@@ -2,13 +2,17 @@
 //!
 //!   ksee records  VMLINUX DUMP [--json]            every record
 //!   ksee syscalls VMLINUX DUMP [--json] [--blocks]  what each syscall ran
-//!   ksee serve [ROOT] [--port=N]  serve the web host (ROOT: the kSEE tree)
+//!   ksee serve [ROOT] [--port=N]  serve the web host (ROOT: build/web, see
+//!                                 make web)
 //!   ksee pack VMLINUX OUT [UNISTD SYSCALL_TABLE]
 //!                            OUT: VMLINUX for the hosts: its types (and,
 //!                            given the generated unistd and syscall table
 //!                            headers, its syscalls) from DWARF as a
 //!                            ksee.types section, without DWARF
 //!   ksee type VMLINUX NAME   the layout of a struct, union, enum or typedef
+//!   ksee sources VMLINUX TREE OUT
+//!                            copy the source files VMLINUX's probes refer
+//!                            to (paths relative to the kernel TREE) to OUT
 //!   ksee cfg VMLINUX DUMP FUNCTION [--dot] [--syscall=N]
 //!                 FUNCTION's control flow graph, with how often each block
 //!                 and edge ran (in the whole trace, or in syscall N as
@@ -34,7 +38,7 @@ fn main() -> ExitCode {
     let flags: Vec<&str> = args.iter().filter(|a| a.starts_with("--")).map(String::as_str).collect();
     let pos: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
     if pos.first() == Some(&"serve") {
-        let root = std::path::Path::new(pos.get(1).copied().unwrap_or("."));
+        let root = std::path::Path::new(pos.get(1).copied().unwrap_or("build/web"));
         let port = flags.iter().find_map(|f| f.strip_prefix("--port=")?.parse().ok()).unwrap_or(8000);
         return match serve::serve(root, port) {
             Ok(()) => ExitCode::SUCCESS,
@@ -65,6 +69,26 @@ fn main() -> ExitCode {
                     ExitCode::FAILURE
                 }
             };
+        }
+        ["sources", vmlinux, tree, out] => {
+            let image = std::fs::read(vmlinux).unwrap_or_else(|e| panic!("{vmlinux}: {e}"));
+            let probes = String::from_utf8_lossy(&module::custom_section(&image, "ksee.probes")).into_owned();
+            let tables = Tables::parse(&probes, "");
+            let (mut copied, mut bytes) = (0, 0);
+            for file in &tables.files {
+                if file.starts_with('/') || file.contains("..") {
+                    continue; // outside the tree
+                }
+                let (from, to) = (std::path::Path::new(tree).join(file), std::path::Path::new(out).join(file));
+                if let Ok(data) = std::fs::read(&from) {
+                    std::fs::create_dir_all(to.parent().unwrap()).unwrap_or_else(|e| panic!("{}: {e}", to.display()));
+                    std::fs::write(&to, &data).unwrap_or_else(|e| panic!("{}: {e}", to.display()));
+                    copied += 1;
+                    bytes += data.len();
+                }
+            }
+            eprintln!("{out}: {copied} source files, {} KiB", bytes >> 10);
+            return ExitCode::SUCCESS;
         }
         ["type", vmlinux, name] => {
             let image = std::fs::read(vmlinux).unwrap_or_else(|e| panic!("{vmlinux}: {e}"));

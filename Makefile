@@ -1,12 +1,13 @@
 # Build the wasm kernel and run the tests.
-#   make             build the kernel and the initramfs
+#   make             build everything, and the site (build/web)
 #   make kernel      build linux/vmlinux (a wasm module)
 #   make vmlinux     build/vmlinux: the kernel with its types, without DWARF
 #   make initramfs   build build/initramfs.cpio from user/
 #   make rust        build the Rust crates (crates/) and run their tests
 #   make defconfig   reset linux/.config to arch/wasm/configs/defconfig
 #   make test        boot in the web host (under Deno) and check the trace
-#   ./ksee.sh serve  then open http://127.0.0.1:8000/web/ (?cmdline=...)
+#   make ui-test     look at the page in headless Chromium ($CHROME)
+#   ./ksee.sh serve  then open http://127.0.0.1:8000/
 
 LLVM ?= -23
 PLUGIN = $(CURDIR)/plugin/ksee-trace.so
@@ -25,7 +26,7 @@ KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=$(LLVM) \
 USER_CC = clang$(LLVM) --target=wasm32 -O2 -ffreestanding -nostdlib -Wl,--no-entry \
 	  -Wl,--export=_start
 
-all: kernel initramfs rust vmlinux
+all: web
 
 $(PLUGIN): plugin/ksee-trace.cpp
 	$(MAKE) -C plugin LLVM=$(LLVM)
@@ -62,10 +63,25 @@ build/user/%.wasm: user/%.c
 build/initramfs.cpio: user/initramfs.list build/user/init.wasm kernel
 	linux/usr/gen_init_cpio $< > $@
 
+# The web host as a self-contained site: the page, the runtime (pkg/), the
+# kernel and initramfs, and the kernel sources the probes refer to (src/).
+web: kernel initramfs rust vmlinux
+	rm -rf build/web && mkdir -p build/web/pkg
+	cp web/* build/web/
+	cp target/web/ksee_runtime.js target/web/ksee_runtime_bg.wasm build/web/pkg/
+	cp build/vmlinux build/initramfs.cpio build/web/
+	target/release/ksee sources build/vmlinux linux build/web/src
+
 defconfig:
 	$(KMAKE) defconfig
 
 test: all
 	tests/trace.sh
 
-.PHONY: all kernel initramfs rust vmlinux defconfig test
+# A look at the page in headless Chromium ($CHROME): no exceptions, and a
+# screenshot in build/ui.png.
+ui-test: all
+	@test -n "$$CHROME" || { echo "set CHROME to a (headless) Chromium binary"; exit 1; }
+	deno run -A tests/ui.js build/ui.png
+
+.PHONY: all kernel initramfs rust vmlinux web defconfig test ui-test

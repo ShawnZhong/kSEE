@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 
 pub fn serve(root: &Path, port: u16) -> std::io::Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", port))?;
-    eprintln!("serving {} at http://127.0.0.1:{}/web/", root.display(), listener.local_addr()?.port());
+    eprintln!("serving {} at http://127.0.0.1:{}/", root.display(), listener.local_addr()?.port());
     for stream in listener.incoming().flatten() {
         let root = root.to_path_buf();
         std::thread::spawn(move || {

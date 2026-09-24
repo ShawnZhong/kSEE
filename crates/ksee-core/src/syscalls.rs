@@ -27,6 +27,9 @@ pub struct Syscall {
     pub blocks: Vec<(u32, u32)>,
     /// Whether the ring had overwritten the start of the call.
     pub partial: bool,
+    /// Positions of its enter and exit records in the record stream.
+    pub first: usize,
+    pub last: Option<usize>,
 }
 
 /// Split `records` at the enter and exit records of `entry` (the syscall
@@ -35,7 +38,7 @@ pub fn split(entry: u32, records: impl IntoIterator<Item = Record>) -> Vec<Sysca
     let mut done = Vec::new();
     let mut open: BTreeMap<u32, Syscall> = BTreeMap::new();
     let mut current = None;
-    for r in records {
+    for (i, r) in records.into_iter().enumerate() {
         match r {
             Record::Enter { func, time, current: task, args } => {
                 current = Some(task);
@@ -43,6 +46,7 @@ pub fn split(entry: u32, records: impl IntoIterator<Item = Record>) -> Vec<Sysca
                     open.insert(task, Syscall {
                         task, nr: args[0], args: [args[1], args[2], args[3]], start: time,
                         end: None, ret: None, blocks: Vec::new(), partial: false,
+                        first: i, last: None,
                     });
                 }
             }
@@ -52,6 +56,7 @@ pub fn split(entry: u32, records: impl IntoIterator<Item = Record>) -> Vec<Sysca
                     if let Some(mut s) = open.remove(&task) {
                         s.end = Some(time);
                         s.ret = Some(value as i32);
+                        s.last = Some(i);
                         done.push(s);
                     }
                 }

@@ -42,6 +42,9 @@ pub struct SyscallSummary {
     /// The agent's own traffic on /dev/ksee (fetching a request, replying),
     /// not a syscall asked for.
     pub control: bool,
+    /// Its span in the record stream (for timelines).
+    pub first: usize,
+    pub last: Option<usize>,
 }
 
 /// Consecutive blocks of one function.
@@ -127,6 +130,8 @@ impl Views<'_> {
         });
         SyscallSummary {
             control,
+            first: s.first,
+            last: s.last,
             index,
             task: self.task(s.task),
             nr: s.nr,

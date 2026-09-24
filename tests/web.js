@@ -1,16 +1,16 @@
-// Boot the kernel in the web host's runtime under Deno (the same module the
-// page uses), make syscalls through /init (the agent), use the debugger,
+// Boot the kernel in the web host's runtime under Deno (the site's module,
+// build/web, as the page uses it), make syscalls through /init (the agent), use the debugger,
 // check the trace views, and save the trace dump.
 //   deno run --allow-read --allow-write tests/web.js DUMP
-import { start, call } from "../web/ksee.js";
+import { start, call } from "../build/web/ksee.js";
 
 const root = new URL("..", import.meta.url);
 // wasm-bindgen's futures (with threads) wake through Atomics.waitAsync,
 // which Deno does not count as pending work: keep the process alive.
 const alive = setInterval(() => {}, 1000);
 const m = await start({
-  kernel: new URL("build/vmlinux", root),
-  initrd: new URL("build/initramfs.cpio", root),
+  kernel: new URL("build/web/vmlinux", root),
+  initrd: new URL("build/web/initramfs.cpio", root),
   cmdline: "wasm_selftest",
 });
 
