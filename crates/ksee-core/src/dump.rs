@@ -87,7 +87,7 @@ pub fn write(t: &Tables, mem: &dyn Memory, ring: u32, sink: &mut dyn FnMut(&[u8]
         let slot = (first + done) % total;
         let n = (pairs - done).min(total - slot).min(chunk.len() as u32 / 8);
         let buf = &mut chunk[..n as usize * 8];
-        mem.read(ring + 4 + slot * 8, buf);
+        mem.read(ring + trace::RING + slot * 8, buf);
         sink(buf);
         done += n;
     }
@@ -152,13 +152,14 @@ mod tests {
         let t = Tables::parse("R\t16\n", "T\t1\tbase\tint\t4\ts\nT\t2\tbase\tchar\t1\tc\n\
             T\t3\tarray\t\t16\t2\t16\nT\t4\tstruct\ttask_struct\t20\nM\t4\tpid\t0\t0\t1\nM\t4\tcomm\t32\t0\t3\n");
         // A task at 0x100, and a 16-word ring at 0x200 holding one exit record.
+        let ring = 0x200 + trace::RING as usize;
         let mut m = alloc::vec![0u8; 0x300];
         m[0x100..0x104].copy_from_slice(&7u32.to_le_bytes());
         m[0x104..0x108].copy_from_slice(b"ping");
         let rec = exit(1, 5, 0x100, 0);
         m[0x200..0x204].copy_from_slice(&(rec.len() as u32).to_le_bytes());
         for (i, w) in rec.iter().enumerate() {
-            m[0x204 + i * 4..0x208 + i * 4].copy_from_slice(&w.to_le_bytes());
+            m[ring + i * 4..ring + 4 + i * 4].copy_from_slice(&w.to_le_bytes());
         }
         let mut out = Vec::new();
         write(&t, &Mem(m), 0x200, &mut |b| out.extend_from_slice(b));

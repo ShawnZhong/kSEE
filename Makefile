@@ -11,15 +11,17 @@
 LLVM ?= -23
 PLUGIN = $(CURDIR)/plugin/ksee-trace.so
 # What the trace plugin instruments (see plugin/ksee-trace.cpp): every basic
-# block, plus the calls that give blocks context. Changing the list does not
-# rebuild anything by itself: clean the kernel.
+# block, plus the calls that give blocks context.
 KSEE_TRACE ?= *:block,wasm_syscall:enter+exit,context_switch:enter+exit,\
 	      __schedule,try_to_wake_up,wake_up_new_task,kernel_clone,do_exit
 # The kernel variable that holds the current task (recorded by enter/exit).
 KSEE_CURRENT ?= __current_task
 export KSEE_TRACE KSEE_CURRENT
+# A hash of the plugin and its settings in the compiler flags makes kbuild
+# rebuild the kernel whenever either changes.
+KSEE_ID = $(shell (cat $(PLUGIN) 2>/dev/null; echo $(KSEE_TRACE) $(KSEE_CURRENT)) | sha1sum | cut -c1-12)
 KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=$(LLVM) \
-	KCFLAGS="-g -fpass-plugin=$(PLUGIN)"
+	KCFLAGS="-g -fpass-plugin=$(PLUGIN) -DKSEE_ID=$(KSEE_ID)"
 USER_CC = clang$(LLVM) --target=wasm32 -O2 -ffreestanding -nostdlib -Wl,--no-entry \
 	  -Wl,--export=_start
 

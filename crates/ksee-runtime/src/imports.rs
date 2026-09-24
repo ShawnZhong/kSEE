@@ -166,6 +166,7 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
 
     let ksee = Object::new();
     js::set(&ksee, "now", export("time_ns"));
+    js::set(&ksee, "stop", export("stop"));
     let env = Object::new();
     js::set(&env, "memory", memory.clone());
     let imports = Object::new();

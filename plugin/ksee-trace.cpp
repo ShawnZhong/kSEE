@@ -21,9 +21,11 @@
 // helper. The sequence of blocks is the branch history.
 //
 // Probes append records to a fixed ring in the module's own memory,
-// __ksee_trace = { u32 pos; u32 ring[KSEE_RING_WORDS]; }, where pos counts
-// words ever written (the ring keeps the most recent ones); the exported
-// function ksee_trace() returns its address. pos is stored with release
+// __ksee_trace = { u32 pos; u32 armed; u32 ring[KSEE_RING_WORDS]; }, where
+// pos counts words ever written (the ring keeps the most recent ones); the
+// exported function ksee_trace() returns its address. While armed is
+// nonzero, block probes also call the ksee.stop(fn, n) import, which may
+// stop the kernel there (breakpoints, stepping). pos is stored with release
 // order after each record, so a reader that loads it sees whole records.
 // The writer assumes one writer at a time (a uniprocessor kernel).
 //
@@ -224,7 +226,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     }
     LLVMContext &C = M->getContext();
     unsigned words = ringWords();
-    auto *traceTy = StructType::get(C, {i32, ArrayType::get(i32, words)});
+    auto *traceTy = StructType::get(C, {i32, i32, ArrayType::get(i32, words)});
     auto *trace = shared(new GlobalVariable(
         *M, traceTy, false, GlobalValue::ExternalLinkage,
         ConstantAggregateZero::get(traceTy), "__ksee_trace"));
@@ -254,7 +256,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       SmallVector<Value *> words;
       body(B, F, words);
       Value *pos = B.CreateStructGEP(traceTy, trace, 0);
-      Value *ring = B.CreateStructGEP(traceTy, trace, 1);
+      Value *ring = B.CreateStructGEP(traceTy, trace, 2);
       Value *p = B.CreateLoad(i32, pos);
       for (auto [i, w] : enumerate(words)) {
         Value *idx = B.CreateAnd(B.CreateAdd(p, B.getInt32(i)), B.getInt32(ringWords() - 1));
@@ -262,6 +264,20 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       }
       B.CreateAlignedStore(B.CreateAdd(p, B.getInt32(words.size())), pos, Align(4))
           ->setAtomic(AtomicOrdering::Release);
+      if (name == "__ksee_put_block") {
+        // if (armed) ksee.stop(fn, n)
+        Value *armed = B.CreateLoad(i32, B.CreateStructGEP(traceTy, trace, 1));
+        BasicBlock *stop = BasicBlock::Create(C, "stop", F), *done = BasicBlock::Create(C, "done", F);
+        B.CreateCondBr(B.CreateICmpNE(armed, B.getInt32(0)), stop, done);
+        B.SetInsertPoint(stop);
+        FunctionCallee hook = M->getOrInsertFunction(
+            "__ksee_stop", FunctionType::get(Type::getVoidTy(C), {i32, i32}, false));
+        cast<Function>(hook.getCallee())->addFnAttr("wasm-import-module", "ksee");
+        cast<Function>(hook.getCallee())->addFnAttr("wasm-import-name", "stop");
+        B.CreateCall(hook, {F->getArg(0), F->getArg(1)});
+        B.CreateBr(done);
+        B.SetInsertPoint(done);
+      }
       B.CreateRetVoid();
       return F;
     };

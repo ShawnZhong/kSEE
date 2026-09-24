@@ -16,6 +16,23 @@ pub static MEMORY_END: AtomicU32 = AtomicU32::new(0);
 pub static HALTED: AtomicU32 = AtomicU32::new(0);
 /// f64 bits of the wall clock when the machine started.
 pub static EPOCH_MS: AtomicU64 = AtomicU64::new(0);
+/// Addresses in kernel memory: the trace (ksee_trace()) and the variable
+/// holding the current task (KSEE_CURRENT).
+pub static TRACE: AtomicU32 = AtomicU32::new(0);
+pub static CURRENT_TASK: AtomicU32 = AtomicU32::new(0);
+/// The kernel's pending-interrupt word (wasm_irq_pending).
+pub static PENDING: AtomicU32 = AtomicU32::new(0);
+
+/// Raise interrupt line `irq` (see WASM_IRQ_* in the kernel's asm/wasm.h).
+pub fn interrupt(irq: u32) {
+    let p = PENDING.load(Ordering::Relaxed);
+    if p != 0 {
+        unsafe {
+            (*(p as *const AtomicU32)).fetch_or(1 << irq, Ordering::SeqCst);
+            core::arch::wasm32::memory_atomic_notify(p as *mut i32, 1);
+        }
+    }
+}
 
 pub static CONSOLE_OUT: ByteRing = ByteRing::new();
 pub static CONSOLE_IN: ByteRing = ByteRing::new();
@@ -28,7 +45,13 @@ pub fn tables() -> &'static Tables {
 pub struct Direct;
 
 impl Memory for Direct {
+    /// Reads outside memory (a stale pointer in the trace, say) give zeros.
     fn read(&self, addr: u32, buf: &mut [u8]) {
+        let size = core::arch::wasm32::memory_size(0) as u64 * 65536;
+        if addr as u64 + buf.len() as u64 > size {
+            buf.fill(0);
+            return;
+        }
         // Racing the kernel only garbles what is read.
         unsafe { core::ptr::copy_nonoverlapping(addr as *const u8, buf.as_mut_ptr(), buf.len()) }
     }

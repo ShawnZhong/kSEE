@@ -11,10 +11,12 @@
 //! * [`worker`]: what each Worker runs: the timer, or a kernel task.
 //! * [`imports`]: the kernel's imports. The frequent ones are this
 //!   module's exports (direct wasm calls); the rest reach Web APIs.
+//! * [`debug`]: breakpoints and stepping (stopping the kernel in a probe).
 //! * [`state`]: statics shared by all instances.
 
 #![feature(stdarch_wasm_atomic_wait)]
 
+mod debug;
 mod imports;
 mod js;
 pub mod machine;

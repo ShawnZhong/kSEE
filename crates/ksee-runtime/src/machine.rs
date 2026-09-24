@@ -12,6 +12,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
+use crate::debug::{self, DEBUG};
 use crate::imports;
 use crate::js;
 use crate::state::*;
@@ -89,6 +90,10 @@ impl Machine {
         let global = |name: &str| {
             js::get(&js::get(&kernel, name), "value").as_f64().unwrap_or(0.0) as u32
         };
+        CURRENT_TASK.store(global("__current_task"), Ordering::Relaxed);
+        PENDING.store(global("wasm_irq_pending"), Ordering::Relaxed);
+        let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
+        TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
         let timer = Object::new();
         js::set(&timer, "role", "timer");
         js::set(&timer, "deadline", global("wasm_timer_deadline"));
@@ -145,9 +150,10 @@ impl Machine {
         String::from_utf8_lossy(&out).into_owned()
     }
 
-    /// Input for the kernel's console.
+    /// Input for the kernel's console (raises its interrupt).
     pub fn type_in(&self, text: &str) {
         CONSOLE_IN.put(text.as_bytes());
+        interrupt(1); // WASM_IRQ_CONSOLE
     }
 
     /// The halt code once the kernel has halted (its Workers are stopped).
@@ -234,6 +240,89 @@ impl Machine {
         let t = tables();
         dump::tasks_in(t, trace::ring(&Direct, self.ring(), t.ring_words)).into_iter()
             .find(|&p| live_task(p).is_some_and(|task| task.pid == pid))
+    }
+
+    // ---- Stopping the kernel ----
+
+    /// Where the kernel is stopped, if it is: { func, block, file, line,
+    /// column, task }.
+    pub fn stopped(&self) -> JsValue {
+        let Some((func, n, task)) = DEBUG.stopped() else { return JsValue::NULL };
+        let t = tables();
+        let o = Object::new();
+        js::set(&o, "func", t.functions.get(&func).map_or(String::new(), |f| f.name.clone()));
+        js::set(&o, "block", n);
+        if let Some(&l) = t.blocks.get(&(func, n)) {
+            js::set(&o, "file", t.file(l));
+            js::set(&o, "line", l.line);
+            js::set(&o, "column", l.column);
+        }
+        js::set(&o, "task", to_js(&self.views_task(task)));
+        o.into()
+    }
+
+    fn views_task(&self, addr: u32) -> ksee_core::view::TaskRef {
+        let t = live_task(addr);
+        ksee_core::view::TaskRef { addr, pid: t.as_ref().map(|t| t.pid), comm: t.map(|t| t.comm) }
+    }
+
+    /// Stop at the next block the kernel runs.
+    pub fn pause(&self) {
+        DEBUG.pause();
+    }
+
+    /// From a stop: run to the next block.
+    pub fn step(&self) {
+        DEBUG.go(debug::STEP);
+    }
+
+    /// From a stop: run to the next block of the same function, on the
+    /// same task (over calls).
+    pub fn next(&self) {
+        DEBUG.go(debug::NEXT);
+    }
+
+    /// From a stop: run until a breakpoint.
+    pub fn resume(&self) {
+        DEBUG.go(debug::RUN);
+    }
+
+    /// Break at the start of every function called `name`.
+    pub fn break_function(&self, name: &str, on: bool) -> bool {
+        let t = tables();
+        let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
+        for &id in &ids {
+            if on { DEBUG.add(id, 0); } else { DEBUG.remove(id, 0); }
+        }
+        !ids.is_empty()
+    }
+
+    /// Break at the blocks that start at `file:line`; the number of blocks.
+    pub fn break_line(&self, file: &str, line: u32, on: bool) -> usize {
+        let t = tables();
+        let blocks: Vec<(u32, u32)> = t.blocks.iter()
+            .filter(|(_, l)| l.line == line && t.file(**l) == file).map(|(&k, _)| k).collect();
+        for &(f, n) in &blocks {
+            if on { DEBUG.add(f, n); } else { DEBUG.remove(f, n); }
+        }
+        blocks.len()
+    }
+
+    /// The breakpoints, as [{ func, block, file, line }].
+    pub fn breakpoints(&self) -> JsValue {
+        let t = tables();
+        let list = js_sys::Array::new();
+        for (f, n) in DEBUG.list() {
+            let o = Object::new();
+            js::set(&o, "func", t.functions.get(&f).map_or(String::new(), |f| f.name.clone()));
+            js::set(&o, "block", n);
+            if let Some(&l) = t.blocks.get(&(f, n)) {
+                js::set(&o, "file", t.file(l));
+                js::set(&o, "line", l.line);
+            }
+            list.push(&o);
+        }
+        list.into()
     }
 
     // ---- Text views (for tests and the CLI's format) ----

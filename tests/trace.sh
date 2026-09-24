@@ -1,9 +1,10 @@
 #!/bin/sh
-# Boot the selftest in the web host (under Deno), then read the trace dump
-# with the CLI: the scheduler at work and the code init's syscalls ran.
+# Run tests/web.js (the web host under Deno: the selftest, init's syscall
+# shell, the debugger), then read its trace dump with the CLI: the
+# scheduler at work and the code init's syscalls ran.
 cd "$(dirname "$0")/.."
 dump=build/trace.dump
-deno run --allow-read --allow-write tests/web.js $dump wasm_selftest || exit 1
+deno run --allow-read --allow-write tests/web.js $dump || exit 1
 ksee() { ./ksee.sh "$@" build/vmlinux $dump; }
 ksee records > build/records.txt
 ksee syscalls --blocks > build/syscalls.txt
@@ -14,4 +15,5 @@ check "ping -> pong" build/records.txt '> context_switch(0x[0-9a-f]*, ping([0-9]
 check "pong -> ping" build/records.txt '> context_switch(0x[0-9a-f]*, pong([0-9]*), ping('
 check "write ran vfs_write" build/syscalls.txt '^ *vfs_write  *fs/read_write.c:[0-9]*:[0-9]*$'
 check "getpid ran __task_pid_nr_ns" build/syscalls.txt '^ *__task_pid_nr_ns '
+check "mkdir ran vfs_mkdir" build/syscalls.txt '^ *vfs_mkdir '
 echo "PASS ($(wc -l < build/records.txt) records, $(grep -c '^#' build/syscalls.txt) syscalls)"

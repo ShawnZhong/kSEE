@@ -24,13 +24,19 @@ pub fn decode(words: &[u32]) -> Vec<Record> {
         .collect()
 }
 
-/// The ring at `trace` (`{ u32 pos; u32 ring[words]; }`), decoded in place.
+/// Offset of the ring's words in the trace header (`{ u32 pos; u32 armed;
+/// u32 ring[words]; }`, see plugin/ksee-trace.cpp).
+pub const RING: u32 = 8;
+/// Offset of the `armed` word.
+pub const ARMED: u32 = 4;
+
+/// The ring at `trace`, decoded in place.
 pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> impl Iterator<Item = Record> + '_ {
     let (first, len) = window(mem, trace, words);
     let pairs = words / 2;
     Decoder::new(len, move |i| {
         let slot = (first + i) % pairs;
-        let a = trace + 4 + slot * 8;
+        let a = trace + RING + slot * 8;
         (mem.read_u32(a), mem.read_u32(a + 4))
     })
 }
@@ -41,7 +47,7 @@ pub fn ring_words(mem: &dyn Memory, trace: u32, words: u32) -> Vec<u32> {
     let pairs = words / 2;
     let mut out = Vec::with_capacity(len as usize * 2);
     for i in 0..len {
-        let a = trace + 4 + (first + i) % pairs * 8;
+        let a = trace + RING + (first + i) % pairs * 8;
         out.extend([mem.read_u32(a), mem.read_u32(a + 4)]);
     }
     out
@@ -148,10 +154,10 @@ pub(crate) mod tests {
 
     #[test]
     fn reads_ring_words() {
-        let mut m = alloc::vec![0u8; 20];
+        let mut m = alloc::vec![0u8; 24];
         m[0..4].copy_from_slice(&6u32.to_le_bytes());
         for (slot, w) in [4u32, 5, 2, 3].iter().enumerate() {
-            m[4 + slot * 4..8 + slot * 4].copy_from_slice(&w.to_le_bytes());
+            m[8 + slot * 4..12 + slot * 4].copy_from_slice(&w.to_le_bytes());
         }
         assert_eq!(ring_words(&Ring(m), 0, 4), [2, 3, 4, 5]);
     }
@@ -164,11 +170,11 @@ pub(crate) mod tests {
     #[test]
     fn reads_a_wrapped_ring() {
         // A 4-word ring after 6 words (blocks 0, 1, 2) were written.
-        let mut m = alloc::vec![0u8; 20];
+        let mut m = alloc::vec![0u8; 24];
         m[0..4].copy_from_slice(&6u32.to_le_bytes());
         let words = [block(9, 2), block(9, 1)].concat();
         for (slot, w) in words.iter().enumerate() {
-            m[4 + slot * 4..8 + slot * 4].copy_from_slice(&w.to_le_bytes());
+            m[8 + slot * 4..12 + slot * 4].copy_from_slice(&w.to_le_bytes());
         }
         let got: Vec<Record> = ring(&Ring(m), 0, 4).collect();
         assert_eq!(got, [Record::Block { func: 9, n: 1 }, Record::Block { func: 9, n: 2 }]);
