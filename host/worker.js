@@ -14,6 +14,17 @@ const nowNs = () =>
 
 class ExitTask extends Error {}
 
+let kernel;        // this Worker's kernel instance
+let user = null;   // the running user program (instance), if any
+let loaded = null; // the program exec() has loaded, until user_enter
+
+// Bounds-checked view of the running program's memory, or null.
+function userBytes(addr, n) {
+  const mem = user?.exports.memory;
+  if (!mem || addr + n > mem.buffer.byteLength) return null;
+  return new Uint8Array(mem.buffer, addr, n);
+}
+
 function imports() {
   return {
     env: { memory },
@@ -44,8 +55,37 @@ function imports() {
       print_stack() {
         writeSync(1, new Error().stack.split("\n").slice(2).join("\n") + "\n");
       },
-      user_read: (to, from, n) => n,
-      user_write: (to, from, n) => n,
+      console_read: () => 0,
+      user_load(image, len) {
+        try {
+          const module = new WebAssembly.Module(u8().slice(image, image + len));
+          // The syscall import is the kernel export itself: a direct call.
+          loaded = new WebAssembly.Instance(module,
+                                            { linux: { syscall: kernel.syscall } });
+          return 0;
+        } catch (e) {
+          writeSync(2, `[${workerData.comm}] exec: ${e.message}\n`);
+          return 1;
+        }
+      },
+      user_enter() {
+        user = loaded;
+        loaded = null;
+        user.exports._start();
+      },
+      // Both return the number of bytes not copied.
+      user_read(to, from, n) {
+        const src = userBytes(from, n);
+        if (!src) return n;
+        u8().set(src, to);
+        return 0;
+      },
+      user_write(to, from, n) {
+        const dst = userBytes(to, n);
+        if (!dst) return n;
+        dst.set(u8().subarray(from, from + n));
+        return 0;
+      },
     },
   };
 }
@@ -77,6 +117,7 @@ if (workerData.role === "timer") {
   timer();
 } else {
   const { exports } = new WebAssembly.Instance(module, imports());
+  kernel = exports;
   try {
     if (workerData.role === "boot") {
       exports.__stack_pointer.value = exports.boot_stack();

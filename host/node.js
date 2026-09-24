@@ -11,6 +11,7 @@ const { values, positionals } = parseArgs({
     mem: { type: "string", default: "64" },
     timeout: { type: "string", default: "0" },
     trace: { type: "boolean", default: false },
+    initrd: { type: "string" },
   },
 });
 const [image, ...cmd] = positionals;
@@ -26,6 +27,14 @@ const exports = {
   wasm_irq_pending: main.exports.wasm_irq_pending.value,
   wasm_timer_deadline: main.exports.wasm_timer_deadline.value,
 };
+
+// The initramfs goes at the top of memory; the kernel reserves it.
+if (values.initrd) {
+  const cpio = readFileSync(values.initrd);
+  const addr = (memory.buffer.byteLength - cpio.length) & ~0xfff;
+  new Uint8Array(memory.buffer).set(cpio, addr);
+  cmd.push(`initrd=0x${addr.toString(16)},${cpio.length}`);
+}
 
 const shared = {
   module, memory, exports,
