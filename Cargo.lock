@@ -3,9 +3,21 @@
 version = 4
 
 [[package]]
-name = "ksee"
+name = "ksee-cli"
 version = "0.1.0"
 dependencies = [
+ "ksee-core",
+]
+
+[[package]]
+name = "ksee-core"
+version = "0.1.0"
+
+[[package]]
+name = "ksee-runtime"
+version = "0.1.0"
+dependencies = [
+ "ksee-core",
  "linked_list_allocator",
 ]
 

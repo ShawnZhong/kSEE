@@ -1,25 +1,30 @@
-//! The wasm runtime: entry points for the JS shim.
+//! kSEE host runtime.
 //!
-//! This module imports the kernel's shared memory and lives below the
-//! kernel image, so Rust statics are shared by every Worker that
-//! instantiates it; only the stack pointer is per instance.
+//! This wasm module imports the kernel's shared memory and lives below the
+//! kernel image (CONFIG_WASM_HOST_MEMORY), so it reads kernel objects and
+//! the trace ring directly, and its statics are shared by every Worker
+//! that instantiates it (only the stack pointer is per instance). The JS
+//! shim does what needs the platform: Workers, instantiating modules, time
+//! and I/O.
+#![no_std]
+#![feature(stdarch_wasm_atomic_wait)]
 
-use core::alloc::GlobalAlloc;
+extern crate alloc;
+
+use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use ksee_core::tables::Tables;
+use ksee_core::{dump, Memory};
 use linked_list_allocator::LockedHeap;
-
-use crate::json::Writer;
-use crate::tables::Tables;
-use crate::{syscalls, trace, Memory};
 
 mod platform {
     #[link(wasm_import_module = "platform")]
     unsafe extern "C" {
         /// Monotonic nanoseconds since the machine started.
         pub fn now_ns() -> u64;
-        /// Output one line (e.g. a JSON record) to the named stream.
-        pub fn emit(stream: u32, ptr: *const u8, len: u32);
+        /// Write bytes to the named output (see [`super::DUMP`]).
+        pub fn write(output: u32, ptr: *const u8, len: u32);
         /// Report a panic and stop.
         pub fn panic(ptr: *const u8, len: u32) -> !;
     }
@@ -29,6 +34,9 @@ mod platform {
 const HOST_END: usize = 16 << 20;
 const STACK_SIZE: usize = 64 << 10;
 const STACKS: usize = 8;
+
+/// Output for [`dump`]: the trace dump (see ksee_core::dump).
+pub const DUMP: u32 = 0;
 
 unsafe extern "C" {
     static __heap_base: u8;
@@ -61,11 +69,11 @@ impl Heap {
     }
 }
 
-unsafe impl core::alloc::GlobalAlloc for Heap {
-    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
+unsafe impl GlobalAlloc for Heap {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         unsafe { self.get().alloc(layout) }
     }
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe { self.get().dealloc(ptr, layout) }
     }
 }
@@ -94,10 +102,8 @@ struct Direct;
 
 impl Memory for Direct {
     fn read(&self, addr: u32, buf: &mut [u8]) {
-        let src = addr as *const u8;
-        for (i, b) in buf.iter_mut().enumerate() {
-            *b = unsafe { core::ptr::read_volatile(src.add(i)) };
-        }
+        // The kernel is stopped or elsewhere; racing it only garbles data.
+        unsafe { core::ptr::copy_nonoverlapping(addr as *const u8, buf.as_mut_ptr(), buf.len()) }
     }
 }
 
@@ -125,12 +131,12 @@ fn tables() -> &'static Tables {
 /// Allocate `len` bytes for the shim to write into; see [`free`].
 #[unsafe(no_mangle)]
 pub extern "C" fn alloc(len: u32) -> *mut u8 {
-    unsafe { HEAP.alloc(core::alloc::Layout::from_size_align_unchecked(len.max(1) as usize, 8)) }
+    unsafe { HEAP.alloc(Layout::from_size_align_unchecked(len.max(1) as usize, 8)) }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn free(ptr: *mut u8, len: u32) {
-    unsafe { HEAP.dealloc(ptr, core::alloc::Layout::from_size_align_unchecked(len.max(1) as usize, 8)) }
+    unsafe { HEAP.dealloc(ptr, Layout::from_size_align_unchecked(len.max(1) as usize, 8)) }
 }
 
 /// Called once, on the first instance: load the kernel module's
@@ -168,23 +174,11 @@ pub extern "C" fn timer(deadline: u32, pending: u32) -> ! {
     }
 }
 
-const EVENTS: u32 = 0;
-const SYSCALLS: u32 = 1;
-
-fn emit(stream: u32, line: &str) {
-    unsafe { platform::emit(stream, line.as_ptr(), line.len() as u32) }
-}
-
-/// Decode the trace ring at `ring` (the kernel's ksee_trace()) and output
-/// its records (stream 0) and the per-syscall view (stream 1).
+/// Save the trace ring at `ring` (the kernel's ksee_trace()) and the tasks
+/// it mentions to output [`DUMP`].
 #[unsafe(no_mangle)]
 pub extern "C" fn dump(ring: u32) {
-    let t = tables();
-    let w = Writer { tables: t, mem: &Direct };
-    for r in trace::ring(&Direct, ring, t.ring_words) {
-        emit(EVENTS, &w.record(&r));
-    }
-    for s in syscalls::split(trace::ring(&Direct, ring, t.ring_words)) {
-        emit(SYSCALLS, &w.syscall(&s));
-    }
+    dump::write(tables(), &Direct, ring, &mut |b| unsafe {
+        platform::write(DUMP, b.as_ptr(), b.len() as u32)
+    });
 }

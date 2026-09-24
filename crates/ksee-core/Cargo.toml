@@ -1,0 +1,6 @@
+[package]
+name = "ksee-core"
+version = "0.1.0"
+description = "kSEE: probe tables, trace decoding and views (no_std)"
+edition.workspace = true
+publish.workspace = true

@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = ["crates/ksee-core", "crates/ksee-runtime", "crates/ksee-cli"]
+
+[workspace.package]
+edition = "2024"
+publish = false
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

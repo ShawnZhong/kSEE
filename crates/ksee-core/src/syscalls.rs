@@ -9,9 +9,9 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use crate::tables::Tables;
 use crate::trace::Record;
 
+/// The syscall entry function of the wasm port.
 pub const ENTRY: &str = "wasm_syscall";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,8 +29,9 @@ pub struct Syscall {
     pub partial: bool,
 }
 
-pub fn split(records: impl IntoIterator<Item = Record>) -> Vec<Syscall> {
-    let entry = Tables::id(ENTRY);
+/// Split `records` at the enter and exit records of `entry` (the syscall
+/// entry function's id, see [`crate::tables::Tables::find`]).
+pub fn split(entry: u32, records: impl IntoIterator<Item = Record>) -> Vec<Syscall> {
     let mut done = Vec::new();
     let mut open: BTreeMap<u32, Syscall> = BTreeMap::new();
     let mut current = None;
@@ -70,6 +71,7 @@ pub fn split(records: impl IntoIterator<Item = Record>) -> Vec<Syscall> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tables::Tables;
     use crate::trace::{decode, tests::*};
 
     #[test]
@@ -86,7 +88,7 @@ mod tests {
         w.extend(exit(cs, 5, a, 0));                // a resumes
         w.extend(block(9, 2));
         w.extend(exit(sys, 6, a, 36));
-        let calls = split(decode(&w));
+        let calls = split(sys, decode(&w));
         assert_eq!(calls.len(), 1);
         let c = &calls[0];
         assert_eq!((c.task, c.nr, c.args, c.ret), (a, 64, [1, 2, 3], Some(36)));

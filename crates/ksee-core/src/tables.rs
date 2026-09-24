@@ -118,7 +118,13 @@ impl Tables {
         self.fields.get(&(s.to_string(), f.to_string())).copied()
     }
 
-    /// The function id of `name` (the plugin's FNV-1a hash).
+    /// The id of the (first) instrumented function called `name`.
+    pub fn find(&self, name: &str) -> Option<u32> {
+        self.functions.iter().find(|(_, f)| f.name == name).map(|(&id, _)| id)
+    }
+
+    /// The plugin's FNV-1a hash (function ids hash the name, prefixed with
+    /// the source file for functions local to a file).
     pub fn id(name: &str) -> u32 {
         name.bytes().fold(2166136261u32, |h, c| (h ^ c as u32).wrapping_mul(16777619))
     }

@@ -2,7 +2,7 @@
 #   make             build the kernel and the initramfs
 #   make kernel      build linux/vmlinux (a wasm module)
 #   make initramfs   build build/initramfs.cpio from user/
-#   make core        build and unit-test the Rust host runtime (host/ksee)
+#   make rust        build the Rust crates (crates/) and run their tests
 #   make defconfig   reset linux/.config to arch/wasm/configs/defconfig
 #   make test        boot it under Node and run the selftest
 
@@ -23,9 +23,7 @@ KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=$(LLVM) \
 USER_CC = clang$(LLVM) --target=wasm32 -O2 -ffreestanding -nostdlib -Wl,--no-entry \
 	  -Wl,--export=_start
 
-KSEE_CORE = host/ksee/target/wasm32-unknown-unknown/release/ksee.wasm
-
-all: kernel initramfs core
+all: kernel initramfs rust
 
 $(PLUGIN): plugin/ksee-trace.cpp
 	$(MAKE) -C plugin LLVM=$(LLVM)
@@ -36,13 +34,14 @@ kernel: $(PLUGIN)
 
 initramfs: build/initramfs.cpio
 
-# The Rust host runtime (always rebuilt: cargo tracks its own dependencies).
-# Its wasm build shares the kernel's memory, so core and alloc are rebuilt
-# with atomics (nightly, see host/ksee/rust-toolchain.toml).
-core:
-	cd host/ksee && cargo build -q --release --target wasm32-unknown-unknown \
+# The Rust crates (always rebuilt: cargo tracks its own dependencies). The
+# runtime's wasm build shares the kernel's memory, so core and alloc are
+# rebuilt with atomics (nightly, see rust-toolchain.toml).
+rust:
+	cargo build -q --release -p ksee-runtime --target wasm32-unknown-unknown \
 		-Zbuild-std=core,alloc,panic_abort
-	cd host/ksee && cargo test -q
+	cargo build -q --release -p ksee-cli
+	cargo test -q -p ksee-core
 
 build/user/%.wasm: user/%.c
 	@mkdir -p $(@D)
@@ -54,9 +53,9 @@ build/initramfs.cpio: user/initramfs.list build/user/init.wasm kernel
 defconfig:
 	$(KMAKE) defconfig
 
-test: kernel initramfs core
+test: kernel initramfs rust
 	tests/selftest.sh
 	tests/init.sh
 	tests/events.sh
 
-.PHONY: all kernel initramfs core defconfig test
+.PHONY: all kernel initramfs rust defconfig test

@@ -6,16 +6,17 @@ import { writeSync } from "node:fs";
 export const nowNs = (epoch) =>
   BigInt(Math.round((performance.timeOrigin - epoch + performance.now()) * 1e6));
 
-// Imports for an instance of the host module. streams maps output stream
-// numbers (see host/ksee/src/wasm.rs) to file descriptors.
-export function platformImports(memory, epoch, streams = {}) {
+// Imports for an instance of the host runtime (crates/ksee-runtime).
+// outputs maps its output numbers to file descriptors.
+export function platformImports(memory, epoch, outputs = {}) {
   const text = (p, n) => new TextDecoder().decode(new Uint8Array(memory.buffer).slice(p, p + n));
   return {
     env: { memory },
     platform: {
       now_ns: () => nowNs(epoch),
-      emit(stream, p, n) {
-        if (streams[stream] !== undefined) writeSync(streams[stream], text(p, n) + "\n");
+      write(output, p, n) {
+        if (outputs[output] !== undefined)
+          writeSync(outputs[output], new Uint8Array(memory.buffer).slice(p, p + n));
       },
       panic(p, n) {
         throw new Error(`host panic: ${text(p, n)}`);

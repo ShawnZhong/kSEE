@@ -9,7 +9,7 @@
 //                                    object that defines this (start_kernel)
 //
 // PATTERN is a glob over function names or, if it contains '/', over
-// source file paths. MODES is a '+'-separated subset of
+// source file paths (relative to the kernel tree, e.g. kernel/sched/*). MODES is a '+'-separated subset of
 //   enter  at function entry: the time, the current task and the first
 //          four integer/pointer arguments (truncated to 32 bits)
 //   exit   before each return: the time, the current task and the value
@@ -38,7 +38,8 @@
 //   [fn, 3 << 28]         exit fn, followed by time lo, time hi, current,
 //                         value
 //   [value, 8 << 28 | i]  continuation i of the preceding head
-// fn is a hash of the function name; time comes from the ksee.now import.
+// fn is a hash of the function name (for a function local to its file, of
+// "file:name"); time comes from the ksee.now import.
 //
 // The linked module describes its probes in two wasm custom sections, which
 // wasm-ld concatenates across objects (lines may repeat):
@@ -56,6 +57,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Plugins/PassPlugin.h"
 #include "llvm/Support/GlobPattern.h"
+#include "llvm/Support/Path.h"
 
 #include <cstdlib>
 #include <set>
@@ -110,11 +112,17 @@ std::vector<Rule> parseRules() {
   return rules;
 }
 
-uint32_t fnId(StringRef name) {
-  uint32_t h = 2166136261u; // FNV-1a
-  for (unsigned char c : name)
+uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
+  for (unsigned char c : s)
     h = (h ^ c) * 16777619u;
   return h;
+}
+
+// Functions local to a file are told apart by the file's name.
+uint32_t fnId(const Function &F) {
+  if (!F.hasLocalLinkage())
+    return fnv(F.getName());
+  return fnv(F.getName(), fnv(":", fnv(F.getParent()->getSourceFileName())));
 }
 
 // "task_struct*", "u32", ...: the type as far as the host needs to know.
@@ -130,8 +138,14 @@ std::string typeName(const DIType *T) {
   return T && !T->getName().empty() ? T->getName().str() : "?";
 }
 
+// The file, relative to the compilation directory (the kernel tree) when it
+// is inside it.
 std::string sourcePath(const DIScope *S) {
-  return (S->getDirectory() + "/" + S->getFilename()).str();
+  StringRef file = S->getFilename();
+  if (sys::path::is_absolute(file))
+    return file.str();
+  file.consume_front("./");
+  return file.str();
 }
 
 // Wasm module asm can emit a custom section (a data global cannot).
@@ -300,7 +314,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
 
   void instrument(Function &F, unsigned modes) {
     createRuntime();
-    uint32_t id = fnId(F.getName());
+    uint32_t id = fnId(F);
     DISubprogram *SP = F.getSubprogram();
 
     SmallVector<BasicBlock *> blocks;

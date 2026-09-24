@@ -1,0 +1,15 @@
+[package]
+name = "ksee-runtime"
+version = "0.1.0"
+description = "kSEE host runtime: wasm that runs in the kernel's shared memory"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ksee-core = { path = "../ksee-core" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+linked_list_allocator = { version = "0.10", default-features = false, features = ["use_spin"] }

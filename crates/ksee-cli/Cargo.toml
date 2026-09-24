@@ -1,0 +1,13 @@
+[package]
+name = "ksee-cli"
+version = "0.1.0"
+description = "kSEE command line: decode trace dumps offline"
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "ksee"
+path = "src/main.rs"
+
+[dependencies]
+ksee-core = { path = "../ksee-core" }

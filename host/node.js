@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Boot a kSEE wasm kernel under Node.
 //   node host/node.js [--mem MiB] [--timeout s] [--initrd cpio] [--trace]
-//                     [--events out.jsonl] [--syscalls out.jsonl]
-//                     vmlinux [cmdline...]
+//                     [--dump FILE] vmlinux [cmdline...]
+// --dump saves the trace ring when the machine stops; read it with the
+// ksee command (crates/ksee-cli).
 import { openSync, readFileSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 import { parseArgs } from "node:util";
@@ -15,14 +16,13 @@ const { values, positionals } = parseArgs({
     timeout: { type: "string", default: "0" },
     trace: { type: "boolean", default: false },
     initrd: { type: "string" },
-    events: { type: "string" },
-    syscalls: { type: "string" },
+    dump: { type: "string" },
   },
 });
 const [image, ...cmd] = positionals;
 const module = await WebAssembly.compile(readFileSync(image));
-const host = await WebAssembly.compile(readFileSync(
-  new URL("./ksee/target/wasm32-unknown-unknown/release/ksee.wasm", import.meta.url)));
+const host = await WebAssembly.compile(readFileSync(new URL(
+  "../target/wasm32-unknown-unknown/release/ksee_runtime.wasm", import.meta.url)));
 const pages = (Number(values.mem) << 20) >> 16;
 const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
 const epoch = performance.timeOrigin;
@@ -30,8 +30,8 @@ const epoch = performance.timeOrigin;
 // Instantiate both modules once here: their start functions initialize
 // their data in the shared memory, so no Worker has to wait for that.
 // The host (Rust) owns the memory below the kernel image.
-const streams = {};
-const h = new WebAssembly.Instance(host, platformImports(memory, epoch, streams));
+const outputs = {};
+const h = new WebAssembly.Instance(host, platformImports(memory, epoch, outputs));
 const stub = new Proxy({}, { get: (_, name) => () => { throw new Error(name); } });
 const k = new WebAssembly.Instance(module, { env: { memory }, kernel: stub, ksee: stub });
 const exports = {
@@ -88,12 +88,13 @@ function spawn(role, extra = {}) {
   return w;
 }
 
-// Stop every Worker, then decode the trace ring the kernel left behind.
+// Stop every Worker, then save the trace ring the kernel left behind.
 async function halt(code) {
   await Promise.all([...workers].map((w) => w.terminate()));
-  if (values.events) streams[0] = openSync(values.events, "w");
-  if (values.syscalls) streams[1] = openSync(values.syscalls, "w");
-  if (values.events || values.syscalls) h.exports.dump(k.exports.ksee_trace());
+  if (values.dump) {
+    outputs[0] = openSync(values.dump, "w");
+    h.exports.dump(k.exports.ksee_trace());
+  }
   process.exit(code);
 }
 
