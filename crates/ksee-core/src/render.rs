@@ -1,16 +1,20 @@
 //! Rendering decoded traces as text or JSON.
 
-use std::collections::BTreeMap;
-use std::fmt::Write;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::fmt::Write;
 
-use ksee_core::dump::Task;
-use ksee_core::syscalls::Syscall;
-use ksee_core::tables::Tables;
-use ksee_core::trace::Record;
+use crate::cfg::Coverage;
+use crate::dump::Task;
+use crate::syscalls::Syscall;
+use crate::tables::Tables;
+use crate::trace::Record;
 
 pub struct Renderer<'a> {
     pub tables: &'a Tables,
-    pub tasks: &'a BTreeMap<u32, Task>,
+    /// A task_struct pointer's pid and comm (from a dump, or live memory).
+    pub tasks: &'a dyn Fn(u32) -> Option<Task>,
 }
 
 impl Renderer<'_> {
@@ -27,14 +31,14 @@ impl Renderer<'_> {
     }
 
     pub fn task(&self, p: u32) -> String {
-        match self.tasks.get(&p) {
+        match (self.tasks)(p) {
             Some(t) => format!("{}({})", t.comm, t.pid),
             None => format!("{p:#x}"),
         }
     }
 
     fn task_json(&self, p: u32, out: &mut String) {
-        match self.tasks.get(&p) {
+        match (self.tasks)(p) {
             Some(t) => {
                 let _ = write!(out, "{{\"pid\":{},\"comm\":", t.pid);
                 string(&t.comm, out);
@@ -149,6 +153,51 @@ impl Renderer<'_> {
             out.push(']');
         }
         out.push_str("]}");
+        out
+    }
+}
+
+impl Renderer<'_> {
+    fn cfg_header(&self, func: u32) -> String {
+        let f = &self.tables.functions[&func];
+        format!("{} {}:{}", f.name, self.tables.file(f.loc), f.loc.line)
+    }
+
+    /// One line per block: where it is, how often it ran, where it goes.
+    pub fn cfg_text(&self, func: u32, cov: &Coverage) -> String {
+        let blocks: Vec<(u32, _)> = self.tables.blocks_of(func).collect();
+        let ran = blocks.iter().filter(|(n, _)| cov.block(func, *n) > 0).count();
+        let mut out = format!("{}  ({} blocks, {} ran)\n", self.cfg_header(func), blocks.len(), ran);
+        for (n, l) in blocks {
+            let succs: Vec<String> = self.tables.successors.get(&(func, n)).into_iter().flatten()
+                .map(|&s| match cov.edge(func, n, s) {
+                    0 => format!("b{s}"),
+                    c => format!("b{s}({c})"),
+                }).collect();
+            let _ = writeln!(out, "  {} b{:<4} {:>6}x  {:<40} -> {}",
+                if cov.block(func, n) > 0 { '*' } else { ' ' }, n, cov.block(func, n),
+                format!("{}:{}:{}", self.tables.file(l), l.line, l.column), succs.join(" "));
+        }
+        out
+    }
+
+    /// Graphviz: blocks that ran are filled, edges are labelled with counts.
+    pub fn cfg_dot(&self, func: u32, cov: &Coverage) -> String {
+        let mut out = String::from("digraph cfg {\n  node [shape=box fontname=monospace fontsize=10];\n");
+        let _ = writeln!(out, "  label=\"{}\";", self.cfg_header(func));
+        for (n, l) in self.tables.blocks_of(func) {
+            let hits = cov.block(func, n);
+            let style = if hits > 0 { " style=filled fillcolor=\"#ffd27f\"" } else { "" };
+            let _ = writeln!(out, "  b{n} [label=\"b{n} ({hits}x)\\n{}:{}\"{style}];",
+                             self.tables.file(l), l.line);
+            for &s in self.tables.successors.get(&(func, n)).into_iter().flatten() {
+                match cov.edge(func, n, s) {
+                    0 => { let _ = writeln!(out, "  b{n} -> b{s} [color=gray];"); }
+                    c => { let _ = writeln!(out, "  b{n} -> b{s} [label=\"{c}\" penwidth=2];"); }
+                }
+            }
+        }
+        out.push_str("}\n");
         out
     }
 }

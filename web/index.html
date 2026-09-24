@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kSEE</title>
+<style>
+  :root { --bg: #fff; --fg: #1d1d1f; --dim: #6e6e73; --line: #d2d2d7; --hot: #ffe7b3; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111; --fg: #eee; --dim: #999; --line: #333; --hot: #4a3a10; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 ui-monospace, monospace; }
+  header { padding: 8px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: baseline; }
+  header b { font-size: 15px; }
+  #status { color: var(--dim); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); height: calc(100vh - 38px); }
+  section { overflow: auto; border-right: 1px solid var(--line); }
+  h2 { font-size: 12px; margin: 0; padding: 6px 16px; color: var(--dim); position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid var(--line); }
+  pre { margin: 0; padding: 8px 16px; white-space: pre-wrap; word-break: break-all; }
+  #syscalls div { padding: 2px 16px; cursor: pointer; white-space: pre; }
+  #syscalls div:hover, #syscalls div.on { background: var(--hot); }
+  #detail span.fn { cursor: pointer; text-decoration: underline dotted; }
+  @media (max-width: 700px) { main { grid-template-columns: 1fr; height: auto; } }
+</style>
+</head>
+<body>
+<header><b>kSEE</b><span id="status">loading...</span></header>
+<main>
+  <section><h2>console</h2><pre id="console"></pre><h2>syscalls (click one)</h2><div id="syscalls"></div></section>
+  <section><h2 id="detail-title">what the syscall ran</h2><pre id="detail"></pre></section>
+</main>
+<script type="module">
+import { start } from "./ksee.js";
+
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const m = await start({
+  kernel: "../linux/vmlinux",
+  runtime: "../target/wasm32-unknown-unknown/release/ksee_runtime.wasm",
+  initrd: "../build/initramfs.cpio",
+  cmdline: params.get("cmdline") ?? "",
+  onConsole: (s) => ($("console").textContent += s),
+});
+$("status").textContent = "running";
+const code = await m.halted;
+$("status").textContent = `halted (${code})`;
+
+// The syscall list, then a syscall's blocks, then a function's CFG.
+let current = 0;
+for (const line of m.view("syscalls").trim().split("\n")) {
+  const div = document.createElement("div");
+  div.textContent = line;
+  const n = Number(line.match(/^#(\d+)/)[1]);
+  div.onclick = () => {
+    document.querySelectorAll("#syscalls div").forEach((d) => d.classList.remove("on"));
+    div.classList.add("on");
+    current = n;
+    $("detail-title").textContent = `what syscall #${n} ran (click a function for its control flow)`;
+    const text = m.view("syscall", n);
+    $("detail").replaceChildren(...text.split("\n").map((l) => {
+      const span = document.createElement("span");
+      const f = l.match(/^    (\S+)/);
+      span.textContent = l + "\n";
+      if (f) {
+        span.className = "fn";
+        span.onclick = () => {
+          $("detail-title").textContent = `${f[1]} in syscall #${n} (* ran, counts per block and edge)`;
+          $("detail").textContent = m.cfg(f[1], n);
+        };
+      }
+      return span;
+    }));
+  };
+  $("syscalls").append(div);
+}
+</script>
+</body>
+</html>

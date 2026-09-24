@@ -36,6 +36,8 @@ pub struct Tables {
     pub functions: BTreeMap<u32, Function>,
     /// (function, block) -> where the block's first instruction is.
     pub blocks: BTreeMap<(u32, u32), Loc>,
+    /// (function, block) -> successor blocks.
+    pub successors: BTreeMap<(u32, u32), Vec<u32>>,
     /// Source file paths.
     pub files: Vec<String>,
     /// (struct, field) -> layout.
@@ -91,6 +93,12 @@ impl Tables {
                     let loc = files.loc(location, false);
                     t.functions.insert(id, Function { name: name.to_string(), loc, arg_types });
                 }
+                ["E", id, n, succs] => {
+                    if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {
+                        let s = succs.split(',').filter_map(|s| s.parse().ok()).collect();
+                        t.successors.insert((id, n), s);
+                    }
+                }
                 ["B", id, n, where_] => {
                     if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {
                         t.blocks.insert((id, n), files.loc(where_, true));
@@ -108,6 +116,11 @@ impl Tables {
             }
         }
         t
+    }
+
+    /// The blocks of `func`, in order.
+    pub fn blocks_of(&self, func: u32) -> impl Iterator<Item = (u32, Loc)> + '_ {
+        self.blocks.range((func, 0)..=(func, u32::MAX)).map(|(&(_, n), &l)| (n, l))
     }
 
     pub fn file(&self, loc: Loc) -> &str {
