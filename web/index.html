@@ -30,24 +30,22 @@
   <section><h2 id="detail-title">what the syscall ran</h2><pre id="detail"></pre></section>
 </main>
 <script type="module">
-import { start } from "./ksee.js";
+import { start, run } from "./ksee.js";
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const m = await start({
-  kernel: "../linux/vmlinux",
-  runtime: "../target/wasm32-unknown-unknown/release/ksee_runtime.wasm",
-  initrd: "../build/initramfs.cpio",
+  kernel: new URL("../linux/vmlinux", location),
+  initrd: new URL("../build/initramfs.cpio", location),
   cmdline: params.get("cmdline") ?? "",
-  onConsole: (s) => ($("console").textContent += s),
 });
 $("status").textContent = "running";
-const code = await m.halted;
+const code = await run(m, (s) => ($("console").textContent += s));
 $("status").textContent = `halted (${code})`;
 
 // The syscall list, then a syscall's blocks, then a function's CFG.
 let current = 0;
-for (const line of m.view("syscalls").trim().split("\n")) {
+for (const line of m.view_syscalls().trim().split("\n")) {
   const div = document.createElement("div");
   div.textContent = line;
   const n = Number(line.match(/^#(\d+)/)[1]);
@@ -56,7 +54,7 @@ for (const line of m.view("syscalls").trim().split("\n")) {
     div.classList.add("on");
     current = n;
     $("detail-title").textContent = `what syscall #${n} ran (click a function for its control flow)`;
-    const text = m.view("syscall", n);
+    const text = m.view_syscall(n);
     $("detail").replaceChildren(...text.split("\n").map((l) => {
       const span = document.createElement("span");
       const f = l.match(/^    (\S+)/);
@@ -65,7 +63,7 @@ for (const line of m.view("syscalls").trim().split("\n")) {
         span.className = "fn";
         span.onclick = () => {
           $("detail-title").textContent = `${f[1]} in syscall #${n} (* ran, counts per block and edge)`;
-          $("detail").textContent = m.cfg(f[1], n);
+          $("detail").textContent = m.view_cfg(f[1], n);
         };
       }
       return span;

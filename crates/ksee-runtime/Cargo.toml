@@ -1,7 +1,7 @@
 [package]
 name = "ksee-runtime"
 version = "0.1.0"
-description = "kSEE host runtime: wasm that runs in the kernel's shared memory"
+description = "kSEE host runtime: wasm in the kernel's shared memory, with wasm-bindgen threads"
 edition.workspace = true
 publish.workspace = true
 
@@ -10,6 +10,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 ksee-core = { path = "../ksee-core" }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-linked_list_allocator = { version = "0.10", default-features = false, features = ["use_spin"] }
+wasm-bindgen = "0.2.128"
+wasm-bindgen-futures = "0.4.78"
+js-sys = "0.3.105"
+web-sys = { version = "0.3.105", features = [
+  "console", "DedicatedWorkerGlobalScope", "MessageEvent", "Performance",
+  "Response", "Worker", "WorkerOptions", "WorkerType",
+] }

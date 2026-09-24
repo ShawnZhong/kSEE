@@ -36,11 +36,14 @@ kernel: $(PLUGIN)
 initramfs: build/initramfs.cpio
 
 # The Rust crates (always rebuilt: cargo tracks its own dependencies). The
-# runtime's wasm build shares the kernel's memory, so core and alloc are
-# rebuilt with atomics (nightly, see rust-toolchain.toml).
+# runtime's wasm build shares the kernel's memory and runs in many Workers,
+# so std is rebuilt with atomics (nightly, see rust-toolchain.toml), and
+# wasm-bindgen generates thread-aware glue (target/web).
 rust:
 	cargo build -q --release -p ksee-runtime --target wasm32-unknown-unknown \
-		-Zbuild-std=core,alloc,panic_abort
+		-Zbuild-std=std,panic_abort
+	wasm-bindgen --target web --out-dir target/web \
+		target/wasm32-unknown-unknown/release/ksee_runtime.wasm
 	cargo build -q --release -p ksee-cli
 	cargo test -q -p ksee-core
 
