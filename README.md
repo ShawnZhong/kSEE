@@ -19,7 +19,7 @@ kernel `WebAssembly.Memory`.
 - `plugin/`: the LLVM pass that instruments the kernel (basic blocks, calls)
 - `crates/`: Rust: `ksee-core` (trace decoding, views, types), `ksee-runtime`
   (wasm that runs in the kernel's memory and drives the page), `ksee-cli`
-  (`pack` the kernel for the page, `serve` it, show a `type`)
+  (`./ksee.sh`: build, test, serve; pack the kernel for the page)
 - `web/`: the page; `make` puts what it loads there too (gitignored)
 - `user/`: `/init`, the syscall agent; `tests/`: see below
 
@@ -36,5 +36,6 @@ number to set a breakpoint: the kernel stops there; step, and look at the
 current task, the runqueue, any global or type. The strip at the bottom
 replays the trace ring.
 
-`make ui-test` (with `$CHROME` set to a headless Chromium) checks the page for
-exceptions and saves a screenshot, `web/ui.png`.
+`./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also checks
+the page for exceptions and saves a screenshot, `web/ui.png`. The build is
+`ksee build` (crates/ksee-cli/src/build.rs).

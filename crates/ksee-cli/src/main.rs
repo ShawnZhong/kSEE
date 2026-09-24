@@ -1,5 +1,8 @@
-//! The ksee command (./ksee.sh runs it):
+//! The ksee command (./ksee.sh runs it, in the kSEE tree):
 //!
+//!   ksee                     build, then serve the page
+//!   ksee build               build the kernel, runtime and page (build.rs)
+//!   ksee test [--ui]         build, then run the tests (--ui: in Chromium)
 //!   ksee pack KERNEL OUT     prepare the kernel tree KERNEL (built) for the
 //!                            page, in OUT: OUT/vmlinux, with the kernel's
 //!                            types and syscalls from DWARF, without DWARF;
@@ -8,6 +11,7 @@
 //!                            serve DIR (web) for a browser
 //!   ksee type VMLINUX NAME   the layout of a kernel struct, union, enum or
 //!                            typedef
+mod build;
 mod pack;
 mod serve;
 
@@ -28,8 +32,15 @@ fn fail(msg: &str) -> ! {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let port = args.iter().find_map(|a| a.strip_prefix("--port=")?.parse().ok()).unwrap_or(8000);
+    let ui = args.iter().any(|a| a == "--ui");
     let args: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
     match args[..] {
+        [] => {
+            build::build();
+            serve::serve(Path::new("web"), port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
+        }
+        ["build"] => build::build(),
+        ["test"] => build::test(ui),
         ["pack", kernel, out] => pack::pack(Path::new(kernel), Path::new(out)),
         ["serve", ref dir @ ..] if dir.len() <= 1 => {
             let dir = Path::new(dir.first().copied().unwrap_or("web"));
@@ -42,7 +53,7 @@ fn main() -> ExitCode {
             print!("{}", types.layout(id));
         }
         _ => {
-            eprintln!("usage: ksee pack KERNEL OUT | serve [DIR] [--port=N] | type VMLINUX NAME");
+            eprintln!("usage: ksee [build | test [--ui] | serve [DIR] [--port=N] | pack KERNEL OUT | type VMLINUX NAME]");
             return ExitCode::from(2);
         }
     }

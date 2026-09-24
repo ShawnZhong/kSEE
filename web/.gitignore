@@ -1,4 +1,4 @@
-# Built by make (see ../Makefile)
+# Built by ./ksee.sh build (see crates/ksee-cli/src/build.rs)
 /pkg/
 /src/
 /vmlinux

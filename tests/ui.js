@@ -1,4 +1,4 @@
-// The page in headless Chromium: serve web/, load it, make some calls
+// The page in headless Chromium (./ksee.sh test --ui): serve web/, load it, make some calls
 // with the presets, fail on any exception, and save a screenshot. Options
 // look at another page or script (to check the UI while working on it).
 //   deno run -A tests/ui.js OUT.png [--url=URL] [--wait=ms] [--eval=JS] [--size=WxH]
