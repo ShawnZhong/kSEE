@@ -47,12 +47,10 @@
 //   ksee.probes  R \t ring words
 //                F \t fn \t name \t file:line \t argument types
 //                B \t fn \t n \t file:line:column
-//                E \t fn \t n \t successor blocks (comma-separated)
 // Source locations come from debug info, so compile with -g. (The
 // kernel's types are extracted from its DWARF after linking: ksee pack.)
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/IR/CFG.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
@@ -337,17 +335,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     for (BasicBlock &BB : F)
       blocks.push_back(&BB);
 
-    if (modes & Block) {
-      DenseMap<BasicBlock *, unsigned> index;
-      for (auto [n, BB] : enumerate(blocks))
-        index[BB] = n;
-      for (auto [n, BB] : enumerate(blocks)) {
-        std::string succs;
-        for (BasicBlock *S : successors(BB))
-          succs += (succs.empty() ? "" : ",") + std::to_string(index[S]);
-        probes += ("E\t" + Twine(id) + "\t" + Twine(n) + "\t" + succs + "\n").str();
-      }
-    }
     if (modes & Block)
       for (auto [n, BB] : enumerate(blocks)) {
         IRBuilder<> B(&*BB->getFirstInsertionPt());

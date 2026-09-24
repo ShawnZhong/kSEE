@@ -1,15 +1,18 @@
-// /init: the syscall agent. It makes the syscalls the host asks for, so
-// that they run in a real process (this one); no libc, just the syscall
-// import.
+// /init: the process the page's syscalls run in. It serves requests from
+// the kernel's /dev/ksee channel (see linux/arch/wasm/drivers/ksee_channel.c;
+// the read sleeps until there is one): make a syscall, or prepare memory
+// for syscalls (buffers and structs the page lays out), in this process.
+// No libc, just the syscall import.
 //
-// It reads requests from /dev/ksee (the kernel's mailbox for the host, see
-// linux/arch/wasm/drivers/ksee_agent.c; the read sleeps until there is one)
-// and writes back replies. A request (little endian):
-//   u32 nr, nbufs; i64 args[6];
-//   { u32 arg, dir, len, off } bufs[nbufs];   dir 0: input, 1: output
-//   data                                       (buffer b at offset b.off)
-// Argument `arg` of each buffer becomes the buffer's address here. The
-// reply is i64 ret, then the output buffers' contents, in order.
+// A request (little endian): u32 op, a, b, pad; i64 args[6]; data. A reply:
+// i64 ret; data.
+//   SYSCALL  nr = a, args            ret: the syscall's result
+//   ALLOC    size = a, align = b     ret: the address (-ENOMEM)
+//   WRITE    addr = a, len = b, data ret: 0 (-EFAULT)
+//   READ     addr = a, len = b       ret: b (-EFAULT), then the bytes
+//   RESET                            frees everything ALLOC gave
+
+enum { SYSCALL = 1, ALLOC, WRITE, READ, RESET };
 
 #define NR_mount	40
 #define NR_openat	56
@@ -17,23 +20,87 @@
 #define NR_write	64
 #define AT_FDCWD	-100
 #define O_RDWR		02
+#define ENOMEM		12
+#define EFAULT		14
+#define EINVAL		22
 
 __attribute__((import_module("linux"), import_name("syscall")))
 long __syscall(long nr, long long a0, long long a1, long long a2,
 	       long long a3, long long a4, long long a5);
 
-struct buf {
-	unsigned int arg, dir, len, off;
-};
-
 struct request {
-	unsigned int nr, nbufs;
+	unsigned int op, a, b, pad;
 	long long args[6];
-	struct buf bufs[];
+	unsigned char data[];
 };
 
-static unsigned char req[64 << 10] __attribute__((aligned(8)));
-static unsigned char rep[64 << 10] __attribute__((aligned(8)));
+#define MESSAGE	(64 << 10)
+static unsigned char req[MESSAGE] __attribute__((aligned(8)));
+static unsigned char rep[MESSAGE] __attribute__((aligned(8)));
+static unsigned char heap[1 << 20] __attribute__((aligned(16)));
+static unsigned long used;
+
+static int in_heap(unsigned long addr, unsigned long len)
+{
+	unsigned long base = (unsigned long)heap;
+
+	return addr >= base && len <= sizeof(heap) && addr - base <= sizeof(heap) - len;
+}
+
+// Serve one request into rep; the reply's length.
+static unsigned long serve(struct request *r, long n)
+{
+	long long *ret = (long long *)rep;
+	unsigned long len = 8;
+
+	switch (r->op) {
+	case SYSCALL:
+		*ret = __syscall(r->a, r->args[0], r->args[1], r->args[2],
+				 r->args[3], r->args[4], r->args[5]);
+		break;
+	case ALLOC: {
+		unsigned long align = r->b ? r->b : 8;
+		unsigned long at = (used + align - 1) & ~(align - 1);
+
+		if ((align & (align - 1)) || at + r->a > sizeof(heap)) {
+			*ret = -ENOMEM;
+			break;
+		}
+		used = at + r->a;
+		for (unsigned long i = at; i < used; i++)
+			heap[i] = 0;
+		*ret = (long)(heap + at);
+		break;
+	}
+	case WRITE:
+		if (!in_heap(r->a, r->b) || (long)sizeof(*r) + r->b > n) {
+			*ret = -EFAULT;
+			break;
+		}
+		for (unsigned int i = 0; i < r->b; i++)
+			((unsigned char *)(long)r->a)[i] = r->data[i];
+		*ret = 0;
+		break;
+	case READ:
+		// Anywhere in this process's memory (the page reads results).
+		if (r->b > MESSAGE - 8) {
+			*ret = -EFAULT;
+			break;
+		}
+		for (unsigned int i = 0; i < r->b; i++)
+			rep[8 + i] = ((unsigned char *)(long)r->a)[i];
+		*ret = r->b;
+		len += r->b;
+		break;
+	case RESET:
+		used = 0;
+		*ret = 0;
+		break;
+	default:
+		*ret = -EINVAL;
+	}
+	return len;
+}
 
 static void say(const char *s)
 {
@@ -51,35 +118,15 @@ void _start(void)
 	// Device files (the kernel mounts devtmpfs itself only for a real root).
 	__syscall(NR_mount, (long)"devtmpfs", (long)"/dev", (long)"devtmpfs", 0, 0, 0);
 	fd = __syscall(NR_openat, AT_FDCWD, (long)"/dev/ksee", O_RDWR, 0, 0, 0);
-
 	if (fd < 0) {
 		say("init: no /dev/ksee\n");
 		return;
 	}
-	say("init: kSEE syscall agent ready\n");
+	say("init: ready for the page's syscalls\n");
 	for (;;) {
-		struct request *r = (struct request *)req;
 		long n = __syscall(NR_read, fd, (long)req, sizeof(req), 0, 0, 0);
-		long long ret;
-		unsigned long out = 8;
 
-		if (n < (long)sizeof(*r))
-			continue;
-		for (unsigned int i = 0; i < r->nbufs && i < 6; i++)
-			if (r->bufs[i].arg < 6)
-				r->args[r->bufs[i].arg] = (long)(req + r->bufs[i].off);
-		ret = __syscall(r->nr, r->args[0], r->args[1], r->args[2],
-				r->args[3], r->args[4], r->args[5]);
-		*(long long *)rep = ret;
-		for (unsigned int i = 0; i < r->nbufs && i < 6; i++) {
-			struct buf *b = &r->bufs[i];
-
-			if (b->dir != 1 || out + b->len > sizeof(rep))
-				continue;
-			for (unsigned int j = 0; j < b->len; j++)
-				rep[out + j] = req[b->off + j];
-			out += b->len;
-		}
-		__syscall(NR_write, fd, (long)rep, out, 0, 0, 0);
+		if (n >= (long)sizeof(struct request))
+			__syscall(NR_write, fd, (long)rep, serve((struct request *)req, n), 0, 0, 0);
 	}
 }

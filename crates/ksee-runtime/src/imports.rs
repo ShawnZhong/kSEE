@@ -45,9 +45,10 @@ pub extern "C" fn get_cmdline(buf: *mut u8, len: u32) -> u32 {
     n as u32
 }
 
-/// The /dev/ksee mailbox's address; its data's size goes to `*capacity`.
+/// The /dev/ksee channel's mailbox address; its data's size goes to
+/// `*capacity`.
 #[unsafe(no_mangle)]
-pub extern "C" fn agent_mailbox(capacity: *mut u32) -> u32 {
+pub extern "C" fn channel_mailbox(capacity: *mut u32) -> u32 {
     unsafe { *capacity = MAILBOX_SIZE as u32 };
     &MAILBOX as *const Mailbox as u32
 }
@@ -107,7 +108,7 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
 
     let kernel = Object::new();
     for name in ["console_write", "console_read", "get_cmdline", "memory_end", "time_ns", "halt",
-                 "agent_mailbox"] {
+                 "channel_mailbox"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "spawn_task", func(Closure::<dyn FnMut(u32, u32)>::new(

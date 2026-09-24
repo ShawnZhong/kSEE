@@ -83,8 +83,14 @@ pub fn build() {
         eprintln!("  INIT    web/initramfs.cpio");
         run(Command::new(format!("clang{llvm}")).args(["--target=wasm32", "-O2", "-ffreestanding", "-nostdlib",
             "-Wl,--no-entry", "-Wl,--export=_start", "-o", "web/init.wasm", "user/init.c"]));
-        let cpio = Command::new("linux/usr/gen_init_cpio").arg("../user/initramfs.list").current_dir("web")
-            .output().unwrap_or_else(|e| crate::fail(&format!("gen_init_cpio: {e}")));
+        // (The list's paths are relative to web/.)
+        let tool = Path::new("linux/usr/gen_init_cpio").canonicalize()
+            .unwrap_or_else(|e| crate::fail(&format!("linux/usr/gen_init_cpio: {e}")));
+        let cpio = Command::new(tool).arg("../user/initramfs.list").current_dir("web").output()
+            .unwrap_or_else(|e| crate::fail(&format!("gen_init_cpio: {e}")));
+        if !cpio.status.success() {
+            crate::fail(&format!("gen_init_cpio: {}", String::from_utf8_lossy(&cpio.stderr)));
+        }
         std::fs::write("web/initramfs.cpio", cpio.stdout).unwrap_or_else(|e| crate::fail(&format!("web/initramfs.cpio: {e}")));
     }
 }

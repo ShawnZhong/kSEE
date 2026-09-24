@@ -6,7 +6,7 @@ use js_sys::{Function, Object, Uint8Array, WebAssembly};
 use ksee_core::types::Kind;
 use ksee_core::view::Views;
 use ksee_core::tables::Tables;
-use ksee_core::{cfg, syscalls, task, trace, Memory};
+use ksee_core::{syscalls, task, trace, Memory};
 use serde_wasm_bindgen as _;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -24,8 +24,6 @@ pub struct Machine {
     kernel: Object,
     workers: std::rc::Rc<std::cell::RefCell<Vec<web_sys::Worker>>>,
     syscalls: std::cell::RefCell<Option<Vec<syscalls::Syscall>>>,
-    /// The sizes of the pending call's output buffers.
-    pending: std::cell::RefCell<Option<Vec<u32>>>,
     history: std::cell::RefCell<History>,
 }
 
@@ -35,23 +33,6 @@ struct History {
     records: Vec<trace::Record>,
     tasks: Vec<u32>,
     times: Vec<u64>,
-}
-
-#[derive(serde::Deserialize)]
-struct CallRequest {
-    nr: u32,
-    #[serde(default)]
-    args: Vec<i64>,
-    #[serde(default)]
-    buffers: Vec<CallBuffer>,
-}
-
-#[derive(serde::Deserialize)]
-struct CallBuffer {
-    arg: u32,
-    #[serde(default)]
-    data: Option<Vec<u8>>,
-    len: Option<u32>,
 }
 
 #[derive(serde::Serialize)]
@@ -171,7 +152,7 @@ impl Machine {
         let boot = Object::new();
         js::set(&boot, "role", "boot");
         spawn.call1(&JsValue::NULL, &boot)?;
-        Ok(Machine { kernel, workers, syscalls: Default::default(), pending: Default::default(), history: Default::default() })
+        Ok(Machine { kernel, workers, syscalls: Default::default(), history: Default::default() })
     }
 
     /// A function that starts a Worker for `msg` (a role, or a task that a
@@ -410,21 +391,37 @@ impl Machine {
         self.with_syscalls(|calls| to_js(&calls.get(n).map(|s| self.views().runs(s)).unwrap_or_default()))
     }
 
-    /// The instrumented functions called `name` (usually one), with block
-    /// and edge counts from syscall `n` (or the whole trace).
+    /// The instrumented functions called `name` (usually one), with how
+    /// often each block ran in syscall `n` (or the whole trace).
     pub fn functions(&self, name: &str, n: Option<usize>) -> JsValue {
         let t = tables();
         let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
-        let keep = |f: u32| ids.contains(&f);
-        let cov = match n {
-            None => cfg::coverage(t, trace::ring(&Direct, self.ring(), t.ring_words), keep),
-            Some(n) => self.with_syscalls(|calls| {
-                let blocks = calls.get(n).map(|s| s.blocks.clone()).unwrap_or_default();
-                cfg::coverage(t, blocks.into_iter().map(|(func, n)| trace::Record::Block { func, n }), keep)
-            }),
-        };
+        let counts = self.block_counts(n, |f| ids.contains(&f));
         let v = self.views();
-        to_js(&ids.iter().filter_map(|&id| v.function(id, &cov)).collect::<Vec<_>>())
+        to_js(&ids.iter().filter_map(|&id| v.function(id, &counts)).collect::<Vec<_>>())
+    }
+
+    /// How often each block ran in syscall `n` (or the whole trace), for
+    /// the functions `keep` accepts.
+    fn block_counts(&self, n: Option<usize>, keep: impl Fn(u32) -> bool)
+                    -> std::collections::BTreeMap<(u32, u32), u64> {
+        let mut counts = std::collections::BTreeMap::new();
+        let mut add = |f: u32, b: u32| if keep(f) { *counts.entry((f, b)).or_default() += 1 };
+        match n {
+            Some(n) => self.with_syscalls(|calls| {
+                for &(f, b) in calls.get(n).map(|s| &s.blocks[..]).unwrap_or(&[]) {
+                    add(f, b);
+                }
+            }),
+            None => {
+                for r in trace::ring(&Direct, self.ring(), tables().ring_words) {
+                    if let trace::Record::Block { func, n } = r {
+                        add(func, n);
+                    }
+                }
+            }
+        }
+        counts
     }
 
     /// The value of the type named `name` at `addr` (an Object, see
@@ -515,6 +512,62 @@ impl Machine {
         to_js(&out)
     }
 
+    /// The id of the struct, union, enum or typedef called `name` (e.g.
+    /// "struct stat" or "stat"; "u64"), or of a base type.
+    pub fn find_type(&self, name: &str) -> Option<u32> {
+        let types = &tables().types;
+        let bare = name.trim().trim_start_matches("struct ").trim_start_matches("union ").trim_start_matches("enum ").trim();
+        types.find(bare).or_else(|| {
+            (1..types.types.len() as u32).find(|&id| {
+                matches!(types.get(id).kind, Kind::Base(_)) && types.get(id).name == bare
+            })
+        })
+    }
+
+    /// A type, for laying out values of it: { name, size, kind, members:
+    /// [{ name, offset, ty }], elem, count, target } (kind: "int", "char",
+    /// "float", "bool", "enum", "ptr", "array", "struct", "union", "void").
+    pub fn type_info(&self, ty: u32) -> JsValue {
+        let types = &tables().types;
+        let id = types.resolve(ty);
+        let t = types.get(id);
+        let o = Object::new();
+        js::set(&o, "id", id);
+        js::set(&o, "name", types.name(id));
+        js::set(&o, "size", types.size_of(id));
+        let kind = match &t.kind {
+            Kind::Base(ksee_core::types::Base::Char) => "char",
+            Kind::Base(ksee_core::types::Base::Float) => "float",
+            Kind::Base(ksee_core::types::Base::Bool) => "bool",
+            Kind::Base(_) => "int",
+            Kind::Enum(_) => "enum",
+            Kind::Pointer(to) => {
+                js::set(&o, "target", types.resolve(*to));
+                "ptr"
+            }
+            Kind::Array { elem, count } => {
+                js::set(&o, "elem", *elem);
+                js::set(&o, "count", *count);
+                "array"
+            }
+            Kind::Struct(m) | Kind::Union(m) => {
+                let members = js_sys::Array::new();
+                for m in m {
+                    let mo = Object::new();
+                    js::set(&mo, "name", m.name.clone());
+                    js::set(&mo, "offset", m.bit_offset / 8);
+                    js::set(&mo, "ty", m.ty);
+                    members.push(&mo);
+                }
+                js::set(&o, "members", members);
+                if matches!(t.kind, Kind::Struct(_)) { "struct" } else { "union" }
+            }
+            _ => "void",
+        };
+        js::set(&o, "kind", kind);
+        o.into()
+    }
+
     /// Decode `bytes` (a call's output buffer, say) as type `ty`: an Object.
     pub fn decode_bytes(&self, label: &str, ty: u32, bytes: &[u8]) -> JsValue {
         to_js(&tables().types.object(&Bytes(bytes), label, 0, ty, 3))
@@ -524,22 +577,7 @@ impl Machine {
     /// blocks there ran in syscall `n` (or the whole trace): [{ line, count }].
     pub fn file_coverage(&self, file: &str, n: Option<usize>) -> JsValue {
         let t = tables();
-        let mut counts: std::collections::BTreeMap<(u32, u32), u64> = Default::default();
-        let mut add = |f: u32, b: u32| *counts.entry((f, b)).or_default() += 1;
-        match n {
-            Some(n) => self.with_syscalls(|calls| {
-                for &(f, b) in calls.get(n).map(|s| &s.blocks[..]).unwrap_or(&[]) {
-                    add(f, b);
-                }
-            }),
-            None => {
-                for r in trace::ring(&Direct, self.ring(), t.ring_words) {
-                    if let trace::Record::Block { func, n } = r {
-                        add(func, n);
-                    }
-                }
-            }
-        }
+        let counts = self.block_counts(n, |_| true);
         let mut lines: std::collections::BTreeMap<u32, u64> = Default::default();
         for (&(f, b), l) in &t.blocks {
             if t.file(*l) == file {
@@ -557,72 +595,44 @@ impl Machine {
         list.into()
     }
 
-    /// Ask the agent to make a syscall: `{ nr, args: [6 numbers],
-    /// buffers: [{ arg, data?: Uint8Array | number[] (input), len?:
-    /// number (output) }] }`: each buffer is placed in the agent's memory and
-    /// replaces argument `arg` with its address. False if a call is pending.
-    pub fn call(&self, request: JsValue) -> Result<bool, JsValue> {
-        let req: CallRequest = serde_wasm_bindgen::from_value(request)?;
+    /// Send init (the process on /dev/ksee, see user/init.c) a request:
+    /// `op` with `a`, `b`, up to six `args` and `data`. False if one is
+    /// pending. See web/ksee.js for the operations.
+    pub fn post(&self, op: u32, a: u32, b: u32, args: Vec<f64>, data: Option<Vec<u8>>) -> Result<bool, JsValue> {
         if MAILBOX.state.load(Ordering::Acquire) != EMPTY {
             return Ok(false);
         }
-        // u32 nr, nbufs; i64 args[6]; { u32 arg, dir, len, off }[nbufs]; data
-        let mut out = Vec::new();
-        out.extend(req.nr.to_le_bytes());
-        out.extend((req.buffers.len() as u32).to_le_bytes());
+        let mut out = Vec::with_capacity(64);
+        for v in [op, a, b, 0] {
+            out.extend(v.to_le_bytes());
+        }
         for i in 0..6 {
-            out.extend(req.args.get(i).copied().unwrap_or(0).to_le_bytes());
+            out.extend((args.get(i).copied().unwrap_or(0.0) as i64).to_le_bytes());
         }
-        let mut off = (out.len() + 16 * req.buffers.len()) as u32;
-        let mut data = Vec::new();
-        for b in &req.buffers {
-            let (dir, bytes) = match (&b.data, b.len) {
-                (Some(d), _) => (0u32, d.clone()),
-                (None, len) => (1, vec![0; len.unwrap_or(0) as usize]),
-            };
-            let len = bytes.len() as u32;
-            for v in [b.arg, dir, len, off] {
-                out.extend(v.to_le_bytes());
-            }
-            off += len.next_multiple_of(8);
-            data.extend(&bytes);
-            data.resize(data.len().next_multiple_of(8), 0);
-        }
-        out.extend(data);
+        out.extend(data.unwrap_or_default());
         if out.len() > MAILBOX_SIZE {
             return Err("request too large".into());
         }
-        let data = unsafe { &mut *MAILBOX.data.get() };
-        data[..out.len()].copy_from_slice(&out);
+        let buf = unsafe { &mut *MAILBOX.data.get() };
+        buf[..out.len()].copy_from_slice(&out);
         MAILBOX.len.store(out.len() as u32, Ordering::Relaxed);
         MAILBOX.state.store(REQUEST, Ordering::Release);
-        interrupt(2); // WASM_IRQ_AGENT
-        *self.pending.borrow_mut() = Some(req.buffers.iter().filter(|b| b.data.is_none())
-            .map(|b| b.len.unwrap_or(0)).collect());
+        interrupt(2); // WASM_IRQ_CHANNEL
         Ok(true)
     }
 
-    /// The last call's result once the agent has replied: { ret, outputs:
-    /// [Uint8Array] } (the output buffers, in order); else null.
-    pub fn call_result(&self) -> JsValue {
+    /// The reply to the last request, once init has sent it: { ret, data }.
+    pub fn take(&self) -> JsValue {
         if MAILBOX.state.load(Ordering::Acquire) != REPLY {
             return JsValue::NULL;
         }
-        let len = MAILBOX.len.load(Ordering::Relaxed) as usize;
-        let reply = unsafe { &*MAILBOX.data.get() }[..len.min(MAILBOX_SIZE)].to_vec();
+        let len = (MAILBOX.len.load(Ordering::Relaxed) as usize).min(MAILBOX_SIZE);
+        let reply = unsafe { &*MAILBOX.data.get() }[..len].to_vec();
         MAILBOX.state.store(EMPTY, Ordering::Release);
-        let sizes = self.pending.borrow_mut().take().unwrap_or_default();
         let ret = i64::from_le_bytes(reply.get(..8).and_then(|b| b.try_into().ok()).unwrap_or([0; 8]));
         let o = Object::new();
         js::set(&o, "ret", ret as f64);
-        let outputs = js_sys::Array::new();
-        let mut at = 8;
-        for n in sizes {
-            let end = (at + n as usize).min(reply.len());
-            outputs.push(&Uint8Array::from(&reply[at.min(end)..end]));
-            at = end;
-        }
-        js::set(&o, "outputs", outputs);
+        js::set(&o, "data", Uint8Array::from(reply.get(8..).unwrap_or(&[])));
         o.into()
     }
 

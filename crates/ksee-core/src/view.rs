@@ -5,7 +5,8 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use crate::cfg::Coverage;
+use alloc::collections::BTreeMap;
+
 use crate::task::Task;
 use crate::syscalls::Syscall;
 use crate::tables::Tables;
@@ -39,8 +40,8 @@ pub struct SyscallSummary {
     pub blocks: usize,
     pub functions: usize,
     pub partial: bool,
-    /// The agent's own traffic on /dev/ksee (fetching a request, replying),
-    /// not a syscall asked for.
+    /// init's own traffic on the /dev/ksee channel (fetching a request,
+    /// replying), not a syscall the page made.
     pub control: bool,
     /// Its span in the record stream (for timelines).
     pub first: usize,
@@ -60,20 +61,12 @@ pub struct Run {
 
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Edge {
-    pub to: u32,
-    pub count: u64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Block {
     pub n: u32,
     pub file: String,
     pub line: u32,
     pub column: u32,
     pub count: u64,
-    pub succs: Vec<Edge>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -126,7 +119,7 @@ impl Views<'_> {
             })
         });
         let control = funcs.iter().any(|f| {
-            self.tables.functions.get(f).is_some_and(|f| f.name.starts_with("ksee_agent_"))
+            self.tables.functions.get(f).is_some_and(|f| f.name.starts_with("ksee_channel_"))
         });
         SyscallSummary {
             control,
@@ -165,16 +158,16 @@ impl Views<'_> {
         runs.into_iter().map(|(_, r)| r).collect()
     }
 
-    pub fn function(&self, id: u32, cov: &Coverage) -> Option<Function> {
+    /// Function `id`'s blocks, with how often each ran (`counts`:
+    /// (function, block) -> times).
+    pub fn function(&self, id: u32, counts: &BTreeMap<(u32, u32), u64>) -> Option<Function> {
         let f = self.tables.functions.get(&id)?;
         let blocks = self.tables.blocks_of(id).map(|(n, l)| Block {
             n,
             file: self.tables.file(l).to_string(),
             line: l.line,
             column: l.column,
-            count: cov.block(id, n),
-            succs: self.tables.successors.get(&(id, n)).into_iter().flatten()
-                .map(|&to| Edge { to, count: cov.edge(id, n, to) }).collect(),
+            count: counts.get(&(id, n)).copied().unwrap_or(0),
         }).collect();
         Some(Function { name: f.name.clone(), file: self.tables.file(f.loc).to_string(), line: f.loc.line, blocks })
     }

@@ -14,63 +14,51 @@
     <button id="next" disabled title="Run to the next block of this function (over calls)">Next</button>
     <button id="cont" disabled title="Run until a breakpoint">Continue</button>
   </span></header>
+<section id="history">
+  <div class="tl">
+    <span class="tlbtn"><button id="back-sys" title="previous syscall">⏮</button><button id="back-fn" title="previous function">◀◀</button><button id="back-blk" title="previous block (←)">◀</button></span>
+    <canvas id="lanes" tabindex="0" aria-label="history: tasks and their syscalls over the trace"></canvas>
+    <span class="tlbtn"><button id="fwd-blk" title="next block (→)">▶</button><button id="fwd-fn" title="next function">▶▶</button><button id="fwd-sys" title="next syscall">⏭</button>
+      <button id="live" title="back to now: the end of the trace">Now</button></span>
+  </div>
+  <div class="tlinfo"><span id="where" class="mono dim"></span>
+    <label class="dim right"><input type="checkbox" id="show-control"> init's channel traffic</label></div>
+</section>
 <main>
   <div class="col">
-    <div class="pane" style="flex: 0 0 auto; max-height: 55%">
-      <h2>Make a syscall <span class="dim">/init makes it, in a real process</span></h2>
-      <div class="body">
-        <div id="composer">
-          <div id="presets"></div>
-          <input id="sysname" list="syscall-list" placeholder="search the kernel's syscalls: write, openat, …" aria-label="syscall">
-          <datalist id="syscall-list"></datalist>
-          <div id="fields"></div>
-        </div>
-        <div id="log"></div>
-      </div>
+    <h2>Notebook <span class="dim">syscalls /init makes, with values in its memory</span></h2>
+    <div class="nbbar">
+      <select id="examples" aria-label="example notebooks"><option value="">examples…</option></select>
+      <input id="add" list="syscall-list" placeholder="+ syscall…" aria-label="add a syscall"><datalist id="syscall-list"></datalist>
+      <span class="right"><button id="runall" class="go" title="Reset, then run every line">Run all</button><button id="reset" title="Forget the values and free init's memory">Reset</button></span>
     </div>
-    <div class="pane">
-      <h2>Syscalls <span class="dim" id="nsys"></span>
-        <span class="right"><label class="dim"><input type="checkbox" id="show-agent"> agent's own</label></span></h2>
-      <div class="body" id="syscalls"><div class="empty">Make a syscall above; what it ran appears here.</div></div>
-    </div>
+    <div class="body" id="cells"></div>
   </div>
   <div class="col">
-    <div class="pane">
-      <h2>Ran <span class="what" id="run-title"></span></h2>
-      <div class="body" id="runs"><div class="empty">Pick a syscall: the functions it ran, in order, with how many blocks.</div></div>
+    <h2><span class="what" id="run-title">Ran</span><span class="right dim" id="run-meta"></span></h2>
+    <div class="codecol">
+      <div class="body" id="runs"><div class="empty">Run a line, or pick a syscall in the history: the functions it ran, in order.</div></div>
+      <div class="body" id="src"><div class="empty">The source of the function at the cursor: lines where blocks ran are green (with counts), untaken ones red. Click a line number to break there.</div></div>
     </div>
-    <div class="pane" style="flex: 0 0 22%">
-      <h2>Console</h2>
-      <div class="body"><pre id="console"></pre></div>
-    </div>
+    <div class="srcbar mono dim" id="fn-title"></div>
   </div>
-  <div class="col" style="border-right: 0">
-    <div class="pane">
-      <h2><span class="what" id="fn-title">Source</span>
-        <span class="right tabs"><button id="tab-src" class="on">Source</button><button id="tab-cfg">Control flow</button></span></h2>
-      <div class="body" id="code"><div class="empty">Pick a function to see its file: lines where blocks ran are green (with counts), untaken ones red. Click a line number to break there.</div></div>
-    </div>
-    <div class="pane" style="flex: 0 0 40%">
-      <h2>Objects <span class="dim">changed since the last stop are highlighted</span></h2>
+  <div class="col">
+    <h2 class="tabs"><button id="tab-objects" class="on">Objects</button><button id="tab-syscalls">Syscalls <span id="nsys" class="dim"></span></button><button id="tab-console">Console <span id="console-new"></span></button>
+      <span class="right dim" id="mem-note" title="Objects are read from the kernel's memory now, not as it was at the cursor">live memory</span></h2>
+    <div class="tab" id="pane-objects">
       <div class="objbar">
         <button id="pick-task">current task</button><button id="pick-rq">runqueue</button><button id="pick-init">init_task</button>
-        <form id="globalf"><input id="global" list="globals" placeholder="global…" size="14" aria-label="global"><datalist id="globals"></datalist></form>
-        <form id="decode"><input id="type" value="task_struct" size="11" aria-label="type"><input id="addr" placeholder="0x…" size="9" aria-label="address"><button>at</button></form>
-        <input id="objfilter" placeholder="filter fields" size="12" aria-label="filter">
+        <form id="globalf"><input id="global" list="globals" placeholder="global…" size="12" aria-label="global"><datalist id="globals"></datalist></form>
+        <form id="decode"><input id="type" value="task_struct" size="10" aria-label="type"><input id="addr" placeholder="0x…" size="8" aria-label="address"><button>at</button></form>
+        <input id="objfilter" placeholder="filter fields" size="10" aria-label="filter">
       </div>
       <div id="crumbs"></div>
-      <div class="body" id="objtable"><div class="empty">Stop the kernel (a breakpoint, or Pause) and look at the current task, the runqueue, a global, or any type at an address. → follows a pointer.</div></div>
+      <div class="body" id="objtable"><div class="empty">Stop the kernel (a breakpoint, or Pause) and look at the current task, the runqueue, a global, or any type at an address. → follows a pointer; fields changed since the last stop are highlighted.</div></div>
     </div>
+    <div class="tab body" id="pane-syscalls" hidden><div id="syscalls"></div></div>
+    <div class="tab body" id="pane-console" hidden><pre id="console"></pre></div>
   </div>
 </main>
-<footer>
-  <div class="tl">
-    <span class="tlbtn"><button id="back-sys" title="previous syscall">⏮</button><button id="back-fn" title="previous function">◀◀</button><button id="back-blk" title="previous block">◀</button></span>
-    <div class="track"><canvas id="strip"></canvas><input type="range" id="cursor" min="0" max="0" value="0" aria-label="history"></div>
-    <span class="tlbtn"><button id="fwd-blk" title="next block">▶</button><button id="fwd-fn" title="next function">▶▶</button><button id="fwd-sys" title="next syscall">⏭</button></span>
-  </div>
-  <div class="tlinfo"><span id="where" class="mono dim"></span><span id="legend"></span></div>
-</footer>
 <script type="module">
 import { start } from "./ksee.js";
 import { app } from "./app.js";

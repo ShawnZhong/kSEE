@@ -11,13 +11,26 @@ export async function start({ kernel, initrd, cmdline = "", ramMiB = 64 }) {
   return Machine.start({ kernel: String(kernel), initrd: initrd && String(initrd), cmdline, worker, ram });
 }
 
-// Make a syscall through /init (the agent on /dev/ksee); resolves to
-// { ret, outputs }. See Machine.call for the request.
-export async function call(machine, request) {
-  while (!machine.call(request)) await new Promise((r) => setTimeout(r, 5));
-  for (;;) {
-    const r = machine.call_result();
-    if (r) return r;
-    await new Promise((r) => setTimeout(r, 5));
-  }
+// The process the page's syscalls run in: init, on the kernel's /dev/ksee
+// channel (see user/init.c). Each operation waits for init's reply.
+export function process(machine) {
+  const request = async (op, a = 0, b = 0, args = [], data) => {
+    while (!machine.post(op, a >>> 0, b >>> 0, args, data)) await tick();
+    for (;;) {
+      const r = machine.take();
+      if (r) return r;
+      await tick();
+    }
+  };
+  const tick = () => new Promise((r) => setTimeout(r, 2));
+  return {
+    // A syscall by number; its result.
+    syscall: async (nr, args = []) => (await request(1, nr, 0, args.map(Number))).ret,
+    // `size` bytes of zeroed memory in init; their address.
+    alloc: async (size, align = 8) => (await request(2, size, align)).ret,
+    write: async (addr, bytes) => (await request(3, addr, bytes.length, [], bytes)).ret,
+    read: async (addr, len) => (await request(4, addr, len)).data,
+    // Free everything alloc gave.
+    reset: async () => (await request(5)).ret,
+  };
 }

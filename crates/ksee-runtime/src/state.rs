@@ -23,8 +23,8 @@ pub static CURRENT_TASK: AtomicU32 = AtomicU32::new(0);
 /// The kernel's pending-interrupt word (wasm_irq_pending).
 pub static PENDING: AtomicU32 = AtomicU32::new(0);
 
-/// The syscall mailbox of the kernel's /dev/ksee (see its
-/// drivers/ksee_agent.c): `{ u32 state; u32 len; u8 data[]; }`.
+/// The mailbox of the kernel's /dev/ksee channel (see its
+/// drivers/ksee_channel.c): `{ u32 state; u32 len; u8 data[]; }`.
 #[repr(C)]
 pub struct Mailbox {
     pub state: AtomicU32,

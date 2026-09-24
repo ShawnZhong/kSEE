@@ -1,5 +1,5 @@
-// The page in headless Chromium (./ksee.sh test --ui): serve web/, load it, make some calls
-// with the presets, fail on any exception, and save a screenshot. Options
+// The page in headless Chromium (./ksee.sh test --ui): serve web/, load it, run the example
+// notebooks, fail on any exception, and save a screenshot. Options
 // look at another page or script (to check the UI while working on it).
 //   deno run -A tests/ui.js OUT.png [--url=URL] [--wait=ms] [--eval=JS] [--size=WxH]
 // $CHROME: a Chromium binary (e.g. Playwright's chrome-headless-shell).
@@ -54,12 +54,22 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url });
 await new Promise((r) => setTimeout(r, Number(opt("wait", "8000"))));
-// By default: run the presets, then report what the page shows.
+// By default: run each example notebook, then report what the page shows.
 const script = opt("eval", `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  for (const b of document.querySelectorAll("#presets button")) { b.click(); await sleep(800); }
-  await sleep(500);
-  return { syscalls: document.querySelectorAll("#syscalls .row").length, log: document.getElementById("log").innerText.split("\\n").length };
+  const pick = document.getElementById("examples");
+  for (const o of [...pick.options].slice(1)) {
+    pick.value = o.value;
+    pick.dispatchEvent(new Event("change"));
+    for (let i = 0; i < 100 && document.querySelector(".cell.running"); i++) await sleep(50);
+    await sleep(300);
+  }
+  const lanes = document.getElementById("lanes");
+  lanes.dispatchEvent(new PointerEvent("pointerdown", { clientX: lanes.getBoundingClientRect().left + lanes.clientWidth * 0.6, clientY: lanes.getBoundingClientRect().top + 5, bubbles: true }));
+  await sleep(300);
+  return { ok: document.querySelectorAll(".cell.ok").length, err: [...document.querySelectorAll(".cell.err")].map((c) => c.innerText),
+           runs: document.querySelectorAll("#runs .row").length, src: document.querySelectorAll("#src tr").length,
+           where: document.getElementById("where").textContent };
 })()`);
 if (script) {
   const r = await send("Runtime.evaluate", { expression: script, awaitPromise: true, returnByValue: true });

@@ -132,16 +132,30 @@ synchronous duration from downstream effects, e.g. `read()` → page-cache miss
 
 ## UI
 
+One cursor, a position in the history (the trace ring) or now; every panel
+shows the cursor's moment.
+
 ```text
-┌──────────────────────┬──────────────────────┐
-│ Linux source         │ Kernel objects       │
-│ (highlighted)        │ (before/after state) │
-├──────────────────────┼──────────────────────┤
-│ Concept/explanation  │ Causal graph         │
-├──────────────────────┴──────────────────────┤
-│                 Timeline                    │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ History: a lane per task, its syscalls as bars; the cursor  │
+├──────────────┬──────────────────────────────┬───────────────┤
+│ Notebook     │ Call path │ Source (whole    │ Objects       │
+│ (syscalls    │ of the    │ file, lines that │ (live memory) │
+│ /init makes) │ syscall   │ ran, the cursor) │ Syscalls, Con.│
+└──────────────┴──────────────────────────────┴───────────────┘
 ```
+
+- The **notebook** is how the page talks to the kernel: strace-like lines
+  (`fd = openat(AT_FDCWD, "/tmp/x", O_CREAT|O_WRONLY, 0644)`), with named
+  values and buffers or structs laid out by their kernel types in /init's
+  memory (`st = new struct stat`, `iov = new struct iovec[2] {…}`). /init
+  runs each line in a real process, over the /dev/ksee channel
+  (web/notebook.js, user/init.c).
+- Selecting a syscall (a line's result, a bar, the Syscalls tab) selects its
+  span; moving the cursor shows the function and line there.
+- The debugger's stop is now: breakpoints (click a line number), Step, Next,
+  Continue. Objects are read from memory as it is, so they match the cursor
+  only at now.
 
 Scrubbing changes the visualization's historical state, not the machine.
 Primary question: **what changed, why, and where in Linux source?**
