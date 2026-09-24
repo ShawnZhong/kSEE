@@ -1,5 +1,5 @@
-//! kSEE core: the kernel's probe tables, trace decoding and views of the
-//! trace. `no_std` so that the same code runs in the wasm host runtime
+//! kSEE core: the kernel's probe tables and types, trace decoding, and views
+//! of the trace. `no_std` so that the same code runs in the wasm runtime
 //! (crates/ksee-runtime) and natively (crates/ksee-cli, tests).
 #![no_std]
 
@@ -8,11 +8,10 @@ extern crate alloc;
 extern crate std;
 
 pub mod cfg;
-pub mod dump;
 pub mod module;
-pub mod render;
 pub mod syscalls;
 pub mod tables;
+pub mod task;
 pub mod trace;
 pub mod types;
 pub mod view;

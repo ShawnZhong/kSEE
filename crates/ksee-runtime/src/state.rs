@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use ksee_core::tables::Tables;
-use ksee_core::{dump, Memory};
+use ksee_core::{task, Memory};
 
 /// The probe tables, set once by the page before boot.
 pub static TABLES: OnceLock<Tables> = OnceLock::new();
@@ -77,8 +77,8 @@ impl Memory for Direct {
     }
 }
 
-pub fn live_task(p: u32) -> Option<dump::Task> {
-    dump::read_task(tables(), &Direct, p)
+pub fn live_task(p: u32) -> Option<task::Task> {
+    task::read_task(tables(), &Direct, p)
 }
 
 /// A byte ring written by one side and read by the other; the writer drops

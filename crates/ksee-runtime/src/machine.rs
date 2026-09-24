@@ -6,7 +6,7 @@ use js_sys::{Function, Object, Uint8Array, WebAssembly};
 use ksee_core::types::Kind;
 use ksee_core::view::Views;
 use ksee_core::tables::Tables;
-use ksee_core::{cfg, dump, syscalls, trace, Memory};
+use ksee_core::{cfg, syscalls, task, trace, Memory};
 use serde_wasm_bindgen as _;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -356,7 +356,7 @@ impl Machine {
         let spans: Vec<(u32, usize, usize)> = self.with_syscalls(|calls| {
             calls.iter().map(|s| (s.task, s.first, s.last.unwrap_or(usize::MAX))).collect()
         });
-        let mut names: std::collections::BTreeMap<u32, Option<dump::Task>> = Default::default();
+        let mut names: std::collections::BTreeMap<u32, Option<task::Task>> = Default::default();
         let list = js_sys::Array::new();
         for b in 0..n {
             let i = b * total / n.max(1);
@@ -459,7 +459,7 @@ impl Machine {
     /// The task_struct of `pid`, among the tasks the trace mentions.
     pub fn task_address(&self, pid: i32) -> Option<u32> {
         let t = tables();
-        dump::tasks_in(t, trace::ring(&Direct, self.ring(), t.ring_words)).into_iter()
+        task::tasks_in(t, trace::ring(&Direct, self.ring(), t.ring_words)).into_iter()
             .find(|&p| live_task(p).is_some_and(|task| task.pid == pid))
     }
 
@@ -709,10 +709,4 @@ impl Machine {
         list.into()
     }
 
-    /// The trace dump (read it with ./ksee.sh).
-    pub fn dump(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        dump::write(tables(), &Direct, self.ring(), &mut |b| out.extend_from_slice(b));
-        out
-    }
 }

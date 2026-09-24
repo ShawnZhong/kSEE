@@ -318,6 +318,29 @@ impl Types {
         }
     }
 
+    /// A type's layout, pahole style: each member with its offset and size.
+    pub fn layout(&self, id: u32) -> String {
+        let t = self.get(self.resolve(id));
+        let mut out = alloc::format!("{} {{\t/* size {} */\n", self.name(self.resolve(id)), t.size);
+        match &t.kind {
+            Kind::Struct(members) | Kind::Union(members) => {
+                for m in members {
+                    let bits = if m.bit_size > 0 { alloc::format!(":{}", m.bit_size) } else { String::new() };
+                    let decl = alloc::format!("{} {}{bits};", self.name(m.ty), m.name);
+                    let _ = writeln!(out, "\t{decl:<48}\t/* {:>5} {:>5} */", m.bit_offset / 8, self.size_of(m.ty));
+                }
+            }
+            Kind::Enum(values) => {
+                for (name, v) in values {
+                    let _ = writeln!(out, "\t{name} = {v},");
+                }
+            }
+            _ => {}
+        }
+        out.push_str("};\n");
+        out
+    }
+
     fn read_int(&self, mem: &dyn Memory, addr: u32, size: u32, bit_off: u32, bit_size: u32) -> u64 {
         let bytes = if bit_size > 0 { (bit_off + bit_size).div_ceil(8) } else { size }.min(8);
         let mut buf = [0u8; 8];

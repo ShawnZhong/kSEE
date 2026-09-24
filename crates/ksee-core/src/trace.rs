@@ -41,18 +41,6 @@ pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> impl Iterator<Item = Re
     })
 }
 
-/// The ring's contents, oldest word first.
-pub fn ring_words(mem: &dyn Memory, trace: u32, words: u32) -> Vec<u32> {
-    let (first, len) = window(mem, trace, words);
-    let pairs = words / 2;
-    let mut out = Vec::with_capacity(len as usize * 2);
-    for i in 0..len {
-        let a = trace + RING + (first + i) % pairs * 8;
-        out.extend([mem.read_u32(a), mem.read_u32(a + 4)]);
-    }
-    out
-}
-
 /// (first pair, number of pairs) of the ring's current contents.
 pub fn window(mem: &dyn Memory, trace: u32, words: u32) -> (u32, u32) {
     let pos = mem.read_u32(trace) & !1;
@@ -151,16 +139,6 @@ pub(crate) mod tests {
     }
 
     struct Ring(Vec<u8>);
-
-    #[test]
-    fn reads_ring_words() {
-        let mut m = alloc::vec![0u8; 24];
-        m[0..4].copy_from_slice(&6u32.to_le_bytes());
-        for (slot, w) in [4u32, 5, 2, 3].iter().enumerate() {
-            m[8 + slot * 4..12 + slot * 4].copy_from_slice(&w.to_le_bytes());
-        }
-        assert_eq!(ring_words(&Ring(m), 0, 4), [2, 3, 4, 5]);
-    }
     impl Memory for Ring {
         fn read(&self, addr: u32, buf: &mut [u8]) {
             buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);

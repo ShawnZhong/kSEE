@@ -1,0 +1,7 @@
+# Built by make (see ../Makefile)
+/pkg/
+/src/
+/vmlinux
+/initramfs.cpio
+/init.wasm
+/ui.png

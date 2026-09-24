@@ -1,13 +1,50 @@
-//! `ksee pack`: prepare the kernel for the hosts. Its types, read from
-//! DWARF and deduplicated across compilation units (as pahole does for
-//! BTF), become a ksee.types section (see ksee_core::types) in a copy of
-//! the module without DWARF.
+//! `ksee pack`: prepare a built kernel tree for the page. The kernel's
+//! types and syscalls, read from DWARF (types deduplicated across
+//! compilation units, as pahole does for BTF), become a ksee.types section
+//! (see ksee_core::types) in a copy of vmlinux without DWARF; the sources
+//! its probes refer to are copied next to it.
 
 use std::collections::HashMap;
 use std::fmt::Write;
 
+use std::path::Path;
+
 use gimli::{AttributeValue, DwAt, DwTag, EndianSlice, LittleEndian, UnitOffset, constants as dw};
-use ksee_core::module;
+use ksee_core::{module, tables::Tables};
+
+/// Write OUT/vmlinux (from KERNEL/vmlinux) and OUT/src (from KERNEL).
+pub fn pack(kernel: &Path, out: &Path) {
+    let generated = kernel.join("arch/wasm/include/generated");
+    let text = |p: &Path| String::from_utf8_lossy(&crate::read(p)).into_owned();
+    let image = crate::read(&kernel.join("vmlinux"));
+    let calls = syscalls(&text(&generated.join("uapi/asm/unistd_32.h")),
+                         &text(&generated.join("asm/syscall_table_32.h")));
+    let types = types(&image, &calls).unwrap_or_else(|e| crate::fail(&format!("DWARF: {e}")));
+    let packed = rewrite(&image, &types);
+    std::fs::create_dir_all(out).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", out.display())));
+    std::fs::write(out.join("vmlinux"), &packed).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", out.display())));
+
+    // The sources, for the page's source view.
+    let probes = String::from_utf8_lossy(&module::custom_section(&image, "ksee.probes")).into_owned();
+    let src = out.join("src");
+    let _ = std::fs::remove_dir_all(&src);
+    let (mut files, mut bytes) = (0, 0);
+    for file in &Tables::parse(&probes, "").files {
+        if file.starts_with('/') || file.contains("..") {
+            continue; // outside the tree
+        }
+        if let Ok(data) = std::fs::read(kernel.join(file)) {
+            let to = src.join(file);
+            let _ = std::fs::create_dir_all(to.parent().unwrap());
+            std::fs::write(&to, &data).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", to.display())));
+            files += 1;
+            bytes += data.len();
+        }
+    }
+    eprintln!("{}: {} types, {} syscalls, {} -> {} KiB; {files} sources, {} KiB",
+              out.display(), types.lines().filter(|l| l.starts_with('T')).count(), calls.len(),
+              image.len() >> 10, packed.len() >> 10, bytes >> 10);
+}
 
 type R<'a> = EndianSlice<'a, LittleEndian>;
 

@@ -1,191 +1,50 @@
-//! kSEE command line: read a trace dump offline.
+//! The ksee command (./ksee.sh runs it):
 //!
-//!   ksee records  VMLINUX DUMP [--json]            every record
-//!   ksee syscalls VMLINUX DUMP [--json] [--blocks]  what each syscall ran
-//!   ksee serve [ROOT] [--port=N]  serve the web host (ROOT: build/web, see
-//!                                 make web)
-//!   ksee pack VMLINUX OUT [UNISTD SYSCALL_TABLE]
-//!                            OUT: VMLINUX for the hosts: its types (and,
-//!                            given the generated unistd and syscall table
-//!                            headers, its syscalls) from DWARF as a
-//!                            ksee.types section, without DWARF
-//!   ksee type VMLINUX NAME   the layout of a struct, union, enum or typedef
-//!   ksee sources VMLINUX TREE OUT
-//!                            copy the source files VMLINUX's probes refer
-//!                            to (paths relative to the kernel TREE) to OUT
-//!   ksee cfg VMLINUX DUMP FUNCTION [--dot] [--syscall=N]
-//!                 FUNCTION's control flow graph, with how often each block
-//!                 and edge ran (in the whole trace, or in syscall N as
-//!                 numbered by `ksee syscalls`)
-//!
-//! VMLINUX (the kernel module) provides the probe tables; DUMP is written
-//! by the host (node host/node.js --dump FILE).
-use std::io::{BufWriter, Write};
-use std::process::ExitCode;
-
-use ksee_core::dump::Dump;
-use ksee_core::tables::Tables;
-use ksee_core::syscalls::Syscall;
-use ksee_core::{cfg, module, syscalls, trace};
-
-use ksee_core::render::{self, Renderer};
-
+//!   ksee pack KERNEL OUT     prepare the kernel tree KERNEL (built) for the
+//!                            page, in OUT: OUT/vmlinux, with the kernel's
+//!                            types and syscalls from DWARF, without DWARF;
+//!                            and OUT/src, the sources its probes refer to
+//!   ksee serve [DIR] [--port=N]
+//!                            serve DIR (web) for a browser
+//!   ksee type VMLINUX NAME   the layout of a kernel struct, union, enum or
+//!                            typedef
 mod pack;
 mod serve;
 
+use std::path::Path;
+use std::process::ExitCode;
+
+use ksee_core::{module, types::Types};
+
+fn read(p: &Path) -> Vec<u8> {
+    std::fs::read(p).unwrap_or_else(|e| fail(&format!("{}: {e}", p.display())))
+}
+
+fn fail(msg: &str) -> ! {
+    eprintln!("ksee: {msg}");
+    std::process::exit(1)
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let flags: Vec<&str> = args.iter().filter(|a| a.starts_with("--")).map(String::as_str).collect();
-    let pos: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
-    if pos.first() == Some(&"serve") {
-        let root = std::path::Path::new(pos.get(1).copied().unwrap_or("build/web"));
-        let port = flags.iter().find_map(|f| f.strip_prefix("--port=")?.parse().ok()).unwrap_or(8000);
-        return match serve::serve(root, port) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("serve: {e}");
-                ExitCode::FAILURE
-            }
-        };
-    }
-    match pos[..] {
-        ["pack", input, output, ref headers @ ..] if headers.len() == 0 || headers.len() == 2 => {
-            let image = std::fs::read(input).unwrap_or_else(|e| panic!("{input}: {e}"));
-            let text = |p: &str| std::fs::read_to_string(p).unwrap_or_else(|e| panic!("{p}: {e}"));
-            let syscalls = match headers {
-                [unistd, table] => pack::syscalls(&text(unistd), &text(table)),
-                _ => Vec::new(),
-            };
-            return match pack::types(&image, &syscalls) {
-                Ok(types) => {
-                    let out = pack::rewrite(&image, &types);
-                    std::fs::write(output, &out).unwrap_or_else(|e| panic!("{output}: {e}"));
-                    eprintln!("{output}: {} types, {} -> {} bytes", types.lines().filter(|l| l.starts_with('T')).count(),
-                              image.len(), out.len());
-                    ExitCode::SUCCESS
-                }
-                Err(e) => {
-                    eprintln!("{input}: DWARF: {e}");
-                    ExitCode::FAILURE
-                }
-            };
-        }
-        ["sources", vmlinux, tree, out] => {
-            let image = std::fs::read(vmlinux).unwrap_or_else(|e| panic!("{vmlinux}: {e}"));
-            let probes = String::from_utf8_lossy(&module::custom_section(&image, "ksee.probes")).into_owned();
-            let tables = Tables::parse(&probes, "");
-            let (mut copied, mut bytes) = (0, 0);
-            for file in &tables.files {
-                if file.starts_with('/') || file.contains("..") {
-                    continue; // outside the tree
-                }
-                let (from, to) = (std::path::Path::new(tree).join(file), std::path::Path::new(out).join(file));
-                if let Ok(data) = std::fs::read(&from) {
-                    std::fs::create_dir_all(to.parent().unwrap()).unwrap_or_else(|e| panic!("{}: {e}", to.display()));
-                    std::fs::write(&to, &data).unwrap_or_else(|e| panic!("{}: {e}", to.display()));
-                    copied += 1;
-                    bytes += data.len();
-                }
-            }
-            eprintln!("{out}: {copied} source files, {} KiB", bytes >> 10);
-            return ExitCode::SUCCESS;
+    let port = args.iter().find_map(|a| a.strip_prefix("--port=")?.parse().ok()).unwrap_or(8000);
+    let args: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
+    match args[..] {
+        ["pack", kernel, out] => pack::pack(Path::new(kernel), Path::new(out)),
+        ["serve", ref dir @ ..] if dir.len() <= 1 => {
+            let dir = Path::new(dir.first().copied().unwrap_or("web"));
+            serve::serve(dir, port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
         }
         ["type", vmlinux, name] => {
-            let image = std::fs::read(vmlinux).unwrap_or_else(|e| panic!("{vmlinux}: {e}"));
-            let types = ksee_core::types::Types::parse(
-                &String::from_utf8_lossy(&module::custom_section(&image, "ksee.types")));
-            let Some(id) = types.find(name) else {
-                eprintln!("{name}: no such type");
-                return ExitCode::FAILURE;
-            };
-            print!("{}", render::layout(&types, id));
-            return ExitCode::SUCCESS;
-        }
-        _ => {}
-    }
-    let (cmd, vmlinux, dump, rest) = match pos[..] {
-        [cmd, vmlinux, dump, ref rest @ ..] => (cmd, vmlinux, dump, rest),
-        _ => {
-            eprintln!("usage: ksee records|syscalls|cfg VMLINUX DUMP ... (see crates/ksee-cli)");
-            return ExitCode::from(2);
-        }
-    };
-    let flag = |name: &str| flags.iter().find_map(|f| f.strip_prefix(name)?.strip_prefix('='));
-    let read = |p: &str| std::fs::read(p).unwrap_or_else(|e| panic!("{p}: {e}"));
-    let image = read(vmlinux);
-    let text = |name| String::from_utf8_lossy(&module::custom_section(&image, name)).into_owned();
-    let tables = Tables::parse(&text("ksee.probes"), &text("ksee.types"));
-    let dump = match Dump::parse(&read(dump)) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("{dump}: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let task = |p| dump.tasks.get(&p).cloned();
-    let r = Renderer { tables: &tables, tasks: &task };
-    let json = flags.contains(&"--json");
-    let mut out = BufWriter::new(std::io::stdout().lock());
-    match cmd {
-        "records" => {
-            for rec in trace::decode(&dump.words) {
-                let line = if json { r.record_json(&rec) } else { r.record_text(&rec) };
-                let _ = writeln!(out, "{line}");
-            }
-        }
-        "syscalls" => {
-            let Some(calls) = split_syscalls(&tables, &dump, vmlinux) else {
-                return ExitCode::FAILURE;
-            };
-            for (i, s) in calls.iter().enumerate() {
-                let line = if json { r.syscall_json(s) } else {
-                    format!("#{i} {}", r.syscall_text(s, flags.contains(&"--blocks")))
-                };
-                let _ = writeln!(out, "{line}");
-            }
-        }
-        "cfg" => {
-            let [name] = rest[..] else {
-                eprintln!("usage: ksee cfg VMLINUX DUMP FUNCTION [--dot] [--syscall=N]");
-                return ExitCode::from(2);
-            };
-            let ids: Vec<u32> = tables.functions.iter()
-                .filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
-            if ids.is_empty() {
-                eprintln!("{name}: no such traced function");
-                return ExitCode::FAILURE;
-            }
-            let records: Vec<trace::Record> = match flag("--syscall") {
-                Some(n) => {
-                    let Some(calls) = split_syscalls(&tables, &dump, vmlinux) else {
-                        return ExitCode::FAILURE;
-                    };
-                    let Some(call) = n.parse::<usize>().ok().and_then(|n| calls.into_iter().nth(n)) else {
-                        eprintln!("--syscall={n}: no such syscall");
-                        return ExitCode::FAILURE;
-                    };
-                    call.blocks.iter().map(|&(func, n)| trace::Record::Block { func, n }).collect()
-                }
-                None => trace::decode(&dump.words),
-            };
-            let cov = cfg::coverage(&tables, records, |f| ids.contains(&f));
-            for id in ids {
-                let text = if flags.contains(&"--dot") { r.cfg_dot(id, &cov) } else { r.cfg_text(id, &cov) };
-                let _ = write!(out, "{text}");
-            }
+            let image = read(Path::new(vmlinux));
+            let types = Types::parse(&String::from_utf8_lossy(&module::custom_section(&image, "ksee.types")));
+            let Some(id) = types.find(name) else { fail(&format!("{name}: no such type")) };
+            print!("{}", types.layout(id));
         }
         _ => {
-            eprintln!("unknown command {cmd}");
+            eprintln!("usage: ksee pack KERNEL OUT | serve [DIR] [--port=N] | type VMLINUX NAME");
             return ExitCode::from(2);
         }
     }
     ExitCode::SUCCESS
-}
-
-fn split_syscalls(tables: &Tables, dump: &Dump, vmlinux: &str) -> Option<Vec<Syscall>> {
-    let Some(entry) = tables.find(syscalls::ENTRY) else {
-        eprintln!("{vmlinux}: {} is not traced", syscalls::ENTRY);
-        return None;
-    };
-    Some(syscalls::split(entry, trace::decode(&dump.words)))
 }

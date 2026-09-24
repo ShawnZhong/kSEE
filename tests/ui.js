@@ -1,4 +1,4 @@
-// The page in headless Chromium: serve build/web, load it, make some calls
+// The page in headless Chromium: serve web/, load it, make some calls
 // with the presets, fail on any exception, and save a screenshot. Options
 // look at another page or script (to check the UI while working on it).
 //   deno run -A tests/ui.js OUT.png [--url=URL] [--wait=ms] [--eval=JS] [--size=WxH]
@@ -12,9 +12,13 @@ let exceptions = 0;
 let server = null, url = opt("url", "");
 if (!url) {
   server = new Deno.Command(new URL("../target/release/ksee", import.meta.url).pathname,
-    { args: ["serve", new URL("../build/web", import.meta.url).pathname, "--port=8199"], stdout: "null", stderr: "null" }).spawn();
+    { args: ["serve", new URL("../web", import.meta.url).pathname, "--port=8199"], stdout: "null", stderr: "null" }).spawn();
   url = "http://127.0.0.1:8199/";
   await new Promise((r) => setTimeout(r, 500));
+}
+if (!Deno.env.get("CHROME")) {
+  console.log("set CHROME to a (headless) Chromium binary");
+  Deno.exit(2);
 }
 const chrome = new Deno.Command(Deno.env.get("CHROME"), {
   args: ["--no-sandbox", "--headless", `--remote-debugging-port=${port}`, `--window-size=${w},${h}`, "about:blank"],

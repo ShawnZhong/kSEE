@@ -6,7 +6,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::cfg::Coverage;
-use crate::dump::Task;
+use crate::task::Task;
 use crate::syscalls::Syscall;
 use crate::tables::Tables;
 use crate::types::{Base, Kind, Types};

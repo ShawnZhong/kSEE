@@ -1,17 +1,16 @@
-// Boot the kernel in the web host's runtime under Deno (the site's module,
-// build/web, as the page uses it), make syscalls through /init (the agent), use the debugger,
-// check the trace views, and save the trace dump.
-//   deno run --allow-read --allow-write tests/web.js DUMP
-import { start, call } from "../build/web/ksee.js";
+// Boot the kernel under Deno with the page's own module (web/ksee.js), make
+// syscalls through /init (the agent), use the debugger, and check what the
+// trace shows.
+//   deno run --allow-read tests/web.js
+import { start, call } from "../web/ksee.js";
 
 const root = new URL("..", import.meta.url);
 // wasm-bindgen's futures (with threads) wake through Atomics.waitAsync,
 // which Deno does not count as pending work: keep the process alive.
 const alive = setInterval(() => {}, 1000);
 const m = await start({
-  kernel: new URL("build/web/vmlinux", root),
-  initrd: new URL("build/web/initramfs.cpio", root),
-  cmdline: "wasm_selftest",
+  kernel: new URL("web/vmlinux", root),
+  initrd: new URL("web/initramfs.cpio", root),
 });
 
 let out = "", failed = false;
@@ -32,7 +31,6 @@ const enc = (s) => [...new TextEncoder().encode(s)];
 const table = m.syscall_table();
 const nr = (name) => table.find((s) => s.name === name).nr;
 
-check("selftest passed", await until(() => out.includes("selftest: passed")));
 check("agent ready", await until(() => out.includes("syscall agent ready")));
 const write = table.find((s) => s.name === "write");
 check("syscall table has signatures",
@@ -75,8 +73,15 @@ const called = calls.map((s) => s.name);
 for (const n of ["getpid", "write", "mkdirat", "openat", "getdents64", "clock_nanosleep_time64"])
   check(`syscall ${n} traced`, called.includes(n));
 check("agent traffic is marked", m.syscalls().some((s) => s.control && s.name === "read"));
+const ran = (name, func) => calls.some((s) => s.name === name && m.runs(s.index).some((r) => r.func === func));
 const w = calls.find((s) => s.name === "write" && s.ret === 11).index;
-check("write ran vfs_write", m.runs(w).some((r) => r.func === "vfs_write"));
+check("write ran vfs_write", ran("write", "vfs_write"));
+check("getpid ran __task_pid_nr_ns", ran("getpid", "__task_pid_nr_ns"));
+check("mkdirat ran vfs_mkdir", ran("mkdirat", "vfs_mkdir"));
+check("sleeping switched to the idle task and back", ran("clock_nanosleep_time64", "__schedule")
+      && m.timeline(4000).some((b) => b.comm === "swapper/0") && m.timeline(4000).some((b) => b.comm === "init"));
+const at = m.at(m.seek(calls.find((s) => s.name === "getpid").first, 1, "block"));
+check("history: a record in getpid", at?.syscall != null && m.syscalls()[at.syscall]?.name === "getpid");
 const [vfs] = m.functions("vfs_write", w);
 check("vfs_write CFG", vfs?.blocks.some((b) => b.count > 0 && b.succs.some((e) => e.count > 0)));
 
@@ -85,7 +90,6 @@ call(m, { nr: nr("reboot"), args: [0xfee1dead, 672274793, 0x4321fedc, 0] });
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);
 
 if (failed) console.log(out);
-await Deno.writeFile(Deno.args[0], m.dump());
 clearInterval(alive);
 console.log(failed ? "FAIL" : "PASS");
 Deno.exit(failed ? 1 : 0);
