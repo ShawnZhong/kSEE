@@ -19,11 +19,21 @@ kernel `WebAssembly.Memory`.
 - `plugin/`: the LLVM pass that instruments the kernel (basic blocks, calls)
 - `crates/`: Rust: `ksee-core` (trace decoding, views), `ksee-runtime`
   (wasm that runs in the kernel's memory), `ksee-cli` (`./ksee.sh`)
-- `web/`: the browser host (`ksee.js`) and page
+- `web/`: the page, and the few lines of JS that start the runtime
 - `user/`: user programs for the initramfs; `tests/`: `make test`
 
 ## Running
 
-    make                 # kernel, initramfs, Rust crates
-    make test            # boot under Deno, check the trace
+    make                 # kernel, initramfs, Rust crates, build/vmlinux
+    make test            # boot under Deno: shell, debugger, trace views
     ./ksee.sh serve      # then open http://127.0.0.1:8000/web/
+
+In the page, `/init` is a syscall shell (try `help`, `ls /`, `mkdir /tmp`):
+each command's syscalls appear on the left; pick one to see the functions it
+ran, their source with the lines that ran, and their control flow. Click a
+source line number to set a breakpoint: the kernel stops there, and you can
+step, look at the current task, globals (`runqueues`), or any type at an
+address.
+
+`tools/shot.js` (with `$CHROME` set to a headless Chromium) screenshots the
+page, for checking the UI without a browser.

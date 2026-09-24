@@ -49,9 +49,29 @@ static unsigned long len(const char *s)
 	return n;
 }
 
+// Output is buffered and written once per command (flush), so that the
+// shell's own writes do not crowd the trace.
+static char obuf[8192];
+static unsigned long olen;
+
+static void flush(void)
+{
+	if (olen)
+		sys(NR_write, 1, (long)obuf, olen, 0);
+	olen = 0;
+}
+
+static void outn(const char *s, unsigned long n)
+{
+	if (olen + n > sizeof(obuf))
+		flush();
+	for (unsigned long i = 0; i < n && olen < sizeof(obuf); i++)
+		obuf[olen++] = s[i];
+}
+
 static void out(const char *s)
 {
-	sys(NR_write, 1, (long)s, len(s), 0);
+	outn(s, len(s));
 }
 
 static void num(long v)
@@ -132,6 +152,7 @@ static int prompt(void)
 	char *p;
 
 	out("ksee$ ");
+	flush();
 	n = sys(NR_read, 0, (long)line, sizeof(line) - 1, 0);
 	if (n <= 0)
 		return 0;
@@ -167,6 +188,8 @@ static void cmd_write(void)
 			*p++ = argv[i][j];
 		*p++ = i + 1 < argc ? ' ' : '\n';
 	}
+	// The command's own write goes out first, unbuffered.
+	flush();
 	result(sys(NR_write, arg(1), (long)buf, p - buf, 0));
 }
 
@@ -176,7 +199,7 @@ static void cmd_read(void)
 	long n = sys(NR_read, arg(1), (long)buf, want < (long)sizeof(buf) ? want : (long)sizeof(buf), 0);
 
 	if (n > 0)
-		sys(NR_write, 1, (long)buf, n, 0);
+		outn(buf, n);
 	if (n > 0 && buf[n - 1] != '\n')
 		out("\n");
 	result(n);
@@ -231,7 +254,7 @@ static void cmd_cat(void)
 		return;
 	}
 	while ((n = sys(NR_read, fd, (long)buf, sizeof(buf), 0)) > 0)
-		sys(NR_write, 1, (long)buf, n, 0);
+		outn(buf, n);
 	sys(NR_close, fd, 0, 0, 0);
 	result(n);
 }
@@ -305,7 +328,7 @@ static void run(void)
 		result(__syscall(arg(1), arg(2), arg(3), arg(4), arg(5), arg(6), arg(7)));
 	else if (same(c, "poweroff"))
 		// LINUX_REBOOT_CMD_POWER_OFF (as init, exiting would panic)
-		result(sys(NR_reboot, 0xfee1dead, 672274793, 0x4321fedc, 0));
+		flush(), result(sys(NR_reboot, 0xfee1dead, 672274793, 0x4321fedc, 0));
 	else {
 		out(c);
 		out(": unknown command (try help)\n");
@@ -315,6 +338,7 @@ static void run(void)
 void _start(void)
 {
 	out("kSEE syscall shell: each command makes system calls to watch (try help)\n");
+	flush();
 	while (prompt())
 		if (argc)
 			run();

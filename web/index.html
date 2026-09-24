@@ -67,16 +67,34 @@
   form { display: flex; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
   input, button.go { font: inherit; font-size: 12px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; }
   #console { margin: 0; padding: 8px 12px; font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; word-break: break-word; }
+  #shell { border-top: 1px solid var(--line); border-bottom: 0; }
+  #shell input { flex: 1; font-family: var(--mono); }
+  .controls { display: flex; gap: 4px; margin-left: auto; }
+  .controls button { font: inherit; font-size: 12px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg); cursor: pointer; }
+  .controls button:disabled { color: var(--dim); cursor: default; opacity: .6; }
+  #status.stopped { color: var(--miss); font-weight: 600; }
+  table.src td.n.can { cursor: pointer; }
+  table.src td.n.can:hover { color: var(--accent); }
+  table.src td.bp { width: 1%; color: var(--miss); padding: 0 0 0 6px; }
+  table.src tr.at td.code { background: #fff3bf; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) table.src tr.at td.code { background: #3d3207; } }
+  .row .live { color: var(--miss); }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } .col { border-right: 0; } .pane { min-height: 40vh; } }
 </style>
 </head>
 <body>
-<header><b>kSEE</b><span id="status" class="dim">loading the kernel…</span></header>
+<header><b>kSEE</b><span id="status" class="dim">loading the kernel…</span>
+  <span class="controls">
+    <button id="pause" disabled title="Stop at the next basic block">Pause</button>
+    <button id="step" disabled title="Run to the next basic block">Step</button>
+    <button id="next" disabled title="Run to the next block of this function (over calls)">Next</button>
+    <button id="cont" disabled title="Run until a breakpoint">Continue</button>
+  </span></header>
 <main>
   <div class="col">
     <div class="pane">
       <h2>Syscalls <span class="dim" id="nsys"></span></h2>
-      <div class="body" id="syscalls"><div class="empty">The trace appears when the kernel halts.</div></div>
+      <div class="body" id="syscalls"><div class="empty">Type a command in the console below; each syscall it makes appears here.</div></div>
     </div>
   </div>
   <div class="col">
@@ -84,26 +102,28 @@
       <h2>Ran <span class="what" id="run-title"></span></h2>
       <div class="body" id="runs"><div class="empty">Pick a syscall to see the functions it ran, in order.</div></div>
     </div>
-    <div class="pane" style="flex: 0 0 30%">
-      <h2>Console</h2>
+    <div class="pane" style="flex: 0 0 34%">
+      <h2>Console <span class="dim">/init is a syscall shell: try help, ls /, write 1 hi</span></h2>
       <div class="body"><pre id="console"></pre></div>
+      <form id="shell"><input id="cmd" placeholder="command for /init (enter to run)" autocomplete="off" aria-label="command"></form>
     </div>
   </div>
   <div class="col" style="border-right: 0">
     <div class="pane">
       <h2><span class="what" id="fn-title">Function</span>
         <span class="tabs"><button id="tab-src" class="on">Source</button><button id="tab-cfg">Control flow</button></span></h2>
-      <div class="body" id="fn"><div class="empty">Pick a function to see which of its lines and branches ran.</div></div>
+      <div class="body" id="fn"><div class="empty">Pick a function to see which of its lines and branches ran. Click a line number to break there.</div></div>
     </div>
     <div class="pane" style="flex: 0 0 38%">
       <h2>Objects</h2>
       <form id="decode"><input id="type" value="task_struct" size="14" aria-label="type"><input id="addr" placeholder="address (0x…)" size="12" aria-label="address"><button class="go">decode</button></form>
-      <div class="body" id="objects"><div class="empty">Click a task, or decode a type at an address. Pointers link to what they point to.</div></div>
+      <form id="globalf"><input id="global" list="globals" placeholder="a global variable: runqueues, init_task, …" aria-label="global"><datalist id="globals"></datalist><button class="go">show</button></form>
+      <div class="body" id="objects"><div class="empty">Stop the kernel (a breakpoint, or Pause), then look at the current task, a global, or any type at an address. Pointers link to what they point to.</div></div>
     </div>
   </div>
 </main>
 <script type="module">
-import { start, run } from "./ksee.js";
+import { start } from "./ksee.js";
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => {
@@ -119,15 +139,7 @@ const m = await start({
   initrd: new URL("../build/initramfs.cpio", location),
   cmdline: params.get("cmdline") ?? "",
 });
-$("status").textContent = "running";
-const consoleOut = (s) => {
-  const c = $("console");
-  c.textContent += s;
-  c.parentElement.scrollTop = c.parentElement.scrollHeight;
-};
-const code = await run(m, consoleOut);
-$("status").textContent = `halted (${code}): showing the trace ring as the kernel left it`;
-m.snapshot();
+$("globals").append(...m.globals().map((g) => el("option", { value: g })));
 
 // ---- Objects -----------------------------------------------------------------
 
@@ -139,14 +151,10 @@ function taskLink(task) {
 function objectNode(o) {
   const head = [el("span", { className: "k", textContent: o.name }), " ",
                 el("span", { className: "t", textContent: o.ty })];
-  if (o.value !== null && o.value !== undefined) head.push(" = ", el("span", { className: "v", textContent: o.value }));
-  const expandable = o.children || o.expand !== null && o.expand !== undefined;
-  if (o.target !== null && o.target !== undefined) {
-    head.push(" ", el("a", { textContent: "→ follow", onclick: () => {
-      showObjectById(`*${o.name}`, o.target, Number(o.value));
-    } }));
-  }
-  if (!expandable) return el("div", { className: "leaf" }, ...head);
+  if (o.value != null) head.push(" = ", el("span", { className: "v", textContent: o.value }));
+  if (o.target != null)
+    head.push(" ", el("a", { textContent: "→ follow", onclick: () => showObjectById(`*${o.name}`, o.target, Number(o.value)) }));
+  if (!o.children && o.expand == null) return el("div", { className: "leaf" }, ...head);
   const d = el("details", {}, el("summary", {}, ...head));
   const fill = (children) => d.append(...children.map(objectNode));
   if (o.children) fill(o.children);
@@ -156,24 +164,30 @@ function objectNode(o) {
   return d;
 }
 
-function showObject(type, addr) {
+function showTree(o, title) {
+  $("objects").replaceChildren(o ? el("div", { className: "obj" }, objectNode({ ...o, name: title }))
+                                   : el("div", { className: "empty", textContent: "nothing to show" }));
+  $("objects").querySelector("details")?.setAttribute("open", "");
+}
+const showObject = (type, addr) => {
   $("type").value = type;
   $("addr").value = hex(addr);
   const o = m.object(type, addr, 1);
-  $("objects").replaceChildren(o ? el("div", { className: "obj" }, objectNode({ ...o, name: `(${o.ty} *) ${hex(addr)}` }))
-                                   : el("div", { className: "empty", textContent: `${type}: no such type` }));
-  $("objects").querySelector("details")?.setAttribute("open", "");
-}
-
-function showObjectById(label, ty, addr) {
+  showTree(o, o ? `(${o.ty} *) ${hex(addr)}` : "");
+};
+const showObjectById = (label, ty, addr) => {
   const o = m.object_by_id(label, ty, addr, 1);
-  $("objects").replaceChildren(el("div", { className: "obj" }, objectNode({ ...o, name: `(${o.ty} *) ${hex(addr)}` })));
-  $("objects").querySelector("details")?.setAttribute("open", "");
-}
-
+  showTree(o, `(${o.ty} *) ${hex(addr)}`);
+};
 $("decode").onsubmit = (e) => {
   e.preventDefault();
   showObject($("type").value.trim(), Number($("addr").value));
+};
+$("globalf").onsubmit = (e) => {
+  e.preventDefault();
+  const name = $("global").value.trim();
+  const o = m.global(name, 1);
+  showTree(o, o ? `${name} (${o.ty}, at ${hex(o.addr)})` : `${name}: no such global`);
 };
 
 // ---- Functions: source and control flow --------------------------------------
@@ -187,7 +201,8 @@ const source = (file) => {
   return sources.get(file);
 };
 
-let tab = "src", current = null;
+let tab = "src", current = null, currentSyscall = null, stop = null;
+const breaks = new Set(); // "file:line"
 for (const [t, b] of [["src", $("tab-src")], ["cfg", $("tab-cfg")]])
   b.onclick = () => {
     tab = t;
@@ -197,7 +212,7 @@ for (const [t, b] of [["src", $("tab-src")], ["cfg", $("tab-cfg")]])
   };
 
 function showFunction(name, syscall) {
-  const [f] = m.functions(name, syscall);
+  const [f] = m.functions(name, syscall ?? undefined);
   if (!f) return;
   current = f;
   const ran = f.blocks.filter((b) => b.count > 0).length;
@@ -222,20 +237,30 @@ async function renderFunction(f) {
     const last = Math.max(f.line, ...own.map((b) => b.line)) + 1;
     const rows = [];
     for (let n = Math.max(1, f.line - 1); n <= Math.min(lines.length, last); n++) {
-      const h = hits.get(n);
-      const cls = h === undefined ? "" : h > 0 ? "hit" : "miss";
+      const h = hits.get(n), key = `${f.file}:${n}`;
+      const here = stop && stop.file === f.file && stop.line === n;
+      const cls = [h === undefined ? "" : h > 0 ? "hit" : "miss", here ? "at" : ""].join(" ");
+      const num = el("td", { className: "n" + (h !== undefined ? " can" : ""), textContent: n,
+                             title: h !== undefined ? "click to toggle a breakpoint" : "" });
+      if (h !== undefined)
+        num.onclick = () => {
+          const on = !breaks.has(key);
+          if (m.break_line(f.file, n, on)) on ? breaks.add(key) : breaks.delete(key);
+          renderFunction(f);
+        };
       rows.push(el("tr", { className: cls },
-        el("td", { className: "n", textContent: n }),
+        el("td", { className: "bp", textContent: here ? "▶" : breaks.has(key) ? "●" : "" }), num,
         el("td", { className: "h", textContent: h === undefined ? "" : h > 0 ? `${h}×` : "0" }),
         el("td", { className: "code", textContent: lines[n - 1] })));
     }
     kids.push(el("div", { className: "note",
-      textContent: "Lines where a basic block starts: the count is how often it ran in this syscall (0 in red: not taken)." }));
+      textContent: "Lines where a basic block starts: how often it ran in this syscall (0 in red: not taken). Click a line number to break there." }));
     kids.push(el("table", { className: "src" }, el("tbody", {}, ...rows)));
   }
   if (inlined.length)
     kids.push(el("div", { className: "note", textContent: `Also ran inlined code from ${inlined.slice(0, 8).join(", ")}${inlined.length > 8 ? ", …" : ""}` }));
   $("fn").replaceChildren(...kids);
+  $("fn").querySelector("tr.at")?.scrollIntoView({ block: "center" });
 }
 
 // Blocks top to bottom in program order; forward edges on the right,
@@ -253,7 +278,6 @@ function cfgSvg(f) {
   const index = new Map(f.blocks.map((b, i) => [b.n, i]));
   const edges = f.blocks.flatMap((b) => b.succs.map((e) => ({ from: index.get(b.n), to: index.get(e.to), count: e.count })))
     .filter((e) => e.to !== undefined);
-  // Nest longer spans outside shorter ones.
   const lane = (side) => {
     const es = edges.filter((e) => (e.to > e.from) === (side > 0) && Math.abs(e.to - e.from) > 1)
       .sort((a, b) => Math.abs(a.to - a.from) - Math.abs(b.to - b.from));
@@ -266,13 +290,8 @@ function cfgSvg(f) {
     const y1 = y(e.from) + H / 2, y2 = y(e.to) + H / 2;
     let d;
     if (e.to === e.from + 1) d = `M ${X + W / 2} ${y(e.from) + H} V ${y(e.to)}`;
-    else if (e.to > e.from) {
-      const x = X + W + 10 * e.lane;
-      d = `M ${X + W} ${y1} H ${x} V ${y2} H ${X + W}`;
-    } else {
-      const x = X - 10 * (e.lane ?? 1);
-      d = `M ${X} ${y1} H ${x} V ${y2} H ${X}`;
-    }
+    else if (e.to > e.from) d = `M ${X + W} ${y1} H ${X + W + 10 * e.lane} V ${y2} H ${X + W}`;
+    else d = `M ${X} ${y1} H ${X - 10 * (e.lane ?? 1)} V ${y2} H ${X}`;
     svg.append(s("path", { d, class: e.count > 0 ? "e taken" : "e" }));
     if (e.count > 0 && e.to !== e.from + 1) {
       const lx = e.to > e.from ? X + W + 10 * e.lane + 3 : X - 10 * (e.lane ?? 1) - 3;
@@ -280,37 +299,46 @@ function cfgSvg(f) {
     }
   }
   f.blocks.forEach((b, i) => {
-    svg.append(s("rect", { x: X, y: y(i), width: W, height: H, rx: 4, class: b.count > 0 ? "box hit" : "box" }));
+    const here = stop && stop.func === f.name && stop.block === b.n;
+    svg.append(s("rect", { x: X, y: y(i), width: W, height: H, rx: 4, class: b.count > 0 ? "box hit" : "box",
+                           ...(here ? { style: "stroke: var(--miss); stroke-width: 2" } : {}) }));
     const file = b.file === f.file ? "" : b.file.split("/").pop() + ":";
-    svg.append(s("text", { x: X + 6, y: y(i) + 15 }, `b${b.n}  ${file}${b.line}:${b.column}`));
+    svg.append(s("text", { x: X + 6, y: y(i) + 15 }, `${here ? "▶ " : ""}b${b.n}  ${file}${b.line}:${b.column}`));
     svg.append(s("text", { x: X + W - 6, y: y(i) + 15, "text-anchor": "end", class: "lbl" }, b.count ? `${b.count}×` : "–"));
   });
-  const wrap = el("div", {});
-  wrap.append(el("div", { className: "note",
+  return el("div", {}, el("div", { className: "note",
     textContent: "Basic blocks in order. Green: ran in this syscall. Thick: branches taken (with counts); thin: not taken." }), svg);
-  return wrap;
 }
 
 // ---- Syscalls and what they ran ---------------------------------------------
 
-const us = (ns) => (ns == null ? "did not return" : ns < 1e6 ? `${(ns / 1e3).toFixed(0)} µs` : `${(ns / 1e6).toFixed(1)} ms`);
-const syscalls = m.syscalls();
-$("nsys").textContent = `(${syscalls.length}, from the trace ring)`;
-const rows = syscalls.map((s) => {
-  const call = `${s.name ?? `syscall_${s.nr}`}(${s.args.map(hex).join(", ")}) = ${s.ret ?? "?"}`;
-  const row = el("div", { className: "row" },
-    el("div", { className: "call", textContent: call }),
-    el("div", { className: "meta" }, taskLink(s.task),
-       ` · ${us(s.duration_ns)} · ${s.blocks} blocks in ${s.functions} functions${s.partial ? " · partial" : ""}`));
-  row.onclick = () => showSyscall(s, row);
-  $("syscalls").append(row);
-  return row;
-});
-if (syscalls.length) $("syscalls").querySelector(".empty").remove();
+const us = (ns) => (ns == null ? "running" : ns < 1e6 ? `${(ns / 1e3).toFixed(0)} µs` : `${(ns / 1e6).toFixed(1)} ms`);
+let rows = [];
 
-function showSyscall(s, row) {
-  rows.forEach((r) => r.classList.remove("on"));
-  row.classList.add("on");
+// Re-read the trace ring and redraw the syscall list, keeping the selection.
+function refresh() {
+  m.snapshot();
+  const list = m.syscalls();
+  $("nsys").textContent = `(${list.length} in the trace ring)`;
+  rows = list.map((s) => {
+    const call = `${s.name ?? `syscall_${s.nr}`}(${s.args.map(hex).join(", ")}) = ${s.ret ?? "…"}`;
+    const row = el("div", { className: "row" },
+      el("div", { className: "call", textContent: call }),
+      el("div", { className: "meta" }, taskLink(s.task),
+         ` · `, el("span", { className: s.duration_ns == null ? "live" : "", textContent: us(s.duration_ns) }),
+         ` · ${s.blocks} blocks in ${s.functions} functions${s.partial ? " · partial" : ""}`));
+    row.onclick = () => showSyscall(s);
+    row.dataset.index = s.index;
+    return row;
+  });
+  $("syscalls").replaceChildren(...(rows.length ? rows : [el("div", { className: "empty", textContent: "No syscalls yet." })]));
+  return list;
+}
+
+function showSyscall(s, fn) {
+  currentSyscall = s.index;
+  rows.forEach((r) => r.classList.toggle("on", Number(r.dataset.index) === s.index));
+  rows[s.index]?.scrollIntoView({ block: "nearest" });
   $("run-title").textContent = `${s.name ?? s.nr} by ${s.task.comm}(${s.task.pid})`;
   const runs = m.runs(s.index);
   const items = runs.map((r) => {
@@ -326,12 +354,85 @@ function showSyscall(s, row) {
     return item;
   });
   $("runs").replaceChildren(...items);
-  // Start at the first function past the entry and the handler's wrapper.
-  const first = runs.findIndex((r) => r.func !== "wasm_syscall" && !r.func.startsWith("__wasm_sys_"));
-  (items[first] ?? items[0])?.click();
+  // The given function (the last run of it), else the first past the entry.
+  let i = fn ? runs.findLastIndex((r) => r.func === fn) : -1;
+  if (i < 0) i = runs.findIndex((r) => r.func !== "wasm_syscall" && !r.func.startsWith("__wasm_sys_"));
+  const item = items[i] ?? items[0];
+  item?.click();
+  item?.scrollIntoView({ block: "nearest" });
 }
 
-rows[0]?.click();
+// ---- Running, stopping ---------------------------------------------------------
+
+const buttons = { pause: $("pause"), step: $("step"), next: $("next"), cont: $("cont") };
+buttons.pause.onclick = () => m.pause();
+buttons.step.onclick = () => m.step();
+buttons.next.onclick = () => m.next();
+buttons.cont.onclick = () => m.resume();
+const setStatus = (text, stopped = false) => {
+  $("status").textContent = text;
+  $("status").className = stopped ? "stopped" : "dim";
+};
+
+function onStop(at) {
+  stop = at;
+  setStatus(`stopped at ${at.func} (${at.file}:${at.line}) in ${at.task.comm}(${at.task.pid})`, true);
+  const list = refresh();
+  // The syscall in progress on the stopped task, if any.
+  const s = list.findLast((s) => s.task.addr === at.task.addr && s.duration_ns == null);
+  if (s) showSyscall(s, at.func);
+  else showFunction(at.func);
+  showObject("task_struct", at.task.addr);
+}
+
+$("shell").onsubmit = (e) => {
+  e.preventDefault();
+  m.type_in($("cmd").value + "\n");
+  $("cmd").value = "";
+};
+
+let halted = false, wasStopped = false, pendingRefresh = false;
+setStatus("running");
+function tick() {
+  const outText = m.console();
+  if (outText) {
+    const c = $("console");
+    c.textContent += outText.replaceAll("\r", "");
+    c.parentElement.scrollTop = c.parentElement.scrollHeight;
+    // A new prompt: the command's syscalls are done.
+    if (outText.includes("ksee$ ")) pendingRefresh = true;
+  }
+  const code = m.halted();
+  if (code !== undefined) {
+    halted = true;
+    stop = null;
+    setStatus(`halted (${code})`);
+    Object.values(buttons).forEach((b) => (b.disabled = true));
+    refresh();
+    return;
+  }
+  const at = m.stopped();
+  if (at && !wasStopped) onStop(at);
+  if (!at && wasStopped) {
+    stop = null;
+    setStatus("running");
+    if (current) renderFunction(current);
+  }
+  wasStopped = !!at;
+  buttons.pause.disabled = !!at;
+  buttons.step.disabled = buttons.next.disabled = buttons.cont.disabled = !at;
+  if (pendingRefresh && !at) {
+    pendingRefresh = false;
+    const list = refresh();
+    // The command's last syscall: skip the shell's own output and the read
+    // waiting for the next command.
+    const done = list.filter((s) => s.task.comm === "init" && s.duration_ns != null);
+    const last = done.findLast((s) => !(s.name === "write" && s.args[0] === 1)) ?? done.at(-1);
+    if (last) showSyscall(last);
+  }
+  setTimeout(tick, 30);
+}
+tick();
 </script>
 </body>
 </html>

@@ -8,6 +8,7 @@
 //!                               typedef (target), func
 //! M id name bit_offset bit_size type     a member of struct/union id
 //! V id name value                        an enumerator of enum id
+//! G name address type                    a variable with a fixed address
 //! ```
 
 use alloc::collections::BTreeMap;
@@ -60,6 +61,8 @@ pub struct Types {
     pub types: Vec<Type>,
     /// Struct, union, enum and typedef names -> ids.
     names: BTreeMap<String, u32>,
+    /// Variables with fixed addresses: name -> (address, type).
+    pub globals: BTreeMap<String, (u32, u32)>,
 }
 
 impl Types {
@@ -68,6 +71,7 @@ impl Types {
         let mut kinds: Vec<(String, Vec<String>)> = Vec::new();
         let mut members: BTreeMap<u32, Vec<Member>> = BTreeMap::new();
         let mut values: BTreeMap<u32, Vec<(String, i64)>> = BTreeMap::new();
+        let mut globals = BTreeMap::new();
         for line in text.lines() {
             let c: Vec<&str> = line.split('\t').collect();
             let num = |i: usize| c.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -85,6 +89,9 @@ impl Types {
                 Some(&"M") if c.len() == 6 => members.entry(num(1)).or_default().push(Member {
                     name: c[2].to_string(), bit_offset: num(3), bit_size: num(4), ty: num(5),
                 }),
+                Some(&"G") if c.len() == 4 => {
+                    globals.insert(c[1].to_string(), (num(2), num(3)));
+                }
                 Some(&"V") if c.len() == 4 => {
                     values.entry(num(1)).or_default().push((c[2].to_string(), c[3].parse().unwrap_or(0)))
                 }
@@ -118,7 +125,7 @@ impl Types {
                 names.entry(t.name.clone()).or_insert(id as u32);
             }
         }
-        Types { types, names }
+        Types { types, names, globals }
     }
 
     pub fn get(&self, id: u32) -> &Type {

@@ -230,6 +230,20 @@ impl Machine {
         }
     }
 
+    /// The names of variables with fixed addresses (runqueues, init_task, ...).
+    pub fn globals(&self) -> Vec<String> {
+        tables().types.globals.keys().cloned().collect()
+    }
+
+    /// The value of the variable `name` (an Object), or null.
+    pub fn global(&self, name: &str, depth: Option<u32>) -> JsValue {
+        let types = &tables().types;
+        match types.globals.get(name) {
+            Some(&(addr, ty)) => to_js(&types.object(&Direct, name, addr, ty, depth.unwrap_or(1))),
+            None => JsValue::NULL,
+        }
+    }
+
     /// Like `object`, by type id (an Object's `expand` or `target`).
     pub fn object_by_id(&self, label: &str, ty: u32, addr: u32, depth: Option<u32>) -> JsValue {
         to_js(&tables().types.object(&Direct, label, addr, ty, depth.unwrap_or(1)))

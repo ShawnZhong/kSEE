@@ -26,17 +26,33 @@ pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
     while let Some(header) = units.next()? {
         let unit = dwarf.unit(header)?;
         let mut cu = Cu { dwarf: &dwarf, unit: &unit, memo: HashMap::new(), files: HashMap::new() };
-        // Every type in the unit, so that unused ones are listed too.
+        // Every type in the unit, so that unused ones are listed too, and
+        // every variable with a fixed address.
         let mut entries = unit.entries();
         let mut offsets = Vec::new();
+        let mut vars = Vec::new();
         while let Some(e) = entries.next_dfs()? {
-            if matches!(e.tag(), dw::DW_TAG_structure_type | dw::DW_TAG_union_type
-                        | dw::DW_TAG_enumeration_type | dw::DW_TAG_typedef) {
-                offsets.push(e.offset());
+            match e.tag() {
+                dw::DW_TAG_structure_type | dw::DW_TAG_union_type | dw::DW_TAG_enumeration_type
+                | dw::DW_TAG_typedef => offsets.push(e.offset()),
+                dw::DW_TAG_variable => {
+                    if let (Some(addr), Some(AttributeValue::UnitRef(ty))) =
+                        (address(&dwarf, &unit, e)?, e.attr_value(dw::DW_AT_type))
+                    {
+                        vars.push((attr_string(&cu, e, dw::DW_AT_name)?, addr, ty));
+                    }
+                }
+                _ => {}
             }
         }
         for off in offsets {
             b.canon(&mut cu, off)?;
+        }
+        for (name, addr, ty) in vars {
+            if !name.is_empty() && b.globals.insert(name.clone()) {
+                let t = b.canon(&mut cu, ty)?;
+                b.extra.push(format!("G\t{name}\t{addr}\t{t}"));
+            }
         }
     }
     Ok(b.text())
@@ -59,6 +75,8 @@ struct Builder {
     /// (tag, name) -> the id of the first complete definition, or a
     /// placeholder for it reserved by a declaration.
     by_name: HashMap<(DwTag, String), (u32, bool)>,
+    /// Names of globals listed (the first of several statics wins).
+    globals: std::collections::HashSet<String>,
 }
 
 impl Builder {
@@ -258,6 +276,18 @@ impl Builder {
     fn size(&self, id: u32) -> u32 {
         self.rows.get(id as usize).and_then(|r| r.split('\t').nth(4)).and_then(|s| s.parse().ok()).unwrap_or(0)
     }
+}
+
+/// A variable's fixed address (DW_OP_addr or DW_OP_addrx), if it has one.
+fn address(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, e: &gimli::DebuggingInformationEntry<R>)
+           -> Result<Option<u64>, gimli::Error> {
+    let Some(AttributeValue::Exprloc(expr)) = e.attr_value(dw::DW_AT_location) else { return Ok(None) };
+    let mut ops = expr.operations(unit.encoding());
+    Ok(match ops.next()? {
+        Some(gimli::Operation::Address { address }) => Some(address),
+        Some(gimli::Operation::AddressIndex { index }) => Some(dwarf.address(unit, index)?),
+        _ => None,
+    })
 }
 
 fn attr_u64(e: &gimli::DebuggingInformationEntry<R>, at: DwAt) -> Option<u64> {
