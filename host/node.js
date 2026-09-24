@@ -10,6 +10,7 @@ const { values, positionals } = parseArgs({
   options: {
     mem: { type: "string", default: "64" },
     timeout: { type: "string", default: "0" },
+    trace: { type: "boolean", default: false },
   },
 });
 const [image, ...cmd] = positionals;
@@ -38,11 +39,16 @@ function spawn(role, extra = {}) {
     workerData: { ...shared, role, ...extra },
   });
   workers.add(w);
+  const name = extra.comm ?? role;
+  if (values.trace) console.error(`[host] spawn ${name}`);
   w.on("message", (m) => {
     if (m.type === "spawn") spawn("task", m);
     else if (m.type === "halt") halt(m.code);
   });
-  w.on("exit", () => workers.delete(w));
+  w.on("exit", () => {
+    workers.delete(w);
+    if (values.trace) console.error(`[host] exit ${name}`);
+  });
   w.on("error", (e) => { console.error(e); halt(1); });
   return w;
 }
