@@ -45,10 +45,12 @@ export async function start({ kernel: kernelUrl, runtime: runtimeUrl, initrd,
   // Instantiating once here runs both modules' start functions, which
   // initialize their data in the shared memory; the runtime owns the memory
   // below the kernel image.
+  // (Asynchronously: browsers refuse to instantiate large modules
+  // synchronously on the page.)
   const outputs = {};
-  const rt = new WebAssembly.Instance(rmod, runtimeImports(memory, outputs)).exports;
+  const rt = (await WebAssembly.instantiate(rmod, runtimeImports(memory, outputs))).exports;
   const stub = new Proxy({}, { get: (_, n) => () => { throw new Error(`${n} on the page`); } });
-  const k = new WebAssembly.Instance(kmod, { env: { memory }, kernel: stub, ksee: stub }).exports;
+  const k = (await WebAssembly.instantiate(kmod, { env: { memory }, kernel: stub, ksee: stub })).exports;
 
   const copyIn = (bytes) => {
     const p = rt.alloc(bytes.length);
