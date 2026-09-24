@@ -6,13 +6,26 @@
 #   make test        boot it under Node and run the selftest
 
 LLVM ?= -23
-KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=$(LLVM)
+PLUGIN = $(CURDIR)/plugin/ksee-trace.so
+# Kernel functions whose entry is reported as a kSEE event. Changing the
+# list does not rebuild anything by itself: touch the files, or clean.
+KSEE_TRACE ?= __schedule,context_switch,try_to_wake_up:enter+block,\
+	      wake_up_new_task,\
+	      kernel_clone,do_exit,wasm_syscall
+# Struct fields whose layout the host needs to decode kernel objects.
+KSEE_TYPES ?= task_struct.pid,task_struct.comm,task_struct.__state
+export KSEE_TRACE KSEE_TYPES
+KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=$(LLVM) \
+	KCFLAGS="-g -fpass-plugin=$(PLUGIN)"
 USER_CC = clang$(LLVM) --target=wasm32 -O2 -ffreestanding -nostdlib -Wl,--no-entry \
 	  -Wl,--export=_start
 
 all: kernel initramfs
 
-kernel:
+$(PLUGIN): plugin/ksee-trace.cpp
+	$(MAKE) -C plugin LLVM=$(LLVM)
+
+kernel: $(PLUGIN)
 	test -f linux/.config || $(KMAKE) defconfig
 	$(KMAKE) -j$$(nproc)
 

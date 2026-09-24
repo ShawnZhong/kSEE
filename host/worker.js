@@ -14,6 +14,50 @@ const nowNs = () =>
 
 class ExitTask extends Error {}
 
+// The module's self-description (see plugin/ksee-trace.cpp).
+function customLines(name) {
+  const text = WebAssembly.Module.customSections(module, name)
+    .map((b) => decoder.decode(b)).join("");
+  return [...new Set(text.split("\n"))].filter(Boolean).map((l) => l.split("\t"));
+}
+const functions = new Map(), blocks = new Map();
+for (const [kind, id, a, b, c] of customLines("ksee.probes")) {
+  if (kind === "F")
+    functions.set(Number(id), { name: a, where: b, types: c ? c.split(",") : [] });
+  else
+    blocks.set(`${id}:${a}`, b);
+}
+const fields = {};
+for (const [struct, field, offset, size] of customLines("ksee.types"))
+  (fields[struct] ??= {})[field] = { offset: Number(offset), size: Number(size) };
+
+function readTask(p) {
+  if (!p || !fields.task_struct) return p;
+  const f = fields.task_struct, dv = new DataView(memory.buffer);
+  const comm = u8().subarray(p + f.comm.offset, p + f.comm.offset + f.comm.size);
+  return {
+    pid: dv.getInt32(p + f.pid.offset, true),
+    comm: decoder.decode(comm.slice(0, comm.indexOf(0) >>> 0)),
+  };
+}
+
+// Append one event (wasm i32s arrive signed, hence >>> 0).
+function record(kind, fn, extra) {
+  const cur = new DataView(memory.buffer).getUint32(addr.__current_task, true);
+  const f = functions.get(fn >>> 0);
+  const rec = { t: Number(nowNs()), kind, fn: f?.name ?? fn >>> 0, cur: readTask(cur), ...extra(f) };
+  writeSync(workerData.eventsFd, JSON.stringify(rec) + "\n");
+}
+
+const probes = {
+  enter: (fn, ...args) => record("enter", fn, (f) => ({
+    args: args.map((a, i) => (f?.types[i] === "task_struct*" ? readTask(a >>> 0) : a >>> 0)),
+  })),
+  exit: (fn, ret) => record("exit", fn, () => ({ ret })),
+  block: (fn, n) => record("block", fn, () => ({ n, loc: blocks.get(`${fn >>> 0}:${n}`) })),
+};
+const noProbes = { enter() {}, exit() {}, block() {} };
+
 let kernel;        // this Worker's kernel instance
 let user = null;   // the running user program (instance), if any
 let loaded = null; // the program exec() has loaded, until user_enter
@@ -28,6 +72,7 @@ function userBytes(addr, n) {
 function imports() {
   return {
     env: { memory },
+    ksee: workerData.eventsFd >= 0 ? probes : noProbes,
     kernel: {
       console_write(ptr, len) {
         writeSync(1, decoder.decode(u8().slice(ptr, ptr + len)));
