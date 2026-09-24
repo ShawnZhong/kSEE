@@ -4,7 +4,7 @@
 #   make initramfs   build build/initramfs.cpio from user/
 #   make rust        build the Rust crates (crates/) and run their tests
 #   make defconfig   reset linux/.config to arch/wasm/configs/defconfig
-#   make test        run the tests (tests/): under Node and Deno (web host)
+#   make test        boot in the web host (under Deno) and check the trace
 #   ./ksee.sh serve  then open http://127.0.0.1:8000/web/ (?cmdline=...)
 
 LLVM ?= -23
@@ -55,9 +55,6 @@ defconfig:
 	$(KMAKE) defconfig
 
 test: kernel initramfs rust
-	tests/selftest.sh
-	tests/init.sh
-	tests/events.sh
-	deno run --allow-read tests/web.js
+	tests/trace.sh
 
 .PHONY: all kernel initramfs rust defconfig test

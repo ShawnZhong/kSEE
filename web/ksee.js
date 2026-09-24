@@ -120,7 +120,15 @@ export async function start({ kernel: kernelUrl, runtime: runtimeUrl, initrd,
     rt.free(...name);
     return text;
   };
-  return { memory, runtime: rt, kernel: k, halted, view, cfg };
+  // The trace dump (see ksee_core::dump; read it with ./ksee.sh).
+  const dump = () => {
+    const parts = [];
+    outputs[0] = (bytes) => parts.push(bytes);
+    rt.dump(k.ksee_trace());
+    delete outputs[0];
+    return new Blob(parts);
+  };
+  return { memory, runtime: rt, kernel: k, halted, view, cfg, dump };
 }
 
 // ---- A Worker ---------------------------------------------------------------
