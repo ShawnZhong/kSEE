@@ -64,7 +64,8 @@ import { start } from "./ksee.js";
 import { app } from "./app.js";
 
 const params = new URLSearchParams(location.search);
-app(await start({ kernel: "./vmlinux", initrd: "./initramfs.cpio", cmdline: params.get("cmdline") ?? "" }));
+// (window.ksee: for the console, and tests/ui.js)
+window.ksee = app(await start({ kernel: "./vmlinux", initrd: "./initramfs.cpio", cmdline: params.get("cmdline") ?? "" }));
 </script>
 </body>
 </html>

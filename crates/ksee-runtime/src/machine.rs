@@ -641,11 +641,12 @@ impl Machine {
     /// Where the kernel is stopped, if it is: { func, block, file, line,
     /// column, task }.
     pub fn stopped(&self) -> JsValue {
-        let Some((func, n, task)) = DEBUG.stopped() else { return JsValue::NULL };
+        let Some((func, n, task, stop)) = DEBUG.stopped() else { return JsValue::NULL };
         let t = tables();
         let o = Object::new();
         js::set(&o, "func", t.functions.get(&func).map_or(String::new(), |f| f.name.clone()));
         js::set(&o, "block", n);
+        js::set(&o, "stop", stop);
         if let Some(&l) = t.blocks.get(&(func, n)) {
             js::set(&o, "file", t.file(l));
             js::set(&o, "line", l.line);

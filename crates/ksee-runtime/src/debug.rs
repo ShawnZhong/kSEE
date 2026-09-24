@@ -101,11 +101,12 @@ impl Debugger {
         }
     }
 
-    /// Where the kernel is stopped: (function, block, task), if it is.
-    pub fn stopped(&self) -> Option<(u32, u32, u32)> {
+    /// Where the kernel is stopped: (function, block, task, which stop
+    /// this is), if it is.
+    pub fn stopped(&self) -> Option<(u32, u32, u32, u32)> {
         (self.stopped.load(Ordering::Acquire) != 0).then(|| {
             (self.at_fn.load(Ordering::Relaxed), self.at_block.load(Ordering::Relaxed),
-             self.at_task.load(Ordering::Relaxed))
+             self.at_task.load(Ordering::Relaxed), self.resume.load(Ordering::Relaxed))
         })
     }
 
@@ -123,6 +124,8 @@ impl Debugger {
         }
         self.mode.store(mode, Ordering::Release);
         self.rearm();
+        // Not stopped from here on (the Worker may take a while to wake).
+        self.stopped.store(0, Ordering::Release);
         self.resume.fetch_add(1, Ordering::AcqRel);
         unsafe { core::arch::wasm32::memory_atomic_notify(self.resume.as_ptr() as *mut i32, u32::MAX) };
     }

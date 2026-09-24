@@ -106,7 +106,7 @@ export function app(m) {
     objs.stopped(at.task);
   }
 
-  let wasStopped = false, lastNow = 0;
+  let lastStop = null, lastNow = 0;
   function tick() {
     const out = m.console();
     if (out) {
@@ -123,15 +123,16 @@ export function app(m) {
       return;
     }
     const at = m.stopped();
-    if (at && !wasStopped) onStop(at);
-    if (!at && wasStopped) src.view.stop = null;
+    // (A new stop, also after a step: each has its own number.)
+    if (at && at.stop !== lastStop) onStop(at);
+    if (!at && lastStop != null) src.view.stop = null;
     // Where the kernel is now (its latest block), a few times a second.
     if (!at && performance.now() - lastNow > 250) {
       lastNow = performance.now();
       const now = m.now();
       if (now) status(`running · now ${taskName(now.task)} in ${now.func} (${now.file}:${now.line})`);
     }
-    wasStopped = !!at;
+    lastStop = at?.stop ?? null;
     buttons.pause.disabled = !!at;
     buttons.step.disabled = buttons.next.disabled = buttons.cont.disabled = !at;
     setTimeout(tick, 30);
