@@ -3,6 +3,9 @@
 //!   ksee records  VMLINUX DUMP [--json]            every record
 //!   ksee syscalls VMLINUX DUMP [--json] [--blocks]  what each syscall ran
 //!   ksee serve [ROOT] [--port=N]  serve the web host (ROOT: the kSEE tree)
+//!   ksee btf VMLINUX OUT     OUT: VMLINUX with its types from DWARF as a
+//!                            ksee.types section, and without DWARF
+//!   ksee type VMLINUX NAME   the layout of a struct, union, enum or typedef
 //!   ksee cfg VMLINUX DUMP FUNCTION [--dot] [--syscall=N]
 //!                 FUNCTION's control flow graph, with how often each block
 //!                 and edge ran (in the whole trace, or in syscall N as
@@ -18,8 +21,9 @@ use ksee_core::tables::Tables;
 use ksee_core::syscalls::Syscall;
 use ksee_core::{cfg, module, syscalls, trace};
 
-use ksee_core::render::Renderer;
+use ksee_core::render::{self, Renderer};
 
+mod btf;
 mod serve;
 
 fn main() -> ExitCode {
@@ -36,6 +40,36 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
+    }
+    match pos[..] {
+        ["btf", input, output] => {
+            let image = std::fs::read(input).unwrap_or_else(|e| panic!("{input}: {e}"));
+            return match btf::types(&image) {
+                Ok(types) => {
+                    let out = btf::rewrite(&image, &types);
+                    std::fs::write(output, &out).unwrap_or_else(|e| panic!("{output}: {e}"));
+                    eprintln!("{output}: {} types, {} -> {} bytes", types.lines().filter(|l| l.starts_with('T')).count(),
+                              image.len(), out.len());
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("{input}: DWARF: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        ["type", vmlinux, name] => {
+            let image = std::fs::read(vmlinux).unwrap_or_else(|e| panic!("{vmlinux}: {e}"));
+            let types = ksee_core::types::Types::parse(
+                &String::from_utf8_lossy(&module::custom_section(&image, "ksee.types")));
+            let Some(id) = types.find(name) else {
+                eprintln!("{name}: no such type");
+                return ExitCode::FAILURE;
+            };
+            print!("{}", render::layout(&types, id));
+            return ExitCode::SUCCESS;
+        }
+        _ => {}
     }
     let (cmd, vmlinux, dump, rest) = match pos[..] {
         [cmd, vmlinux, dump, ref rest @ ..] => (cmd, vmlinux, dump, rest),

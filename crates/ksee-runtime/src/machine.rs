@@ -196,6 +196,26 @@ impl Machine {
         ids.iter().map(|&id| r.cfg_text(id, &cov)).collect()
     }
 
+    /// The value of type `name` (a struct, union, enum or typedef) at
+    /// `addr`, expanding nested aggregates `depth` levels.
+    pub fn view_object(&self, name: &str, addr: u32, depth: Option<u32>) -> String {
+        let types = &tables().types;
+        let Some(id) = types.find(name) else {
+            return format!("{name}: no such type\n");
+        };
+        let mut out = format!("({} *) {addr:#x} = ", types.name(types.resolve(id)));
+        types.print(&Direct, addr, id, depth.unwrap_or(2), &mut out);
+        out.push('\n');
+        out
+    }
+
+    /// The task_struct of `pid`, among the tasks the trace mentions.
+    pub fn task_address(&self, pid: i32) -> Option<u32> {
+        let t = tables();
+        dump::tasks_in(t, trace::ring(&Direct, self.ring(), t.ring_words)).into_iter()
+            .find(|&p| live_task(p).is_some_and(|task| task.pid == pid))
+    }
+
     /// The trace dump (read it with ./ksee.sh).
     pub fn dump(&self) -> Vec<u8> {
         let mut out = Vec::new();

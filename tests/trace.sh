@@ -4,7 +4,7 @@
 cd "$(dirname "$0")/.."
 dump=build/trace.dump
 deno run --allow-read --allow-write tests/web.js $dump wasm_selftest || exit 1
-ksee() { ./ksee.sh "$@" linux/vmlinux $dump; }
+ksee() { ./ksee.sh "$@" build/vmlinux $dump; }
 ksee records > build/records.txt
 ksee syscalls --blocks > build/syscalls.txt
 check() {

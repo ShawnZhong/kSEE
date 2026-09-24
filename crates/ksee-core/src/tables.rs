@@ -29,6 +29,8 @@ pub struct Field {
     pub size: u32,
 }
 
+use crate::types::Types;
+
 #[derive(Debug, Default)]
 pub struct Tables {
     /// Size of the trace ring in words.
@@ -40,8 +42,8 @@ pub struct Tables {
     pub successors: BTreeMap<(u32, u32), Vec<u32>>,
     /// Source file paths.
     pub files: Vec<String>,
-    /// (struct, field) -> layout.
-    pub fields: BTreeMap<(String, String), Field>,
+    /// The kernel's types.
+    pub types: Types,
 }
 
 /// Interns file paths while parsing.
@@ -108,13 +110,7 @@ impl Tables {
             }
         }
         t.files = files.paths;
-        for line in types.lines() {
-            if let [s, f, offset, size] = line.split('\t').collect::<Vec<_>>()[..] {
-                if let (Ok(offset), Ok(size)) = (offset.parse(), size.parse()) {
-                    t.fields.insert((s.into(), f.into()), Field { offset, size });
-                }
-            }
-        }
+        t.types = Types::parse(types);
         t
     }
 
@@ -128,7 +124,8 @@ impl Tables {
     }
 
     pub fn field(&self, s: &str, f: &str) -> Option<Field> {
-        self.fields.get(&(s.to_string(), f.to_string())).copied()
+        let (offset, size) = self.types.field(s, f)?;
+        Some(Field { offset, size })
     }
 
     /// The id of the (first) instrumented function called `name`.
@@ -150,7 +147,7 @@ mod tests {
     #[test]
     fn parses_probes_and_types() {
         let probes = "R\t64\nF\t7\tpick\t/s/p.c:2\ttask*,int\nB\t7\t0\t/s/q.h:2:39\nF\t7\tpick\t/s/p.c:2\ttask*,int\n";
-        let t = Tables::parse(probes, "task_struct\tpid\t736\t4\n");
+        let t = Tables::parse(probes, "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ttask_struct\t740\nM\t2\tpid\t5888\t0\t1\n");
         assert_eq!(t.ring_words, 64);
         let f = &t.functions[&7];
         assert_eq!(f.arg_types, ["task*", "int"]);

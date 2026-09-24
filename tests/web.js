@@ -8,7 +8,7 @@ const root = new URL("..", import.meta.url);
 // which Deno does not count as pending work: keep the process alive.
 const alive = setInterval(() => {}, 1000);
 const m = await start({
-  kernel: new URL("linux/vmlinux", root),
+  kernel: new URL("build/vmlinux", root),
   initrd: new URL("build/initramfs.cpio", root),
   cmdline: Deno.args.slice(1).join(" ") || "wasm_selftest",
 });
@@ -30,7 +30,10 @@ check("init ran", out.includes("Hello from wasm userspace! I am pid 1"));
 check("write returned 36", /init\(1\) syscall 64\(0x1, 0x[0-9a-f]+, 0x24\) = 36/.test(syscalls));
 check("write ran vfs_write", /^ +vfs_write +fs\/read_write\.c:\d+:\d+$/m.test(m.view_syscall(0)));
 check("vfs_write CFG", /^vfs_write fs\/read_write\.c:\d+ +\(\d+ blocks, \d+ ran\)/.test(m.view_cfg("vfs_write", 0)));
-if (failed) console.log(out + "\n" + syscalls);
+const init = m.task_address(1);
+const task = init === undefined ? "" : m.view_object("task_struct", init, 1);
+check("init's task_struct decodes", /^  pid = 1,$/m.test(task) && /^  comm = "init",$/m.test(task));
+if (failed) console.log(out + "\n" + syscalls + "\n" + task);
 await Deno.writeFile(Deno.args[0], m.dump());
 console.log(failed ? "FAIL" : "PASS");
 Deno.exit(failed ? 1 : 0);

@@ -1,6 +1,7 @@
 # Build the wasm kernel and run the tests.
 #   make             build the kernel and the initramfs
 #   make kernel      build linux/vmlinux (a wasm module)
+#   make vmlinux     build/vmlinux: the kernel with its types, without DWARF
 #   make initramfs   build build/initramfs.cpio from user/
 #   make rust        build the Rust crates (crates/) and run their tests
 #   make defconfig   reset linux/.config to arch/wasm/configs/defconfig
@@ -14,17 +15,15 @@ PLUGIN = $(CURDIR)/plugin/ksee-trace.so
 # rebuild anything by itself: clean the kernel.
 KSEE_TRACE ?= *:block,wasm_syscall:enter+exit,context_switch:enter+exit,\
 	      __schedule,try_to_wake_up,wake_up_new_task,kernel_clone,do_exit
-# Struct fields whose layout the host needs to decode kernel objects.
-KSEE_TYPES ?= task_struct.pid,task_struct.comm,task_struct.__state
 # The kernel variable that holds the current task (recorded by enter/exit).
 KSEE_CURRENT ?= __current_task
-export KSEE_TRACE KSEE_TYPES KSEE_CURRENT
+export KSEE_TRACE KSEE_CURRENT
 KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=$(LLVM) \
 	KCFLAGS="-g -fpass-plugin=$(PLUGIN)"
 USER_CC = clang$(LLVM) --target=wasm32 -O2 -ffreestanding -nostdlib -Wl,--no-entry \
 	  -Wl,--export=_start
 
-all: kernel initramfs rust
+all: kernel initramfs rust vmlinux
 
 $(PLUGIN): plugin/ksee-trace.cpp
 	$(MAKE) -C plugin LLVM=$(LLVM)
@@ -34,6 +33,10 @@ kernel: $(PLUGIN)
 	$(KMAKE) -j$$(nproc)
 
 initramfs: build/initramfs.cpio
+
+# The kernel the hosts load: its types from DWARF (ksee.types), no DWARF.
+vmlinux: kernel rust
+	target/release/ksee btf linux/vmlinux build/vmlinux
 
 # The Rust crates (always rebuilt: cargo tracks its own dependencies). The
 # runtime's wasm build shares the kernel's memory and runs in many Workers,
@@ -57,7 +60,7 @@ build/initramfs.cpio: user/initramfs.list build/user/init.wasm kernel
 defconfig:
 	$(KMAKE) defconfig
 
-test: kernel initramfs rust
+test: all
 	tests/trace.sh
 
-.PHONY: all kernel initramfs rust defconfig test
+.PHONY: all kernel initramfs rust vmlinux defconfig test

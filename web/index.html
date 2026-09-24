@@ -19,7 +19,9 @@
   pre { margin: 0; padding: 8px 16px; white-space: pre-wrap; word-break: break-all; }
   #syscalls div { padding: 2px 16px; cursor: pointer; white-space: pre; }
   #syscalls div:hover, #syscalls div.on { background: var(--hot); }
-  #detail span.fn { cursor: pointer; text-decoration: underline dotted; }
+  #detail span.fn, a.task { cursor: pointer; text-decoration: underline dotted; color: inherit; }
+  form { padding: 6px 16px; display: flex; gap: 6px; border-bottom: 1px solid var(--line); }
+  input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--line); padding: 2px 4px; }
   @media (max-width: 700px) { main { grid-template-columns: 1fr; height: auto; } }
 </style>
 </head>
@@ -27,7 +29,11 @@
 <header><b>kSEE</b><span id="status">loading...</span></header>
 <main>
   <section><h2>console</h2><pre id="console"></pre><h2>syscalls (click one)</h2><div id="syscalls"></div></section>
-  <section><h2 id="detail-title">what the syscall ran</h2><pre id="detail"></pre></section>
+  <section>
+    <h2>decode memory as a type</h2>
+    <form id="decode"><input id="type" value="task_struct" size="18"><input id="addr" placeholder="0x... address" size="14"><button>decode</button></form>
+    <h2 id="detail-title">what the syscall ran</h2><pre id="detail"></pre>
+  </section>
 </main>
 <script type="module">
 import { start, run } from "./ksee.js";
@@ -35,7 +41,7 @@ import { start, run } from "./ksee.js";
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const m = await start({
-  kernel: new URL("../linux/vmlinux", location),
+  kernel: new URL("../build/vmlinux", location),
   initrd: new URL("../build/initramfs.cpio", location),
   cmdline: params.get("cmdline") ?? "",
 });
@@ -43,11 +49,40 @@ $("status").textContent = "running";
 const code = await run(m, (s) => ($("console").textContent += s));
 $("status").textContent = `halted (${code})`;
 
+// Decode memory as a type (task links fill in a task_struct).
+const decode = (type, addr) => {
+  $("detail-title").textContent = `${type} at 0x${addr.toString(16)}`;
+  $("detail").textContent = m.view_object(type, addr, 2);
+};
+$("decode").onsubmit = (e) => {
+  e.preventDefault();
+  decode($("type").value, Number($("addr").value));
+};
+const taskLink = (text) => {
+  const frag = document.createDocumentFragment();
+  let last = 0;
+  for (const t of text.matchAll(/([\w\/.-]+)\((\d+)\)/g)) {
+    frag.append(text.slice(last, t.index));
+    const a = document.createElement("a");
+    a.className = "task";
+    a.textContent = t[0];
+    a.onclick = (e) => {
+      e.stopPropagation();
+      const p = m.task_address(Number(t[2]));
+      if (p !== undefined) decode("task_struct", p);
+    };
+    frag.append(a);
+    last = t.index + t[0].length;
+  }
+  frag.append(text.slice(last));
+  return frag;
+};
+
 // The syscall list, then a syscall's blocks, then a function's CFG.
 let current = 0;
 for (const line of m.view_syscalls().trim().split("\n")) {
   const div = document.createElement("div");
-  div.textContent = line;
+  div.append(taskLink(line));
   const n = Number(line.match(/^#(\d+)/)[1]);
   div.onclick = () => {
     document.querySelectorAll("#syscalls div").forEach((d) => d.classList.remove("on"));

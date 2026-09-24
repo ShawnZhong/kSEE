@@ -149,7 +149,8 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let t = Tables::parse("R\t16\n", "task_struct\tpid\t0\t4\ntask_struct\tcomm\t4\t16\n");
+        let t = Tables::parse("R\t16\n", "T\t1\tbase\tint\t4\ts\nT\t2\tbase\tchar\t1\tc\n\
+            T\t3\tarray\t\t16\t2\t16\nT\t4\tstruct\ttask_struct\t20\nM\t4\tpid\t0\t0\t1\nM\t4\tcomm\t32\t0\t3\n");
         // A task at 0x100, and a 16-word ring at 0x200 holding one exit record.
         let mut m = alloc::vec![0u8; 0x300];
         m[0x100..0x104].copy_from_slice(&7u32.to_le_bytes());

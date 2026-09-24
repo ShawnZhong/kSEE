@@ -11,3 +11,4 @@ path = "src/main.rs"
 
 [dependencies]
 ksee-core = { path = "../ksee-core" }
+gimli = { version = "0.34", default-features = false, features = ["read", "std"] }

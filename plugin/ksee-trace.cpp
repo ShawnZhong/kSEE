@@ -1,7 +1,6 @@
 // kSEE trace plugin: probes that report kernel execution to the host.
 //
 //   KSEE_TRACE=PATTERN[:MODES],...   what to instrument
-//   KSEE_TYPES=struct.field,...      struct fields whose layout to publish
 //
 //   KSEE_CURRENT=symbol              variable holding the current task
 //   KSEE_RING_WORDS=n                trace ring size (power of two)
@@ -41,16 +40,15 @@
 // fn is a hash of the function name (for a function local to its file, of
 // "file:name"); time comes from the ksee.now import.
 //
-// The linked module describes its probes in two wasm custom sections, which
+// The linked module describes its probes in a wasm custom section, which
 // wasm-ld concatenates across objects (lines may repeat):
 //   ksee.probes  R \t ring words
 //                F \t fn \t name \t file:line \t argument types
 //                B \t fn \t n \t file:line:column
 //                E \t fn \t n \t successor blocks (comma-separated)
-//   ksee.types   struct \t field \t byte offset \t byte size
-// Types and source locations come from debug info, so compile with -g.
+// Source locations come from debug info, so compile with -g. (The
+// kernel's types are extracted from its DWARF after linking: ksee btf.)
 #include "llvm/BinaryFormat/Dwarf.h"
-#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/IRBuilder.h"
@@ -377,32 +375,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
                argTypes + "\n").str();
   }
 
-  static std::string describeTypes(Module &M) {
-    static const std::vector<StringRef> wanted = envList("KSEE_TYPES");
-    std::set<std::string> fields(wanted.begin(), wanted.end());
-    if (fields.empty())
-      return "";
-    DebugInfoFinder finder;
-    finder.processModule(M);
-    std::string table;
-    std::set<std::string> seen;
-    for (const DIType *T : finder.types()) {
-      auto *S = dyn_cast<DICompositeType>(T);
-      if (!S || S->getTag() != dwarf::DW_TAG_structure_type ||
-          S->isForwardDecl() || !seen.insert(S->getName().str()).second)
-        continue;
-      for (const DINode *N : S->getElements()) {
-        auto *F = dyn_cast<DIDerivedType>(N);
-        if (F && F->getTag() == dwarf::DW_TAG_member &&
-            fields.count((S->getName() + "." + F->getName()).str()))
-          table += (S->getName() + "\t" + F->getName() + "\t" +
-                    Twine(F->getOffsetInBits() / 8) + "\t" +
-                    Twine(F->getSizeInBits() / 8) + "\n").str();
-      }
-    }
-    return table;
-  }
-
 public:
   // Early: enter and exit probes. Late: block probes.
   KseeTrace(const std::vector<Rule> &rules, bool late) : rules(rules), late(late) {}
@@ -422,11 +394,8 @@ public:
     for (auto [F, modes] : todo)
       instrument(*F, modes);
 
-    std::string types = late ? "" : describeTypes(Mod);
     if (!probes.empty())
       emitCustomSection(Mod, "ksee.probes", probes);
-    if (!types.empty())
-      emitCustomSection(Mod, "ksee.types", types);
     return probes.empty() ? PreservedAnalyses::all() : PreservedAnalyses::none();
   }
 };

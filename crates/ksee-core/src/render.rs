@@ -220,3 +220,28 @@ fn string(s: &str, out: &mut String) {
     }
     out.push('"');
 }
+
+/// A type's layout, pahole style: each member with its offset and size.
+pub fn layout(types: &crate::types::Types, id: u32) -> String {
+    use crate::types::Kind;
+    let t = types.get(types.resolve(id));
+    let mut out = format!("{} {{\t/* size {} */\n", types.name(types.resolve(id)), t.size);
+    match &t.kind {
+        Kind::Struct(members) | Kind::Union(members) => {
+            for m in members {
+                let decl = format!("{} {}", types.name(m.ty), m.name);
+                let bits = if m.bit_size > 0 { format!(":{}", m.bit_size) } else { String::new() };
+                let _ = writeln!(out, "\t{:<48}\t/* {:>5} {:>5} */", decl + &bits + ";",
+                                 m.bit_offset / 8, types.size_of(m.ty));
+            }
+        }
+        Kind::Enum(values) => {
+            for (name, v) in values {
+                let _ = writeln!(out, "\t{name} = {v},");
+            }
+        }
+        _ => {}
+    }
+    out.push_str("};\n");
+    out
+}
