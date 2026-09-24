@@ -3,8 +3,11 @@
 //!   ksee records  VMLINUX DUMP [--json]            every record
 //!   ksee syscalls VMLINUX DUMP [--json] [--blocks]  what each syscall ran
 //!   ksee serve [ROOT] [--port=N]  serve the web host (ROOT: the kSEE tree)
-//!   ksee pack VMLINUX OUT    OUT: VMLINUX for the hosts: its types from
-//!                            DWARF as a ksee.types section, without DWARF
+//!   ksee pack VMLINUX OUT [UNISTD SYSCALL_TABLE]
+//!                            OUT: VMLINUX for the hosts: its types (and,
+//!                            given the generated unistd and syscall table
+//!                            headers, its syscalls) from DWARF as a
+//!                            ksee.types section, without DWARF
 //!   ksee type VMLINUX NAME   the layout of a struct, union, enum or typedef
 //!   ksee cfg VMLINUX DUMP FUNCTION [--dot] [--syscall=N]
 //!                 FUNCTION's control flow graph, with how often each block
@@ -42,9 +45,14 @@ fn main() -> ExitCode {
         };
     }
     match pos[..] {
-        ["pack", input, output] => {
+        ["pack", input, output, ref headers @ ..] if headers.len() == 0 || headers.len() == 2 => {
             let image = std::fs::read(input).unwrap_or_else(|e| panic!("{input}: {e}"));
-            return match pack::types(&image) {
+            let text = |p: &str| std::fs::read_to_string(p).unwrap_or_else(|e| panic!("{p}: {e}"));
+            let syscalls = match headers {
+                [unistd, table] => pack::syscalls(&text(unistd), &text(table)),
+                _ => Vec::new(),
+            };
+            return match pack::types(&image, &syscalls) {
                 Ok(types) => {
                     let out = pack::rewrite(&image, &types);
                     std::fs::write(output, &out).unwrap_or_else(|e| panic!("{output}: {e}"));

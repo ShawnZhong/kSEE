@@ -24,6 +24,41 @@ pub struct Machine {
     kernel: Object,
     workers: std::rc::Rc<std::cell::RefCell<Vec<web_sys::Worker>>>,
     syscalls: std::cell::RefCell<Option<Vec<syscalls::Syscall>>>,
+    /// The sizes of the pending call's output buffers.
+    pending: std::cell::RefCell<Option<Vec<u32>>>,
+}
+
+#[derive(serde::Deserialize)]
+struct CallRequest {
+    nr: u32,
+    #[serde(default)]
+    args: Vec<i64>,
+    #[serde(default)]
+    buffers: Vec<CallBuffer>,
+}
+
+#[derive(serde::Deserialize)]
+struct CallBuffer {
+    arg: u32,
+    #[serde(default)]
+    data: Option<Vec<u8>>,
+    len: Option<u32>,
+}
+
+#[derive(serde::Serialize)]
+struct SyscallInfo {
+    nr: u32,
+    name: String,
+    built: bool,
+    params: Option<Vec<ParamInfo>>,
+}
+
+#[derive(serde::Serialize)]
+struct ParamInfo {
+    name: String,
+    #[serde(rename = "type")]
+    ty: String,
+    kind: &'static str,
 }
 
 fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
@@ -102,7 +137,7 @@ impl Machine {
         let boot = Object::new();
         js::set(&boot, "role", "boot");
         spawn.call1(&JsValue::NULL, &boot)?;
-        Ok(Machine { kernel, workers, syscalls: Default::default() })
+        Ok(Machine { kernel, workers, syscalls: Default::default(), pending: Default::default() })
     }
 
     /// A function that starts a Worker for `msg` (a role, or a task that a
@@ -254,6 +289,96 @@ impl Machine {
         let t = tables();
         dump::tasks_in(t, trace::ring(&Direct, self.ring(), t.ring_words)).into_iter()
             .find(|&p| live_task(p).is_some_and(|task| task.pid == pid))
+    }
+
+    // ---- Making syscalls (through /init, the agent on /dev/ksee) ----
+
+    /// The kernel's syscalls: [{ nr, name, built, params: [{ name, type,
+    /// kind }] | null }], kind "in" (a const pointer: data the call reads),
+    /// "out" (a pointer it writes), or "value".
+    pub fn syscall_table(&self) -> JsValue {
+        let types = &tables().types;
+        let list: Vec<SyscallInfo> = types.syscalls.iter().map(|(&nr, s)| SyscallInfo {
+            nr,
+            name: s.name.clone(),
+            built: s.built,
+            params: s.params.as_ref().map(|ps| ps.iter().map(|p| ParamInfo {
+                name: p.name.clone(),
+                ty: p.c_type.clone(),
+                kind: if !p.c_type.ends_with('*') { "value" }
+                      else if p.c_type.starts_with("const ") { "in" } else { "out" },
+            }).collect()),
+        }).collect();
+        to_js(&list)
+    }
+
+    /// Ask the agent to make a syscall: `{ nr, args: [6 numbers],
+    /// buffers: [{ arg, data?: Uint8Array | number[] (input), len?:
+    /// number (output) }] }`: each buffer is placed in the agent's memory and
+    /// replaces argument `arg` with its address. False if a call is pending.
+    pub fn call(&self, request: JsValue) -> Result<bool, JsValue> {
+        let req: CallRequest = serde_wasm_bindgen::from_value(request)?;
+        if MAILBOX.state.load(Ordering::Acquire) != EMPTY {
+            return Ok(false);
+        }
+        // u32 nr, nbufs; i64 args[6]; { u32 arg, dir, len, off }[nbufs]; data
+        let mut out = Vec::new();
+        out.extend(req.nr.to_le_bytes());
+        out.extend((req.buffers.len() as u32).to_le_bytes());
+        for i in 0..6 {
+            out.extend(req.args.get(i).copied().unwrap_or(0).to_le_bytes());
+        }
+        let mut off = (out.len() + 16 * req.buffers.len()) as u32;
+        let mut data = Vec::new();
+        for b in &req.buffers {
+            let (dir, bytes) = match (&b.data, b.len) {
+                (Some(d), _) => (0u32, d.clone()),
+                (None, len) => (1, vec![0; len.unwrap_or(0) as usize]),
+            };
+            let len = bytes.len() as u32;
+            for v in [b.arg, dir, len, off] {
+                out.extend(v.to_le_bytes());
+            }
+            off += len.next_multiple_of(8);
+            data.extend(&bytes);
+            data.resize(data.len().next_multiple_of(8), 0);
+        }
+        out.extend(data);
+        if out.len() > MAILBOX_SIZE {
+            return Err("request too large".into());
+        }
+        let data = unsafe { &mut *MAILBOX.data.get() };
+        data[..out.len()].copy_from_slice(&out);
+        MAILBOX.len.store(out.len() as u32, Ordering::Relaxed);
+        MAILBOX.state.store(REQUEST, Ordering::Release);
+        interrupt(2); // WASM_IRQ_AGENT
+        *self.pending.borrow_mut() = Some(req.buffers.iter().filter(|b| b.data.is_none())
+            .map(|b| b.len.unwrap_or(0)).collect());
+        Ok(true)
+    }
+
+    /// The last call's result once the agent has replied: { ret, outputs:
+    /// [Uint8Array] } (the output buffers, in order); else null.
+    pub fn call_result(&self) -> JsValue {
+        if MAILBOX.state.load(Ordering::Acquire) != REPLY {
+            return JsValue::NULL;
+        }
+        let len = MAILBOX.len.load(Ordering::Relaxed) as usize;
+        let reply = unsafe { &*MAILBOX.data.get() }[..len.min(MAILBOX_SIZE)].to_vec();
+        MAILBOX.state.store(EMPTY, Ordering::Release);
+        let sizes = self.pending.borrow_mut().take().unwrap_or_default();
+        let ret = i64::from_le_bytes(reply.get(..8).and_then(|b| b.try_into().ok()).unwrap_or([0; 8]));
+        let o = Object::new();
+        js::set(&o, "ret", ret as f64);
+        let outputs = js_sys::Array::new();
+        let mut at = 8;
+        for n in sizes {
+            let end = (at + n as usize).min(reply.len());
+            outputs.push(&Uint8Array::from(&reply[at.min(end)..end]));
+            at = end;
+        }
+        js::set(&o, "outputs", outputs);
+        o.into()
     }
 
     // ---- Stopping the kernel ----

@@ -9,6 +9,9 @@
 //! M id name bit_offset bit_size type     a member of struct/union id
 //! V id name value                        an enumerator of enum id
 //! G name address type                    a variable with a fixed address
+//! S nr name params                       a syscall; params: comma-separated
+//!                                        name:type:C type, "?" if unknown,
+//!                                        "!" if not built
 //! ```
 
 use alloc::collections::BTreeMap;
@@ -63,6 +66,25 @@ pub struct Types {
     names: BTreeMap<String, u32>,
     /// Variables with fixed addresses: name -> (address, type).
     pub globals: BTreeMap<String, (u32, u32)>,
+    /// Syscalls, by number.
+    pub syscalls: BTreeMap<u32, Syscall>,
+}
+
+/// A syscall's name and parameters (None if unknown).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Syscall {
+    pub name: String,
+    /// Whether the kernel has it (not sys_ni_syscall).
+    pub built: bool,
+    pub params: Option<Vec<Param>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Param {
+    pub name: String,
+    pub ty: u32,
+    /// The C type as declared ("const char *").
+    pub c_type: String,
 }
 
 impl Types {
@@ -72,6 +94,7 @@ impl Types {
         let mut members: BTreeMap<u32, Vec<Member>> = BTreeMap::new();
         let mut values: BTreeMap<u32, Vec<(String, i64)>> = BTreeMap::new();
         let mut globals = BTreeMap::new();
+        let mut syscalls = BTreeMap::new();
         for line in text.lines() {
             let c: Vec<&str> = line.split('\t').collect();
             let num = |i: usize| c.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -89,6 +112,17 @@ impl Types {
                 Some(&"M") if c.len() == 6 => members.entry(num(1)).or_default().push(Member {
                     name: c[2].to_string(), bit_offset: num(3), bit_size: num(4), ty: num(5),
                 }),
+                Some(&"S") if c.len() == 4 => {
+                    let params = (c[3] != "?" && c[3] != "!").then(|| c[3].split(',').filter(|p| !p.is_empty()).map(|p| {
+                        let mut f = p.splitn(3, ':');
+                        Param {
+                            name: f.next().unwrap_or("").to_string(),
+                            ty: f.next().and_then(|t| t.parse().ok()).unwrap_or(0),
+                            c_type: f.next().unwrap_or("?").to_string(),
+                        }
+                    }).collect());
+                    syscalls.insert(num(1), Syscall { name: c[2].to_string(), built: c[3] != "!", params });
+                }
                 Some(&"G") if c.len() == 4 => {
                     globals.insert(c[1].to_string(), (num(2), num(3)));
                 }
@@ -125,7 +159,7 @@ impl Types {
                 names.entry(t.name.clone()).or_insert(id as u32);
             }
         }
-        Types { types, names, globals }
+        Types { types, names, globals, syscalls }
     }
 
     pub fn get(&self, id: u32) -> &Type {

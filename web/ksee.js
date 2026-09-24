@@ -11,6 +11,17 @@ export async function start({ kernel, initrd, cmdline = "", ramMiB = 64 }) {
   return Machine.start({ kernel: String(kernel), initrd: initrd && String(initrd), cmdline, worker, ram });
 }
 
+// Make a syscall through /init (the agent on /dev/ksee); resolves to
+// { ret, outputs }. See Machine.call for the request.
+export async function call(machine, request) {
+  while (!machine.call(request)) await new Promise((r) => setTimeout(r, 5));
+  for (;;) {
+    const r = machine.call_result();
+    if (r) return r;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 // Resolves to the halt code; calls onConsole with console output meanwhile.
 export function run(machine, onConsole = () => {}) {
   return new Promise((resolve) => {

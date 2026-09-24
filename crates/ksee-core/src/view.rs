@@ -29,7 +29,8 @@ pub struct SyscallSummary {
     pub index: usize,
     pub task: TaskRef,
     pub nr: u32,
-    /// From the handler that ran ("write" for __wasm_sys_write).
+    /// From the syscall table, else the handler that ran ("write" for
+    /// __wasm_sys_write).
     pub name: Option<String>,
     pub args: [u32; 3],
     pub ret: Option<i32>,
@@ -38,6 +39,9 @@ pub struct SyscallSummary {
     pub blocks: usize,
     pub functions: usize,
     pub partial: bool,
+    /// The agent's own traffic on /dev/ksee (fetching a request, replying),
+    /// not a syscall asked for.
+    pub control: bool,
 }
 
 /// Consecutive blocks of one function.
@@ -113,10 +117,16 @@ impl Views<'_> {
         let mut funcs: Vec<u32> = s.blocks.iter().map(|b| b.0).collect();
         funcs.sort();
         funcs.dedup();
-        let name = s.blocks.iter().find_map(|&(f, _)| {
-            self.tables.functions.get(&f)?.name.strip_prefix("__wasm_sys_").map(String::from)
+        let name = self.tables.types.syscalls.get(&s.nr).map(|c| c.name.clone()).or_else(|| {
+            s.blocks.iter().find_map(|&(f, _)| {
+                self.tables.functions.get(&f)?.name.strip_prefix("__wasm_sys_").map(String::from)
+            })
+        });
+        let control = funcs.iter().any(|f| {
+            self.tables.functions.get(f).is_some_and(|f| f.name.starts_with("ksee_agent_"))
         });
         SyscallSummary {
+            control,
             index,
             task: self.task(s.task),
             nr: s.nr,

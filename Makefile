@@ -36,9 +36,12 @@ kernel: $(PLUGIN)
 
 initramfs: build/initramfs.cpio
 
-# The kernel the hosts load: its types from DWARF (ksee.types), no DWARF.
+# The kernel the hosts load: its types and syscalls from DWARF (ksee.types),
+# no DWARF.
 vmlinux: kernel rust
-	target/release/ksee pack linux/vmlinux build/vmlinux
+	target/release/ksee pack linux/vmlinux build/vmlinux \
+		linux/arch/wasm/include/generated/uapi/asm/unistd_32.h \
+		linux/arch/wasm/include/generated/asm/syscall_table_32.h
 
 # The Rust crates (always rebuilt: cargo tracks its own dependencies). The
 # runtime's wasm build shares the kernel's memory and runs in many Workers,

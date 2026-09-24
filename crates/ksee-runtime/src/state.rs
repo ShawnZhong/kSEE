@@ -23,6 +23,26 @@ pub static CURRENT_TASK: AtomicU32 = AtomicU32::new(0);
 /// The kernel's pending-interrupt word (wasm_irq_pending).
 pub static PENDING: AtomicU32 = AtomicU32::new(0);
 
+/// The syscall mailbox of the kernel's /dev/ksee (see its
+/// drivers/ksee_agent.c): `{ u32 state; u32 len; u8 data[]; }`.
+#[repr(C)]
+pub struct Mailbox {
+    pub state: AtomicU32,
+    pub len: AtomicU32,
+    pub data: core::cell::UnsafeCell<[u8; MAILBOX_SIZE]>,
+}
+pub const MAILBOX_SIZE: usize = 64 << 10;
+unsafe impl Sync for Mailbox {}
+pub static MAILBOX: Mailbox = Mailbox {
+    state: AtomicU32::new(0),
+    len: AtomicU32::new(0),
+    data: core::cell::UnsafeCell::new([0; MAILBOX_SIZE]),
+};
+/// Mailbox states.
+pub const EMPTY: u32 = 0;
+pub const REQUEST: u32 = 1;
+pub const REPLY: u32 = 3;
+
 /// Raise interrupt line `irq` (see WASM_IRQ_* in the kernel's asm/wasm.h).
 pub fn interrupt(irq: u32) {
     let p = PENDING.load(Ordering::Relaxed);

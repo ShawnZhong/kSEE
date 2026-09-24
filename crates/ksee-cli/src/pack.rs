@@ -11,8 +11,38 @@ use ksee_core::module;
 
 type R<'a> = EndianSlice<'a, LittleEndian>;
 
-/// The type table as ksee.types text.
-pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
+/// A syscall: its number, name (unistd) and implementing function (the
+/// syscall table's sys_*, without "sys_"; "ni_syscall" if not built).
+pub struct SyscallEntry {
+    pub nr: u32,
+    pub name: String,
+    pub func: String,
+}
+
+/// Syscalls from the kernel's generated unistd header (`#define __NR_x n`)
+/// and syscall table (`__SYSCALL(n, sys_x)`).
+pub fn syscalls(unistd: &str, table: &str) -> Vec<SyscallEntry> {
+    let funcs: HashMap<u32, String> = table.lines().filter_map(|l| {
+        let args = l.split_once('(')?.1.trim_end_matches(')');
+        let mut parts = args.split(',').map(str::trim);
+        let nr = parts.next()?.parse().ok()?;
+        Some((nr, parts.next()?.trim_start_matches("sys_").to_string()))
+    }).collect();
+    unistd.lines().filter_map(|l| {
+        let rest = l.strip_prefix("#define __NR_")?;
+        let (name, nr) = rest.split_once(char::is_whitespace)?;
+        let nr = nr.trim().parse().ok()?;
+        let func = funcs.get(&nr)?.clone();
+        Some(SyscallEntry { nr, name: name.to_string(), func })
+    }).collect()
+}
+
+/// The type table as ksee.types text. `syscalls` get `S nr name params`
+/// lines, with the parameters of the kernel's __do_sys_FUNC (the body of
+/// SYSCALL_DEFINEn(FUNC, ...)): "name:type:C type" (the C type keeps
+/// const, which tells input buffers from output ones), "?" if unknown, "!"
+/// if the syscall is not built.
+pub fn types(image: &[u8], syscalls: &[SyscallEntry]) -> Result<String, gimli::Error> {
     let sections: HashMap<String, Vec<u8>> = module::custom_sections(image)
         .filter(|(name, _)| name.starts_with(".debug_"))
         .map(|(name, data)| (name.to_string(), data.to_vec()))
@@ -31,10 +61,22 @@ pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
         let mut entries = unit.entries();
         let mut offsets = Vec::new();
         let mut vars = Vec::new();
+        let mut sys = Vec::new();
         while let Some(e) = entries.next_dfs()? {
             match e.tag() {
                 dw::DW_TAG_structure_type | dw::DW_TAG_union_type | dw::DW_TAG_enumeration_type
                 | dw::DW_TAG_typedef => offsets.push(e.offset()),
+                dw::DW_TAG_subprogram => {
+                    let name = attr_string(&cu, e, dw::DW_AT_name)?;
+                    if let Some(sys_name) = name.strip_prefix("__do_sys_") {
+                        sys.push((sys_name.to_string(), e.offset()));
+                    } else if let Some(sys_name) = name.strip_prefix("__wasm_sys_") {
+                        // The entry point: SYSCALL_DEFINE0 has no __do_sys_,
+                        // COND_SYSCALL defines one in kernel/sys_ni.c.
+                        let stub = decl_file(&mut cu, e)?.ends_with("kernel/sys_ni.c");
+                        b.entries.entry(sys_name.to_string()).or_insert(stub);
+                    }
+                }
                 dw::DW_TAG_variable => {
                     if let (Some(addr), Some(AttributeValue::UnitRef(ty))) =
                         (address(&dwarf, &unit, e)?, e.attr_value(dw::DW_AT_type))
@@ -48,12 +90,50 @@ pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
         for off in offsets {
             b.canon(&mut cu, off)?;
         }
+        for (name, off) in sys {
+            if b.signatures.contains_key(&name) {
+                continue;
+            }
+            let mut params = Vec::new();
+            let mut tree = unit.entries_tree(Some(off))?;
+            let mut children = tree.root()?.children();
+            while let Some(child) = children.next()? {
+                let c = child.entry();
+                if c.tag() == dw::DW_TAG_formal_parameter {
+                    let pname = attr_string(&cu, c, dw::DW_AT_name)?;
+                    let ty = match c.attr_value(dw::DW_AT_type) {
+                        Some(AttributeValue::UnitRef(t)) => Some(t),
+                        _ => None,
+                    };
+                    params.push((pname, ty));
+                }
+            }
+            let mut sig = Vec::new();
+            for (pname, ty) in params {
+                let (t, c) = match ty {
+                    Some(t) => (b.canon(&mut cu, t)?, c_type(&cu, t, 0)?),
+                    None => (0, "void".into()),
+                };
+                sig.push(format!("{pname}:{t}:{c}"));
+            }
+            b.signatures.insert(name, sig.join(","));
+        }
         for (name, addr, ty) in vars {
             if !name.is_empty() && b.globals.insert(name.clone()) {
                 let t = b.canon(&mut cu, ty)?;
                 b.extra.push(format!("G\t{name}\t{addr}\t{t}"));
             }
         }
+    }
+    for s in syscalls {
+        let sig = match (b.signatures.get(&s.func), b.entries.get(&s.func)) {
+            _ if s.func == "ni_syscall" => "!",
+            (Some(sig), _) => sig.as_str(),
+            (None, Some(true)) => "!", // COND_SYSCALL: not built
+            (None, Some(false)) => "", // SYSCALL_DEFINE0: no parameters
+            (None, None) => "?",
+        };
+        b.extra.push(format!("S\t{}\t{}\t{sig}", s.nr, s.name));
     }
     Ok(b.text())
 }
@@ -77,6 +157,10 @@ struct Builder {
     by_name: HashMap<(DwTag, String), (u32, bool)>,
     /// Names of globals listed (the first of several statics wins).
     globals: std::collections::HashSet<String>,
+    /// Syscall name -> "param:type,..." (from __do_sys_NAME).
+    signatures: HashMap<String, String>,
+    /// Syscall entry points (__wasm_sys_NAME) -> whether just a stub.
+    entries: HashMap<String, bool>,
 }
 
 impl Builder {
@@ -276,6 +360,35 @@ impl Builder {
     fn size(&self, id: u32) -> u32 {
         self.rows.get(id as usize).and_then(|r| r.split('\t').nth(4)).and_then(|s| s.parse().ok()).unwrap_or(0)
     }
+}
+
+/// The C spelling of a type ("const char *", "size_t").
+fn c_type(cu: &Cu, off: UnitOffset, depth: u32) -> Result<String, gimli::Error> {
+    if depth > 8 {
+        return Ok("?".into());
+    }
+    let e = cu.unit.entry(off)?;
+    let inner = |cu: &Cu| -> Result<String, gimli::Error> {
+        match e.attr_value(dw::DW_AT_type) {
+            Some(AttributeValue::UnitRef(t)) => c_type(cu, t, depth + 1),
+            _ => Ok("void".into()),
+        }
+    };
+    let name = attr_string(cu, &e, dw::DW_AT_name)?;
+    Ok(match e.tag() {
+        dw::DW_TAG_pointer_type => {
+            let t = inner(cu)?;
+            if t.ends_with('*') { t + "*" } else { t + " *" }
+        }
+        dw::DW_TAG_const_type => format!("const {}", inner(cu)?),
+        dw::DW_TAG_volatile_type => format!("volatile {}", inner(cu)?),
+        dw::DW_TAG_structure_type => format!("struct {name}"),
+        dw::DW_TAG_union_type => format!("union {name}"),
+        dw::DW_TAG_enumeration_type => format!("enum {name}"),
+        dw::DW_TAG_subroutine_type => "func".into(),
+        _ if !name.is_empty() => name,
+        _ => inner(cu)?,
+    })
 }
 
 /// A variable's fixed address (DW_OP_addr or DW_OP_addrx), if it has one.
