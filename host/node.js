@@ -39,8 +39,11 @@ if (values.initrd) {
   cmd.push(`initrd=0x${addr.toString(16)},${cpio.length}`);
 }
 
+const core = await WebAssembly.compile(readFileSync(
+  new URL("./ksee/target/wasm32-unknown-unknown/release/ksee.wasm", import.meta.url)));
+
 const shared = {
-  module, memory, exports,
+  module, core, memory, exports,
   epoch: performance.timeOrigin,
   cmdline: cmd.join(" "),
   // Workers append kSEE events here; only the Worker holding the CPU token

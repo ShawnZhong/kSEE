@@ -1,0 +1,14 @@
+[package]
+name = "ksee"
+version = "0.1.0"
+edition = "2024"
+description = "kSEE host core: kernel probe handling and event decoding"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

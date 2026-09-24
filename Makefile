@@ -2,6 +2,7 @@
 #   make             build the kernel and the initramfs
 #   make kernel      build linux/vmlinux (a wasm module)
 #   make initramfs   build build/initramfs.cpio from user/
+#   make core        build and unit-test the Rust host core (host/ksee)
 #   make defconfig   reset linux/.config to arch/wasm/configs/defconfig
 #   make test        boot it under Node and run the selftest
 
@@ -20,7 +21,9 @@ KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=$(LLVM) \
 USER_CC = clang$(LLVM) --target=wasm32 -O2 -ffreestanding -nostdlib -Wl,--no-entry \
 	  -Wl,--export=_start
 
-all: kernel initramfs
+KSEE_CORE = host/ksee/target/wasm32-unknown-unknown/release/ksee.wasm
+
+all: kernel initramfs core
 
 $(PLUGIN): plugin/ksee-trace.cpp
 	$(MAKE) -C plugin LLVM=$(LLVM)
@@ -30,6 +33,11 @@ kernel: $(PLUGIN)
 	$(KMAKE) -j$$(nproc)
 
 initramfs: build/initramfs.cpio
+
+# The Rust host core (always rebuilt: cargo tracks its own dependencies).
+core:
+	cd host/ksee && cargo build -q --release --target wasm32-unknown-unknown
+	cd host/ksee && cargo test -q
 
 build/user/%.wasm: user/%.c
 	@mkdir -p $(@D)
@@ -41,8 +49,9 @@ build/initramfs.cpio: user/initramfs.list build/user/init.wasm kernel
 defconfig:
 	$(KMAKE) defconfig
 
-test: kernel initramfs
+test: kernel initramfs core
 	tests/selftest.sh
 	tests/init.sh
+	tests/events.sh
 
-.PHONY: all kernel initramfs defconfig test
+.PHONY: all kernel initramfs core defconfig test

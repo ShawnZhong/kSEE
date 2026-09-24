@@ -14,49 +14,30 @@ const nowNs = () =>
 
 class ExitTask extends Error {}
 
-// The module's self-description (see plugin/ksee-trace.cpp).
-function customLines(name) {
-  const text = WebAssembly.Module.customSections(module, name)
-    .map((b) => decoder.decode(b)).join("");
-  return [...new Set(text.split("\n"))].filter(Boolean).map((l) => l.split("\t"));
-}
-const functions = new Map(), blocks = new Map();
-for (const [kind, id, a, b, c] of customLines("ksee.probes")) {
-  if (kind === "F")
-    functions.set(Number(id), { name: a, where: b, types: c ? c.split(",") : [] });
-  else
-    blocks.set(`${id}:${a}`, b);
-}
-const fields = {};
-for (const [struct, field, offset, size] of customLines("ksee.types"))
-  (fields[struct] ??= {})[field] = { offset: Number(offset), size: Number(size) };
-
-function readTask(p) {
-  if (!p || !fields.task_struct) return p;
-  const f = fields.task_struct, dv = new DataView(memory.buffer);
-  const comm = u8().subarray(p + f.comm.offset, p + f.comm.offset + f.comm.size);
-  return {
-    pid: dv.getInt32(p + f.pid.offset, true),
-    comm: decoder.decode(comm.slice(0, comm.indexOf(0) >>> 0)),
+// kSEE core (host/ksee, Rust): decodes probe hits into event records.
+// The kernel's ksee.* probe imports are its exports: direct wasm calls.
+function kseeProbes() {
+  if (workerData.eventsFd < 0) return { enter() {}, exit() {}, block() {} };
+  let core;
+  const coreBytes = (p, n) => new Uint8Array(core.exports.memory.buffer, p, n);
+  core = new WebAssembly.Instance(workerData.core, {
+    host: {
+      kmem_read: (addr, dst, n) => coreBytes(dst, n).set(u8().subarray(addr, addr + n)),
+      now_ns: nowNs,
+      emit: (p, n) => writeSync(workerData.eventsFd, decoder.decode(coreBytes(p, n)) + "\n"),
+    },
+  });
+  const section = (name) => {
+    const bytes = new Uint8Array(WebAssembly.Module.customSections(module, name)
+      .flatMap((b) => [...new Uint8Array(b)]));
+    const p = core.exports.alloc(bytes.length);
+    coreBytes(p, bytes.length).set(bytes);
+    return [p, bytes.length];
   };
+  core.exports.init(...section("ksee.probes"), ...section("ksee.types"), addr.__current_task);
+  const { enter, exit, block } = core.exports;
+  return { enter, exit, block };
 }
-
-// Append one event (wasm i32s arrive signed, hence >>> 0).
-function record(kind, fn, extra) {
-  const cur = new DataView(memory.buffer).getUint32(addr.__current_task, true);
-  const f = functions.get(fn >>> 0);
-  const rec = { t: Number(nowNs()), kind, fn: f?.name ?? fn >>> 0, cur: readTask(cur), ...extra(f) };
-  writeSync(workerData.eventsFd, JSON.stringify(rec) + "\n");
-}
-
-const probes = {
-  enter: (fn, ...args) => record("enter", fn, (f) => ({
-    args: args.map((a, i) => (f?.types[i] === "task_struct*" ? readTask(a >>> 0) : a >>> 0)),
-  })),
-  exit: (fn, ret) => record("exit", fn, () => ({ ret })),
-  block: (fn, n) => record("block", fn, () => ({ n, loc: blocks.get(`${fn >>> 0}:${n}`) })),
-};
-const noProbes = { enter() {}, exit() {}, block() {} };
 
 let kernel;        // this Worker's kernel instance
 let user = null;   // the running user program (instance), if any
@@ -72,7 +53,7 @@ function userBytes(addr, n) {
 function imports() {
   return {
     env: { memory },
-    ksee: workerData.eventsFd >= 0 ? probes : noProbes,
+    ksee: kseeProbes(),
     kernel: {
       console_write(ptr, len) {
         writeSync(1, decoder.decode(u8().slice(ptr, ptr + len)));
