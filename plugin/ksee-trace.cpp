@@ -3,20 +3,48 @@
 //   KSEE_TRACE=PATTERN[:MODES],...   what to instrument
 //   KSEE_TYPES=struct.field,...      struct fields whose layout to publish
 //
+//   KSEE_CURRENT=symbol              variable holding the current task
+//   KSEE_RING_WORDS=n                trace ring size (power of two)
+//   KSEE_RING_HOME=symbol            define the ring and its writers in the
+//                                    object that defines this (start_kernel)
+//
 // PATTERN is a glob over function names or, if it contains '/', over
 // source file paths. MODES is a '+'-separated subset of
-//   enter  ksee.enter(fn, a0, a1, a2, a3) at function entry, with the first
-//          four integer/pointer arguments (truncated to 32 bits, 0 if absent)
-//   exit   ksee.exit(fn, ret) before each return (ret is 0 for void)
-//   block  ksee.block(fn, n) at the start of basic block n
-// and defaults to "enter". Probes are inserted before optimization, so
-// blocks follow the source-level control flow; probes in inlined code keep
-// their own ids. fn is a hash of the function name.
+//   enter  at function entry: the time, the current task and the first
+//          four integer/pointer arguments (truncated to 32 bits)
+//   exit   before each return: the time, the current task and the value
+//   block  at the start of each basic block: the block's index
+// and defaults to "enter". Enter and exit probes are inserted before
+// optimization, so they survive inlining. Block probes are inserted after
+// it, so they describe the code that actually runs (and cannot keep the
+// optimizer from removing code the kernel relies on being removed); a
+// block's location is that of its first instruction, often in an inlined
+// helper. The sequence of blocks is the branch history.
+//
+// Probes append records to a fixed ring in the module's own memory,
+// __ksee_trace = { u32 pos; u32 ring[KSEE_RING_WORDS]; }, where pos counts
+// words ever written (the ring keeps the most recent ones); the exported
+// function ksee_trace() returns its address. pos is stored with release
+// order after each record, so a reader that loads it sees whole records.
+// The writer assumes one writer at a time (a uniprocessor kernel).
+//
+// A record is a head pair of words followed by continuation pairs; the
+// second word's top nibble tags the pair, so a reader can start at any even
+// offset (the ring may have overwritten the start of a record) and skip
+// continuations until the next head:
+//   [fn, 1 << 28 | n]     block n of fn
+//   [fn, 2 << 28]         enter fn, followed by time lo, time hi, current,
+//                         a0, a1, a2, a3
+//   [fn, 3 << 28]         exit fn, followed by time lo, time hi, current,
+//                         value
+//   [value, 8 << 28 | i]  continuation i of the preceding head
+// fn is a hash of the function name; time comes from the ksee.now import.
 //
 // The linked module describes its probes in two wasm custom sections, which
 // wasm-ld concatenates across objects (lines may repeat):
-//   ksee.probes  F \t fn \t name \t file:line \t argument types
-//                B \t fn \t n \t line:column
+//   ksee.probes  R \t ring words
+//                F \t fn \t name \t file:line \t argument types
+//                B \t fn \t n \t file:line:column
 //   ksee.types   struct \t field \t byte offset \t byte size
 // Types and source locations come from debug info, so compile with -g.
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -122,9 +150,22 @@ void emitCustomSection(Module &M, StringRef name, StringRef text) {
   M.appendModuleInlineAsm(s + "\"\n.text\n");
 }
 
+enum Kind { KindBlock = 1, KindEnter = 2, KindExit = 3, KindValue = 8 };
+
+unsigned ringWords() {
+  const char *env = std::getenv("KSEE_RING_WORDS");
+  unsigned n = env ? std::strtoul(env, nullptr, 0) : 1u << 20;
+  if (!n || (n & (n - 1)))
+    report_fatal_error("KSEE_RING_WORDS must be a power of two");
+  return n;
+}
+
 class KseeTrace : public PassInfoMixin<KseeTrace> {
   const std::vector<Rule> &rules;
-  FunctionCallee enter, exit, block;
+  bool late;
+  Module *M = nullptr;
+  Type *i32 = nullptr, *i64 = nullptr;
+  Function *putBlock = nullptr, *putEnter = nullptr, *putExit = nullptr;
   std::string probes;
 
   unsigned modesFor(Function &F) {
@@ -137,28 +178,131 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     return modes;
   }
 
-  FunctionCallee import(Module &M, StringRef name, FunctionType *T) {
-    FunctionCallee f = M.getOrInsertFunction(("__ksee_" + name).str(), T);
-    auto *decl = cast<Function>(f.getCallee());
-    decl->addFnAttr("wasm-import-module", "ksee");
-    decl->addFnAttr("wasm-import-name", name);
-    return f;
+  // The runtime is defined in one object only (wasm-ld keeps every copy of
+  // weak or COMDAT data), the one that defines $KSEE_RING_HOME.
+  static bool isHome(Module &M) {
+    const char *env = std::getenv("KSEE_RING_HOME");
+    GlobalValue *home = M.getNamedValue(env ? env : "start_kernel");
+    return home && !home->isDeclaration();
   }
 
-  static Value *toI32(IRBuilder<> &B, Value *V) {
+  template <typename T> T *shared(T *GV) {
+    GV->setVisibility(GlobalValue::HiddenVisibility);
+    return GV;
+  }
+
+  Function *writerDecl(StringRef name, unsigned nargs) {
+    SmallVector<Type *> params(nargs, i32);
+    return cast<Function>(M->getOrInsertFunction(
+        name, FunctionType::get(Type::getVoidTy(M->getContext()), params, false)).getCallee());
+  }
+
+  // The per-kind writers, declared (or, in the home object, defined along
+  // with the ring and the export that finds it).
+  void createRuntime() {
+    if (putBlock)
+      return;
+    if (!isHome(*M) || M->getFunction("__ksee_put_block")) {
+      putBlock = writerDecl("__ksee_put_block", 2);
+      putEnter = writerDecl("__ksee_put_enter", 5);
+      putExit = writerDecl("__ksee_put_exit", 2);
+      return;
+    }
+    LLVMContext &C = M->getContext();
+    unsigned words = ringWords();
+    auto *traceTy = StructType::get(C, {i32, ArrayType::get(i32, words)});
+    auto *trace = shared(new GlobalVariable(
+        *M, traceTy, false, GlobalValue::ExternalLinkage,
+        ConstantAggregateZero::get(traceTy), "__ksee_trace"));
+    trace->setAlignment(Align(8));
+
+    auto *infoTy = FunctionType::get(i32, false);
+    Function *info = shared(Function::Create(infoTy, GlobalValue::ExternalLinkage,
+                                             "__ksee_trace_info", M));
+    info->addFnAttr("wasm-export-name", "ksee_trace");
+    IRBuilder<> IB(BasicBlock::Create(C, "", info));
+    IB.CreateRet(IB.CreatePtrToInt(trace, i32));
+
+    FunctionCallee now = M->getOrInsertFunction("__ksee_now", FunctionType::get(i64, false));
+    cast<Function>(now.getCallee())->addFnAttr("wasm-import-module", "ksee");
+    cast<Function>(now.getCallee())->addFnAttr("wasm-import-name", "now");
+
+    Value *current = nullptr;
+    if (const char *sym = std::getenv("KSEE_CURRENT"))
+      current = M->getOrInsertGlobal(sym, PointerType::getUnqual(C));
+
+    auto writer = [&](StringRef name, unsigned nargs, auto body) {
+      SmallVector<Type *> params(nargs, i32);
+      Function *F = shared(Function::Create(FunctionType::get(Type::getVoidTy(C), params, false),
+                                            GlobalValue::ExternalLinkage, name, M));
+      F->addFnAttr(Attribute::NoInline);
+      IRBuilder<> B(BasicBlock::Create(C, "", F));
+      SmallVector<Value *> words;
+      body(B, F, words);
+      Value *pos = B.CreateStructGEP(traceTy, trace, 0);
+      Value *ring = B.CreateStructGEP(traceTy, trace, 1);
+      Value *p = B.CreateLoad(i32, pos);
+      for (auto [i, w] : enumerate(words)) {
+        Value *idx = B.CreateAnd(B.CreateAdd(p, B.getInt32(i)), B.getInt32(ringWords() - 1));
+        B.CreateStore(w, B.CreateGEP(i32, ring, idx));
+      }
+      B.CreateAlignedStore(B.CreateAdd(p, B.getInt32(words.size())), pos, Align(4))
+          ->setAtomic(AtomicOrdering::Release);
+      B.CreateRetVoid();
+      return F;
+    };
+    // Continuation pairs: [value, KindValue << 28 | index].
+    auto value = [&](IRBuilder<> &B, SmallVector<Value *> &words, Value *v) {
+      unsigned index = words.size() / 2 - 1;
+      words.push_back(v);
+      words.push_back(B.getInt32(KindValue << 28 | index));
+    };
+    auto stamp = [&](IRBuilder<> &B, SmallVector<Value *> &words) {
+      Value *t = B.CreateCall(now);
+      value(B, words, B.CreateTrunc(t, i32));
+      value(B, words, B.CreateTrunc(B.CreateLShr(t, 32), i32));
+      value(B, words, current ? B.CreatePtrToInt(B.CreateLoad(PointerType::getUnqual(C), current), i32)
+                              : B.getInt32(0));
+    };
+    putBlock = writer("__ksee_put_block", 2, [&](IRBuilder<> &B, Function *F, auto &words) {
+      words.push_back(F->getArg(0));
+      words.push_back(B.CreateOr(F->getArg(1), B.getInt32(KindBlock << 28)));
+    });
+    putEnter = writer("__ksee_put_enter", 5, [&](IRBuilder<> &B, Function *F, auto &words) {
+      words.push_back(F->getArg(0));
+      words.push_back(B.getInt32(KindEnter << 28));
+      stamp(B, words);
+      for (unsigned i = 1; i < 5; i++)
+        value(B, words, F->getArg(i));
+    });
+    putExit = writer("__ksee_put_exit", 2, [&](IRBuilder<> &B, Function *F, auto &words) {
+      words.push_back(F->getArg(0));
+      words.push_back(B.getInt32(KindExit << 28));
+      stamp(B, words);
+      value(B, words, F->getArg(1));
+    });
+    probes += "R\t" + std::to_string(words) + "\n";
+  }
+
+  static std::string location(const DILocation *L) {
+    return (sourcePath(L->getScope()) + ":" + Twine(L->getLine()) + ":" +
+            Twine(L->getColumn())).str();
+  }
+
+  Value *toI32(IRBuilder<> &B, Value *V) {
     Type *T = V->getType();
     if (T->isPointerTy())
-      return B.CreatePtrToInt(V, B.getInt32Ty());
+      return B.CreatePtrToInt(V, i32);
     if (T->isIntegerTy())
-      return B.CreateZExtOrTrunc(V, B.getInt32Ty());
+      return B.CreateZExtOrTrunc(V, i32);
     return B.getInt32(0);
   }
 
   void instrument(Function &F, unsigned modes) {
+    createRuntime();
     uint32_t id = fnId(F.getName());
     DISubprogram *SP = F.getSubprogram();
 
-    // Collect first: probes add no blocks, but keep iteration simple.
     SmallVector<BasicBlock *> blocks;
     for (BasicBlock &BB : F)
       blocks.push_back(&BB);
@@ -166,11 +310,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     if (modes & Block)
       for (auto [n, BB] : enumerate(blocks)) {
         IRBuilder<> B(&*BB->getFirstInsertionPt());
-        B.CreateCall(block, {B.getInt32(id), B.getInt32(n)});
+        B.CreateCall(putBlock, {B.getInt32(id), B.getInt32(n)});
         std::string loc = "?";
         for (Instruction &I : *BB)
-          if (DebugLoc DL = I.getDebugLoc()) {
-            loc = (Twine(DL.getLine()) + ":" + Twine(DL.getCol())).str();
+          if (DILocation *L = I.getDebugLoc().get(); L && L->getLine()) {
+            loc = location(L);
             break;
           }
         probes += ("B\t" + Twine(id) + "\t" + Twine(n) + "\t" + loc + "\n").str();
@@ -181,7 +325,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         if (auto *R = dyn_cast<ReturnInst>(BB->getTerminator())) {
           IRBuilder<> B(R);
           Value *ret = R->getReturnValue();
-          B.CreateCall(exit, {B.getInt32(id), ret ? toI32(B, ret) : B.getInt32(0)});
+          B.CreateCall(putExit, {B.getInt32(id), ret ? toI32(B, ret) : B.getInt32(0)});
         }
 
     if (modes & Enter) {
@@ -192,7 +336,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
           args.push_back(toI32(B, &A));
       while (args.size() < 5)
         args.push_back(B.getInt32(0));
-      B.CreateCall(enter, args);
+      B.CreateCall(putEnter, args);
     }
 
     std::string where = "?", argTypes;
@@ -233,29 +377,29 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   }
 
 public:
-  KseeTrace(const std::vector<Rule> &rules) : rules(rules) {}
+  // Early: enter and exit probes. Late: block probes.
+  KseeTrace(const std::vector<Rule> &rules, bool late) : rules(rules), late(late) {}
 
-  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
-    LLVMContext &C = M.getContext();
-    Type *i32 = Type::getInt32Ty(C), *vd = Type::getVoidTy(C);
-    enter = import(M, "enter", FunctionType::get(vd, {i32, i32, i32, i32, i32}, false));
-    exit = import(M, "exit", FunctionType::get(vd, {i32, i32}, false));
-    block = import(M, "block", FunctionType::get(vd, {i32, i32}, false));
+  PreservedAnalyses run(Module &Mod, ModuleAnalysisManager &) {
+    M = &Mod;
+    i32 = Type::getInt32Ty(Mod.getContext());
+    i64 = Type::getInt64Ty(Mod.getContext());
 
-    for (Function &F : M)
+    SmallVector<std::pair<Function *, unsigned>> todo;
+    for (Function &F : Mod)
       if (!F.isDeclaration() && !F.getName().starts_with("__ksee_"))
-        if (unsigned modes = modesFor(F))
-          instrument(F, modes);
+        if (unsigned modes = modesFor(F) & (late ? Block : Enter | Exit))
+          todo.push_back({&F, modes});
+    if (!late && isHome(Mod))
+      createRuntime();
+    for (auto [F, modes] : todo)
+      instrument(*F, modes);
 
-    std::string types = describeTypes(M);
+    std::string types = late ? "" : describeTypes(Mod);
     if (!probes.empty())
-      emitCustomSection(M, "ksee.probes", probes);
+      emitCustomSection(Mod, "ksee.probes", probes);
     if (!types.empty())
-      emitCustomSection(M, "ksee.types", types);
-    // Drop the declarations nobody called, so they are not imported.
-    for (FunctionCallee f : {enter, exit, block})
-      if (auto *decl = cast<Function>(f.getCallee()); decl->use_empty())
-        decl->eraseFromParent();
+      emitCustomSection(Mod, "ksee.types", types);
     return probes.empty() ? PreservedAnalyses::all() : PreservedAnalyses::none();
   }
 };
@@ -267,7 +411,11 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
             static const std::vector<Rule> rules = parseRules();
             PB.registerPipelineStartEPCallback(
                 [](ModulePassManager &MPM, OptimizationLevel) {
-                  MPM.addPass(KseeTrace(rules));
+                  MPM.addPass(KseeTrace(rules, false));
+                });
+            PB.registerOptimizerLastEPCallback(
+                [](ModulePassManager &MPM, OptimizationLevel, ThinOrFullLTOPhase) {
+                  MPM.addPass(KseeTrace(rules, true));
                 });
           }};
 }

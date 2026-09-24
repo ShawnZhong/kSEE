@@ -1,0 +1,11 @@
+# The wasm build shares the kernel's memory: atomics, an imported shared
+# memory, and (Makefile) core/alloc rebuilt with those features.
+[target.wasm32-unknown-unknown]
+rustflags = [
+  "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals",
+  "-C", "link-arg=--import-memory",
+  "-C", "link-arg=--shared-memory",
+  "-C", "link-arg=--max-memory=4294967296",
+  "-C", "link-arg=--export=__stack_pointer",
+  "-C", "link-arg=-zstack-size=65536",
+]

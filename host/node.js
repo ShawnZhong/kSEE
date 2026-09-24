@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Boot a kSEE wasm kernel under Node.
-//   node host/node.js [--mem MiB] [--timeout s] [--initrd cpio]
-//                     [--events out.jsonl] [--trace] vmlinux [cmdline...]
+//   node host/node.js [--mem MiB] [--timeout s] [--initrd cpio] [--trace]
+//                     [--events out.jsonl] [--syscalls out.jsonl]
+//                     vmlinux [cmdline...]
 import { openSync, readFileSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 import { parseArgs } from "node:util";
+import { platformImports } from "./platform.js";
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -14,22 +16,47 @@ const { values, positionals } = parseArgs({
     trace: { type: "boolean", default: false },
     initrd: { type: "string" },
     events: { type: "string" },
+    syscalls: { type: "string" },
   },
 });
 const [image, ...cmd] = positionals;
 const module = await WebAssembly.compile(readFileSync(image));
+const host = await WebAssembly.compile(readFileSync(
+  new URL("./ksee/target/wasm32-unknown-unknown/release/ksee.wasm", import.meta.url)));
 const pages = (Number(values.mem) << 20) >> 16;
 const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+const epoch = performance.timeOrigin;
 
-// Instantiate once on the main thread: this runs the module's start
-// function, which initializes kernel memory, so no Worker has to wait.
+// Instantiate both modules once here: their start functions initialize
+// their data in the shared memory, so no Worker has to wait for that.
+// The host (Rust) owns the memory below the kernel image.
+const streams = {};
+const h = new WebAssembly.Instance(host, platformImports(memory, epoch, streams));
 const stub = new Proxy({}, { get: (_, name) => () => { throw new Error(name); } });
-const main = new WebAssembly.Instance(module, { env: { memory }, kernel: stub, ksee: stub });
+const k = new WebAssembly.Instance(module, { env: { memory }, kernel: stub, ksee: stub });
 const exports = {
-  wasm_irq_pending: main.exports.wasm_irq_pending.value,
-  wasm_timer_deadline: main.exports.wasm_timer_deadline.value,
-  __current_task: main.exports.__current_task.value,
+  wasm_irq_pending: k.exports.wasm_irq_pending.value,
+  wasm_timer_deadline: k.exports.wasm_timer_deadline.value,
 };
+
+// Hand the kernel's self-description (plugin/ksee-trace.cpp) to the host.
+function section(name) {
+  const parts = WebAssembly.Module.customSections(module, name).map((b) => new Uint8Array(b));
+  const len = parts.reduce((n, b) => n + b.length, 0);
+  const p = h.exports.alloc(len);
+  let off = p;
+  for (const b of parts) {
+    new Uint8Array(memory.buffer).set(b, off);
+    off += b.length;
+  }
+  return [p, len];
+}
+{
+  const probes = section("ksee.probes"), types = section("ksee.types");
+  h.exports.init(...probes, ...types);
+  h.exports.free(...probes);
+  h.exports.free(...types);
+}
 
 // The initramfs goes at the top of memory; the kernel reserves it.
 if (values.initrd) {
@@ -39,17 +66,7 @@ if (values.initrd) {
   cmd.push(`initrd=0x${addr.toString(16)},${cpio.length}`);
 }
 
-const core = await WebAssembly.compile(readFileSync(
-  new URL("./ksee/target/wasm32-unknown-unknown/release/ksee.wasm", import.meta.url)));
-
-const shared = {
-  module, core, memory, exports,
-  epoch: performance.timeOrigin,
-  cmdline: cmd.join(" "),
-  // Workers append kSEE events here; only the Worker holding the CPU token
-  // runs kernel code, so writes are already in execution order.
-  eventsFd: values.events ? openSync(values.events, "w") : -1,
-};
+const shared = { module, host, memory, epoch, exports, cmdline: cmd.join(" ") };
 const workers = new Set();
 
 function spawn(role, extra = {}) {
@@ -71,8 +88,12 @@ function spawn(role, extra = {}) {
   return w;
 }
 
-function halt(code) {
-  for (const w of workers) w.terminate();
+// Stop every Worker, then decode the trace ring the kernel left behind.
+async function halt(code) {
+  await Promise.all([...workers].map((w) => w.terminate()));
+  if (values.events) streams[0] = openSync(values.events, "w");
+  if (values.syscalls) streams[1] = openSync(values.syscalls, "w");
+  if (values.events || values.syscalls) h.exports.dump(k.exports.ksee_trace());
   process.exit(code);
 }
 
