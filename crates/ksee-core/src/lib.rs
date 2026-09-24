@@ -15,6 +15,7 @@ pub mod syscalls;
 pub mod tables;
 pub mod trace;
 pub mod types;
+pub mod view;
 
 /// Read access to kernel memory.
 pub trait Memory {

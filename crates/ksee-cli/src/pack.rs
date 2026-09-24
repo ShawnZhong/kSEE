@@ -1,6 +1,7 @@
-//! `ksee btf`: the kernel's types from DWARF, deduplicated across
-//! compilation units (like pahole's BTF), as a ksee.types section (see
-//! ksee_core::types), in a copy of the module without DWARF.
+//! `ksee pack`: prepare the kernel for the hosts. Its types, read from
+//! DWARF and deduplicated across compilation units (as pahole does for
+//! BTF), become a ksee.types section (see ksee_core::types) in a copy of
+//! the module without DWARF.
 
 use std::collections::HashMap;
 use std::fmt::Write;

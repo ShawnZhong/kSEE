@@ -3,8 +3,8 @@
 //!   ksee records  VMLINUX DUMP [--json]            every record
 //!   ksee syscalls VMLINUX DUMP [--json] [--blocks]  what each syscall ran
 //!   ksee serve [ROOT] [--port=N]  serve the web host (ROOT: the kSEE tree)
-//!   ksee btf VMLINUX OUT     OUT: VMLINUX with its types from DWARF as a
-//!                            ksee.types section, and without DWARF
+//!   ksee pack VMLINUX OUT    OUT: VMLINUX for the hosts: its types from
+//!                            DWARF as a ksee.types section, without DWARF
 //!   ksee type VMLINUX NAME   the layout of a struct, union, enum or typedef
 //!   ksee cfg VMLINUX DUMP FUNCTION [--dot] [--syscall=N]
 //!                 FUNCTION's control flow graph, with how often each block
@@ -23,7 +23,7 @@ use ksee_core::{cfg, module, syscalls, trace};
 
 use ksee_core::render::{self, Renderer};
 
-mod btf;
+mod pack;
 mod serve;
 
 fn main() -> ExitCode {
@@ -42,11 +42,11 @@ fn main() -> ExitCode {
         };
     }
     match pos[..] {
-        ["btf", input, output] => {
+        ["pack", input, output] => {
             let image = std::fs::read(input).unwrap_or_else(|e| panic!("{input}: {e}"));
-            return match btf::types(&image) {
+            return match pack::types(&image) {
                 Ok(types) => {
-                    let out = btf::rewrite(&image, &types);
+                    let out = pack::rewrite(&image, &types);
                     std::fs::write(output, &out).unwrap_or_else(|e| panic!("{output}: {e}"));
                     eprintln!("{output}: {} types, {} -> {} bytes", types.lines().filter(|l| l.starts_with('T')).count(),
                               image.len(), out.len());

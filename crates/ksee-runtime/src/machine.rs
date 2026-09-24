@@ -4,8 +4,10 @@ use std::sync::atomic::Ordering;
 
 use js_sys::{Function, Object, Uint8Array, WebAssembly};
 use ksee_core::render::Renderer;
+use ksee_core::view::Views;
 use ksee_core::tables::Tables;
 use ksee_core::{cfg, dump, syscalls, trace};
+use serde_wasm_bindgen as _;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -20,6 +22,11 @@ pub struct Machine {
     /// The page's kernel instance (it only reads the kernel).
     kernel: Object,
     workers: std::rc::Rc<std::cell::RefCell<Vec<web_sys::Worker>>>,
+    syscalls: std::cell::RefCell<Option<Vec<syscalls::Syscall>>>,
+}
+
+fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
+    serde_wasm_bindgen::to_value(v).unwrap_or(JsValue::NULL)
 }
 
 async fn fetch_bytes(url: &str) -> Result<Uint8Array, JsValue> {
@@ -90,7 +97,7 @@ impl Machine {
         let boot = Object::new();
         js::set(&boot, "role", "boot");
         spawn.call1(&JsValue::NULL, &boot)?;
-        Ok(Machine { kernel, workers })
+        Ok(Machine { kernel, workers, syscalls: Default::default() })
     }
 
     /// A function that starts a Worker for `msg` (a role, or a task that a
@@ -160,53 +167,66 @@ impl Machine {
         f.call0(&JsValue::NULL).ok().and_then(|v| v.as_f64()).unwrap_or(0.0) as u32
     }
 
-    fn syscalls(&self) -> Vec<syscalls::Syscall> {
+    /// Decode the trace ring (again). The views below use the last snapshot.
+    pub fn snapshot(&self) {
         let t = tables();
         let entry = t.find(syscalls::ENTRY).unwrap_or(0);
-        syscalls::split(entry, trace::ring(&Direct, self.ring(), t.ring_words))
+        let calls = syscalls::split(entry, trace::ring(&Direct, self.ring(), t.ring_words));
+        *self.syscalls.borrow_mut() = Some(calls);
     }
 
-    /// The syscalls in the trace, one per line (`#n ...`).
-    pub fn view_syscalls(&self) -> String {
-        let r = Renderer { tables: tables(), tasks: &live_task };
-        self.syscalls().iter().enumerate()
-            .map(|(i, s)| format!("#{i} {}\n", r.syscall_text(s, false))).collect()
+    fn with_syscalls<T>(&self, f: impl FnOnce(&[syscalls::Syscall]) -> T) -> T {
+        if self.syscalls.borrow().is_none() {
+            self.snapshot();
+        }
+        f(self.syscalls.borrow().as_deref().unwrap_or(&[]))
     }
 
-    /// Syscall `n` with the blocks it ran.
-    pub fn view_syscall(&self, n: usize) -> String {
-        let r = Renderer { tables: tables(), tasks: &live_task };
-        self.syscalls().get(n).map_or(String::new(), |s| r.syscall_text(s, true) + "\n")
+    fn views(&self) -> Views<'static> {
+        Views { tables: tables(), tasks: &live_task }
     }
 
-    /// The control flow graph of the function `name`, with counts from
-    /// syscall `n` (or the whole trace).
-    pub fn view_cfg(&self, name: &str, n: Option<usize>) -> String {
+    /// The syscalls in the trace (a list of SyscallSummary, see ksee_core::view).
+    pub fn syscalls(&self) -> JsValue {
+        let v = self.views();
+        self.with_syscalls(|calls| to_js(&calls.iter().enumerate().map(|(i, s)| v.summary(i, s)).collect::<Vec<_>>()))
+    }
+
+    /// What syscall `n` ran, as runs of blocks per function.
+    pub fn runs(&self, n: usize) -> JsValue {
+        self.with_syscalls(|calls| to_js(&calls.get(n).map(|s| self.views().runs(s)).unwrap_or_default()))
+    }
+
+    /// The instrumented functions called `name` (usually one), with block
+    /// and edge counts from syscall `n` (or the whole trace).
+    pub fn functions(&self, name: &str, n: Option<usize>) -> JsValue {
         let t = tables();
         let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
         let keep = |f: u32| ids.contains(&f);
         let cov = match n {
             None => cfg::coverage(t, trace::ring(&Direct, self.ring(), t.ring_words), keep),
-            Some(n) => {
-                let blocks = self.syscalls().into_iter().nth(n).map(|s| s.blocks).unwrap_or_default();
+            Some(n) => self.with_syscalls(|calls| {
+                let blocks = calls.get(n).map(|s| s.blocks.clone()).unwrap_or_default();
                 cfg::coverage(t, blocks.into_iter().map(|(func, n)| trace::Record::Block { func, n }), keep)
-            }
+            }),
         };
-        let r = Renderer { tables: t, tasks: &live_task };
-        ids.iter().map(|&id| r.cfg_text(id, &cov)).collect()
+        let v = self.views();
+        to_js(&ids.iter().filter_map(|&id| v.function(id, &cov)).collect::<Vec<_>>())
     }
 
-    /// The value of type `name` (a struct, union, enum or typedef) at
-    /// `addr`, expanding nested aggregates `depth` levels.
-    pub fn view_object(&self, name: &str, addr: u32, depth: Option<u32>) -> String {
+    /// The value of the type named `name` at `addr` (an Object, see
+    /// ksee_core::view), aggregates expanded `depth` levels.
+    pub fn object(&self, name: &str, addr: u32, depth: Option<u32>) -> JsValue {
         let types = &tables().types;
-        let Some(id) = types.find(name) else {
-            return format!("{name}: no such type\n");
-        };
-        let mut out = format!("({} *) {addr:#x} = ", types.name(types.resolve(id)));
-        types.print(&Direct, addr, id, depth.unwrap_or(2), &mut out);
-        out.push('\n');
-        out
+        match types.find(name) {
+            Some(id) => to_js(&types.object(&Direct, name, addr, id, depth.unwrap_or(1))),
+            None => JsValue::NULL,
+        }
+    }
+
+    /// Like `object`, by type id (an Object's `expand` or `target`).
+    pub fn object_by_id(&self, label: &str, ty: u32, addr: u32, depth: Option<u32>) -> JsValue {
+        to_js(&tables().types.object(&Direct, label, addr, ty, depth.unwrap_or(1)))
     }
 
     /// The task_struct of `pid`, among the tasks the trace mentions.
@@ -214,6 +234,21 @@ impl Machine {
         let t = tables();
         dump::tasks_in(t, trace::ring(&Direct, self.ring(), t.ring_words)).into_iter()
             .find(|&p| live_task(p).is_some_and(|task| task.pid == pid))
+    }
+
+    // ---- Text views (for tests and the CLI's format) ----
+
+    /// The syscalls, one per line (`#n ...`).
+    pub fn view_syscalls(&self) -> String {
+        let r = Renderer { tables: tables(), tasks: &live_task };
+        self.with_syscalls(|calls| calls.iter().enumerate()
+            .map(|(i, s)| format!("#{i} {}\n", r.syscall_text(s, false))).collect())
+    }
+
+    /// Syscall `n` with the blocks it ran.
+    pub fn view_syscall(&self, n: usize) -> String {
+        let r = Renderer { tables: tables(), tasks: &live_task };
+        self.with_syscalls(|calls| calls.get(n).map_or(String::new(), |s| r.syscall_text(s, true) + "\n"))
     }
 
     /// The trace dump (read it with ./ksee.sh).

@@ -47,7 +47,7 @@
 //                B \t fn \t n \t file:line:column
 //                E \t fn \t n \t successor blocks (comma-separated)
 // Source locations come from debug info, so compile with -g. (The
-// kernel's types are extracted from its DWARF after linking: ksee btf.)
+// kernel's types are extracted from its DWARF after linking: ksee pack.)
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/CFG.h"

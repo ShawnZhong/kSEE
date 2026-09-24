@@ -36,7 +36,7 @@ initramfs: build/initramfs.cpio
 
 # The kernel the hosts load: its types from DWARF (ksee.types), no DWARF.
 vmlinux: kernel rust
-	target/release/ksee btf linux/vmlinux build/vmlinux
+	target/release/ksee pack linux/vmlinux build/vmlinux
 
 # The Rust crates (always rebuilt: cargo tracks its own dependencies). The
 # runtime's wasm build shares the kernel's memory and runs in many Workers,

@@ -1,4 +1,4 @@
-//! Kernel types (from DWARF, see `ksee btf`) and decoding memory with them.
+//! Kernel types (from DWARF, see `ksee pack`) and decoding memory with them.
 //!
 //! The `ksee.types` custom section lists types by dense id (0 is void),
 //! one per line, tab-separated:
@@ -259,6 +259,12 @@ impl Types {
             Kind::Func => out.push_str("<function>"),
             Kind::Void | Kind::Typedef(_) => out.push_str("<void>"),
         }
+    }
+
+    /// Print a scalar (or string) value at `addr`, possibly a bitfield.
+    pub(crate) fn print_bits(&self, mem: &dyn Memory, addr: u32, ty: u32, bit_off: u32,
+                             bit_size: u32, out: &mut String) {
+        self.value(mem, addr, ty, bit_off, bit_size, 0, 0, out);
     }
 
     /// Size in bytes of type `ty` (arrays: count * element).
