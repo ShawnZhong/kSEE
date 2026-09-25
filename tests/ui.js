@@ -84,7 +84,9 @@ const script = opt("eval", `(async () => {
 })()`);
 if (script) {
   const r = await send("Runtime.evaluate", { expression: script, awaitPromise: true, returnByValue: true });
-  console.log("eval:", JSON.stringify(r.result?.result?.value ?? r.result?.exceptionDetails?.text));
+  const failed = r.result?.exceptionDetails;
+  if (failed) exceptions++;
+  console.log("eval:", failed ? failed.exception?.description ?? failed.text : JSON.stringify(r.result?.result?.value));
   await new Promise((r) => setTimeout(r, 1000));
 }
 const shot = await send("Page.captureScreenshot", { format: "png" });

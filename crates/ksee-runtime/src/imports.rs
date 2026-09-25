@@ -1,6 +1,6 @@
 //! The kernel's imports.
 //!
-//! Frequent ones (time, console, command line, halt, the probes' clock) are
+//! Frequent ones (time, console, command line, halt, bulk stores) are
 //! this module's exports, so the kernel calls them directly. The rest need
 //! JS objects (Workers, user programs' modules and memories) and are
 //! closures reached through wasm-bindgen.
@@ -26,13 +26,6 @@ pub const HALT: &str = "ksee:halt";
 #[unsafe(no_mangle)]
 pub extern "C" fn console_write(p: *const u8, n: u32) {
     CONSOLE_OUT.put(unsafe { core::slice::from_raw_parts(p, n as usize) });
-}
-
-/// Pending console input, without blocking.
-#[unsafe(no_mangle)]
-pub extern "C" fn console_read(p: *mut u8, n: u32) -> i32 {
-    bulk(p as u32, n);
-    CONSOLE_IN.take(unsafe { core::slice::from_raw_parts_mut(p, n as usize) }) as i32
 }
 
 /// Copy the command line (NUL-terminated) to `buf`.
@@ -170,7 +163,7 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
     let export = |name: &str| js::get(&rt, name);
 
     let kernel = Object::new();
-    for name in ["console_write", "console_read", "get_cmdline", "memory_end", "time_ns", "halt"] {
+    for name in ["console_write", "get_cmdline", "memory_end", "time_ns", "halt"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "spawn_task", func(Closure::<dyn FnMut(u32, u32)>::new(

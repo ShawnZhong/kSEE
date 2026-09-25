@@ -22,8 +22,10 @@ pub static TRACE: AtomicU32 = AtomicU32::new(0);
 /// The trace ring's size in words.
 pub static RING_WORDS: AtomicU32 = AtomicU32::new(0);
 pub static CURRENT_TASK: AtomicU32 = AtomicU32::new(0);
-/// The kernel's pending-interrupt word (wasm_irq_pending).
+/// The kernel's pending-interrupt word (wasm_irq_pending), and its timer's
+/// deadline (wasm_timer_deadline).
 pub static PENDING: AtomicU32 = AtomicU32::new(0);
+pub static DEADLINE: AtomicU32 = AtomicU32::new(0);
 
 /// The kernel's request to run a program (wasm_run, see its
 /// arch/wasm/kernel/run.c): `{ u32 state; s32 status; s32 pid; char path[256]; }`.
@@ -34,7 +36,11 @@ pub const RUN_REQUESTED: u32 = 1;
 pub const RUN_DONE: u32 = 3;
 pub const RUN_PATH: usize = 256;
 
-/// Raise interrupt line `irq` (see WASM_IRQ_* in the kernel's asm/wasm.h).
+/// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h).
+pub const IRQ_TIMER: u32 = 0;
+pub const IRQ_RUN: u32 = 1;
+
+/// Raise interrupt line `irq`.
 pub fn interrupt(irq: u32) {
     let p = PENDING.load(Ordering::Relaxed);
     if p != 0 {
@@ -46,7 +52,6 @@ pub fn interrupt(irq: u32) {
 }
 
 pub static CONSOLE_OUT: ByteRing = ByteRing::new();
-pub static CONSOLE_IN: ByteRing = ByteRing::new();
 
 pub fn tables() -> &'static Tables {
     TABLES.get().expect("no kernel loaded")
@@ -68,8 +73,8 @@ impl Memory for Direct {
     }
 }
 
-/// A byte ring written by one side and read by the other; the writer drops
-/// the oldest bytes if the reader falls behind.
+/// A byte ring written by the kernel's Workers and read by the page; the
+/// writer drops the oldest bytes if the reader falls behind.
 pub struct ByteRing {
     buf: [AtomicU32; ByteRing::WORDS],
     head: AtomicU32, // bytes ever written

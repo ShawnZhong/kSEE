@@ -123,7 +123,7 @@ export function app(m) {
     $("note").hidden = !stop;
     if (stop) $("note").replaceChildren(el("span", { className: "dim", textContent: `Stop ${k + 1} of ${n} · ` }),
       el("b", { textContent: stop.func }), `: ${stop.note} `,
-      k + 1 < n ? el("button", { className: "go", textContent: "Next stop ▸", onclick: () => tour?.next() }) : null);
+      k + 1 < n ? el("button", { className: "go", textContent: "Next stop ▸", onclick: () => tour?.next() }) : "");
   }
 
   // ---- Lines: the line steps of the selection (a syscall or program) ----

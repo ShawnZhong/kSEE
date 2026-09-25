@@ -105,14 +105,13 @@ impl Machine {
         };
         CURRENT_TASK.store(global("__current_task"), Ordering::Relaxed);
         PENDING.store(global("wasm_irq_pending"), Ordering::Relaxed);
+        DEADLINE.store(global("wasm_timer_deadline"), Ordering::Relaxed);
         RUN.store(global("wasm_run"), Ordering::Relaxed);
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         // (The page's instance is not needed after this.)
         TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
         let timer = Object::new();
         js::set(&timer, "role", "timer");
-        js::set(&timer, "deadline", global("wasm_timer_deadline"));
-        js::set(&timer, "pending", global("wasm_irq_pending"));
         spawn.call1(&JsValue::NULL, &timer)?;
         let boot = Object::new();
         js::set(&boot, "role", "boot");
@@ -227,7 +226,7 @@ impl Machine {
         buf[..path.len()].copy_from_slice(path.as_bytes());
         buf[path.len()] = 0;
         state.store(RUN_REQUESTED, Ordering::Release);
-        interrupt(2); // WASM_IRQ_RUN
+        interrupt(IRQ_RUN);
         Ok(true)
     }
 
