@@ -96,7 +96,7 @@ impl Machine {
         // browsers refuse large synchronous instantiation on the page).
         let workers = Rc::new(RefCell::new(Vec::new()));
         let spawn = Machine::spawner(module.clone(), worker_url, workers.clone());
-        let imports = imports::kernel(&wasm_bindgen::memory(), spawn.clone(), false);
+        let imports = imports::kernel(&wasm_bindgen::memory(), false);
         let inst: WebAssembly::Instance =
             JsFuture::from(WebAssembly::instantiate_module(&module, &imports)).await?.unchecked_into();
         let kernel = inst.exports();
@@ -111,49 +111,40 @@ impl Machine {
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         // (The page's instance is not needed after this.)
         TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
-        let timer = Object::new();
-        js::set(&timer, "role", "timer");
-        spawn.call1(&JsValue::NULL, &timer)?;
+        spawn("timer");
         // Record from the start (config.record): the boot, too.
         if js::get(&config, "record").is_truthy() {
             let on = unsafe { &*((TRACE.load(Ordering::Relaxed) + trace::ON) as *const AtomicU32) };
             on.store(1, Ordering::Release);
         }
-        let boot = Object::new();
-        js::set(&boot, "role", "boot");
-        spawn.call1(&JsValue::NULL, &boot)?;
+        spawn("boot");
         Ok(Machine { workers, rec: Default::default(), past: Default::default(), frozen: Default::default() })
     }
 
-    /// A function that starts a Worker for `msg` (a role, or a task that a
-    /// Worker asked for) and keeps it, so that `halted` can stop it.
+    /// A function that starts a Worker for `role` ("timer", "boot", or
+    /// "task": new tasks, see worker.rs) and keeps it, so that `halted` can
+    /// stop it. A task Worker's message asks for another task Worker.
     fn spawner(module: WebAssembly::Module, url: String,
-               workers: Rc<RefCell<Vec<web_sys::Worker>>>) -> Function {
-        let this: Rc<RefCell<Option<Function>>> = Default::default();
+               workers: Rc<RefCell<Vec<web_sys::Worker>>>) -> Rc<dyn Fn(&str)> {
+        let this: Rc<RefCell<Option<Rc<dyn Fn(&str)>>>> = Default::default();
         let me = this.clone();
-        let f = Closure::<dyn FnMut(JsValue)>::new(move |msg: JsValue| {
+        let spawn: Rc<dyn Fn(&str)> = Rc::new(move |role: &str| {
             let opts = web_sys::WorkerOptions::new();
             opts.set_type(web_sys::WorkerType::Module);
             let w = web_sys::Worker::new_with_options(&url, &opts).expect("worker");
-            if js::get(&msg, "role").is_undefined() {
-                js::set(&msg, "role", "task");
-            }
+            let msg = Object::new();
+            js::set(&msg, "role", role);
             js::set(&msg, "kernel", module.clone());
             js::set(&msg, "runtime", wasm_bindgen::module());
             js::set(&msg, "memory", wasm_bindgen::memory());
-            // A kernel Worker's messages ask for new tasks.
-            let spawn = me.borrow().clone().unwrap();
-            let onmessage = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |e: web_sys::MessageEvent| {
-                let _ = spawn.call1(&JsValue::NULL, &e.data());
-            });
+            let more = me.borrow().clone().unwrap();
+            let onmessage = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |_: web_sys::MessageEvent| more("task"));
             w.set_onmessage(Some(onmessage.into_js_value().unchecked_ref()));
             w.post_message(&msg).expect("post");
             workers.borrow_mut().push(w);
-        })
-        .into_js_value()
-        .unchecked_into::<Function>();
-        *this.borrow_mut() = Some(f.clone());
-        f
+        });
+        *this.borrow_mut() = Some(spawn.clone());
+        spawn
     }
 
     /// Console output since the last call.

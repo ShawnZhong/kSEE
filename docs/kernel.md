@@ -32,9 +32,10 @@ __switch_to(A, B)                       ... waiting on B's token
   ...                                   runs
 ```
 
-`copy_thread` asks the host for a new Worker (`spawn_task`), which calls
-the kernel's `task_entry(p)` export on the task's stack; it parks until the
-task is first scheduled. A dead task's Worker unwinds itself (`exit_task`).
+`copy_thread` gives the new task to the host (`spawn_task`): a Worker
+calls the kernel's `task_entry(p)` export on the task's stack, which parks
+until the task is first scheduled. A dead task's Worker unwinds its stack
+(`exit_task`), and the host gives it another task later.
 
 The boot Worker runs `start_kernel` and becomes the idle task (swapper).
 

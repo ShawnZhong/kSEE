@@ -120,6 +120,24 @@ pub(crate) fn task_record() {
                word(1), value | 2, word(2), value | 3, word(3), value | 4]);
 }
 
+/// A new task: a Worker takes it (see worker.rs), one waiting already or,
+/// if none waits, one the page starts.
+#[unsafe(no_mangle)]
+pub extern "C" fn spawn_task(task: u32, sp: u32) {
+    if SPAWN.put(task, sp) {
+        MORE.with_borrow(|more| {
+            if let Some(f) = more {
+                let _ = f.call0(&JsValue::NULL);
+            }
+        });
+    }
+}
+
+thread_local! {
+    /// Asks the page for another Worker (see worker.rs).
+    pub static MORE: RefCell<Option<Function>> = const { RefCell::new(None) };
+}
+
 /// Record the halt for the page and stop this Worker.
 #[unsafe(no_mangle)]
 pub extern "C" fn halt(code: i32) {
@@ -155,21 +173,17 @@ fn func<F: ?Sized + wasm_bindgen::closure::WasmClosure>(c: Closure<F>) -> JsValu
     c.into_js_value()
 }
 
-/// The import object for a kernel instance. `spawn(task, sp)` creates a
-/// new task's Worker. On the page (`worker` false) the rare imports fail:
-/// the page's instance only initializes memory and reads the kernel.
-pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
+/// The import object for a kernel instance. On the page (`worker` false)
+/// the rare imports fail: the page's instance only initializes memory and
+/// reads the kernel.
+pub fn kernel(memory: &JsValue, worker: bool) -> Object {
     let rt = wasm_bindgen::exports();
     let export = |name: &str| js::get(&rt, name);
 
     let kernel = Object::new();
-    for name in ["console_write", "get_cmdline", "memory_end", "time_ns", "halt"] {
+    for name in ["console_write", "get_cmdline", "memory_end", "time_ns", "halt", "spawn_task"] {
         js::set(&kernel, name, export(name));
     }
-    js::set(&kernel, "spawn_task", func(Closure::<dyn FnMut(u32, u32)>::new(
-        move |task: u32, sp: u32| {
-            let _ = spawn.call2(&JsValue::NULL, &task.into(), &sp.into());
-        })));
     js::set(&kernel, "exit_task", func(Closure::<dyn FnMut()>::new(|| wasm_bindgen::throw_str(EXIT))));
     js::set(&kernel, "print_stack", func(Closure::<dyn FnMut()>::new(|| {
         web_sys::console::log_1(&js::get(&js_sys::Error::new("kernel stack"), "stack"));
@@ -248,4 +262,13 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
 /// Remember this Worker's kernel, for user programs' syscall import.
 pub fn set_kernel(exports: &Object) {
     USER.with_borrow_mut(|u| u.kernel_syscall = Some(js::get(exports, "syscall").unchecked_into()));
+}
+
+/// Forget the last task's program (the Worker runs another task).
+pub fn reset_user() {
+    USER.with_borrow_mut(|u| {
+        u.loaded = None;
+        u.running = None;
+        u.memory = None;
+    });
 }

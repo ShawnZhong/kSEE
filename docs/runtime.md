@@ -39,15 +39,18 @@ instantiate the kernel once on the page, which runs its start function
 The page never runs kernel code after that. Then it starts the timer Worker
 and the boot Worker.
 
-**Messages** are only for creating Workers. The page's `spawner` creates a
-Worker and posts it `{ role, the kernel module, the runtime module, the
-memory, task, sp }`. A kernel Worker's `spawn_task` import posts
-`{ task, sp }` to the page, whose spawner creates that task's Worker (only
-the page keeps them all, so that it can stop them at a halt). Everything
-else goes through memory: the page raises interrupts (a bit and a notify),
-writes `wasm_run`, and reads the console ring.
+**Workers and tasks.** A task's Worker is not made for it: the kernel's
+`spawn_task` (a runtime export) queues `(task, sp)` in shared memory
+(`state::SPAWN`), and a Worker waiting there takes it, with its runtime
+and kernel instance already set up; when its task is dead, the Worker
+waits for the next. Only if no Worker waits does the kernel's Worker ask
+the page (a message) for one more; only the page creates Workers, so that
+it can stop them all at a halt. After the first few tasks, starting a
+process sends no messages. Everything else goes through memory too: the
+page raises interrupts (a bit and a notify), writes `wasm_run`, and reads
+the console ring.
 
-**Imports**: the frequent ones (`console_write`, `time_ns`,
+**Imports**: the frequent ones (`console_write`, `time_ns`, `spawn_task`,
 `ksee.bulk`, ...) are the runtime's own wasm exports, so the kernel calls
 them directly; the rest (Workers, user programs' modules and memories) are
 closures reaching Web APIs.

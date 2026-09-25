@@ -1,23 +1,23 @@
 //! What a Worker runs, once web/worker.js has initialized this module in
-//! it: the timer, or one kernel task.
+//! it: the timer, or kernel tasks (the boot CPU, or new tasks, one after
+//! another).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use js_sys::{Function, Object, WebAssembly};
+use js_sys::{Function, WebAssembly};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::imports::{self, EXIT, HALT};
 use crate::js;
-use crate::state::{interrupt, DEADLINE, HALTED, IRQ_TIMER};
+use crate::state::{self, interrupt, DEADLINE, HALTED, IRQ_TIMER};
 
 /// Called with the page's message (see machine.rs, `spawn`).
 #[wasm_bindgen]
 pub fn worker_entry(msg: JsValue) {
-    let num = |k: &str| js::get(&msg, k).as_f64().unwrap_or(0.0) as u32;
     match js::get(&msg, "role").as_string().as_deref() {
         Some("timer") => timer(),
-        Some(role) => task(&msg, role == "boot", num("task"), num("sp")),
+        Some(role) => tasks(&msg, role == "boot"),
         None => panic!("worker without a role"),
     }
 }
@@ -41,23 +41,24 @@ fn timer() -> ! {
     }
 }
 
-/// Run a kernel task (or, for "boot", the boot CPU) on this Worker.
-fn task(msg: &JsValue, boot: bool, task: u32, sp: u32) {
+/// Run kernel tasks on this Worker: the boot CPU ("boot"), or, one after
+/// another, the new tasks the kernel spawns (see state::SPAWN): when its
+/// task exits, the Worker takes the next, with its kernel instance.
+fn tasks(msg: &JsValue, boot: bool) {
     let scope: web_sys::DedicatedWorkerGlobalScope = js_sys::global().unchecked_into();
-    // New tasks' Workers are created by the page, which can stop them all.
-    let spawn = {
+    // (If no Worker waits for a new task, the page starts one more: only it
+    // can stop them all.)
+    let more = {
         let scope = scope.clone();
-        Closure::<dyn FnMut(u32, u32)>::new(move |task: u32, sp: u32| {
-            let m = Object::new();
-            js::set(&m, "task", task);
-            js::set(&m, "sp", sp);
-            let _ = scope.post_message(&m);
+        Closure::<dyn FnMut()>::new(move || {
+            let _ = scope.post_message(&JsValue::from_str("more"));
         })
         .into_js_value()
         .unchecked_into::<Function>()
     };
+    imports::MORE.with_borrow_mut(|m| *m = Some(more));
     let module: WebAssembly::Module = js::get(msg, "kernel").unchecked_into();
-    let imports = imports::kernel(&wasm_bindgen::memory(), spawn, true);
+    let imports = imports::kernel(&wasm_bindgen::memory(), true);
     let kernel = WebAssembly::Instance::new(&module, &imports).expect("kernel instance").exports();
     imports::set_kernel(&kernel);
 
@@ -69,20 +70,29 @@ fn task(msg: &JsValue, boot: bool, task: u32, sp: u32) {
         let g: WebAssembly::Global = js::get(&kernel, "__stack_pointer").unchecked_into();
         g.set_value(&v);
     };
-    let result = if boot {
-        call("boot_stack", &[]).and_then(|sp| {
-            set_sp(sp);
-            call("boot", &[])
-        })
-    } else {
-        set_sp(sp.into());
-        call("task_entry", &[task.into()])
-    };
-    if let Err(e) = result {
-        let quiet = js_sys::Error::from(e.clone()).message();
-        let quiet = quiet == EXIT || quiet == HALT || HALTED.load(Ordering::Acquire) != 0;
-        if !quiet {
-            web_sys::console::error_2(&"kernel worker:".into(), &e);
+    let mut first = boot;
+    loop {
+        let result = if first {
+            first = false;
+            call("boot_stack", &[]).and_then(|sp| {
+                set_sp(sp);
+                call("boot", &[])
+            })
+        } else {
+            let (task, sp) = state::SPAWN.take();
+            imports::reset_user();
+            set_sp(sp.into());
+            call("task_entry", &[task.into()])
+        };
+        // (A task's end unwinds its stack: EXIT; the machine's, HALT.)
+        if let Err(e) = result {
+            let message = js_sys::Error::from(e.clone()).message();
+            if HALTED.load(Ordering::Acquire) != 0 || message == HALT {
+                break;
+            }
+            if message != EXIT {
+                web_sys::console::error_2(&"kernel worker:".into(), &e);
+            }
         }
     }
     scope.close();

@@ -51,6 +51,57 @@ pub fn interrupt(irq: u32) {
     }
 }
 
+/// New tasks waiting for a Worker (see worker.rs): the kernel's
+/// spawn_task puts them here (from the Worker holding the CPU: one at a
+/// time), and idle Workers take them.
+pub static SPAWN: Spawns = Spawns::new();
+
+pub struct Spawns {
+    /// (task << 32 | sp) per slot.
+    slots: [AtomicU64; Spawns::SLOTS],
+    /// Tasks ever put, and taken.
+    put: AtomicU32,
+    taken: AtomicU32,
+    /// Workers waiting for a task.
+    pub idle: AtomicU32,
+}
+
+impl Spawns {
+    const SLOTS: usize = 256;
+
+    pub const fn new() -> Self {
+        Spawns { slots: [const { AtomicU64::new(0) }; Self::SLOTS], put: AtomicU32::new(0),
+                 taken: AtomicU32::new(0), idle: AtomicU32::new(0) }
+    }
+
+    /// Queue task `task` (its stack pointer `sp`) for a Worker. Whether
+    /// none waits (so another is needed).
+    pub fn put(&self, task: u32, sp: u32) -> bool {
+        let n = self.put.load(Ordering::Relaxed);
+        self.slots[n as usize % Self::SLOTS].store((task as u64) << 32 | sp as u64, Ordering::Relaxed);
+        self.put.store(n + 1, Ordering::Release);
+        unsafe { core::arch::wasm32::memory_atomic_notify(self.put.as_ptr() as *mut i32, 1) };
+        self.idle.load(Ordering::Acquire) == 0
+    }
+
+    /// The next task to run: (task, sp); waits for one.
+    pub fn take(&self) -> (u32, u32) {
+        loop {
+            let (t, put) = (self.taken.load(Ordering::Acquire), self.put.load(Ordering::Acquire));
+            if t < put {
+                if self.taken.compare_exchange(t, t + 1, Ordering::AcqRel, Ordering::Relaxed).is_ok() {
+                    let v = self.slots[t as usize % Self::SLOTS].load(Ordering::Relaxed);
+                    return ((v >> 32) as u32, v as u32);
+                }
+                continue;
+            }
+            self.idle.fetch_add(1, Ordering::AcqRel);
+            unsafe { core::arch::wasm32::memory_atomic_wait32(self.put.as_ptr() as *mut i32, put as i32, -1) };
+            self.idle.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+}
+
 pub static CONSOLE_OUT: ByteRing = ByteRing::new();
 
 pub fn tables() -> &'static Tables {
