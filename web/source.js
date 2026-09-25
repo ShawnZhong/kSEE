@@ -1,5 +1,6 @@
 // The source view: a whole kernel file in Monaco (web/editor.js), with the
-// lines where blocks ran (counts in the gutter; untaken ones marked), the
+// lines where blocks ran (how often: hover the line number; untaken ones
+// marked), the
 // function's lines, and the cursor. Hover a name for its value at the
 // cursor (an argument, a global, and fields: file->f_pos); right-click to
 // watch it; F12 or Ctrl+click on a function to open its source.
@@ -49,9 +50,7 @@ export function source(app) {
     ed = monaco.editor.create($("src"), {
       ...readOnly,
       glyphMargin: true,
-      lineNumbersMinChars: 8,
-      // Line numbers, with how often blocks there ran.
-      lineNumbers: (n) => (v.counts.has(n) ? `${v.counts.get(n) ? `${v.counts.get(n)}×` : "·"} ${n}` : `${n}`),
+      lineNumbersMinChars: 4,
     });
     marks = ed.createDecorationsCollection();
     // Ctrl+click on a function: its source.
@@ -112,10 +111,12 @@ export function source(app) {
     const at = (x) => x && x.file === file && x.line;
     const line = (n, options) => ({ range: new monaco.Range(n, 1, n, 1), options });
     const d = [];
+    const where = v.syscall != null ? " in this syscall" : " in the recording";
     for (const [n, c] of v.counts)
       d.push(line(n, c > 0
-        ? { isWholeLine: true, className: "ln-hit", overviewRuler: { color: "#2da44e88", position: 4 }, minimap: { color: "#2da44e88", position: 1 } }
-        : { linesDecorationsClassName: "ln-miss" }));
+        ? { isWholeLine: true, className: "ln-hit", overviewRuler: { color: "#2da44e88", position: 4 }, minimap: { color: "#2da44e88", position: 1 },
+            lineNumberHoverMessage: { value: `ran ${c}×${where}` } }
+        : { linesDecorationsClassName: "ln-miss", lineNumberHoverMessage: { value: `a block starts here; it did not run${where}` } }));
     if (fn) d.push({ range: new monaco.Range(fn.line, 1, last, 1), options: { isWholeLine: true, linesDecorationsClassName: "ln-infn" } });
     if (at(v.cursor)) d.push(line(v.cursor.line, { isWholeLine: true, className: "ln-cursor", glyphMarginClassName: "gl-cursor",
       overviewRuler: { color: "#0969da", position: 7 } }));
@@ -129,7 +130,6 @@ export function source(app) {
     const mdl = model(file, text ?? `// ${file}: not in this site's sources.`);
     if (ed.getModel() !== mdl) ed.setModel(mdl);
     v.counts = new Map(text === null ? [] : m.file_coverage(file, v.syscall).map((c) => [c.line, c.count]));
-    ed.updateOptions({ lineNumbers: ed.getRawOptions().lineNumbers }); // (the counts changed)
     decorate();
     const fn = v.fn?.file === file ? v.fn : null;
     const to = focus ?? fn?.line ?? 1;
