@@ -54,6 +54,25 @@ pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> impl Iterator<Item = Re
     })
 }
 
+/// The ring at `trace`, decoded, with each record's id: the number of the
+/// pair it starts at, counting every pair ever written (so an id stays the
+/// same while the ring goes on; indexes do not).
+pub fn ring_ids(mem: &dyn Memory, trace: u32, words: u32) -> (Vec<Record>, Vec<u32>) {
+    let (first, len) = window(mem, trace, words);
+    let pairs = words / 2;
+    let mut d = Decoder::new(len, move |i| {
+        let slot = (first + i) % pairs;
+        let a = trace + RING + slot * 8;
+        (mem.read_u32(a), mem.read_u32(a + 4))
+    });
+    let (mut records, mut ids) = (Vec::new(), Vec::new());
+    while let Some(r) = d.next() {
+        records.push(r);
+        ids.push(first + d.head);
+    }
+    (records, ids)
+}
+
 /// (first pair, number of pairs) of the ring's current contents.
 pub fn window(mem: &dyn Memory, trace: u32, words: u32) -> (u32, u32) {
     let pos = mem.read_u32(trace) & !1;
@@ -66,11 +85,13 @@ pub struct Decoder<F> {
     pair: F,
     next: u32,
     len: u32,
+    /// The pair the last record returned starts at.
+    pub head: u32,
 }
 
 impl<F: FnMut(u32) -> (u32, u32)> Decoder<F> {
     pub fn new(len: u32, pair: F) -> Self {
-        Decoder { pair, next: 0, len }
+        Decoder { pair, next: 0, len, head: 0 }
     }
 }
 
@@ -80,6 +101,7 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
     fn next(&mut self) -> Option<Record> {
         while self.next < self.len {
             let (func, tag) = (self.pair)(self.next);
+            self.head = self.next;
             self.next += 1;
             let kind = tag >> 28;
             let count = match kind {

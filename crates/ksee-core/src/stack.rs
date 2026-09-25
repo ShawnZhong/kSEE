@@ -101,6 +101,77 @@ pub fn frames(records: &[Record], tasks: &[u32], from: usize, to: usize, task: O
     out
 }
 
+/// A source line the kernel ran: at `record` (the block's, or the return
+/// after which the block goes on), in `func` (`inlined` from another
+/// function, maybe), `depth` calls deep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LineStep {
+    pub record: usize,
+    pub func: u32,
+    pub depth: u32,
+    pub loc: crate::tables::Loc,
+    pub inlined: Option<u32>,
+}
+
+/// The source lines run in records `from..=to` (of task `task`, or any), in
+/// order: each block's lines up to its first call, then, as each call
+/// returns, the lines up to the next (Tables::segments). The same line twice
+/// in a row counts once.
+pub fn lines(t: &crate::tables::Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
+             task: Option<u32>) -> Vec<LineStep> {
+    // Per task: the frames, each with its block and the stretch it is at.
+    struct At {
+        stack: Stack,
+        blocks: Vec<(u32, usize)>, // per frame: (block, next stretch)
+    }
+    let mut out: Vec<LineStep> = Vec::new();
+    let to = to.min(records.len().saturating_sub(1));
+    let mut tasks_at: BTreeMap<u32, At> = BTreeMap::new();
+    let mut emit = |out: &mut Vec<LineStep>, func: u32, n: u32, seg: usize, depth: u32, i: usize| {
+        if i < from {
+            return;
+        }
+        for s in t.segments(func, n).get(seg).into_iter().flatten() {
+            let last = out.last();
+            if last.is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
+                continue;
+            }
+            out.push(LineStep { record: i, func, depth, loc: s.loc, inlined: s.inlined });
+        }
+    };
+    for (i, r) in records.iter().enumerate().take(to + 1) {
+        let tk = tasks[i];
+        if task.is_some_and(|x| x != tk) {
+            continue;
+        }
+        let at = tasks_at.entry(tk).or_insert_with(|| At { stack: Stack::default(), blocks: Vec::new() });
+        match *r {
+            Record::Block { func, n } => {
+                at.stack.block(func, n, i, &mut |_| {});
+                let depth = at.stack.frames.len();
+                at.blocks.resize(depth, (u32::MAX, 0));
+                at.blocks[depth - 1] = (n, 1);
+                emit(&mut out, func, n, 0, depth as u32 - 1, i);
+            }
+            Record::Exit { func, .. } | Record::Return { func } => {
+                at.stack.exit(func, i, &mut |_| {});
+                let depth = at.stack.frames.len();
+                at.blocks.truncate(depth);
+                // The caller goes on after the call: its block's next stretch.
+                if let (Some(&(f, _)), Some((n, seg))) = (at.stack.frames.last(), at.blocks.last_mut()) {
+                    if *n != u32::MAX {
+                        let (block, stretch) = (*n, *seg);
+                        *seg += 1;
+                        emit(&mut out, f, block, stretch, depth as u32 - 1, i);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// The call stack of the task running at record `at`, outermost first.
 pub fn stack_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<u32> {
     let Some(&task) = tasks.get(at) else { return Vec::new() };
@@ -135,6 +206,16 @@ mod tests {
         assert_eq!(got, [(1, 0, 0, 7), (2, 1, 2, 4), (3, 2, 3, 3), (2, 1, 6, 6)]);
         assert_eq!(stack_at(&r, &t, 3), [1, 2, 3]);
         assert_eq!(stack_at(&r, &t, 5), [1]);
+    }
+
+    #[test]
+    fn lines_go_on_after_calls() {
+        // f's block 0: lines 1, 2, a call (g: line 10), then line 3.
+        let t = crate::tables::Tables::parse(
+            "U\nP\t0\tf.c\nP\t1\tg.c\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1;:2;|;:3\nB\t2\t0\t1:10:1\n", "");
+        let r = [b(1, 0), b(2, 0), Record::Return { func: 2 }, Record::Return { func: 1 }];
+        let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| (s.loc.line, s.record, s.depth)).collect();
+        assert_eq!(got, [(1, 0, 0), (2, 0, 0), (10, 1, 1), (3, 2, 0)]);
     }
 
     #[test]

@@ -254,6 +254,15 @@ export function timeline(app) {
   }
   $("legend").replaceChildren(...AREAS.map(([p, , name]) =>
     el("span", { className: "key" }, el("i", { style: `background:${color(p, false)}` }), name)));
-  return { refresh, go, select, selectWindow, cursor: () => t.cursor, records: () => t.n,
+  // Put the cursor at record `i` (null, or the last: now) without showing
+  // it (the caller shows what is there: a line within the block, say).
+  function mark(i) {
+    t.cursor = i == null || i >= t.n - 1 ? null : i;
+    if (t.cursor != null && t.win && (t.cursor < t.win.a || t.cursor > t.win.b)) {
+      const span = t.win.b - t.win.a;
+      setWindow(t.cursor - span / 2, t.cursor + span / 2);
+    } else draw();
+  }
+  return { refresh, go, mark, home: () => t.home, select, selectWindow, cursor: () => t.cursor, records: () => t.n,
            selected: () => t.all.find((s) => app.key(s) === t.sel) };
 }

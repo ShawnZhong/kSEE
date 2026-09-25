@@ -31,6 +31,8 @@ pub struct Machine {
 #[derive(Default)]
 struct History {
     records: Vec<trace::Record>,
+    /// Each record's id (trace::ring_ids).
+    ids: Vec<u32>,
     tasks: Vec<u32>,
     times: Vec<u64>,
     /// Who was at a task_struct address, from Task records: address ->
@@ -262,7 +264,7 @@ impl Machine {
     pub fn snapshot(&self) {
         let t = tables();
         let entry = t.find(syscalls::ENTRY).unwrap_or(0);
-        let records: Vec<trace::Record> = trace::ring(&Direct, self.ring(), t.ring_words).collect();
+        let (records, ids) = trace::ring_ids(&Direct, self.ring(), t.ring_words);
         // The running task and the time at each record (from the last enter
         // or exit record, which carry them).
         let (mut task, mut time) = (0, 0);
@@ -292,7 +294,7 @@ impl Machine {
         }
         let calls = syscalls::split(entry, records.iter().copied());
         *self.syscalls.borrow_mut() = Some(calls);
-        *self.history.borrow_mut() = History { records, tasks, times, idents, exits };
+        *self.history.borrow_mut() = History { records, ids, tasks, times, idents, exits };
     }
 
     fn with_syscalls<T>(&self, f: impl FnOnce(&[syscalls::Syscall]) -> T) -> T {
@@ -318,6 +320,18 @@ impl Machine {
     }
 
     // ---- History: the records of the last snapshot, by position ----
+
+    /// Record `i`'s id: it names the record in later snapshots too (see
+    /// index_of), where its index has moved on.
+    pub fn record_id(&self, i: usize) -> Option<u32> {
+        self.history.borrow().ids.get(i).copied()
+    }
+
+    /// The index of the record with id `id` in the last snapshot (or of the
+    /// first after it; the end if none).
+    pub fn index_of(&self, id: u32) -> usize {
+        self.history.borrow().ids.partition_point(|&x| x < id)
+    }
 
     /// How many records the last snapshot holds.
     pub fn records(&self) -> usize {
@@ -454,6 +468,29 @@ impl Machine {
         js::set(&o, "last", last as f64);
         js::set(&o, "lines", lines);
         o.into()
+    }
+
+    /// The source lines run in records `first..=last` of the task at address
+    /// `task`, in order (see ksee_core::stack::lines): [{ i (the record),
+    /// func, depth, file, line, inlined (the function the line is inlined
+    /// from, if) }].
+    pub fn line_steps(&self, first: usize, last: usize, task: u32) -> JsValue {
+        let h = self.history.borrow();
+        let t = tables();
+        let list = js_sys::Array::new();
+        for s in stack::lines(t, &h.records, &h.tasks, first, last, Some(task)) {
+            let o = Object::new();
+            js::set(&o, "i", s.record as f64);
+            js::set(&o, "func", t.functions.get(&s.func).map_or(String::new(), |f| f.name.clone()));
+            js::set(&o, "depth", s.depth);
+            js::set(&o, "file", t.file(s.loc));
+            js::set(&o, "line", s.loc.line);
+            if let Some(k) = s.inlined {
+                js::set(&o, "inlined", t.names.get(k as usize).cloned().unwrap_or_default());
+            }
+            list.push(&o);
+        }
+        list.into()
     }
 
     /// The call stack at record `i` (of the task running then), outermost
@@ -827,6 +864,8 @@ impl Machine {
         js::set(&o, "func", t.functions.get(&func).map_or(String::new(), |f| f.name.clone()));
         js::set(&o, "block", n);
         js::set(&o, "stop", stop);
+        // (A stop at a return, while stepping: the caller goes on.)
+        js::set(&o, "kind", if n == debug::RETURN { "return" } else { "block" });
         if let Some(&l) = t.blocks.get(&(func, n)) {
             js::set(&o, "file", t.file(l));
             js::set(&o, "line", l.line);

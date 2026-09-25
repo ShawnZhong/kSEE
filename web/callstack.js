@@ -60,11 +60,14 @@ export function callstack(app) {
   }
 
   // At a stop (the kernel's frames, with arguments) or at record `at`
-  // (rebuilt from the trace).
-  function show(at, stopped) {
+  // (rebuilt from the trace); `step`: the line (Machine.line_steps) shown
+  // there, whose inlined function, if any, is a frame of its own.
+  function show(at, stopped, step) {
     if (stopped) {
-      s.frames = m.call_stack().map((f, k) => ({ ...f, line: k === 0 ? stopped.line : undefined,
-        file: k === 0 ? stopped.file : f.file, where: k === 0 ? `${stopped.file}:${stopped.line}` : f.file }));
+      const here = step ?? stopped;
+      s.frames = m.call_stack().map((f, k) => ({ ...f, line: k === 0 ? here.line : undefined,
+        file: k === 0 ? here.file : f.file, where: k === 0 ? `${here.file}:${here.line}` : f.file }));
+      if (step?.inlined) s.frames.unshift({ func: `${step.inlined} (inlined)`, where: `${step.file}:${step.line}`, line: step.line, file: step.file });
       $("stack-note").textContent = "the kernel's, with arguments (live memory)";
       draw();
       return;
@@ -75,8 +78,10 @@ export function callstack(app) {
       $("stack-note").textContent = "";
       return;
     }
-    s.frames = m.stack_at(at.i).reverse().map((func, k) => ({ func, where: k === 0 ? `${at.file}:${at.line}` : "",
-      line: k === 0 ? at.line : undefined, file: k === 0 ? at.file : undefined }));
+    const here = step ?? at;
+    s.frames = m.stack_at(at.i).reverse().map((func, k) => ({ func, where: k === 0 ? `${here.file}:${here.line}` : "",
+      line: k === 0 ? here.line : undefined, file: k === 0 ? here.file : undefined }));
+    if (step?.inlined) s.frames.unshift({ func: `${step.inlined} (inlined)`, where: `${step.file}:${step.line}`, line: step.line, file: step.file });
     $("stack-note").textContent = "from the trace (arguments only while paused)";
     draw();
   }

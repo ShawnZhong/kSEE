@@ -28,6 +28,8 @@ pub const TASK: u32 = 3;
 const BREAKS: usize = 256;
 /// A breakpoint's block number meaning "any block of the function".
 pub const ANY: u32 = u32::MAX;
+/// The block number stop() gets at a return (plugin/ksee-trace.cpp).
+pub const RETURN: u32 = 0x0fff_ffff;
 
 pub struct Debugger {
     mode: AtomicU32,

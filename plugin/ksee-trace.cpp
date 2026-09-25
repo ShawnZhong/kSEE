@@ -39,7 +39,9 @@
 //                         a0, a1, a2, a3
 //   [fn, 3 << 28]         exit fn, followed by time lo, time hi, current,
 //                         value
-//   [fn, 4 << 28]         return from fn (block mode)
+//   [fn, 4 << 28]         return from fn (block mode); while armed, it
+//                         calls ksee.stop(fn, 0x0fffffff) too (stepping
+//                         sees returns)
 //   [value, 8 << 28 | i]  continuation i of the preceding head
 // fn is a hash of the function name (for a function local to its file, of
 // "file:name"); time comes from the ksee.now import.
@@ -53,10 +55,21 @@
 // its own task's stack.)
 //
 // The linked module describes its probes in a wasm custom section, which
-// wasm-ld concatenates across objects (lines may repeat):
-//   ksee.probes  R \t ring words
-//                F \t fn \t name \t file:line \t argument types
-//                B \t fn \t n \t file:line:column
+// wasm-ld concatenates across objects (lines may repeat). Each object's
+// part starts with U and its files, which the lines after it name by
+// number (FILE below):
+//   ksee.probes  U
+//                P \t k \t path       file k
+//                R \t ring words
+//                F \t fn \t name \t FILE:line \t argument types
+//                B \t fn \t n \t FILE:line:column
+//                L \t fn \t n \t lines: the source lines the block runs, in
+//                  order (each once per stretch between calls), separated
+//                  by ';': FILE:line (:line in the same file as the one
+//                  before), then @function where it is inlined from
+//                  function; "|" where the block calls a
+//                  function (which runs in between). Only for blocks with
+//                  more than their first line.
 // Source locations come from debug info, so compile with -g. (The
 // kernel's types are extracted from its DWARF after linking: ksee pack.)
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -70,6 +83,7 @@
 #include "llvm/Support/Path.h"
 
 #include <cstdlib>
+#include <map>
 #include <set>
 #include <tuple>
 #include <string>
@@ -195,6 +209,12 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   Function *putBlock = nullptr, *putEnter = nullptr, *putExit = nullptr, *putReturn = nullptr;
   GlobalVariable *frames = nullptr;
   std::string probes;
+  // This object's files, numbered for the probes' lines.
+  std::map<std::string, unsigned> files;
+
+  std::string fileRef(const std::string &path) {
+    return std::to_string(files.try_emplace(path, files.size()).first->second);
+  }
 
   unsigned modesFor(Function &F) {
     unsigned modes = 0;
@@ -283,20 +303,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       }
       B.CreateAlignedStore(B.CreateAdd(p, B.getInt32(words.size())), pos, Align(4))
           ->setAtomic(AtomicOrdering::Release);
-      if (name == "__ksee_put_block") {
-        // if (armed) ksee.stop(fn, n)
-        Value *armed = B.CreateLoad(i32, B.CreateStructGEP(traceTy, trace, 1));
-        BasicBlock *stop = BasicBlock::Create(C, "stop", F), *done = BasicBlock::Create(C, "done", F);
-        B.CreateCondBr(B.CreateICmpNE(armed, B.getInt32(0)), stop, done);
-        B.SetInsertPoint(stop);
-        FunctionCallee hook = M->getOrInsertFunction(
-            "__ksee_stop", FunctionType::get(Type::getVoidTy(C), {i32, i32}, false));
-        cast<Function>(hook.getCallee())->addFnAttr("wasm-import-module", "ksee");
-        cast<Function>(hook.getCallee())->addFnAttr("wasm-import-name", "stop");
-        B.CreateCall(hook, {F->getArg(0), F->getArg(1)});
-        B.CreateBr(done);
-        B.SetInsertPoint(done);
-      }
+      if (name == "__ksee_put_block")
+        stopHook(B, F, traceTy, trace, F->getArg(1));
       B.CreateRetVoid();
       return F;
     };
@@ -334,11 +342,84 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       words.push_back(F->getArg(0));
       words.push_back(B.getInt32(KindReturn << 28));
     });
+    stopOnReturn(putReturn, traceTy, trace);
     probes += "R\t" + std::to_string(words) + "\n";
   }
 
-  static std::string location(const DILocation *L) {
-    return (sourcePath(L->getScope()) + ":" + Twine(L->getLine()) + ":" +
+  // if (armed) ksee.stop(fn, n), at B (which then continues after it).
+  void stopHook(IRBuilder<> &B, Function *F, Type *traceTy, Value *trace, Value *n) {
+    LLVMContext &C = M->getContext();
+    Value *armed = B.CreateLoad(i32, B.CreateStructGEP(traceTy, trace, 1));
+    BasicBlock *stop = BasicBlock::Create(C, "stop", F), *done = BasicBlock::Create(C, "done", F);
+    B.CreateCondBr(B.CreateICmpNE(armed, B.getInt32(0)), stop, done);
+    B.SetInsertPoint(stop);
+    FunctionCallee hook = M->getOrInsertFunction(
+        "__ksee_stop", FunctionType::get(Type::getVoidTy(C), {i32, i32}, false));
+    cast<Function>(hook.getCallee())->addFnAttr("wasm-import-module", "ksee");
+    cast<Function>(hook.getCallee())->addFnAttr("wasm-import-name", "stop");
+    B.CreateCall(hook, {F->getArg(0), n});
+    B.CreateBr(done);
+    B.SetInsertPoint(done);
+  }
+
+  // The return writer's stop hook, before its ret.
+  void stopOnReturn(Function *F, Type *traceTy, Value *trace) {
+    ReturnInst *ret = cast<ReturnInst>(F->back().getTerminator());
+    IRBuilder<> B(ret);
+    BasicBlock *rest = F->back().splitBasicBlock(ret);
+    F->back().getPrevNode()->getTerminator()->eraseFromParent();
+    B.SetInsertPoint(rest->getPrevNode());
+    stopHook(B, F, traceTy, trace, B.getInt32(0x0fffffff));
+    B.CreateBr(rest);
+  }
+
+  // Whether a call runs code with probes (its blocks come in between).
+  static bool runsProbes(const CallBase &CB) {
+    const Function *callee = CB.getCalledFunction();
+    if (!callee)
+      return true; // an indirect call
+    if (callee->isIntrinsic() || callee->getName().starts_with("__ksee_"))
+      return false;
+    return !callee->hasFnAttribute("wasm-import-module");
+  }
+
+  // The block's lines, as for an L line; empty if just its first line.
+  std::string blockLines(BasicBlock &BB) {
+    std::vector<std::string> items;
+    std::set<std::string> seen; // (since the last call)
+    std::string file;           // the last item's
+    for (Instruction &I : BB) {
+      if (auto *CB = dyn_cast<CallBase>(&I); CB && !isa<DbgInfoIntrinsic>(CB) && runsProbes(*CB)) {
+        if (!items.empty() && items.back() != "|")
+          items.push_back("|");
+        seen.clear();
+        continue;
+      }
+      DILocation *L = I.getDebugLoc().get();
+      if (!L || !L->getLine())
+        continue;
+      std::string path = fileRef(sourcePath(L->getScope()));
+      std::string item = path + ":" + std::to_string(L->getLine());
+      if (L->getInlinedAt())
+        if (DISubprogram *SP = L->getScope()->getSubprogram())
+          item += "@" + SP->getName().str();
+      if (seen.insert(item).second) {
+        items.push_back(path == file ? item.substr(path.size()) : item);
+        file = path;
+      }
+    }
+    while (!items.empty() && items.back() == "|")
+      items.pop_back();
+    if (items.size() <= 1)
+      return "";
+    std::string out;
+    for (auto &i : items)
+      out += (out.empty() ? "" : ";") + i;
+    return out;
+  }
+
+  std::string location(const DILocation *L) {
+    return (fileRef(sourcePath(L->getScope())) + ":" + Twine(L->getLine()) + ":" +
             Twine(L->getColumn())).str();
   }
 
@@ -371,6 +452,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
             break;
           }
         probes += ("B\t" + Twine(id) + "\t" + Twine(n) + "\t" + loc + "\n").str();
+        if (std::string lines = blockLines(*BB); !lines.empty())
+          probes += ("L\t" + Twine(id) + "\t" + Twine(n) + "\t" + lines + "\n").str();
       }
 
     if (modes & Block) {
@@ -420,7 +503,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
 
     std::string where = "?", argTypes;
     if (SP) {
-      where = sourcePath(SP) + ":" + std::to_string(SP->getLine());
+      where = fileRef(sourcePath(SP)) + ":" + std::to_string(SP->getLine());
       auto sig = SP->getType()->getTypeArray();
       for (unsigned i = 1; i < sig.size() && i <= 4; i++)
         argTypes += (i > 1 ? "," : "") + typeName(sig[i]);
@@ -449,7 +532,12 @@ public:
       instrument(*F, modes);
 
     if (!probes.empty())
-      emitCustomSection(Mod, "ksee.probes", probes);
+    {
+      std::string head = "U\n";
+      for (auto &[path, k] : files)
+        head += "P\t" + std::to_string(k) + "\t" + path + "\n";
+      emitCustomSection(Mod, "ksee.probes", head + probes);
+    }
     return probes.empty() ? PreservedAnalyses::all() : PreservedAnalyses::none();
   }
 };
