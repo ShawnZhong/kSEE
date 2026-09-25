@@ -4,7 +4,7 @@
 
 How it works, part by part:
 
-- [kernel.md](kernel.md): Linux on wasm (arch/wasm): a Worker per task,
+- [kernel.md](kernel.md): Linux on wasm (arch/wasm): tasks as suspended stacks (JSPI),
   interrupts, /init and the syscalls it makes for the page, the console, a
   disk.
 - [recording.md](recording.md): what the compiler records, the ring, and

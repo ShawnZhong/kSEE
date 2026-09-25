@@ -58,8 +58,8 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
 ```
 
 - **The kernel** ([kernel.md](kernel.md)): a minimal `arch/wasm` for Linux
-  7.2. Each task runs in its own Web Worker, all on one shared kernel
-  memory; a context switch hands a CPU token from one Worker to the next.
+  7.2. One wasm instance, on the page's thread; a task is a call stack of
+  it, which the host suspends and resumes at a context switch (JSPI).
   /init makes the syscalls the page asks for (the doorbell: console input).
 - **The recording** ([recording.md](recording.md)): an LLVM pass
   instruments every function the same way (blocks, calls with arguments,
@@ -68,7 +68,7 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   crates/ksee-core rebuilds which task ran, call stacks, lines within
   blocks, syscalls, and memory as it was at any record.
 - **The runtime and the page** ([runtime.md](runtime.md)): one Rust wasm
-  module, shared by the page and the Workers, boots the kernel and reads it
+  module, on the kernel's memory, boots the kernel and reads it
   directly; the page (web/) lays out what the core computes.
 - **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel, the
   runtime, /init, and the page's files (types from DWARF, the

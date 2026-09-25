@@ -1,59 +1,48 @@
 # The runtime and the page
 
-## One module, in the kernel's memory
+## One thread, one memory
 
-crates/ksee-runtime is Rust compiled to wasm (wasm-bindgen, with atomics).
-The page and **every Worker instantiate it on the kernel's shared memory**:
-its static data sits in the 16 MiB below the kernel image
-(`CONFIG_WASM_HOST_MEMORY`), its heap grows above the kernel's RAM, and
-wasm-bindgen gives each instance its own stack. So:
+crates/ksee-runtime is Rust compiled to wasm (wasm-bindgen), on the page's
+own thread. The kernel is one wasm instance on the runtime's memory: its
+RAM above the runtime's static data and stack (`CONFIG_WASM_HOST_MEMORY`),
+the runtime's heap above its RAM. So the runtime reads kernel objects and
+the trace ring **directly**, as memory, with no copying and no messages.
 
-- the runtime reads kernel objects and the trace ring **directly**, as
-  memory, with no copying and no messages;
-- the page and the Workers share the runtime's statics (state.rs): the
-  kernel's tables, the addresses of its globals, the console's output ring,
-  whether it halted. What the page touches is lock-free: it may not block.
-
-One module rather than two (a worker crate and a page crate) because of
-this sharing: two modules would each have their own statics and allocator
-in the same memory.
-
-## Who runs what
+The kernel's tasks are call stacks of that instance, which JSPI suspends
+and resumes (sched.rs; see [kernel.md](kernel.md)). No host code runs while
+the kernel does: the page's JavaScript runs while it is suspended (a task
+switch, idle), so the page stays responsive between the kernel's bursts
+(a boot is ~0.3 s, a call milliseconds). No Workers, no shared memory, so
+no cross-origin isolation either. It needs JSPI: Chrome and Edge 137,
+Firefox 153, Safari 27.
 
 ```text
-page (main thread)                      Workers
-──────────────────                      ───────
-web/ksee.js: create the memory,         web/worker.js: init the runtime on
-  init the runtime, Machine.start         the memory, worker_entry(msg)
-machine.rs: boot, console, record,      worker.rs: the timer, or a task:
-  syscalls (by /init), snapshots          instantiate the kernel, run it
-replay.rs: views of the recording       imports.rs: the kernel's imports
-  (ksee_core::view, as JS values)
-                    state.rs: statics shared by both
+web/ksee.js      init the runtime; Machine.start
+machine.rs       boot (a new kernel instance on wiped memory), restart,
+                 console, record, snapshots, syscalls by /init
+sched.rs         the tasks: switch_task, idle (suspending), spawn_task
+imports.rs       the kernel's imports; programs (/init's module)
+replay.rs        views of the recording (ksee_core::view, as JS values)
+state.rs         the machine's state in the runtime
 ```
 
-**Booting** (`Machine::start`): fetch and compile vmlinux, parse its
-`ksee.probes`/`ksee.types`, put the initramfs at the top of RAM, and
-instantiate the kernel once on the page, which runs its start function
-(initializing its data) and gives the addresses of its exported globals.
-The page never runs kernel code after that. Then it starts the timer Worker
-and the boot Worker.
+**Booting** (`Machine.start`): grow the memory to the kernel's RAM, fetch
+and compile vmlinux, parse its `ksee.probes`/`ksee.types`; then each boot
+wipes the kernel's memory, puts the initramfs at the top of RAM, and
+instantiates the kernel (which initializes its data), and calls its
+`boot` export (JSPI: it runs until it first suspends). **Restart**: stop
+the machine (its tasks dropped; a stopped machine's stack that suspends is
+never resumed), let what it had under way end, and boot again.
 
-**Workers and tasks.** A task's Worker is not made for it: the kernel's
-`spawn_task` (a runtime export) queues `(task, sp)` in shared memory
-(`state::SPAWN`), and a Worker waiting there takes it, with its runtime
-and kernel instance already set up; when its task is dead, the Worker
-waits for the next. Only if no Worker waits does the kernel's Worker ask
-the page (a message) for one more; only the page creates Workers, so that
-it can stop them all at a halt. After the first few tasks, starting a
-process sends no messages. Everything else goes through memory too: the
-page raises interrupts (a bit and a notify), puts the syscalls /init is
-to make in `state::CALL`, and reads the console ring.
+**The page and the kernel** talk through memory and promises: the page
+raises interrupts (a bit, and a wake-up of idle), and asks for syscalls
+(`Machine.call` returns a promise, which /init settles through
+`ksee.done`); it reads the console's output.
 
 **Imports**: the frequent ones (`console_write`, `time_ns`, `spawn_task`,
 `ksee.bulk`, ...) are the runtime's own wasm exports, so the kernel calls
-them directly; the rest (Workers, /init's module and memory) are
-closures reaching Web APIs.
+them directly; the rest (promises, /init's module and memory) are closures
+reaching Web APIs.
 
 ## The page
 
@@ -68,7 +57,7 @@ source. Rust does the work: JS only lays it out.
 | callstack.js | the Stack: calls with arguments and locals, the task (current), ✎ who wrote a value |
 | examples.js | the examples: syscalls /init makes, one at a time, recorded; their stops; adding a call |
 | args.js | a syscall's arguments, written as in C, with the kernel's constants |
-| ksee.js, worker.js | booting; each Worker's script |
+| ksee.js | booting |
 
 Every view asks the Machine for the moment at the cursor: `at(i)`,
 `call_stack(i)`, `line_steps`, `chart`, `memory_at(i)` then `object` /

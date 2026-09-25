@@ -11,7 +11,7 @@ Records do not say which task wrote them. The running task changes at
 known places, so a pass over the records tracks it:
 
 - a call of `__switch_to(prev, next)` notes `next`; the task changes when
-  that call **returns** (in the next task's Worker);
+  that call **returns** (on the next task's stack);
 - a new task starts in `wasm_task_entry(p)`;
 - a Task record names the task that writes it.
 

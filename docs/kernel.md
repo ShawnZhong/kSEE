@@ -10,63 +10,64 @@ The configuration: wasm32, `CONFIG_MMU=n`, one CPU, `PREEMPT_NONE`, an
 initramfs, a console (with input), a timer; the block layer, the loop
 device and ext4.
 
-## One Worker per task
+## Tasks: stacks the host suspends
 
-Wasm cannot save and restore its own call stack, so a context switch cannot
-be a stack swap. Instead **every task_struct gets its own Web Worker**
-(kernel/process.c), and a parked Worker's native stack *is* the task's
-saved context. All Workers instantiate the same kernel module on **one
-shared `WebAssembly.Memory`**, so they share all of kernel memory; each has
-its own wasm stack.
+Wasm cannot save and restore its own call stack, so a context switch
+cannot be a stack swap. Instead the kernel is **one wasm instance, on one
+thread, and a task's context is a call stack of it**, which the host
+suspends and resumes with JSPI (JavaScript Promise Integration: a wasm
+stack suspends on a promise, and resumes when it settles).
 
-Exactly one Worker holds the CPU at a time. Each task has a token word
-(`thread_info.cpu_token`); the others wait on theirs with
-`memory.atomic.wait32`. `__switch_to(prev, next)` parks prev's token, gives
-next the token, notifies it, and waits until its own comes back:
+`__switch_to(prev, next)` calls the host's `switch_task(prev, next)`, a
+*suspending* import: it returns a promise, so prev's stack suspends; the
+host then gives the CPU to next: resolves next's promise (its stack
+resumes, returning from its own `__switch_to`), or, the first time, starts
+it (`task_entry(p)`, on the stack `copy_thread` gave with `spawn_task`).
+prev resumes when some task switches back to it; a dead task's stack is
+never resumed (the host drops it). All tasks share the instance's
+`__stack_pointer` (the C stack's, in memory): the host saves it when a task
+suspends, and puts it back before it resumes.
 
 ```text
-Worker A (prev)                         Worker B (next)
-__switch_to(A, B)                       ... waiting on B's token
-  A.token = PARKED
-  B.token = 0; notify(B.token)  ─────▶  wakes, returns from its
-  wait(A.token)                         __switch_to (or starts)
-  ...                                   runs
+task A (prev)                           host                    task B (next)
+__switch_to(A, B)
+  switch_task(A, B) ──promise──▶ A suspends
+                                        B's promise resolved ──▶ returns from its
+                                                                 switch_task (or starts)
 ```
 
-`copy_thread` gives the new task to the host (`spawn_task`): a Worker
-calls the kernel's `task_entry(p)` export on the task's stack, which parks
-until the task is first scheduled. A dead task's Worker unwinds its stack
-(`exit_task`), and the host gives it another task later.
-
-The boot Worker runs `start_kernel` and becomes the idle task (swapper).
+The boot CPU runs `start_kernel` (the host calls `boot`) and becomes the
+idle task (swapper). Only one task runs at a time: one CPU, and no host
+code runs while the kernel does.
 
 ## Interrupts and time
 
-The host never interrupts running wasm code. It raises an interrupt by
-setting a bit in `wasm_irq_pending` and notifying that word (kernel/irq.c).
-The kernel takes pending interrupts when it re-enables interrupts, and the
-idle loop waits on the word: that is the host's only way to wake the
-kernel. For a `PREEMPT_NONE` kernel these are the points where real hardware
-would deliver them too.
+The host never interrupts running wasm code: its JavaScript runs only
+while the kernel is suspended. It raises an interrupt by setting a bit in
+`wasm_irq_pending`; the kernel takes pending interrupts when it re-enables
+interrupts. The idle loop calls `idle()`, which suspends until an
+interrupt may be pending: the timer's deadline passed (a `setTimeout`), or
+input from the page. For a `PREEMPT_NONE` kernel these are the points
+where real hardware would deliver them too.
 
 | Line | Raised by | For |
 |---|---|---|
-| 0, timer | the timer Worker | the clockevent (kernel/time.c) |
+| 0, timer | the host, when the deadline passes (at idle, or at a switch) | the clockevent (kernel/time.c) |
 | 1, console | the page | console input (/init's doorbell, below) |
 
 The clockevent is one-shot: the kernel writes its deadline to
-`wasm_timer_deadline`; the host's timer Worker waits on that word
-(`memory.atomic.wait64`, with a timeout until the deadline) and raises the
-timer line when it passes. The clocksource reads host time.
+`wasm_timer_deadline`; the host raises the timer line once it passes. The
+clocksource reads host time; delays spin on it.
 
 ## Programs, and /init
 
 Programs are wasm modules with **their own memory** (so a program's
 pointers are not kernel addresses; NOMMU without sharing the kernel's
 memory). kernel/binfmt_wasm.c recognizes them in `exec`: the host compiles
-and instantiates the module on the task's Worker (`user_load`), and enters
-its `_start` when the task returns to user mode (`user_enter`). A syscall is
-a plain wasm call into the kernel's `syscall` export, on the same Worker
+and instantiates the module (`user_load`), and puts its `_start` in the
+kernel's function table, which the task calls when it returns to user mode
+(a direct call: nothing of the host's may be on a stack it suspends). A
+syscall is a plain wasm call into the kernel's `syscall` export
 (kernel/syscall.c). `copy_from_user`/`copy_to_user` are host imports that
 copy between the two memories (`user_read`, `user_write`).
 
@@ -76,7 +77,7 @@ work as usual.
 
 So there is one program: **/init** (user/init.c, C on nolibc). It mounts
 the disk, and then makes the syscalls the page asks for, one at a time. It
-waits for them reading its terminal: the page puts a request in shared
+waits for them reading its terminal: the page puts a request in the runtime's
 memory (the runtime's), and one byte of console input (`WASM_IRQ_CONSOLE`)
 wakes it; the runtime's `ksee.call` import copies the request (the number,
 the arguments, the buffers) into its memory, it makes the syscall, and
@@ -100,18 +101,19 @@ kicked after every write, added a task and noise to every recording.)
 
 ## Memory
 
-`CONFIG_WASM_HOST_MEMORY` (16 MiB) at the bottom of linear memory belongs to
-the host runtime, which runs as wasm in the same memory; the kernel image is
-linked above it. RAM ends where the host says (`memory_end`); the host puts
+The kernel's memory is the host runtime's (the kernel imports it; not
+shared: one thread). `CONFIG_WASM_HOST_MEMORY` (16 MiB) at its bottom belongs
+to the runtime, its static data and stack; the kernel image is linked above
+it. RAM ends where the host says (`memory_end`); the host puts
 the initramfs at its top and passes `initrd=` on the command line. Memory
 above RAM is the host's heap.
 
 ## The host interface
 
 All of it is in arch/wasm/include/asm/wasm.h. Imports (module `kernel`):
-`console_write`, `console_read`, `get_cmdline`, `memory_end`, `time_ns`, `spawn_task`,
-`exit_task`, `halt`, `user_load`, `user_enter`, `user_read`, `user_write`,
-`print_stack`; and `ksee.bulk` (see [recording.md](recording.md)).
+`console_write`, `console_read`, `get_cmdline`, `memory_end`, `time_ns`,
+`spawn_task`, `switch_task` and `idle` (suspending), `halt`, `user_load`,
+`user_enter`, `user_read`, `user_write`, `print_stack`; and `ksee.bulk` (see [recording.md](recording.md)).
 Exports: `boot_stack`, `boot`, `task_entry`, `syscall`, `ksee_trace`, and the
 globals `__stack_pointer`, `wasm_irq_pending`, `wasm_timer_deadline`,
 `__current_task`.

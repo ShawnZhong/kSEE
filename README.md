@@ -3,8 +3,9 @@
 kSEE records what the real Linux kernel does, down to every line it runs and
 every value it changes, and lets you explore the recording in time, in a
 browser. Linux is compiled to WebAssembly through a minimal `arch/wasm`
-(one Web Worker per task, one shared kernel memory) and instrumented by an
-LLVM pass.
+(one instance on the page's thread; its tasks are call stacks it suspends
+and resumes with JSPI) and instrumented by an LLVM pass. It needs a browser
+with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
 
 - [docs/design.md](docs/design.md): the goal, the experience, how it works
   (and [docs/](docs/README.md): the kernel port, the recording, rebuilding
@@ -16,7 +17,7 @@ LLVM pass.
 - `plugin/`: the LLVM pass that instruments the kernel (blocks, calls, returns, stores)
 - `crates/`: Rust: `ksee-core` (decoding and rebuilding the recording:
   stacks, lines, memory as it was, types), `ksee-runtime` (wasm: boots the
-  kernel in Workers, serves the page), `ksee-cli` (`./ksee.sh`: build, test,
+  kernel and runs its tasks, serves the page), `ksee-cli` (`./ksee.sh`: build, test,
   serve; pack the kernel for the page)
 - `web/`: the page (HTML, JS, CSS); the build puts it, with what it loads,
   in `target/site/` (served, and deployed)
@@ -43,7 +44,7 @@ write it as in C, `openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`,
 and Enter (Tab completes a syscall's name; the hint shows its signature).
 ✎ on a call made goes back to before it, to make another instead: the page
 starts a fresh kernel and makes the calls before it again (a kernel's
-tasks' stacks are its Workers', so it cannot be put back as it was); the
+tasks' stacks are the browser's, so it cannot be put back as it was); the
 calls are in the URL (`#back=`), a link to them.
 
 The timeline shows the recording: the call stacks over time, and which

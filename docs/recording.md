@@ -50,7 +50,7 @@ overwritten the start of a record) and skip to the next head:
 `fn` is a hash of the function's name. `pos` counts words ever written and
 is stored with release order after each record, so a reader sees whole
 records. One writer at a time: the kernel is uniprocessor, and the runtime
-writes its own records only from the Worker holding the CPU.
+writes its own records only while the kernel runs (one thread).
 
 Probes record **only while `on` is set**: the page turns it on to record (a
 program's run, or ● Record) and off after. Otherwise each probe costs a
