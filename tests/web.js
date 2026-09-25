@@ -127,9 +127,11 @@ check("a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr
 m.memory_at(null);
 
 // ext4 (on the loop device, mounted by /init): each example's stops are in its recording.
-for (const [name, funcs] of [["ext4-write", ["ext4_sync_file", "ext4_mb_new_blocks", "jbd2_journal_commit_transaction", "submit_bio"]],
-                             ["ext4-mkdir", ["ext4_mkdir", "__ext4_new_inode", "ext4_init_new_dir", "add_dirent_to_buf"]],
-                             ["ext4-delete", ["ext4_delete_entry", "ext4_orphan_add", "ext4_evict_inode", "ext4_free_blocks", "ext4_free_inode"]]]) {
+for (const [name, funcs] of [["file", ["ext4_create", "__ext4_new_inode", "add_dirent_to_buf", "ext4_da_write_begin", "ext4_sync_file",
+                                       "ext4_mb_new_blocks", "jbd2_journal_commit_transaction", "submit_bio", "__fput",
+                                       "ext4_delete_entry", "ext4_evict_inode", "ext4_free_blocks", "ext4_free_inode"]],
+                             ["dirs", ["ext4_mkdir", "ext4_init_new_dir", "ext4_create", "ext4_readdir", "filldir64", "ext4_rename", "ext4_add_entry",
+                                       "ext4_empty_dir", "ext4_free_inode", "ext4_free_blocks"]]]) {
   const e = await run(`/bin/${name}`);
   m.snapshot();
   const p = m.program(e.pid);
@@ -144,7 +146,7 @@ for (const [name, funcs] of [["ext4-write", ["ext4_sync_file", "ext4_mb_new_bloc
   // (7.2's struct filename: the name pointer is in an anonymous struct, with the name in iname.)
   const name = arg && m.object_by_id("name", arg.target, Number(arg.value.split(" ")[0]), 2)?.children?.[0]?.children?.find((c) => c.name === "name");
   m.memory_at(null);
-  check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/notes"'));
+  check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/dir"'));
 }
 
 // LINUX_REBOOT_CMD_POWER_OFF

@@ -17,6 +17,12 @@ void __ksee_line(int line);
 
 #define __KSEE(call) (__ksee_line(__LINE__), (call))
 
+// (Not in nolibc.)
+static __attribute__((unused)) int rename(const char *old, const char *new)
+{
+	return __sysret(__nolibc_syscall5(__NR_renameat2, AT_FDCWD, old, AT_FDCWD, new, 0));
+}
+
 #define open(...)	__KSEE(open(__VA_ARGS__))
 #define read(...)	__KSEE(read(__VA_ARGS__))
 #define write(...)	__KSEE(write(__VA_ARGS__))
@@ -29,6 +35,9 @@ void __ksee_line(int line);
 #define lseek(...)	__KSEE(lseek(__VA_ARGS__))
 #define mkdir(...)	__KSEE(mkdir(__VA_ARGS__))
 #define unlink(...)	__KSEE(unlink(__VA_ARGS__))
+#define rmdir(...)	__KSEE(rmdir(__VA_ARGS__))
+#define rename(...)	__KSEE(rename(__VA_ARGS__))
+#define getdents64(...)	__KSEE(getdents64(__VA_ARGS__))
 #define getpid(...)	__KSEE(getpid(__VA_ARGS__))
 #define nanosleep(...)	__KSEE(nanosleep(__VA_ARGS__))
 #define stat(...)	__KSEE(stat(__VA_ARGS__))

@@ -154,7 +154,7 @@ fn vendor() {
 }
 
 /// The examples' order on the page, from the simplest (others after them).
-const EXAMPLES: &[&str] = &["hello", "read", "open-fails", "sleep", "ext4-write", "ext4-mkdir", "ext4-delete"];
+const EXAMPLES: &[&str] = &["hello", "read", "open-fails", "sleep", "file", "dirs"];
 
 /// The programs: user/{examples,tests}/*.c, sorted.
 fn examples() -> Vec<String> {

@@ -194,12 +194,22 @@ impl Recording {
     }
 
     /// The first call of function `name` in records `first..=last` (of the
-    /// task at address `task`, or any): its record.
+    /// task at address `task`, or any): its record. Code inlined from it
+    /// counts too (the first block that runs some).
     pub fn first_call(&self, t: &Tables, name: &str, first: usize, last: usize, task: Option<u32>) -> Option<usize> {
         let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
+        // The inline chains with `name` in them.
+        let inl = t.names.iter().position(|n| n == name).map(|k| k as u32);
+        let chains: Vec<u32> = t.inlines.iter().enumerate()
+            .filter(|(_, c)| c.iter().any(|&(k, _)| Some(k) == inl)).map(|(c, _)| c as u32).collect();
+        let inlined = |func: u32, n: u32| !chains.is_empty() && t.lines.get(&(func, n))
+            .is_some_and(|segs| segs.iter().flatten().any(|s| s.inlined.is_some_and(|c| chains.contains(&c))));
         (first..=last.min(self.len().checked_sub(1)?)).find(|&i| {
-            matches!(self.records[i], Record::Block { func, n: 0 } if ids.contains(&func))
-                && task.is_none_or(|t| self.tasks[i] == t)
+            task.is_none_or(|t| self.tasks[i] == t) && match self.records[i] {
+                Record::Block { func, n: 0 } if ids.contains(&func) => true,
+                Record::Block { func, n } => inlined(func, n),
+                _ => false,
+            }
         })
     }
 
@@ -260,6 +270,15 @@ mod tests {
         assert_eq!(rec.tasks, [0x100, 0x100, 0x100, 0x200, 0x200]);
         assert_eq!(rec.task_at(0x100, 4).map(|t| (t.pid, t.comm)), Some((5, "hi".into())));
         assert_eq!(rec.task_at(0x200, 4), None);
+    }
+
+    #[test]
+    fn a_function_inlined_is_found_as_a_call() {
+        // f (1): block 1 runs h's line 20 (h inlined into f).
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nB\t1\t0\t0:1:1\nB\t1\t1\t0:5:1\n\
+                               L\t1\t1\t0:5;:20@h^0:6\n", "");
+        let rec = Recording::new(&t, alloc::vec![b(1, 0), b(1, 1)], alloc::vec![0, 1]);
+        assert_eq!((rec.first_call(&t, "f", 0, 1, None), rec.first_call(&t, "h", 0, 1, None)), (Some(0), Some(1)));
     }
 
     #[test]
