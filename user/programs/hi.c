@@ -1,4 +1,4 @@
-// One write, for tests/web.js's breakpoint.
+// One write.
 #include <unistd.h>
 
 int main(void)

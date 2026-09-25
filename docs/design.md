@@ -1,211 +1,110 @@
 # kSEE design
 
-kSEE is a browser-based system for interactively exploring the execution of
-the **real Linux kernel**: observe what Linux is doing and connect execution
-to Linux source code, kernel objects/state, semantic events, and causal
-history.
+## Goal
 
-## Scope and positioning
+**kSEE records what the real Linux kernel does, down to every line it runs
+and every value it changes, and lets you explore the recording in time.**
 
-- kSEE is **generic** Linux execution visualization, not a scheduler tool.
-- **kSTEP** stays separate: scheduler-specific deterministic testing/control.
-  It can later plug into kSEE as an optional scheduler-control backend
-  (inject events, control the virtual clock, deliver ticks/IPIs). kSEE must
-  work without it, and `arch/wasm` must not be scheduler-specific.
-- The first prototype may be scheduler-heavy; a second demo (e.g. `read()` →
-  VFS → page cache → filesystem) establishes generality.
-- Not "Linux compiled to Wasm" (prior work: see [related/](related/)) and not
-  "scheduler visualization" (KernelShark, SchedViz, ...). The contribution is
-  interactive exploration of the real kernel that tightly correlates
-  **source, live kernel objects, semantic state transitions, causality and
-  history**, zero-install in a browser. Where xv6 simplifies the OS so humans
-  can understand it, kSEE keeps real Linux and simplifies/explains the
-  execution that matters. The key question kSEE answers is **why**: why did
-  this task run, this syscall block, this lock contend, this I/O happen.
+The question it answers: *what did the kernel do here, why, and where in the
+source?* It runs in a browser, with nothing to install: Linux itself is
+compiled to WebAssembly (no emulator), and instrumented by the compiler.
+
+**Who it is for**
+
+- *Learners*: how an OS really works, on real Linux instead of a teaching
+  kernel. They start from **tours**: a question ("What happens in
+  read()?"), a small C program that asks it, and stops that explain what
+  happens.
+- *Kernel developers*: what a code path really does, on a real kernel they
+  can read and change. They run **their own programs**, or **record** the
+  kernel as it runs.
+
+**What it is not**: a live debugger (it replays; it does not pause the
+kernel), a syscall playground, a profiler, a full Linux system (no MMU, no
+SMP, no fork: see Limits).
+
+## The experience
+
+1. **Run** something, recorded: a tour's program, another program, or the
+   kernel for a while (● Record). Programs run to the end: a recording
+   takes milliseconds.
+2. **Explore the recording**, at one cursor:
+   - *time*: a timeline of the call stack (who ran, what they called);
+     drag, step line by line, Play;
+   - *code*: the source line at the cursor, the lines that ran;
+   - *values*: the call stack with each call's arguments and locals,
+     watches, and a name's value on hover; memory as it was at the cursor;
+     ✎: which code last wrote a value.
+   A tour's stops are places in the recording, with a note each: Next goes
+   to the next one.
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Timeline: overview · tasks · call stacks over time · cursor │
+├──────────────┬──────────────────────────────┬───────────────┤
+│ Tours,       │ The stop's note              │ Stack: calls, │
+│ programs     │ Source at the cursor         │ arguments,    │
+│              │ (lines that ran)             │ locals,       │
+│              │                              │ watches       │
+└──────────────┴──────────────────────────────┴───────────────┘
+```
+
+## The recording
+
+Every kernel function is instrumented the same way by an LLVM pass
+(plugin/ksee-trace.cpp) after optimization, and writes to one ring:
+
+- each **basic block** (a call's entry block, with its arguments);
+- each **return**, with its value;
+- a call's **locals in memory** (their addresses, once they exist);
+- each **store**, with the value it overwrites (not to a function's own
+  stack slots, except those locals).
+
+The runtime adds a few records (the program's source line before each
+syscall; which task a program is). From these alone the host
+(crates/ksee-core) rebuilds everything: syscalls (wasm_syscall's calls and
+returns), the running task (where __switch_to returns), the call tree and
+call stacks with arguments and locals, source lines within blocks (the
+plugin's line tables), and memory as it was at any record (the stores after
+it, undone from memory as it was when recording stopped).
+
+Recording happens only while asked for (a program runs, or ● Record), so a
+recording holds what was asked for, and the kernel runs uninstrumented
+otherwise (a check per probe).
 
 ## Architecture
 
 ```text
-Linux source → Clang/LLVM → arch/wasm → vmlinux.wasm → browser runtime
-             → kSEE instrumentation → interactive UI
+linux/ (arch/wasm) ──clang + plugin──▶ vmlinux (wasm) ─┐
+user/  (init, tours, tests: C on nolibc) ─▶ initramfs ─┼─▶ web/ ─▶ browser
+crates/ksee-runtime (Rust → wasm) ─────────────────────┘
 ```
 
-Linux compiles directly to Wasm through a minimal `arch/wasm` (no CPU
-emulator underneath). Initial configuration:
+- **The kernel** (linux/, branch wasm): a minimal `arch/wasm` for Linux 7.2:
+  wasm32, `CONFIG_MMU=n`, one CPU, `PREEMPT_NONE`, an initramfs, a console,
+  a timer. Wasm cannot save a call stack, so each task runs in its own Web
+  Worker, whose stack is the task's; a context switch hands a CPU token
+  from one Worker to the next. All Workers share one kernel memory.
+  Programs are wasm modules with their own memory; a syscall is a call
+  into the kernel's `syscall` export. `/dev/ksee` lets the page ask init to
+  start programs (there is no user fork on wasm: the kernel starts them
+  the way it starts init).
+- **The runtime** (crates/ksee-runtime, Rust to wasm, wasm-bindgen): boots
+  the kernel in Workers, implements its imports, and serves the page: the
+  Machine (snapshots of the recording, and views of it).
+- **The core** (crates/ksee-core): decoding and rebuilding, no browser: the
+  trace, stacks and lines, memory as it was, kernel types (from DWARF).
+- **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel, the
+  runtime, the programs, and the page's files (types from DWARF, the
+  sources, Monaco), into web/.
+- **The page** (web/): tours and programs, the timeline, the source
+  (Monaco), the Stack.
 
-```text
-wasm32, CONFIG_MMU=n, CONFIG_SMP=n (NR_CPUS=1), CONFIG_PREEMPT_NONE,
-no modules/PCI/ACPI/networking, initramfs/tmpfs, simple console,
-simple virtual timer, minimal userspace, asm-generic wherever possible
-```
+## Limits
 
-### NOMMU
-
-Wasm linear memory has no Linux-controlled MMU (no PTEs, TLB, faults, COW),
-so `CONFIG_MMU=n`. That is adequate for scheduler, syscalls, sleep/wakeup,
-locks/waitqueues, VFS, filesystems, page cache, kernel allocation, block I/O.
-It is not faithful for `fork()`/COW, page tables, TLBs, demand paging or full
-`mmap()`. MMU support (e.g. software translation) is not a prerequisite.
-
-### Tasks: one Worker per `task_struct`
-
-Wasm cannot save/restore its execution stack, so each Linux schedulable task
-gets its own Web Worker, whose hidden Wasm stack is the task's continuation.
-A context switch hands a **CPU token** from one Worker to another and parks
-the old one; when rescheduled, a Worker resumes from its existing stack. No
-Asyncify is needed for ordinary scheduling.
-
-```text
-schedule A→B on CPU0: transfer CPU0 token A→B, wake B, park A
-```
-
-All task Workers instantiate the same kernel module against one **shared
-kernel `WebAssembly.Memory`** (SharedArrayBuffer) holding all kernel state.
-Userspace may use separate per-process memories; `copy_{to,from}_user()`
-become runtime hooks into the current task's user memory.
-
-### SMP (later)
-
-N task Workers, M CPU tokens: M Workers run concurrently, N−M are parked.
-This gives real per-CPU runqueues, migration, affinity, load balancing,
-spinlocks, atomics, cross-CPU wakeups, IPIs, RCU. Start at `NR_CPUS=1` but
-keep runtime structures (`HostCPU{cpu_id, current_task, pending_irqs}`,
-`HostTask{tid, worker, cpu, state}`) so going to 2 needs no redesign.
-
-### Preemption
-
-No asynchronous browser-level preemption initially (it would also hurt
-determinism). `sched_yield()` is **not** a substitute for preemption. Keep
-Linux's sequence: timer/event → `scheduler_tick()` → `resched_curr()` →
-`TIF_NEED_RESCHED` → legal reschedule point → `__schedule()`, delivered at
-safepoints. Progression: explicit safepoints → compiler-inserted userspace
-safepoints → compiler-inserted legal kernel safepoints → finer only if needed.
-
-### fork
-
-Deferred. Possible later: Asyncify **userspace only**; at a clean syscall
-boundary after `copy_process()`, unwind the user continuation into memory,
-create the child Worker and rewind both (parent gets PID, child 0). Never
-clone a kernel continuation. Under NOMMU this is still not real COW fork.
-The MVP uses pre-created tasks or a simple spawn.
-
-### No snapshots / reverse execution
-
-Linux always runs forward. kSEE records an append-only semantic history and
-the UI scrubs it ("visual time travel"), applying/reversing state deltas on a
-frontend shadow model.
-
-## Instrumentation
-
-**Semantic history**: append-only events with state deltas and source, e.g.
-
-```text
-event 104 SCHED_SWITCH  CPU0 current A→B; A RUNNING→RUNNABLE;
-                        B RUNNABLE→RUNNING; rq0 before→after;
-                        source kernel/sched/core.c:...
-```
-
-**Hierarchical tracing** to bound overhead/perturbation:
-
-| Level | What |
-|---|---|
-| 0 | semantic events: sched_switch, wakeup, syscall, IRQ, ... |
-| 1 | selected function entry/exit |
-| 2 | basic-block/branch history for a selected subsystem/function |
-| 3 | selected object/memory mutation |
-
-**Source mapping**: an LLVM pass assigns a `LocationID` to selected
-`DILocation`s and inserts `__ksee_location(ID)`; a sidecar maps ID → file,
-line, column, function, inline context. The runtime only emits compact IDs;
-DWARF stays available for arbitrary inspection.
-
-**Objects**: BTF decodes kernel structs into a browsable object graph
-(pointers are edges), with progressive disclosure concept → object → fields →
-raw memory. Curate `task_struct`, `sched_entity`, `rq` first; later `file`,
-`inode`, `dentry`, `address_space`/folio. Stable identity via
-`ObjectID = address + allocation generation` (allocators reuse addresses).
-
-**Causality**: syscall instance/root IDs propagate through async mechanisms
-(bio, work_struct, timer, wake events carry provenance), distinguishing
-synchronous duration from downstream effects, e.g. `read()` → page-cache miss
-→ bio → sleep … IRQ → bio completion → wake → schedule → read resumes.
-
-## UI
-
-The kernel runs on its own and is traced while recording (a tour records
-by itself; ● Record by hand), so the history holds just what was asked
-for. The header says LIVE, RECORDING, PAUSED (the debugger stopped it) or
-REPLAY (the cursor is in the recorded past). One cursor; every panel shows
-its moment.
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ History: a lane per task, syscalls as bars                  │
-│ Flame chart of the selection (calls by depth)               │
-│ ⏮ ◀ ▶ Play ▶| ⤼ Now   speed                                 │
-├──────────────┬──────────────────────────────┬───────────────┤
-│ Tours        │ The stop's note              │ Stack: calls, │
-│ (a question, │ Source (whole file, lines    │ arguments,    │
-│ a C program, │ that ran, the cursor)        │ watches       │
-│ stops)       │                              │ Console       │
-└──────────────┴──────────────────────────────┴───────────────┘
-```
-
-- **Tours** are how the page talks to the kernel: a question, a small C
-  program (on nolibc) that init starts as a real process (the /dev/ksee
-  spawn ioctl), and stops: breakpoints with a note, for the syscalls of the
-  lines marked `// stops here`.
-- **One trace**, one kind of instrumentation for every function (the
-  plugin has no settings): each block (a call's entry block with its
-  arguments), each return (with its value), the addresses of a call's
-  locals in memory, and each store (with the old value), in one ring.
-  Syscalls are wasm_syscall's calls and returns; the running task changes
-  where __switch_to returns. The call tree, call stacks with arguments and
-  locals, and memory as it was at any moment are all rebuilt from it; ✎
-  says which code last wrote a value. When recording stops, the runtime
-  keeps kernel memory as it was then (the past is that, with the recorded
-  stores undone).
-- **Source**: Monaco (vendored at build time): the lines that ran, the
-  function, breakpoints, the stop and the cursor as decorations; hover a
-  name for its value at the cursor; right-click to watch it; F12 to open a
-  function's source.
-- **Lines within blocks**: the plugin writes each block's source lines, so
-  steps and Play go by source line; an inlined function is a frame of its
-  own.
-- **Play** goes line by line: through the recording (REPLAY), or by running
-  the paused kernel a line at a time on its task. The kernel's clock stands
-  still while it is paused.
-
-Scrubbing changes the visualization's historical state, not the machine.
-Primary question: **what changed, why, and where in Linux source?**
-
-## Demos
-
-1. **Scheduler**: 2–3 pre-created tasks; B wakes → `try_to_wake_up()` →
-   `enqueue_task()` → `check_preempt_curr()` → need_resched → `__schedule()`
-   → B runs. Later 2 CPUs for migration/load balancing/IPIs/spinlocks.
-2. **Non-scheduler**: `read()`/`write()` through VFS, page cache, filesystem
-   (and JBD2/block layer).
-
-## Explicitly deferred
-
-MMU, COW/POSIX fork, full exec environment/shell, PCI, ACPI, networking,
-large device ecosystem, asynchronous preemption, production SMP,
-snapshot/restore, reverse execution, full instruction tracing.
-
-## Phases
-
-| Phase | Goal |
-|---|---|
-| 0 | minimal `arch/wasm`; Linux boots; console works |
-| 1 | one task, basic syscall, source/event tracing |
-| 2 | multiple task Workers, one CPU token, sleep/wakeup/context switch |
-| 3 | scheduler visualization: task_struct/rq, event history, source correlation |
-| 4 | generic instrumentation API, BTF object browser, causal history |
-| 5 | VFS read/write demo |
-| 6 | 2 logical CPUs: SMP scheduler, migration, spinlocks, IPIs |
-| later | compiler safepoints, kSTEP integration, fork/Asyncify, networking, MMU |
-
-**First milestone**: the smallest `arch/wasm` + browser runtime that boots
-Linux and shows two tasks sleeping, waking and context-switching while
-emitting source-correlated semantic events to a browser UI.
+- No MMU: no page tables, faults, copy-on-write or demand paging; no user
+  fork (programs are started by the kernel).
+- One CPU; no preemption (the kernel reschedules at its usual points).
+- Arguments are 32 bits (wider ones lose their high half); locals are only
+  those in memory; values in wasm locals are not recorded.
+- A recording is a ring: the oldest records go when it is full.

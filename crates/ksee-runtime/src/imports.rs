@@ -60,17 +60,9 @@ pub extern "C" fn memory_end() -> u32 {
     MEMORY_END.load(Ordering::Relaxed)
 }
 
-/// Nanoseconds since the machine started (also the probes' clock).
+/// Nanoseconds since the machine started (the kernel's clock).
 #[unsafe(no_mangle)]
 pub extern "C" fn time_ns() -> u64 {
-    // The kernel's clock stands still while the debugger has it stopped
-    // (else it would catch up on every missed tick when it goes on).
-    let at = STOPPED_AT.load(Ordering::Acquire);
-    (if at != 0 { at } else { wall_ns() }).saturating_sub(PAUSED_NS.load(Ordering::Acquire))
-}
-
-/// Nanoseconds since boot, the stops included.
-pub fn wall_ns() -> u64 {
     ((js::now_ms() - f64::from_bits(EPOCH_MS.load(Ordering::Relaxed))) * 1e6) as u64
 }
 
@@ -259,7 +251,6 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
         })));
 
     let ksee = Object::new();
-    js::set(&ksee, "stop", export("stop"));
     js::set(&ksee, "bulk", export("bulk"));
     let env = Object::new();
     js::set(&env, "memory", memory.clone());

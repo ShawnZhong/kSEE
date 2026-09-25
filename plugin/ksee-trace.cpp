@@ -17,15 +17,12 @@
 //
 // Probes append records to a ring in the module's own memory, defined in
 // the object that defines start_kernel (wasm-ld keeps every copy of weak
-// or COMDAT data): __ksee_trace = { u32 pos; u32 armed; u32 on; u32 pad;
+// or COMDAT data): __ksee_trace = { u32 pos; u32 pad; u32 on; u32 pad;
 // u32 ring[RING_WORDS]; }; the exported ksee_trace() returns its address.
 // pos counts words ever written (the ring keeps the most recent), stored
 // with release order after each record, so a reader that loads it sees
 // whole records. Probes record only while on is nonzero (the host turns
-// it on and off). While armed is nonzero, block and return probes also call
-// the ksee.stop(fn, n) import (n = 0x0fffffff at a return), which may stop
-// the kernel there (breakpoints, stepping). One writer at a time: the
-// kernel is uniprocessor.
+// it on and off). One writer at a time: the kernel is uniprocessor.
 //
 // A record is a head pair of words and continuation pairs; the second
 // word's top nibble tags the pair, so a reader can start at any even offset
@@ -91,7 +88,6 @@ namespace {
 constexpr unsigned RingWords = 1u << 21;
 constexpr unsigned CallArgs = 6;
 constexpr unsigned Locals = 8;
-constexpr uint32_t ReturnMark = 0x0fffffff;
 enum Kind { KindBlock = 1, KindLocals = 2, KindReturn = 4, KindStore = 7, KindValue = 8 };
 
 uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
@@ -203,11 +199,9 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     info->addFnAttr("wasm-export-name", "ksee_trace");
     IRBuilder<> IB(BasicBlock::Create(C, "", info));
     IB.CreateRet(IB.CreatePtrToInt(trace, i32));
-    FunctionCallee stop = import("__ksee_stop", "stop", FunctionType::get(vd, {i32, i32}, false));
     auto field = [&](IRBuilder<> &B, unsigned k) { return B.CreateStructGEP(traceTy, trace, k); };
 
-    // A writer: `words` of a record from its arguments, while on; then, for
-    // blocks and returns, the stop hook while armed.
+    // A writer: `words` of a record from its arguments, while on.
     auto writer = [&](Function *&F, const std::string &name, unsigned n, auto words) {
       F = hidden(Function::Create(FunctionType::get(vd, SmallVector<Type *>(n, i32), false),
                                   GlobalValue::ExternalLinkage, name, M));
@@ -223,7 +217,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         w.push_back(v);
         w.push_back(B.getInt32(KindValue << 28 | index));
       };
-      Value *hookN = words(B, F, w, value);
+      words(B, F, w, value);
       Value *p = B.CreateLoad(i32, field(B, 0));
       for (auto [i, v] : enumerate(w)) {
         Value *idx = B.CreateAnd(B.CreateAdd(p, B.getInt32(i)), B.getInt32(RingWords - 1));
@@ -233,38 +227,30 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
           ->setAtomic(AtomicOrdering::Release);
       B.CreateBr(done);
       B.SetInsertPoint(done);
-      if (hookN) {
-        BasicBlock *hook = BasicBlock::Create(C, "stop", F), *ret = BasicBlock::Create(C, "ret", F);
-        B.CreateCondBr(B.CreateICmpNE(B.CreateLoad(i32, field(B, 1)), B.getInt32(0)), hook, ret);
-        B.SetInsertPoint(hook);
-        B.CreateCall(stop, {F->getArg(0), hookN});
-        B.CreateBr(ret);
-        B.SetInsertPoint(ret);
-      }
       B.CreateRetVoid();
     };
     names([&](Function *&F, const std::string &name, unsigned n) {
-      writer(F, name, n, [&](IRBuilder<> &B, Function *F, auto &w, auto value) -> Value * {
+      writer(F, name, n, [&](IRBuilder<> &B, Function *F, auto &w, auto value) {
         if (StringRef(name).starts_with("__ksee_put_call") || name == "__ksee_put_block") {
           bool call = name != "__ksee_put_block";
           w.push_back(F->getArg(0));
           w.push_back(call ? B.getInt32(KindBlock << 28) : B.CreateOr(F->getArg(1), B.getInt32(KindBlock << 28)));
           for (unsigned i = 1; call && i < n; i++)
             value(F->getArg(i));
-          return call ? (Value *)B.getInt32(0) : F->getArg(1);
+          return;
         }
         if (StringRef(name).starts_with("__ksee_put_locals")) {
           w.push_back(F->getArg(0));
           w.push_back(B.getInt32(KindLocals << 28 | (n - 1)));
           for (unsigned i = 1; i < n; i++)
             value(F->getArg(i));
-          return nullptr;
+          return;
         }
         if (name == "__ksee_put_return") {
           w.push_back(F->getArg(0));
           w.push_back(B.getInt32(KindReturn << 28));
           value(F->getArg(1));
-          return B.getInt32(ReturnMark);
+          return;
         }
         // A store of 1 << k bytes: the old value.
         unsigned k = Log2_32(std::stoi(name.substr(strlen("__ksee_put_store"))));
@@ -276,7 +262,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         value(B.CreateTrunc(old, i32));
         if (k == 3)
           value(B.CreateTrunc(B.CreateLShr(old, 32), i32));
-        return nullptr;
       });
     });
     probes += "R\t" + std::to_string(RingWords) + "\n";

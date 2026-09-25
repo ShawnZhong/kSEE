@@ -6,10 +6,11 @@
 //!   linux/vmlinux          the kernel, instrumented (kbuild)
 //!   web/pkg/               the runtime, and wasm-bindgen's glue (cargo)
 //!   web/vmlinux, web/src/  the kernel for the page (pack)
-//!   web/initramfs.cpio     /init (user/init.c), and the programs: the
-//!                          tours' (user/tours/*.c) and the tests'
-//!                          (user/tests/*.c), as /bin/NAME
-//!   web/tours/             the tours: their sources, and index.json
+//!   web/initramfs.cpio     /init (user/init.c), and the programs, as
+//!                          /bin/NAME: the tours' (user/tours/*.c), the
+//!                          others the page lists (user/programs/*.c), and
+//!                          the tests' (user/tests/*.c)
+//!   web/tours/             the programs' sources, and index.json
 //!   web/vendor/monaco/     the Monaco editor (downloaded once from npm)
 //!
 //! $LLVM is the LLVM version suffix (default -23).
@@ -99,6 +100,11 @@ pub fn build() {
             std::fs::write(format!("web/tours/{name}.c"), &text).unwrap_or_else(|e| crate::fail(&format!("web/tours: {e}")));
             if src.starts_with("user/tours/") {
                 index.push(tour_json(&name, &text));
+            } else if src.starts_with("user/programs/") {
+                // (A program: its title is its first comment line.)
+                let title = text.lines().next().and_then(|l| l.strip_prefix("// ")).unwrap_or(&name);
+                index.push(format!("  {{ \"name\": \"{name}\", \"path\": \"/bin/{name}\", \"title\": \"{}\", \"program\": true }}",
+                                   title.replace('\\', "\\\\").replace('"', "\\\"")));
             }
         }
         std::fs::write("web/tours/index.json", format!("[\n{}\n]\n", index.join(",\n")))
@@ -136,9 +142,9 @@ fn vendor() {
         .unwrap_or_else(|e| crate::fail(&format!("web/vendor/monaco: {e}")));
 }
 
-/// The programs, user/tours/*.c and user/tests/*.c, sorted.
+/// The programs, user/{tours,programs,tests}/*.c, sorted.
 fn tours() -> Vec<String> {
-    let mut list: Vec<String> = ["user/tours", "user/tests"].iter()
+    let mut list: Vec<String> = ["user/tours", "user/programs", "user/tests"].iter()
         .flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
         .map(|e| e.path().to_string_lossy().into_owned()).filter(|p| p.ends_with(".c")).collect();
     list.sort();

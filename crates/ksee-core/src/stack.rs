@@ -12,91 +12,60 @@ use alloc::vec::Vec;
 
 use crate::trace::Record;
 
-/// A call: `func` at `depth` (0: outermost seen), from record `first` to
-/// record `last` (the last one of its task while it was on the stack).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Frame {
-    pub func: u32,
-    pub depth: u32,
-    pub first: usize,
-    pub last: usize,
-}
-
 #[derive(Default)]
 struct Stack {
     /// (function, first record)
     frames: Vec<(u32, usize)>,
-    /// The task's latest record.
-    last: usize,
 }
 
 impl Stack {
-    /// Apply block `(func, n)` at record `i`; `pop` gets each frame that ends.
-    fn block(&mut self, func: u32, n: u32, i: usize, pop: &mut impl FnMut(Frame)) {
-        let end = self.last;
-        let mut pop_to = |frames: &mut Vec<(u32, usize)>, keep: usize| {
-            while frames.len() > keep {
-                let (f, first) = frames.pop().unwrap();
-                pop(Frame { func: f, depth: frames.len() as u32, first, last: end });
-            }
-        };
+    /// Apply block `(func, n)` at record `i`.
+    fn block(&mut self, func: u32, n: u32, i: usize) {
         if n == 0 {
             self.frames.push((func, i));
         } else if self.frames.last().is_some_and(|&(f, _)| f == func) {
             // Still in the same function.
         } else if let Some(k) = self.frames.iter().rposition(|&(f, _)| f == func) {
-            pop_to(&mut self.frames, k + 1);
+            self.frames.truncate(k + 1);
         } else {
-            pop_to(&mut self.frames, 0);
+            self.frames.clear();
             self.frames.push((func, i));
         }
-        self.last = i;
     }
 
-    /// Function `func` returned (an exit record at `i`).
-    fn exit(&mut self, func: u32, i: usize, pop: &mut impl FnMut(Frame)) {
+    /// Function `func` returned.
+    fn exit(&mut self, func: u32) {
         if let Some(k) = self.frames.iter().rposition(|&(f, _)| f == func) {
-            while self.frames.len() > k {
-                let (f, first) = self.frames.pop().unwrap();
-                pop(Frame { func: f, depth: self.frames.len() as u32, first, last: i });
-            }
+            self.frames.truncate(k);
         }
-        self.last = i;
     }
 }
 
-/// The calls in records `from..=to` (of task `task`, or any), at least
-/// `min` records long (smaller ones are too small to draw). `tasks[i]` is
-/// the task running at record `i`.
-pub fn frames(records: &[Record], tasks: &[u32], from: usize, to: usize, task: Option<u32>,
-              min: usize) -> Vec<Frame> {
-    let mut out = Vec::new();
-    let to = to.min(records.len().saturating_sub(1));
+/// A stack chart of records `from..=to` in `n` columns: for each column,
+/// the task running at its first record and that task's call stack then,
+/// outermost first, as (function, the call's first record).
+pub fn chart(records: &[Record], tasks: &[u32], from: usize, to: usize, n: usize) -> Vec<(u32, Vec<(u32, usize)>)> {
+    let mut out = Vec::with_capacity(n);
+    if records.is_empty() || n == 0 || from > to {
+        return out;
+    }
+    let to = to.min(records.len() - 1);
+    let span = to - from + 1;
     let mut stacks: BTreeMap<u32, Stack> = BTreeMap::new();
-    let mut keep = |f: Frame| {
-        if f.last >= from && f.first <= to && f.last - f.first + 1 >= min {
-            out.push(Frame { first: f.first.max(from), ..f });
-        }
-    };
+    let mut col = 0;
     for (i, r) in records.iter().enumerate().take(to + 1) {
         let t = tasks[i];
-        if task.is_some_and(|x| x != t) {
-            continue;
-        }
         match *r {
-            Record::Block { func, n } => stacks.entry(t).or_default().block(func, n, i, &mut keep),
-            Record::Return { func, .. } => stacks.entry(t).or_default().exit(func, i, &mut keep),
+            Record::Block { func, n } => stacks.entry(t).or_default().block(func, n, i),
+            Record::Return { func, .. } => stacks.entry(t).or_default().exit(func),
             _ => {}
         }
-    }
-    // The calls still in progress at `to`.
-    for s in stacks.values_mut() {
-        let end = s.last;
-        while let Some((f, first)) = s.frames.pop() {
-            keep(Frame { func: f, depth: s.frames.len() as u32, first, last: end });
+        // (A column's first record, or several columns' when zoomed in.)
+        while col < n && i >= from + col * span / n {
+            out.push((t, stacks.get(&t).map(|s| s.frames.clone()).unwrap_or_default()));
+            col += 1;
         }
     }
-    out.sort_by_key(|f| (f.first, f.depth));
     out
 }
 
@@ -146,14 +115,14 @@ pub fn lines(t: &crate::tables::Tables, records: &[Record], tasks: &[u32], from:
         let at = tasks_at.entry(tk).or_insert_with(|| At { stack: Stack::default(), blocks: Vec::new() });
         match *r {
             Record::Block { func, n } => {
-                at.stack.block(func, n, i, &mut |_| {});
+                at.stack.block(func, n, i);
                 let depth = at.stack.frames.len();
                 at.blocks.resize(depth, (u32::MAX, 0));
                 at.blocks[depth - 1] = (n, 1);
                 emit(&mut out, func, n, 0, depth as u32 - 1, i);
             }
             Record::Return { func, .. } => {
-                at.stack.exit(func, i, &mut |_| {});
+                at.stack.exit(func);
                 let depth = at.stack.frames.len();
                 at.blocks.truncate(depth);
                 // The caller goes on after the call: its block's next stretch.
@@ -189,8 +158,8 @@ pub fn calls_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<Call> {
     for (i, r) in records.iter().enumerate().take(at + 1) {
         if tasks[i] == task {
             match *r {
-                Record::Block { func, n } => s.block(func, n, i, &mut |_| {}),
-                Record::Return { func, .. } => s.exit(func, i, &mut |_| {}),
+                Record::Block { func, n } => s.block(func, n, i),
+                Record::Return { func, .. } => s.exit(func),
                 _ => {}
             }
         }
@@ -218,8 +187,8 @@ pub fn stack_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<u32> {
     for (i, r) in records.iter().enumerate().take(at + 1) {
         if tasks[i] == task {
             match *r {
-                Record::Block { func, n } => s.block(func, n, i, &mut |_| {}),
-                Record::Return { func, .. } => s.exit(func, i, &mut |_| {}),
+                Record::Block { func, n } => s.block(func, n, i),
+                Record::Return { func, .. } => s.exit(func),
                 _ => {}
             }
         }
@@ -240,9 +209,6 @@ mod tests {
         // f calls g, g calls h; back in g, back in f; then f calls g again.
         let r = [b(1, 0), b(1, 1), b(2, 0), b(3, 0), b(2, 1), b(1, 2), b(2, 0), b(1, 3)];
         let t = [7; 8];
-        let f = frames(&r, &t, 0, 7, None, 1);
-        let got: Vec<_> = f.iter().map(|f| (f.func, f.depth, f.first, f.last)).collect();
-        assert_eq!(got, [(1, 0, 0, 7), (2, 1, 2, 4), (3, 2, 3, 3), (2, 1, 6, 6)]);
         assert_eq!(stack_at(&r, &t, 3), [1, 2, 3]);
         assert_eq!(stack_at(&r, &t, 5), [1]);
     }
@@ -271,15 +237,12 @@ mod tests {
         let r = [b(1, 0), b(2, 0), b(2, 1), b(1, 1)];
         let t = [7, 8, 8, 7];
         assert_eq!(stack_at(&r, &t, 3), [1]);
-        let f = frames(&r, &t, 0, 3, Some(7), 1);
-        assert_eq!(f, [Frame { func: 1, depth: 0, first: 0, last: 3 }]);
     }
 
     #[test]
     fn a_return_past_the_start_restarts_the_stack() {
         let r = [b(2, 3), b(3, 0), b(1, 4)];
-        let f = frames(&r, &[7; 3], 0, 2, None, 1);
-        let got: Vec<_> = f.iter().map(|f| (f.func, f.depth)).collect();
-        assert_eq!(got, [(2, 0), (3, 1), (1, 0)]);
+        assert_eq!(stack_at(&r, &[7; 3], 1), [2, 3]);
+        assert_eq!(stack_at(&r, &[7; 3], 2), [1]);
     }
 }

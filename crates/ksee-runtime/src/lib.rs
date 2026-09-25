@@ -16,7 +16,6 @@
 
 #![feature(stdarch_wasm_atomic_wait)]
 
-mod debug;
 mod imports;
 mod js;
 pub mod machine;

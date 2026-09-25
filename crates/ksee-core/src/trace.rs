@@ -48,11 +48,9 @@ pub fn decode(words: &[u32]) -> Vec<Record> {
         .collect()
 }
 
-/// Offset of the ring's words in the trace header (`{ u32 pos; u32 armed;
+/// Offset of the ring's words in the trace header (`{ u32 pos; u32 pad;
 /// u32 on; u32 pad; u32 ring[words]; }`, see plugin/ksee-trace.cpp).
 pub const RING: u32 = 16;
-/// Offset of the `armed` word.
-pub const ARMED: u32 = 4;
 /// Offset of the `on` word (probes record only while it is nonzero).
 pub const ON: u32 = 8;
 

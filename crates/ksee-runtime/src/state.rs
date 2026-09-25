@@ -21,10 +21,6 @@ pub static EPOCH_MS: AtomicU64 = AtomicU64::new(0);
 pub static TRACE: AtomicU32 = AtomicU32::new(0);
 /// The trace ring's size in words.
 pub static RING_WORDS: AtomicU32 = AtomicU32::new(0);
-/// While the debugger has the kernel stopped: when (imports::wall_ns, 0
-/// otherwise); and how long it has been stopped in all.
-pub static STOPPED_AT: AtomicU64 = AtomicU64::new(0);
-pub static PAUSED_NS: AtomicU64 = AtomicU64::new(0);
 pub static CURRENT_TASK: AtomicU32 = AtomicU32::new(0);
 /// The kernel's pending-interrupt word (wasm_irq_pending).
 pub static PENDING: AtomicU32 = AtomicU32::new(0);

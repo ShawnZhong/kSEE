@@ -1,7 +1,6 @@
 // The source view: a whole kernel file in Monaco (web/editor.js), with the
 // lines where blocks ran (counts in the gutter; untaken ones marked), the
-// function's lines, breakpoints (click the glyph margin), and where the
-// kernel is stopped or the cursor is. Hover a name for its value at the
+// function's lines, and the cursor. Hover a name for its value at the
 // cursor (an argument, a global, and fields: file->f_pos); right-click to
 // watch it; F12 or Ctrl+click on a function to open its source.
 import { $ } from "./dom.js";
@@ -39,8 +38,8 @@ export function source(app) {
         : fetch(new URL(`./src/${file}`, location)).then((r) => (r.ok ? r.text() : null)).catch(() => null));
     return texts.get(file);
   };
-  // What is shown, and the markers: breakpoints, the stop, the history cursor.
-  const v = { file: null, fn: null, syscall: undefined, breaks: new Set(), stop: null, cursor: null, counts: new Map() };
+  // What is shown, and the cursor's line.
+  const v = { file: null, fn: null, syscall: undefined, cursor: null, counts: new Map() };
   let monaco, ed, marks;
   const models = new Map();
 
@@ -55,16 +54,10 @@ export function source(app) {
       lineNumbers: (n) => (v.counts.has(n) ? `${v.counts.get(n) ? `${v.counts.get(n)}×` : "·"} ${n}` : `${n}`),
     });
     marks = ed.createDecorationsCollection();
-    // A breakpoint: click the glyph margin (or the line number) of a line that has blocks.
+    // Ctrl+click on a function: its source.
     ed.onMouseDown((e) => {
-      const T = monaco.editor.MouseTargetType, line = e.target.position?.lineNumber;
-      if ((e.target.type === T.GUTTER_GLYPH_MARGIN || e.target.type === T.GUTTER_LINE_NUMBERS) && v.counts.has(line)) {
-        const key = `${v.file}:${line}`, on = !v.breaks.has(key);
-        if (m.break_line(v.file, line, on)) on ? v.breaks.add(key) : v.breaks.delete(key);
-        decorate();
-      } else if (e.target.type === T.CONTENT_TEXT && (e.event.ctrlKey || e.event.metaKey)) {
+      if (e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT && (e.event.ctrlKey || e.event.metaKey))
         definition(e.target.position);
-      }
     });
     // Hover: the value at the cursor.
     monaco.languages.registerHoverProvider("c", {
@@ -124,14 +117,8 @@ export function source(app) {
         ? { isWholeLine: true, className: "ln-hit", overviewRuler: { color: "#2da44e88", position: 4 }, minimap: { color: "#2da44e88", position: 1 } }
         : { linesDecorationsClassName: "ln-miss" }));
     if (fn) d.push({ range: new monaco.Range(fn.line, 1, last, 1), options: { isWholeLine: true, linesDecorationsClassName: "ln-infn" } });
-    for (const key of v.breaks) {
-      const [f, n] = [key.slice(0, key.lastIndexOf(":")), Number(key.slice(key.lastIndexOf(":") + 1))];
-      if (f === file) d.push(line(n, { glyphMarginClassName: "gl-break", glyphMarginHoverMessage: { value: "breakpoint: click to remove" } }));
-    }
     if (at(v.cursor)) d.push(line(v.cursor.line, { isWholeLine: true, className: "ln-cursor", glyphMarginClassName: "gl-cursor",
       overviewRuler: { color: "#0969da", position: 7 } }));
-    if (at(v.stop)) d.push(line(v.stop.line, { isWholeLine: true, className: "ln-stop", glyphMarginClassName: "gl-stop",
-      overviewRuler: { color: "#cf222e", position: 7 } }));
     marks.set(d);
   }
 
@@ -162,11 +149,13 @@ export function source(app) {
     showFile(file ?? f.file, focus);
   }
 
-  // For tests: the hover at the first `needle` of the shown file, on `word`.
+  // For tests: the hover at the first `needle` of the shown function (and
+  // after it), on `word`.
   async function hoverAt(needle, word) {
     await ready;
     const mdl = ed.getModel();
-    for (let n = 1; n <= mdl.getLineCount(); n++) {
+    // (From the shown function's first line.)
+    for (let n = v.fn?.file === v.file ? v.fn.line : 1; n <= mdl.getLineCount(); n++) {
       const text = mdl.getLineContent(n), k = text.indexOf(needle);
       if (k >= 0) return hover(n, text, k + needle.indexOf(word))?.text ?? null;
     }

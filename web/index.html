@@ -10,23 +10,17 @@
 <header><b>kSEE</b>
   <span id="badge" class="badge">loading</span><span id="status" class="dim">loading the kernel…</span>
   <span class="controls">
-    <button id="record" title="Record the kernel (a tour records by itself)">● Record</button>
-    <button id="pause" disabled title="Stop the kernel at its next basic block">Pause</button>
-    <button id="cont" disabled title="Let the kernel run (until a breakpoint)">Continue</button>
+    <button id="record" title="Record what the kernel runs, until you stop it (a tour or a program records by itself)">● Record</button>
   </span></header>
 <section id="history">
-  <canvas id="lanes" aria-label="history: tasks and their syscalls over the trace"></canvas>
-  <div id="flamebox" hidden>
-    <div class="flamehead"><span id="flame-title" class="dim"></span><span id="legend"></span></div>
-    <div class="flamescroll" id="flamescroll"><canvas id="flame" aria-label="the calls of the selected syscall"></canvas></div>
-  </div>
+  <canvas id="overview" aria-label="the whole recording: which task ran when; the window below"></canvas>
+  <div class="flamehead"><span id="chart-title" class="dim"></span><span id="legend"></span></div>
+  <div class="flamescroll" id="chartbox"><canvas id="chart" aria-label="the call stacks over time"></canvas></div>
   <div class="transport">
     <button id="to-start" title="To the start">⏮</button>
     <button id="back-line" title="Back a line (←)">◀</button>
     <button id="play" class="go" title="Play: line by line (space)">▶ Play</button>
-    <button id="fwd-line" title="Forward a line (→); at now, while paused, the kernel runs a line">▶|</button>
-    <button id="over" title="Over: to the next line of this function (while paused)">⤼</button>
-    <button id="now" title="Back to now">Now ⏭</button>
+    <button id="fwd-line" title="Forward a line (→)">▶|</button>
     <select id="speed" aria-label="speed" title="Play speed">
       <option value="1000">slow</option><option value="400" selected>1 line / 0.4 s</option><option value="120">fast</option><option value="30">faster</option>
     </select>
@@ -36,14 +30,14 @@
 <div class="hsplit" id="hsplit" title="drag to resize"></div>
 <main id="main">
   <div class="col">
-    <h2>Tours <span class="dim">programs, and what the kernel does for them</span></h2>
+    <h2>Tours <span class="dim">and programs: what the kernel does for them</span></h2>
     <div class="body" id="tours"></div>
   </div>
   <div class="vsplit" data-col="left" title="drag to resize"></div>
   <div class="col">
     <div id="note" hidden></div>
     <div class="srcbar mono" id="fn-title">Source</div>
-    <div class="body" id="src"><div class="empty">The source at the cursor: lines where blocks ran are green (with counts), untaken ones red. Click a line number to break there.</div></div>
+    <div class="body" id="src"><div class="empty">The source at the cursor: lines where blocks ran are green (with counts), untaken ones red.</div></div>
   </div>
   <div class="vsplit" data-col="right" title="drag to resize"></div>
   <div class="col">

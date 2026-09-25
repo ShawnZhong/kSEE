@@ -1,4 +1,4 @@
-// The page in headless Chromium (./ksee.sh test --ui): serve web/, load it, run a tour, fail on any exception, and save a screenshot. Options
+// The page in headless Chromium (./ksee.sh test --ui): serve web/, load it, run a tour and go through it, fail on any exception, and save a screenshot. Options
 // look at another page or script (to check the UI while working on it).
 //   deno run -A tests/ui.js OUT.png [--url=URL] [--wait=ms] [--eval=JS] [--size=WxH]
 // $CHROME: a Chromium binary (e.g. Playwright's chrome-headless-shell).
@@ -53,41 +53,33 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url });
 await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
-// By default: open the read tour (it runs, recording, with its stops):
-// each stop's note and the Stack's arguments; after it, replay its read
-// with memory as it was; report what the page shows.
+// By default: open the read tour (it runs, recorded); go through its stops
+// (the note, the Stack, a hover at each); play a little; report.
 const script = opt("eval", `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (id) => document.getElementById(id);
-  const exited = () => document.querySelector(".tstatus")?.textContent.includes("exited");
   const r = { badge: $("badge").textContent };
-  // The hover on the word in the first shown source line with the needle.
-  const hover = (needle, word) => ksee.src.hoverAt(needle, word).then((t) => t?.split("\\n")[0] ?? "(none)");
-
   for (let i = 0; i < 50 && !document.querySelector(".row.tour"); i++) await sleep(100);
   r.tours = document.querySelectorAll(".row.tour").length;
   [...document.querySelectorAll(".row.tour")].find((e) => e.textContent.includes("read()")).click();
+  for (let i = 0; i < 100 && $("note").hidden; i++) await sleep(100);
+  r.after = [$("badge").textContent, document.querySelector(".tstatus").textContent.slice(0, 30)];
   r.notes = [];
-  for (let k = 0; k < 6 && !exited(); k++) {
-    for (let i = 0; i < 100 && !(ksee.state() === "paused" && !$("note").hidden) && !exited(); i++) await sleep(50);
-    if ($("note").hidden) break;
+  for (let k = 0; k < 5; k++) {
+    await sleep(300);
     r.notes.push($("note").querySelector("b")?.textContent);
     if (k === 0) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
     if (k === 0) r.args = [...document.querySelectorAll("#stack tr")].slice(1, 4).map((f) => f.innerText.replace(/\\s+/g, " ").trim());
-    if (r.notes.at(-1) === "vfs_read") r.hover = await hover("file->f_mode", "f_mode");
-    $("cont").click();
-    await sleep(300);
+    if (r.notes.at(-1) === "vfs_read") r.hover = await ksee.src.hoverAt("file->f_mode & FMODE_READ", "f_mode");
+    const next = [...$("note").querySelectorAll("button")].find((b) => b.textContent.startsWith("Next"));
+    if (!next) break;
+    next.click();
   }
-  for (let i = 0; i < 100 && !exited(); i++) await sleep(100);
-  r.tour = document.querySelector(".tstatus").textContent.slice(0, 40);
-  ksee.tours.pickLine(23); // n = read(fd, buf, sizeof(buf));
-  await sleep(300);
-  $("speed").value = "30"; $("play").click(); await sleep(2000); $("play").click();
-  r.replay = [$("badge").textContent, $("mem-note").textContent, $("where").textContent.slice(0, 50)];
-  r.pastArgs = [...document.querySelectorAll("#stack tr")].slice(1, 3).map((f) => f.innerText.replace(/\\s+/g, " ").trim());
-  const who = document.querySelector("#stack a.who");
-  if (who) { who.click(); await sleep(300); r.who = $("where").textContent.slice(0, 80); }
-  r.split = document.querySelectorAll(".vsplit").length;
+  $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
+  r.played = [$("badge").textContent, $("mem-note").textContent, $("where").textContent.slice(0, 50)];
+  r.chart = $("chart-title").textContent;
+  ksee.tours.pickLine(23); await sleep(300);
+  r.picked = $("where").textContent.slice(0, 40);
   return r;
 })()`);
 if (script) {

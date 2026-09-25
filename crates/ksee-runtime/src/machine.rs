@@ -11,7 +11,6 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::debug::{self, DEBUG};
 use crate::imports;
 use crate::js;
 use crate::state::*;
@@ -401,12 +400,6 @@ impl Machine {
         self.history.borrow().ids.get(i).copied()
     }
 
-    /// The index of the record with id `id` in the last snapshot (or of the
-    /// first after it; the end if none).
-    pub fn index_of(&self, id: u32) -> usize {
-        self.history.borrow().ids.partition_point(|&x| x < id)
-    }
-
     /// How many records the last snapshot holds.
     pub fn records(&self) -> usize {
         self.history.borrow().records.len()
@@ -485,26 +478,6 @@ impl Machine {
         }
     }
 
-    /// The calls in records `first..=last` (of the task at address `task`,
-    /// or any), rebuilt from the trace (see ksee_core::stack), at least
-    /// `min` records long: [{ func, file, depth, first, last }].
-    pub fn frames(&self, first: usize, last: usize, task: Option<u32>, min: Option<usize>) -> JsValue {
-        let h = self.history.borrow();
-        let t = tables();
-        let list = js_sys::Array::new();
-        for f in stack::frames(&h.records, &h.tasks, first, last, task, min.unwrap_or(1).max(1)) {
-            let o = Object::new();
-            let func = t.functions.get(&f.func);
-            js::set(&o, "func", func.map_or(String::new(), |x| x.name.clone()));
-            js::set(&o, "file", func.map_or("", |x| t.file(x.loc)));
-            js::set(&o, "depth", f.depth);
-            js::set(&o, "first", f.first as f64);
-            js::set(&o, "last", f.last as f64);
-            list.push(&o);
-        }
-        list.into()
-    }
-
     /// The latest run of program `pid` (a Task record says which) in the
     /// last snapshot: { task (address), first, last (records), lines: [{ i,
     /// line }] (its Line records: the program's source line, before each
@@ -559,6 +532,38 @@ impl Machine {
             list.push(&o);
         }
         list.into()
+    }
+
+    /// A stack chart of records `first..=last` in `n` columns (see
+    /// ksee_core::stack::chart), flattened: per column, the task, the
+    /// depth, then (function, first record) per call, outermost first.
+    pub fn chart(&self, first: usize, last: usize, n: usize) -> Vec<u32> {
+        let h = self.history.borrow();
+        let mut out = Vec::new();
+        for (task, frames) in stack::chart(&h.records, &h.tasks, first, last, n) {
+            out.extend([task, frames.len() as u32]);
+            for (f, at) in frames {
+                out.extend([f, at as u32]);
+            }
+        }
+        out
+    }
+
+    /// Function `id`: { name, file, line }.
+    pub fn function(&self, id: u32) -> JsValue {
+        let t = tables();
+        let Some(f) = t.functions.get(&id) else { return JsValue::NULL };
+        let o = Object::new();
+        js::set(&o, "name", f.name.clone());
+        js::set(&o, "file", t.file(f.loc));
+        js::set(&o, "line", f.loc.line);
+        o.into()
+    }
+
+    /// Who the task at address `task` was at record `i`: { addr, pid, comm }.
+    pub fn task(&self, task: u32, i: usize) -> JsValue {
+        let h = self.history.borrow();
+        to_js(&task_ref(task, h.task_at(task, i)))
     }
 
     /// The call stack at record `i` of the last snapshot (or its last: at
@@ -626,33 +631,6 @@ impl Machine {
             list.push(&o);
         }
         list.into()
-    }
-
-    /// Where the kernel is now: its most recent block (from the live ring)
-    /// and the current task: { func, file, line, task }.
-    pub fn now(&self) -> JsValue {
-        let t = tables();
-        let ring = self.ring();
-        let pos = Direct.read_u32(ring) & !1;
-        let pairs = t.ring_words / 2;
-        // The newest block record, among the last few pairs.
-        for k in 1..=64.min(pos / 2) {
-            let slot = (pos / 2 - k) % pairs.max(1);
-            let a = ring + trace::RING + slot * 8;
-            let (func, tag) = (Direct.read_u32(a), Direct.read_u32(a + 4));
-            if tag >> 28 == 1 {
-                let o = Object::new();
-                js::set(&o, "func", t.functions.get(&func).map_or(String::new(), |f| f.name.clone()));
-                if let Some(&l) = t.blocks.get(&(func, tag & 0x0fff_ffff)) {
-                    js::set(&o, "file", t.file(l));
-                    js::set(&o, "line", l.line);
-                }
-                let task = Direct.read_u32(CURRENT_TASK.load(Ordering::Relaxed));
-                js::set(&o, "task", to_js(&self.views_task(task)));
-                return o.into();
-            }
-        }
-        JsValue::NULL
     }
 
     /// The syscalls in the trace (a list of SyscallSummary, see ksee_core::view).
@@ -789,73 +767,20 @@ impl Machine {
         o.into()
     }
 
-    // ---- Stopping the kernel ----
-
-    /// Where the kernel is stopped, if it is: { func, block, file, line,
-    /// column, task }.
-    pub fn stopped(&self) -> JsValue {
-        let Some((func, n, task, stop)) = DEBUG.stopped() else { return JsValue::NULL };
+    /// The first call of function `name` in records `first..=last` (of the
+    /// task at address `task`, or any), if there is one: its record.
+    pub fn first_call(&self, name: &str, first: usize, last: usize, task: Option<u32>) -> Option<usize> {
         let t = tables();
-        let o = Object::new();
-        js::set(&o, "func", t.functions.get(&func).map_or(String::new(), |f| f.name.clone()));
-        js::set(&o, "block", n);
-        js::set(&o, "stop", stop);
-        // (A stop at a return, while stepping: the caller goes on.)
-        js::set(&o, "kind", if n == debug::RETURN { "return" } else { "block" });
-        if let Some(&l) = t.blocks.get(&(func, n)) {
-            js::set(&o, "file", t.file(l));
-            js::set(&o, "line", l.line);
-            js::set(&o, "column", l.column);
-        }
-        js::set(&o, "task", to_js(&self.views_task(task)));
-        o.into()
+        let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
+        let h = self.history.borrow();
+        (first..=last.min(h.records.len().saturating_sub(1))).find(|&i| {
+            matches!(h.records[i], trace::Record::Block { func, n: 0 } if ids.contains(&func))
+                && task.is_none_or(|t| h.tasks[i] == t)
+        })
     }
 
     fn views_task(&self, addr: u32) -> ksee_core::view::TaskRef {
         task_ref(addr, live_task(addr))
-    }
-
-    /// Stop at the next block the kernel runs.
-    pub fn pause(&self) {
-        DEBUG.pause();
-    }
-
-    /// From a stop: run to the next block of the same function, on the
-    /// same task (over calls).
-    pub fn next(&self) {
-        DEBUG.go(debug::NEXT);
-    }
-
-    /// From a stop: run to the next block on the same task (not into
-    /// interrupts or other tasks, unless they run on it).
-    pub fn step_task(&self) {
-        DEBUG.go(debug::TASK);
-    }
-
-    /// From a stop: run until a breakpoint.
-    pub fn resume(&self) {
-        DEBUG.go(debug::RUN);
-    }
-
-    /// Break at the start of every function called `name`.
-    pub fn break_function(&self, name: &str, on: bool) -> bool {
-        let t = tables();
-        let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
-        for &id in &ids {
-            if on { DEBUG.add(id, 0); } else { DEBUG.remove(id, 0); }
-        }
-        !ids.is_empty()
-    }
-
-    /// Break at the blocks that start at `file:line`; the number of blocks.
-    pub fn break_line(&self, file: &str, line: u32, on: bool) -> usize {
-        let t = tables();
-        let blocks: Vec<(u32, u32)> = t.blocks.iter()
-            .filter(|(_, l)| l.line == line && t.file(**l) == file).map(|(&k, _)| k).collect();
-        for &(f, n) in &blocks {
-            if on { DEBUG.add(f, n); } else { DEBUG.remove(f, n); }
-        }
-        blocks.len()
     }
 
 }

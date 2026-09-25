@@ -1,17 +1,9 @@
 // The kSEE page: wires the panels to a booted Machine (crates/ksee-runtime).
 //
-// The kernel runs on its own; it is traced while recording (a tour records
-// by itself, or ● Record). The page is in one of these states:
-//   LIVE       running
-//   RECORDING  running, and recording: the history grows
-//   PAUSED     the debugger stopped the kernel (a tour's stop, a
-//              breakpoint, Pause): now is the stop
-//   REPLAY     the cursor is in the recorded history (a picked moment, or
-//              playing it back); memory is shown as it was then
-// One cursor: the history shows it among the tasks and the calls; the
-// source and the Stack show the code and the values there. Play moves it
-// line by line: through the recording in REPLAY, or by running the kernel,
-// a line at a time, when PAUSED.
+// Run something, recorded (a tour's program, a program, or ● Record); then
+// explore the recording at one cursor: the timeline shows it among the
+// tasks and their calls; the source and the Stack show the code and the
+// values there (memory as it was). ◀ ▶| and Play move it line by line.
 import { $, el, taskName } from "./dom.js";
 import { process } from "./ksee.js";
 import { source } from "./source.js";
@@ -19,40 +11,36 @@ import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { tours } from "./tours.js";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 export function app(m) {
   const a = { m, proc: process(m) };
-  // A syscall's identity across snapshots (indexes shift as the ring goes on).
+  // A syscall's identity across snapshots (indexes move as the ring goes on).
   a.key = (s) => `${s.task.addr}:${m.record_id(s.first)}`;
   const src = source(a), time = timeline(a), stack = callstack(a);
   a.showFunction = src.showFunction;
   a.src = src;
+  a.time = time;
   // Expressions at the cursor (hover in the source; watches).
-  a.resolve = (expr, prefer) => stack.resolve(expr, prefer);
+  a.resolve = (expr, only) => stack.resolve(expr, only);
   a.kids = (o) => stack.kids(o);
   a.watch = (expr, only) => stack.watch(expr, only);
 
-  // ---- The state ----
+  // ---- The state: recording, or exploring the recording ----
   let halted = null;
-  const state = () => (halted != null ? "halted" : time.cursor() != null ? "replay"
-    : m.stopped() ? "paused" : m.recording() ? "recording" : "live");
+  const state = () => (halted != null ? "halted" : m.recording() ? "recording" : time.records() ? "replay" : "idle");
   function badge() {
-    const st = state(), at = m.stopped();
+    const st = state();
     $("badge").className = `badge ${st}`;
-    $("badge").textContent = { live: "● LIVE", recording: "● RECORDING", paused: "❚❚ PAUSED", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
-    $("pause").disabled = st === "halted" || !!at;
-    $("cont").disabled = !at;
-    $("over").disabled = !(at && st === "paused");
+    $("badge").textContent = { idle: "○ IDLE", recording: "● RECORDING", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
     $("record").textContent = m.recording() ? "■ Stop recording" : "● Record";
-    if (st === "paused") status(`in ${at.func} (${at.file}:${at.line}) on ${taskName(at.task)}`);
-    if (st === "halted") status(`the kernel halted (${halted})`);
-    if (st === "replay") status("the recorded past; the kernel runs on");
-    if (st === "live") status(time.records() ? "not recording: the history is the last recording" : "not recording: run a tour (or ● Record)");
+    $("status").textContent = {
+      idle: "Run a tour or a program: the kernel's work for it is recorded, to explore here.",
+      recording: `recording… ${time.records()} records`,
+      replay: `a recording of ${time.records()} records: move the cursor through it`,
+      halted: `the kernel halted (${halted})`,
+    }[st];
   }
-  const status = (text) => ($("status").textContent = text);
 
-  // A new snapshot of the trace, everywhere (the cursor back at now).
+  // A new snapshot of the recording, everywhere.
   let calls = [];
   const refresh = () => {
     m.snapshot();
@@ -67,8 +55,8 @@ export function app(m) {
     badge();
   };
 
-  // ---- Memory: as it is, or as it was at the cursor ----
-  let memAt = null;
+  // ---- Memory: as it was at the cursor ----
+  let memAt;
   function memoryAt(i) {
     if (i === memAt) return;
     memAt = i;
@@ -85,13 +73,11 @@ export function app(m) {
     $("where").textContent = `✎ ${o.name} was last written here: by ${w.inlined ? `${w.inlined} in ` : ""}${w.func} (${w.file}:${w.line}), on ${taskName(w.task)}; before, it held ${w.old}`;
   } });
 
-  // ---- Selecting and moving the cursor ----
+  // ---- Selecting, and moving the cursor ----
 
-  // Select syscall `s`: its span, its calls; the cursor at its first line
-  // past the entry (unless `stay`: the kernel is stopped in it).
-  a.select = (s, stay = false) => {
+  // Select syscall `s`: its records; the cursor at its first line past the entry.
+  a.select = (s) => {
     time.select(s);
-    if (stay) return;
     let i = s.first;
     for (let k = 0; k < 4; k++) {
       const at = m.at(i);
@@ -100,8 +86,7 @@ export function app(m) {
     }
     time.go(i);
   };
-  // Select the run of program `pid` (Machine.program): its calls; the
-  // cursor at its start.
+  // Select the run of program `pid` (Machine.program); the cursor at its start.
   a.selectProgram = (pid, title) => {
     const where = () => {
       const p = m.program(pid);
@@ -128,78 +113,22 @@ export function app(m) {
       (s ? ` · in ${s.name}` : "");
     badge();
   };
-  // Back at now: the stop, or the kernel running.
-  a.showNow = () => {
-    L.pos = null;
-    memoryAt(null);
-    src.view.cursor = null;
-    const at = m.stopped();
-    if (at) showStop(at);
-    else stack.show(undefined);
-    $("where").textContent = "";
-    badge();
-  };
   let tour = null;
   tours(a).then((t) => (a.tours = tour = t));
 
-  // A tour's note for a stop (null: none).
+  // A tour's stop `stop` (the `k`th of `n`) at record `i`: the cursor there, and its note.
+  a.goStop = (i, stop, k, n) => {
+    time.go(i);
+    note(stop, k, n);
+  };
   function note(stop, k, n) {
     $("note").hidden = !stop;
     if (stop) $("note").replaceChildren(el("span", { className: "dim", textContent: `Stop ${k + 1} of ${n} · ` }),
       el("b", { textContent: stop.func }), `: ${stop.note} `,
-      el("span", { className: "dim" }, "(Continue: to the next stop; ▶| or Play: line by line; ",
-        el("a", { textContent: "Finish", title: "no more stops: run the program to its end", onclick: () => tour?.finish() }), ")"));
+      k + 1 < n ? el("button", { className: "go", textContent: "Next stop ▸", onclick: () => tour?.next() }) : null);
   }
 
-  // ---- Stopping ----
-  function showStop(at) {
-    src.view.stop = at;
-    src.showFunction(at.func, undefined, at.line, at.file);
-    stack.show(null, null, at.task);
-  }
-  // A new stop (`quiet`: while stepping, which shows the line itself).
-  function onStop(at, quiet = false) {
-    refresh();
-    // A tour's stops are for its program's syscalls (not, say, its exec,
-    // which reads the program's file), unless one says any task; and only
-    // on the program's lines the tour marks.
-    const stops = a.tour?.stops ?? [];
-    const k = stops.findIndex((s) => s.func === at.func);
-    if (k >= 0) {
-      // (The program may stop before the page knows its pid: not init's, then.)
-      const pid = a.tour.pid ?? (at.task.pid > 1 ? at.task.pid : null);
-      const inSyscall = m.call_stack().some((f) => f.func === "wasm_syscall");
-      let skip = !stops[k].any && (pid == null || at.task.pid !== pid || !inSyscall);
-      if (!skip && a.tour.lines?.length) {
-        const line = pid != null ? m.program(pid)?.lines.at(-1)?.line : null;
-        skip = !a.tour.lines.includes(line);
-      }
-      if (skip) {
-        m.resume();
-        return;
-      }
-    }
-    const s = calls.findLast((s) => s.task.addr === at.task.addr && s.last == null);
-    if (s) a.select(s, true);
-    note(k >= 0 ? stops[k] : null, k, stops.length);
-    tour?.follow(null, at);
-    if (!quiet) {
-      showStop(at);
-      // The stop's first line, among the syscall's.
-      const st = steps(), first = st.findIndex((x) => x.i >= time.records() - 1);
-      if (first >= 0) showStep(first);
-    }
-    badge();
-  }
-  $("pause").onclick = () => m.pause();
-  $("cont").onclick = () => {
-    note(null);
-    stopPlay();
-    src.view.stop = null;
-    m.resume();
-  };
-
-  // ---- Lines: the line steps of the selected syscall or program ----
+  // ---- Lines: the line steps of the selection (a syscall or program) ----
   // (Machine.line_steps: every source line it ran, within blocks too.)
   const L = { key: null, steps: [], pos: null };
   function steps() {
@@ -209,7 +138,7 @@ export function app(m) {
     const key = `${w.a}:${w.b}:${w.task}:${m.record_id(time.records() - 1)}`;
     if (key !== L.key) {
       L.key = key;
-      L.steps = m.line_steps(w.a, w.b ?? time.records() - 1, w.task);
+      L.steps = m.line_steps(w.a, w.b, w.task);
       L.pos = null;
     }
     return L.steps;
@@ -218,8 +147,7 @@ export function app(m) {
   function position() {
     const st = steps();
     if (L.pos != null && L.pos < st.length) return L.pos;
-    const cur = time.cursor() ?? time.records() - 1;
-    const k = st.findIndex((x) => x.i >= cur);
+    const k = st.findIndex((x) => x.i >= (time.cursor() ?? 0));
     return (L.pos = k < 0 ? st.length - 1 : k);
   }
   // Show step `k`: the cursor at its record, its line in the source.
@@ -228,64 +156,18 @@ export function app(m) {
     if (!step) return false;
     L.pos = k;
     time.mark(step.i);
-    memoryAt(time.cursor());
+    memoryAt(step.i);
     const at = m.at(step.i);
-    src.view.cursor = time.cursor() == null ? null : { file: step.file, line: step.line };
-    src.showFunction(step.func, time.selected()?.index, step.line, step.file);
+    src.view.cursor = { file: step.file, line: step.line };
+    src.showFunction(step.func, undefined, step.line, step.file);
     stack.show(step.i, step, at?.task);
     tour?.follow(at);
     $("where").textContent = `line ${k + 1} of ${st.length} · ${step.inlined ? `${step.inlined} in ` : ""}${step.func} ${step.file}:${step.line}` +
       (at ? ` · record ${step.i + 1} · ${taskName(at.task)}` : "");
-    badge();
     return true;
   }
-
-  // Run the paused kernel on its task until there is a line more (or, with
-  // `over`, to the next block of the same function). False if it went on
-  // running instead (the syscall returned, and the task sleeps).
-  let stepping = false;
-  async function runStep(over = false) {
-    let at = m.stopped();
-    if (!at || stepping) return false;
-    stepping = true;
-    // (The last line's record, by id: indexes move with each snapshot.)
-    const before = steps().length ? m.record_id(steps().at(-1).i) : null;
-    try {
-      for (let k = 0; k < 2000; k++) {
-        const last = at.stop;
-        over ? m.next() : m.step_task();
-        at = null;
-        for (let w = 0; w < 200 && !(at = m.stopped()); w++) await sleep(5);
-        if (!at || at.stop === last) {
-          m.resume(); // gone on (it would stop in the next syscall)
-          return false;
-        }
-        lastStop = at.stop;
-        onStop(at, true);
-        const after = before == null ? -1 : m.index_of(before);
-        const st = steps(), next = st.findIndex((x) => x.i > after);
-        if (next >= 0) return showStep(next);
-      }
-      return false;
-    } finally {
-      stepping = false;
-    }
-  }
-
-  // ---- The transport: line by line, and Play ----
-  async function forward() {
-    const st = steps();
-    if (!st.length) return m.stopped() ? runStep() : false;
-    const k = position();
-    if (k + 1 < st.length) return showStep(k + 1);
-    // The last line recorded: go on in the kernel if it is paused there.
-    return m.stopped() ? runStep() : false;
-  }
-  function back() {
-    const st = steps();
-    if (!st.length) return time.go(m.seek(time.cursor() ?? time.records() - 1, -1, "line"));
-    showStep(Math.max(0, position() - 1));
-  }
+  const forward = () => steps().length > 0 && showStep(position() + 1);
+  const back = () => steps().length > 0 && showStep(Math.max(0, position() - 1));
   let playing = null;
   function stopPlay() {
     clearTimeout(playing);
@@ -294,29 +176,21 @@ export function app(m) {
   }
   function play() {
     if (playing) return stopPlay();
-    if (state() !== "paused" && state() !== "replay") {
-      if (!time.home()) return status("run a tour (or pick a syscall in the history) to play it");
-      showStep(0);
-    }
+    if (!steps().length) return;
     $("play").textContent = "❚❚ Pause";
-    const tickPlay = async () => {
+    const tickPlay = () => {
       if (!playing) return;
-      if (!(await forward())) return stopPlay();
+      if (!forward()) return stopPlay();
       playing = setTimeout(tickPlay, Number($("speed").value));
     };
     playing = setTimeout(tickPlay, 0);
   }
   $("play").onclick = play;
-  $("fwd-line").onclick = () => forward();
+  $("fwd-line").onclick = forward;
   $("back-line").onclick = back;
-  $("over").onclick = () => runStep(true);
   $("to-start").onclick = () => steps().length && showStep(0);
-  $("now").onclick = () => {
-    stopPlay();
-    time.go(null);
-  };
   addEventListener("keydown", (e) => {
-    if (e.target.closest("input, select, textarea")) return;
+    if (e.target.closest("input, select, textarea, .monaco-editor")) return;
     if (e.key === "ArrowRight") forward();
     else if (e.key === "ArrowLeft") back();
     else if (e.key === " ") play();
@@ -336,12 +210,12 @@ export function app(m) {
   }
   for (const t of ["stack", "console"]) $(`tab-${t}`).onclick = () => tab(t);
 
-  // ---- Resizing: the columns, and the history's height ----
-  const sizes = { left: 340, right: 380, flame: 190 };
+  // ---- Resizing: the columns, and the timeline's height ----
+  const sizes = { left: 340, right: 380, chart: 190 };
   try { Object.assign(sizes, JSON.parse(localStorage.getItem("ksee.sizes") ?? "{}")); } catch { /* none kept */ }
   const layout = () => {
     $("main").style.gridTemplateColumns = `${sizes.left}px 5px minmax(300px, 1fr) 5px ${sizes.right}px`;
-    $("flamescroll").style.maxHeight = `${sizes.flame}px`;
+    $("chartbox").style.maxHeight = `${sizes.chart}px`;
     try { localStorage.setItem("ksee.sizes", JSON.stringify(sizes)); } catch { /* not kept */ }
   };
   const drag = (handle, move) => (handle.onpointerdown = (e) => {
@@ -363,11 +237,11 @@ export function app(m) {
       else sizes.right = Math.max(220, s.right - dx);
     });
   }
-  drag($("hsplit"), (s, _, dy) => (sizes.flame = Math.max(60, s.flame + dy)));
+  drag($("hsplit"), (s, _, dy) => (sizes.chart = Math.max(60, s.chart + dy)));
   layout();
 
-  // ---- The loop: console, stops, and (recording) the history growing ----
-  let lastStop = null, lastNow = 0, lastRefresh = 0;
+  // ---- The loop: the console; while recording, the timeline grows ----
+  let lastRefresh = 0;
   function tick() {
     const out = m.console();
     if (out) {
@@ -379,35 +253,19 @@ export function app(m) {
     if (code !== undefined) {
       halted = code;
       stopPlay();
-      src.view.stop = null;
-      refresh();
       badge();
       return;
     }
-    const at = m.stopped();
-    // (A new stop, also after a step: each has its own number.)
-    if (!stepping) {
-      if (at && at.stop !== lastStop) onStop(at);
-      if (!at && lastStop != null) src.view.stop = null;
-      lastStop = at?.stop ?? null;
-    }
-    const st = state(), t = performance.now();
-    if (st === "recording" && t - lastNow > 250) {
-      lastNow = t;
-      const now = m.now();
-      if (now) status(`now ${taskName(now.task)} in ${now.func} (${now.file}:${now.line})`);
-      if (t - lastRefresh > 1500 && !document.hidden) {
-        lastRefresh = t;
-        refresh();
-      }
+    if (m.recording() && performance.now() - lastRefresh > 1000) {
+      lastRefresh = performance.now();
+      refresh();
     }
     badge();
-    setTimeout(tick, 30);
+    setTimeout(tick, 50);
   }
   refresh();
   stack.show(undefined);
   tick();
   a.state = state;
-  a.time = time;
   return a;
 }

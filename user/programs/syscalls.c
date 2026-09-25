@@ -1,4 +1,4 @@
-// The syscalls tests/web.js looks for in the trace, with their results.
+// A little of everything: files, a directory, writev, a pipe, uname, a sleep.
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdio.h>

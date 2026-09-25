@@ -1,6 +1,6 @@
 // Boot the kernel under Deno with the page's own module (web/ksee.js), run
-// programs in it (user/tests/, user/tours/) while recording, use the
-// debugger, and check what the trace shows.
+// programs in it (user/programs/, user/tours/, user/tests/), recorded, and
+// check what the recording shows.
 //   deno run --allow-read tests/web.js
 import { start, process } from "../web/ksee.js";
 
@@ -51,7 +51,7 @@ const called = calls.map((s) => s.name);
 for (const n of ["getpid", "write", "mkdirat", "openat", "getdents64", "writev", "pipe2", "read", "uname", "clock_nanosleep_time64"])
   check(`syscall ${n} traced`, called.includes(n));
 const ran = (name, func) => calls.some((s) => s.name === name && s.last != null
-  && m.frames(s.first, s.last, s.task.addr, 1).some((f) => f.func === func));
+  && m.first_call(func, s.first, s.last, s.task.addr) != null);
 check("write ran vfs_write", ran("write", "vfs_write"));
 check("getpid ran __task_pid_nr_ns", ran("getpid", "__task_pid_nr_ns"));
 check("mkdirat ran vfs_mkdir", ran("mkdirat", "vfs_mkdir"));
@@ -61,8 +61,8 @@ const w = calls.find((s) => s.name === "write" && s.ret === 11);
 const [vfs] = m.functions("vfs_write", w.index);
 check("vfs_write block counts", vfs?.blocks.some((b) => b.count > 0) && vfs.blocks.some((b) => b.count === 0));
 check("fs/read_write.c coverage", m.file_coverage("fs/read_write.c", w.index).some((l) => l.count > 0));
-const frames = m.frames(w.first, w.last, w.task.addr, 1);
-check("write's calls, rebuilt", frames.some((f) => f.func === "vfs_write" && frames.some((g) => g.func === "ksys_write" && g.depth === f.depth - 1)));
+const chart = m.chart(w.first, w.last, 200);
+check("a stack chart of write's records", chart.length > 400 && chart[0] === w.task.addr);
 const steps = m.line_steps(w.first, w.last, w.task.addr);
 check("write, line by line (more lines than blocks)", steps.length > w.blocks && steps.some((x) => x.inlined));
 const mid = steps.find((x) => x.func === "vfs_write").i;
@@ -93,30 +93,20 @@ check("a local on the stack, as it was: ksys_read's pos, 0 then 26",
       pos(inRead) === "0" && pos(readSteps.findLast((x) => x.func === "ksys_read").i) === "26");
 m.memory_at(null);
 
-// Stop in vfs_write (in hi's write), look around, step, go on.
-check("breakpoint set", m.break_function("vfs_write", true));
-m.record(true);
-const hi = await proc.spawn("/bin/hi");
-const waiting = proc.wait(hi);
-const stop = await until(() => m.stopped());
-check("stopped in vfs_write", stop?.func === "vfs_write" && stop.file === "fs/read_write.c");
-check("stopped task is hi", stop?.task.comm === "hi" && stop.task.pid === hi);
+// A program's write, in its recording: the call stack there, and the task.
+const hi = await run("/bin/hi");
+check("hi ran", hi.status === 0 && await until(() => out.includes("hi\n")));
 m.snapshot();
-const live = m.call_stack();
-check("the call stack, with arguments", live[0]?.func === "vfs_write" && live.some((f) => f.func === "ksys_write"
+const hw = m.syscalls().find((s) => s.task.pid === hi.pid && s.name === "write");
+const inWrite = m.first_call("vfs_write", hw.first, hw.last, hw.task.addr);
+const live = m.call_stack(inWrite);
+check("the call stack in vfs_write, with arguments", live[0]?.func === "vfs_write" && live.some((f) => f.func === "ksys_write"
       && f.args?.find((a) => a.name === "count")?.value === "3"));
-const task = stop && m.object("task_struct", stop.task.addr, 1);
-check("decode the task while stopped", task?.children?.find((c) => c.name === "comm")?.value === '"hi"');
-check("decode a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr_running"));
-m.step_task();
-check("step to the next block on the task", !!await until(() => {
-  const s = m.stopped();
-  return s && s.stop !== stop.stop && s.task.addr === stop.task.addr && s;
-}));
-m.break_function("vfs_write", false);
-m.resume();
-check("resumed", (await waiting) === 0 && await until(() => out.includes("hi\n")));
-m.record(false);
+m.memory_at(inWrite);
+const task = m.object("task_struct", hw.task.addr, 1);
+check("the task, as it was", task?.children?.find((c) => c.name === "comm")?.value === '"hi"');
+check("a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr_running"));
+m.memory_at(null);
 
 // LINUX_REBOOT_CMD_POWER_OFF
 proc.spawn("/bin/poweroff");

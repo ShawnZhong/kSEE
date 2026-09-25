@@ -1,48 +1,45 @@
 # kSEE
 
-Interactive, browser-based exploration of the execution of the real Linux
-kernel: correlate what Linux is doing with its source code, kernel objects,
-semantic events, and causal history.
+kSEE records what the real Linux kernel does, down to every line it runs and
+every value it changes, and lets you explore the recording in time, in a
+browser. Linux is compiled to WebAssembly through a minimal `arch/wasm`
+(one Web Worker per task, one shared kernel memory) and instrumented by an
+LLVM pass.
 
-Linux is compiled directly to WebAssembly through a minimal `arch/wasm`
-(wasm32, NOMMU, UP first), with one Web Worker per Linux task sharing a single
-kernel `WebAssembly.Memory`.
-
-- [docs/design.md](docs/design.md) — project direction and architecture
-- [docs/related/](docs/related/) — survey of existing Linux-on-Wasm systems
-
-`refs/` (gitignored) holds local clones of the related projects for reading.
+- [docs/design.md](docs/design.md): the goal, the experience, how it works
+- [docs/related/](docs/related/): other Linux-on-Wasm systems
 
 ## Layout
 
 - `linux/`: the kernel with `arch/wasm` (submodule, ShawnZhong/kSEE-linux)
-- `plugin/`: the LLVM pass that instruments the kernel (basic blocks, calls)
-- `crates/`: Rust: `ksee-core` (trace decoding, views, types), `ksee-runtime`
-  (wasm that runs in the kernel's memory and drives the page), `ksee-cli`
-  (`./ksee.sh`: build, test, serve; pack the kernel for the page)
+- `plugin/`: the LLVM pass that instruments the kernel (blocks, calls, returns, stores)
+- `crates/`: Rust: `ksee-core` (decoding and rebuilding the recording:
+  stacks, lines, memory as it was, types), `ksee-runtime` (wasm: boots the
+  kernel in Workers, serves the page), `ksee-cli` (`./ksee.sh`: build, test,
+  serve; pack the kernel for the page)
 - `web/`: the page; the build puts what it loads there too (gitignored)
-- `user/`: `/init`, the process the page's syscalls run in; `tests/`: see below
+- `user/`: `/init` (starts the page's programs), `tours/`, `programs/`,
+  `tests/` (C on nolibc); `tests/`: see below
 
 ## Running
 
     ./ksee.sh              # build what changed, serve http://127.0.0.1:8000/
-    ./ksee.sh test         # under Deno: programs, the debugger, the trace
+    ./ksee.sh test         # under Deno: programs, and what their recordings show
     ./ksee.sh type task_struct
 
-Pick a **tour** (on the left): a question about the kernel ("What happens
-in read()?", "Why does open() fail?", …), answered by a small C program
-(user/tours/, plain C on nolibc) that runs as a real process, recorded.
-The kernel pauses at each of the tour's stops, with a note on what is
-happening, the program's line, the source, and the Stack: the call stack
-with every call's arguments (pointers open into their structs). Continue to
-the next stop, ▶| / ▶ Play line by line, or Finish. Afterwards the
-recording is in the history (a lane per task, a flame chart of the calls):
-click a program line for what the kernel did for it, drag the cursor back,
-and the Stack shows memory as it was then (✎: which code last wrote a
-value). Hover a name in the source (an argument, a global, or a field
-after them: `file->f_pos`) for its value there; click it to watch it.
-● Record records the kernel by hand; click a line number in the
-source for a breakpoint. Drag the gray bars to resize the panels.
+Open a **tour** (on the left): a question about the kernel ("What happens
+in read()?", "Why does open() fail?", …) and a small C program (user/tours/,
+plain C on nolibc) that asks it. kSEE runs the program in the kernel,
+recorded, to its end, and goes to the tour's first stop: its note, the
+program's line, the source, and the Stack (the call stack, with each call's
+arguments and locals, as they were). Next stop, ◀ / ▶| line by line, or
+Play. The timeline shows the recording: which task ran, and the call stacks
+over time (scroll to zoom, drag to pan, double-click a call to zoom to it).
+Hover a name in the source for its value at the cursor; right-click to
+watch it; ✎ on a value says which code last wrote it.
+
+**Programs** run the same way, without stops: add a C file to
+user/programs/ and rebuild. ● Record records the kernel until you stop it.
 
 A tour is one C file: `// tour:`, `// question:`, and `// stop FUNCTION:
 NOTE` lines at the top, and `// stops here` on the lines whose syscalls the
