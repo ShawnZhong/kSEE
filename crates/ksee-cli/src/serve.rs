@@ -1,6 +1,4 @@
-//! `ksee serve`: a static file server for the web host. Pages that use
-//! SharedArrayBuffer (the kernel's memory) must be cross-origin isolated,
-//! which takes the COOP and COEP headers.
+//! `ksee serve`: a static file server for the site.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -34,8 +32,6 @@ fn handle(root: &Path, mut stream: TcpStream) -> std::io::Result<()> {
         None => ("404 Not Found", b"not found\n".to_vec(), "text/plain"),
     };
     write!(stream, "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\n\
-                    Cross-Origin-Opener-Policy: same-origin\r\n\
-                    Cross-Origin-Embedder-Policy: require-corp\r\n\
                     Cache-Control: no-store\r\nConnection: close\r\n\r\n", body.len())?;
     stream.write_all(&body)
 }

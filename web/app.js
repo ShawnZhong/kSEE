@@ -5,14 +5,13 @@
 // tasks and their calls; the source and the Stack show the code and the
 // values there (memory as it was). ◀ ▶| and Play move it line by line.
 import { $, el, taskName } from "./dom.js";
-import { process } from "./ksee.js";
 import { source } from "./source.js";
 import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
 
 export function app(m) {
-  const a = { m, proc: process(m) };
+  const a = { m };
   const src = source(a), time = timeline(a), stack = callstack(a);
   // (The panels, for each other and for tests.)
   Object.assign(a, { src, time, stack });
@@ -249,7 +248,6 @@ export function app(m) {
     a.ready = false;
     halted = null;
     stopPlay();
-    a.proc.cancel();
     $("console").textContent = "";
     await m.restart();
     refresh();

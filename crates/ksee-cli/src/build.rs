@@ -74,7 +74,7 @@ pub fn build() {
     site();
     eprintln!("  RUNTIME {SITE}/pkg");
     run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-runtime",
-        "--target", "wasm32-unknown-unknown", "-Zbuild-std=std,panic_abort"]));
+        "--target", "wasm32-unknown-unknown"]));
     run(Command::new("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", &format!("{SITE}/pkg"),
         "target/wasm32-unknown-unknown/release/ksee_runtime.wasm"]));
 

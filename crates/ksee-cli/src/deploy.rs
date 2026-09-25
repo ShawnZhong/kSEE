@@ -1,7 +1,6 @@
 //! `ksee deploy`: build, then push the site (target/site, as served) to the
 //! gh-pages branch of origin, for GitHub Pages. The branch is one commit,
 //! replaced each time (the kernel is ~20 MB; no history of it to keep).
-//! Pages can't send COOP/COEP; web/coi.js (a service worker) adds them.
 use std::process::Command;
 
 use crate::build::run;

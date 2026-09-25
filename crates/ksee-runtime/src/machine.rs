@@ -1,11 +1,11 @@
-//! The page's API: boot a kernel in Workers, drive it (console, syscalls,
-//! recording), and take snapshots of its recording (see replay.rs).
+//! The page's API: boot a kernel (one instance, its tasks on this thread:
+//! see sched.rs), drive it (console, syscalls, recording), and take
+//! snapshots of its recording (see replay.rs).
 
 use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::Ordering;
 
-use js_sys::{Function, Object, Uint8Array, WebAssembly};
+use js_sys::{Function, Promise, Uint8Array, WebAssembly};
 use ksee_core::recording::Recording;
 use ksee_core::tables::Tables;
 use ksee_core::{trace, Memory};
@@ -15,17 +15,16 @@ use wasm_bindgen_futures::JsFuture;
 
 use crate::imports;
 use crate::js;
+use crate::sched;
 use crate::state::*;
 
 /// A booted machine. Its views of the recording are in replay.rs.
 #[wasm_bindgen]
 pub struct Machine {
-    workers: Rc<RefCell<Vec<web_sys::Worker>>>,
-    /// Starts a Worker (see spawner).
-    spawn: Rc<dyn Fn(&str)>,
-    /// The kernel's memory before it first ran (its data initialized, the
-    /// initramfs in place), from KERNEL_BASE: what restart puts back.
-    pristine: Vec<u8>,
+    /// The kernel, compiled (a new instance of it each boot); and the
+    /// initramfs (at the top of RAM).
+    module: WebAssembly::Module,
+    initrd: Vec<u8>,
     /// The last snapshot of the trace.
     pub(crate) rec: RefCell<Recording>,
     /// The moment the views show memory at (a record), or None: now.
@@ -33,6 +32,11 @@ pub struct Machine {
     /// Kernel memory when recording stopped: memory as it was is that, the
     /// recorded stores undone (the kernel went on, unrecorded).
     pub(crate) frozen: RefCell<Option<Vec<u8>>>,
+}
+
+/// Where the initramfs goes: at the top of RAM (page-aligned).
+fn initrd_at(ram: u32, initrd: &[u8]) -> u32 {
+    (ram - initrd.len() as u32) & !0xfff
 }
 
 /// Kernel memory as it was when recording stopped.
@@ -67,14 +71,20 @@ fn section(module: &WebAssembly::Module, name: &str) -> String {
 
 #[wasm_bindgen]
 impl Machine {
-    /// Boot a kernel. `config`: { kernel, initrd?, cmdline?, worker, ram }
-    /// (URLs of vmlinux, an initramfs and web/worker.js; RAM in bytes, at
-    /// most the shared memory's initial size).
+    /// Boot a kernel. `config`: { kernel, initrd?, cmdline?, ram } (URLs
+    /// of vmlinux and an initramfs; RAM in bytes).
     pub async fn start(config: JsValue) -> Result<Machine, JsValue> {
         let s = |k: &str| js::get(&config, k).as_string();
         let url = s("kernel").ok_or("no kernel")?;
         let ram = js::get(&config, "ram").as_f64().ok_or("no ram")? as u32;
-        let worker_url = s("worker").ok_or("no worker")?;
+        // The kernel's RAM: this module's memory, grown to it first (the
+        // runtime's heap grows above it, its data and stack are below).
+        let memory: WebAssembly::Memory = wasm_bindgen::memory().unchecked_into();
+        let have = Uint8Array::new(&memory.buffer()).length();
+        if have < ram {
+            memory.grow((ram - have).div_ceil(65536));
+        }
+        MEMORY_END.store(ram, Ordering::Relaxed);
 
         let bytes = fetch_bytes(&url).await?;
         let module: WebAssembly::Module =
@@ -82,125 +92,82 @@ impl Machine {
         let tables = Tables::parse(&section(&module, "ksee.probes"), &section(&module, "ksee.types"));
         RING_WORDS.store(tables.ring_words, Ordering::Relaxed);
         TABLES.set(tables).map_err(|_| "one machine per page")?;
-        MEMORY_END.store(ram, Ordering::Relaxed);
         EPOCH_MS.store(js::now_ms().to_bits(), Ordering::Relaxed);
 
         let mut cmdline = s("cmdline").unwrap_or_default();
         // The initramfs goes at the top of RAM; the kernel reserves it.
-        if let Some(initrd) = s("initrd") {
-            let cpio = fetch_bytes(&initrd).await?;
-            let addr = (ram - cpio.length()) & !0xfff;
-            js::copy_to(&cpio, addr as *mut u8);
-            cmdline += &format!(" initrd={addr:#x},{}", cpio.length());
+        let initrd = match s("initrd") {
+            Some(url) => fetch_bytes(&url).await?.to_vec(),
+            None => Vec::new(),
+        };
+        if !initrd.is_empty() {
+            cmdline += &format!(" initrd={:#x},{}", initrd_at(ram, &initrd), initrd.len());
         }
         let _ = CMDLINE.set(cmdline.trim().as_bytes().to_vec());
+        let m = Machine { module, initrd, rec: Default::default(),
+                          past: Default::default(), frozen: Default::default() };
+        m.boot().await?;
+        Ok(m)
+    }
 
-        // Instantiating here runs the kernel's start function, which
-        // initializes its data, before any Worker runs it (asynchronously:
-        // browsers refuse large synchronous instantiation on the page).
-        let workers = Rc::new(RefCell::new(Vec::new()));
-        let spawn = Machine::spawner(module.clone(), worker_url, workers.clone());
-        let imports = imports::kernel(&wasm_bindgen::memory(), false);
+    /// Boot: kernel memory as new (zeros, and the initramfs), a new kernel
+    /// instance (instantiating initializes its data), and its boot CPU.
+    async fn boot(&self) -> Result<(), JsValue> {
+        let ram = MEMORY_END.load(Ordering::Relaxed);
+        unsafe { core::ptr::write_bytes(KERNEL_BASE as *mut u8, 0, (ram - KERNEL_BASE) as usize) };
+        if !self.initrd.is_empty() {
+            let at = initrd_at(ram, &self.initrd) as usize;
+            unsafe { core::ptr::copy_nonoverlapping(self.initrd.as_ptr(), at as *mut u8, self.initrd.len()) };
+        }
         let inst: WebAssembly::Instance =
-            JsFuture::from(WebAssembly::instantiate_module(&module, &imports)).await?.unchecked_into();
+            JsFuture::from(WebAssembly::instantiate_module(&self.module, &imports::kernel())).await?.unchecked_into();
         let kernel = inst.exports();
-
-        let global = |name: &str| {
-            js::get(&js::get(&kernel, name), "value").as_f64().unwrap_or(0.0) as u32
-        };
+        let global = |name: &str| js::get(&js::get(&kernel, name), "value").as_f64().unwrap_or(0.0) as u32;
         CURRENT_TASK.store(global("__current_task"), Ordering::Relaxed);
         PENDING.store(global("wasm_irq_pending"), Ordering::Relaxed);
         DEADLINE.store(global("wasm_timer_deadline"), Ordering::Relaxed);
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
-        // (The page's instance is not needed after this.)
         TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
-        let mut pristine = vec![0u8; (ram - KERNEL_BASE) as usize];
-        Direct.read(KERNEL_BASE, &mut pristine);
-        spawn("timer");
-        spawn("boot");
-        Ok(Machine { workers, spawn, pristine, rec: Default::default(), past: Default::default(), frozen: Default::default() })
+        EPOCH_MS.store(js::now_ms().to_bits(), Ordering::Relaxed);
+        HALTED.store(0, Ordering::Release);
+        imports::instantiated(&kernel);
+        sched::boot(&kernel)
     }
 
-    /// Start the kernel again, from scratch: its Workers stopped, its memory
-    /// as before it first ran, the runtime's shared state emptied, and a new
-    /// boot. (The page stays: no reload.)
+    /// Start the kernel again, from scratch: the machine stopped (its tasks
+    /// dropped, and what it had under way let end: it only suspends, for
+    /// ever), the runtime's state emptied, and a new boot.
     pub async fn restart(&self) -> Result<(), JsValue> {
-        // (Any Worker that outlives terminate is stale now, and stops.)
-        GEN.fetch_add(1, Ordering::AcqRel);
-        for w in self.workers.borrow_mut().drain(..) {
-            w.terminate();
-        }
-        // (A Worker stops soon after, not at once: let them.)
-        let pause = js_sys::Promise::new(&mut |ok, _| {
+        sched::stop();
+        JsFuture::from(js_sys::Promise::new(&mut |ok, _| {
             let set: Function = js::get(&js_sys::global(), "setTimeout").unchecked_into();
-            let _ = set.call2(&JsValue::NULL, &ok, &50.into());
-        });
-        JsFuture::from(pause).await?;
-        unsafe { core::ptr::copy_nonoverlapping(self.pristine.as_ptr(), KERNEL_BASE as *mut u8, self.pristine.len()) };
-        SPAWN.reset();
-        CALL.state.store(CALL_IDLE, Ordering::Release);
-        CONSOLE_OUT.reset();
-        CONSOLE_IN.reset();
-        HALTED.store(0, Ordering::Release);
-        EPOCH_MS.store(js::now_ms().to_bits(), Ordering::Relaxed);
+            let _ = set.call2(&JsValue::NULL, &ok, &0.into());
+        })).await?;
+        sched::stop();
+        // (A call under way gives up.)
+        if let Some(fail) = CALL.with_borrow_mut(std::mem::take).reject {
+            let _ = fail.call1(&JsValue::NULL, &"the kernel started again".into());
+        }
+        CONSOLE_OUT.with_borrow_mut(|o| o.clear());
+        CONSOLE_IN.with_borrow_mut(|i| i.clear());
         *self.rec.borrow_mut() = Default::default();
         *self.past.borrow_mut() = None;
         *self.frozen.borrow_mut() = None;
-        (self.spawn)("timer");
-        (self.spawn)("boot");
-        Ok(())
-    }
-
-    /// A function that starts a Worker for `role` ("timer", "boot", or
-    /// "task": new tasks, see worker.rs) and keeps it, so that `halted` can
-    /// stop it. A task Worker's message asks for another task Worker.
-    fn spawner(module: WebAssembly::Module, url: String,
-               workers: Rc<RefCell<Vec<web_sys::Worker>>>) -> Rc<dyn Fn(&str)> {
-        let this: Rc<RefCell<Option<Rc<dyn Fn(&str)>>>> = Default::default();
-        let me = this.clone();
-        let spawn: Rc<dyn Fn(&str)> = Rc::new(move |role: &str| {
-            let opts = web_sys::WorkerOptions::new();
-            opts.set_type(web_sys::WorkerType::Module);
-            let w = web_sys::Worker::new_with_options(&url, &opts).expect("worker");
-            let msg = Object::new();
-            js::set(&msg, "role", role);
-            js::set(&msg, "kernel", module.clone());
-            js::set(&msg, "runtime", wasm_bindgen::module());
-            js::set(&msg, "memory", wasm_bindgen::memory());
-            let more = me.borrow().clone().unwrap();
-            let onmessage = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |_: web_sys::MessageEvent| more("task"));
-            w.set_onmessage(Some(onmessage.into_js_value().unchecked_ref()));
-            w.post_message(&msg).expect("post");
-            workers.borrow_mut().push(w);
-        });
-        *this.borrow_mut() = Some(spawn.clone());
-        spawn
+        self.boot().await
     }
 
     /// Console output since the last call.
     pub fn console(&self) -> String {
-        let mut out = Vec::new();
-        let mut buf = [0u8; 4096];
-        loop {
-            let n = CONSOLE_OUT.take(&mut buf);
-            if n == 0 {
-                break;
-            }
-            out.extend_from_slice(&buf[..n]);
-        }
+        let out = CONSOLE_OUT.with_borrow_mut(std::mem::take);
         String::from_utf8_lossy(&out).into_owned()
     }
 
-    /// The halt code once the kernel has halted (its Workers are stopped).
+    /// The halt code once the kernel has halted.
     pub fn halted(&self) -> Option<i32> {
-        let h = HALTED.load(Ordering::Acquire);
-        if h == 0 {
-            return None;
+        match HALTED.load(Ordering::Acquire) {
+            0 => None,
+            h => Some(h as i32 - 1),
         }
-        for w in self.workers.borrow_mut().drain(..) {
-            w.terminate();
-        }
-        Some(h as i32 - 1)
     }
 
     /// Decode the trace ring (again). The views use the last snapshot.
@@ -214,15 +181,15 @@ impl Machine {
     /// kernel memory as it is then: memory as it was in the recording is
     /// that, the recorded stores undone (the kernel goes on, unrecorded).
     pub fn record(&self, on: bool) {
-        let word = unsafe { &*((TRACE.load(Ordering::Relaxed) + trace::ON) as *const AtomicU32) };
+        let word = TRACE.load(Ordering::Relaxed) + trace::ON;
         if on {
             *self.frozen.borrow_mut() = None;
-            word.store(1, Ordering::Release);
+            Direct.write_u32(word, 1);
             // Who runs now (the trace names tasks by their switches).
             imports::task_record();
             return;
         }
-        word.store(0, Ordering::Release);
+        Direct.write_u32(word, 0);
         self.snapshot();
         let mut ram = vec![0u8; MEMORY_END.load(Ordering::Relaxed) as usize];
         // (Not from address 0: a null pointer, to Rust. The kernel's memory
@@ -238,18 +205,20 @@ impl Machine {
 
     // ---- Syscalls, made by /init ----
 
-    /// Ask /init to make syscall `nr` with `args` (user/init.c): each a
-    /// number, a string (as a NUL-terminated buffer), { bytes } (a buffer
-    /// of them: an array or a Uint8Array), or { size } (a buffer of that
-    /// many zero bytes, for the call to fill). False if a call is under way
-    /// already.
-    pub fn call(&self, nr: u32, args: Vec<JsValue>) -> Result<bool, JsValue> {
-        if CALL.state.load(Ordering::Acquire) != CALL_IDLE {
-            return Ok(false);
+    /// Have /init make syscall `name` (e.g. "openat") with `args` (see
+    /// user/init.c): each a number, a string (as a NUL-terminated buffer),
+    /// { bytes } (a buffer of them: an array or a Uint8Array), or { size }
+    /// (a buffer of that many zero bytes, for the call to fill). A promise
+    /// of { ret, buffers: [the bytes of each buffer argument, as the call
+    /// left them (null for the others)] }. One call at a time.
+    pub fn call(&self, name: &str, args: Vec<JsValue>) -> Result<Promise, JsValue> {
+        let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
+            .ok_or_else(|| format!("no syscall {name}"))?;
+        if CALL.with_borrow(|c| c.state != CallState::Idle) {
+            return Err("a call is under way".into());
         }
-        let data = CALL.data();
-        data.fill(0);
-        let (mut used, mut buffers) = (0usize, 0u32);
+        let mut c = Call { state: CallState::Asked, nr, data: vec![0; CALL_DATA], ..Default::default() };
+        let mut used = 0usize;
         for (i, a) in args.iter().take(6).enumerate() {
             let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
                 Some([s.as_bytes(), &[0]].concat())
@@ -260,55 +229,29 @@ impl Machine {
             } else {
                 None
             };
-            let v = match buffer {
+            c.args[i] = match buffer {
                 Some(b) => {
                     if used + b.len() > CALL_DATA {
                         return Err("the call's buffers are too big".into());
                     }
+                    c.data[used..used + b.len()].copy_from_slice(&b);
+                    c.buffers |= 1 << i;
+                    c.lens[i] = b.len() as u32;
                     let at = used;
-                    data[at..at + b.len()].copy_from_slice(&b);
-                    buffers |= 1 << i;
-                    CALL.lens[i].store(b.len() as u32, Ordering::Relaxed);
                     used += (b.len() + 7) & !7; // (8-byte aligned)
                     at as u32
                 }
                 None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { size }")? as i64 as u32,
             };
-            CALL.args[i].store(v, Ordering::Relaxed);
         }
-        for i in args.len()..6 {
-            CALL.args[i].store(0, Ordering::Relaxed);
-        }
-        CALL.nr.store(nr, Ordering::Relaxed);
-        CALL.buffers.store(buffers, Ordering::Relaxed);
-        CALL.state.store(CALL_ASKED, Ordering::Release);
+        let p = Promise::new(&mut |ok, fail| {
+            c.resolve = Some(ok);
+            c.reject = Some(fail);
+        });
+        CALL.with_borrow_mut(|old| *old = c);
         // (The doorbell: /init waits reading its terminal.)
-        CONSOLE_IN.put(b"\n");
+        CONSOLE_IN.with_borrow_mut(|i| i.push_back(b'\n'));
         interrupt(IRQ_CONSOLE);
-        Ok(true)
+        Ok(p)
     }
-
-    /// Once the call is made: { ret, buffers: [the bytes of each buffer
-    /// argument, as the call left them (null for the others)] }; null before.
-    pub fn call_result(&self) -> JsValue {
-        if CALL.state.load(Ordering::Acquire) != CALL_DONE {
-            return JsValue::NULL;
-        }
-        let o = Object::new();
-        js::set(&o, "ret", CALL.ret.load(Ordering::Relaxed) as i64 as f64);
-        let buffers = js_sys::Array::new();
-        let bits = CALL.buffers.load(Ordering::Relaxed);
-        for i in 0..6 {
-            if bits >> i & 1 == 0 {
-                buffers.push(&JsValue::NULL);
-                continue;
-            }
-            let (at, n) = (CALL.args[i].load(Ordering::Relaxed) as usize, CALL.lens[i].load(Ordering::Relaxed) as usize);
-            buffers.push(&Uint8Array::from(&CALL.data()[at..at + n]));
-        }
-        js::set(&o, "buffers", buffers);
-        CALL.state.store(CALL_IDLE, Ordering::Release);
-        o.into()
-    }
-
 }

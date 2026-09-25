@@ -81,7 +81,7 @@ const script = Deno.args.includes("--back") ? backScript : opt("eval", `(async (
   r.first = [pick.selectedOptions[0]?.textContent, document.querySelector("ol.steps > li.done")?.innerText.split("\\n")[0]];
   r.examples = pick.options.length;
   // (Its calls, up to the read: the 6th.)
-  document.querySelectorAll("ol.steps > li > a")[5].click();
+  document.querySelectorAll("ol.steps > li > a:first-child")[5].click();
   await until(() => document.querySelectorAll("ol.steps > li.done").length >= 6 && $("note").querySelector("b")?.textContent === "ksys_read");
   r.calls = [...document.querySelectorAll("ol.steps > li.done")].map((li) => li.innerText.split("\\n").slice(0, 2).join(" · ")).slice(4, 6);
   r.notes = [];

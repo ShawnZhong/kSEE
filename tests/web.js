@@ -2,7 +2,7 @@
 // /init make syscalls (as the page's examples do), recorded, and check what
 // the recordings show.
 //   deno run --allow-read tests/web.js
-import { start, process } from "../target/site/ksee.js";
+import { start } from "../target/site/ksee.js";
 import { arg } from "../target/site/args.js";
 
 const root = new URL("..", import.meta.url);
@@ -28,11 +28,10 @@ async function until(pred, ms = 10000) {
     if (v) return v;
   }
 }
-const proc = process(m);
 // Syscall `name` made by /init, recorded: { ret, buffers, s (its syscall summary) }.
 async function call(name, args) {
   m.record(true);
-  const r = await proc.call(name, args);
+  const r = await m.call(name, args);
   m.record(false);
   m.snapshot();
   const nr = m.syscall(name).nr;
@@ -154,7 +153,7 @@ check("restarted: init ready again", await until(() => out.slice(before).include
 check("... on a fresh kernel: /tmp is not there", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === 0);
 
 // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts)
-proc.call("reboot", [0xfee1dead, 672274793, 0x4321fedc, 0]);
+m.call("reboot", [0xfee1dead, 672274793, 0x4321fedc, 0]);
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);
 
 if (failed) console.log(out);

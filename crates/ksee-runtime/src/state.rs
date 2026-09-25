@@ -1,6 +1,8 @@
-//! Statics shared by every instance (they live in the shared memory). The
-//! page may not block, so what it touches is lock-free.
+//! The machine's state in the runtime: one thread, so plain statics (for
+//! addresses, set once) and thread-locals (for what changes).
 
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
@@ -10,22 +12,8 @@ use ksee_core::Memory;
 /// The probe tables, set once by the page before boot.
 pub static TABLES: OnceLock<Tables> = OnceLock::new();
 pub static CMDLINE: OnceLock<Vec<u8>> = OnceLock::new();
-/// The machine's generation: restart counts it up. A Worker of an earlier
-/// one is stale: it stops (see stale).
-pub static GEN: AtomicU32 = AtomicU32::new(0);
-
-thread_local! {
-    /// This Worker's generation (GEN when it started).
-    pub static MY_GEN: core::cell::Cell<u32> = const { core::cell::Cell::new(0) };
-}
-
-/// Whether this Worker is of an earlier machine (it is to stop).
-pub fn stale() -> bool {
-    MY_GEN.get() != GEN.load(Ordering::Acquire)
-}
-
 /// Where the kernel's memory starts (CONFIG_WASM_HOST_MEMORY: below it,
-/// the runtime's own static data and stacks).
+/// the runtime's own static data and stack).
 pub const KERNEL_BASE: u32 = 0x100_0000;
 /// End of the kernel's RAM (it may use memory below it).
 pub static MEMORY_END: AtomicU32 = AtomicU32::new(0);
@@ -33,137 +21,61 @@ pub static MEMORY_END: AtomicU32 = AtomicU32::new(0);
 pub static HALTED: AtomicU32 = AtomicU32::new(0);
 /// f64 bits of the wall clock when the machine started.
 pub static EPOCH_MS: AtomicU64 = AtomicU64::new(0);
-/// Addresses in kernel memory: the trace (ksee_trace()) and the variable
-/// holding the current task (KSEE_CURRENT).
+/// Addresses in kernel memory: the trace (ksee_trace()), the variable
+/// holding the current task, the pending interrupts (wasm_irq_pending), and
+/// the timer's deadline (wasm_timer_deadline).
 pub static TRACE: AtomicU32 = AtomicU32::new(0);
-/// The trace ring's size in words.
-pub static RING_WORDS: AtomicU32 = AtomicU32::new(0);
 pub static CURRENT_TASK: AtomicU32 = AtomicU32::new(0);
-/// The kernel's pending-interrupt word (wasm_irq_pending), and its timer's
-/// deadline (wasm_timer_deadline).
 pub static PENDING: AtomicU32 = AtomicU32::new(0);
 pub static DEADLINE: AtomicU32 = AtomicU32::new(0);
+/// The trace ring's size in words.
+pub static RING_WORDS: AtomicU32 = AtomicU32::new(0);
 
 /// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h).
 pub const IRQ_TIMER: u32 = 0;
 pub const IRQ_CONSOLE: u32 = 1;
 
-/// Raise interrupt line `irq`.
+thread_local! {
+    pub static CONSOLE_OUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    pub static CONSOLE_IN: RefCell<VecDeque<u8>> = const { RefCell::new(VecDeque::new()) };
+    /// The syscall the page asks /init to make (see Machine::call).
+    pub static CALL: RefCell<Call> = RefCell::new(Call::default());
+}
+
+/// A syscall for /init to make (user/init.c): asked, then made (its
+/// promise settled).
+#[derive(Default)]
+pub struct Call {
+    pub state: CallState,
+    pub nr: u32,
+    /// Each an integer, or (bit i of `buffers`) the offset of a buffer in
+    /// `data` (its length: `lens`).
+    pub args: [u32; 6],
+    pub buffers: u32,
+    pub lens: [u32; 6],
+    pub data: Vec<u8>,
+    /// Settles Machine::call's promise.
+    pub resolve: Option<js_sys::Function>,
+    pub reject: Option<js_sys::Function>,
+}
+
+#[derive(Default, PartialEq, Clone, Copy)]
+pub enum CallState {
+    #[default]
+    Idle,
+    Asked,
+}
+
+/// The size of a call's buffers, all together.
+pub const CALL_DATA: usize = 4096;
+
+/// Raise interrupt line `irq`, and wake the CPU if it idles.
 pub fn interrupt(irq: u32) {
     let p = PENDING.load(Ordering::Relaxed);
     if p != 0 {
-        unsafe {
-            (*(p as *const AtomicU32)).fetch_or(1 << irq, Ordering::SeqCst);
-            // (All waiters: any but one are stale Workers, see stale.)
-            core::arch::wasm32::memory_atomic_notify(p as *mut i32, u32::MAX);
-        }
+        Direct.write_u32(p, Direct.read_u32(p) | 1 << irq);
     }
-}
-
-/// New tasks waiting for a Worker (see worker.rs): the kernel's
-/// spawn_task puts them here (from the Worker holding the CPU: one at a
-/// time), and idle Workers take them.
-pub static SPAWN: Spawns = Spawns::new();
-
-pub struct Spawns {
-    /// (task << 32 | sp) per slot.
-    slots: [AtomicU64; Spawns::SLOTS],
-    /// Tasks ever put, and taken.
-    put: AtomicU32,
-    taken: AtomicU32,
-    /// Workers waiting for a task.
-    pub idle: AtomicU32,
-}
-
-impl Spawns {
-    const SLOTS: usize = 256;
-
-    pub const fn new() -> Self {
-        Spawns { slots: [const { AtomicU64::new(0) }; Self::SLOTS], put: AtomicU32::new(0),
-                 taken: AtomicU32::new(0), idle: AtomicU32::new(0) }
-    }
-
-    /// Empty (for a new kernel: no task waits, and no Worker).
-    pub fn reset(&self) {
-        self.put.store(0, Ordering::Relaxed);
-        self.taken.store(0, Ordering::Relaxed);
-        self.idle.store(0, Ordering::Relaxed);
-    }
-
-    /// Queue task `task` (its stack pointer `sp`) for a Worker. Whether
-    /// none waits (so another is needed).
-    pub fn put(&self, task: u32, sp: u32) -> bool {
-        let n = self.put.load(Ordering::Relaxed);
-        self.slots[n as usize % Self::SLOTS].store((task as u64) << 32 | sp as u64, Ordering::Relaxed);
-        self.put.store(n + 1, Ordering::Release);
-        unsafe { core::arch::wasm32::memory_atomic_notify(self.put.as_ptr() as *mut i32, u32::MAX) };
-        self.idle.load(Ordering::Acquire) == 0
-    }
-
-    /// The next task to run: (task, sp); waits for one. None: this Worker
-    /// is stale (see stale).
-    pub fn take(&self) -> Option<(u32, u32)> {
-        loop {
-            if stale() {
-                return None;
-            }
-            let (t, put) = (self.taken.load(Ordering::Acquire), self.put.load(Ordering::Acquire));
-            if t < put {
-                if self.taken.compare_exchange(t, t + 1, Ordering::AcqRel, Ordering::Relaxed).is_ok() {
-                    let v = self.slots[t as usize % Self::SLOTS].load(Ordering::Relaxed);
-                    return Some(((v >> 32) as u32, v as u32));
-                }
-                continue;
-            }
-            self.idle.fetch_add(1, Ordering::AcqRel);
-            unsafe { core::arch::wasm32::memory_atomic_wait32(self.put.as_ptr() as *mut i32, put as i32, -1) };
-            // (Stale: the counts are a new machine's, not to touch.)
-            if stale() {
-                return None;
-            }
-            self.idle.fetch_sub(1, Ordering::AcqRel);
-        }
-    }
-}
-
-pub static CONSOLE_OUT: ByteRing = ByteRing::new();
-pub static CONSOLE_IN: ByteRing = ByteRing::new();
-
-/// A syscall the page asks /init to make (user/init.c; see Machine::call):
-/// the page fills it and sets CALL_ASKED; /init takes it (ksee.call), makes
-/// it, and gives the result back (ksee.done): CALL_DONE.
-pub static CALL: Call = Call::new();
-pub const CALL_IDLE: u32 = 0;
-pub const CALL_ASKED: u32 = 1;
-pub const CALL_DONE: u32 = 2;
-
-pub struct Call {
-    pub state: AtomicU32,
-    pub nr: AtomicU32,
-    /// Each an integer, or (bit i of `buffers`) the offset of a buffer in
-    /// `data` (its length: `lens`).
-    pub args: [AtomicU32; 6],
-    pub buffers: AtomicU32,
-    pub lens: [AtomicU32; 6],
-    /// The result (i64 bits).
-    pub ret: AtomicU64,
-    pub data: core::cell::UnsafeCell<[u8; CALL_DATA]>,
-}
-pub const CALL_DATA: usize = 4096;
-
-// (data: written by one side at a time, the state word says which.)
-unsafe impl Sync for Call {}
-
-impl Call {
-    const fn new() -> Self {
-        Call { state: AtomicU32::new(0), nr: AtomicU32::new(0), args: [const { AtomicU32::new(0) }; 6],
-               buffers: AtomicU32::new(0), lens: [const { AtomicU32::new(0) }; 6], ret: AtomicU64::new(0),
-               data: core::cell::UnsafeCell::new([0; CALL_DATA]) }
-    }
-
-    pub fn data(&self) -> &mut [u8; CALL_DATA] {
-        unsafe { &mut *self.data.get() }
-    }
+    crate::sched::wake();
 }
 
 pub fn tables() -> &'static Tables {
@@ -173,6 +85,12 @@ pub fn tables() -> &'static Tables {
 /// The kernel's memory is this module's memory.
 pub struct Direct;
 
+impl Direct {
+    pub fn write_u32(&self, addr: u32, v: u32) {
+        unsafe { (addr as *mut u32).write_volatile(v) }
+    }
+}
+
 impl Memory for Direct {
     /// Reads outside memory (a stale pointer in the trace, say) give zeros.
     fn read(&self, addr: u32, buf: &mut [u8]) {
@@ -181,62 +99,7 @@ impl Memory for Direct {
             buf.fill(0);
             return;
         }
-        // Racing the kernel only garbles what is read.
         unsafe { core::ptr::copy_nonoverlapping(addr as *const u8, buf.as_mut_ptr(), buf.len()) }
-    }
-}
-
-/// A byte ring written by the kernel's Workers and read by the page; the
-/// writer drops the oldest bytes if the reader falls behind.
-pub struct ByteRing {
-    buf: [AtomicU32; ByteRing::WORDS],
-    head: AtomicU32, // bytes ever written
-    tail: AtomicU32, // bytes ever read
-}
-
-impl ByteRing {
-    const WORDS: usize = 1 << 12;
-    const CAP: u32 = Self::WORDS as u32 * 4;
-
-    pub const fn new() -> Self {
-        ByteRing {
-            buf: [const { AtomicU32::new(0) }; Self::WORDS],
-            head: AtomicU32::new(0),
-            tail: AtomicU32::new(0),
-        }
-    }
-
-    fn byte(&self, i: u32) -> (&AtomicU32, u32) {
-        let i = i % Self::CAP;
-        (&self.buf[(i / 4) as usize], (i % 4) * 8)
-    }
-
-    /// Empty.
-    pub fn reset(&self) {
-        self.head.store(0, Ordering::Relaxed);
-        self.tail.store(0, Ordering::Relaxed);
-    }
-
-    pub fn put(&self, data: &[u8]) {
-        let head = self.head.load(Ordering::Relaxed);
-        for (i, &b) in data.iter().enumerate() {
-            let (w, shift) = self.byte(head + i as u32);
-            let old = w.load(Ordering::Relaxed);
-            w.store(old & !(0xff << shift) | (b as u32) << shift, Ordering::Relaxed);
-        }
-        self.head.store(head + data.len() as u32, Ordering::Release);
-    }
-
-    pub fn take(&self, out: &mut [u8]) -> usize {
-        let head = self.head.load(Ordering::Acquire);
-        let tail = self.tail.load(Ordering::Relaxed).max(head.saturating_sub(Self::CAP));
-        let n = ((head - tail) as usize).min(out.len());
-        for (i, b) in out[..n].iter_mut().enumerate() {
-            let (w, shift) = self.byte(tail + i as u32);
-            *b = (w.load(Ordering::Relaxed) >> shift) as u8;
-        }
-        self.tail.store(tail + n as u32, Ordering::Relaxed);
-        n
     }
 }
 
@@ -244,4 +107,15 @@ impl ByteRing {
 pub fn recording() -> bool {
     let trace = TRACE.load(Ordering::Relaxed);
     trace != 0 && Direct.read_u32(trace + ksee_core::trace::ON) != 0
+}
+
+/// The kernel's timer deadline (ns of time_ns), u64::MAX if none.
+pub fn deadline() -> u64 {
+    let d = DEADLINE.load(Ordering::Relaxed);
+    if d == 0 {
+        return u64::MAX;
+    }
+    let mut b = [0u8; 8];
+    Direct.read(d, &mut b);
+    u64::from_le_bytes(b)
 }

@@ -15,7 +15,7 @@ import { $, el } from "./dom.js";
 import { arg, made, parseCall, result } from "./args.js";
 
 export async function examples(app) {
-  const { m, proc } = app;
+  const { m } = app;
   const consts = m.constants();
   const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
   // The open example: its steps, the ones run ({ ret, text, id, ol }), and
@@ -78,7 +78,7 @@ export async function examples(app) {
       ? `Went back to before call ${n}: on a fresh kernel, ${n > 2 ? `calls 1–${n - 1}` : "call 1"} made again, then this one.` : ""));
   }
   // Go back to before call `j` and make `call` instead: a kernel cannot be
-  // put back as it was (its tasks' stacks are its Workers'), so it starts
+  // put back as it was (its tasks' stacks are the browser's), so it starts
   // again (a fresh kernel), and calls 1..j-1 are made again, then it. (The
   // calls are in the URL, #back=: a link to this, too.)
   function branch(j, call) {
@@ -136,7 +136,7 @@ export async function examples(app) {
     const mine = t.list;
     m.record(true);
     try {
-      r = await proc.call(s.call, args);
+      r = await m.call(s.call, args);
     } catch (e) {
       if (t.list === mine) t.status.textContent = e.message;
     } finally {
