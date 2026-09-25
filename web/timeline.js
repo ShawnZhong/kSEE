@@ -172,7 +172,7 @@ export function timeline(app) {
     t.all = list;
     t.cursor = null;
     t.buckets = m.timeline(Math.max(1, lw()));
-    t.calls = list.filter((s) => $("show-control").checked || !s.control);
+    t.calls = list.filter((s) => !s.control);
     const ls = new Map([[0, { pid: 0, comm: "swapper/0" }]]);
     for (const s of t.calls) if (s.task.pid != null) ls.set(s.task.pid, { pid: s.task.pid, comm: s.task.comm });
     t.lanes = [...ls.values()].sort((a, b) => a.pid - b.pid);

@@ -10,6 +10,7 @@
 <header><b>kSEE</b>
   <span id="badge" class="badge">loading</span><span id="status" class="dim">loading the kernel…</span>
   <span class="controls">
+    <button id="record" title="Record the kernel (a tour records by itself)">● Record</button>
     <button id="pause" disabled title="Stop the kernel at its next basic block">Pause</button>
     <button id="cont" disabled title="Let the kernel run (until a breakpoint)">Continue</button>
   </span></header>
@@ -17,10 +18,10 @@
   <canvas id="lanes" aria-label="history: tasks and their syscalls over the trace"></canvas>
   <div id="flamebox" hidden>
     <div class="flamehead"><span id="flame-title" class="dim"></span><span id="legend"></span></div>
-    <div class="flamescroll"><canvas id="flame" aria-label="the calls of the selected syscall"></canvas></div>
+    <div class="flamescroll" id="flamescroll"><canvas id="flame" aria-label="the calls of the selected syscall"></canvas></div>
   </div>
   <div class="transport">
-    <button id="to-start" title="To the start of the selected syscall">⏮</button>
+    <button id="to-start" title="To the start">⏮</button>
     <button id="back-line" title="Back a line (←)">◀</button>
     <button id="play" class="go" title="Play: line by line (space)">▶ Play</button>
     <button id="fwd-line" title="Forward a line (→); at now, while paused, the kernel runs a line">▶|</button>
@@ -30,47 +31,29 @@
       <option value="1000">slow</option><option value="400" selected>1 line / 0.4 s</option><option value="120">fast</option><option value="30">faster</option>
     </select>
     <span id="where" class="mono dim"></span>
-    <label class="dim right"><input type="checkbox" id="show-control"> init's channel traffic</label>
   </div>
 </section>
-<main>
+<div class="hsplit" id="hsplit" title="drag to resize"></div>
+<main id="main">
   <div class="col">
-    <h2 class="tabs"><button id="tab-tours" class="on">Tours</button><button id="tab-play">Playground</button>
-      <span class="right dim" id="left-note">programs, and what the kernel does for them</span></h2>
-    <div class="tab body" id="pane-tours"><div id="tours"></div></div>
-    <div class="tab" id="pane-play" hidden>
-    <div class="nbbar">
-      <input id="add" list="syscall-list" placeholder="+ a syscall: write, openat, …" aria-label="add a syscall"><datalist id="syscall-list"></datalist>
-      <select id="scenarios" aria-label="scenarios"><option value="">scenarios…</option></select>
-      <span class="right"><button id="runall" title="Run every card, in order">Run all</button><button id="clear" title="Remove the cards; forget the fds; free init's memory">Clear</button></span>
-    </div>
-    <datalist id="fds"></datalist>
-    <div class="body" id="cards"></div>
-    </div>
+    <h2>Tours <span class="dim">programs, and what the kernel does for them</span></h2>
+    <div class="body" id="tours"></div>
   </div>
+  <div class="vsplit" data-col="left" title="drag to resize"></div>
   <div class="col">
     <div id="note" hidden></div>
     <div class="srcbar mono" id="fn-title">Source</div>
     <div class="body" id="src"><div class="empty">The source at the cursor: lines where blocks ran are green (with counts), untaken ones red. Click a line number to break there.</div></div>
   </div>
+  <div class="vsplit" data-col="right" title="drag to resize"></div>
   <div class="col">
-    <h2 class="tabs"><button id="tab-stack" class="on">Stack</button><button id="tab-objects">Objects</button><button id="tab-syscalls">Syscalls <span id="nsys" class="dim"></span></button><button id="tab-console">Console <span id="console-new"></span></button>
-      <span class="right dim" id="mem-note" title="Objects are read from the kernel's memory as it is now">live memory</span></h2>
+    <h2 class="tabs"><button id="tab-stack" class="on">Stack</button><button id="tab-console">Console <span id="console-new"></span></button>
+      <span class="right dim" id="mem-note" title="Values are read from memory as it was at the cursor">memory now</span></h2>
     <div class="tab" id="pane-stack">
       <div class="stackhead dim" id="stack-note"></div>
       <div class="body" id="stack"></div>
+      <form class="watchbar" id="watchf"><input id="watch" list="globals" placeholder="+ watch a global: runqueues, jiffies_64, …" aria-label="watch a global"><datalist id="globals"></datalist></form>
     </div>
-    <div class="tab" id="pane-objects" hidden>
-      <div class="objbar">
-        <button id="pick-task">current task</button><button id="pick-rq">runqueue</button><button id="pick-init">init_task</button>
-        <form id="globalf"><input id="global" list="globals" placeholder="global…" size="12" aria-label="global"><datalist id="globals"></datalist></form>
-        <form id="decode"><input id="type" value="task_struct" size="10" aria-label="type"><input id="addr" placeholder="0x…" size="8" aria-label="address"><button>at</button></form>
-        <input id="objfilter" placeholder="filter fields" size="10" aria-label="filter">
-      </div>
-      <div id="crumbs"></div>
-      <div class="body" id="objtable"><div class="empty">Pause the kernel (or step into a syscall) and look at the current task, the runqueue, a global, or any type at an address; → in the call stack opens an argument. Fields changed since the last stop are highlighted.</div></div>
-    </div>
-    <div class="tab body" id="pane-syscalls" hidden><div id="syscalls"></div></div>
     <div class="tab body" id="pane-console" hidden><pre id="console"></pre></div>
   </div>
 </main>

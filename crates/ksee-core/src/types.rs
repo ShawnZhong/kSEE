@@ -224,6 +224,12 @@ impl Types {
         self.value(mem, addr, ty, 0, 0, depth, 0, out);
     }
 
+    /// Whether `ty` holds flags (named so: fmode_t, gfp_t, vm_flags_t, ...).
+    fn is_flags(&self, ty: u32) -> bool {
+        let name = self.name(ty);
+        matches!(name.as_str(), "fmode_t" | "gfp_t" | "fop_flags_t") || name.ends_with("flags_t")
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn value(&self, mem: &dyn Memory, addr: u32, ty: u32, bit_off: u32, bit_size: u32,
              depth: u32, indent: usize, out: &mut String) {
@@ -241,7 +247,9 @@ impl Types {
                     Base::Char => write!(out, "{}", signed(v, bits.max(1))),
                     Base::Float if size == 4 => write!(out, "{}", f32::from_bits(v as u32)),
                     Base::Float => write!(out, "{}", f64::from_bits(v)),
-                    _ if v > 9 => write!(out, "{v:#x}"),
+                    // Unsigned: decimal, but flags in hex and file modes in octal.
+                    _ if v > 9 && self.is_flags(ty) => write!(out, "{v:#x}"),
+                    _ if v > 7 && self.name(ty) == "umode_t" => write!(out, "0{v:o}"),
                     _ => write!(out, "{v}"),
                 };
             }

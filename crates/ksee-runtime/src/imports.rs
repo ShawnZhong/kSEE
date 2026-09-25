@@ -83,48 +83,40 @@ pub extern "C" fn user_line(line: u32) {
 }
 
 /// ksee.bulk, for the kernel (memcpy, memset, wide stores), and for what
-/// the runtime itself writes into kernel memory: log the old contents of
-/// `addr..addr + len` in the memory ring, in 8-byte stores, up to 256 bytes
-/// (the rest as a range of unknown old contents).
+/// the runtime itself writes into kernel memory: Store records with the old
+/// contents of `addr..addr + len`, in 8-byte stores, up to 256 bytes (the
+/// rest as a range of unknown old contents).
 #[unsafe(no_mangle)]
 pub extern "C" fn bulk(addr: u32, len: u32) {
-    let (mem, words, trace) = (MEM.load(Ordering::Relaxed), MEM_WORDS.load(Ordering::Relaxed), TRACE.load(Ordering::Relaxed));
-    if mem == 0 || words == 0 || len == 0 {
+    use ksee_core::trace::{STORE, UNKNOWN, VALUE_TAG};
+    if len == 0 || !recording() {
         return;
     }
-    let main = (Direct.read_u32(trace) >> 1) & (ksee_core::mem::MAIN - 1);
-    let pos = unsafe { &*(mem as *const AtomicU32) };
-    let mut p = pos.load(Ordering::Relaxed);
-    let mut put = |w: [u32; 4]| {
-        for (i, v) in w.into_iter().enumerate() {
-            let at = mem + ksee_core::mem::RING + ((p + i as u32) & (words - 1)) * 4;
-            unsafe { (at as *mut u32).write_volatile(v) };
-        }
-        p += 4;
-    };
     let logged = len.min(256);
     let mut off = 0;
     while off < logged {
-        let n = (logged - off).min(8);
-        let class = match n { 8.. => 3, 4..=7 => 2, 2..=3 => 1, _ => 0 };
+        let class = match logged - off { 8.. => 3, 4..=7 => 2, 2..=3 => 1, _ => 0 };
         let size = 1u32 << class;
         let mut old = [0u8; 8];
         Direct.read(addr + off, &mut old[..size as usize]);
         let v = u64::from_le_bytes(old);
-        put([addr + off, class << 29 | main, v as u32, (v >> 32) as u32]);
+        if class == 3 {
+            ring_put(&[addr + off, STORE << 28 | class, v as u32, VALUE_TAG << 28, (v >> 32) as u32, VALUE_TAG << 28 | 1]);
+        } else {
+            ring_put(&[addr + off, STORE << 28 | class, v as u32, VALUE_TAG << 28]);
+        }
         off += size;
     }
     if len > logged {
-        put([addr + logged, ksee_core::mem::UNKNOWN << 29 | main, len - logged, 0]);
+        ring_put(&[addr + logged, STORE << 28 | UNKNOWN, len - logged, VALUE_TAG << 28]);
     }
-    pos.store(p, Ordering::Release);
 }
 
 /// Append a record (pairs of words) to the kernel's trace ring, from a
 /// task's Worker while it holds the CPU (so no kernel code writes too).
 fn ring_put(words: &[u32]) {
     let (trace, size) = (TRACE.load(Ordering::Relaxed), RING_WORDS.load(Ordering::Relaxed));
-    if trace == 0 || size == 0 {
+    if trace == 0 || size == 0 || !recording() {
         return;
     }
     let pos = unsafe { &*(trace as *const AtomicU32) };
@@ -139,7 +131,7 @@ fn ring_put(words: &[u32]) {
 
 /// A Task record for the current task (it enters a user program): its
 /// pid and comm, as they are now.
-fn task_record() {
+pub(crate) fn task_record() {
     let task = Direct.read_u32(CURRENT_TASK.load(Ordering::Relaxed));
     let Some(t) = live_task(task) else { return };
     let mut comm = [0u8; 16];

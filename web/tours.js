@@ -1,9 +1,10 @@
 // Tours: a question about the kernel, a small C program that asks it
 // (user/tours/*.c, run as a real process), and stops in the kernel with a
-// note each. Running a tour starts the program with a breakpoint at each
-// stop; at a stop, the note says what is happening (Next stop goes on, or
-// Play goes line by line). Afterwards the program's run is in the history:
-// its lines link to what the kernel did for them.
+// note each. Opening a tour runs it: the program, recorded, with a
+// breakpoint at each stop; at a stop, the note says what is happening
+// (Continue goes on, Play goes line by line, Finish skips the other stops).
+// Afterwards the program's run is in the history: its lines link to what
+// the kernel did for them.
 import { $, el } from "./dom.js";
 import { highlight } from "./source.js";
 
@@ -17,7 +18,7 @@ export async function tours(app) {
     t.tour = null;
     app.tourStops = null;
     $("tours").replaceChildren(el("div", { className: "note", textContent: "Each tour asks a question, and answers it with a small C program run in a real process: follow what the kernel does for it, stop by stop." }),
-      ...list.map((tour) => el("div", { className: "row tour", onclick: () => open(tour) },
+      ...list.map((tour) => el("div", { className: "row tour", onclick: () => open(tour).then(() => run()) },
         el("div", { className: "tt", textContent: tour.title }), el("div", { className: "meta", textContent: tour.question }))));
   }
 
@@ -45,28 +46,28 @@ export async function tours(app) {
         el("div", { className: "tt", textContent: tour.title }),
         el("div", { className: "q", textContent: tour.question }),
         el("div", { className: "tbar" },
-          el("button", { className: "go", textContent: "▶ Run, with its stops", onclick: () => run(true) }),
-          el("button", { textContent: "Run straight through", onclick: () => run(false) }))),
+          el("button", { textContent: "↻ Run again", onclick: () => run() }))),
       t.stops, t.status,
       el("table", { className: "src prog" }, el("tbody", {}, ...t.rows)));
     app.tourStops = tour.stops;
   }
 
-  // Run the program; with its stops (breakpoints) or not.
-  async function run(stops) {
+  // Run the program, recording, with its stops (breakpoints).
+  async function run() {
     if (t.running) return;
     t.running = true;
     t.reached = new Set();
     t.stops.querySelectorAll("li").forEach((li) => li.classList.remove("on", "done"));
-    const funcs = stops ? t.tour.stops.map((s) => s.func) : [];
+    const funcs = (t.funcs = t.tour.stops.map((s) => s.func));
     for (const f of funcs) m.break_function(f, true);
-    app.tour = { pid: null, stops: stops ? t.tour.stops : [], lines: t.tour.lines };
+    app.tour = { pid: null, stops: t.tour.stops, lines: t.tour.lines };
+    m.record(true);
     t.status.textContent = "starting the program…";
     try {
       const pid = await proc.spawn(t.tour.path);
       if (pid < 0) throw new Error(`could not start ${t.tour.path}: ${pid}`);
       app.tour.pid = pid;
-      t.status.textContent = `${t.tour.path} runs as pid ${pid}` + (stops ? "; it stops at each stop" : "");
+      t.status.textContent = `${t.tour.path} runs as pid ${pid}; it stops at each stop`;
       const status = await proc.wait(pid);
       t.status.textContent = `${t.tour.path} (pid ${pid}) exited with status ${status}: click a line to see what the kernel did for it, or replay it (▶ Play).`;
       t.run = { pid };
@@ -74,6 +75,7 @@ export async function tours(app) {
       t.status.textContent = e.message;
     } finally {
       for (const f of funcs) m.break_function(f, false);
+      m.record(false);
       app.tour = null;
       t.running = false;
     }
@@ -125,6 +127,13 @@ export async function tours(app) {
     if (l) mark(l.line);
   }
 
+  // No more stops: run the program to its end.
+  function finish() {
+    for (const f of t.funcs ?? []) m.break_function(f, false);
+    if (app.tour) app.tour.stops = [];
+    m.resume();
+  }
+
   index();
-  return { follow, open, run, list };
+  return { follow, open, run, finish, list };
 }

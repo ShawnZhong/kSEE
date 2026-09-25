@@ -22,19 +22,23 @@
 // helper. The sequence of blocks is the branch history.
 //
 // Probes append records to a fixed ring in the module's own memory,
-// __ksee_trace = { u32 pos; u32 armed; u32 ring[KSEE_RING_WORDS]; }, where
-// pos counts words ever written (the ring keeps the most recent ones); the
-// exported function ksee_trace() returns its address. While armed is
-// nonzero, block probes also call the ksee.stop(fn, n) import, which may
-// stop the kernel there (breakpoints, stepping). pos is stored with release
-// order after each record, so a reader that loads it sees whole records.
-// The writer assumes one writer at a time (a uniprocessor kernel).
+// __ksee_trace = { u32 pos; u32 armed; u32 on; u32 pad; u32 ring[KSEE_RING_WORDS]; },
+// where pos counts words ever written (the ring keeps the most recent
+// ones); the exported function ksee_trace() returns its address. Probes
+// record only while on is nonzero (the host turns it on and off). While
+// armed is nonzero, block probes (and returns) also call the ksee.stop(fn,
+// n) import, which may stop the kernel there (breakpoints, stepping). pos is
+// stored with release order after each record, so a reader that loads it
+// sees whole records. The writer assumes one writer at a time (a
+// uniprocessor kernel).
 //
 // A record is a head pair of words followed by continuation pairs; the
 // second word's top nibble tags the pair, so a reader can start at any even
 // offset (the ring may have overwritten the start of a record) and skip
 // continuations until the next head:
-//   [fn, 1 << 28 | n]     block n of fn
+//   [fn, 1 << 28 | n]     block n of fn; block 0 (the entry: a call) is
+//                         followed by the call's arguments (the first six
+//                         integer or pointer ones, truncated to 32 bits)
 //   [fn, 2 << 28]         enter fn, followed by time lo, time hi, current,
 //                         a0, a1, a2, a3
 //   [fn, 3 << 28]         exit fn, followed by time lo, time hi, current,
@@ -42,27 +46,21 @@
 //   [fn, 4 << 28]         return from fn (block mode); while armed, it
 //                         calls ksee.stop(fn, 0x0fffffff) too (stepping
 //                         sees returns)
+//   [addr, 7 << 28 | k]   a store of 1 << k bytes at addr (k < 4), followed
+//                         by the old value (low, then for 8 bytes high): the
+//                         host undoes stores to see memory as it was; k = 7:
+//                         a range whose old contents are not logged, followed
+//                         by its length
 //   [value, 8 << 28 | i]  continuation i of the preceding head
-// fn is a hash of the function name (for a function local to its file, of
-// "file:name"); time comes from the ksee.now import.
+// (The host's runtime writes kinds 5 and 6 too, and store records for its
+// own writes into kernel memory.) fn is a hash of the function name (for a
+// function local to its file, of "file:name"); time comes from the ksee.now
+// import.
 //
-// Memory: a function with block probes also logs each store it makes (not
-// to its own stack slots), before it, to a second ring, __ksee_mem = { u32
-// pos; u32 pad; u32 ring[KSEE_MEM_WORDS]; } (ksee_mem() finds it), four
-// words a store: { address, class << 29 | main, old low, old high }: the
-// old value (the host undoes stores to see memory as it was). main is the
-// main ring's pos / 2 then (which records came before it), modulo 2^29;
-// class: 0-3 a 1, 2, 4 or 8 byte store, 7 a range whose old contents are
-// not logged (length in old low). Bulk writes (memcpy, memset, and wider
-// stores) go to the ksee.bulk(address, length) import, which logs them.
-//
-// Frames: a function with block probes also keeps a frame on the (kernel)
-// stack while it runs, u32 { prev, fn, args[6] } (the first six integer or
-// pointer arguments, truncated to 32 bits), linked from __ksee_frames, the
-// innermost; the exported ksee_frames() returns its address. A stopped
-// kernel's host walks it for the call stack and the arguments. (A task
-// switch needs nothing: each frame restores the prev it saw on entry, from
-// its own task's stack.)
+// Memory: a function with block probes logs each store it makes (not to
+// its own stack slots), and each atomic, before it. Bulk writes (memcpy,
+// memset, and wider stores) go to the ksee.bulk(address, length) import,
+// which logs them.
 //
 // The linked module describes its probes in a wasm custom section, which
 // wasm-ld concatenates across objects (lines may repeat). Each object's
@@ -71,8 +69,10 @@
 //   ksee.probes  U
 //                P \t k \t path       file k
 //                R \t ring words
-//                W \t memory ring words
-//                F \t fn \t name \t FILE:line \t argument types
+//                F \t fn \t name \t FILE:line \t argument types [\t known]
+//                  (known: with block probes, a bit mask of the source's
+//                  parameters that call records carry; the others were
+//                  optimized away, recorded as 0)
 //                B \t fn \t n \t FILE:line:column
 //                L \t fn \t n \t lines: the source lines the block runs, in
 //                  order (each once per stretch between calls), separated
@@ -85,6 +85,7 @@
 // kernel's types are extracted from its DWARF after linking: ksee pack.)
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/DebugProgramInstruction.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -203,21 +204,13 @@ void emitCustomSection(Module &M, StringRef name, StringRef text) {
   M.appendModuleInlineAsm(s + "\"\n.text\n");
 }
 
-enum Kind { KindBlock = 1, KindEnter = 2, KindExit = 3, KindReturn = 4, KindValue = 8 };
+enum Kind { KindBlock = 1, KindEnter = 2, KindExit = 3, KindReturn = 4, KindStore = 7, KindValue = 8 };
 
-constexpr unsigned FrameArgs = 6;
-
-unsigned memWords() {
-  const char *env = std::getenv("KSEE_MEM_WORDS");
-  unsigned n = env ? std::strtoul(env, nullptr, 0) : 1u << 21;
-  if (n < 4 || (n & (n - 1)))
-    report_fatal_error("KSEE_MEM_WORDS must be a power of two");
-  return n;
-}
+constexpr unsigned CallArgs = 6;
 
 unsigned ringWords() {
   const char *env = std::getenv("KSEE_RING_WORDS");
-  unsigned n = env ? std::strtoul(env, nullptr, 0) : 1u << 20;
+  unsigned n = env ? std::strtoul(env, nullptr, 0) : 1u << 21;
   if (!n || (n & (n - 1)))
     report_fatal_error("KSEE_RING_WORDS must be a power of two");
   return n;
@@ -229,9 +222,9 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   Module *M = nullptr;
   Type *i32 = nullptr, *i64 = nullptr;
   Function *putBlock = nullptr, *putEnter = nullptr, *putExit = nullptr, *putReturn = nullptr;
-  Function *putStore[4] = {}; // 1, 2, 4, 8 bytes
+  Function *putStore[4] = {};         // 1, 2, 4, 8 bytes
+  Function *putCall[CallArgs + 1] = {}; // an entry block, with k arguments
   FunctionCallee bulk;
-  GlobalVariable *frames = nullptr;
   std::string probes;
   // This object's files, numbered for the probes' lines.
   std::map<std::string, unsigned> files;
@@ -275,32 +268,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     cast<Function>(bulk.getCallee())->addFnAttr("wasm-import-name", "bulk");
   }
 
-  // The store writers: log the old value at the address a store is about
-  // to write (see Memory above).
-  void createStoreWriters(GlobalVariable *mem, Type *memTy, unsigned words, GlobalVariable *trace, Type *traceTy) {
-    LLVMContext &C = M->getContext();
-    for (unsigned k = 0; k < 4; k++) {
-      Function *F = shared(Function::Create(FunctionType::get(Type::getVoidTy(C), {i32}, false),
-                                            GlobalValue::ExternalLinkage, ("__ksee_put_store" + Twine(1 << k)).str(), M));
-      F->addFnAttr(Attribute::NoInline);
-      IRBuilder<> B(BasicBlock::Create(C, "", F));
-      Value *addr = F->getArg(0);
-      Type *ty = IntegerType::get(C, 8 << k);
-      LoadInst *old = B.CreateAlignedLoad(ty, B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1));
-      Value *wide = B.CreateZExt(old, i64);
-      Value *main = B.CreateLShr(B.CreateLoad(i32, B.CreateStructGEP(traceTy, trace, 0)), 1);
-      Value *tag = B.CreateOr(B.CreateAnd(main, 0x1fffffff), B.getInt32(k << 29));
-      Value *pos = B.CreateStructGEP(memTy, mem, 0), *ring = B.CreateStructGEP(memTy, mem, 2);
-      Value *p = B.CreateLoad(i32, pos);
-      Value *vals[4] = {addr, tag, B.CreateTrunc(wide, i32), B.CreateTrunc(B.CreateLShr(wide, 32), i32)};
-      for (unsigned i = 0; i < 4; i++)
-        B.CreateStore(vals[i], B.CreateGEP(i32, ring, B.CreateAnd(B.CreateAdd(p, B.getInt32(i)), B.getInt32(words - 1))));
-      B.CreateAlignedStore(B.CreateAdd(p, B.getInt32(4)), pos, Align(4))->setAtomic(AtomicOrdering::Release);
-      B.CreateRetVoid();
-      putStore[k] = F;
-    }
-  }
-
   // Log the store (or atomic, or memset/memcpy) `I` is about to make, if it
   // is not to its function's own stack.
   void logStore(Instruction *I) {
@@ -338,32 +305,22 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       putReturn = writerDecl("__ksee_put_return", 1);
       for (unsigned k = 0; k < 4; k++)
         putStore[k] = writerDecl(("__ksee_put_store" + Twine(1 << k)).str(), 1);
-      frames = shared(cast<GlobalVariable>(M->getOrInsertGlobal("__ksee_frames", i32)));
+      for (unsigned k = 0; k <= CallArgs; k++)
+        putCall[k] = writerDecl(("__ksee_put_call" + Twine(k)).str(), 1 + k);
       declareBulk();
       return;
     }
     declareBulk();
     LLVMContext &C = M->getContext();
     unsigned words = ringWords();
-    auto *traceTy = StructType::get(C, {i32, i32, ArrayType::get(i32, words)});
+    auto *traceTy = StructType::get(C, {i32, i32, i32, i32, ArrayType::get(i32, words)});
     auto *trace = shared(new GlobalVariable(
         *M, traceTy, false, GlobalValue::ExternalLinkage,
         ConstantAggregateZero::get(traceTy), "__ksee_trace"));
     trace->setAlignment(Align(8));
 
-    frames = shared(new GlobalVariable(*M, i32, false, GlobalValue::ExternalLinkage,
-                                       ConstantInt::get(i32, 0), "__ksee_frames"));
-    unsigned memN = memWords();
-    auto *memTy = StructType::get(C, {i32, i32, ArrayType::get(i32, memN)});
-    auto *mem = shared(new GlobalVariable(*M, memTy, false, GlobalValue::ExternalLinkage,
-                                          ConstantAggregateZero::get(memTy), "__ksee_mem"));
-    mem->setAlignment(Align(8));
-    createStoreWriters(mem, memTy, memN, trace, traceTy);
-    probes += "W\t" + std::to_string(memN) + "\n";
-    // Exports that find the rings and the frames.
-    for (auto [name, export_, var] : {std::tuple{"__ksee_trace_info", "ksee_trace", (GlobalVariable *)trace},
-                                      std::tuple{"__ksee_mem_info", "ksee_mem", mem},
-                                      std::tuple{"__ksee_frames_info", "ksee_frames", frames}}) {
+    // The export that finds the ring.
+    for (auto [name, export_, var] : {std::tuple{"__ksee_trace_info", "ksee_trace", (GlobalVariable *)trace}}) {
       Function *info = shared(Function::Create(FunctionType::get(i32, false),
                                                GlobalValue::ExternalLinkage, name, M));
       info->addFnAttr("wasm-export-name", export_);
@@ -385,10 +342,15 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
                                             GlobalValue::ExternalLinkage, name, M));
       F->addFnAttr(Attribute::NoInline);
       IRBuilder<> B(BasicBlock::Create(C, "", F));
+      // Only while on.
+      BasicBlock *write = BasicBlock::Create(C, "write", F), *done = BasicBlock::Create(C, "done", F);
+      Value *on = B.CreateLoad(i32, B.CreateStructGEP(traceTy, trace, 2));
+      B.CreateCondBr(B.CreateICmpNE(on, B.getInt32(0)), write, done);
+      B.SetInsertPoint(write);
       SmallVector<Value *> words;
       body(B, F, words);
       Value *pos = B.CreateStructGEP(traceTy, trace, 0);
-      Value *ring = B.CreateStructGEP(traceTy, trace, 2);
+      Value *ring = B.CreateStructGEP(traceTy, trace, 4);
       Value *p = B.CreateLoad(i32, pos);
       for (auto [i, w] : enumerate(words)) {
         Value *idx = B.CreateAnd(B.CreateAdd(p, B.getInt32(i)), B.getInt32(ringWords() - 1));
@@ -396,8 +358,14 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       }
       B.CreateAlignedStore(B.CreateAdd(p, B.getInt32(words.size())), pos, Align(4))
           ->setAtomic(AtomicOrdering::Release);
+      B.CreateBr(done);
+      B.SetInsertPoint(done);
       if (name == "__ksee_put_block")
         stopHook(B, F, traceTy, trace, F->getArg(1));
+      else if (name.starts_with("__ksee_put_call"))
+        stopHook(B, F, traceTy, trace, B.getInt32(0));
+      else if (name == "__ksee_put_return")
+        stopHook(B, F, traceTy, trace, B.getInt32(0x0fffffff));
       B.CreateRetVoid();
       return F;
     };
@@ -435,7 +403,25 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       words.push_back(F->getArg(0));
       words.push_back(B.getInt32(KindReturn << 28));
     });
-    stopOnReturn(putReturn, traceTy, trace);
+    for (unsigned k = 0; k <= CallArgs; k++)
+      putCall[k] = writer(("__ksee_put_call" + Twine(k)).str(), 1 + k, [&](IRBuilder<> &B, Function *F, auto &words) {
+        words.push_back(F->getArg(0));
+        words.push_back(B.getInt32(KindBlock << 28));
+        for (unsigned i = 0; i < k; i++)
+          value(B, words, F->getArg(1 + i));
+      });
+    // Stores: the old value, before the store.
+    for (unsigned k = 0; k < 4; k++)
+      putStore[k] = writer(("__ksee_put_store" + Twine(1 << k)).str(), 1, [&](IRBuilder<> &B, Function *F, auto &words) {
+        Value *addr = F->getArg(0);
+        Value *old = B.CreateZExt(B.CreateAlignedLoad(IntegerType::get(C, 8 << k),
+                                                      B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1)), i64);
+        words.push_back(addr);
+        words.push_back(B.getInt32(KindStore << 28 | k));
+        value(B, words, B.CreateTrunc(old, i32));
+        if (k == 3)
+          value(B, words, B.CreateTrunc(B.CreateLShr(old, 32), i32));
+      });
     probes += "R\t" + std::to_string(words) + "\n";
   }
 
@@ -453,17 +439,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     B.CreateCall(hook, {F->getArg(0), n});
     B.CreateBr(done);
     B.SetInsertPoint(done);
-  }
-
-  // The return writer's stop hook, before its ret.
-  void stopOnReturn(Function *F, Type *traceTy, Value *trace) {
-    ReturnInst *ret = cast<ReturnInst>(F->back().getTerminator());
-    IRBuilder<> B(ret);
-    BasicBlock *rest = F->back().splitBasicBlock(ret);
-    F->back().getPrevNode()->getTerminator()->eraseFromParent();
-    B.SetInsertPoint(rest->getPrevNode());
-    stopHook(B, F, traceTy, trace, B.getInt32(0x0fffffff));
-    B.CreateBr(rest);
   }
 
   // Whether a call runs code with probes (its blocks come in between).
@@ -533,6 +508,28 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     SmallVector<BasicBlock *> blocks;
     for (BasicBlock &BB : F)
       blocks.push_back(&BB);
+    // The source's parameters: the value each has at entry (an argument, or
+    // a constant the optimizer put in its place), from the debug records
+    // (after optimization, arguments may no longer be the source's).
+    SmallVector<Value *, CallArgs> params;
+    unsigned known = 0;
+    if ((modes & Block) && SP) {
+      for (Instruction &I : instructions(F))
+        for (DbgVariableRecord &R : filterDbgVars(I.getDbgRecordRange())) {
+          DILocalVariable *V = R.getVariable();
+          unsigned k = V ? V->getArg() : 0;
+          if (!k || k > CallArgs || V->getScope()->getSubprogram() != SP || R.getNumVariableLocationOps() != 1)
+            continue;
+          Value *v = R.getVariableLocationOp(0);
+          if (!isa_and_nonnull<Argument, ConstantInt>(v) || (known >> (k - 1) & 1))
+            continue;
+          if (params.size() < k)
+            params.resize(k, nullptr);
+          params[k - 1] = v;
+          known |= 1 << (k - 1);
+        }
+    }
+
     // The function's own writes to memory (before any probe is added).
     SmallVector<Instruction *> writes;
     if (modes & Block)
@@ -543,7 +540,16 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     if (modes & Block)
       for (auto [n, BB] : enumerate(blocks)) {
         IRBuilder<> B(&*BB->getFirstInsertionPt());
-        B.CreateCall(putBlock, {B.getInt32(id), B.getInt32(n)});
+        if (n == 0) {
+          // The entry: the call, with its arguments, in the source's order
+          // (0 for those the optimizer took away: see known).
+          SmallVector<Value *, 1 + CallArgs> args{B.getInt32(id)};
+          for (unsigned k = 0; k < params.size(); k++)
+            args.push_back(params[k] ? toI32(B, params[k]) : B.getInt32(0));
+          B.CreateCall(putCall[args.size() - 1], args);
+        } else {
+          B.CreateCall(putBlock, {B.getInt32(id), B.getInt32(n)});
+        }
         std::string loc = "?";
         for (Instruction &I : *BB)
           if (DILocation *L = I.getDebugLoc().get(); L && L->getLine()) {
@@ -556,19 +562,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       }
 
     if (modes & Block) {
-      // The frame, before the entry block's probe (so that a stop there
-      // sees the arguments); restored, and a return record, at each return.
-      IRBuilder<> B(&*F.getEntryBlock().getFirstInsertionPt());
-      auto *frameTy = ArrayType::get(i32, 2 + FrameArgs);
-      AllocaInst *frame = B.CreateAlloca(frameTy);
-      frame->setAlignment(Align(4));
-      Value *prev = B.CreateLoad(i32, frames);
-      B.CreateStore(prev, B.CreateConstGEP2_32(frameTy, frame, 0, 0));
-      B.CreateStore(B.getInt32(id), B.CreateConstGEP2_32(frameTy, frame, 0, 1));
-      for (unsigned i = 0; i < FrameArgs; i++)
-        B.CreateStore(i < F.arg_size() ? toI32(B, F.getArg(i)) : B.getInt32(0),
-                      B.CreateConstGEP2_32(frameTy, frame, 0, 2 + i));
-      B.CreateStore(B.CreatePtrToInt(frame, i32), frames);
+      // A return record at each return.
       for (BasicBlock *BB : blocks)
         if (auto *R = dyn_cast<ReturnInst>(BB->getTerminator())) {
           // (A musttail call must stay right before its return.)
@@ -576,7 +570,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
           if (auto *C = dyn_cast_or_null<CallInst>(R->getPrevNode()); C && C->isMustTailCall())
             at = C;
           IRBuilder<> RB(at);
-          RB.CreateStore(prev, frames);
           RB.CreateCall(putReturn, {RB.getInt32(id)});
         }
     }
@@ -611,7 +604,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         argTypes += (i > 1 ? "," : "") + typeName(sig[i]);
     }
     probes += ("F\t" + Twine(id) + "\t" + F.getName() + "\t" + where + "\t" +
-               argTypes + "\n").str();
+               argTypes + ((modes & Block) ? "\t" + Twine(known) : Twine()) + "\n").str();
   }
 
 public:

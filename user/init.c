@@ -1,25 +1,17 @@
-// /init: the process the page's syscalls run in. It serves requests from
-// the kernel's /dev/ksee channel (see linux/arch/wasm/drivers/ksee_channel.c;
-// the read sleeps until there is one): make a syscall, or prepare memory
-// for syscalls (buffers and structs the page lays out), in this process.
-// No libc, just the syscall import.
+// /init: starts the page's programs (a tour's, see user/tours/) and waits
+// for them, at the requests of the kernel's /dev/ksee channel (see
+// linux/arch/wasm/drivers/ksee_channel.c; the read sleeps until there is
+// one). No libc, just the syscall import.
 //
 // A request (little endian): u32 op, a, b, pad; i64 args[6]; data. A reply:
-// i64 ret; data.
-//   SYSCALL  nr = a, args            ret: the syscall's result
-//   ALLOC    size = a, align = b     ret: the address (-ENOMEM)
-//   WRITE    addr = a, len = b, data ret: 0 (-EFAULT)
-//   READ     addr = a, len = b       ret: b (-EFAULT), then the bytes
-//   RESET                            frees everything ALLOC gave
+// i64 ret.
 //   SPAWN    path = data (NUL-ended) ret: the pid of a new child running
 //                                    the program (-errno)
 //   WAIT     pid = a                 ret: its exit status, when it exits
 //
-// The channel is fd 100 (KSEE_FD), so that the page's own files get the
-// usual numbers, and the debugger can tell this traffic from the page's
-// syscalls (it does not stop in it; see crates/ksee-runtime/src/debug.rs).
+// The channel is fd 100 (KSEE_FD), so that programs get the usual fds.
 
-enum { SYSCALL = 1, ALLOC, WRITE, READ, RESET, SPAWN, WAIT };
+enum { SPAWN = 1, WAIT };
 
 #define NR_dup3		24
 #define NR_ioctl	29
@@ -34,8 +26,6 @@ enum { SYSCALL = 1, ALLOC, WRITE, READ, RESET, SPAWN, WAIT };
 #define KSEE_SPAWN	0x6b01	/* _IO('k', 1) */
 #define AT_FDCWD	-100
 #define O_RDWR		02
-#define ENOMEM		12
-#define EFAULT		14
 #define EINVAL		22
 #define KSEE_FD		100
 
@@ -49,85 +39,28 @@ struct request {
 	unsigned char data[];
 };
 
-#define MESSAGE	(64 << 10)
+#define MESSAGE	(4 << 10)
 static unsigned char req[MESSAGE] __attribute__((aligned(8)));
-static unsigned char rep[MESSAGE] __attribute__((aligned(8)));
-static unsigned char heap[1 << 20] __attribute__((aligned(16)));
-static unsigned long used;
+static long long rep;
 
-static int in_heap(unsigned long addr, unsigned long len)
+// Serve one request (`n` bytes): the reply.
+static long long serve(struct request *r, long n)
 {
-	unsigned long base = (unsigned long)heap;
-
-	return addr >= base && len <= sizeof(heap) && addr - base <= sizeof(heap) - len;
-}
-
-// Serve one request into rep; the reply's length.
-static unsigned long serve(struct request *r, long n)
-{
-	long long *ret = (long long *)rep;
-	unsigned long len = 8;
-
 	switch (r->op) {
-	case SYSCALL:
-		*ret = __syscall(r->a, r->args[0], r->args[1], r->args[2],
-				 r->args[3], r->args[4], r->args[5]);
-		break;
-	case ALLOC: {
-		unsigned long align = r->b ? r->b : 8;
-		unsigned long at = (used + align - 1) & ~(align - 1);
-
-		if ((align & (align - 1)) || at + r->a > sizeof(heap)) {
-			*ret = -ENOMEM;
-			break;
-		}
-		used = at + r->a;
-		for (unsigned long i = at; i < used; i++)
-			heap[i] = 0;
-		*ret = (long)(heap + at);
-		break;
-	}
-	case WRITE:
-		if (!in_heap(r->a, r->b) || (long)sizeof(*r) + r->b > n) {
-			*ret = -EFAULT;
-			break;
-		}
-		for (unsigned int i = 0; i < r->b; i++)
-			((unsigned char *)(long)r->a)[i] = r->data[i];
-		*ret = 0;
-		break;
-	case READ:
-		// Anywhere in this process's memory (the page reads results).
-		if (r->b > MESSAGE - 8) {
-			*ret = -EFAULT;
-			break;
-		}
-		for (unsigned int i = 0; i < r->b; i++)
-			rep[8 + i] = ((unsigned char *)(long)r->a)[i];
-		*ret = r->b;
-		len += r->b;
-		break;
-	case RESET:
-		used = 0;
-		*ret = 0;
-		break;
 	case SPAWN:
 		// (A child of this process: the kernel's /dev/ksee starts it.)
 		r->data[n - sizeof(*r) - 1] = 0;
-		*ret = __syscall(NR_ioctl, KSEE_FD, KSEE_SPAWN, (long)r->data, 0, 0, 0);
-		break;
+		return __syscall(NR_ioctl, KSEE_FD, KSEE_SPAWN, (long)r->data, 0, 0, 0);
 	case WAIT: {
 		// siginfo_t: si_signo, si_errno, si_code, then si_pid, si_uid, si_status.
 		int info[32] = { 0 };
 		long err = __syscall(NR_waitid, P_PID, r->a, (long)info, WEXITED, 0, 0);
 
-		*ret = err < 0 ? err : info[5];
-		break;
+		return err < 0 ? err : info[5];
 	}
 	default:
-		*ret = -EINVAL;
+		return -EINVAL;
 	}
-	return len;
 }
 
 static void say(const char *s)
@@ -152,11 +85,13 @@ void _start(void)
 	}
 	__syscall(NR_close, fd, 0, 0, 0, 0, 0);
 	fd = KSEE_FD;
-	say("init: ready for the page's syscalls\n");
+	say("init: ready for the page's programs\n");
 	for (;;) {
 		long n = __syscall(NR_read, fd, (long)req, sizeof(req), 0, 0, 0);
 
-		if (n >= (long)sizeof(struct request))
-			__syscall(NR_write, fd, (long)rep, serve((struct request *)req, n), 0, 0, 0);
+		if (n >= (long)sizeof(struct request)) {
+			rep = serve((struct request *)req, n);
+			__syscall(NR_write, fd, (long)&rep, sizeof(rep), 0, 0, 0);
+		}
 	}
 }

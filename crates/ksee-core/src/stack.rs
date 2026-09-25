@@ -87,7 +87,7 @@ pub fn frames(records: &[Record], tasks: &[u32], from: usize, to: usize, task: O
         match *r {
             Record::Block { func, n } => stacks.entry(t).or_default().block(func, n, i, &mut keep),
             Record::Exit { func, .. } | Record::Return { func } => stacks.entry(t).or_default().exit(func, i, &mut keep),
-            Record::Enter { .. } | Record::Line { .. } | Record::Task { .. } => {}
+            Record::Enter { .. } | Record::Line { .. } | Record::Task { .. } | Record::Args { .. } | Record::Store { .. } => {}
         }
     }
     // The calls still in progress at `to`.
@@ -127,7 +127,7 @@ pub fn lines(t: &crate::tables::Tables, records: &[Record], tasks: &[u32], from:
     let mut out: Vec<LineStep> = Vec::new();
     let to = to.min(records.len().saturating_sub(1));
     let mut tasks_at: BTreeMap<u32, At> = BTreeMap::new();
-    let mut emit = |out: &mut Vec<LineStep>, func: u32, n: u32, seg: usize, depth: u32, i: usize| {
+    let emit = |out: &mut Vec<LineStep>, func: u32, n: u32, seg: usize, depth: u32, i: usize| {
         if i < from {
             return;
         }
@@ -172,6 +172,30 @@ pub fn lines(t: &crate::tables::Tables, records: &[Record], tasks: &[u32], from:
     out
 }
 
+/// The call stack of the task running at record `at`, outermost first,
+/// with each call's arguments (the Args record after its entry block, if
+/// the trace has it): (function, first record, arguments).
+pub fn calls_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<(u32, usize, Option<Vec<u32>>)> {
+    let Some(&task) = tasks.get(at) else { return Vec::new() };
+    let mut s = Stack::default();
+    for (i, r) in records.iter().enumerate().take(at + 1) {
+        if tasks[i] == task {
+            match *r {
+                Record::Block { func, n } => s.block(func, n, i, &mut |_| {}),
+                Record::Exit { func, .. } | Record::Return { func } => s.exit(func, i, &mut |_| {}),
+                _ => {}
+            }
+        }
+    }
+    s.frames.into_iter().map(|(f, first)| {
+        let args = match records.get(first + 1) {
+            Some(&Record::Args { args, n }) if matches!(records[first], Record::Block { n: 0, .. }) => Some(args[..n as usize].to_vec()),
+            _ => None,
+        };
+        (f, first, args)
+    }).collect()
+}
+
 /// The call stack of the task running at record `at`, outermost first.
 pub fn stack_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<u32> {
     let Some(&task) = tasks.get(at) else { return Vec::new() };
@@ -181,7 +205,7 @@ pub fn stack_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<u32> {
             match *r {
                 Record::Block { func, n } => s.block(func, n, i, &mut |_| {}),
                 Record::Exit { func, .. } | Record::Return { func } => s.exit(func, i, &mut |_| {}),
-                Record::Enter { .. } | Record::Line { .. } | Record::Task { .. } => {}
+                Record::Enter { .. } | Record::Line { .. } | Record::Task { .. } | Record::Args { .. } | Record::Store { .. } => {}
             }
         }
     }

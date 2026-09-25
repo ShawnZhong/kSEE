@@ -11,7 +11,7 @@ export async function start({ kernel, initrd, cmdline = "", ramMiB = 64 }) {
   return Machine.start({ kernel: String(kernel), initrd: initrd && String(initrd), cmdline, worker, ram });
 }
 
-// The process the page's syscalls run in: init, on the kernel's /dev/ksee
+// init, which starts the page's programs, on the kernel's /dev/ksee
 // channel (see user/init.c). Each operation waits for init's reply.
 export function process(machine) {
   const request = async (op, a = 0, b = 0, args = [], data) => {
@@ -24,17 +24,9 @@ export function process(machine) {
   };
   const tick = () => new Promise((r) => setTimeout(r, 2));
   return {
-    // A syscall by number; its result.
-    syscall: async (nr, args = []) => (await request(1, nr, 0, args.map(Number))).ret,
-    // `size` bytes of zeroed memory in init; their address.
-    alloc: async (size, align = 8) => (await request(2, size, align)).ret,
-    write: async (addr, bytes) => (await request(3, addr, bytes.length, [], bytes)).ret,
-    read: async (addr, len) => (await request(4, addr, len)).data,
-    // Free everything alloc gave.
-    reset: async () => (await request(5)).ret,
     // A program (a path in the initramfs) as a child of init: its pid; then
     // its exit status, once it exits.
-    spawn: async (path) => (await request(6, 0, 0, [], new TextEncoder().encode(path + "\0"))).ret,
-    wait: async (pid) => (await request(7, pid)).ret,
+    spawn: async (path) => (await request(1, 0, 0, [], new TextEncoder().encode(path + "\0"))).ret,
+    wait: async (pid) => (await request(2, pid)).ret,
   };
 }

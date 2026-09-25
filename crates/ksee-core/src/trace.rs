@@ -16,6 +16,12 @@ pub enum Record {
     /// A task entering a user program (after exec): who it is, as the
     /// pointer may later be another task's.
     Task { task: u32, pid: u32, comm: [u32; 4] },
+    /// The arguments of the call whose entry block (Block n 0) is just
+    /// before: the first `n` of `args`.
+    Args { args: [u32; 6], n: u8 },
+    /// A store of `size` bytes at `addr`, which held `old` (size 0: a range
+    /// of `old` bytes whose old contents are not logged).
+    Store { addr: u32, size: u32, old: u64 },
 }
 
 const BLOCK: u32 = 1;
@@ -26,6 +32,10 @@ const RETURN: u32 = 4;
 pub const LINE: u32 = 5;
 /// The tag of a Task record's head (also the runtime's).
 pub const TASK: u32 = 6;
+/// The tag of a Store record's head (the plugin's, and the runtime's).
+pub const STORE: u32 = 7;
+/// A Store record's size class for a range of unknown old contents.
+pub const UNKNOWN: u32 = 7;
 pub const VALUE_TAG: u32 = VALUE;
 const VALUE: u32 = 8;
 
@@ -38,10 +48,12 @@ pub fn decode(words: &[u32]) -> Vec<Record> {
 }
 
 /// Offset of the ring's words in the trace header (`{ u32 pos; u32 armed;
-/// u32 ring[words]; }`, see plugin/ksee-trace.cpp).
-pub const RING: u32 = 8;
+/// u32 on; u32 pad; u32 ring[words]; }`, see plugin/ksee-trace.cpp).
+pub const RING: u32 = 16;
 /// Offset of the `armed` word.
 pub const ARMED: u32 = 4;
+/// Offset of the `on` word (probes record only while it is nonzero).
+pub const ON: u32 = 8;
 
 /// The ring at `trace`, decoded in place.
 pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> impl Iterator<Item = Record> + '_ {
@@ -87,11 +99,30 @@ pub struct Decoder<F> {
     len: u32,
     /// The pair the last record returned starts at.
     pub head: u32,
+    /// A record to return next (a call's arguments, after its block).
+    pending: Option<Record>,
 }
 
 impl<F: FnMut(u32) -> (u32, u32)> Decoder<F> {
     pub fn new(len: u32, pair: F) -> Self {
-        Decoder { pair, next: 0, len, head: 0 }
+        Decoder { pair, next: 0, len, head: 0, pending: None }
+    }
+}
+
+impl<F: FnMut(u32) -> (u32, u32)> Decoder<F> {
+    /// Up to `max` continuation pairs from the next one, into `v`: how many.
+    fn values(&mut self, v: &mut [u32], max: usize) -> usize {
+        let mut got = 0;
+        while got < max && self.next < self.len {
+            let (value, t) = (self.pair)(self.next);
+            if t >> 28 != VALUE {
+                break; // the next head
+            }
+            v[got] = value;
+            got += 1;
+            self.next += 1;
+        }
+        got
     }
 }
 
@@ -99,33 +130,49 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
     type Item = Record;
 
     fn next(&mut self) -> Option<Record> {
+        if let Some(r) = self.pending.take() {
+            return Some(r);
+        }
         while self.next < self.len {
             let (func, tag) = (self.pair)(self.next);
             self.head = self.next;
             self.next += 1;
             let kind = tag >> 28;
+            let mut v = [0u32; 7];
             let count = match kind {
-                BLOCK => return Some(Record::Block { func, n: tag & 0x0fff_ffff }),
+                BLOCK => {
+                    let n = tag & 0x0fff_ffff;
+                    // An entry block: the call's arguments follow (as many as it has).
+                    if n == 0 {
+                        let mut args = [0u32; 6];
+                        let k = self.values(&mut args, 6);
+                        if k > 0 {
+                            self.pending = Some(Record::Args { args, n: k as u8 });
+                        }
+                    }
+                    return Some(Record::Block { func, n });
+                }
                 RETURN => return Some(Record::Return { func }),
                 LINE => return Some(Record::Line { line: func }),
+                STORE => {
+                    let class = tag & 0xf;
+                    let want = if class == 3 { 2 } else { 1 };
+                    if self.values(&mut v, want) < want {
+                        continue;
+                    }
+                    return Some(if class == UNKNOWN {
+                        Record::Store { addr: func, size: 0, old: v[0] as u64 }
+                    } else {
+                        Record::Store { addr: func, size: 1 << class, old: v[0] as u64 | (v[1] as u64) << 32 }
+                    });
+                }
                 ENTER => 7,
                 EXIT => 4,
                 TASK => 5,
                 _ => continue, // a continuation without its head
             };
-            let mut v = [0u32; 7];
-            let mut got = 0;
-            while got < count && self.next < self.len {
-                let (value, t) = (self.pair)(self.next);
-                if t >> 28 != VALUE {
-                    break; // truncated: this is the next head
-                }
-                v[got] = value;
-                got += 1;
-                self.next += 1;
-            }
-            if got < count {
-                continue;
+            if self.values(&mut v, count) < count {
+                continue; // truncated
             }
             if kind == TASK {
                 return Some(Record::Task { task: func, pid: v[0], comm: [v[1], v[2], v[3], v[4]] });
@@ -187,13 +234,23 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn calls_carry_arguments_and_stores_old_values() {
+        let w = [9, BLOCK << 28, 7, VALUE << 28, 8, VALUE << 28 | 1, 0x100, STORE << 28 | 2, 5, VALUE << 28,
+                 0x200, STORE << 28 | UNKNOWN, 64, VALUE << 28, 9, BLOCK << 28 | 1];
+        assert_eq!(decode(&w), [Record::Block { func: 9, n: 0 }, Record::Args { args: [7, 8, 0, 0, 0, 0], n: 2 },
+                                Record::Store { addr: 0x100, size: 4, old: 5 }, Record::Store { addr: 0x200, size: 0, old: 64 },
+                                Record::Block { func: 9, n: 1 }]);
+    }
+
+    #[test]
     fn reads_a_wrapped_ring() {
         // A 4-word ring after 6 words (blocks 0, 1, 2) were written.
-        let mut m = alloc::vec![0u8; 24];
+        let mut m = alloc::vec![0u8; 32];
         m[0..4].copy_from_slice(&6u32.to_le_bytes());
         let words = [block(9, 2), block(9, 1)].concat();
         for (slot, w) in words.iter().enumerate() {
-            m[8 + slot * 4..12 + slot * 4].copy_from_slice(&w.to_le_bytes());
+            let at = RING as usize + slot * 4;
+            m[at..at + 4].copy_from_slice(&w.to_le_bytes());
         }
         let got: Vec<Record> = ring(&Ring(m), 0, 4).collect();
         assert_eq!(got, [Record::Block { func: 9, n: 1 }, Record::Block { func: 9, n: 2 }]);

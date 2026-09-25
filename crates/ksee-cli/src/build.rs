@@ -6,8 +6,9 @@
 //!   linux/vmlinux          the kernel, instrumented (kbuild)
 //!   web/pkg/               the runtime, and wasm-bindgen's glue (cargo)
 //!   web/vmlinux, web/src/  the kernel for the page (pack)
-//!   web/initramfs.cpio     /init (user/init.c), and the tours' programs
-//!                          (user/tours/*.c, as /bin/NAME)
+//!   web/initramfs.cpio     /init (user/init.c), and the programs: the
+//!                          tours' (user/tours/*.c) and the tests'
+//!                          (user/tests/*.c), as /bin/NAME
 //!   web/tours/             the tours: their sources, and index.json
 //!
 //! $LLVM is the LLVM version suffix (default -23); $KSEE_TRACE and
@@ -105,7 +106,9 @@ pub fn build() {
             list += &format!("file /bin/{name} bin/{name}.wasm 0755 0 0\n");
             let text = std::fs::read_to_string(src).unwrap_or_default();
             std::fs::write(format!("web/tours/{name}.c"), &text).unwrap_or_else(|e| crate::fail(&format!("web/tours: {e}")));
-            index.push(tour_json(&name, &text));
+            if src.starts_with("user/tours/") {
+                index.push(tour_json(&name, &text));
+            }
         }
         std::fs::write("web/tours/index.json", format!("[\n{}\n]\n", index.join(",\n")))
             .unwrap_or_else(|e| crate::fail(&format!("web/tours/index.json: {e}")));
@@ -122,9 +125,10 @@ pub fn build() {
     }
 }
 
-/// The tours' programs, user/tours/*.c, sorted.
+/// The programs, user/tours/*.c and user/tests/*.c, sorted.
 fn tours() -> Vec<String> {
-    let mut list: Vec<String> = std::fs::read_dir("user/tours").into_iter().flatten().flatten()
+    let mut list: Vec<String> = ["user/tours", "user/tests"].iter()
+        .flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
         .map(|e| e.path().to_string_lossy().into_owned()).filter(|p| p.ends_with(".c")).collect();
     list.sort();
     list

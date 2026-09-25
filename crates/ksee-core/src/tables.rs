@@ -20,6 +20,9 @@ pub struct Function {
     pub loc: Loc,
     /// Types of the first four parameters, e.g. `task_struct*`.
     pub arg_types: Vec<String>,
+    /// Which of the source's parameters call records carry (a bit each);
+    /// the others were optimized away. None: no call records.
+    pub known: Option<u32>,
 }
 
 /// A source line a block runs; `inlined`: the function (an index into
@@ -43,8 +46,6 @@ use crate::types::Types;
 pub struct Tables {
     /// Size of the trace ring in words.
     pub ring_words: u32,
-    /// Size of the memory ring (the stores' old values) in words.
-    pub mem_words: u32,
     pub functions: BTreeMap<u32, Function>,
     /// (function, block) -> where the block's first instruction is.
     pub blocks: BTreeMap<(u32, u32), Loc>,
@@ -113,7 +114,6 @@ impl Tables {
                     }
                 }
                 ["R", words] => t.ring_words = words.parse().unwrap_or(0),
-                ["W", words] => t.mem_words = words.parse().unwrap_or(0),
                 ["F", id, name, location, rest @ ..] => {
                     let Ok(id) = id.parse() else { continue };
                     let arg_types = match rest.first() {
@@ -123,7 +123,10 @@ impl Tables {
                         _ => Vec::new(),
                     };
                     let loc = unit.loc(location, false);
-                    t.functions.insert(id, Function { name: name.to_string(), loc, arg_types });
+                    // (The late pass's line has the mask; the early one's may follow.)
+                    let known = rest.get(1).and_then(|k| k.parse().ok())
+                        .or_else(|| t.functions.get(&id).and_then(|f| f.known));
+                    t.functions.insert(id, Function { name: name.to_string(), loc, arg_types, known });
                 }
                 ["B", id, n, where_] => {
                     if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {

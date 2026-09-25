@@ -1,22 +1,20 @@
 // The kSEE page: wires the panels to a booted Machine (crates/ksee-runtime).
 //
-// The kernel is live: it runs on its own, and the history (the trace ring)
-// grows. The page is in one of three states:
-//   LIVE     running; the history follows now
-//   PAUSED   the debugger stopped the kernel (Pause, a breakpoint, Step
-//            into); now is the stop, and objects are exact
-//   REPLAY   the cursor is in the history (a picked moment, or playing a
-//            syscall back); the kernel goes on meanwhile
-// One cursor: the history shows it among the tasks and the calls; the call
-// stack and the source show the code there. Play moves it line by line:
-// through the recorded trace in REPLAY, or by running the kernel, a line at
-// a time, when PAUSED.
+// The kernel runs on its own; it is traced while recording (a tour records
+// by itself, or ● Record). The page is in one of these states:
+//   LIVE       running
+//   RECORDING  running, and recording: the history grows
+//   PAUSED     the debugger stopped the kernel (a tour's stop, a
+//              breakpoint, Pause): now is the stop
+//   REPLAY     the cursor is in the recorded history (a picked moment, or
+//              playing it back); memory is shown as it was then
+// One cursor: the history shows it among the tasks and the calls; the
+// source and the Stack show the code and the values there. Play moves it
+// line by line: through the recording in REPLAY, or by running the kernel,
+// a line at a time, when PAUSED.
 import { $, el, taskName } from "./dom.js";
 import { process } from "./ksee.js";
-import { cards } from "./cards.js";
-import { syscalls } from "./syscalls.js";
 import { source } from "./source.js";
-import { objects } from "./objects.js";
 import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { tours } from "./tours.js";
@@ -25,63 +23,61 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function app(m) {
   const a = { m, proc: process(m) };
-  // A syscall's identity across snapshots (indexes shift as the ring wraps).
+  // A syscall's identity across snapshots (indexes shift as the ring goes on).
   a.key = (s) => `${s.task.addr}:${s.start_ns}`;
-  const list = syscalls(a), src = source(a), objs = objects(a), time = timeline(a), stack = callstack(a);
+  const src = source(a), time = timeline(a), stack = callstack(a);
   a.showFunction = src.showFunction;
-  a.inspect = (...args) => {
-    tab("objects");
-    objs.inspect(...args);
-  };
-  a.showBytes = (name, object) => {
-    tab("objects");
-    objs.inspect(name, null, 0, true, object);
-  };
 
   // ---- The state ----
   let halted = null;
-  const state = () => (halted != null ? "halted" : time.cursor() != null ? "replay" : m.stopped() ? "paused" : "live");
+  const state = () => (halted != null ? "halted" : time.cursor() != null ? "replay"
+    : m.stopped() ? "paused" : m.recording() ? "recording" : "live");
   function badge() {
     const st = state(), at = m.stopped();
     $("badge").className = `badge ${st}`;
-    $("badge").textContent = { live: "● LIVE", paused: "❚❚ PAUSED", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
+    $("badge").textContent = { live: "● LIVE", recording: "● RECORDING", paused: "❚❚ PAUSED", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
     $("pause").disabled = st === "halted" || !!at;
     $("cont").disabled = !at;
     $("over").disabled = !(at && st === "paused");
+    $("record").textContent = m.recording() ? "■ Stop recording" : "● Record";
     if (st === "paused") status(`in ${at.func} (${at.file}:${at.line}) on ${taskName(at.task)}`);
     if (st === "halted") status(`the kernel halted (${halted})`);
-    if (st === "replay") status(at ? "the recorded past; the kernel is paused at now" : "the recorded past; the kernel runs on");
+    if (st === "replay") status("the recorded past; the kernel runs on");
+    if (st === "live") status(time.records() ? "not recording: the history is the last recording" : "not recording: run a tour (or ● Record)");
   }
   const status = (text) => ($("status").textContent = text);
 
   // A new snapshot of the trace, everywhere (the cursor back at now).
+  let calls = [];
   const refresh = () => {
-    const all = list.refresh();
-    time.refresh(all);
-    return all;
+    m.snapshot();
+    calls = m.syscalls();
+    time.refresh(calls);
+    return calls;
   };
-  $("show-control").onchange = refresh;
   a.refresh = refresh;
+  $("record").onclick = () => {
+    m.record(!m.recording());
+    refresh();
+    badge();
+  };
 
-  // ---- Memory: as it is, or as it was at the cursor (the memory history) ----
+  // ---- Memory: as it is, or as it was at the cursor ----
   let memAt = null;
   function memoryAt(i) {
     if (i === memAt) return;
     memAt = i;
     const undone = m.memory_at(i ?? undefined);
-    $("mem-note").textContent = i == null ? "memory now"
-      : undone < 0 ? "memory now: the memory log does not reach back this far"
-      : `memory at the cursor (${undone} writes undone)`;
-    $("mem-note").className = "right " + (i != null && undone >= 0 ? "past" : "dim");
-    objs.moved();
+    $("mem-note").textContent = i == null ? "memory now" : `memory at the cursor (${undone} writes undone)`;
+    $("mem-note").className = "right " + (i != null ? "past" : "dim");
   }
   // ✎ for a value (an Object): which code last wrote it; click: go there.
   a.writer = (o) => el("a", { className: "who", textContent: " ✎", title: "who last wrote this?", onclick: (e) => {
     e.stopPropagation();
     const w = m.last_write(o.addr, o.size || 4);
-    if (!w) return ($("where").textContent = `✎ ${o.name}: not written since the memory log began`);
+    if (!w) return ($("where").textContent = `✎ ${o.name}: not written in the recording`);
     time.go(w.i);
-    $("where").textContent = `✎ ${o.name} was last written here: by ${w.inlined ? `${w.inlined} in ` : ""}${w.func} (${w.file}:${w.line}), on ${taskName(w.task)}; before, it held 0x${w.old.toString(16)}`;
+    $("where").textContent = `✎ ${o.name} was last written here: by ${w.inlined ? `${w.inlined} in ` : ""}${w.func} (${w.file}:${w.line}), on ${taskName(w.task)}; before, it held ${w.old}`;
   } });
 
   // ---- Selecting and moving the cursor ----
@@ -89,8 +85,6 @@ export function app(m) {
   // Select syscall `s`: its span, its calls; the cursor at its first line
   // past the entry (unless `stay`: the kernel is stopped in it).
   a.select = (s, stay = false) => {
-    list.mark(a.key(s));
-    nb.mark(a.key(s));
     time.select(s);
     if (stay) return;
     let i = s.first;
@@ -111,32 +105,18 @@ export function app(m) {
     const w = where();
     if (!w) return;
     time.selectWindow(where, title);
-    list.mark(null);
-    nb.mark(null);
     time.go(m.seek(w.a, 1, "line"));
   };
   // The first syscall of task `task` after record `i`.
-  a.syscallAfter = (task, i) => list.all().find((s) => s.task.addr === task && s.first > i);
-  a.selectKey = (key) => {
-    const s = list.byKey(key) ?? (refresh(), list.byKey(key));
-    if (s) a.select(s);
-    else $("where").textContent = "that syscall is no longer in the trace ring";
-  };
-  // A card made syscall `name`: the snapshot with it, selected.
-  a.madeSyscall = (name) => {
-    if (m.stopped()) return null;
-    const s = refresh().findLast((s) => !s.control && s.name === name && s.task.pid === 1);
-    if (s) a.select(s);
-    return s;
-  };
+  a.syscallAfter = (task, i) => calls.find((s) => s.task.addr === task && s.first > i);
   // The cursor moved to `at` (see Machine.at).
   a.showAt = (at) => {
     L.pos = null;
     memoryAt(at.i);
     src.view.cursor = at;
-    const s = at.syscall != null ? list.byIndex(at.syscall) : null;
+    const s = at.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
     if (at.kind === "block") src.showFunction(at.func, s?.index, at.line, at.file);
-    stack.show(at);
+    stack.show(at.i, null, at.task);
     tour?.follow(at);
     note(null);
     $("where").textContent = `record ${at.i + 1} of ${time.records()} · ${taskName(at.task)} · ${at.func} ${at.file ?? ""}:${at.line ?? ""}` +
@@ -150,11 +130,10 @@ export function app(m) {
     src.view.cursor = null;
     const at = m.stopped();
     if (at) showStop(at);
-    else stack.show(null);
+    else stack.show(undefined);
     $("where").textContent = "";
     badge();
   };
-  const nb = cards(a);
   let tour = null;
   tours(a).then((t) => (tour = t));
 
@@ -163,26 +142,19 @@ export function app(m) {
     $("note").hidden = !stop;
     if (stop) $("note").replaceChildren(el("span", { className: "dim", textContent: `Stop ${k + 1} of ${n} · ` }),
       el("b", { textContent: stop.func }), `: ${stop.note} `,
-      el("span", { className: "dim", textContent: "(Continue: to the next stop; ▶| or Play: line by line)" }));
+      el("span", { className: "dim" }, "(Continue: to the next stop; ▶| or Play: line by line; ",
+        el("a", { textContent: "Finish", title: "no more stops: run the program to its end", onclick: () => tour?.finish() }), ")"));
   }
 
   // ---- Stopping ----
-  let oneShot = null; // the handler "Step into" breaks at
-  a.stepInto = (name) => {
-    oneShot = `__wasm_sys_${name}`;
-    m.break_function(oneShot, true);
-  };
   function showStop(at) {
     src.view.stop = at;
     src.showFunction(at.func, undefined, at.line, at.file);
-    stack.show(null, at);
+    stack.show(null, null, at.task);
   }
   // A new stop (`quiet`: while stepping, which shows the line itself).
   function onStop(at, quiet = false) {
-    if (oneShot) {
-      m.break_function(oneShot, false);
-      oneShot = null;
-    }
+    refresh();
     // A tour's stops are for its program's syscalls (not, say, its exec,
     // which reads the program's file), unless one says any task; and only
     // on the program's lines the tour marks.
@@ -194,7 +166,6 @@ export function app(m) {
       const inSyscall = m.call_stack().some((f) => f.func === "wasm_syscall");
       let skip = !stops[k].any && (pid == null || at.task.pid !== pid || !inSyscall);
       if (!skip && a.tour.lines?.length) {
-        refresh();
         const line = pid != null ? m.program(pid)?.lines.at(-1)?.line : null;
         skip = !a.tour.lines.includes(line);
       }
@@ -203,10 +174,8 @@ export function app(m) {
         return;
       }
     }
-    const s = refresh().findLast((s) => s.task.addr === at.task.addr && s.duration_ns == null);
+    const s = calls.findLast((s) => s.task.addr === at.task.addr && s.duration_ns == null);
     if (s) a.select(s, true);
-    stack.stopped();
-    objs.stopped(at.task);
     note(k >= 0 ? stops[k] : null, k, stops.length);
     tour?.follow(null, at);
     if (!quiet) {
@@ -255,11 +224,10 @@ export function app(m) {
     L.pos = k;
     time.mark(step.i);
     memoryAt(time.cursor());
-    const at = m.at(step.i), stop = m.stopped();
+    const at = m.at(step.i);
     src.view.cursor = time.cursor() == null ? null : { file: step.file, line: step.line };
     src.showFunction(step.func, time.selected()?.index, step.line, step.file);
-    if (time.cursor() == null && stop) stack.show(null, stop, step);
-    else stack.show(at, null, step);
+    stack.show(step.i, step, at?.task);
     tour?.follow(at);
     $("where").textContent = `line ${k + 1} of ${st.length} · ${step.inlined ? `${step.inlined} in ` : ""}${step.func} ${step.file}:${step.line}` +
       (at ? ` · record ${step.i + 1} · ${taskName(at.task)}` : "");
@@ -321,8 +289,8 @@ export function app(m) {
   }
   function play() {
     if (playing) return stopPlay();
-    if (state() === "live") {
-      if (!time.home()) return status("pick a syscall to play (a card's result, a bar in the history, a tour's run), or pause the kernel");
+    if (state() !== "paused" && state() !== "replay") {
+      if (!time.home()) return status("run a tour (or pick a syscall in the history) to play it");
       showStep(0);
     }
     $("play").textContent = "❚❚ Pause";
@@ -351,24 +319,49 @@ export function app(m) {
     e.preventDefault();
   });
 
-  // ---- The state column's tabs ----
+  // ---- The right column's tabs ----
   let current = "stack";
   function tab(name) {
     current = name;
-    for (const t of ["stack", "objects", "syscalls", "console"]) {
+    for (const t of ["stack", "console"]) {
       $(`tab-${t}`).classList.toggle("on", t === name);
       $(`pane-${t}`).hidden = t !== name;
     }
     if (name === "console") $("console-new").textContent = "";
   }
-  for (const t of ["stack", "objects", "syscalls", "console"]) $(`tab-${t}`).onclick = () => tab(t);
-  for (const t of ["tours", "play"])
-    $(`tab-${t}`).onclick = () => ["tours", "play"].forEach((u) => {
-      $(`tab-${u}`).classList.toggle("on", u === t);
-      $(`pane-${u}`).hidden = u !== t;
-    });
+  for (const t of ["stack", "console"]) $(`tab-${t}`).onclick = () => tab(t);
 
-  // ---- The loop: console, stops, and (live) the history growing ----
+  // ---- Resizing: the columns, and the history's height ----
+  const sizes = { left: 340, right: 380, flame: 190 };
+  try { Object.assign(sizes, JSON.parse(localStorage.getItem("ksee.sizes") ?? "{}")); } catch { /* none kept */ }
+  const layout = () => {
+    $("main").style.gridTemplateColumns = `${sizes.left}px 5px minmax(300px, 1fr) 5px ${sizes.right}px`;
+    $("flamescroll").style.maxHeight = `${sizes.flame}px`;
+    try { localStorage.setItem("ksee.sizes", JSON.stringify(sizes)); } catch { /* not kept */ }
+  };
+  const drag = (handle, move) => (handle.onpointerdown = (e) => {
+    e.preventDefault();
+    const start = { x: e.clientX, y: e.clientY, ...sizes };
+    const onMove = (ev) => {
+      move(start, ev.clientX - start.x, ev.clientY - start.y);
+      layout();
+    };
+    addEventListener("pointermove", onMove);
+    addEventListener("pointerup", () => {
+      removeEventListener("pointermove", onMove);
+      dispatchEvent(new Event("resize")); // (the canvases redraw)
+    }, { once: true });
+  });
+  for (const h of document.querySelectorAll(".vsplit")) {
+    drag(h, (s, dx) => {
+      if (h.dataset.col === "left") sizes.left = Math.max(200, s.left + dx);
+      else sizes.right = Math.max(220, s.right - dx);
+    });
+  }
+  drag($("hsplit"), (s, _, dy) => (sizes.flame = Math.max(60, s.flame + dy)));
+  layout();
+
+  // ---- The loop: console, stops, and (recording) the history growing ----
   let lastStop = null, lastNow = 0, lastRefresh = 0;
   function tick() {
     const out = m.console();
@@ -394,11 +387,10 @@ export function app(m) {
       lastStop = at?.stop ?? null;
     }
     const st = state(), t = performance.now();
-    if (st === "live" && t - lastNow > 250) {
+    if (st === "recording" && t - lastNow > 250) {
       lastNow = t;
       const now = m.now();
       if (now) status(`now ${taskName(now.task)} in ${now.func} (${now.file}:${now.line})`);
-      // The history grows (not while a card waits for its result).
       if (t - lastRefresh > 1500 && !document.hidden) {
         lastRefresh = t;
         refresh();
@@ -408,7 +400,7 @@ export function app(m) {
     setTimeout(tick, 30);
   }
   refresh();
-  stack.show(null);
+  stack.show(undefined);
   tick();
   a.state = state;
   a.time = time;

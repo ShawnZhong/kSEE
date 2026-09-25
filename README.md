@@ -26,24 +26,21 @@ kernel `WebAssembly.Memory`.
 ## Running
 
     ./ksee.sh              # build what changed, serve http://127.0.0.1:8000/
-    ./ksee.sh test         # under Deno: syscalls, the debugger, the trace
+    ./ksee.sh test         # under Deno: programs, the debugger, the trace
     ./ksee.sh type task_struct
 
-Start with a **tour** (on the left): a question about the kernel ("What
-happens in read()?", "Why does open() fail?", …), answered by a small C
-program (user/tours/, plain C on nolibc) that runs as a real process. Run
-it with its stops: the kernel pauses at each, with a note on what is
-happening, the program's line, the call stack with every call's arguments
-(the Stack tab; pointers open into their structs), and the source. Continue
-to the next stop, or ▶| / ▶ Play line by line. Afterwards the program's run
-is in the history (a lane of its own, a flame chart of its calls): click a
-program line for what the kernel did for it.
-
-The kernel is live (● LIVE): it runs on its own and the history grows. The
-Playground makes any syscall from a typed form (fds by name, flags,
-structs), described as strace would. ⤵ steps into one. Click a line number
-in the source for a breakpoint. The kernel's clock stands still while it is
-paused (❚❚ PAUSED); ↺ REPLAY is the recorded past.
+Pick a **tour** (on the left): a question about the kernel ("What happens
+in read()?", "Why does open() fail?", …), answered by a small C program
+(user/tours/, plain C on nolibc) that runs as a real process, recorded.
+The kernel pauses at each of the tour's stops, with a note on what is
+happening, the program's line, the source, and the Stack: the call stack
+with every call's arguments (pointers open into their structs). Continue to
+the next stop, ▶| / ▶ Play line by line, or Finish. Afterwards the
+recording is in the history (a lane per task, a flame chart of the calls):
+click a program line for what the kernel did for it, drag the cursor back,
+and the Stack shows memory as it was then (✎: which code last wrote a
+value). ● Record records the kernel by hand; click a line number in the
+source for a breakpoint. Drag the gray bars to resize the panels.
 
 A tour is one C file: `// tour:`, `// question:`, and `// stop FUNCTION:
 NOTE` lines at the top, and `// stops here` on the lines whose syscalls the

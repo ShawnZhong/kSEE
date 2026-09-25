@@ -1,9 +1,8 @@
-// Boot the kernel under Deno with the page's own modules (web/ksee.js,
-// web/calls.js), make syscalls in /init, use the debugger, and check what
-// the trace shows.
+// Boot the kernel under Deno with the page's own module (web/ksee.js), run
+// programs in it (user/tests/, user/tours/) while recording, use the
+// debugger, and check what the trace shows.
 //   deno run --allow-read tests/web.js
 import { start, process } from "../web/ksee.js";
-import { Session, SCENARIOS } from "../web/calls.js";
 
 const root = new URL("..", import.meta.url);
 // wasm-bindgen's futures (with threads) wake through Atomics.waitAsync,
@@ -28,69 +27,81 @@ async function until(pred, ms = 10000) {
     if (v) return v;
   }
 }
-const table = m.syscall_table();
-const session = new Session(m, process(m));
-// Run a scenario; the last call's result.
-async function scenario(name) {
-  let r;
-  for (const [sys, values] of SCENARIOS[name]) r = await session.call(sys, values);
-  return r;
+const proc = process(m);
+// Run program `path`, recording; its pid and exit status.
+async function run(path) {
+  m.record(true);
+  const pid = await proc.spawn(path);
+  const status = await proc.wait(pid);
+  m.record(false);
+  return { pid, status };
 }
 
-check("init ready", await until(() => out.includes("ready for the page's syscalls")));
-const write = table.find((s) => s.name === "write");
-check("syscall table has signatures",
-      write.params.map((p) => `${p.type} ${p.name} ${p.kind}`).join(", ") ===
-      "unsigned int fd value, const char * buf in, size_t count value");
-check("getpid = 1", (await session.call("getpid")).ret === 1);
-const hello = await session.call("write", { fd: "1", buf: "hello kSEE\\n", count: "auto" });
-check("write, as strace shows it", hello.line === 'write(1<stdout>, "hello kSEE\\n", 11) = 11' && await until(() => out.includes("hello kSEE")));
-const ls = await session.call("openat", { dfd: "AT_FDCWD", filename: "/", flags: "O_RDONLY|O_DIRECTORY" });
-const dents = await session.call("getdents64", { fd: "latest", count: "auto" });
-check("getdents64 lists /", ls.ret === 3 && dents.outputs[0].list.some((d) => d.startsWith("init")));
-await session.call("close", { fd: "latest" });
-check("write a file", (await scenario("write a file")).ret === 0);
-const back = await scenario("read it back");
-check("read it back", back.ret === 0 && session.fds.length === 0);
-check("writev two struct iovec", (await scenario("writev")).ret === 18 && await until(() => out.includes("from writev")));
-const pipe = await scenario("pipe");
-check("pipe: fds by name", pipe.line === 'read(3<pipe read end>, "through a pipe", 32) = 14');
-const uname = await scenario("uname");
-check("uname decodes struct new_utsname", uname.outputs[0].object.children.some((c) => c.name === "machine" && c.value === '"wasm"'));
-check("clock_nanosleep_time64", (await scenario("sleep 20 ms")).ret === 0);
-let bad;
-try { await session.call("nosuch"); } catch (e) { bad = e.message; }
-check("unknown syscalls are errors", bad === "no syscall nosuch");
-await session.reset();
-check("reset forgets the fds", session.fds.length === 0);
+check("init ready", await until(() => out.includes("ready for the page's programs")));
+check("not recording at first", !m.recording() && (m.snapshot(), m.records() === 0));
 
-// A tour's program: a real child process of init, with its source lines.
-const proc = process(m);
-const pid = await proc.spawn("/bin/read");
-check("spawn a program", pid > 1);
-check("it exits with status 0", (await proc.wait(pid)) === 0 && await until(() => out.includes("read 26 bytes")));
+// Syscalls, traced.
+const t = await run("/bin/syscalls");
+check("a program runs, and exits 0", t.pid > 1 && t.status === 0);
+check("its output", await until(() => out.includes("hello kSEE") && out.includes("ls /: init found") &&
+      out.includes("hello from writev") && out.includes("pipe: through a pipe") && out.includes("uname: Linux wasm") && out.includes("slept")));
 m.snapshot();
-const prog = m.program(pid);
-check("its syscalls are its own", m.syscalls().some((s) => s.task.pid === pid && s.name === "read" && s.ret === 26));
+const calls = m.syscalls().filter((s) => s.task.pid === t.pid);
+const called = calls.map((s) => s.name);
+for (const n of ["getpid", "write", "mkdirat", "openat", "getdents64", "writev", "pipe2", "read", "uname", "clock_nanosleep_time64"])
+  check(`syscall ${n} traced`, called.includes(n));
+const ran = (name, func) => calls.some((s) => s.name === name && m.runs(s.index).some((r) => r.func === func));
+check("write ran vfs_write", ran("write", "vfs_write"));
+check("getpid ran __task_pid_nr_ns", ran("getpid", "__task_pid_nr_ns"));
+check("mkdirat ran vfs_mkdir", ran("mkdirat", "vfs_mkdir"));
+check("sleeping switched to the idle task and back", ran("clock_nanosleep_time64", "__schedule")
+      && m.timeline(4000).some((b) => b.comm === "swapper/0"));
+const w = calls.find((s) => s.name === "write" && s.ret === 11);
+const [vfs] = m.functions("vfs_write", w.index);
+check("vfs_write block counts", vfs?.blocks.some((b) => b.count > 0) && vfs.blocks.some((b) => b.count === 0));
+check("fs/read_write.c coverage", m.file_coverage("fs/read_write.c", w.index).some((l) => l.count > 0));
+const frames = m.frames(w.first, w.last, w.task.addr, 1);
+check("write's calls, rebuilt", frames.some((f) => f.func === "vfs_write" && frames.some((g) => g.func === "ksys_write" && g.depth === f.depth - 1)));
+const steps = m.line_steps(w.first, w.last, w.task.addr);
+check("write, line by line (more lines than blocks)", steps.length > w.blocks && steps.some((x) => x.inlined));
+const mid = steps.find((x) => x.func === "vfs_write").i;
+const stack = m.call_stack(mid);
+check("a past call stack, with arguments", stack[0]?.func === "vfs_write"
+      && stack.find((f) => f.func === "ksys_write")?.args?.find((a) => a.name === "count")?.value === "11");
+check("memory as it was: writes undone", m.memory_at(w.first) > m.memory_at(w.last));
+m.memory_at(null);
+const at = m.at(m.seek(calls.find((s) => s.name === "getpid").first, 1, "block"));
+check("history: a record in getpid", at?.syscall != null && m.syscalls()[at.syscall]?.name === "getpid");
+
+// A tour's program: its source lines, and f_pos over time.
+const r = await run("/bin/read");
+check("the read tour's program", r.status === 0 && await until(() => out.includes("read 26 bytes")));
+m.snapshot();
+const prog = m.program(r.pid);
 check("its source lines are in the trace", prog?.lines.some((l) => l.line === 23));
-const read = m.syscalls().find((s) => s.task.pid === pid && s.name === "read");
-const steps = m.line_steps(read.first, read.last, read.task.addr);
-check("its read, line by line (more lines than blocks)", steps.length > read.blocks && steps.some((x) => x.inlined));
-check("memory as it was: some writes undone", m.memory_at(read.first) > m.memory_at(read.last));
+const read = m.syscalls().find((s) => s.task.pid === r.pid && s.name === "read");
+const inRead = m.line_steps(read.first, read.last, read.task.addr).find((x) => x.func === "vfs_read").i;
+const file = m.call_stack(inRead)[0].args.find((a) => a.name === "file");
+const fpos = (i) => (m.memory_at(i), m.object_by_id("file", file.target, Number(file.value), 1)?.children?.find((c) => c.name === "f_pos"));
+check("f_pos before the read, and after", fpos(read.first)?.value === "0" && fpos(read.last)?.value === "26");
+const who = (m.memory_at(read.last), m.last_write(fpos(read.last).addr, 8));
+check("who wrote f_pos: ksys_read", who?.func === "ksys_read");
 m.memory_at(null);
 
-
-// Stop in vfs_write, look around, step, go on.
+// Stop in vfs_write (in hi's write), look around, step, go on.
 check("breakpoint set", m.break_function("vfs_write", true));
-const pending = session.call("write", { fd: "1", buf: "hi\\n", count: "auto" });
+m.record(true);
+const hi = await proc.spawn("/bin/hi");
+const waiting = proc.wait(hi);
 const stop = await until(() => m.stopped());
 check("stopped in vfs_write", stop?.func === "vfs_write" && stop.file === "fs/read_write.c");
-check("stopped task is init", stop?.task.comm === "init" && stop.task.pid === 1);
-const frames = m.call_stack();
-check("the call stack, with arguments", frames[0]?.func === "vfs_write" && frames.some((f) => f.func === "ksys_write"
-      && f.args.find((a) => a.name === "count")?.value === "3") && frames[0].args[0].target != null);
+check("stopped task is hi", stop?.task.comm === "hi" && stop.task.pid === hi);
+m.snapshot();
+const live = m.call_stack();
+check("the call stack, with arguments", live[0]?.func === "vfs_write" && live.some((f) => f.func === "ksys_write"
+      && f.args?.find((a) => a.name === "count")?.value === "3"));
 const task = stop && m.object("task_struct", stop.task.addr, 1);
-check("decode the task while stopped", task?.children?.find((c) => c.name === "comm")?.value === '"init"');
+check("decode the task while stopped", task?.children?.find((c) => c.name === "comm")?.value === '"hi"');
 check("decode a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr_running"));
 m.step_task();
 check("step to the next block on the task", !!await until(() => {
@@ -99,31 +110,11 @@ check("step to the next block on the task", !!await until(() => {
 }));
 m.break_function("vfs_write", false);
 m.resume();
-check("resumed", (await pending).ret === 3);
-
-m.snapshot();
-const calls = m.syscalls().filter((s) => !s.control);
-const called = calls.map((s) => s.name);
-for (const n of ["getpid", "write", "mkdirat", "openat", "getdents64", "writev", "pipe2", "uname", "clock_nanosleep_time64"])
-  check(`syscall ${n} traced`, called.includes(n));
-check("init's channel traffic is marked", m.syscalls().some((s) => s.control && s.name === "read"));
-const ran = (name, func) => calls.some((s) => s.name === name && m.runs(s.index).some((r) => r.func === func));
-const w = calls.find((s) => s.name === "write" && s.ret === 11).index;
-check("write ran vfs_write", ran("write", "vfs_write"));
-check("getpid ran __task_pid_nr_ns", ran("getpid", "__task_pid_nr_ns"));
-check("mkdirat ran vfs_mkdir", ran("mkdirat", "vfs_mkdir"));
-check("sleeping switched to the idle task and back", ran("clock_nanosleep_time64", "__schedule")
-      && m.timeline(4000).some((b) => b.comm === "swapper/0") && m.timeline(4000).some((b) => b.comm === "init"));
-const at = m.at(m.seek(calls.find((s) => s.name === "getpid").first, 1, "block"));
-check("history: a record in getpid", at?.syscall != null && m.syscalls()[at.syscall]?.name === "getpid");
-const [vfs] = m.functions("vfs_write", w);
-check("vfs_write block counts", vfs?.blocks.some((b) => b.count > 0) && vfs.blocks.some((b) => b.count === 0));
-const fr = m.frames(calls.find((s) => s.name === "write" && s.ret === 11).first, calls.find((s) => s.name === "write" && s.ret === 11).last, calls[0].task.addr, 1);
-check("write's calls, rebuilt", fr.some((f) => f.func === "vfs_write" && fr.some((g) => g.func === "ksys_write" && g.depth === f.depth - 1)));
-check("fs/read_write.c coverage", m.file_coverage("fs/read_write.c", w).some((l) => l.count > 0));
+check("resumed", (await waiting) === 0 && await until(() => out.includes("hi\n")));
+m.record(false);
 
 // LINUX_REBOOT_CMD_POWER_OFF
-session.call("reboot", { magic1: "0xfee1dead", magic2: "672274793", cmd: "0x4321fedc", arg: "NULL" }).catch(() => {});
+proc.spawn("/bin/poweroff");
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);
 
 if (failed) console.log(out);

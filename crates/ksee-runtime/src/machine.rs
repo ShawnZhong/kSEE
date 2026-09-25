@@ -3,7 +3,6 @@
 use std::sync::atomic::Ordering;
 
 use js_sys::{Function, Object, Uint8Array, WebAssembly};
-use ksee_core::types::Kind;
 use ksee_core::view::Views;
 use ksee_core::tables::Tables;
 use ksee_core::{stack, syscalls, task, trace, Memory};
@@ -25,11 +24,13 @@ pub struct Machine {
     workers: std::rc::Rc<std::cell::RefCell<Vec<web_sys::Worker>>>,
     syscalls: std::cell::RefCell<Option<Vec<syscalls::Syscall>>>,
     history: std::cell::RefCell<History>,
-    /// Memory as it was at a record (memory_at: the record, and its age),
-    /// for the views; None: now. mem: the stores, indexed (for the
-    /// snapshot whose last record's id it has).
-    past: std::cell::RefCell<Option<(usize, u32)>>,
+    /// Memory as it was after a record (memory_at), for the views; None:
+    /// now. mem: the trace's stores, indexed (for the snapshot whose last
+    /// record's id it has). frozen: kernel memory when recording stopped
+    /// (the past is that, stores undone; the kernel went on unrecorded).
+    past: std::cell::RefCell<Option<usize>>,
     mem: std::cell::RefCell<Option<(u32, ksee_core::mem::History)>>,
+    frozen: std::cell::RefCell<Option<Vec<u8>>>,
 }
 
 /// The last snapshot's records, and the task and time at each.
@@ -69,34 +70,16 @@ impl History {
     }
 }
 
-#[derive(serde::Serialize)]
-struct SyscallInfo {
-    nr: u32,
-    name: String,
-    built: bool,
-    params: Option<Vec<ParamInfo>>,
-}
+/// Kernel memory as it was when recording stopped.
+struct Frozen<'a>(&'a [u8]);
 
-#[derive(serde::Serialize)]
-struct ParamInfo {
-    name: String,
-    #[serde(rename = "type")]
-    ty: String,
-    kind: &'static str,
-    /// For a pointer: the type pointed to (0: void), its size, and whether
-    /// it is a struct or union.
-    target: u32,
-    size: u32,
-    aggregate: bool,
-}
-
-#[derive(serde::Serialize)]
-struct FieldInfo {
-    name: String,
-    offset: u32,
-    size: u32,
-    #[serde(rename = "type")]
-    ty: String,
+impl ksee_core::Memory for Frozen<'_> {
+    fn read(&self, addr: u32, buf: &mut [u8]) {
+        match self.0.get(addr as usize..addr as usize + buf.len()) {
+            Some(b) => buf.copy_from_slice(b),
+            None => Direct.read(addr, buf),
+        }
+    }
 }
 
 /// Bytes decoded as if they were memory at address 0.
@@ -152,7 +135,6 @@ impl Machine {
             JsFuture::from(WebAssembly::compile(&bytes)).await?.unchecked_into();
         let tables = Tables::parse(&section(&module, "ksee.probes"), &section(&module, "ksee.types"));
         RING_WORDS.store(tables.ring_words, Ordering::Relaxed);
-        MEM_WORDS.store(tables.mem_words, Ordering::Relaxed);
         TABLES.set(tables).map_err(|_| "one machine per page")?;
         MEMORY_END.store(ram, Ordering::Relaxed);
         EPOCH_MS.store(js::now_ms().to_bits(), Ordering::Relaxed);
@@ -184,12 +166,6 @@ impl Machine {
         PENDING.store(global("wasm_irq_pending"), Ordering::Relaxed);
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
-        if let Ok(mem) = js::get(&kernel, "ksee_mem").dyn_into::<Function>() {
-            MEM.store(mem.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
-        }
-        if let Ok(frames) = js::get(&kernel, "ksee_frames").dyn_into::<Function>() {
-            FRAMES.store(frames.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
-        }
         let timer = Object::new();
         js::set(&timer, "role", "timer");
         js::set(&timer, "deadline", global("wasm_timer_deadline"));
@@ -198,7 +174,8 @@ impl Machine {
         let boot = Object::new();
         js::set(&boot, "role", "boot");
         spawn.call1(&JsValue::NULL, &boot)?;
-        Ok(Machine { kernel, workers, syscalls: Default::default(), history: Default::default(), past: Default::default(), mem: Default::default() })
+        Ok(Machine { kernel, workers, syscalls: Default::default(), history: Default::default(), past: Default::default(), mem: Default::default(),
+                    frozen: Default::default() })
     }
 
     /// A function that starts a Worker for `msg` (a role, or a task that a
@@ -289,6 +266,7 @@ impl Machine {
             }
             match *r {
                 trace::Record::Task { task: addr, pid, comm } => {
+                    task = addr;
                     let bytes: Vec<u8> = comm.iter().flat_map(|w| w.to_le_bytes()).take_while(|&b| b != 0).collect();
                     let who = task::Task { pid: pid as i32, comm: String::from_utf8_lossy(&bytes).into() };
                     idents.entry(addr).or_default().push((i, who));
@@ -330,76 +308,94 @@ impl Machine {
 
     // ---- History: the records of the last snapshot, by position ----
 
-    /// Memory for the views (object, object_by_id, global) as it was at
-    /// record `i` of the last snapshot (the stores since undone; see
-    /// ksee_core::mem), or as it is now (None). The number of stores undone,
-    /// or -1 if the memory ring does not reach back that far.
-    pub fn memory_at(&self, i: Option<usize>) -> i32 {
-        let Some(i) = i else {
-            *self.past.borrow_mut() = None;
-            return 0;
-        };
-        let Some(at) = self.history.borrow().ids.get(i).copied() else { return -1 };
-        let mut mem = self.mem.borrow_mut();
-        // (Built once per snapshot.)
-        let key = self.history.borrow().ids.last().copied().unwrap_or(0);
-        if mem.as_ref().is_none_or(|(k, _)| *k != key) {
-            *mem = Some((key, ksee_core::mem::History::new(&self.stores(), self.main_pairs())));
+    /// Record the trace (on) or not. Stopping takes a snapshot, and keeps
+    /// kernel memory as it is then: memory as it was in the recording is
+    /// that, the recorded stores undone (the kernel goes on, unrecorded).
+    pub fn record(&self, on: bool) {
+        let word = unsafe { &*((self.ring() + trace::ON) as *const std::sync::atomic::AtomicU32) };
+        if on {
+            *self.frozen.borrow_mut() = None;
+            word.store(1, Ordering::Release);
+            // Who runs now (the trace names tasks by their switches).
+            imports::task_record();
+            return;
         }
-        let h = &mem.as_ref().unwrap().1;
-        let age = h.age(at);
-        *self.past.borrow_mut() = Some((i, age));
-        if h.reaches(age) { h.after(age) as i32 } else { -1 }
+        word.store(0, Ordering::Release);
+        self.snapshot();
+        let mut ram = vec![0u8; MEMORY_END.load(Ordering::Relaxed) as usize];
+        // (Not from address 0: a null pointer, to Rust. The kernel's memory
+        // starts well above it anyway.)
+        Direct.read(8, &mut ram[8..]);
+        *self.frozen.borrow_mut() = Some(ram);
+    }
+
+    /// Whether the trace records.
+    pub fn recording(&self) -> bool {
+        recording()
+    }
+
+    /// Memory for the views (object, object_by_id, global) as it was after
+    /// record `i` of the last snapshot (the stores since undone; see
+    /// ksee_core::mem), or as it is now (None): how many stores are undone.
+    pub fn memory_at(&self, i: Option<usize>) -> i32 {
+        *self.past.borrow_mut() = i;
+        match i {
+            Some(i) => self.with_history(|h| h.after(i) as i32),
+            None => 0,
+        }
     }
 
     /// The newest write to `addr..addr + len` at or before the moment
-    /// memory_at shows (or now): { i (the record of the block that made
-    /// it), func, file, line, task }, or null if the memory ring has none.
+    /// memory_at shows (or the end of the trace): { i (the store's record),
+    /// func, file, line, task, old }, or null if the trace has none.
     pub fn last_write(&self, addr: u32, len: u32) -> JsValue {
-        let stores = self.stores();
-        let now = self.main_pairs();
-        let before = match &*self.past.borrow() {
-            Some((i, _)) => self.history.borrow().ids.get(*i).copied().unwrap_or(now),
-            None => now,
+        let at = self.past.borrow().unwrap_or(usize::MAX);
+        let found = {
+            let h = self.history.borrow();
+            let at = at.min(h.records.len().saturating_sub(1));
+            self.with_history(|m| m.last_write(&h.records, addr, len, at))
         };
-        let Some(s) = ksee_core::mem::last_write(&stores, addr, len, before, now) else { return JsValue::NULL };
-        // The block before it: the record just before its main pair count.
-        let main = now.wrapping_sub(now.wrapping_sub(s.main) & (ksee_core::mem::MAIN - 1));
-        let i = self.index_of(main).saturating_sub(1);
-        let at = self.at(i);
-        if at.is_null() {
-            return at;
+        let Some((i, old)) = found else { return JsValue::NULL };
+        let o = self.at(i);
+        if o.is_null() {
+            return o;
         }
-        js::set(&at, "old", s.old as f64);
-        // The line then: where the function running it is (after a return
-        // into the middle of a block, the caller; not the block's first line).
+        js::set(&o, "old", old as f64);
+        // The line that made it: where the function running then is (after
+        // a return into the middle of a block, the caller's).
         let h = self.history.borrow();
         let t = tables();
         if let Some(step) = stack::lines(t, &h.records, &h.tasks, i.saturating_sub(4000), i, h.tasks.get(i).copied()).last() {
-            js::set(&at, "func", t.functions.get(&step.func).map_or(String::new(), |f| f.name.clone()));
-            js::set(&at, "file", t.file(step.loc));
-            js::set(&at, "line", step.loc.line);
+            js::set(&o, "func", t.functions.get(&step.func).map_or(String::new(), |f| f.name.clone()));
+            js::set(&o, "file", t.file(step.loc));
+            js::set(&o, "line", step.loc.line);
             if let Some(k) = step.inlined {
-                js::set(&at, "inlined", t.names.get(k as usize).cloned().unwrap_or_default());
+                js::set(&o, "inlined", t.names.get(k as usize).cloned().unwrap_or_default());
             }
         }
-        at
+        o
     }
 
-    fn stores(&self) -> Vec<ksee_core::mem::Store> {
-        ksee_core::mem::stores(&Direct, MEM.load(Ordering::Relaxed), MEM_WORDS.load(Ordering::Relaxed).max(4))
-    }
-
-    /// The main ring's pair count now (modulo mem::MAIN, as stores have it).
-    fn main_pairs(&self) -> u32 {
-        (Direct.read_u32(self.ring()) >> 1) & (ksee_core::mem::MAIN - 1)
+    /// Run `f` on the stores of the last snapshot, indexed (once per snapshot).
+    fn with_history<T>(&self, f: impl FnOnce(&ksee_core::mem::History) -> T) -> T {
+        let key = self.history.borrow().ids.last().copied().unwrap_or(0);
+        let mut mem = self.mem.borrow_mut();
+        if mem.as_ref().is_none_or(|(k, _)| *k != key) {
+            *mem = Some((key, ksee_core::mem::History::new(&self.history.borrow().records)));
+        }
+        f(&mem.as_ref().unwrap().1)
     }
 
     /// Run `f` on memory as the views should see it (memory_at).
     fn with_memory<T>(&self, f: impl FnOnce(&dyn Memory) -> T) -> T {
-        match (&*self.past.borrow(), &*self.mem.borrow()) {
-            (Some((_, age)), Some((_, history))) => f(&ksee_core::mem::PastMemory { live: &Direct, history, age: *age }),
-            _ => f(&Direct),
+        let frozen = self.frozen.borrow();
+        let base: &dyn Memory = match &*frozen {
+            Some(ram) => &Frozen(ram),
+            None => &Direct,
+        };
+        match *self.past.borrow() {
+            Some(at) => self.with_history(|history| f(&ksee_core::mem::PastMemory { base, history, at })),
+            None => f(&Direct),
         }
     }
 
@@ -435,6 +431,8 @@ impl Machine {
             trace::Record::Return { func } => ("return", func, None),
             trace::Record::Line { .. } => ("line", 0, None),
             trace::Record::Task { .. } => ("task", 0, None),
+            trace::Record::Args { .. } => ("args", 0, None),
+            trace::Record::Store { .. } => ("store", 0, None),
         };
         js::set(&o, "i", i as f64);
         js::set(&o, "kind", kind);
@@ -584,26 +582,17 @@ impl Machine {
             .map(|f| t.functions.get(&f).map_or(format!("{f:#x}"), |x| x.name.clone())).collect()
     }
 
-    /// While stopped: the stopped task's calls, innermost first, from the
-    /// frames the plugin keeps on the kernel stack: [{ func, file, line,
-    /// args: [Object (see ksee_core::view)] }]. Arguments are 32 bits
-    /// (wider ones lose their high half); __user pointers point into the
-    /// process, not the kernel.
-    pub fn call_stack(&self) -> JsValue {
-        let list = js_sys::Array::new();
-        let head = FRAMES.load(Ordering::Relaxed);
-        if DEBUG.stopped().is_none() || head == 0 {
-            return list.into();
-        }
+    /// The call stack at record `i` of the last snapshot (or its last: at
+    /// a stop, take a snapshot first), innermost first, rebuilt from the
+    /// trace: [{ func, file, line, args: [Object (see ksee_core::view)] }]
+    /// (arguments are 32 bits: wider ones lose their high half; __user
+    /// pointers point into the process, not the kernel).
+    pub fn call_stack(&self, i: Option<usize>) -> JsValue {
+        let h = self.history.borrow();
         let t = tables();
-        let mut frame = Direct.read_u32(head);
-        // Outer frames are at higher addresses, on the same (16 KiB) stack.
-        let top = frame.saturating_add(16 << 10);
-        for _ in 0..64 {
-            if frame == 0 || frame >= top {
-                break;
-            }
-            let func = Direct.read_u32(frame + 4);
+        let list = js_sys::Array::new();
+        let Some(i) = i.or(h.records.len().checked_sub(1)) else { return list.into() };
+        for (func, _, args) in stack::calls_at(&h.records, &h.tasks, i).into_iter().rev() {
             let o = Object::new();
             let f = t.functions.get(&func);
             let name = f.map_or(format!("{func:#x}"), |f| f.name.clone());
@@ -612,18 +601,23 @@ impl Machine {
                 js::set(&o, "file", t.file(f.loc));
                 js::set(&o, "line", f.loc.line);
             }
-            let args = js_sys::Array::new();
-            for (i, (pname, ty)) in t.types.params.get(&name).into_iter().flatten().take(6).enumerate() {
-                let raw = Direct.read_u32(frame + 8 + 4 * i as u32).to_le_bytes();
-                args.push(&to_js(&t.types.object(&Bytes(&raw), pname, 0, *ty, 0)));
+            if let Some(args) = args {
+                let known = f.and_then(|f| f.known).unwrap_or(u32::MAX);
+                let list = js_sys::Array::new();
+                for (k, ((pname, ty), v)) in t.types.params.get(&name).into_iter().flatten().zip(args).enumerate() {
+                    let mut arg = t.types.object(&Bytes(&v.to_le_bytes()), pname, 0, *ty, 0);
+                    if known >> k & 1 == 0 {
+                        // (Not passed any more: the optimizer took it away.)
+                        arg.value = Some("(optimized out)".into());
+                        arg.children = None;
+                        arg.expand = None;
+                        arg.target = None;
+                    }
+                    list.push(&to_js(&arg));
+                }
+                js::set(&o, "args", list);
             }
-            js::set(&o, "args", args);
             list.push(&o);
-            let prev = Direct.read_u32(frame);
-            if prev <= frame {
-                break;
-            }
-            frame = prev;
         }
         list.into()
     }
@@ -752,125 +746,7 @@ impl Machine {
         self.with_memory(|mem| to_js(&tables().types.object(mem, label, addr, ty, depth.unwrap_or(1))))
     }
 
-    /// The task_struct of `pid`, among the tasks the trace mentions.
-    pub fn task_address(&self, pid: i32) -> Option<u32> {
-        let t = tables();
-        task::tasks_in(t, trace::ring(&Direct, self.ring(), t.ring_words)).into_iter()
-            .find(|&p| live_task(p).is_some_and(|task| task.pid == pid))
-    }
-
     // ---- Making syscalls (through /init, the agent on /dev/ksee) ----
-
-    /// The kernel's syscalls: [{ nr, name, built, params: [{ name, type,
-    /// kind }] | null }], kind "in" (a const pointer: data the call reads),
-    /// "out" (a pointer it writes), or "value".
-    pub fn syscall_table(&self) -> JsValue {
-        let types = &tables().types;
-        let list: Vec<SyscallInfo> = types.syscalls.iter().map(|(&nr, s)| SyscallInfo {
-            nr,
-            name: s.name.clone(),
-            built: s.built,
-            params: s.params.as_ref().map(|ps| ps.iter().map(|p| {
-                let target = match types.get(types.resolve(p.ty)).kind {
-                    Kind::Pointer(t) => types.resolve(t),
-                    _ => 0,
-                };
-                ParamInfo {
-                    name: p.name.clone(),
-                    ty: p.c_type.clone(),
-                    kind: if !p.c_type.ends_with('*') { "value" }
-                          else if p.c_type.starts_with("const ") { "in" } else { "out" },
-                    target,
-                    size: types.size_of(target),
-                    aggregate: matches!(types.get(target).kind, Kind::Struct(_) | Kind::Union(_)),
-                }
-            }).collect()),
-        }).collect();
-        to_js(&list)
-    }
-
-    /// The scalar fields of struct type `ty` (flattened, with byte offsets),
-    /// e.g. to build a struct argument: [{ name, offset, size, type }].
-    pub fn layout(&self, ty: u32) -> JsValue {
-        let types = &tables().types;
-        let mut out = Vec::new();
-        fn walk(types: &ksee_core::types::Types, ty: u32, prefix: &str, base: u32, out: &mut Vec<FieldInfo>) {
-            let t = types.get(types.resolve(ty));
-            match &t.kind {
-                Kind::Struct(members) | Kind::Union(members) => {
-                    for m in members {
-                        let name = if prefix.is_empty() { m.name.clone() } else { format!("{prefix}.{}", m.name) };
-                        walk(types, m.ty, &name, base + m.bit_offset / 8, out);
-                    }
-                }
-                _ => out.push(FieldInfo { name: prefix.to_string(), offset: base,
-                                          size: types.size_of(ty), ty: types.name(ty) }),
-            }
-        }
-        walk(types, ty, "", 0, &mut out);
-        to_js(&out)
-    }
-
-    /// The id of the struct, union, enum or typedef called `name` (e.g.
-    /// "struct stat" or "stat"; "u64"), or of a base type.
-    pub fn find_type(&self, name: &str) -> Option<u32> {
-        let types = &tables().types;
-        let bare = name.trim().trim_start_matches("struct ").trim_start_matches("union ").trim_start_matches("enum ").trim();
-        types.find(bare).or_else(|| {
-            (1..types.types.len() as u32).find(|&id| {
-                matches!(types.get(id).kind, Kind::Base(_)) && types.get(id).name == bare
-            })
-        })
-    }
-
-    /// A type, for laying out values of it: { name, size, kind, members:
-    /// [{ name, offset, ty }], elem, count, target } (kind: "int", "char",
-    /// "float", "bool", "enum", "ptr", "array", "struct", "union", "void").
-    pub fn type_info(&self, ty: u32) -> JsValue {
-        let types = &tables().types;
-        let id = types.resolve(ty);
-        let t = types.get(id);
-        let o = Object::new();
-        js::set(&o, "id", id);
-        js::set(&o, "name", types.name(id));
-        js::set(&o, "size", types.size_of(id));
-        let kind = match &t.kind {
-            Kind::Base(ksee_core::types::Base::Char) => "char",
-            Kind::Base(ksee_core::types::Base::Float) => "float",
-            Kind::Base(ksee_core::types::Base::Bool) => "bool",
-            Kind::Base(_) => "int",
-            Kind::Enum(_) => "enum",
-            Kind::Pointer(to) => {
-                js::set(&o, "target", types.resolve(*to));
-                "ptr"
-            }
-            Kind::Array { elem, count } => {
-                js::set(&o, "elem", *elem);
-                js::set(&o, "count", *count);
-                "array"
-            }
-            Kind::Struct(m) | Kind::Union(m) => {
-                let members = js_sys::Array::new();
-                for m in m {
-                    let mo = Object::new();
-                    js::set(&mo, "name", m.name.clone());
-                    js::set(&mo, "offset", m.bit_offset / 8);
-                    js::set(&mo, "ty", m.ty);
-                    members.push(&mo);
-                }
-                js::set(&o, "members", members);
-                if matches!(t.kind, Kind::Struct(_)) { "struct" } else { "union" }
-            }
-            _ => "void",
-        };
-        js::set(&o, "kind", kind);
-        o.into()
-    }
-
-    /// Decode `bytes` (a call's output buffer, say) as type `ty`: an Object.
-    pub fn decode_bytes(&self, label: &str, ty: u32, bytes: &[u8]) -> JsValue {
-        to_js(&tables().types.object(&Bytes(bytes), label, 0, ty, 3))
-    }
 
     /// Every line of `file` where a basic block starts, with how often
     /// blocks there ran in syscall `n` (or the whole trace): [{ line, count }].

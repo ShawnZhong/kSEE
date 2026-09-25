@@ -132,47 +132,41 @@ synchronous duration from downstream effects, e.g. `read()` → page-cache miss
 
 ## UI
 
-The kernel is live; the page is in one of three states, shown in its
-header: **LIVE** (running; the history follows now), **PAUSED** (the
-debugger stopped it; objects are exact), **REPLAY** (the cursor is in the
-recorded past; the kernel goes on). One cursor; every panel shows its
-moment.
+The kernel runs on its own and is traced while recording (a tour records
+by itself; ● Record by hand), so the history holds just what was asked
+for. The header says LIVE, RECORDING, PAUSED (the debugger stopped it) or
+REPLAY (the cursor is in the recorded past). One cursor; every panel shows
+its moment.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │ History: a lane per task, syscalls as bars                  │
-│ Flame chart of the selected syscall (calls by depth)        │
+│ Flame chart of the selection (calls by depth)               │
 │ ⏮ ◀ ▶ Play ▶| ⤼ Now   speed                                 │
 ├──────────────┬──────────────────────────────┬───────────────┤
-│ Syscall cards│ Call stack (args when paused)│ Objects       │
-│ (typed forms,│ Source (whole file, lines    │ (live memory) │
-│ /init makes  │ that ran, the cursor)        │ Syscalls, Con.│
-│ them)        │                              │               │
+│ Tours        │ The stop's note              │ Stack: calls, │
+│ (a question, │ Source (whole file, lines    │ arguments,    │
+│ a C program, │ that ran, the cursor)        │ watches       │
+│ stops)       │                              │ Console       │
 └──────────────┴──────────────────────────────┴───────────────┘
 ```
 
-- **Cards** are how the page talks to the kernel: a form per syscall built
-  from its DWARF signature (fds by name, flag chips, struct fields,
-  outputs decoded), no language to learn. /init makes each call in a real
-  process, over the /dev/ksee channel (web/calls.js, user/init.c); the
-  debugger never stops in that channel's own traffic.
-- **Calls** come from the trace: every block, and every return, is
-  recorded, so the call tree is rebuilt exactly (ksee_core::stack). While
-  paused, the plugin's frames on the kernel stack give the call stack with
-  arguments, decoded by their types.
-- **Lines within blocks**: the plugin writes each block's source lines (in
-  order, split at the calls it makes, with the function a line is inlined
-  from), so steps and Play go by source line, not by block; an inlined
-  function is a frame of its own.
-- **Memory history**: the plugin logs the old value of every store (not to
-  a function's own stack slots) in a second ring; the host undoes the ones
-  after the cursor, so objects are as they were then, and ✎ says which
-  code last wrote a field. Bulk writes (memcpy, memset, copies from user
-  space) go through the runtime, which logs up to 256 bytes of each.
-- **Play** goes line by line: through the recorded trace (REPLAY), or by
-  running the kernel a line at a time on the stopped task (PAUSED). Step
-  into stops the kernel where a card's syscall starts. The kernel's clock
-  stands still while it is paused.
+- **Tours** are how the page talks to the kernel: a question, a small C
+  program (on nolibc) that init starts as a real process (the /dev/ksee
+  spawn ioctl), and stops: breakpoints with a note, for the syscalls of the
+  lines marked `// stops here`.
+- **One trace**: every block (a call's entry block with its arguments),
+  every return, and every store (with the old value), in one ring. The call
+  tree, the call stack with arguments, and memory as it was at any moment
+  are all rebuilt from it; ✎ says which code last wrote a value. When
+  recording stops, the runtime keeps kernel memory as it was then (the
+  past is that, with the recorded stores undone).
+- **Lines within blocks**: the plugin writes each block's source lines, so
+  steps and Play go by source line; an inlined function is a frame of its
+  own.
+- **Play** goes line by line: through the recording (REPLAY), or by running
+  the paused kernel a line at a time on its task. The kernel's clock stands
+  still while it is paused.
 
 Scrubbing changes the visualization's historical state, not the machine.
 Primary question: **what changed, why, and where in Linux source?**
