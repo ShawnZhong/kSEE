@@ -67,6 +67,7 @@ source. Rust does the work: JS only lays it out.
 | source.js | the source at the cursor (Monaco): lines that ran, the function, hover values, Watch, definitions |
 | callstack.js | the Stack: calls with arguments and locals, watches, ✎ who wrote a value |
 | examples.js | the examples: syscalls /init makes, one at a time, recorded; their stops; adding a call |
+| args.js | a syscall's arguments, written as in C, with the kernel's constants |
 | ksee.js, worker.js | booting; each Worker's script |
 
 Every view asks the Machine for the moment at the cursor: `at(i)`,
