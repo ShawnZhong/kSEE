@@ -98,7 +98,7 @@ export function app(m) {
       const p = get?.();
       if (p) src.preview(p.func, p.file, p.line);
       else src.unpreview();
-    }, get ? 150 : 80);
+    }, 40);
   };
   // Select the call on the stack at the cursor whose first record is
   // `first` (or code inlined into it, from function `inlined`).

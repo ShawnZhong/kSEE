@@ -227,8 +227,15 @@ export function timeline(app) {
   const tip = document.body.appendChild(Object.assign(document.createElement("div"), { className: "tip", hidden: true }));
   const args = new Map(); // first record -> the call's arguments
   const argsOf = (first) => args.get(first) ?? args.set(first, m.call_stack(first)?.find((f) => !f.inlined)?.args ?? []).get(first);
+  // The call under the pointer: its column `k` and depth `d` (above a
+  // column's stack: its top, the call running then; -1: none).
+  function hit(e) {
+    const k = Math.floor((e.offsetX / W()) * t.cols.length), c = t.cols[k];
+    const d = Math.min(rowAt(e.offsetY - (chart.clientHeight - t.depth * t.row)), (c?.frames.length ?? 0) - 1);
+    return { k, c, d };
+  }
   function hover(e) {
-    const k = Math.floor((e.offsetX / W()) * t.cols.length), d = rowAt(e.offsetY - (chart.clientHeight - t.depth * t.row)), c = t.cols[k];
+    const { k, c, d } = hit(e);
     const [id, first, inl] = c?.frames[d] ?? [];
     hilite(first ?? null);
     const key = first == null ? null : `${first}:${inl}:${k}`;
@@ -243,8 +250,10 @@ export function timeline(app) {
         if (!f) return null;
         // (Where it was called from: the call outside it, where it is.)
         const caller = frames[frames.indexOf(f) + 1];
+        // (And what runs then, on top of it.)
         if (key === t.peek) tip.querySelector(".here").textContent =
-          (caller ? `called at ${caller.file}:${caller.line} · ` : "") + `now at ${f.file}:${f.line}`;
+          (caller ? `called at ${caller.file}:${caller.line} · ` : "") + `now at ${f.file}:${f.line}` +
+          (frames[0] && frames[0] !== f ? ` · running: ${frames[0].func}${frames[0].inlined ? " (inlined)" : ""} (${frames[0].file}:${frames[0].line})` : "");
         return { func: owner?.func ?? f.func, file: f.file, line: f.line };
       });
     }
@@ -316,7 +325,7 @@ export function timeline(app) {
     if (!was || was.moved) return;
     // A call: the cursor in it, and the call selected (the source shows
     // where it is then). Elsewhere: the cursor at the next block.
-    const k = Math.floor((e.offsetX / W()) * t.cols.length), [, first, inl] = t.cols[k]?.frames[rowAt(e.offsetY - (chart.clientHeight - t.depth * t.row))] ?? [];
+    const { c, d } = hit(e), [, first, inl] = c?.frames[d] ?? [];
     if (first == null) return go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
     // (A syscall: selected, its records from its entry to its exit.)
     const s = !inl && t.syscallAt.get(first);
@@ -326,8 +335,7 @@ export function timeline(app) {
   };
   chart.ondblclick = (e) => {
     // Select the call there: its records, from its first to its return.
-    const k = Math.floor((e.offsetX / W()) * t.cols.length), d = rowAt(e.offsetY - (chart.clientHeight - t.depth * t.row));
-    const [id, first, inl] = t.cols[k]?.frames[d] ?? [];
+    const { c, d } = hit(e), [id, first, inl] = c?.frames[d] ?? [];
     if (first == null || inl || t.syscallAt.has(first)) return;
     selectCall(first, fn(id)?.name ?? "a call");
     go(m.seek(first, 1, "line"));

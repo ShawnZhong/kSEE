@@ -89,6 +89,11 @@ const script = opt("eval", `(async () => {
   const box = ksee.time.boxOf(read.first), at = { clientX: box?.x, clientY: box?.y };
   $("chart").dispatchEvent(new PointerEvent("pointermove", at));
   r.tip = document.querySelector(".tip:not([hidden])")?.innerText.replace(/\\s+/g, " ").slice(0, 60);
+  // (Above the stack, at the top of the chart: the call on top then.)
+  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: box.x, clientY: $("chart").getBoundingClientRect().top + 2 }));
+  r.top = document.querySelector(".tip:not([hidden])")?.firstChild?.textContent;
+  if (!r.top) throw new Error("no call on top above the stack");
+  $("chart").dispatchEvent(new PointerEvent("pointermove", at));
   await sleep(400);
   r.preview = [$("fn-title").textContent.slice(0, 40), document.querySelector(".tip .here")?.textContent];
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
