@@ -38,8 +38,8 @@ never resumed), let what it had under way end, and boot again.
 **The page and the kernel** talk through memory and promises: the page
 raises interrupts (a bit, and a wake-up of idle), and asks a runner (/init,
 or a thread or child of it: see [kernel.md](kernel.md)) for a syscall
-(`Machine.call(name, args, tid)`: a doorbell byte on the runner's console
-line); it reads the console's output. `Machine.quiet()` is a promise of
+(`Machine.call(name, args, tid)`: it rings the runner, which waits for
+SIGUSR1); it reads the console's output. `Machine.quiet()` is a promise of
 the kernel **quiet** (idle, until the page's input: the recording stops
 there), with the calls finished meanwhile: returned (`ksee.done`), ended
 by an execve (the new program's `ksee.ready`) or by their task's exit.

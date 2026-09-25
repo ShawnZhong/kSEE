@@ -124,6 +124,8 @@ pub struct Function {
     pub file: String,
     pub line: u32,
     pub blocks: Vec<Block>,
+    /// Only its call and returns are recorded (tables::Function::sealed).
+    pub sealed: bool,
 }
 
 /// Where a function is.
@@ -366,6 +368,7 @@ impl View<'_> {
             name: f.name.clone(),
             file: t.file(f.loc).to_string(),
             line: f.loc.line,
+            sealed: f.sealed,
             blocks: t.blocks_of(id).map(|(n, l)| Block {
                 n, file: t.file(l).to_string(), line: l.line, count: counts.get(&(id, n)).copied().unwrap_or(0),
             }).collect(),

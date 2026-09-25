@@ -25,17 +25,20 @@ use crate::state::*;
 use ksee_core::Memory;
 
 /// A task not running: its stack pointer, and what resumes it (None: it
-/// has not started).
+/// has not started; it starts in task_entry, or, `user`, user_entry).
 struct Task {
     sp: u32,
     resume: Option<Function>,
+    user: bool,
 }
 
 #[derive(Default)]
 struct Sched {
     tasks: BTreeMap<u32, Task>,
-    /// The kernel's exports: task_entry (promising), boot, and the stack pointer.
+    /// The kernel's exports: task_entry and user_entry (promising), and the
+    /// stack pointer.
     task_entry: Option<Function>,
+    user_entry: Option<Function>,
     sp: Option<WebAssembly::Global>,
     /// What wakes the idle task (it is idle, for the page's input).
     idle: Option<Function>,
@@ -111,7 +114,8 @@ pub fn never() -> Promise {
 pub fn boot(kernel: &Object) -> Result<(), JsValue> {
     let sp: WebAssembly::Global = js::get(kernel, "__stack_pointer").unchecked_into();
     S.with_borrow_mut(|s| {
-        *s = Sched { task_entry: Some(promising(&js::get(kernel, "task_entry"))), sp: Some(sp), boot: s.boot + 1,
+        *s = Sched { task_entry: Some(promising(&js::get(kernel, "task_entry"))),
+                     user_entry: Some(promising(&js::get(kernel, "user_entry"))), sp: Some(sp), boot: s.boot + 1,
                      running: true, ..Default::default() };
     });
     let boot_stack: Function = js::get(kernel, "boot_stack").unchecked_into();
@@ -135,7 +139,17 @@ pub fn stop() {
 /// first gets the CPU.
 #[unsafe(no_mangle)]
 pub extern "C" fn spawn_task(task: u32, sp: u32) {
-    S.with_borrow_mut(|s| s.running.then(|| s.tasks.insert(task, Task { sp, resume: None })));
+    S.with_borrow_mut(|s| s.running.then(|| s.tasks.insert(task, Task { sp, resume: None, user: false })));
+}
+
+/// restart_task (suspending): the current task's stack is dropped, and it
+/// starts again, in user_entry, on the stack at `sp` (after an execve).
+pub fn restart_task(task: u32, sp: u32) -> Promise {
+    if running() {
+        S.with_borrow_mut(|s| s.tasks.insert(task, Task { sp, resume: None, user: true }));
+        soon(move || run(task));
+    }
+    never()
 }
 
 fn running() -> bool {
@@ -160,7 +174,7 @@ pub fn switch_task(prev: u32, next: u32, dead: u32) -> Promise {
     } else {
         let mut resume = None;
         let p = Promise::new(&mut |ok, _| resume = Some(ok));
-        S.with_borrow_mut(|s| s.tasks.insert(prev, Task { sp, resume }));
+        S.with_borrow_mut(|s| s.tasks.insert(prev, Task { sp, resume, user: false }));
         // (Its stack pointer back, before its stack resumes.)
         let then: Function = js::get(&p, "then").unchecked_into();
         then.call1(&p, &Closure::once_into_js(move |v: JsValue| {
@@ -178,7 +192,7 @@ fn run(task: u32) {
         let t = s.tasks.get_mut(&task);
         match t {
             Some(t) if t.resume.is_some() => (t.resume.take(), None),
-            Some(t) => (None, Some((t.sp, s.task_entry.clone()))),
+            Some(t) => (None, Some((t.sp, if t.user { s.user_entry.clone() } else { s.task_entry.clone() }))),
             None => (None, None),
         }
     });

@@ -59,7 +59,7 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
 - **The kernel** ([kernel.md](kernel.md)): a minimal `arch/wasm` for Linux
   7.2. One wasm instance, on the page's thread; a task is a call stack of
   it, which the host suspends and resumes at a context switch (JSPI).
-  /init makes the syscalls the page asks for (the doorbell: console input).
+  /init makes the syscalls the page asks for (the doorbell: a signal).
 - **The recording** ([recording.md](recording.md)): an LLVM pass
   instruments every function the same way (blocks, calls with arguments,
   returns, locals, stores with old values) into one ring.

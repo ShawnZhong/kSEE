@@ -25,20 +25,10 @@ pub extern "C" fn console_write(p: *const u8, n: u32) {
     k(|k| k.console_out.borrow_mut().extend_from_slice(unsafe { core::slice::from_raw_parts(p, n as usize) }));
 }
 
-/// Console line `line`'s pending input, without blocking.
+/// doorbell: the next task to ring, or 0.
 #[unsafe(no_mangle)]
-pub extern "C" fn console_read(line: u32, p: *mut u8, n: u32) -> i32 {
-    bulk(p as u32, n);
-    let out = unsafe { core::slice::from_raw_parts_mut(p, n as usize) };
-    k(|k| {
-        let mut lines = k.console_in.borrow_mut();
-        let Some(input) = lines.get_mut(line as usize) else { return 0 };
-        let n = input.len().min(out.len());
-        for (o, b) in out.iter_mut().zip(input.drain(..n)) {
-            *o = b;
-        }
-        n as i32
-    })
+pub extern "C" fn doorbell() -> u32 {
+    k(|k| k.doorbell.borrow_mut().pop_front().unwrap_or(0))
 }
 
 /// Copy the command line (NUL-terminated) to `buf`.
@@ -305,11 +295,12 @@ pub fn kernel() -> Object {
     let export = |name: &str| js::get(&rt, name);
 
     let kernel = Object::new();
-    for name in ["console_write", "console_read", "get_cmdline", "memory_end", "time_ns", "spawn_task"] {
+    for name in ["console_write", "doorbell", "get_cmdline", "memory_end", "time_ns", "spawn_task"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "switch_task", sched::suspending(func(Closure::<dyn FnMut(u32, u32, u32) -> Promise>::new(sched::switch_task))));
     js::set(&kernel, "idle", sched::suspending(func(Closure::<dyn FnMut() -> Promise>::new(sched::idle))));
+    js::set(&kernel, "restart_task", sched::suspending(func(Closure::<dyn FnMut(u32, u32) -> Promise>::new(sched::restart_task))));
     js::set(&kernel, "halt", sched::suspending(func(Closure::<dyn FnMut(i32) -> Promise>::new(|code: i32| {
         k(|k| k.halted.set(Some(code)));
         for (_, fail) in k(|k| k.quiet_waiters.take()) {
@@ -362,33 +353,18 @@ pub(crate) fn finish(tid: u32, how: &'static str, ret: i64, buffers: Vec<Option<
     });
 }
 
-/// The imports of a runner (user/init.c), module ksee: its console line,
-/// ready, the call asked of it, and its result. A request's place in the
+/// The imports of a runner (user/init.c), module ksee: ready, the call
+/// asked of it, and its result. A request's place in the
 /// runner's memory (kernel memory):
 /// `struct { i32 nr; i32 args[6]; i32 pad; u8 data[CALL_DATA]; }`.
 fn runner_imports() -> Object {
     let ksee = Object::new();
-    // ksee.line(): the console line the current thread waits on: the
-    // first /init's is 0, another runner's a free one (and one exec'd
-    // keeps its own).
-    js::set(&ksee, "line", func(Closure::<dyn FnMut() -> i32>::new(|| {
-        let (tid, task) = (tid(), current());
-        k(|k| {
-            let mut runners = k.runners.borrow_mut();
-            if let Some(r) = runners.get_mut(&tid) {
-                r.task = task;
-                return r.line as i32;
-            }
-            let line = if tid == 1 { Some(0) } else { (1..LINES).find(|l| runners.values().all(|r| r.line != *l)) };
-            let Some(line) = line else { return -1 };
-            runners.insert(tid, Runner { task, line });
-            line as i32
-        })
-    })));
-    // ksee.ready(): the runner waits for calls. (A call it was making is
-    // over: it was an execve, and this is the new program.)
+    // ksee.ready(): the current thread is a runner, waiting for calls
+    // (rung: SIGUSR1). (A call it was making is over: it was an execve, and
+    // this is the new program.)
     js::set(&ksee, "ready", func(Closure::<dyn FnMut()>::new(|| {
-        let tid = tid();
+        let (tid, task) = (tid(), current());
+        k(|k| k.runners.borrow_mut().insert(tid, Runner { task }));
         finish(tid, "exec", 0, Vec::new());
         if tid == 1 && k(|k| k.calls.borrow().is_empty()) {
             // (The boot's over: let what it left for later run now, while

@@ -21,6 +21,9 @@ pub struct Function {
     /// Which of the source's parameters call records carry (a bit each);
     /// the others were optimized away.
     pub known: u32,
+    /// Only its call and returns are recorded, not its blocks (it loops,
+    /// writes nothing the host undoes, calls nothing: see the plugin).
+    pub sealed: bool,
 }
 
 /// A source line a block runs; `inlined`: if it is code inlined into the
@@ -121,10 +124,11 @@ impl Tables {
                     }
                 }
                 ["R", words] => t.ring_words = words.parse().unwrap_or(0),
-                ["F", id, name, location, known] => {
+                ["F", id, name, location, known, rest @ ..] => {
                     let Ok(id) = id.parse() else { continue };
                     let loc = unit.loc(location, false);
-                    t.functions.insert(id, Function { name: name.to_string(), loc, known: known.parse().unwrap_or(0) });
+                    let sealed = rest.first() == Some(&"1");
+                    t.functions.insert(id, Function { name: name.to_string(), loc, known: known.parse().unwrap_or(0), sealed });
                 }
                 ["V", id, names] => {
                     if let Ok(id) = id.parse() {
@@ -224,11 +228,11 @@ mod tests {
 
     #[test]
     fn parses_probes_and_types() {
-        let probes = "U\nP\t0\t/s/p.c\nP\t1\t/s/q.h\nR\t64\nF\t7\tpick\t0:2\t3\nB\t7\t0\t1:2:39\nU\nP\t0\t/s/p.c\nF\t7\tpick\t0:2\t3\n";
+        let probes = "U\nP\t0\t/s/p.c\nP\t1\t/s/q.h\nR\t64\nF\t7\tpick\t0:2\t3\t0\nB\t7\t0\t1:2:39\nU\nP\t0\t/s/p.c\nF\t7\tpick\t0:2\t3\t0\nF\t8\tcrc\t0:9\t1\t1\n";
         let t = Tables::parse(probes, "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ttask_struct\t740\nM\t2\tpid\t5888\t0\t1\n");
         assert_eq!(t.ring_words, 64);
         let f = &t.functions[&7];
-        assert_eq!(f.known, 3);
+        assert_eq!((f.known, f.sealed, t.functions[&8].sealed), (3, false, true));
         assert_eq!((t.file(f.loc), f.loc.line), ("/s/p.c", 2));
         let b = t.blocks[&(7, 0)];
         assert_eq!((t.file(b), b.line, b.column), ("/s/q.h", 2, 39));

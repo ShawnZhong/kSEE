@@ -53,7 +53,7 @@ where real hardware would deliver them too.
 | Line | Raised by | For |
 |---|---|---|
 | 0, timer | the host, when the deadline passes (at idle, or at a switch) | the clockevent (kernel/time.c) |
-| 1, console | the page | console input (the runners' doorbells, below) |
+| 1, doorbell | the page | a task to ring: it gets SIGUSR1 (the runners', below) |
 
 The clockevent is one-shot: the kernel writes its deadline to
 `wasm_timer_deadline`; the host raises the timer line once it passes. The
@@ -106,27 +106,30 @@ system):
 
 `copy_thread` tells the host (`clone_user`): a program's `__stack_pointer`
 is its instance's global, which its threads share, so the host keeps each
-task's value and puts it back when the task gets the CPU. An `execve` from
-user mode runs the new program on the same stack (kernel/syscall.c: the
-old one's frames are never returned to). Futexes are the kernel's own
+task's value and puts it back when the task gets the CPU. After an
+`execve` from user mode, the host drops the task's stack (the old
+program's frames are never returned to) and starts it again on a fresh
+one, in `user_entry` (`restart_task`). No `CLONE_SETTLS`: programs have no
+thread-local storage. Futexes are the kernel's own
 (`CONFIG_FUTEX`; one CPU, so plain loads and stores in user space).
 
 ## /init, and the runners
 
 There is one program: **/init** (user/init.c, C on nolibc). It mounts the
 disk, and then makes the syscalls the page asks for, one at a time. It
-waits for them reading a console line: the page leaves a request with the
-runtime, and one byte of console input (`WASM_IRQ_CONSOLE`) wakes it; the
-runtime's `ksee.call` import copies the request (the number, the
-arguments, the buffers) into its memory (recorded), it makes the syscall,
-and `ksee.done` gives the result back. So every syscall the page shows is
-a real process's, with its fds and its memory.
+waits for them in `sigtimedwait`, for SIGUSR1 (blocked): the page leaves a
+request with the runtime and rings /init's task (`WASM_IRQ_DOORBELL`: its
+handler sends the signal, kernel/irq.c); the runtime's `ksee.call` import
+copies the request (the number, the arguments, the buffers) into /init's
+memory (recorded), it makes the syscall, and `ksee.done` gives the result
+back. So every syscall the page shows is a real process's, with its fds
+and its memory. (A signal, not console input: a tty hands input to a
+kworker first, and each call's recording began with that.)
 
 A clone child of /init (a thread, a vfork child) is a **runner** too, and
-so is /init exec'd again: each waits on a console line of its own
-(`ttyW1`..., `ksee.line`), as a tty gives each byte to one reader. So the
-page can make calls as several threads and processes: one blocks (a
-futex's wait, a pipe's read), another wakes it.
+so is /init exec'd again (they inherit the blocked signal; the doorbell
+rings one task). So the page can make calls as several threads and
+processes: one blocks (a futex's wait, a pipe's read), another wakes it.
 
 ## A disk
 
@@ -138,11 +141,8 @@ kernel's; the disk's blocks are that file's pages in memory.
 
 ## Console
 
-kernel/console.c: tty lines `ttyW0`... (as serial ports: one per runner
-waiting for the page's calls), raw (no line editing, no echo). `ttyW0` is
-printk's console from `setup_arch` on, and `/dev/console`. Writes go to
-the host synchronously (`console_write`); input comes with
-`WASM_IRQ_CONSOLE` (`console_read`, a line's). (A console of its own rather than hvc: hvc's thread,
+kernel/console.c: one console, printk's from `setup_arch` on, whose tty is
+`/dev/console`: output only, to the host, synchronously (`console_write`). (A console of its own rather than hvc: hvc's thread,
 kicked after every write, added a task and noise to every recording.)
 
 ## Memory
@@ -157,9 +157,10 @@ above RAM is the host's heap.
 ## The host interface
 
 All of it is in arch/wasm/include/asm/wasm.h. Imports (module `kernel`):
-`console_write`, `console_read`, `get_cmdline`, `memory_end`, `time_ns`,
-`spawn_task`, `switch_task` and `idle` (suspending), `halt`, `user_load`,
+`console_write`, `get_cmdline`, `memory_end`, `time_ns`,
+`spawn_task`, `switch_task`, `restart_task` and `idle` (suspending),
+`clone_user`, `doorbell`, `halt`, `user_load`,
 `user_start`, `print_stack`; and `ksee.bulk` (see [recording.md](recording.md)).
-Exports: `boot_stack`, `boot`, `task_entry`, `syscall`, `ksee_trace`, and the
+Exports: `boot_stack`, `boot`, `task_entry`, `user_entry`, `syscall`, `ksee_trace`, and the
 globals `__stack_pointer`, `wasm_irq_pending`, `wasm_timer_deadline`,
 `__current_task`.

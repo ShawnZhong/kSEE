@@ -8,11 +8,15 @@
 //     is the call, with its arguments);
 //   - before each return, a return record, with the value;
 //   - once its locals in memory exist, a locals record: their addresses;
-//   - before each store it makes (not to its own stack slots, except those
-//     locals), a store
-//     record, with the old value (the host undoes stores to see memory as
-//     it was). Bulk writes (memcpy, memset, wider stores) go to the
+//   - before each store it makes (its stack slots' too: a slot is reused by
+//     later calls, and a frame's locals must be undone to be seen as they
+//     were), a store record, with the old value (the host undoes stores to
+//     see memory as it was). Bulk writes (memcpy, memset, wider stores) go to the
 //     ksee.bulk(address, length) import, which logs them.
+// A function that loops, but writes no memory the host must undo and calls
+// nothing (a checksum, a search: crc32c, find_next_bit) is sealed: only
+// its call and its returns are recorded, not each block of each turn. (Its
+// inside is then a box: what it read and what it returned.)
 // Compile with -g: locations and parameters come from debug info.
 //
 // Probes append records to a ring in the module's own memory, defined in
@@ -52,9 +56,10 @@
 //   ksee.probes  U
 //                P \t k \t path       file k
 //                R \t ring words
-//                F \t fn \t name \t FILE:line \t known
+//                F \t fn \t name \t FILE:line \t known \t sealed
 //                  (known: a bit mask of the source's parameters that call
-//                  records carry; the others were optimized away)
+//                  records carry; the others were optimized away. sealed:
+//                  1 if only its call and returns are recorded: see below)
 //                V \t fn \t names   the locals of fn's locals records
 //                B \t fn \t n \t FILE:line:column
 //                L \t fn \t n \t lines: the source lines the block runs, in
@@ -69,6 +74,7 @@
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugProgramInstruction.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -324,7 +330,23 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
 
   // Log the store (or atomic, or memset/memcpy) `I` is about to make, if it
   // is not to its function's own stack (but for its `locals`).
-  void logStore(Instruction *I, const SmallPtrSetImpl<AllocaInst *> &locals) {
+  // Whether `F` is sealed (see the top): it loops (a block reaches one that
+  // dominates it), writes no memory, and calls nothing but intrinsics.
+  static bool sealed(Function &F, ArrayRef<Instruction *> writes) {
+    if (!writes.empty())
+      return false;
+    for (Instruction &I : instructions(F))
+      if (isa<CallBase>(I) && !isa<IntrinsicInst>(I))
+        return false;
+    DominatorTree DT(F);
+    for (BasicBlock &BB : F)
+      for (BasicBlock *S : successors(&BB))
+        if (DT.dominates(S, &BB))
+          return true;
+    return false;
+  }
+
+  void logStore(Instruction *I) {
     const DataLayout &DL = M->getDataLayout();
     Value *ptr = nullptr, *len = nullptr;
     uint64_t size = 0;
@@ -337,8 +359,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     else if (auto *MI = dyn_cast<MemIntrinsic>(I))
       ptr = MI->getRawDest(), len = MI->getLength();
     if (!ptr)
-      return;
-    if (auto *A = dyn_cast<AllocaInst>(getUnderlyingObject(ptr)); A && !locals.contains(A))
       return;
     IRBuilder<> B(I);
     Value *addr = B.CreatePtrToInt(ptr, i32);
@@ -390,7 +410,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       }
     }
 
+    // (Sealed: the entry block's probe only, the call.)
+    bool seal = sealed(F, writes);
     for (auto [n, BB] : enumerate(blocks)) {
+      if (seal && n > 0)
+        break;
       IRBuilder<> B(&*BB->getFirstInsertionPt());
       if (n == 0) {
         SmallVector<Value *, 1 + CallArgs> args{B.getInt32(id)};
@@ -423,7 +447,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       }
 
     for (Instruction *I : writes)
-      logStore(I, slots);
+      logStore(I);
 
     // The locals record, once they all exist (after the last of them).
     if (!locals.empty()) {
@@ -445,7 +469,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     }
 
     std::string where = SP ? fileRef(sourcePath(SP)) + ":" + std::to_string(SP->getLine()) : "?";
-    probes += ("F\t" + Twine(id) + "\t" + F.getName() + "\t" + where + "\t" + Twine(known) + "\n").str();
+    probes += ("F\t" + Twine(id) + "\t" + F.getName() + "\t" + where + "\t" + Twine(known) + "\t" + Twine(seal) + "\n").str();
   }
 
 public:

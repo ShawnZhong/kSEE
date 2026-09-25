@@ -23,10 +23,7 @@ pub const KERNEL_BASE: u32 = 0x100_0000;
 
 /// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h).
 pub const IRQ_TIMER: u32 = 0;
-pub const IRQ_CONSOLE: u32 = 1;
-
-/// Console lines (WASM_CONSOLE_LINES): a runner waits on one of its own.
-pub const LINES: usize = 8;
+pub const IRQ_DOORBELL: u32 = 1;
 
 /// The kernel's clock advances this much at each read (so that a loop on
 /// it ends), besides where idle skips to the next timer (see sched).
@@ -59,7 +56,8 @@ pub struct Kernel {
     /// The halt code, once the kernel has halted.
     pub halted: Cell<Option<i32>>,
     pub console_out: RefCell<Vec<u8>>,
-    pub console_in: RefCell<[VecDeque<u8>; LINES]>,
+    /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
+    pub doorbell: RefCell<VecDeque<u32>>,
     /// The runners ready for the page's calls, by thread id; the calls
     /// asked of them (see Machine::call), and the count of calls asked.
     pub runners: RefCell<BTreeMap<u32, Runner>>,
@@ -67,11 +65,10 @@ pub struct Kernel {
     pub asked: Cell<u32>,
 }
 
-/// A runner (user/init.c): its task, and the console line it waits on.
+/// A runner (user/init.c): its task.
 #[derive(Clone, Copy)]
 pub struct Runner {
     pub task: u32,
-    pub line: usize,
 }
 
 /// A call finished: returned (its result, and its buffers as it left them),

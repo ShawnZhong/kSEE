@@ -142,7 +142,7 @@ impl Machine {
         }
         k(|k| {
             k.console_out.borrow_mut().clear();
-            *k.console_in.borrow_mut() = Default::default();
+            k.doorbell.borrow_mut().clear();
             k.runners.borrow_mut().clear();
             k.calls.borrow_mut().clear();
             k.finished.borrow_mut().clear();
@@ -224,8 +224,8 @@ impl Machine {
             k.asked.set(id);
             k.calls.borrow_mut().insert(tid, c);
             k.waiting.set(Some(k.clock.get()));
-            // (The doorbell: the runner waits reading its console line.)
-            k.console_in.borrow_mut()[runner.line].push_back(b'\n');
+            // (Ring the runner: it waits for SIGUSR1.)
+            k.doorbell.borrow_mut().push_back(runner.task);
         });
         let trace = k(|k| k.trace.get());
         Direct.write_u32(trace + trace::ON, 1);
@@ -233,7 +233,7 @@ impl Machine {
         js::set(&o, "id", id);
         // (Records' ids count the pairs of words ever written: see trace::ring.)
         js::set(&o, "from", Direct.read_u32(trace) / 2);
-        sched::interrupt(IRQ_CONSOLE);
+        sched::interrupt(IRQ_DOORBELL);
         Ok(o.into())
     }
 

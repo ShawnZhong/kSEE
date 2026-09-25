@@ -131,7 +131,8 @@ export function source(app) {
     const to = focus ?? fn?.line ?? 1;
     if (focus) ed.revealLineInCenterIfOutsideViewport(to);
     else ed.revealLineNearTop(to);
-    const ran = fn ? ` · ${fn.name}: ${fn.blocks.filter((b) => b.count > 0).length} of ${fn.blocks.length} blocks ran` : "";
+    const ran = !fn ? "" : fn.sealed ? ` · ${fn.name}: sealed (it loops, only reading memory: its call and return are recorded, not its lines)`
+      : ` · ${fn.name}: ${fn.blocks.filter((b) => b.count > 0).length} of ${fn.blocks.length} blocks ran`;
     $("fn-title").textContent = (saved ? "preview · " : "") + file + ran;
     $("fn-title").classList.toggle("preview", !!saved);
   }

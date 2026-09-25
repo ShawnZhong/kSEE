@@ -1,23 +1,21 @@
 // /init: the first process, and the page's runner. It mounts the ext4
 // disk (the image /disk.img, through the loop device, on /mnt), then makes
-// the syscalls the page asks for, one at a time: it waits reading its
-// console line, and a byte there says a call is asked for (see the page's
-// Machine.call). A clone child of it (a thread, or vfork's child) starts
-// at __wasm_clone_start and is a runner too, on a line of its own; so is
-// /init exec'd again. Plain C on nolibc (linux/tools/include/nolibc), the
-// kernel's small C library.
+// the syscalls the page asks for, one at a time: it waits for SIGUSR1
+// (blocked, in sigtimedwait), which says a call is asked for (the host's
+// doorbell: see the page's Machine.call). A clone child of it (a thread,
+// or vfork's child) starts at __wasm_clone_start and is a runner too; so
+// is /init exec'd again. Plain C on nolibc (linux/tools/include/nolibc),
+// the kernel's small C library.
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <unistd.h>
 #include <linux/loop.h>
 
-// This runner's console line (0: the first /init's); ready for calls; the
-// call asked for (the runtime fills it in; buffer arguments point into
-// data), and its result.
-__attribute__((import_module("ksee"), import_name("line")))
-int ksee_line(void);
+// Ready for calls; the call asked for (the runtime fills it in; buffer
+// arguments point into data), and its result.
 __attribute__((import_module("ksee"), import_name("ready")))
 void ksee_ready(void);
 __attribute__((import_module("ksee"), import_name("call")))
@@ -49,21 +47,18 @@ static void disk(void)
 	close(loop);
 }
 
-// Make the page's calls, from console line `line` (its fd out of the way
-// of the page's, and not inherited by a program exec'd).
-static void __attribute__((noreturn)) serve(int line)
-{
-	char tty[] = "/dev/ttyW0", c;
-	struct request req;
-	int fd, bell;
+// The doorbell's signal.
+static const unsigned long bell = 1UL << (SIGUSR1 - 1);
 
-	tty[9] += line;
-	fd = open(tty, O_RDONLY | O_CLOEXEC);
-	bell = dup3(fd, 64 + line, O_CLOEXEC);
-	close(fd);
+// Make the page's calls, one at a time, as each is rung.
+static void __attribute__((noreturn)) serve(void)
+{
+	struct request req;
+
 	ksee_ready();
 	for (;;) {
-		if (read(bell, &c, 1) != 1 || ksee_call(&req) < 0)
+		if (__nolibc_syscall4(__NR_rt_sigtimedwait_time64, &bell, NULL, NULL, 8) != SIGUSR1 ||
+		    ksee_call(&req) < 0)
 			continue;
 		ksee_done(__nolibc_syscall6(req.nr, req.args[0], req.args[1], req.args[2],
 					    req.args[3], req.args[4], req.args[5]), &req);
@@ -72,14 +67,14 @@ static void __attribute__((noreturn)) serve(int line)
 
 int main(void)
 {
-	int line = ksee_line();
-
-	if (line == 0) {
+	// (Its threads and children inherit the mask, and a program exec'd.)
+	__nolibc_syscall4(__NR_rt_sigprocmask, SIG_BLOCK, &bell, NULL, 8);
+	if (getpid() == 1) {
 		mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
 		disk();
 		printf("init: ready for the page's calls\n");
 	}
-	serve(line);
+	serve();
 }
 
 // Where a clone child starts (arch/wasm: it cannot return from clone), on
@@ -87,7 +82,7 @@ int main(void)
 __attribute__((export_name("__wasm_clone_start")))
 void clone_start(void)
 {
-	serve(ksee_line());
+	serve();
 }
 
 // 128-bit multiply, which clang emits as a libcall on wasm32 (for 64-bit
