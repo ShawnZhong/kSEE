@@ -53,15 +53,15 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url });
 await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
-// By default: the boot (it opens by itself); then open the read example (it runs, recorded); go through its stops
+// By default: the first example (it runs by itself); then open the read example (it runs, recorded); go through its stops
 // (the note, the Stack, a hover at each); play a little; report.
 const script = opt("eval", `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (id) => document.getElementById(id);
   const r = { badge: $("badge").textContent };
-  // The boot, recorded, opens by itself at its first stop.
-  for (let i = 0; i < 100 && $("note").hidden; i++) await sleep(100);
-  r.boot = [$("note").querySelector("b")?.textContent, document.querySelector(".tstatus")?.textContent.slice(0, 40)];
+  // The first example runs by itself, once the kernel is up.
+  for (let i = 0; i < 100 && !document.querySelector(".tstatus")?.textContent.includes(" ran as "); i++) await sleep(100);
+  r.first = [document.querySelector(".thead .tt")?.textContent, $("note").querySelector("b")?.textContent];
   [...document.querySelectorAll(".thead a")].find((a) => a.textContent.includes("examples")).click();
   r.examples = document.querySelectorAll(".row.example").length;
   [...document.querySelectorAll(".row.example")].find((e) => e.textContent.includes("read()")).click();

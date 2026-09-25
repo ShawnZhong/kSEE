@@ -13,8 +13,8 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
 
 - *Learners*: how an OS really works, on real Linux instead of a teaching
   kernel. They start from **examples**: a question ("What happens in
-  read()?", "How does Linux boot?"), its recording (usually of a small C
-  program that asks it), and stops that explain what happens.
+  read()?", "ext4: what makes a directory?"), a small C program that asks
+  it, and stops in its recording that explain what happens.
 - *Kernel developers*: what a code path really does, on a real kernel they
   can read and change. They run **their own programs**, or **record** the
   kernel as it runs.
@@ -25,9 +25,9 @@ SMP, no fork: see Limits).
 
 ## The experience
 
-1. **Run** something, recorded: the boot (the page's first recording), an
-   example's program, or the kernel for a while (● Record). Programs run to the end: a recording
-   takes milliseconds.
+1. **Run** something, recorded: an example's program (the page runs the
+   first), or the kernel for a while (● Record). Programs run to the end:
+   a recording takes milliseconds.
 2. **Explore the recording**, at one cursor:
    - *time*: a timeline of the call stack (who ran, what they called);
      drag, step line by line, Play;

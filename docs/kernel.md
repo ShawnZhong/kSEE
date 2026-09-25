@@ -7,7 +7,7 @@ five files, 78 lines (build scripts, the initramfs's alignment, and nolibc's
 `arch-wasm.h` for the programs).
 
 The configuration: wasm32, `CONFIG_MMU=n`, one CPU, `PREEMPT_NONE`, an
-initramfs, a console, a timer.
+initramfs, a console, a timer; the block layer, the loop device and ext4.
 
 ## One Worker per task
 
@@ -83,7 +83,16 @@ struct { u32 state; s32 status; s32 pid; char path[256]; } wasm_run;
 The page writes a path, sets `REQUESTED` and raises the run line; the
 interrupt queues work that runs the program with `/dev/console` as its
 fds 0–2, waits for it, and writes its exit status and pid (`DONE`); the page
-takes them and sets `IDLE`. `/init` (user/init.c) only has to exist.
+takes them and sets `IDLE`. `/init` (user/init.c) mounts the ext4 disk and
+sleeps.
+
+## A disk
+
+No block device is emulated: the initramfs holds an ext4 image
+(`/disk.img`, made by `mkfs.ext4` at build time), and /init attaches it to
+the loop device (the kernel's own driver: a file as a block device) and
+mounts it on `/mnt`. So ext4, jbd2 and the block layer are all the real
+kernel's; the disk's blocks are that file's pages in memory.
 
 ## Console
 

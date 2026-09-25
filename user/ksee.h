@@ -21,6 +21,7 @@ void __ksee_line(int line);
 #define read(...)	__KSEE(read(__VA_ARGS__))
 #define write(...)	__KSEE(write(__VA_ARGS__))
 #define close(...)	__KSEE(close(__VA_ARGS__))
+#define fsync(...)	__KSEE(fsync(__VA_ARGS__))
 #define dup(...)	__KSEE(dup(__VA_ARGS__))
 #define dup2(...)	__KSEE(dup2(__VA_ARGS__))
 #define pipe(...)	__KSEE(pipe(__VA_ARGS__))

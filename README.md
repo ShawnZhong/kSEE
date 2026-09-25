@@ -28,12 +28,12 @@ LLVM pass.
     ./ksee.sh test         # under Deno: programs, and what their recordings show
     ./ksee.sh type task_struct
 
-The page boots the kernel **recorded from its first line**, and opens the
-first example, "How does Linux boot?", at its first stop. An **example**
-(on the left) is a question about the kernel ("What happens in read()?",
-"Why does open() fail?", …), usually with a small C program that asks it
-(user/examples/, plain C on nolibc): opening one runs it in the kernel,
-recorded, to its end, and goes to its first stop: its note, the program's
+The page boots the kernel and runs the first example. An **example** (on
+the left) is a question about the kernel ("What happens in read()?", "Why
+does open() fail?", "ext4: what happens when a file is deleted?", …) and a
+small C program that asks it (user/examples/, plain C on nolibc): opening
+one runs it in the kernel, recorded, to its end, and goes to its first
+stop: its note, the program's
 line, the source, and the Stack (the call stack, with each call's
 arguments and locals, as they were). Next stop, ◀ / ▶| line by line, or
 Play.
@@ -47,9 +47,9 @@ until you stop it.
 
 An example is one file in user/examples/: `// example:`, `// question:`,
 and `// stop FUNCTION: NOTE` lines at the top, and `// stops here` on the
-lines whose syscalls the stops are for (a .txt file with only the header:
-the boot's).
+lines whose syscalls the stops are for. /init mounts an ext4 disk on /mnt
+(an image in the initramfs, through the loop device).
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs
-the page itself through the boot and an example, and saves a screenshot,
+the page itself through two examples, and saves a screenshot,
 `web/ui.png`. The build is `ksee build` (crates/ksee-cli/src/build.rs).

@@ -45,12 +45,6 @@ impl Machine {
         self.rec.borrow().ids.get(i).copied()
     }
 
-    /// The record with id `id` (see record_id), if the snapshot still has it.
-    pub fn record_index(&self, id: u32) -> Option<usize> {
-        let rec = self.rec.borrow();
-        rec.ids.binary_search(&id).ok()
-    }
-
     /// Show memory (object, object_by_id, global, call_stack's locals) as it
     /// was after record `i`, or as it is now (None): how many stores that
     /// undoes.

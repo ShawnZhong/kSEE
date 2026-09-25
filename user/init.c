@@ -1,21 +1,25 @@
-// /init: the first process. The kernel runs the page's programs itself (see
-// linux/arch/wasm/kernel/run.c), so init only has to be there.
-// No libc, just the syscall import.
+// /init: the first process. It mounts the ext4 disk (the image /disk.img,
+// through the loop device, on /mnt), says it is ready, and sleeps: the
+// kernel runs the page's programs itself (linux/arch/wasm/kernel/run.c).
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/ioctl.h>
+#include <sys/mount.h>
+#include <unistd.h>
+#include <linux/loop.h>
 
-#define NR_write		64
-#define NR_clock_nanosleep	407
-#define CLOCK_MONOTONIC		1
-
-__attribute__((import_module("linux"), import_name("syscall")))
-long __syscall(long nr, long long a0, long long a1, long long a2,
-	       long long a3, long long a4, long long a5);
-
-void _start(void)
+int main(void)
 {
-	static const char ready[] = "init: ready for the page's programs\n";
-	long long hour[2] = { 3600, 0 };
+	struct loop_config config = { 0 };
+	int loop;
 
-	__syscall(NR_write, 1, (long)ready, sizeof(ready) - 1, 0, 0, 0);
+	mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
+	config.fd = open("/disk.img", O_RDWR);
+	loop = open("/dev/loop0", O_RDWR);
+	if (config.fd < 0 || loop < 0 || ioctl(loop, LOOP_CONFIGURE, &config) ||
+	    mount("/dev/loop0", "/mnt", "ext4", 0, NULL))
+		printf("init: no ext4 disk on /mnt\n");
+	printf("init: ready for the page's programs\n");
 	for (;;)
-		__syscall(NR_clock_nanosleep, CLOCK_MONOTONIC, 0, (long)hour, 0, 0, 0);
+		sleep(3600);
 }

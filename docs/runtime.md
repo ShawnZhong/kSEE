@@ -66,7 +66,7 @@ source. Rust does the work: JS only lays it out.
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom); zoom, pan |
 | source.js | the source at the cursor (Monaco): lines that ran, the function, hover values, Watch, definitions |
 | callstack.js | the Stack: calls with arguments and locals, watches, ✎ who wrote a value |
-| examples.js | the examples: the boot's recording, or a program run recorded; their stops |
+| examples.js | the examples: a program run recorded, and its stops |
 | ksee.js, worker.js | booting; each Worker's script |
 
 Every view asks the Machine for the moment at the cursor: `at(i)`,
@@ -79,8 +79,8 @@ Every view asks the Machine for the moment at the cursor: `at(i)`,
 - tests/web.js (Deno, with the page's own ksee.js): boots the kernel, runs
   programs recorded, and checks what the recording shows: syscalls,
   stacks with arguments, lines, memory as it was, who wrote a value, tasks.
-- tests/ui.js: the page in headless Chromium over CDP: the boot, then the
-  read example: walks its stops, hovers, plays; fails on any exception. Saves
+- tests/ui.js: the page in headless Chromium over CDP: the first example
+  (it runs by itself), then the read example: walks its stops, hovers, plays; fails on any exception. Saves
   web/ui.png.
 
 `./ksee.sh test --ui` runs all three (`$CHROME`: a headless Chromium).

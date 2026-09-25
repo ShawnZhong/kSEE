@@ -1,23 +1,19 @@
 // The examples. An example is a question about the kernel, a small C
 // program that asks it (user/examples/*.c, run as a real process), and
-// stops with a note each; the boot is one too, without a program: its
-// recording is the page's first (the kernel is recorded from its first
-// line). Opening an example runs its program, recorded, to its end; then
-// its recording is in the timeline. Its stops are places in it: the first
-// call of the stop's function in the syscalls of the lines marked
-// "// stops here" (of any task, for a stop that says so), or anywhere in
-// the boot. Next goes from one to the next. Click a line of the program
-// for what the kernel did for it.
+// stops with a note each. Opening an example runs its program, recorded,
+// to its end (the page opens the first once the kernel is up); then its
+// recording is in the timeline. Its stops are places in it: the first call
+// of the stop's function in the syscalls of the lines marked "// stops
+// here" (of any task, for a stop that says so). Next goes from one to the
+// next. Click a line of the program for what the kernel did for it.
 import { $, el } from "./dom.js";
 import { loadMonaco, readOnly } from "./editor.js";
 
 export async function examples(app) {
   const { m, proc } = app;
   const list = await fetch(new URL("./examples/index.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
-  // The open example, its run ({ pid }), and its stops' records; boot: the
-  // boot's recording (its first and last records' ids), once recorded.
-  const t = { tour: null, first: 1, source: [], run: null, running: false, marks: null, ed: null, line: null, at: [], k: -1,
-              boot: null };
+  // The open example, its run ({ pid }), and its stops' records.
+  const t = { tour: null, first: 1, source: [], run: null, running: false, marks: null, ed: null, line: null, at: [], k: -1 };
 
   function index() {
     t.tour = null;
@@ -34,7 +30,6 @@ export async function examples(app) {
     t.run = null;
     t.at = [];
     t.k = -1;
-    if (!tour.path) return openBoot(tour);
     const text = await fetch(new URL(`./examples/${tour.name}.c`, location)).then((r) => r.text());
     // The program, without the tour's header comments; its "// stops here"
     // marks shown as ● instead.
@@ -69,34 +64,9 @@ export async function examples(app) {
       button ? el("div", { className: "tbar" }, button) : null);
   }
 
-  // The boot: its recording (the page's first), and its stops.
-  const bootRange = () => {
-    const a = t.boot && m.record_index(t.boot.first), b = t.boot && m.record_index(t.boot.last);
-    return a != null && b != null ? { a, b } : null;
-  };
-  function openBoot(tour) {
-    t.ed?.dispose();
-    t.ed = null;
-    t.status = el("div", { className: "tstatus dim" });
-    $("examples").replaceChildren(head(tour, null), t.stops, t.status);
-    const r = bootRange();
-    if (!r) {
-      t.status.textContent = t.boot ? "The boot's recording is gone: the ring has moved on. Reload the page to see it again."
-        : "The kernel is booting, recorded…";
-      return;
-    }
-    t.status.textContent = `Recorded from the kernel's first line to /init: ${r.b - r.a + 1} records.`;
-    app.time.selectWindow(bootRange, "the boot");
-    t.at = tour.stops.map((s) => m.first_call(s.func, r.a, r.b));
-    const k = t.at.findIndex((i) => i != null);
-    if (k >= 0) stop(k);
-    else app.time.go(r.a);
-  }
-  // The boot is recorded (records `first..=last`): open it.
-  function booted(first, last) {
-    t.boot = { first: m.record_id(first), last: m.record_id(last) };
-    const boot = list.find((x) => !x.path);
-    if (boot && (!t.tour || t.tour === boot)) open(boot);
+  // The kernel is up: run the first example (unless one is open).
+  function ready() {
+    if (!t.tour && list.length) open(list[0]);
   }
 
   // Run the program, recorded, to its end; then its stops.
@@ -195,7 +165,7 @@ export async function examples(app) {
   }
 
   index();
-  if (app.booted) booted(...app.booted);
+  if (app.ready) ready();
   // (For tests: the program line marked now.)
-  return { follow, open, run, next, stop, list, pickLine, booted, marked: () => t.line };
+  return { follow, open, run, next, stop, list, pickLine, ready, marked: () => t.line };
 }

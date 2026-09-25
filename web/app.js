@@ -275,17 +275,14 @@ export function app(m) {
   layout();
 
   // ---- The loop: the console; while recording, the timeline grows ----
-  // (The page records the boot: until /init says it is ready.)
-  let lastRefresh = 0, booting = m.recording();
+  // (Once /init is ready, the examples run the first one.)
+  let lastRefresh = 0, booting = true;
   function tick() {
     const out = m.console();
     if (booting && ($("console").textContent + out).includes("ready for the page's programs")) {
       booting = false;
-      m.record(false);
-      refresh();
-      badge();
-      a.booted = [0, time.records() - 1]; // (for the examples, if not loaded yet)
-      tour?.booted(...a.booted);
+      a.ready = true; // (for the examples, if not loaded yet)
+      tour?.ready();
     }
     if (out) {
       $("console").textContent += out.replaceAll("\r", "");

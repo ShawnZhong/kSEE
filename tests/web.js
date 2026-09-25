@@ -11,7 +11,6 @@ const alive = setInterval(() => {}, 1000);
 const m = await start({
   kernel: new URL("web/vmlinux", root),
   initrd: new URL("web/initramfs.cpio", root),
-  record: true, // (the boot too, as the page does)
 });
 
 let out = "", failed = false;
@@ -38,10 +37,7 @@ async function run(path) {
 }
 
 check("init ready", await until(() => out.includes("ready for the page's programs")));
-m.record(false);
-const boot = m.records() - 1;
-check("the boot, recorded whole: from start_kernel", m.first_call("start_kernel", 0, boot) != null);
-check("... the boot task's, then pid 1's", m.first_call("run_init_process", 0, boot) > m.first_call("sched_init", 0, boot));
+check("not recording at first", !m.recording() && (m.snapshot(), m.records() === 0));
 
 // Syscalls, traced.
 const t = await run("/bin/syscalls");
@@ -129,6 +125,17 @@ const task = m.object("task_struct", hw.task.addr, 1);
 check("the task, as it was", task?.children?.find((c) => c.name === "comm")?.value === '"hello"');
 check("a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr_running"));
 m.memory_at(null);
+
+// ext4 (on the loop device, mounted by /init): each example's stops are in its recording.
+for (const [name, funcs] of [["ext4-write", ["ext4_sync_file", "ext4_mb_new_blocks", "jbd2_journal_commit_transaction", "submit_bio"]],
+                             ["ext4-mkdir", ["ext4_mkdir", "__ext4_new_inode", "ext4_init_new_dir", "add_dirent_to_buf"]],
+                             ["ext4-delete", ["ext4_delete_entry", "ext4_orphan_add", "ext4_evict_inode", "ext4_free_blocks", "ext4_free_inode"]]]) {
+  const e = await run(`/bin/${name}`);
+  m.snapshot();
+  const p = m.program(e.pid);
+  const missing = funcs.filter((f) => m.first_call(f, p.first, m.records() - 1) == null);
+  check(`${name}: ${funcs.join(", ")}`, e.status === 0 && !missing.length || console.log("  missing:", missing));
+}
 
 // LINUX_REBOOT_CMD_POWER_OFF
 proc.run("/bin/poweroff");

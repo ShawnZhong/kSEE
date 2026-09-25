@@ -58,8 +58,7 @@ import { app } from "./app.js";
 
 const params = new URLSearchParams(location.search);
 // (window.ksee: for the console, and tests/ui.js)
-// (Recording from the start: the boot is the first example.)
-window.ksee = app(await start({ kernel: "./vmlinux", initrd: "./initramfs.cpio", cmdline: params.get("cmdline") ?? "", record: true }));
+window.ksee = app(await start({ kernel: "./vmlinux", initrd: "./initramfs.cpio", cmdline: params.get("cmdline") ?? "" }));
 </script>
 </body>
 </html>

@@ -6,7 +6,8 @@
 //!   linux/vmlinux          the kernel, instrumented (kbuild)
 //!   web/pkg/               the runtime, and wasm-bindgen's glue (cargo)
 //!   web/vmlinux, web/src/  the kernel for the page (pack)
-//!   web/initramfs.cpio     /init (user/init.c), and the programs, as
+//!   web/initramfs.cpio     /init (user/init.c), an ext4 disk image
+//!                          (/disk.img, mkfs.ext4), and the programs, as
 //!                          /bin/NAME: the examples' (user/examples/*.c)
 //!                          and the tests' (user/tests/*.c)
 //!   web/examples/          the examples (their sources), and index.json
@@ -57,7 +58,7 @@ pub fn build() {
             .args(args);
         c
     };
-    if !Path::new("linux/.config").exists() {
+    if stale("linux/.config", &["linux/arch/wasm/configs/defconfig"]) {
         run(&mut kmake(&["defconfig"]));
     }
     eprintln!("  KERNEL  linux/vmlinux");
@@ -76,7 +77,7 @@ pub fn build() {
     // The programs use nolibc, with the kernel's UAPI headers.
     run(&mut kmake(&["headers"]));
     let examples = examples();
-    let programs: Vec<String> = examples.iter().filter(|p| p.ends_with(".c")).cloned().collect();
+    let programs = &examples;
     let mut inputs = vec!["user/init.c", "user/initramfs.list", "user/ksee.h", "linux/usr/gen_init_cpio",
                           "linux/tools/include/nolibc/arch-wasm.h"];
     inputs.extend(examples.iter().map(String::as_str));
@@ -90,7 +91,12 @@ pub fn build() {
         let cc = |out: &str, src: &str, flags: &[&str]| run(Command::new(format!("clang{llvm}"))
             .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-Wl,--no-entry", "-Wl,--export=_start"])
             .args(flags).args(["-o", out, src]));
-        cc("web/init.wasm", "user/init.c", &[]);
+        let nolibc = ["-nostdinc", "-isystem", "linux/tools/include/nolibc", "-isystem", "linux/usr/include",
+                      "-include", "user/ksee.h"];
+        cc("web/init.wasm", "user/init.c", &nolibc);
+        // The ext4 disk /init mounts (a file, through the loop device).
+        let _ = std::fs::remove_file("web/disk.img");
+        run(Command::new("mkfs.ext4").args(["-q", "-F", "-b", "1024", "-L", "ksee", "-N", "32", "web/disk.img", "2M"]));
         let mut list = std::fs::read_to_string("user/initramfs.list").unwrap_or_default();
         list += "dir /bin 0755 0 0\n";
         let _ = std::fs::remove_dir_all("web/bin");
@@ -98,22 +104,20 @@ pub fn build() {
         std::fs::create_dir_all("web/bin").and_then(|_| std::fs::create_dir_all("web/examples"))
             .unwrap_or_else(|e| crate::fail(&format!("web/bin: {e}")));
         for (src, name) in programs.iter().zip(&names) {
-            cc(&format!("web/bin/{name}.wasm"), src, &["-nostdinc", "-isystem", "linux/tools/include/nolibc",
-                "-isystem", "linux/usr/include", "-include", "user/ksee.h"]);
+            cc(&format!("web/bin/{name}.wasm"), src, &nolibc);
             list += &format!("file /bin/{name} bin/{name}.wasm 0755 0 0\n");
         }
-        // The examples, for the page: the boot first, then by name.
+        // The examples, for the page.
         let mut index = Vec::new();
         for src in examples.iter().filter(|p| p.starts_with("user/examples/")) {
             let name = Path::new(src).file_stem().unwrap().to_string_lossy().into_owned();
             let text = std::fs::read_to_string(src).unwrap_or_default();
-            if src.ends_with(".c") {
-                std::fs::write(format!("web/examples/{name}.c"), &text)
-                    .unwrap_or_else(|e| crate::fail(&format!("web/examples: {e}")));
-            }
-            index.push(example_json(&name, &text, src.ends_with(".c")));
+            std::fs::write(format!("web/examples/{name}.c"), &text)
+                .unwrap_or_else(|e| crate::fail(&format!("web/examples: {e}")));
+            index.push((EXAMPLES.iter().position(|&e| e == name).unwrap_or(EXAMPLES.len()), example_json(&name, &text)));
         }
-        index.sort_by_key(|e| !e.contains("\"name\": \"boot\""));
+        index.sort();
+        let index: Vec<String> = index.into_iter().map(|(_, e)| e).collect();
         std::fs::write("web/examples/index.json", format!("[\n{}\n]\n", index.join(",\n")))
             .unwrap_or_else(|e| crate::fail(&format!("web/examples/index.json: {e}")));
         std::fs::write("web/initramfs.list", list).unwrap_or_else(|e| crate::fail(&format!("web/initramfs.list: {e}")));
@@ -149,13 +153,15 @@ fn vendor() {
         .unwrap_or_else(|e| crate::fail(&format!("web/vendor/monaco: {e}")));
 }
 
-/// The examples and tests: user/{examples,tests}/*.c (programs) and
-/// user/examples/*.txt (an example without a program: the boot), sorted.
+/// The examples' order on the page, from the simplest (others after them).
+const EXAMPLES: &[&str] = &["hello", "read", "open-fails", "sleep", "ext4-write", "ext4-mkdir", "ext4-delete"];
+
+/// The programs: user/{examples,tests}/*.c, sorted.
 fn examples() -> Vec<String> {
     let mut list: Vec<String> = ["user/examples", "user/tests"].iter()
         .flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
         .map(|e| e.path().to_string_lossy().into_owned())
-        .filter(|p| p.ends_with(".c") || (p.starts_with("user/examples/") && p.ends_with(".txt"))).collect();
+        .filter(|p| p.ends_with(".c")).collect();
     list.sort();
     list
 }
@@ -167,9 +173,8 @@ fn examples() -> Vec<String> {
 ///                                  when another task runs it, as in an
 ///                                  interrupt)
 /// and the program's lines that end in "// stops here": the stops are for
-/// the syscalls those make (all of the program's, if none). Without a
-/// program (`program` false), the example is the boot's recording.
-fn example_json(name: &str, text: &str, program: bool) -> String {
+/// the syscalls those make (all of the program's, if none).
+fn example_json(name: &str, text: &str) -> String {
     let q = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
     let (mut title, mut question, mut stops) = (String::new(), String::new(), Vec::new());
     for line in text.lines().map_while(|l| l.strip_prefix("// ")) {
@@ -184,8 +189,7 @@ fn example_json(name: &str, text: &str, program: bool) -> String {
     }
     let lines: Vec<String> = text.lines().enumerate().filter(|(_, l)| l.trim_end().ends_with("// stops here"))
         .map(|(k, _)| (k + 1).to_string()).collect();
-    let path = if program { format!("\"/bin/{name}\"") } else { "null".into() };
-    format!("  {{ \"name\": {}, \"path\": {path}, \"title\": {}, \"question\": {}, \"stops\": [{}], \"lines\": [{}] }}",
+    format!("  {{ \"name\": {}, \"path\": \"/bin/{name}\", \"title\": {}, \"question\": {}, \"stops\": [{}], \"lines\": [{}] }}",
             q(name), q(&title), q(&question), stops.join(", "), lines.join(", "))
 }
 
