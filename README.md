@@ -35,7 +35,8 @@ recorded, to its end, and goes to the tour's first stop: its note, the
 program's line, the source, and the Stack (the call stack, with each call's
 arguments and locals, as they were). Next stop, ◀ / ▶| line by line, or
 Play. The timeline shows the recording: which task ran, and the call stacks
-over time (scroll to zoom, drag to pan, double-click a call to zoom to it).
+over time (scroll to zoom, drag to pan; hover a call for what it was, click it
+to see where it was then, double-click to zoom to it).
 Hover a name in the source for its value at the cursor; right-click to
 watch it; ✎ on a value says which code last wrote it.
 

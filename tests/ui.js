@@ -81,6 +81,9 @@ const script = opt("eval", `(async () => {
   const box = $("chart").getBoundingClientRect();
   $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: box.left + box.width / 2, clientY: box.bottom - 12 - 2 - 4 }));
   r.tip = document.querySelector(".tip:not([hidden])")?.innerText.replace(/\\s+/g, " ").slice(0, 60);
+  for (const type of ["pointerdown", "pointerup"])
+    $("chart").dispatchEvent(new PointerEvent(type, { clientX: box.left + box.width / 2, clientY: box.bottom - 12 - 2 - 4 }));
+  r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
   ksee.tours.pickLine(23); await sleep(300);
   r.picked = $("where").textContent.slice(0, 40);
   return r;

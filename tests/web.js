@@ -66,6 +66,8 @@ const steps = m.line_steps(w.first, w.last, w.task.addr);
 check("write, line by line (inlined lines too)", steps.length > 50 && steps.some((x) => x.inlined));
 const mid = steps.find((x) => x.func === "vfs_write").i;
 const stack = m.call_stack(mid);
+const kw = stack.find((f) => f.func === "ksys_write"), kwDef = m.functions("ksys_write")[0];
+check("an outer call is where it calls the next one in", kw?.file === "fs/read_write.c" && kw.line > kwDef.line);
 check("a past call stack, with arguments", stack[0]?.func === "vfs_write"
       && stack.find((f) => f.func === "ksys_write")?.args?.find((a) => a.name === "count")?.value === "11");
 check("memory as it was: writes undone", m.memory_at(w.first) > m.memory_at(w.last));

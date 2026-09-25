@@ -7,14 +7,15 @@
 // what they point to, structs into their fields, read from memory as it was
 // at the cursor (Machine.memory_at); what is open stays open while
 // stepping; values that changed since the cursor last moved are
-// highlighted; ✎: which code last wrote a value. Click a call for its
-// source.
+// highlighted; ✎: which code last wrote a value. Click a call to select
+// it: the source shows where it is (for an outer call, the line calling
+// the next one in).
 import { $, el } from "./dom.js";
 
 export function callstack(app) {
   const { m } = app;
   // Open paths, and the values shown before (to highlight changes).
-  const s = { open: new Set(), last: new Map(), now: new Map(), frames: [], task: null, watches: [] };
+  const s = { open: new Set(), last: new Map(), now: new Map(), frames: [], task: null, watches: [], sel: null };
 
   // The children of value `o` (an Object, see ksee_core::view), if it has any.
   function kids(o) {
@@ -50,8 +51,9 @@ export function callstack(app) {
     s.now = new Map();
     const n = s.frames.length, body = [];
     s.frames.forEach((f, k) => {
-      const h = head(f.func, f.where, () => app.showFunction(f.func.replace(/ \(inlined\)$/, ""), undefined,
-        k === 0 ? f.line : undefined, k === 0 ? f.file : undefined), k === 0 ? "on" : "");
+      // (Click: select the call; the source shows where it is.)
+      const on = s.sel == null ? k === 0 : f.first === s.sel;
+      const h = head(f.func, f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f), on ? "on" : "");
       // (Hover: the call, outlined in the timeline.)
       if (f.first != null) {
         h.onmouseenter = () => app.time.hilite(f.first);
@@ -94,9 +96,10 @@ export function callstack(app) {
     s.last = s.now;
     s.task = task ?? null;
     const frames = i === undefined ? [] : m.call_stack(i ?? undefined);
-    s.frames = frames.map((f, k) => ({ ...f, where: k === 0 && step ? `${step.file}:${step.line}` : f.file,
-      line: k === 0 ? step?.line : undefined, file: k === 0 ? step?.file ?? f.file : f.file }));
-    if (step?.inlined) s.frames.unshift({ func: `${step.inlined} (inlined)`, where: `${step.file}:${step.line}`, line: step.line, file: step.file });
+    // (Each call where it is; the innermost at the line stepped to.)
+    s.frames = frames.map((f, k) => (k === 0 && step ? { ...f, file: step.file, line: step.line } : f));
+    if (step?.inlined) s.frames.unshift({ func: `${step.inlined} (inlined)`, file: step.file, line: step.line });
+    s.sel = null;
     // (The stack comes from the recording: nothing recorded, no stack.)
     $("stack-note").textContent = frames.length ? "" : m.recording() || m.records()
       ? "The call stack at the cursor, with arguments: pick a moment in the recording."
@@ -134,5 +137,14 @@ export function callstack(app) {
     e.preventDefault();
     if (watch($("watch").value.trim())) $("watch").value = "";
   };
-  return { show, watch, resolve, kids, redraw: draw };
+  // Select the call on the stack whose first record is `first` (null: the
+  // innermost): its frame, or null if it is not on the stack.
+  function select(first) {
+    const f = first == null ? s.frames[0] : s.frames.find((f) => f.first === first);
+    s.sel = f?.first ?? null;
+    draw();
+    return f ?? null;
+  }
+
+  return { show, select, watch, resolve, kids, redraw: draw };
 }

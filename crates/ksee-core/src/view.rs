@@ -95,6 +95,8 @@ pub struct Frame {
     pub func: String,
     /// The call's first record (its block 0).
     pub first: usize,
+    /// Where the call is (the line it runs, or the one calling the frame
+    /// inside it; else where its function is).
     pub file: Option<String>,
     pub line: Option<u32>,
     pub args: Option<Vec<Object>>,
@@ -245,8 +247,15 @@ impl View<'_> {
     pub fn call_stack(&self, i: usize, mem: &dyn Memory) -> Vec<Frame> {
         let t = self.tables;
         let calls = stack::calls_at(&self.rec.records, &self.rec.tasks, i);
-        calls.into_iter().rev().map(|stack::Call { func, first, args, locals }| {
+        // Where each call is: the last line its depth ran since it began.
+        let steps = match (calls.first(), self.rec.tasks.get(i)) {
+            (Some(c), Some(&task)) => self.rec.lines(t, c.first, i, task),
+            _ => Vec::new(),
+        };
+        calls.into_iter().enumerate().rev().map(|(depth, stack::Call { func, first, args, locals })| {
             let f = t.functions.get(&func);
+            let at = steps.iter().rev().take_while(|s| s.record >= first).find(|s| s.depth as usize == depth)
+                .map(|s| s.loc).or(f.map(|f| f.loc));
             let name = self.name(func);
             let args = args.map(|args| {
                 let known = f.map_or(u32::MAX, |f| f.known);
@@ -269,7 +278,7 @@ impl View<'_> {
                 }
                 _ => None,
             };
-            Frame { func: name, first, file: f.map(|f| t.file(f.loc).to_string()), line: f.map(|f| f.loc.line), args, locals }
+            Frame { func: name, first, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args, locals }
         }).collect()
     }
 
@@ -389,6 +398,18 @@ mod tests {
         fn read(&self, addr: u32, buf: &mut [u8]) {
             buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
         }
+    }
+
+    #[test]
+    fn frames_are_where_their_calls_are() {
+        // f (1) runs lines 1 and 2, calls g (2) at 2, then runs 3.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\nB\t1\t0\t0:1:1\n\
+                               L\t1\t0\t0:1;:2;|;:3\nB\t2\t0\t0:10:1\n", "");
+        let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1]);
+        let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
+        let lines: Vec<_> = v.call_stack(1, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
+        assert_eq!(lines, [("g".into(), Some(10)), ("f".into(), Some(2))]);
     }
 
     #[test]

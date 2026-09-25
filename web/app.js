@@ -14,7 +14,6 @@ import { tours } from "./tours.js";
 export function app(m) {
   const a = { m, proc: process(m) };
   const src = source(a), time = timeline(a), stack = callstack(a);
-  a.showFunction = src.showFunction;
   a.src = src;
   a.time = time;
   // Expressions at the cursor (hover in the source; watches).
@@ -94,6 +93,21 @@ export function app(m) {
     if (!w) return;
     time.selectWindow(where, title);
     time.go(m.seek(w.a, 1, "line"));
+  };
+  // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:
+  // the Stack marks it, the source shows where it is, the timeline outlines it.
+  a.selectFrame = (f) => {
+    if (f.first != null) stack.select(f.first);
+    src.view.cursor = { file: f.file, line: f.line };
+    const at = time.cursor() != null ? m.at(time.cursor()) : null;
+    src.showFunction(f.func.replace(/ \(inlined\)$/, ""), at?.syscall ?? undefined, f.line, f.file);
+    time.selected(f.first ?? null);
+    $("where").textContent = `${f.func} ${f.file ?? ""}:${f.line ?? ""}` + (time.cursor() != null ? ` · record ${time.cursor() + 1}` : "");
+  };
+  // Select the call on the stack at the cursor whose first record is `first`.
+  a.selectCall = (first) => {
+    const f = stack.select(first);
+    if (f) a.selectFrame(f);
   };
   // The first syscall of task `task` after record `i`.
   a.syscallAfter = (task, i) => calls.find((s) => s.task.addr === task && s.first > i);

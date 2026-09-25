@@ -6,7 +6,8 @@
 // rows fit the box, as thin as the deepest stack of the selection needs
 // (so they do not move while zooming). Scroll (or pinch, or W/S) to zoom;
 // drag, Shift+scroll, sideways scroll or A/D to pan; click to put the
-// cursor there; double-click a call to zoom to it; click or drag the
+// cursor there (on a call: and select it, for where it is then);
+// double-click a call to zoom to it; click or drag the
 // overview to move the window. Hover a call for what it was (and hover a
 // call in the Stack: it is outlined here).
 import { $, taskName } from "./dom.js";
@@ -30,7 +31,7 @@ export function timeline(app) {
   // chart's columns [{ task, frames: [[func, first]] }].
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
               depth: 1, row: ROW, // (depth: the deepest stack of the selection seen; row: the rows' height)
-              lit: null }; // lit: the call outlined (its first record), hovered here or in the Stack
+              lit: null, sel: null }; // the calls outlined (their first records): hovered here or in the Stack; selected
   const funcs = new Map(), tasks = new Map();
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const who = (addr, i) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr, i)).get(addr));
@@ -119,7 +120,7 @@ export function timeline(app) {
         const on = curCol?.frames[d]?.[1] === first && cur >= t.win.a && cur <= t.win.b;
         ctx.fillStyle = color(f?.file, on);
         ctx.fillRect(x1, y, Math.max(1, w - 1), t.row - 1);
-        if (first === t.lit) {
+        if (first === t.lit || first === t.sel) {
           ctx.strokeStyle = css("--fg");
           ctx.lineWidth = 1.5;
           ctx.strokeRect(x1 + 0.75, y + 0.75, Math.max(1, w - 2.5), t.row - 2.5);
@@ -234,6 +235,11 @@ export function timeline(app) {
     tip.hidden = true;
     hilite(null);
   };
+  // Mark call `first` as the selected one (null: none).
+  function selected(first) {
+    t.sel = first;
+    if (t.win) drawChart();
+  }
   // Outline the call whose first record is `first` (null: none).
   function hilite(first) {
     if (first === t.lit) return;
@@ -257,7 +263,13 @@ export function timeline(app) {
   chart.onpointerup = (e) => {
     const was = drag;
     drag = null;
-    if (was && !was.moved) go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
+    if (!was || was.moved) return;
+    // A call: the cursor in it, and the call selected (the source shows
+    // where it is then). Elsewhere: the cursor at the next block.
+    const k = Math.floor((e.offsetX / W()) * t.cols.length), first = t.cols[k]?.frames[rowAt(e.offsetY)]?.[1];
+    if (first == null) return go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
+    go(Math.max(first, at(e.offsetX)));
+    app.selectCall(first);
   };
   chart.ondblclick = (e) => {
     // Zoom to the call there: from its first record to where it ends.
@@ -328,6 +340,7 @@ export function timeline(app) {
   // line there); the window follows it.
   function mark(i) {
     if (!t.n) return;
+    t.sel = null;
     t.cursor = Math.max(0, Math.min(t.n - 1, i));
     if (t.win && (t.cursor < t.win.a || t.cursor > t.win.b)) {
       const span = t.win.b - t.win.a;
@@ -340,5 +353,5 @@ export function timeline(app) {
     k.innerHTML = `<i style="background:${color(p, false)}"></i>${name}`;
     return k;
   }));
-  return { refresh, go, mark, select, selectWindow, hilite, home: () => t.home, cursor: () => t.cursor, records: () => t.n };
+  return { refresh, go, mark, select, selectWindow, hilite, selected, home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }
