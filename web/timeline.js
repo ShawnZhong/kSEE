@@ -7,8 +7,8 @@
 // thin as the deepest stack of the selection needs (so they do not move
 // while zooming), and the box scrolls when deeper still.
 //
-// Scroll up and down through deep stacks; Ctrl+scroll (or pinch, or W/S)
-// to zoom; drag, Shift+scroll, sideways scroll or A/D to pan. Hover a call
+// Scroll (or pinch, or W/S) to zoom; drag to pan, in time and up and down
+// through deep stacks; Shift+scroll, sideways scroll or A/D to pan in time. Hover a call
 // for what it was (the source previews where it is); click to put the
 // cursor there and select it; double-click a call to zoom to it. Click or
 // drag the overview to move the window.
@@ -144,7 +144,7 @@ export function timeline(app) {
       sctx.fillStyle = css("--fg");
       sctx.fillRect(x(cur) - 1, 0, 2, STRIP);
     }
-    if (!$("chart-title").classList.contains("hint")) $("chart-title").textContent = `${t.title || "the recording"} · records ${t.win.a + 1}–${t.win.b + 1} of ${t.n}`;
+    $("chart-title").textContent = `${t.title || "the recording"} · records ${t.win.a + 1}–${t.win.b + 1} of ${t.n}`;
   }
   function label(ctx, text, x1, w, y, fill) {
     if (w < 24) return;
@@ -197,34 +197,14 @@ export function timeline(app) {
     setWindow(at_ - (at_ - t.win.a) * k, at_ + (t.win.b - at_) * k);
   };
   // Scroll or pinch (ctrl+wheel): zoom; sideways or Shift+scroll: pan.
-  // Scrolling: up and down, the stacks (when deeper than the box);
-  // sideways or with Shift, pan; with Ctrl (or a pinch), zoom.
+  // Scrolling up and down (or a pinch): zoom; sideways, or with Shift: pan.
   chart.onwheel = (e) => {
     if (!t.win) return;
-    if (e.ctrlKey) {
-      e.preventDefault();
-      return zoom(at(e.offsetX), e.deltaY * 0.01);
-    }
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey) {
-      e.preventDefault();
-      return pan(e.shiftKey ? e.deltaY : e.deltaX);
-    }
-    const box = $("chartbox");
-    if (box.scrollHeight <= box.clientHeight) {
-      e.preventDefault();
-      hint("Ctrl + scroll (or pinch, or W/S) to zoom · Shift + scroll or drag to pan");
-    }
+    e.preventDefault();
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return pan(e.deltaX);
+    if (e.shiftKey) return pan(e.deltaY);
+    zoom(at(e.offsetX), e.deltaY * (e.ctrlKey ? 0.01 : 0.002));
   };
-  let hinted = 0;
-  function hint(text) {
-    clearTimeout(hinted);
-    $("chart-title").textContent = text;
-    $("chart-title").classList.add("hint");
-    hinted = setTimeout(() => {
-      $("chart-title").classList.remove("hint");
-      drawChart();
-    }, 2000);
-  }
   // The task strip: who ran; click to put the cursor there.
   strip.onpointermove = (e) => {
     const c = t.win && t.cols[Math.floor((e.offsetX / W()) * t.cols.length)];
@@ -312,15 +292,18 @@ export function timeline(app) {
   let drag = null;
   chart.onpointerdown = (e) => {
     tip.hidden = true;
-    if (t.win) drag = { x: e.offsetX, a: t.win.a, b: t.win.b, moved: false };
+    if (t.win) drag = { x: e.clientX, y: e.clientY, top: $("chartbox").scrollTop, a: t.win.a, b: t.win.b, moved: false };
   };
+  // Drag: pan, in time (sideways) and through the stacks (up and down).
   chart.onpointermove = (e) => {
     if (!drag) return hover(e);
-    const dx = e.offsetX - drag.x;
-    if (Math.abs(dx) > 3) drag.moved = true;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
     if (drag.moved) {
+      tip.hidden = true;
+      $("chartbox").scrollTop = drag.top - dy;
       const per = (drag.b - drag.a) / W();
-      setWindow(drag.a - dx * per, drag.b - dx * per);
+      if (dx) setWindow(drag.a - dx * per, drag.b - dx * per);
     }
   };
   chart.onpointerup = (e) => {

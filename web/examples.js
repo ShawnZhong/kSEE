@@ -1,30 +1,32 @@
-// Tours and programs. A tour is a question about the kernel, a small C
-// program that asks it (user/tours/*.c, run as a real process), and stops
-// with a note each; a program (user/programs/*.c) is just the program.
-// Opening one runs it, recorded, to its end; then its recording is in the
-// timeline. A tour's stops are places in it: the first call of the stop's
-// function in the syscalls of the lines marked "// stops here" (of any
-// task, for a stop that says so). Next goes from one to the next. Click a
-// line of the program for what the kernel did for it.
+// The examples. An example is a question about the kernel, a small C
+// program that asks it (user/examples/*.c, run as a real process), and
+// stops with a note each; the boot is one too, without a program: its
+// recording is the page's first (the kernel is recorded from its first
+// line). Opening an example runs its program, recorded, to its end; then
+// its recording is in the timeline. Its stops are places in it: the first
+// call of the stop's function in the syscalls of the lines marked
+// "// stops here" (of any task, for a stop that says so), or anywhere in
+// the boot. Next goes from one to the next. Click a line of the program
+// for what the kernel did for it.
 import { $, el } from "./dom.js";
 import { loadMonaco, readOnly } from "./editor.js";
 
-export async function tours(app) {
+export async function examples(app) {
   const { m, proc } = app;
-  const list = await fetch(new URL("./tours/index.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
-  // The open tour (or program), its run ({ pid }), and its stops' records.
-  const t = { tour: null, first: 1, source: [], run: null, running: false, marks: null, ed: null, line: null, at: [], k: -1 };
+  const list = await fetch(new URL("./examples/index.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+  // The open example, its run ({ pid }), and its stops' records; boot: the
+  // boot's recording (its first and last records' ids), once recorded.
+  const t = { tour: null, first: 1, source: [], run: null, running: false, marks: null, ed: null, line: null, at: [], k: -1,
+              boot: null };
 
   function index() {
     t.tour = null;
-    const row = (x) => el("div", { className: "row tour", onclick: () => open(x) },
+    const row = (x) => el("div", { className: "row example", onclick: () => open(x) },
       el("div", { className: "tt", textContent: x.title }), x.question ? el("div", { className: "meta", textContent: x.question }) : null);
-    $("tours").replaceChildren(
-      el("div", { className: "note", textContent: "A tour asks a question, and answers it with a small C program: open one to run it, recorded, then follow its stops." }),
-      ...list.filter((x) => !x.program).map(row),
-      el("h3", { textContent: "Programs" }),
-      el("div", { className: "note", textContent: "Your own: a C file in user/programs/ (on nolibc), then ./ksee.sh build." }),
-      ...list.filter((x) => x.program).map(row));
+    $("examples").replaceChildren(
+      el("div", { className: "note", textContent: "Each asks a question about the kernel, and answers it with its recording: open one, then follow its stops." }),
+      ...list.map(row),
+      el("div", { className: "note dim", textContent: "Your own: a C file in user/examples/ (on nolibc), then ./ksee.sh build." }));
   }
 
   async function open(tour) {
@@ -32,23 +34,17 @@ export async function tours(app) {
     t.run = null;
     t.at = [];
     t.k = -1;
-    const text = await fetch(new URL(`./tours/${tour.name}.c`, location)).then((r) => r.text());
+    if (!tour.path) return openBoot(tour);
+    const text = await fetch(new URL(`./examples/${tour.name}.c`, location)).then((r) => r.text());
     // The program, without the tour's header comments; its "// stops here"
     // marks shown as ● instead.
     const lines = text.split("\n");
-    const skip = tour.program ? 0 : lines.findIndex((l) => !l.startsWith("// "));
+    const skip = lines.findIndex((l) => !l.startsWith("// "));
     t.first = skip + 1;
     t.source = lines.slice(skip).map((l) => l.replace(/\s*\/\/ stops here\s*$/, ""));
-    t.stops = el("ol", { className: "stops" }, ...(tour.stops ?? []).map((s, k) =>
-      el("li", { onclick: () => stop(k) }, el("b", { className: "mono", textContent: s.func }), " ", s.note)));
     t.status = el("div", { className: "tstatus dim" });
     const box = el("div", { className: "prog", style: `height:${Math.min(t.source.length, 40) * 18 + 8}px` });
-    $("tours").replaceChildren(
-      el("div", { className: "thead" },
-        el("a", { textContent: "‹ tours and programs", onclick: index }),
-        el("div", { className: "tt", textContent: tour.title }),
-        tour.question ? el("div", { className: "q", textContent: tour.question }) : null,
-        el("div", { className: "tbar" }, el("button", { textContent: "↻ Run again", onclick: () => run() }))),
+    $("examples").replaceChildren(head(tour, el("button", { textContent: "↻ Run again", onclick: () => run() })),
       tour.stops?.length ? t.stops : null, t.status, box);
     const monaco = await loadMonaco();
     t.ed?.dispose();
@@ -60,6 +56,47 @@ export async function tours(app) {
     t.line = null;
     decorate();
     run();
+  }
+
+  // An example's heading (and `button`), and its stops.
+  function head(tour, button) {
+    t.stops = el("ol", { className: "stops" }, ...(tour.stops ?? []).map((s, k) =>
+      el("li", { onclick: () => stop(k) }, el("b", { className: "mono", textContent: s.func }), " ", s.note)));
+    return el("div", { className: "thead" },
+      el("a", { textContent: "‹ examples", onclick: index }),
+      el("div", { className: "tt", textContent: tour.title }),
+      tour.question ? el("div", { className: "q", textContent: tour.question }) : null,
+      button ? el("div", { className: "tbar" }, button) : null);
+  }
+
+  // The boot: its recording (the page's first), and its stops.
+  const bootRange = () => {
+    const a = t.boot && m.record_index(t.boot.first), b = t.boot && m.record_index(t.boot.last);
+    return a != null && b != null ? { a, b } : null;
+  };
+  function openBoot(tour) {
+    t.ed?.dispose();
+    t.ed = null;
+    t.status = el("div", { className: "tstatus dim" });
+    $("examples").replaceChildren(head(tour, null), t.stops, t.status);
+    const r = bootRange();
+    if (!r) {
+      t.status.textContent = t.boot ? "The boot's recording is gone: the ring has moved on. Reload the page to see it again."
+        : "The kernel is booting, recorded…";
+      return;
+    }
+    t.status.textContent = `Recorded from the kernel's first line to /init: ${r.b - r.a + 1} records.`;
+    app.time.selectWindow(bootRange, "the boot");
+    t.at = tour.stops.map((s) => m.first_call(s.func, r.a, r.b));
+    const k = t.at.findIndex((i) => i != null);
+    if (k >= 0) stop(k);
+    else app.time.go(r.a);
+  }
+  // The boot is recorded (records `first..=last`): open it.
+  function booted(first, last) {
+    t.boot = { first: m.record_id(first), last: m.record_id(last) };
+    const boot = list.find((x) => !x.path);
+    if (boot && (!t.tour || t.tour === boot)) open(boot);
   }
 
   // Run the program, recorded, to its end; then its stops.
@@ -158,6 +195,7 @@ export async function tours(app) {
   }
 
   index();
+  if (app.booted) booted(...app.booted);
   // (For tests: the program line marked now.)
-  return { follow, open, run, next, stop, list, pickLine, marked: () => t.line };
+  return { follow, open, run, next, stop, list, pickLine, booted, marked: () => t.line };
 }

@@ -1,0 +1,9 @@
+// example: How does Linux boot?
+// question: The page records the kernel from its very first line. What does it do before a program can run?
+// stop start_kernel: The kernel's first C function (init/main.c), on the boot CPU: everything else starts here.
+// stop setup_arch: The architecture's part: for arch/wasm, memory is what the host gives, and the console is the host's.
+// stop mm_core_init: The memory allocators take over RAM: from now on, the kernel can allocate.
+// stop sched_init: The scheduler: this code becomes the idle task (swapper), which runs when nothing else can.
+// stop rest_init: Start the first real task, kernel_init (pid 1), and let it run.
+// stop do_initcalls, any task: pid 1: every built-in subsystem's and driver's init function, in order.
+// stop run_init_process, any task: pid 1 becomes a program: exec /init. The kernel is up.

@@ -62,7 +62,8 @@ fn section(module: &WebAssembly::Module, name: &str) -> String {
 
 #[wasm_bindgen]
 impl Machine {
-    /// Boot a kernel. `config`: { kernel, initrd?, cmdline?, worker, ram }
+    /// Boot a kernel. `config`: { kernel, initrd?, cmdline?, worker, ram,
+    /// record? (record from the start: the boot too) }
     /// (URLs of vmlinux, an initramfs and web/worker.js; RAM in bytes, at
     /// most the shared memory's initial size).
     pub async fn start(config: JsValue) -> Result<Machine, JsValue> {
@@ -113,6 +114,11 @@ impl Machine {
         let timer = Object::new();
         js::set(&timer, "role", "timer");
         spawn.call1(&JsValue::NULL, &timer)?;
+        // Record from the start (config.record): the boot, too.
+        if js::get(&config, "record").is_truthy() {
+            let on = unsafe { &*((TRACE.load(Ordering::Relaxed) + trace::ON) as *const AtomicU32) };
+            on.store(1, Ordering::Release);
+        }
         let boot = Object::new();
         js::set(&boot, "role", "boot");
         spawn.call1(&JsValue::NULL, &boot)?;

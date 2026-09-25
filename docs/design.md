@@ -12,9 +12,9 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
 **Who it is for**
 
 - *Learners*: how an OS really works, on real Linux instead of a teaching
-  kernel. They start from **tours**: a question ("What happens in
-  read()?"), a small C program that asks it, and stops that explain what
-  happens.
+  kernel. They start from **examples**: a question ("What happens in
+  read()?", "How does Linux boot?"), its recording (usually of a small C
+  program that asks it), and stops that explain what happens.
 - *Kernel developers*: what a code path really does, on a real kernel they
   can read and change. They run **their own programs**, or **record** the
   kernel as it runs.
@@ -25,8 +25,8 @@ SMP, no fork: see Limits).
 
 ## The experience
 
-1. **Run** something, recorded: a tour's program, another program, or the
-   kernel for a while (● Record). Programs run to the end: a recording
+1. **Run** something, recorded: the boot (the page's first recording), an
+   example's program, or the kernel for a while (● Record). Programs run to the end: a recording
    takes milliseconds.
 2. **Explore the recording**, at one cursor:
    - *time*: a timeline of the call stack (who ran, what they called);
@@ -35,15 +35,15 @@ SMP, no fork: see Limits).
    - *values*: the call stack with each call's arguments and locals,
      watches, and a name's value on hover; memory as it was at the cursor;
      ✎: which code last wrote a value.
-   A tour's stops are places in the recording, with a note each: Next goes
+   An example's stops are places in the recording, with a note each: Next goes
    to the next one.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │ Timeline: overview · call stacks over time · tasks · cursor │
 ├──────────────┬──────────────────────────────┬───────────────┤
-│ Tours,       │ The stop's note              │ Stack: calls, │
-│ programs     │ Source at the cursor         │ arguments,    │
+│ Examples     │ The stop's note              │ Stack: calls, │
+│              │ Source at the cursor         │ arguments,    │
 │              │ (lines that ran)             │ locals,       │
 │              │                              │ watches       │
 └──────────────┴──────────────────────────────┴───────────────┘
@@ -53,7 +53,7 @@ SMP, no fork: see Limits).
 
 ```text
 linux/ (arch/wasm) ──clang + plugin──▶ vmlinux (wasm) ──────┐
-user/ (init, tours, programs: C on nolibc) ─▶ initramfs ────┼─▶ web/ ─▶ browser
+user/ (init, examples, tests: C on nolibc) ─▶ initramfs ────┼─▶ web/ ─▶ browser
 crates/ksee-runtime (Rust → wasm) ──────────────────────────┘
 ```
 

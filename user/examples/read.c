@@ -1,4 +1,4 @@
-// tour: What happens in read()?
+// example: What happens in read()?
 // question: A program asks for 64 bytes of a file. Which parts of the kernel does that go through?
 // stop ksys_read: The syscall itself: fdget_pos turns the fd into the open file (a struct file), and the position to read at.
 // stop vfs_read: The VFS, the same for every filesystem: is the file open for reading, is the range sane? Then it calls the filesystem's own read_iter.

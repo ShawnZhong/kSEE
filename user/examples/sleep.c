@@ -1,4 +1,4 @@
-// tour: Where does the time go when a program sleeps?
+// example: Where does the time go when a program sleeps?
 // question: nanosleep() for 30 ms takes 30 ms, but the kernel works for a tiny part of it. What happens in between?
 // stop hrtimer_nanosleep: Set a high-resolution timer for 30 ms from now.
 // stop schedule: Nothing to do until then: give the CPU away. The idle task (swapper) runs, and waits for an interrupt.

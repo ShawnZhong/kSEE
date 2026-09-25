@@ -9,7 +9,7 @@ import { process } from "./ksee.js";
 import { source } from "./source.js";
 import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
-import { tours } from "./tours.js";
+import { examples } from "./examples.js";
 
 export function app(m) {
   const a = { m, proc: process(m) };
@@ -143,7 +143,7 @@ export function app(m) {
     badge();
   };
   let tour = null;
-  tours(a).then((t) => (a.tours = tour = t));
+  examples(a).then((t) => (a.examples = tour = t));
 
   // A tour's stop `stop` (the `k`th of `n`) at record `i`: the cursor there, and its note.
   a.goStop = (i, stop, k, n) => {
@@ -163,11 +163,13 @@ export function app(m) {
   function steps() {
     const w = time.home();
     if (!w) return (L.steps = []);
+    // (A selection of any task, as the boot: the cursor's task's lines.)
+    const task = w.task ?? m.at(time.cursor() ?? w.a)?.task.addr ?? 0;
     // (A new snapshot moves the indexes: the newest record's id tells it.)
-    const key = `${w.a}:${w.b}:${w.task}:${m.record_id(time.records() - 1)}`;
+    const key = `${w.a}:${w.b}:${task}:${m.record_id(time.records() - 1)}`;
     if (key !== L.key) {
       L.key = key;
-      L.steps = m.line_steps(w.a, w.b, w.task);
+      L.steps = m.line_steps(w.a, w.b, task);
       L.pos = null;
     }
     return L.steps;
@@ -273,9 +275,18 @@ export function app(m) {
   layout();
 
   // ---- The loop: the console; while recording, the timeline grows ----
-  let lastRefresh = 0;
+  // (The page records the boot: until /init says it is ready.)
+  let lastRefresh = 0, booting = m.recording();
   function tick() {
     const out = m.console();
+    if (booting && ($("console").textContent + out).includes("ready for the page's programs")) {
+      booting = false;
+      m.record(false);
+      refresh();
+      badge();
+      a.booted = [0, time.records() - 1]; // (for the examples, if not loaded yet)
+      tour?.booted(...a.booted);
+    }
     if (out) {
       $("console").textContent += out.replaceAll("\r", "");
       $("pane-console").scrollTop = $("pane-console").scrollHeight;

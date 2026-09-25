@@ -53,16 +53,19 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url });
 await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
-// By default: open the read tour (it runs, recorded); go through its stops
+// By default: the boot (it opens by itself); then open the read example (it runs, recorded); go through its stops
 // (the note, the Stack, a hover at each); play a little; report.
 const script = opt("eval", `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (id) => document.getElementById(id);
   const r = { badge: $("badge").textContent };
-  for (let i = 0; i < 50 && !document.querySelector(".row.tour"); i++) await sleep(100);
-  r.tours = document.querySelectorAll(".row.tour").length;
-  [...document.querySelectorAll(".row.tour")].find((e) => e.textContent.includes("read()")).click();
+  // The boot, recorded, opens by itself at its first stop.
   for (let i = 0; i < 100 && $("note").hidden; i++) await sleep(100);
+  r.boot = [$("note").querySelector("b")?.textContent, document.querySelector(".tstatus")?.textContent.slice(0, 40)];
+  [...document.querySelectorAll(".thead a")].find((a) => a.textContent.includes("examples")).click();
+  r.examples = document.querySelectorAll(".row.example").length;
+  [...document.querySelectorAll(".row.example")].find((e) => e.textContent.includes("read()")).click();
+  for (let i = 0; i < 100 && !document.querySelector(".tstatus")?.textContent.includes(" ran as "); i++) await sleep(100);
   r.after = [$("badge").textContent, document.querySelector(".tstatus").textContent.slice(0, 30)];
   r.notes = [];
   for (let k = 0; k < 5; k++) {
@@ -89,7 +92,7 @@ const script = opt("eval", `(async () => {
   for (const type of ["pointerdown", "pointerup"])
     $("chart").dispatchEvent(new PointerEvent(type, { clientX: box.left + box.width / 2, clientY: box.bottom - 12 - 2 - 4 }));
   r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
-  ksee.tours.pickLine(23); await sleep(300);
+  ksee.examples.pickLine(23); await sleep(300);
   r.picked = $("where").textContent.slice(0, 40);
   return r;
 })()`);

@@ -87,7 +87,7 @@ using namespace llvm;
 
 namespace {
 
-constexpr unsigned RingWords = 1u << 21;
+constexpr unsigned RingWords = 1u << 22; // 16 MiB: a whole boot
 constexpr unsigned CallArgs = 6;
 constexpr unsigned Locals = 8;
 enum Kind { KindBlock = 1, KindLocals = 2, KindReturn = 4, KindStore = 7, KindValue = 8 };

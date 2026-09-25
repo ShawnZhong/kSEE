@@ -55,13 +55,16 @@ impl Recording {
             Some(&Record::Args { args, .. }) => Some(args),
             _ => None,
         };
-        let (mut task, mut next) = (0, None);
+        let (mut task, mut next, mut first_prev) = (0, None, None);
         let mut tasks = Vec::with_capacity(records.len());
         let mut idents: BTreeMap<u32, Vec<(usize, Task)>> = BTreeMap::new();
         let mut exits: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
         for (i, r) in records.iter().enumerate() {
             match *r {
-                Record::Block { func, n: 0 } if Some(func) == switch => next = args(i).map(|a| a[1]),
+                Record::Block { func, n: 0 } if Some(func) == switch => {
+                    first_prev = first_prev.or(args(i).map(|a| (i, a[0])));
+                    next = args(i).map(|a| a[1]);
+                }
                 Record::Block { func, n: 0 } if Some(func) == start => {
                     task = args(i).map_or(task, |a| a[0]);
                     next = None;
@@ -77,6 +80,13 @@ impl Recording {
                 _ => {}
             }
             tasks.push(task);
+        }
+        // (Before the first switch, the task it switches from ran: until
+        // then, the records say no more.)
+        if let Some((at, prev)) = first_prev {
+            for t in tasks[..at].iter_mut().take_while(|t| **t == 0) {
+                *t = prev;
+            }
         }
         let syscalls = syscalls::split(t.find(syscalls::ENTRY).unwrap_or(0), &records, &tasks);
         Recording { records, ids, tasks, syscalls, idents, exits, stores: OnceCell::new() }

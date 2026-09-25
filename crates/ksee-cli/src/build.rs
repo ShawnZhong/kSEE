@@ -7,10 +7,9 @@
 //!   web/pkg/               the runtime, and wasm-bindgen's glue (cargo)
 //!   web/vmlinux, web/src/  the kernel for the page (pack)
 //!   web/initramfs.cpio     /init (user/init.c), and the programs, as
-//!                          /bin/NAME: the tours' (user/tours/*.c), the
-//!                          others the page lists (user/programs/*.c), and
-//!                          the tests' (user/tests/*.c)
-//!   web/tours/             the programs' sources, and index.json
+//!                          /bin/NAME: the examples' (user/examples/*.c)
+//!                          and the tests' (user/tests/*.c)
+//!   web/examples/          the examples (their sources), and index.json
 //!   web/vendor/monaco/     the Monaco editor (downloaded once from npm)
 //!
 //! $LLVM is the LLVM version suffix (default -23).
@@ -74,15 +73,16 @@ pub fn build() {
     if stale("web/vmlinux", &["linux/vmlinux"]) {
         crate::pack::pack(Path::new("linux"), Path::new("web"));
     }
-    // The tours' programs use nolibc, with the kernel's UAPI headers.
+    // The programs use nolibc, with the kernel's UAPI headers.
     run(&mut kmake(&["headers"]));
-    let tours = tours();
+    let examples = examples();
+    let programs: Vec<String> = examples.iter().filter(|p| p.ends_with(".c")).cloned().collect();
     let mut inputs = vec!["user/init.c", "user/initramfs.list", "user/ksee.h", "linux/usr/gen_init_cpio",
                           "linux/tools/include/nolibc/arch-wasm.h"];
-    inputs.extend(tours.iter().map(String::as_str));
+    inputs.extend(examples.iter().map(String::as_str));
     // (Stale too if the programs are not the ones built: one renamed or removed.)
     let built = std::fs::read_to_string("web/initramfs.list").unwrap_or_default();
-    let names: Vec<String> = tours.iter().map(|s| Path::new(s).file_stem().unwrap().to_string_lossy().into_owned()).collect();
+    let names: Vec<String> = programs.iter().map(|s| Path::new(s).file_stem().unwrap().to_string_lossy().into_owned()).collect();
     let same = built.lines().filter(|l| l.starts_with("file /bin/")).count() == names.len()
         && names.iter().all(|n| built.contains(&format!("file /bin/{n} ")));
     if !same || stale("web/initramfs.cpio", &inputs) {
@@ -94,27 +94,28 @@ pub fn build() {
         let mut list = std::fs::read_to_string("user/initramfs.list").unwrap_or_default();
         list += "dir /bin 0755 0 0\n";
         let _ = std::fs::remove_dir_all("web/bin");
-        let _ = std::fs::remove_dir_all("web/tours");
-        std::fs::create_dir_all("web/bin").and_then(|_| std::fs::create_dir_all("web/tours"))
+        let _ = std::fs::remove_dir_all("web/examples");
+        std::fs::create_dir_all("web/bin").and_then(|_| std::fs::create_dir_all("web/examples"))
             .unwrap_or_else(|e| crate::fail(&format!("web/bin: {e}")));
-        let mut index = Vec::new();
-        for (src, name) in tours.iter().zip(&names) {
+        for (src, name) in programs.iter().zip(&names) {
             cc(&format!("web/bin/{name}.wasm"), src, &["-nostdinc", "-isystem", "linux/tools/include/nolibc",
                 "-isystem", "linux/usr/include", "-include", "user/ksee.h"]);
             list += &format!("file /bin/{name} bin/{name}.wasm 0755 0 0\n");
-            let text = std::fs::read_to_string(src).unwrap_or_default();
-            std::fs::write(format!("web/tours/{name}.c"), &text).unwrap_or_else(|e| crate::fail(&format!("web/tours: {e}")));
-            if src.starts_with("user/tours/") {
-                index.push(tour_json(&name, &text));
-            } else if src.starts_with("user/programs/") {
-                // (A program: its title is its first comment line.)
-                let title = text.lines().next().and_then(|l| l.strip_prefix("// ")).unwrap_or(&name);
-                index.push(format!("  {{ \"name\": \"{name}\", \"path\": \"/bin/{name}\", \"title\": \"{}\", \"program\": true }}",
-                                   title.replace('\\', "\\\\").replace('"', "\\\"")));
-            }
         }
-        std::fs::write("web/tours/index.json", format!("[\n{}\n]\n", index.join(",\n")))
-            .unwrap_or_else(|e| crate::fail(&format!("web/tours/index.json: {e}")));
+        // The examples, for the page: the boot first, then by name.
+        let mut index = Vec::new();
+        for src in examples.iter().filter(|p| p.starts_with("user/examples/")) {
+            let name = Path::new(src).file_stem().unwrap().to_string_lossy().into_owned();
+            let text = std::fs::read_to_string(src).unwrap_or_default();
+            if src.ends_with(".c") {
+                std::fs::write(format!("web/examples/{name}.c"), &text)
+                    .unwrap_or_else(|e| crate::fail(&format!("web/examples: {e}")));
+            }
+            index.push(example_json(&name, &text, src.ends_with(".c")));
+        }
+        index.sort_by_key(|e| !e.contains("\"name\": \"boot\""));
+        std::fs::write("web/examples/index.json", format!("[\n{}\n]\n", index.join(",\n")))
+            .unwrap_or_else(|e| crate::fail(&format!("web/examples/index.json: {e}")));
         std::fs::write("web/initramfs.list", list).unwrap_or_else(|e| crate::fail(&format!("web/initramfs.list: {e}")));
         // (The list's paths are relative to web/.)
         let tool = Path::new("linux/usr/gen_init_cpio").canonicalize()
@@ -148,28 +149,31 @@ fn vendor() {
         .unwrap_or_else(|e| crate::fail(&format!("web/vendor/monaco: {e}")));
 }
 
-/// The programs, user/{tours,programs,tests}/*.c, sorted.
-fn tours() -> Vec<String> {
-    let mut list: Vec<String> = ["user/tours", "user/programs", "user/tests"].iter()
+/// The examples and tests: user/{examples,tests}/*.c (programs) and
+/// user/examples/*.txt (an example without a program: the boot), sorted.
+fn examples() -> Vec<String> {
+    let mut list: Vec<String> = ["user/examples", "user/tests"].iter()
         .flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
-        .map(|e| e.path().to_string_lossy().into_owned()).filter(|p| p.ends_with(".c")).collect();
+        .map(|e| e.path().to_string_lossy().into_owned())
+        .filter(|p| p.ends_with(".c") || (p.starts_with("user/examples/") && p.ends_with(".txt"))).collect();
     list.sort();
     list
 }
 
-/// A tour's entry in index.json, from its program's header comments:
-///   // tour: TITLE
+/// An example's entry in index.json, from its header comments:
+///   // example: TITLE
 ///   // question: TEXT
 ///   // stop FUNCTION: NOTE        (any number; "FUNCTION, any task": also
 ///                                  when another task runs it, as in an
 ///                                  interrupt)
 /// and the program's lines that end in "// stops here": the stops are for
-/// the syscalls those make (all of the program's, if none).
-fn tour_json(name: &str, text: &str) -> String {
+/// the syscalls those make (all of the program's, if none). Without a
+/// program (`program` false), the example is the boot's recording.
+fn example_json(name: &str, text: &str, program: bool) -> String {
     let q = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
     let (mut title, mut question, mut stops) = (String::new(), String::new(), Vec::new());
     for line in text.lines().map_while(|l| l.strip_prefix("// ")) {
-        if let Some(t) = line.strip_prefix("tour: ") {
+        if let Some(t) = line.strip_prefix("example: ") {
             title = t.to_string();
         } else if let Some(t) = line.strip_prefix("question: ") {
             question = t.to_string();
@@ -180,7 +184,8 @@ fn tour_json(name: &str, text: &str) -> String {
     }
     let lines: Vec<String> = text.lines().enumerate().filter(|(_, l)| l.trim_end().ends_with("// stops here"))
         .map(|(k, _)| (k + 1).to_string()).collect();
-    format!("  {{ \"name\": {}, \"path\": \"/bin/{name}\", \"title\": {}, \"question\": {}, \"stops\": [{}], \"lines\": [{}] }}",
+    let path = if program { format!("\"/bin/{name}\"") } else { "null".into() };
+    format!("  {{ \"name\": {}, \"path\": {path}, \"title\": {}, \"question\": {}, \"stops\": [{}], \"lines\": [{}] }}",
             q(name), q(&title), q(&question), stops.join(", "), lines.join(", "))
 }
 

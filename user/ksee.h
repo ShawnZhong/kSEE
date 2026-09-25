@@ -1,5 +1,5 @@
 // kSEE's additions to nolibc (linux/tools/include/nolibc, the kernel's
-// own small C library) for the example programs in user/tours/. The build
+// own small C library) for the example programs in user/examples/. The build
 // includes this first (-include), so the programs are plain C with the
 // usual #include <stdio.h> etc. (nolibc's headers, already included here).
 //

@@ -1,5 +1,5 @@
 // Boot the kernel under Deno with the page's own module (web/ksee.js), run
-// programs in it (user/programs/, user/tours/, user/tests/), recorded, and
+// programs in it (user/examples/, user/tests/), recorded, and
 // check what the recording shows.
 //   deno run --allow-read tests/web.js
 import { start, process } from "../web/ksee.js";
@@ -11,6 +11,7 @@ const alive = setInterval(() => {}, 1000);
 const m = await start({
   kernel: new URL("web/vmlinux", root),
   initrd: new URL("web/initramfs.cpio", root),
+  record: true, // (the boot too, as the page does)
 });
 
 let out = "", failed = false;
@@ -37,7 +38,10 @@ async function run(path) {
 }
 
 check("init ready", await until(() => out.includes("ready for the page's programs")));
-check("not recording at first", !m.recording() && (m.snapshot(), m.records() === 0));
+m.record(false);
+const boot = m.records() - 1;
+check("the boot, recorded whole: from start_kernel", m.first_call("start_kernel", 0, boot) != null);
+check("... the boot task's, then pid 1's", m.first_call("run_init_process", 0, boot) > m.first_call("sched_init", 0, boot));
 
 // Syscalls, traced.
 const t = await run("/bin/syscalls");
@@ -54,8 +58,15 @@ const ran = (name, func) => calls.some((s) => s.name === name && s.last != null
 check("write ran vfs_write", ran("write", "vfs_write"));
 check("getpid ran __task_pid_nr_ns", ran("getpid", "__task_pid_nr_ns"));
 check("mkdirat ran vfs_mkdir", ran("mkdirat", "vfs_mkdir"));
+// (The tasks of a stack chart's columns: see Machine.chart.)
+const chartTasks = (flat) => {
+  const out = [];
+  for (let j = 0; j < flat.length; j += 2 + 3 * flat[j + 1]) out.push(flat[j]);
+  return out;
+};
+const nap = calls.find((s) => s.name === "clock_nanosleep_time64");
 check("sleeping switched to the idle task and back", ran("clock_nanosleep_time64", "__schedule")
-      && m.timeline(4000).some((b) => b.comm === "swapper/0"));
+      && chartTasks(m.chart(nap.first, nap.last, 50)).some((a) => m.task(a, nap.first).comm === "swapper/0"));
 const w = calls.find((s) => s.name === "write" && s.ret === 11);
 const [vfs] = m.functions("vfs_write", w.index);
 check("vfs_write block counts", vfs?.blocks.some((b) => b.count > 0) && vfs.blocks.some((b) => b.count === 0));
@@ -105,17 +116,17 @@ check("a local on the stack, as it was: ksys_read's pos, 0 then 26",
 m.memory_at(null);
 
 // A program's write, in its recording: the call stack there, and the task.
-const hi = await run("/bin/hi");
-check("hi ran", hi.status === 0 && await until(() => out.includes("hi\n")));
+const hi = await run("/bin/hello");
+check("hello ran", hi.status === 0 && await until(() => out.includes("hello\n")));
 m.snapshot();
 const hw = m.syscalls().find((s) => s.task.pid === hi.pid && s.name === "write");
 const inWrite = m.first_call("vfs_write", hw.first, hw.last, hw.task.addr);
 const live = m.call_stack(inWrite);
 check("the call stack in vfs_write, with arguments", live[0]?.func === "vfs_write" && live.some((f) => f.func === "ksys_write"
-      && f.args?.find((a) => a.name === "count")?.value === "3"));
+      && f.args?.find((a) => a.name === "count")?.value === "6"));
 m.memory_at(inWrite);
 const task = m.object("task_struct", hw.task.addr, 1);
-check("the task, as it was", task?.children?.find((c) => c.name === "comm")?.value === '"hi"');
+check("the task, as it was", task?.children?.find((c) => c.name === "comm")?.value === '"hello"');
 check("a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr_running"));
 m.memory_at(null);
 

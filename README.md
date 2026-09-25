@@ -19,7 +19,7 @@ LLVM pass.
   kernel in Workers, serves the page), `ksee-cli` (`./ksee.sh`: build, test,
   serve; pack the kernel for the page)
 - `web/`: the page; the build puts what it loads there too (gitignored)
-- `user/`: `/init`, `tours/`, `programs/`, `tests/` (C on nolibc)
+- `user/`: `/init`, `examples/`, `tests/` (C on nolibc)
 - `tests/`: the page's tests (see below)
 
 ## Running
@@ -28,25 +28,28 @@ LLVM pass.
     ./ksee.sh test         # under Deno: programs, and what their recordings show
     ./ksee.sh type task_struct
 
-Open a **tour** (on the left): a question about the kernel ("What happens
-in read()?", "Why does open() fail?", …) and a small C program (user/tours/,
-plain C on nolibc) that asks it. kSEE runs the program in the kernel,
-recorded, to its end, and goes to the tour's first stop: its note, the
-program's line, the source, and the Stack (the call stack, with each call's
+The page boots the kernel **recorded from its first line**, and opens the
+first example, "How does Linux boot?", at its first stop. An **example**
+(on the left) is a question about the kernel ("What happens in read()?",
+"Why does open() fail?", …), usually with a small C program that asks it
+(user/examples/, plain C on nolibc): opening one runs it in the kernel,
+recorded, to its end, and goes to its first stop: its note, the program's
+line, the source, and the Stack (the call stack, with each call's
 arguments and locals, as they were). Next stop, ◀ / ▶| line by line, or
-Play. The timeline shows the recording: which task ran, and the call stacks
-over time (scroll to zoom, drag to pan; hover a call for what it was, click it
-to see where it was then, double-click to zoom to it).
-Hover a name in the source for its value at the cursor; right-click to
-watch it; ✎ on a value says which code last wrote it.
+Play.
 
-**Programs** run the same way, without stops: add a C file to
-user/programs/ and rebuild. ● Record records the kernel until you stop it.
+The timeline shows the recording: the call stacks over time, and which
+task ran (scroll to zoom, drag to pan; hover a call for what it was and a
+preview of where, click it to go there, double-click to zoom to it). Hover
+a name in the source for its value at the cursor; right-click to watch it;
+✎ on a value says which code last wrote it. ● Record records the kernel
+until you stop it.
 
-A tour is one C file: `// tour:`, `// question:`, and `// stop FUNCTION:
-NOTE` lines at the top, and `// stops here` on the lines whose syscalls the
-stops are for.
+An example is one file in user/examples/: `// example:`, `// question:`,
+and `// stop FUNCTION: NOTE` lines at the top, and `// stops here` on the
+lines whose syscalls the stops are for (a .txt file with only the header:
+the boot's).
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs
-the page itself through a tour, and saves a screenshot, `web/ui.png`. The build is
-`ksee build` (crates/ksee-cli/src/build.rs).
+the page itself through the boot and an example, and saves a screenshot,
+`web/ui.png`. The build is `ksee build` (crates/ksee-cli/src/build.rs).

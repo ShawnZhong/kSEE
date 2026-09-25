@@ -2,13 +2,13 @@
 // shared memory, initialize the runtime on it, and boot a kernel.
 import init, { Machine } from "./pkg/ksee_runtime.js";
 
-export async function start({ kernel, initrd, cmdline = "", ramMiB = 64 }) {
+export async function start({ kernel, initrd, cmdline = "", ramMiB = 96, record = false }) {
   const ram = ramMiB << 20;
   // The kernel uses the first `ram` bytes; the runtime's heap grows above.
   const memory = new WebAssembly.Memory({ initial: ram >> 16, maximum: 65536, shared: true });
   await init({ module_or_path: new URL("./pkg/ksee_runtime_bg.wasm", import.meta.url), memory });
   const worker = new URL("./worker.js", import.meta.url).href;
-  return Machine.start({ kernel: String(kernel), initrd: initrd && String(initrd), cmdline, worker, ram });
+  return Machine.start({ kernel: String(kernel), initrd: initrd && String(initrd), cmdline, worker, ram, record });
 }
 
 // Running programs: the kernel runs one (a path in the initramfs), and says

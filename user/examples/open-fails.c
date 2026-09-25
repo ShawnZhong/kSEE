@@ -1,4 +1,4 @@
-// tour: Why does open() fail?
+// example: Why does open() fail?
 // question: Opening a file that is not there fails with ENOENT. Where in the kernel is that decided?
 // stop path_openat: Opening walks the path, one name at a time, from the root (/) down.
 // stop lookup_fast: Look each name up in the dentry cache: the kernel's memory of the names it has seen. "tmp" is there.
