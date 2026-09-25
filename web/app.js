@@ -27,6 +27,10 @@ export function app(m) {
   a.key = (s) => `${s.task.addr}:${s.start_ns}`;
   const src = source(a), time = timeline(a), stack = callstack(a);
   a.showFunction = src.showFunction;
+  // Expressions at the cursor (hover in the source; watches).
+  a.resolve = (expr, prefer) => stack.resolve(expr, prefer);
+  a.kids = (o) => stack.kids(o);
+  a.watch = (expr) => stack.watch(expr);
 
   // ---- The state ----
   let halted = null;

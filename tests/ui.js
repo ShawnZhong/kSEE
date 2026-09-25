@@ -61,6 +61,21 @@ const script = opt("eval", `(async () => {
   const $ = (id) => document.getElementById(id);
   const exited = () => document.querySelector(".tstatus")?.textContent.includes("exited");
   const r = { badge: $("badge").textContent };
+  // Hover on the word in the first source line with the needle: the tooltip.
+  const hover = async (needle, word) => {
+    const td = [...document.querySelectorAll("#src td.code")].find((t) => t.textContent.includes(needle));
+    if (!td) return "no " + needle;
+    td.scrollIntoView({ block: "center" });
+    await sleep(50);
+    const walk = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
+    let at = td.textContent.indexOf(needle) + needle.indexOf(word) + 1, n;
+    for (n = walk.nextNode(); n && at >= n.textContent.length; n = walk.nextNode()) at -= n.textContent.length;
+    const range = document.createRange(); range.setStart(n, at); range.setEnd(n, at + 1);
+    const b = range.getBoundingClientRect();
+    $("src").dispatchEvent(new MouseEvent("mousemove", { clientX: b.left + b.width / 2, clientY: b.top + b.height / 2, bubbles: true }));
+    const tip = document.querySelector(".tip");
+    return tip.hidden ? "(no tip)" : tip.innerText.split("\\n")[0];
+  };
   for (let i = 0; i < 50 && !document.querySelector(".row.tour"); i++) await sleep(100);
   r.tours = document.querySelectorAll(".row.tour").length;
   [...document.querySelectorAll(".row.tour")].find((e) => e.textContent.includes("read()")).click();
@@ -70,7 +85,8 @@ const script = opt("eval", `(async () => {
     if ($("note").hidden) break;
     r.notes.push($("note").querySelector("b")?.textContent);
     if (k === 0) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
-    if (k === 0) r.args = [...document.querySelectorAll("#stack tr")].slice(1, 4).map((f) => f.innerText.replace(/\s+/g, " ").trim());
+    if (k === 0) r.args = [...document.querySelectorAll("#stack tr")].slice(1, 4).map((f) => f.innerText.replace(/\\s+/g, " ").trim());
+    if (r.notes.at(-1) === "vfs_read") r.hover = await hover("file->f_mode", "f_mode");
     $("cont").click();
     await sleep(300);
   }
@@ -80,7 +96,7 @@ const script = opt("eval", `(async () => {
   await sleep(300);
   $("speed").value = "30"; $("play").click(); await sleep(2000); $("play").click();
   r.replay = [$("badge").textContent, $("mem-note").textContent, $("where").textContent.slice(0, 50)];
-  r.pastArgs = [...document.querySelectorAll("#stack tr")].slice(1, 3).map((f) => f.innerText.replace(/\s+/g, " ").trim());
+  r.pastArgs = [...document.querySelectorAll("#stack tr")].slice(1, 3).map((f) => f.innerText.replace(/\\s+/g, " ").trim());
   const who = document.querySelector("#stack a.who");
   if (who) { who.click(); await sleep(300); r.who = $("where").textContent.slice(0, 80); }
   r.split = document.querySelectorAll(".vsplit").length;

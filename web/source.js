@@ -91,5 +91,65 @@ export function source(app) {
     v.syscall = syscall;
     showFile(file ?? f.file, focus);
   }
+  // ---- Hover: the value of the expression under the mouse ----
+  // A name, and the fields before it ("file->f_pos" when on f_pos), as
+  // app.resolve finds it at the cursor (an argument of a call on the stack,
+  // the shown function's first; or a global). Click: watch it.
+  const tip = el("div", { className: "tip", hidden: true });
+  document.body.append(tip);
+  const WORD = /[A-Za-z0-9_]/;
+  // The expression at the mouse, from the line's text and the offset in it.
+  function exprAt(text, k) {
+    if (!WORD.test(text[k] ?? "")) return null;
+    let a = k, b = k;
+    while (a > 0 && WORD.test(text[a - 1])) a--;
+    while (b < text.length && WORD.test(text[b])) b++;
+    let expr = text.slice(a, b);
+    if (/^\d/.test(expr) || KEYWORDS.has(expr)) return null;
+    // Fields before it: "x->", "x.".
+    for (;;) {
+      const m2 = text.slice(0, a).match(/([A-Za-z_]\w*)\s*(->|\.)\s*$/);
+      if (!m2) break;
+      expr = `${m2[1]}${m2[2]}${expr}`;
+      a -= m2[0].length;
+    }
+    return expr;
+  }
+  function textOffset(td, node, offset) {
+    let k = 0;
+    const walk = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (n === node) return k + offset;
+      k += n.textContent.length;
+    }
+    return -1;
+  }
+  let hovered = null;
+  $("src").addEventListener("mousemove", (e) => {
+    const pos = document.caretPositionFromPoint?.(e.clientX, e.clientY);
+    const r = pos ? { node: pos.offsetNode, offset: pos.offset } : (() => {
+      const range = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+      return range && { node: range.startContainer, offset: range.startOffset };
+    })();
+    const td = r?.node?.parentElement?.closest?.("td.code");
+    const expr = td ? exprAt(td.textContent, textOffset(td, r.node, r.offset)) : null;
+    const o = expr && app.resolve(expr, v.fn?.name);
+    hovered = o ? expr : null;
+    if (!o) return (tip.hidden = true);
+    const fields = o.value == null || (o.target != null && o.value !== "NULL") ? (app.kids(o) ?? []).slice(0, 8) : [];
+    tip.replaceChildren(
+      el("div", {}, el("b", { textContent: expr }), " = ", el("span", { className: "v", textContent: o.value ?? "{…}" }),
+        el("span", { className: "dim", textContent: `  ${o.ty}` })),
+      ...fields.map((c) => el("div", { className: "f" }, `${c.name} = `, el("span", { className: "v", textContent: c.value ?? "{…}" }))),
+      el("div", { className: "dim", textContent: "click: watch it" }));
+    tip.hidden = false;
+    tip.style.left = `${Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8)}px`;
+    tip.style.top = `${Math.min(e.clientY + 16, innerHeight - tip.offsetHeight - 8)}px`;
+  });
+  $("src").addEventListener("mouseleave", () => (tip.hidden = true));
+  $("src").addEventListener("click", (e) => {
+    if (hovered && e.target.closest("td.code")) app.watch(hovered);
+  });
+
   return { view: v, showFunction, showFile };
 }

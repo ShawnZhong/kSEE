@@ -144,3 +144,11 @@ table.stack tr.sep td { padding: 8px 8px 2px; color: var(--dim); font-family: sy
 table.stack tr.watch td { background: var(--panel); }
 .watchbar { padding: 6px 12px; border-top: 1px solid var(--line); }
 .watchbar input { width: 100%; font-family: var(--mono); }
+
+/* Hover: a value */
+.tip { position: fixed; z-index: 10; max-width: 420px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--line);
+       border-radius: 6px; box-shadow: 0 4px 16px rgb(0 0 0 / .15); font: 12px/1.5 var(--mono); pointer-events: none; }
+.tip b { font-weight: 600; }
+.tip .v { color: var(--accent); }
+.tip .f { padding-left: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tip .dim { font-family: system-ui, sans-serif; font-size: 11px; margin-top: 2px; }

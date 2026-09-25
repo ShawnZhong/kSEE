@@ -1,7 +1,8 @@
 // The Stack tab: the call stack at the cursor, innermost first, each call
 // with its arguments as a tree (like a debugger's variables), rebuilt from
 // the trace (Machine.call_stack: a call's arguments are in its record);
-// then the watches: the task at the cursor, and globals. Pointers open into
+// then the watches: the task at the cursor, and expressions (a global, or
+// a call's argument, and fields: "file->f_pos"; see resolve). Pointers open into
 // what they point to, structs into their fields, read from memory as it was
 // at the cursor (Machine.memory_at); what is open stays open while
 // stepping; values that changed since the cursor last moved are
@@ -56,7 +57,7 @@ export function callstack(app) {
     const watches = [];
     if (s.task) watches.push({ title: `current: ${s.task.comm ?? "?"}(${s.task.pid ?? "?"})`, key: "task",
                                value: () => m.object("task_struct", s.task.addr, 1) });
-    for (const g of s.watches) watches.push({ title: g, key: `global/${g}`, value: () => m.global(g, 1), remove: g });
+    for (const g of s.watches) watches.push({ title: g, key: `watch/${g}`, value: () => resolve(g), remove: g });
     if (watches.length) body.push(el("tr", { className: "sep" }, el("td", { colSpan: 3, textContent: "watch" })));
     for (const w of watches) {
       const o = w.value();
@@ -69,7 +70,8 @@ export function callstack(app) {
         draw();
       } }));
       body.push(h);
-      if (o && s.open.has(w.key)) rows(o.children ?? [o], w.key, 1, body);
+      if (!o) body.push(el("tr", {}, el("td", { colSpan: 3, className: "dim", style: "padding-left:24px", textContent: "not here (no such name at the cursor)" })));
+      else if (s.open.has(w.key)) rows(o.children ?? [o], w.key, 1, body);
     }
     $("stack").replaceChildren(el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
   }
@@ -88,11 +90,28 @@ export function callstack(app) {
     draw();
   }
 
-  // Watch global `name` (opened).
-  function watch(name) {
-    if (!m.global(name, 0)) return false;
-    if (!s.watches.includes(name)) s.watches.push(name);
-    s.open.add(`global/${name}`);
+  // The value of expression `expr` at the cursor: a name, then fields
+  // (".f" or "->f"). The name is an argument of a call on the stack (of
+  // function `prefer`'s first, if it is there), else a global.
+  function resolve(expr, prefer) {
+    const path = expr.split(/\s*(?:->|\.)\s*/).filter(Boolean);
+    if (!path.length) return null;
+    const frames = [...s.frames.filter((f) => f.func === prefer), ...s.frames];
+    let o = null;
+    for (const f of frames) if ((o = f.args?.find((x) => x.name === path[0]))) break;
+    o ??= m.global(path[0], 1);
+    for (const field of path.slice(1)) {
+      if (!o) return null;
+      o = kids(o)?.find((c) => c.name === field) ?? null;
+    }
+    return o ? { ...o, name: expr } : null;
+  }
+
+  // Watch expression `expr` (opened).
+  function watch(expr) {
+    if (!resolve(expr)) return false;
+    if (!s.watches.includes(expr)) s.watches.push(expr);
+    s.open.add(`watch/${expr}`);
     draw();
     return true;
   }
@@ -101,5 +120,5 @@ export function callstack(app) {
     e.preventDefault();
     if (watch($("watch").value.trim())) $("watch").value = "";
   };
-  return { show, watch, redraw: draw };
+  return { show, watch, resolve, kids, redraw: draw };
 }

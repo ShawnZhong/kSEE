@@ -39,7 +39,9 @@ the next stop, ▶| / ▶ Play line by line, or Finish. Afterwards the
 recording is in the history (a lane per task, a flame chart of the calls):
 click a program line for what the kernel did for it, drag the cursor back,
 and the Stack shows memory as it was then (✎: which code last wrote a
-value). ● Record records the kernel by hand; click a line number in the
+value). Hover a name in the source (an argument, a global, or a field
+after them: `file->f_pos`) for its value there; click it to watch it.
+● Record records the kernel by hand; click a line number in the
 source for a breakpoint. Drag the gray bars to resize the panels.
 
 A tour is one C file: `// tour:`, `// question:`, and `// stop FUNCTION:
