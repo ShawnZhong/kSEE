@@ -146,6 +146,7 @@ pub fn test(ui: bool) {
     run(Command::new("deno").args(["run", "--allow-read", "tests/web.js"]));
     if ui {
         run(Command::new("deno").args(["run", "-A", "tests/ui.js", "web/ui.png"]));
+        run(Command::new("deno").args(["run", "-A", "tests/ui.js", "web/ui-back.png", "--back"]));
     }
 }
 

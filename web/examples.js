@@ -29,9 +29,10 @@ export async function examples(app) {
       el("div", { className: "note dim", textContent: "Your own: a JSON file in user/examples/, then ./ksee.sh build." }));
   }
 
-  function open(ex) {
+  function open(ex, steps = ex.steps) {
     t.ex = ex;
-    t.steps = ex.steps.map((s) => ({ ...s })); // (the form adds to them)
+    t.branch = null;
+    t.steps = steps.map((s) => ({ ...s })); // (the form adds to them)
     t.done = [];
     t.cur = { stops: [], ol: null };
     t.at = [];
@@ -48,12 +49,34 @@ export async function examples(app) {
     draw();
   }
 
-  // The kernel is up: open the first example, and make its first call.
+  // The kernel is up: open the first example, and make its first call; or,
+  // after going back (see branch), the example as it was, and its calls up
+  // to the one changed.
   function ready() {
+    let back = null;
+    try {
+      back = JSON.parse(decodeURIComponent(location.hash.match(/^#back=(.*)$/)?.[1] ?? "null"));
+    } catch { /* none */ }
+    if (back) {
+      open(list.find((x) => x.name === back.name) ?? list[0], back.steps);
+      const n = back.steps.length;
+      return upTo(n - 1).then(() => (t.status.textContent = n > 1
+        ? `Went back to before call ${n}: on a fresh kernel, calls 1–${n - 1} made again, then this one.` : ""));
+    }
     if (!t.ex && list.length) {
       open(list[0]);
       step();
     }
+  }
+  // Go back to before call `j` and make `call` instead: a kernel cannot be
+  // put back as it was (its tasks' stacks are its Workers'), so the page
+  // starts again (a fresh kernel), and makes calls 1..j-1 again, then it.
+  // (The calls are in the URL, #back=: a link to this, too.)
+  function branch(j, call) {
+    const old = t.steps[j];
+    const steps = [...t.steps.slice(0, j), { ...call, stops: old?.call === call.call ? old.stops : undefined }];
+    location.hash = `back=${encodeURIComponent(JSON.stringify({ name: t.ex.name, steps }))}`;
+    location.reload();
   }
 
   const rets = () => t.done.map((d) => d.ret);
@@ -70,6 +93,13 @@ export async function examples(app) {
         // (As written; once made, and if $n made it differ, as made too.)
         el("a", { className: "mono", textContent: text(s), onclick: () => (d ? select(j) : upTo(j)) }),
         d ? el("span", { className: "mono ret", textContent: ` = ${result(d.ret, consts)}` }) : null,
+        // (Change it: go back to before it, and make another.)
+        d ? el("a", { className: "who", textContent: " ✎", title: "change this call: go back to before it, and make another instead", onclick: () => {
+          t.branch = j;
+          t.input.value = text(s);
+          t.hint.textContent = `Changing call ${j + 1}: Enter goes back to before it (a fresh kernel, calls 1–${j} again) and makes this instead; Esc: not.`;
+          t.input.focus();
+        } }) : null,
         d && text(s, rets()) !== text(s) ? el("div", { className: "mono dim", textContent: `as made: ${text(s, rets())}` }) : null,
         d?.text ? el("div", { className: "mono dim", textContent: d.text }) : null,
         d?.ol ?? null);
@@ -170,6 +200,8 @@ export async function examples(app) {
     const input = el("input", { className: "mono", placeholder: 'add a call: openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)',
                                 spellcheck: false, autocomplete: "off" });
     const hint = el("div", { className: "mono dim hint" });
+    t.input = input;
+    t.hint = hint;
     const signature = (name) => {
       const s = m.syscall(name);
       return s && `${name}(${s.params.map((p) => `${p.ty}${p.ty.endsWith("*") ? "" : " "}${p.name}`).join(", ")})`;
@@ -195,6 +227,9 @@ export async function examples(app) {
       } else if (e.key === "Enter") {
         e.preventDefault();
         add();
+      } else if (e.key === "Escape" && t.branch != null) {
+        t.branch = null;
+        input.value = hint.textContent = "";
       }
     };
     function add() {
@@ -209,6 +244,7 @@ export async function examples(app) {
       } catch (e) {
         return (hint.textContent = e.message);
       }
+      if (t.branch != null) return branch(t.branch, { call: c.call, args: c.args });
       t.steps.push({ call: c.call, args: c.args });
       input.value = "";
       hint.textContent = "";

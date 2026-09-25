@@ -1,6 +1,8 @@
-// The page in headless Chromium (./ksee.sh test --ui): serve web/, load it, run a tour and go through it, fail on any exception, and save a screenshot. Options
-// look at another page or script (to check the UI while working on it).
-//   deno run -A tests/ui.js OUT.png [--url=URL] [--wait=ms] [--eval=JS] [--size=WxH]
+// The page in headless Chromium (./ksee.sh test --ui): serve web/, load it,
+// go through examples, fail on any exception (or if the script throws), and
+// save a screenshot. Options look at another page, or run another script
+// (--eval; --back: going back, see below).
+//   deno run -A tests/ui.js OUT.png [--url=URL] [--at=PATH] [--wait=ms] [--eval=JS | --back] [--size=WxH]
 // $CHROME: a Chromium binary (e.g. Playwright's chrome-headless-shell).
 const [out] = Deno.args.filter((a) => !a.startsWith("--"));
 const opt = (k, d) => Deno.args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
@@ -12,9 +14,14 @@ let server = null, url = opt("url", "");
 if (!url) {
   server = new Deno.Command(new URL("../target/release/ksee", import.meta.url).pathname,
     { args: ["serve", new URL("../web", import.meta.url).pathname, "--port=8199"], stdout: "null", stderr: "null" }).spawn();
-  url = "http://127.0.0.1:8199/";
+  url = `http://127.0.0.1:8199/${opt("at", "")}`;
   await new Promise((r) => setTimeout(r, 500));
 }
+// --back: the page opened going back (examples.js, branch): the life of a
+// file, its first call made again, then another instead of its second.
+const back = { name: "file", steps: [{ call: "openat", args: ["AT_FDCWD", '"/mnt/note.txt"', "O_CREAT | O_WRONLY", "0644"] },
+                                     { call: "write", args: ["$1", '"changed\\n"', "8"] }] };
+if (Deno.args.includes("--back")) url += `#back=${encodeURIComponent(JSON.stringify(back))}`;
 if (!Deno.env.get("CHROME")) {
   console.log("set CHROME to a (headless) Chromium binary");
   Deno.exit(2);
@@ -56,7 +63,14 @@ await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
 // By default: the first example (it makes its call by itself); then the
 // read example: make its calls, go through the read's stops (the note, the
 // Stack, a hover at each), play a little, hover and click the chart; report.
-const script = opt("eval", `(async () => {
+const backScript = `(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  for (let i = 0; i < 100 && document.querySelectorAll("ol.steps > li.done").length < 2; i++) await sleep(100);
+  const done = [...document.querySelectorAll("ol.steps > li.done")].map((li) => li.innerText.split("\\n")[0]);
+  if (done.length !== 2 || !done[1].includes("= 8")) throw new Error("not back: " + JSON.stringify(done));
+  return { done, status: document.querySelector(".tstatus").textContent };
+})()`;
+const script = Deno.args.includes("--back") ? backScript : opt("eval", `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (id) => document.getElementById(id);
   const until = async (f, n = 100) => { for (let i = 0; i < n && !f(); i++) await sleep(100); };
