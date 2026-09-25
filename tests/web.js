@@ -50,7 +50,8 @@ const calls = m.syscalls().filter((s) => s.task.pid === t.pid);
 const called = calls.map((s) => s.name);
 for (const n of ["getpid", "write", "mkdirat", "openat", "getdents64", "writev", "pipe2", "read", "uname", "clock_nanosleep_time64"])
   check(`syscall ${n} traced`, called.includes(n));
-const ran = (name, func) => calls.some((s) => s.name === name && m.runs(s.index).some((r) => r.func === func));
+const ran = (name, func) => calls.some((s) => s.name === name && s.last != null
+  && m.frames(s.first, s.last, s.task.addr, 1).some((f) => f.func === func));
 check("write ran vfs_write", ran("write", "vfs_write"));
 check("getpid ran __task_pid_nr_ns", ran("getpid", "__task_pid_nr_ns"));
 check("mkdirat ran vfs_mkdir", ran("mkdirat", "vfs_mkdir"));
@@ -86,6 +87,10 @@ const fpos = (i) => (m.memory_at(i), m.object_by_id("file", file.target, Number(
 check("f_pos before the read, and after", fpos(read.first)?.value === "0" && fpos(read.last)?.value === "26");
 const who = (m.memory_at(read.last), m.last_write(fpos(read.last).addr, 8));
 check("who wrote f_pos: ksys_read", who?.func === "ksys_read");
+const readSteps = m.line_steps(read.first, read.last, read.task.addr);
+const pos = (i) => (m.memory_at(i), m.call_stack(i).find((c) => c.func === "ksys_read")?.locals?.find((l) => l.name === "pos")?.value);
+check("a local on the stack, as it was: ksys_read's pos, 0 then 26",
+      pos(inRead) === "0" && pos(readSteps.findLast((x) => x.func === "ksys_read").i) === "26");
 m.memory_at(null);
 
 // Stop in vfs_write (in hi's write), look around, step, go on.

@@ -1,103 +1,82 @@
-//! What code ran for each system call: the trace split per syscall.
-//!
-//! Syscalls are delimited by the enter and exit records of the syscall
-//! entry function (wasm_syscall). Enter and exit records carry the current
-//! task; blocks in between belong to that task. The exit of context_switch
-//! happens in the task switched to, so blocks follow the task that runs
-//! them even when a syscall sleeps.
+//! Syscalls in the trace: the calls of the syscall entry (wasm_syscall: its
+//! call record's arguments are the number and the syscall's arguments; its
+//! return's value is the result), per task, with the blocks they ran.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use crate::trace::Record;
 
-/// The syscall entry function of the wasm port.
+/// The syscall entry's name.
 pub const ENTRY: &str = "wasm_syscall";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Syscall {
     pub task: u32,
     pub nr: u32,
-    pub args: [u32; 3],
-    pub start: u64,
-    /// `None` if the syscall had not returned when the trace ended.
-    pub end: Option<u64>,
+    pub args: [u32; 5],
+    /// The result (None: still running at the end of the trace).
     pub ret: Option<i32>,
-    /// Blocks executed by the task during the call, in order.
+    /// The blocks it ran, in order: (function, block).
     pub blocks: Vec<(u32, u32)>,
-    /// Whether the ring had overwritten the start of the call.
-    pub partial: bool,
-    /// Positions of its enter and exit records in the record stream.
+    /// Its first and last records.
     pub first: usize,
     pub last: Option<usize>,
 }
 
-/// Split `records` at the enter and exit records of `entry` (the syscall
-/// entry function's id, see [`crate::tables::Tables::find`]).
-pub fn split(entry: u32, records: impl IntoIterator<Item = Record>) -> Vec<Syscall> {
+/// The syscalls in `records` (`entry`: the syscall entry's function id;
+/// `tasks[i]`: the task running at record `i`), in the order they began.
+pub fn split(entry: u32, records: &[Record], tasks: &[u32]) -> Vec<Syscall> {
     let mut done = Vec::new();
     let mut open: BTreeMap<u32, Syscall> = BTreeMap::new();
-    let mut current = None;
-    for (i, r) in records.into_iter().enumerate() {
-        match r {
-            Record::Enter { func, time, current: task, args } => {
-                current = Some(task);
-                if func == entry {
-                    open.insert(task, Syscall {
-                        task, nr: args[0], args: [args[1], args[2], args[3]], start: time,
-                        end: None, ret: None, blocks: Vec::new(), partial: false,
-                        first: i, last: None,
-                    });
+    for (i, r) in records.iter().enumerate() {
+        let task = tasks[i];
+        match *r {
+            Record::Block { func, n: 0 } if func == entry => {
+                let a = match records.get(i + 1) {
+                    Some(&Record::Args { args, .. }) => args,
+                    _ => [0; 6],
+                };
+                let s = Syscall { task, nr: a[0], args: [a[1], a[2], a[3], a[4], a[5]], ret: None,
+                                  blocks: alloc::vec![(func, 0)], first: i, last: None };
+                if let Some(old) = open.insert(task, s) {
+                    done.push(old); // (it never returned)
                 }
             }
-            Record::Exit { func, time, current: task, value } => {
-                current = Some(task);
-                if func == entry {
-                    if let Some(mut s) = open.remove(&task) {
-                        s.end = Some(time);
-                        s.ret = Some(value as i32);
-                        s.last = Some(i);
-                        done.push(s);
-                    }
+            Record::Return { func, value } if func == entry => {
+                if let Some(mut s) = open.remove(&task) {
+                    s.ret = Some(value as i32);
+                    s.last = Some(i);
+                    done.push(s);
                 }
             }
             Record::Block { func, n } => {
-                if let Some(s) = current.and_then(|t| open.get_mut(&t)) {
+                if let Some(s) = open.get_mut(&task) {
                     s.blocks.push((func, n));
                 }
             }
-            Record::Return { .. } | Record::Line { .. } | Record::Task { .. } | Record::Args { .. } | Record::Store { .. } => {}
+            _ => {}
         }
     }
     done.extend(open.into_values());
-    done.sort_by_key(|s| s.start);
+    done.sort_by_key(|s| s.first);
     done
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tables::Tables;
-    use crate::trace::{decode, tests::*};
 
     #[test]
-    fn blocks_follow_the_running_task() {
-        let (sys, cs) = (Tables::id(ENTRY), Tables::id("context_switch"));
-        let (a, b) = (0x100, 0x200);
-        let mut w = Vec::new();
-        w.extend(enter(sys, 1, a, [64, 1, 2, 3])); // a: write(1, 2, 3)
-        w.extend(block(9, 0));
-        w.extend(enter(cs, 2, a, [0, a, b, 0]));    // a sleeps, b runs
-        w.extend(exit(cs, 3, b, 0));
-        w.extend(block(9, 1));                      // b's code
-        w.extend(enter(cs, 4, b, [0, b, a, 0]));
-        w.extend(exit(cs, 5, a, 0));                // a resumes
-        w.extend(block(9, 2));
-        w.extend(exit(sys, 6, a, 36));
-        let calls = split(sys, decode(&w));
-        assert_eq!(calls.len(), 1);
-        let c = &calls[0];
-        assert_eq!((c.task, c.nr, c.args, c.ret), (a, 64, [1, 2, 3], Some(36)));
-        assert_eq!(c.blocks, [(9, 0), (9, 2)]);
+    fn splits_per_task() {
+        // Task 7 makes syscall 64 (write): its entry (1) calls 2; task 8 runs meanwhile.
+        let r = [Record::Block { func: 1, n: 0 }, Record::Args { args: [64, 1, 2, 3, 0, 0], n: 4 },
+                 Record::Block { func: 2, n: 0 }, Record::Block { func: 3, n: 0 },
+                 Record::Return { func: 1, value: 3 }];
+        let tasks = [7, 7, 7, 8, 7];
+        let s = split(1, &r, &tasks);
+        assert_eq!(s.len(), 1);
+        assert_eq!((s[0].task, s[0].nr, s[0].args[0], s[0].ret, s[0].first, s[0].last), (7, 64, 1, Some(3), 0, Some(4)));
+        assert_eq!(s[0].blocks, [(1, 0), (2, 0)]);
     }
 }

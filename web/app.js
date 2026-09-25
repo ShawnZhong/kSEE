@@ -24,13 +24,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export function app(m) {
   const a = { m, proc: process(m) };
   // A syscall's identity across snapshots (indexes shift as the ring goes on).
-  a.key = (s) => `${s.task.addr}:${s.start_ns}`;
+  a.key = (s) => `${s.task.addr}:${m.record_id(s.first)}`;
   const src = source(a), time = timeline(a), stack = callstack(a);
   a.showFunction = src.showFunction;
+  a.src = src;
   // Expressions at the cursor (hover in the source; watches).
   a.resolve = (expr, prefer) => stack.resolve(expr, prefer);
   a.kids = (o) => stack.kids(o);
-  a.watch = (expr) => stack.watch(expr);
+  a.watch = (expr, only) => stack.watch(expr, only);
 
   // ---- The state ----
   let halted = null;
@@ -139,7 +140,7 @@ export function app(m) {
     badge();
   };
   let tour = null;
-  tours(a).then((t) => (tour = t));
+  tours(a).then((t) => (a.tours = tour = t));
 
   // A tour's note for a stop (null: none).
   function note(stop, k, n) {
@@ -178,7 +179,7 @@ export function app(m) {
         return;
       }
     }
-    const s = calls.findLast((s) => s.task.addr === at.task.addr && s.duration_ns == null);
+    const s = calls.findLast((s) => s.task.addr === at.task.addr && s.last == null);
     if (s) a.select(s, true);
     note(k >= 0 ? stops[k] : null, k, stops.length);
     tour?.follow(null, at);

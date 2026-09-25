@@ -168,11 +168,4 @@ impl Debugger {
         }
         self.rearm();
     }
-
-    pub fn list(&self) -> Vec<(u32, u32)> {
-        self.breaks.iter().map(|b| b.load(Ordering::Relaxed)).filter(|&b| b != 0)
-            .map(|b| ((b - 1) >> 32) as u32).zip(
-                self.breaks.iter().map(|b| b.load(Ordering::Relaxed)).filter(|&b| b != 0)
-                    .map(|b| (b - 1) as u32)).collect()
-    }
 }

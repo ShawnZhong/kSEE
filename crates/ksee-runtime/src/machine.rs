@@ -40,7 +40,6 @@ struct History {
     /// Each record's id (trace::ring_ids).
     ids: Vec<u32>,
     tasks: Vec<u32>,
-    times: Vec<u64>,
     /// Who was at a task_struct address, from Task records: address ->
     /// [(record, task)]; and where tasks exited (do_exit): address ->
     /// [record]. The address of an exited task may be another's later.
@@ -223,12 +222,6 @@ impl Machine {
         String::from_utf8_lossy(&out).into_owned()
     }
 
-    /// Input for the kernel's console (raises its interrupt).
-    pub fn type_in(&self, text: &str) {
-        CONSOLE_IN.put(text.as_bytes());
-        interrupt(1); // WASM_IRQ_CONSOLE
-    }
-
     /// The halt code once the kernel has halted (its Workers are stopped).
     pub fn halted(&self) -> Option<i32> {
         let h = HALTED.load(Ordering::Acquire);
@@ -251,37 +244,40 @@ impl Machine {
         let t = tables();
         let entry = t.find(syscalls::ENTRY).unwrap_or(0);
         let (records, ids) = trace::ring_ids(&Direct, self.ring(), t.ring_words);
-        // The running task and the time at each record (from the last enter
-        // or exit record, which carry them).
-        let (mut task, mut time) = (0, 0);
+        // The task running at each record: it changes when __switch_to(prev,
+        // next) returns (in next), and when a new task starts
+        // (wasm_task_entry(p)); a Task record says so too.
+        let (switch, start, do_exit) = (t.find("__switch_to"), t.find("wasm_task_entry"), t.find("do_exit"));
+        let args = |i: usize| match records.get(i + 1) {
+            Some(&trace::Record::Args { args, .. }) => Some(args),
+            _ => None,
+        };
+        let (mut task, mut next) = (0, None);
         let mut tasks = Vec::with_capacity(records.len());
-        let mut times = Vec::with_capacity(records.len());
         let mut idents: std::collections::BTreeMap<u32, Vec<(usize, task::Task)>> = Default::default();
         let mut exits: std::collections::BTreeMap<u32, Vec<usize>> = Default::default();
-        let do_exit = t.find("do_exit");
         for (i, r) in records.iter().enumerate() {
-            if let trace::Record::Enter { current, time: t, .. } | trace::Record::Exit { current, time: t, .. } = *r {
-                task = current;
-                time = t;
-            }
             match *r {
+                trace::Record::Block { func, n: 0 } if Some(func) == switch => next = args(i).map(|a| a[1]),
+                trace::Record::Block { func, n: 0 } if Some(func) == start => {
+                    task = args(i).map_or(task, |a| a[0]);
+                    next = None;
+                }
+                trace::Record::Block { func, n: 0 } if Some(func) == do_exit => exits.entry(task).or_default().push(i),
+                trace::Record::Return { func, .. } if Some(func) == switch => task = next.take().unwrap_or(task),
                 trace::Record::Task { task: addr, pid, comm } => {
                     task = addr;
                     let bytes: Vec<u8> = comm.iter().flat_map(|w| w.to_le_bytes()).take_while(|&b| b != 0).collect();
                     let who = task::Task { pid: pid as i32, comm: String::from_utf8_lossy(&bytes).into() };
                     idents.entry(addr).or_default().push((i, who));
                 }
-                trace::Record::Enter { func, current, .. } if Some(func) == do_exit => {
-                    exits.entry(current).or_default().push(i);
-                }
                 _ => {}
             }
             tasks.push(task);
-            times.push(time);
         }
-        let calls = syscalls::split(entry, records.iter().copied());
+        let calls = syscalls::split(entry, &records, &tasks);
         *self.syscalls.borrow_mut() = Some(calls);
-        *self.history.borrow_mut() = History { records, ids, tasks, times, idents, exits };
+        *self.history.borrow_mut() = History { records, ids, tasks, idents, exits };
     }
 
     fn with_syscalls<T>(&self, f: impl FnOnce(&[syscalls::Syscall]) -> T) -> T {
@@ -417,7 +413,7 @@ impl Machine {
     }
 
     /// Where the kernel was at record `i`: { i, kind, func, block, file,
-    /// line, column, time_ns, task: { addr, pid, comm }, syscall } (syscall:
+    /// line, column, task: { addr, pid, comm }, syscall } (syscall:
     /// the index of the syscall in progress on that task, if any).
     pub fn at(&self, i: usize) -> JsValue {
         let h = self.history.borrow();
@@ -426,13 +422,12 @@ impl Machine {
         let o = Object::new();
         let (kind, func, block) = match *r {
             trace::Record::Block { func, n } => ("block", func, Some(n)),
-            trace::Record::Enter { func, .. } => ("enter", func, None),
-            trace::Record::Exit { func, .. } => ("exit", func, None),
-            trace::Record::Return { func } => ("return", func, None),
+            trace::Record::Return { func, .. } => ("return", func, None),
             trace::Record::Line { .. } => ("line", 0, None),
             trace::Record::Task { .. } => ("task", 0, None),
             trace::Record::Args { .. } => ("args", 0, None),
             trace::Record::Store { .. } => ("store", 0, None),
+            trace::Record::Locals { .. } => ("locals", 0, None),
         };
         js::set(&o, "i", i as f64);
         js::set(&o, "kind", kind);
@@ -449,7 +444,6 @@ impl Machine {
             js::set(&o, "line", l.line);
             js::set(&o, "column", l.column);
         }
-        js::set(&o, "time_ns", h.times[i] as f64);
         js::set(&o, "task", to_js(&task_ref(h.tasks[i], h.task_at(h.tasks[i], i))));
         let task = h.tasks[i];
         let sys = self.with_syscalls(|calls| calls.iter().position(|s| {
@@ -461,8 +455,8 @@ impl Machine {
 
     /// The position of the next (dir > 0) or previous block record from `i`
     /// that starts a new `unit`: "block", "line" (another source line, on
-    /// the task running at `i`), "function" (another function than at `i`),
-    /// or "syscall" (a syscall's first record). `i` if none.
+    /// the task running at `i`), or "function" (another function than at
+    /// `i`). `i` if none.
     pub fn seek(&self, i: usize, dir: i32, unit: &str) -> usize {
         let h = self.history.borrow();
         let n = h.records.len();
@@ -470,12 +464,6 @@ impl Machine {
             Some(trace::Record::Block { func, .. }) => Some(*func),
             _ => None,
         };
-        if unit == "syscall" {
-            return self.with_syscalls(|calls| {
-                let starts = calls.iter().map(|s| s.first);
-                if dir > 0 { starts.filter(|&f| f > i).min() } else { starts.filter(|&f| f < i).max() }
-            }).unwrap_or(i);
-        }
         let t = tables();
         let line_at = |j: usize| match h.records.get(j) {
             Some(&trace::Record::Block { func, n }) => t.blocks.get(&(func, n)).map(|l| (l.file, l.line)),
@@ -573,15 +561,6 @@ impl Machine {
         list.into()
     }
 
-    /// The call stack at record `i` (of the task running then), outermost
-    /// first: [function name].
-    pub fn stack_at(&self, i: usize) -> Vec<String> {
-        let h = self.history.borrow();
-        let t = tables();
-        stack::stack_at(&h.records, &h.tasks, i).into_iter()
-            .map(|f| t.functions.get(&f).map_or(format!("{f:#x}"), |x| x.name.clone())).collect()
-    }
-
     /// The call stack at record `i` of the last snapshot (or its last: at
     /// a stop, take a snapshot first), innermost first, rebuilt from the
     /// trace: [{ func, file, line, args: [Object (see ksee_core::view)] }]
@@ -592,7 +571,7 @@ impl Machine {
         let t = tables();
         let list = js_sys::Array::new();
         let Some(i) = i.or(h.records.len().checked_sub(1)) else { return list.into() };
-        for (func, _, args) in stack::calls_at(&h.records, &h.tasks, i).into_iter().rev() {
+        for stack::Call { func, args, locals, .. } in stack::calls_at(&h.records, &h.tasks, i).into_iter().rev() {
             let o = Object::new();
             let f = t.functions.get(&func);
             let name = f.map_or(format!("{func:#x}"), |f| f.name.clone());
@@ -602,7 +581,7 @@ impl Machine {
                 js::set(&o, "line", f.loc.line);
             }
             if let Some(args) = args {
-                let known = f.and_then(|f| f.known).unwrap_or(u32::MAX);
+                let known = f.map_or(u32::MAX, |f| f.known);
                 let list = js_sys::Array::new();
                 for (k, ((pname, ty), v)) in t.types.params.get(&name).into_iter().flatten().zip(args).enumerate() {
                     let mut arg = t.types.object(&Bytes(&v.to_le_bytes()), pname, 0, *ty, 0);
@@ -617,29 +596,33 @@ impl Machine {
                 }
                 js::set(&o, "args", list);
             }
+            // Its locals in memory, as they were (memory_at).
+            if let (Some(addrs), Some(names)) = (locals, t.locals.get(&func)) {
+                let types = t.types.locals.get(&name);
+                let list = js_sys::Array::new();
+                for (addr, var) in addrs.into_iter().zip(names) {
+                    let Some(&(_, ty)) = types.and_then(|v| v.iter().find(|(n, _)| n == var)) else { continue };
+                    list.push(&self.with_memory(|mem| to_js(&t.types.object(mem, var, addr, ty, 0))));
+                }
+                js::set(&o, "locals", list);
+            }
             list.push(&o);
         }
         list.into()
     }
 
-    /// The trace in `n` buckets, for a timeline: [{ pid, comm, syscall }]
-    /// (the task and the syscall in progress at the bucket's start).
+    /// The trace in `n` buckets, for a timeline: [{ pid, comm }] (the task
+    /// running at each bucket's start; pid -1 if not known).
     pub fn timeline(&self, n: usize) -> JsValue {
         let h = self.history.borrow();
         let total = h.records.len().max(1);
-        let spans: Vec<(u32, usize, usize)> = self.with_syscalls(|calls| {
-            calls.iter().map(|s| (s.task, s.first, s.last.unwrap_or(usize::MAX))).collect()
-        });
         let list = js_sys::Array::new();
         for b in 0..n {
             let i = b * total / n.max(1);
-            let task = h.tasks.get(i).copied().unwrap_or(0);
-            let info = h.task_at(task, i);
+            let info = h.tasks.get(i).and_then(|&task| h.task_at(task, i));
             let o = Object::new();
             js::set(&o, "pid", info.as_ref().map_or(-1, |t| t.pid));
             js::set(&o, "comm", info.map_or(String::new(), |t| t.comm));
-            let sys = spans.iter().position(|&(t, f, l)| t == task && f <= i && i <= l);
-            js::set(&o, "syscall", sys.map_or(-1.0, |s| s as f64));
             list.push(&o);
         }
         list.into()
@@ -677,11 +660,6 @@ impl Machine {
         self.with_syscalls(|calls| self.with_views(|v| {
             to_js(&calls.iter().enumerate().map(|(i, s)| v.summary(i, s)).collect::<Vec<_>>())
         }))
-    }
-
-    /// What syscall `n` ran, as runs of blocks per function.
-    pub fn runs(&self, n: usize) -> JsValue {
-        self.with_syscalls(|calls| to_js(&calls.get(n).map(|s| self.views().runs(s)).unwrap_or_default()))
     }
 
     /// The instrumented functions called `name` (usually one), with how
@@ -842,11 +820,6 @@ impl Machine {
         DEBUG.pause();
     }
 
-    /// From a stop: run to the next block.
-    pub fn step(&self) {
-        DEBUG.go(debug::STEP);
-    }
-
     /// From a stop: run to the next block of the same function, on the
     /// same task (over calls).
     pub fn next(&self) {
@@ -883,23 +856,6 @@ impl Machine {
             if on { DEBUG.add(f, n); } else { DEBUG.remove(f, n); }
         }
         blocks.len()
-    }
-
-    /// The breakpoints, as [{ func, block, file, line }].
-    pub fn breakpoints(&self) -> JsValue {
-        let t = tables();
-        let list = js_sys::Array::new();
-        for (f, n) in DEBUG.list() {
-            let o = Object::new();
-            js::set(&o, "func", t.functions.get(&f).map_or(String::new(), |f| f.name.clone()));
-            js::set(&o, "block", n);
-            if let Some(&l) = t.blocks.get(&(f, n)) {
-                js::set(&o, "file", t.file(l));
-                js::set(&o, "line", l.line);
-            }
-            list.push(&o);
-        }
-        list.into()
     }
 
 }

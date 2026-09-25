@@ -1,83 +1,153 @@
-// The source view: a whole kernel file, with the lines where blocks ran
-// (and how often), breakpoints, and where the kernel is stopped or where
-// the history cursor is.
-import { $, el } from "./dom.js";
+// The source view: a whole kernel file in Monaco (web/editor.js), with the
+// lines where blocks ran (counts in the gutter; untaken ones marked), the
+// function's lines, breakpoints (click the glyph margin), and where the
+// kernel is stopped or the cursor is. Hover a name for its value at the
+// cursor (an argument, a global, and fields: file->f_pos); right-click to
+// watch it; F12 or Ctrl+click on a function to open its source.
+import { $ } from "./dom.js";
+import { loadMonaco, readOnly } from "./editor.js";
 
 const KEYWORDS = new Set(("auto break case char const continue default do double else enum extern float for goto if " +
   "inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void " +
-  "volatile while bool true false NULL u8 u16 u32 u64 s8 s16 s32 s64 size_t ssize_t loff_t __user unlikely likely").split(" "));
+  "volatile while bool true false NULL").split(" "));
+const WORD = /[A-Za-z0-9_]/;
 
-// C, roughly: comments (also across lines), strings, preprocessor lines,
-// keywords, numbers. One list of nodes per line.
-export function highlight(lines) {
-  let comment = false;
-  return lines.map((line) => {
-    const out = [];
-    const push = (cls, text) => out.push(cls ? el("span", { className: cls, textContent: text }) : text);
-    if (!comment && /^\s*#/.test(line)) return [el("span", { className: "pp", textContent: line })];
-    for (let i = 0; i < line.length;) {
-      if (comment) {
-        const end = line.indexOf("*/", i), stop = end < 0 ? line.length : end + 2;
-        push("cm", line.slice(i, stop));
-        i = stop;
-        comment = end < 0;
-        continue;
-      }
-      const rest = line.slice(i);
-      let t;
-      if (rest.startsWith("//")) { push("cm", rest); break; }
-      if (rest.startsWith("/*")) { comment = true; continue; }
-      if ((t = rest.match(/^"(\\.|[^"\\])*"?|^'(\\.|[^'\\])*'?/))) push("st", t[0]);
-      else if ((t = rest.match(/^[A-Za-z_]\w*/))) push(KEYWORDS.has(t[0]) ? "kw" : "", t[0]);
-      else if ((t = rest.match(/^(0x[0-9a-fA-F]+|\d+)[uUlL]*/))) push("nu", t[0]);
-      else push("", (t = [rest[0]])[0]);
-      i += t[0].length;
-    }
-    return out;
-  });
+// The expression at offset `k` of `text`: the name there, with the fields
+// before it ("file->f_pos" on f_pos); null if not a name.
+export function exprAt(text, k) {
+  if (!WORD.test(text[k] ?? "")) return null;
+  let a = k, b = k;
+  while (a > 0 && WORD.test(text[a - 1])) a--;
+  while (b < text.length && WORD.test(text[b])) b++;
+  let expr = text.slice(a, b);
+  if (/^\d/.test(expr) || KEYWORDS.has(expr)) return null;
+  for (;;) {
+    const m = text.slice(0, a).match(/([A-Za-z_]\w*)\s*(->|\.)\s*$/);
+    if (!m) break;
+    expr = `${m[1]}${m[2]}${expr}`;
+    a -= m[0].length;
+  }
+  return { expr, start: a, end: b };
 }
 
 export function source(app) {
   const { m } = app;
-  const files = new Map();
+  const texts = new Map();
   const fetchFile = (file) => {
-    if (!files.has(file))
-      files.set(file, file.startsWith("/") ? Promise.resolve(null)
+    if (!texts.has(file))
+      texts.set(file, file.startsWith("/") ? Promise.resolve(null)
         : fetch(new URL(`./src/${file}`, location)).then((r) => (r.ok ? r.text() : null)).catch(() => null));
-    return files.get(file);
+    return texts.get(file);
   };
   // What is shown, and the markers: breakpoints, the stop, the history cursor.
-  const v = { file: null, fn: null, syscall: undefined, breaks: new Set(), stop: null, cursor: null };
+  const v = { file: null, fn: null, syscall: undefined, breaks: new Set(), stop: null, cursor: null, counts: new Map() };
+  let monaco, ed, marks;
+  const models = new Map();
+
+  const ready = loadMonaco().then((mo) => {
+    monaco = mo;
+    $("src").replaceChildren();
+    ed = monaco.editor.create($("src"), {
+      ...readOnly,
+      glyphMargin: true,
+      lineNumbersMinChars: 8,
+      // Line numbers, with how often blocks there ran.
+      lineNumbers: (n) => (v.counts.has(n) ? `${v.counts.get(n) ? `${v.counts.get(n)}×` : "·"} ${n}` : `${n}`),
+    });
+    marks = ed.createDecorationsCollection();
+    // A breakpoint: click the glyph margin (or the line number) of a line that has blocks.
+    ed.onMouseDown((e) => {
+      const T = monaco.editor.MouseTargetType, line = e.target.position?.lineNumber;
+      if ((e.target.type === T.GUTTER_GLYPH_MARGIN || e.target.type === T.GUTTER_LINE_NUMBERS) && v.counts.has(line)) {
+        const key = `${v.file}:${line}`, on = !v.breaks.has(key);
+        if (m.break_line(v.file, line, on)) on ? v.breaks.add(key) : v.breaks.delete(key);
+        decorate();
+      } else if (e.target.type === T.CONTENT_TEXT && (e.event.ctrlKey || e.event.metaKey)) {
+        definition(e.target.position);
+      }
+    });
+    // Hover: the value at the cursor.
+    monaco.languages.registerHoverProvider("c", {
+      provideHover(model, pos) {
+        if (model !== ed.getModel()) return null;
+        const h = hover(pos.lineNumber, model.getLineContent(pos.lineNumber), pos.column - 1);
+        return h && { range: new monaco.Range(pos.lineNumber, h.start + 1, pos.lineNumber, h.end + 1), contents: h.contents };
+      },
+    });
+    ed.addAction({ id: "ksee.watch", label: "Watch", contextMenuGroupId: "navigation", contextMenuOrder: 0,
+      run: () => {
+        const pos = ed.getPosition(), e = exprAt(ed.getModel().getLineContent(pos.lineNumber), pos.column - 1);
+        if (e) app.watch(e.expr, inFunction(pos.lineNumber) ? v.fn.name : null);
+      } });
+    ed.addAction({ id: "ksee.definition", label: "Go to the function's source", contextMenuGroupId: "navigation",
+      contextMenuOrder: 1, keybindings: [monaco.KeyCode.F12], run: () => definition(ed.getPosition()) });
+  });
+
+  // Whether line `n` of the shown file is in the shown function.
+  function inFunction(n) {
+    const fn = v.fn?.file === v.file ? v.fn : null;
+    return fn && n >= fn.line && n <= Math.max(fn.line, ...fn.blocks.filter((b) => b.file === v.file).map((b) => b.line));
+  }
+
+  // The value of the expression at `k` in line `line` (its `text`), for a
+  // hover: { start, end, text, contents (markdown) }, or null.
+  function hover(line, text, k) {
+    const e = exprAt(text, k);
+    // (Arguments only in the shown function's own lines; elsewhere, globals.)
+    const o = e && app.resolve(e.expr, inFunction(line) ? v.fn.name : null);
+    if (!o) return null;
+    const fields = o.value == null || (o.target != null && o.value !== "NULL") ? (app.kids(o) ?? []).slice(0, 10) : [];
+    const code = [`${e.expr} = ${o.value ?? "{…}"}  // ${o.ty}`, ...fields.map((c) => `  .${c.name} = ${c.value ?? "{…}"}`)].join("\n");
+    return { start: e.start, end: e.end, text: code,
+             contents: [{ value: "```c\n" + code + "\n```" }] };
+  }
+  // A function named at `pos`: its source.
+  function definition(pos) {
+    const word = ed.getModel().getWordAtPosition(pos)?.word;
+    if (word && m.functions(word).length) showFunction(word);
+  }
+
+  function model(file, text) {
+    if (!models.has(file)) models.set(file, monaco.editor.createModel(text, "c", monaco.Uri.parse(`kernel:///${file}`)));
+    return models.get(file);
+  }
+
+  // The markers for the shown file.
+  function decorate() {
+    const file = v.file, fn = v.fn?.file === file ? v.fn : null;
+    const last = fn ? Math.max(fn.line, ...fn.blocks.filter((b) => b.file === file).map((b) => b.line)) : 0;
+    const at = (x) => x && x.file === file && x.line;
+    const line = (n, options) => ({ range: new monaco.Range(n, 1, n, 1), options });
+    const d = [];
+    for (const [n, c] of v.counts)
+      d.push(line(n, c > 0
+        ? { isWholeLine: true, className: "ln-hit", overviewRuler: { color: "#2da44e88", position: 4 }, minimap: { color: "#2da44e88", position: 1 } }
+        : { linesDecorationsClassName: "ln-miss" }));
+    if (fn) d.push({ range: new monaco.Range(fn.line, 1, last, 1), options: { isWholeLine: true, linesDecorationsClassName: "ln-infn" } });
+    for (const key of v.breaks) {
+      const [f, n] = [key.slice(0, key.lastIndexOf(":")), Number(key.slice(key.lastIndexOf(":") + 1))];
+      if (f === file) d.push(line(n, { glyphMarginClassName: "gl-break", glyphMarginHoverMessage: { value: "breakpoint: click to remove" } }));
+    }
+    if (at(v.cursor)) d.push(line(v.cursor.line, { isWholeLine: true, className: "ln-cursor", glyphMarginClassName: "gl-cursor",
+      overviewRuler: { color: "#0969da", position: 7 } }));
+    if (at(v.stop)) d.push(line(v.stop.line, { isWholeLine: true, className: "ln-stop", glyphMarginClassName: "gl-stop",
+      overviewRuler: { color: "#cf222e", position: 7 } }));
+    marks.set(d);
+  }
 
   async function showFile(file, focus) {
     v.file = file;
-    const text = await fetchFile(file);
+    const [text] = await Promise.all([fetchFile(file), ready]);
     if (v.file !== file) return; // changed while loading
-    if (text === null)
-      return $("src").replaceChildren(el("div", { className: "empty", textContent: `${file}: not in this site's sources.` }));
-    const cov = new Map(m.file_coverage(file, v.syscall).map((c) => [c.line, c.count]));
-    const lines = text.split("\n"), hl = highlight(lines);
+    const mdl = model(file, text ?? `// ${file}: not in this site's sources.`);
+    if (ed.getModel() !== mdl) ed.setModel(mdl);
+    v.counts = new Map(text === null ? [] : m.file_coverage(file, v.syscall).map((c) => [c.line, c.count]));
+    ed.updateOptions({ lineNumbers: ed.getRawOptions().lineNumbers }); // (the counts changed)
+    decorate();
     const fn = v.fn?.file === file ? v.fn : null;
-    const last = fn ? Math.max(fn.line, ...fn.blocks.filter((b) => b.file === file).map((b) => b.line)) : 0;
-    const mark = (at, n) => at && at.file === file && at.line === n;
-    const rows = lines.map((_, i) => {
-      const n = i + 1, c = cov.get(n), key = `${file}:${n}`;
-      const cls = [c === undefined ? "" : c > 0 ? "hit" : "miss", mark(v.stop, n) ? "at" : "", mark(v.cursor, n) ? "cursor" : "",
-                   fn && n >= fn.line && n <= last ? "infn" : ""].join(" ");
-      const num = el("td", { className: "n" + (c !== undefined ? " can" : ""), textContent: n });
-      if (c !== undefined)
-        num.onclick = () => {
-          const on = !v.breaks.has(key);
-          if (m.break_line(file, n, on)) on ? v.breaks.add(key) : v.breaks.delete(key);
-          showFile(file, n);
-        };
-      return el("tr", { className: cls, id: `L${n}` },
-        el("td", { className: "bp", textContent: mark(v.stop, n) ? "▶" : mark(v.cursor, n) ? "◆" : v.breaks.has(key) ? "●" : "" }),
-        num, el("td", { className: "h", textContent: c === undefined ? "" : c > 0 ? `${c}×` : "0" }),
-        el("td", { className: "code" }, ...hl[i]));
-    });
-    $("src").replaceChildren(el("table", { className: "src" }, el("tbody", {}, ...rows)));
-    $("src").querySelector(`#L${focus ?? fn?.line ?? 1}`)?.scrollIntoView({ block: focus ? "center" : "start" });
+    const to = focus ?? fn?.line ?? 1;
+    if (focus) ed.revealLineInCenterIfOutsideViewport(to);
+    else ed.revealLineNearTop(to);
     const ran = fn ? ` · ${fn.name}: ${fn.blocks.filter((b) => b.count > 0).length} of ${fn.blocks.length} blocks ran` : "";
     $("fn-title").textContent = file + ran;
   }
@@ -91,65 +161,17 @@ export function source(app) {
     v.syscall = syscall;
     showFile(file ?? f.file, focus);
   }
-  // ---- Hover: the value of the expression under the mouse ----
-  // A name, and the fields before it ("file->f_pos" when on f_pos), as
-  // app.resolve finds it at the cursor (an argument of a call on the stack,
-  // the shown function's first; or a global). Click: watch it.
-  const tip = el("div", { className: "tip", hidden: true });
-  document.body.append(tip);
-  const WORD = /[A-Za-z0-9_]/;
-  // The expression at the mouse, from the line's text and the offset in it.
-  function exprAt(text, k) {
-    if (!WORD.test(text[k] ?? "")) return null;
-    let a = k, b = k;
-    while (a > 0 && WORD.test(text[a - 1])) a--;
-    while (b < text.length && WORD.test(text[b])) b++;
-    let expr = text.slice(a, b);
-    if (/^\d/.test(expr) || KEYWORDS.has(expr)) return null;
-    // Fields before it: "x->", "x.".
-    for (;;) {
-      const m2 = text.slice(0, a).match(/([A-Za-z_]\w*)\s*(->|\.)\s*$/);
-      if (!m2) break;
-      expr = `${m2[1]}${m2[2]}${expr}`;
-      a -= m2[0].length;
-    }
-    return expr;
-  }
-  function textOffset(td, node, offset) {
-    let k = 0;
-    const walk = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
-    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
-      if (n === node) return k + offset;
-      k += n.textContent.length;
-    }
-    return -1;
-  }
-  let hovered = null;
-  $("src").addEventListener("mousemove", (e) => {
-    const pos = document.caretPositionFromPoint?.(e.clientX, e.clientY);
-    const r = pos ? { node: pos.offsetNode, offset: pos.offset } : (() => {
-      const range = document.caretRangeFromPoint?.(e.clientX, e.clientY);
-      return range && { node: range.startContainer, offset: range.startOffset };
-    })();
-    const td = r?.node?.parentElement?.closest?.("td.code");
-    const expr = td ? exprAt(td.textContent, textOffset(td, r.node, r.offset)) : null;
-    const o = expr && app.resolve(expr, v.fn?.name);
-    hovered = o ? expr : null;
-    if (!o) return (tip.hidden = true);
-    const fields = o.value == null || (o.target != null && o.value !== "NULL") ? (app.kids(o) ?? []).slice(0, 8) : [];
-    tip.replaceChildren(
-      el("div", {}, el("b", { textContent: expr }), " = ", el("span", { className: "v", textContent: o.value ?? "{…}" }),
-        el("span", { className: "dim", textContent: `  ${o.ty}` })),
-      ...fields.map((c) => el("div", { className: "f" }, `${c.name} = `, el("span", { className: "v", textContent: c.value ?? "{…}" }))),
-      el("div", { className: "dim", textContent: "click: watch it" }));
-    tip.hidden = false;
-    tip.style.left = `${Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8)}px`;
-    tip.style.top = `${Math.min(e.clientY + 16, innerHeight - tip.offsetHeight - 8)}px`;
-  });
-  $("src").addEventListener("mouseleave", () => (tip.hidden = true));
-  $("src").addEventListener("click", (e) => {
-    if (hovered && e.target.closest("td.code")) app.watch(hovered);
-  });
 
-  return { view: v, showFunction, showFile };
+  // For tests: the hover at the first `needle` of the shown file, on `word`.
+  async function hoverAt(needle, word) {
+    await ready;
+    const mdl = ed.getModel();
+    for (let n = 1; n <= mdl.getLineCount(); n++) {
+      const text = mdl.getLineContent(n), k = text.indexOf(needle);
+      if (k >= 0) return hover(n, text, k + needle.indexOf(word))?.text ?? null;
+    }
+    return null;
+  }
+
+  return { view: v, showFunction, showFile, hoverAt, ready };
 }

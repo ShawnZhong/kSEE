@@ -6,11 +6,13 @@ use crate::Memory;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Record {
+    /// Block `n` of `func` (block 0: a call; its arguments follow).
     Block { func: u32, n: u32 },
-    Enter { func: u32, time: u64, current: u32, args: [u32; 4] },
-    Exit { func: u32, time: u64, current: u32, value: u32 },
-    /// A return from a function with block probes.
-    Return { func: u32 },
+    /// A return from `func`, with `value` (truncated to 32 bits).
+    Return { func: u32, value: u32 },
+    /// The addresses of `func`'s locals in memory (the first `n`; their
+    /// names: Tables::locals).
+    Locals { func: u32, addrs: [u32; 8], n: u8 },
     /// A user program's source line (user/ksee.h: before each syscall).
     Line { line: u32 },
     /// A task entering a user program (after exec): who it is, as the
@@ -25,8 +27,7 @@ pub enum Record {
 }
 
 const BLOCK: u32 = 1;
-const ENTER: u32 = 2;
-const EXIT: u32 = 3;
+const LOCALS: u32 = 2;
 const RETURN: u32 = 4;
 /// The tag of a Line record's head (written by the runtime, not the plugin).
 pub const LINE: u32 = 5;
@@ -152,7 +153,20 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                     }
                     return Some(Record::Block { func, n });
                 }
-                RETURN => return Some(Record::Return { func }),
+                LOCALS => {
+                    let mut addrs = [0u32; 8];
+                    let want = ((tag & 0xf) as usize).min(8);
+                    if self.values(&mut addrs, want) < want {
+                        continue;
+                    }
+                    return Some(Record::Locals { func, addrs, n: want as u8 });
+                }
+                RETURN => {
+                    if self.values(&mut v, 1) < 1 {
+                        continue; // truncated
+                    }
+                    return Some(Record::Return { func, value: v[0] });
+                }
                 LINE => return Some(Record::Line { line: func }),
                 STORE => {
                     let class = tag & 0xf;
@@ -166,23 +180,13 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                         Record::Store { addr: func, size: 1 << class, old: v[0] as u64 | (v[1] as u64) << 32 }
                     });
                 }
-                ENTER => 7,
-                EXIT => 4,
                 TASK => 5,
                 _ => continue, // a continuation without its head
             };
             if self.values(&mut v, count) < count {
                 continue; // truncated
             }
-            if kind == TASK {
-                return Some(Record::Task { task: func, pid: v[0], comm: [v[1], v[2], v[3], v[4]] });
-            }
-            let time = v[0] as u64 | (v[1] as u64) << 32;
-            return Some(if kind == ENTER {
-                Record::Enter { func, time, current: v[2], args: [v[3], v[4], v[5], v[6]] }
-            } else {
-                Record::Exit { func, time, current: v[2], value: v[3] }
-            });
+            return Some(Record::Task { task: func, pid: v[0], comm: [v[1], v[2], v[3], v[4]] });
         }
         None
     }
@@ -192,38 +196,22 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
 pub(crate) mod tests {
     use super::*;
 
-    pub fn enter(func: u32, time: u64, current: u32, args: [u32; 4]) -> Vec<u32> {
-        let mut w = alloc::vec![func, ENTER << 28];
-        for (i, v) in [time as u32, (time >> 32) as u32, current].into_iter().chain(args).enumerate() {
-            w.extend([v, VALUE << 28 | i as u32]);
-        }
-        w
-    }
-
-    pub fn exit(func: u32, time: u64, current: u32, value: u32) -> Vec<u32> {
-        let mut w = alloc::vec![func, EXIT << 28];
-        for (i, v) in [time as u32, (time >> 32) as u32, current, value].into_iter().enumerate() {
-            w.extend([v, VALUE << 28 | i as u32]);
-        }
-        w
-    }
-
     pub fn block(func: u32, n: u32) -> Vec<u32> {
         alloc::vec![func, BLOCK << 28 | n]
     }
 
+    pub fn ret(func: u32, value: u32) -> Vec<u32> {
+        alloc::vec![func, RETURN << 28, value, VALUE << 28]
+    }
+
     #[test]
     fn decodes_and_resyncs() {
-        let mut w = enter(5, 1 << 33 | 7, 0x100, [1, 2, 3, 4]);
-        let whole = w.len();
+        let mut w = alloc::vec![5, BLOCK << 28, 1, VALUE << 28, 2, VALUE << 28 | 1];
         w.extend(block(5, 3));
-        w.extend(exit(5, 9, 0x100, 42));
-        // Drop the head and time of the first record, as a wrapped ring would.
-        let got = decode(&w[4..]);
-        assert_eq!(got, [Record::Block { func: 5, n: 3 },
-                         Record::Exit { func: 5, time: 9, current: 0x100, value: 42 }]);
-        assert_eq!(decode(&w[..whole])[0],
-                   Record::Enter { func: 5, time: 1 << 33 | 7, current: 0x100, args: [1, 2, 3, 4] });
+        w.extend(ret(5, 42));
+        // Drop the head of the first record, as a wrapped ring would.
+        assert_eq!(decode(&w[2..]), [Record::Block { func: 5, n: 3 }, Record::Return { func: 5, value: 42 }]);
+        assert_eq!(decode(&w)[..2], [Record::Block { func: 5, n: 0 }, Record::Args { args: [1, 2, 0, 0, 0, 0], n: 2 }]);
     }
 
     struct Ring(Vec<u8>);

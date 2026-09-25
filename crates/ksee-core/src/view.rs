@@ -33,30 +33,15 @@ pub struct SyscallSummary {
     /// From the syscall table, else the handler that ran ("write" for
     /// __wasm_sys_write).
     pub name: Option<String>,
-    pub args: [u32; 3],
+    pub args: [u32; 5],
+    /// The result (None: still running at the end of the trace).
     pub ret: Option<i32>,
-    pub start_ns: u64,
-    pub duration_ns: Option<u64>,
     pub blocks: usize,
-    pub functions: usize,
-    pub partial: bool,
-    /// init's own traffic on the /dev/ksee channel (fetching a request,
-    /// replying), not a syscall the page made.
+    /// init's own traffic on the /dev/ksee channel, not a program's syscall.
     pub control: bool,
-    /// Its span in the record stream (for timelines).
+    /// Its span in the records.
     pub first: usize,
     pub last: Option<usize>,
-}
-
-/// Consecutive blocks of one function.
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Run {
-    pub func: String,
-    pub blocks: usize,
-    /// Where the function is defined.
-    pub file: String,
-    pub line: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -109,15 +94,11 @@ impl Views<'_> {
         TaskRef { addr, pid: t.as_ref().map(|t| t.pid), comm: t.map(|t| t.comm) }
     }
 
-    fn func_name(&self, id: u32) -> String {
-        self.tables.functions.get(&id).map_or_else(|| format!("{id:#x}"), |f| f.name.clone())
-    }
-
     pub fn summary(&self, index: usize, s: &Syscall) -> SyscallSummary {
         let mut funcs: Vec<u32> = s.blocks.iter().map(|b| b.0).collect();
         funcs.sort();
         funcs.dedup();
-        let name = self.tables.types.syscalls.get(&s.nr).map(|c| c.name.clone()).or_else(|| {
+        let name = self.tables.types.syscalls.get(&s.nr).cloned().or_else(|| {
             s.blocks.iter().find_map(|&(f, _)| {
                 self.tables.functions.get(&f)?.name.strip_prefix("__wasm_sys_").map(String::from)
             })
@@ -126,44 +107,19 @@ impl Views<'_> {
             self.tables.functions.get(f).is_some_and(|f| f.name.starts_with("ksee_channel_"))
         });
         SyscallSummary {
-            control,
-            first: s.first,
-            last: s.last,
             index,
             task: self.task(s.task, s.first),
             nr: s.nr,
             name,
             args: s.args,
             ret: s.ret,
-            start_ns: s.start,
-            duration_ns: s.end.map(|e| e - s.start),
             blocks: s.blocks.len(),
-            functions: funcs.len(),
-            partial: s.partial,
+            control,
+            first: s.first,
+            last: s.last,
         }
     }
 
-    /// The syscall's execution as runs of blocks per function.
-    pub fn runs(&self, s: &Syscall) -> Vec<Run> {
-        let mut runs: Vec<(u32, Run)> = Vec::new();
-        for &(f, n) in &s.blocks {
-            match runs.last_mut() {
-                Some((last, run)) if *last == f => run.blocks += 1,
-                _ => {
-                    let (file, line) = match self.tables.functions.get(&f) {
-                        Some(func) => (self.tables.file(func.loc).to_string(), func.loc.line),
-                        None => (String::new(), 0),
-                    };
-                    let _ = n;
-                    runs.push((f, Run { func: self.func_name(f), blocks: 1, file, line }));
-                }
-            }
-        }
-        runs.into_iter().map(|(_, r)| r).collect()
-    }
-
-    /// Function `id`'s blocks, with how often each ran (`counts`:
-    /// (function, block) -> times).
     pub fn function(&self, id: u32, counts: &BTreeMap<(u32, u32), u64>) -> Option<Function> {
         let f = self.tables.functions.get(&id)?;
         let blocks = self.tables.blocks_of(id).map(|(n, l)| Block {

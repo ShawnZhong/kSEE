@@ -152,3 +152,18 @@ table.stack tr.watch td { background: var(--panel); }
 .tip .v { color: var(--accent); }
 .tip .f { padding-left: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tip .dim { font-family: system-ui, sans-serif; font-size: 11px; margin-top: 2px; }
+
+/* The source views (Monaco): decorations */
+#src { overflow: hidden; }
+.prog { border-top: 1px solid var(--line); }
+.ln-hit { background: var(--hit-bg); }
+.ln-miss { border-left: 3px solid var(--miss); margin-left: 3px; }
+.ln-infn { border-left: 3px solid var(--accent); margin-left: 3px; }
+.ln-cursor { background: var(--sel); box-shadow: inset 3px 0 var(--accent); }
+.ln-stop { background: var(--at); }
+.gl-break::before, .gl-stop::before, .gl-cursor::before, .gl-stophere::before { display: block; text-align: center; font-size: 12px; }
+.gl-break::before { content: "●"; color: var(--miss); }
+.gl-stop::before { content: "▶"; color: var(--miss); }
+.gl-cursor::before { content: "◆"; color: var(--accent); }
+.gl-stophere::before { content: "●"; color: var(--accent); }
+table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }

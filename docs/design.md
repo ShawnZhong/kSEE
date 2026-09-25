@@ -155,12 +155,20 @@ its moment.
   program (on nolibc) that init starts as a real process (the /dev/ksee
   spawn ioctl), and stops: breakpoints with a note, for the syscalls of the
   lines marked `// stops here`.
-- **One trace**: every block (a call's entry block with its arguments),
-  every return, and every store (with the old value), in one ring. The call
-  tree, the call stack with arguments, and memory as it was at any moment
-  are all rebuilt from it; ✎ says which code last wrote a value. When
-  recording stops, the runtime keeps kernel memory as it was then (the
-  past is that, with the recorded stores undone).
+- **One trace**, one kind of instrumentation for every function (the
+  plugin has no settings): each block (a call's entry block with its
+  arguments), each return (with its value), the addresses of a call's
+  locals in memory, and each store (with the old value), in one ring.
+  Syscalls are wasm_syscall's calls and returns; the running task changes
+  where __switch_to returns. The call tree, call stacks with arguments and
+  locals, and memory as it was at any moment are all rebuilt from it; ✎
+  says which code last wrote a value. When recording stops, the runtime
+  keeps kernel memory as it was then (the past is that, with the recorded
+  stores undone).
+- **Source**: Monaco (vendored at build time): the lines that ran, the
+  function, breakpoints, the stop and the cursor as decorations; hover a
+  name for its value at the cursor; right-click to watch it; F12 to open a
+  function's source.
 - **Lines within blocks**: the plugin writes each block's source lines, so
   steps and Play go by source line; an inlined function is a frame of its
   own.

@@ -61,21 +61,9 @@ const script = opt("eval", `(async () => {
   const $ = (id) => document.getElementById(id);
   const exited = () => document.querySelector(".tstatus")?.textContent.includes("exited");
   const r = { badge: $("badge").textContent };
-  // Hover on the word in the first source line with the needle: the tooltip.
-  const hover = async (needle, word) => {
-    const td = [...document.querySelectorAll("#src td.code")].find((t) => t.textContent.includes(needle));
-    if (!td) return "no " + needle;
-    td.scrollIntoView({ block: "center" });
-    await sleep(50);
-    const walk = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
-    let at = td.textContent.indexOf(needle) + needle.indexOf(word) + 1, n;
-    for (n = walk.nextNode(); n && at >= n.textContent.length; n = walk.nextNode()) at -= n.textContent.length;
-    const range = document.createRange(); range.setStart(n, at); range.setEnd(n, at + 1);
-    const b = range.getBoundingClientRect();
-    $("src").dispatchEvent(new MouseEvent("mousemove", { clientX: b.left + b.width / 2, clientY: b.top + b.height / 2, bubbles: true }));
-    const tip = document.querySelector(".tip");
-    return tip.hidden ? "(no tip)" : tip.innerText.split("\\n")[0];
-  };
+  // The hover on the word in the first shown source line with the needle.
+  const hover = (needle, word) => ksee.src.hoverAt(needle, word).then((t) => t?.split("\\n")[0] ?? "(none)");
+
   for (let i = 0; i < 50 && !document.querySelector(".row.tour"); i++) await sleep(100);
   r.tours = document.querySelectorAll(".row.tour").length;
   [...document.querySelectorAll(".row.tour")].find((e) => e.textContent.includes("read()")).click();
@@ -92,7 +80,7 @@ const script = opt("eval", `(async () => {
   }
   for (let i = 0; i < 100 && !exited(); i++) await sleep(100);
   r.tour = document.querySelector(".tstatus").textContent.slice(0, 40);
-  [...document.querySelectorAll("table.prog tr")].find((tr) => tr.innerText.includes("n = read(")).click();
+  ksee.tours.pickLine(23); // n = read(fd, buf, sizeof(buf));
   await sleep(300);
   $("speed").value = "30"; $("play").click(); await sleep(2000); $("play").click();
   r.replay = [$("badge").textContent, $("mem-note").textContent, $("where").textContent.slice(0, 50)];

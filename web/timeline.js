@@ -240,16 +240,14 @@ export function timeline(app) {
     t.home = { a: s.first, b: s.last ?? t.n - 1, task: s.task.addr };
     t.win = { ...t.home };
   }
-  // Select syscall `s` (its bar highlighted, its calls in the flame chart);
-  // the cursor to record `i`, if given.
-  function select(s, i) {
+  // Select syscall `s` (its bar highlighted, its calls in the flame chart).
+  function select(s) {
     const key = app.key(s);
     if (t.sel !== key || !t.win) {
       t.sel = key;
       show(s);
       loadFrames();
     }
-    if (i !== undefined) t.cursor = i;
     draw();
   }
   $("legend").replaceChildren(...AREAS.map(([p, , name]) =>

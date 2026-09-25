@@ -259,7 +259,6 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
         })));
 
     let ksee = Object::new();
-    js::set(&ksee, "now", export("time_ns"));
     js::set(&ksee, "stop", export("stop"));
     js::set(&ksee, "bulk", export("bulk"));
     let env = Object::new();

@@ -5,8 +5,7 @@
 //! further down the stack is a return to it: the frames above it pop. A
 //! block of a function not on the stack (its entry was before the trace
 //! began) starts the stack again from it. A return record pops the
-//! function's frame (and any above it); so does an exit record (a function
-//! with an exit probe, like wasm_syscall).
+//! function's frame (and any above it).
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -86,8 +85,8 @@ pub fn frames(records: &[Record], tasks: &[u32], from: usize, to: usize, task: O
         }
         match *r {
             Record::Block { func, n } => stacks.entry(t).or_default().block(func, n, i, &mut keep),
-            Record::Exit { func, .. } | Record::Return { func } => stacks.entry(t).or_default().exit(func, i, &mut keep),
-            Record::Enter { .. } | Record::Line { .. } | Record::Task { .. } | Record::Args { .. } | Record::Store { .. } => {}
+            Record::Return { func, .. } => stacks.entry(t).or_default().exit(func, i, &mut keep),
+            _ => {}
         }
     }
     // The calls still in progress at `to`.
@@ -153,7 +152,7 @@ pub fn lines(t: &crate::tables::Tables, records: &[Record], tasks: &[u32], from:
                 at.blocks[depth - 1] = (n, 1);
                 emit(&mut out, func, n, 0, depth as u32 - 1, i);
             }
-            Record::Exit { func, .. } | Record::Return { func } => {
+            Record::Return { func, .. } => {
                 at.stack.exit(func, i, &mut |_| {});
                 let depth = at.stack.frames.len();
                 at.blocks.truncate(depth);
@@ -172,27 +171,43 @@ pub fn lines(t: &crate::tables::Tables, records: &[Record], tasks: &[u32], from:
     out
 }
 
-/// The call stack of the task running at record `at`, outermost first,
-/// with each call's arguments (the Args record after its entry block, if
-/// the trace has it): (function, first record, arguments).
-pub fn calls_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<(u32, usize, Option<Vec<u32>>)> {
+/// A call on a stack: `func`, from record `first`, with its arguments (the
+/// Args record after its entry block) and its locals' addresses (its
+/// Locals record, once it has run), if the trace has them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Call {
+    pub func: u32,
+    pub first: usize,
+    pub args: Option<Vec<u32>>,
+    pub locals: Option<Vec<u32>>,
+}
+
+/// The call stack of the task running at record `at`, outermost first.
+pub fn calls_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<Call> {
     let Some(&task) = tasks.get(at) else { return Vec::new() };
     let mut s = Stack::default();
     for (i, r) in records.iter().enumerate().take(at + 1) {
         if tasks[i] == task {
             match *r {
                 Record::Block { func, n } => s.block(func, n, i, &mut |_| {}),
-                Record::Exit { func, .. } | Record::Return { func } => s.exit(func, i, &mut |_| {}),
+                Record::Return { func, .. } => s.exit(func, i, &mut |_| {}),
                 _ => {}
             }
         }
     }
-    s.frames.into_iter().map(|(f, first)| {
+    s.frames.into_iter().map(|(func, first)| {
         let args = match records.get(first + 1) {
             Some(&Record::Args { args, n }) if matches!(records[first], Record::Block { n: 0, .. }) => Some(args[..n as usize].to_vec()),
             _ => None,
         };
-        (f, first, args)
+        // (Soon after the entry, on the same task, if it got that far.)
+        let locals = (first..records.len().min(at + 1).min(first + 256))
+            .filter(|&i| tasks[i] == task)
+            .find_map(|i| match records[i] {
+                Record::Locals { func: f, addrs, n } if f == func => Some(addrs[..n as usize].to_vec()),
+                _ => None,
+            });
+        Call { func, first, args, locals }
     }).collect()
 }
 
@@ -204,8 +219,8 @@ pub fn stack_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<u32> {
         if tasks[i] == task {
             match *r {
                 Record::Block { func, n } => s.block(func, n, i, &mut |_| {}),
-                Record::Exit { func, .. } | Record::Return { func } => s.exit(func, i, &mut |_| {}),
-                Record::Enter { .. } | Record::Line { .. } | Record::Task { .. } | Record::Args { .. } | Record::Store { .. } => {}
+                Record::Return { func, .. } => s.exit(func, i, &mut |_| {}),
+                _ => {}
             }
         }
     }
@@ -237,7 +252,7 @@ mod tests {
         // f's block 0: lines 1, 2, a call (g: line 10), then line 3.
         let t = crate::tables::Tables::parse(
             "U\nP\t0\tf.c\nP\t1\tg.c\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1;:2;|;:3\nB\t2\t0\t1:10:1\n", "");
-        let r = [b(1, 0), b(2, 0), Record::Return { func: 2 }, Record::Return { func: 1 }];
+        let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 0 }, Record::Return { func: 1, value: 0 }];
         let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| (s.loc.line, s.record, s.depth)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (10, 1, 1), (3, 2, 0)]);
     }
@@ -245,7 +260,7 @@ mod tests {
     #[test]
     fn exits_pop() {
         // A syscall (1) that calls 2, then returns to user space; another.
-        let exit = Record::Exit { func: 1, time: 0, current: 7, value: 0 };
+        let exit = Record::Return { func: 1, value: 0 };
         let r = [b(1, 0), b(2, 0), exit, b(1, 0)];
         assert_eq!(stack_at(&r, &[7; 4], 3), [1]);
     }

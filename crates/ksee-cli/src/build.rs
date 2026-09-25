@@ -10,18 +10,11 @@
 //!                          tours' (user/tours/*.c) and the tests'
 //!                          (user/tests/*.c), as /bin/NAME
 //!   web/tours/             the tours: their sources, and index.json
+//!   web/vendor/monaco/     the Monaco editor (downloaded once from npm)
 //!
-//! $LLVM is the LLVM version suffix (default -23); $KSEE_TRACE and
-//! $KSEE_CURRENT override what the plugin instruments.
+//! $LLVM is the LLVM version suffix (default -23).
 use std::path::Path;
 use std::process::Command;
-
-/// What the plugin instruments (see plugin/ksee-trace.cpp): every basic
-/// block, and the calls that give blocks context.
-const TRACE: &str = "*:block,wasm_syscall:enter+exit,context_switch:enter+exit,\
-                     __schedule,try_to_wake_up,wake_up_new_task,kernel_clone,do_exit";
-/// The kernel variable that holds the current task.
-const CURRENT: &str = "__current_task";
 
 fn env(name: &str, default: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default.into())
@@ -43,7 +36,6 @@ fn stale(out: &str, inputs: &[&str]) -> bool {
 
 pub fn build() {
     let llvm = env("LLVM", "-23");
-    let (trace, current) = (env("KSEE_TRACE", TRACE), env("KSEE_CURRENT", CURRENT));
 
     if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
         eprintln!("  PLUGIN  plugin/ksee-trace.so");
@@ -54,17 +46,15 @@ pub fn build() {
             .args(String::from_utf8_lossy(&flags).split_whitespace()));
     }
 
-    // A hash of the plugin and its settings in the flags makes kbuild
-    // rebuild the kernel when either changes.
-    let mut id = std::fs::read("plugin/ksee-trace.so").unwrap_or_default();
-    id.extend(format!("{trace} {current}").bytes());
-    let id = format!("{:016x}", fnv64(&id));
+    // A hash of the plugin in the flags makes kbuild rebuild the kernel
+    // when it changes.
+    let id = format!("{:016x}", fnv64(&std::fs::read("plugin/ksee-trace.so").unwrap_or_default()));
     let plugin = Path::new("plugin/ksee-trace.so").canonicalize().unwrap();
     let kmake = |args: &[&str]| {
         let mut c = Command::new("make");
         c.args(["-s", "-C", "linux", "ARCH=wasm", &format!("LLVM={llvm}"),
                 &format!("KCFLAGS=-g -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
-            .args(args).env("KSEE_TRACE", &trace).env("KSEE_CURRENT", &current);
+            .args(args);
         c
     };
     if !Path::new("linux/.config").exists() {
@@ -79,6 +69,7 @@ pub fn build() {
     run(Command::new("wasm-bindgen").args(["--target", "web", "--out-dir", "web/pkg",
         "target/wasm32-unknown-unknown/release/ksee_runtime.wasm"]));
 
+    vendor();
     if stale("web/vmlinux", &["linux/vmlinux"]) {
         crate::pack::pack(Path::new("linux"), Path::new("web"));
     }
@@ -123,6 +114,26 @@ pub fn build() {
         }
         std::fs::write("web/initramfs.cpio", cpio.stdout).unwrap_or_else(|e| crate::fail(&format!("web/initramfs.cpio: {e}")));
     }
+}
+
+/// The Monaco editor (the page's source view), its prebuilt AMD build
+/// (package/min/vs), in web/vendor/monaco/vs.
+const MONACO: &str = "0.57.0";
+
+fn vendor() {
+    let dir = format!("web/vendor/monaco-{MONACO}");
+    if Path::new(&format!("{dir}/vs/loader.js")).exists() {
+        return;
+    }
+    eprintln!("  VENDOR  {dir} (npm: monaco-editor {MONACO})");
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
+    let url = format!("https://registry.npmjs.org/monaco-editor/-/monaco-editor-{MONACO}.tgz");
+    run(Command::new("sh").arg("-c").arg(format!(
+        "curl -fsSL '{url}' | tar xz -C '{dir}' --strip-components=2 package/min/vs")));
+    // (A fixed name for the page.)
+    let _ = std::fs::remove_file("web/vendor/monaco");
+    std::os::unix::fs::symlink(format!("monaco-{MONACO}"), "web/vendor/monaco")
+        .unwrap_or_else(|e| crate::fail(&format!("web/vendor/monaco: {e}")));
 }
 
 /// The programs, user/tours/*.c and user/tests/*.c, sorted.

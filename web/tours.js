@@ -6,7 +6,7 @@
 // Afterwards the program's run is in the history: its lines link to what
 // the kernel did for them.
 import { $, el } from "./dom.js";
-import { highlight } from "./source.js";
+import { loadMonaco, readOnly } from "./editor.js";
 
 export async function tours(app) {
   const { m, proc } = app;
@@ -33,10 +33,7 @@ export async function tours(app) {
     t.first = skip + 1;
     // (A line's "// stops here" marks where the tour stops: a ● instead.)
     t.source = lines.slice(skip).map((l) => l.replace(/\s*\/\/ stops here\s*$/, ""));
-    const hl = highlight(t.source);
-    t.rows = t.source.map((_, k) => el("tr", { dataset: { line: t.first + k }, onclick: () => pickLine(t.first + k) },
-      el("td", { className: "bp", textContent: tour.lines?.includes(t.first + k) ? "●" : "", title: "the tour stops in this line's syscall" }),
-      el("td", { className: "n", textContent: t.first + k }), el("td", { className: "code" }, ...hl[k])));
+    const box = el("div", { className: "prog", style: `height:${Math.min(t.source.length, 40) * 18 + 8}px` });
     t.stops = el("ol", { className: "stops" }, ...tour.stops.map((s) =>
       el("li", { dataset: { func: s.func } }, el("b", { className: "mono", textContent: s.func }), " ", s.note)));
     t.status = el("div", { className: "tstatus dim" });
@@ -47,9 +44,18 @@ export async function tours(app) {
         el("div", { className: "q", textContent: tour.question }),
         el("div", { className: "tbar" },
           el("button", { textContent: "↻ Run again", onclick: () => run() }))),
-      t.stops, t.status,
-      el("table", { className: "src prog" }, el("tbody", {}, ...t.rows)));
+      t.stops, t.status, box);
     app.tourStops = tour.stops;
+    // The program, in Monaco (its lines as in the file: numbered from t.first).
+    const monaco = await loadMonaco();
+    t.ed?.dispose();
+    t.ed = monaco.editor.create(box, { ...readOnly, glyphMargin: true, minimap: { enabled: false }, stickyScroll: { enabled: false },
+      lineNumbers: (n) => `${n + t.first - 1}`, lineNumbersMinChars: 3, folding: false,
+      model: monaco.editor.createModel(t.source.join("\n"), "c", monaco.Uri.parse(`tour:///${tour.name}.c#${Date.now()}`)) });
+    t.marks = t.ed.createDecorationsCollection();
+    t.ed.onMouseDown((e) => e.target.position && pickLine(e.target.position.lineNumber + t.first - 1));
+    t.line = null;
+    decorate();
   }
 
   // Run the program, recording, with its stops (breakpoints).
@@ -95,9 +101,21 @@ export async function tours(app) {
     for (const l of lines) if (l.i <= i) best = l;
     return best;
   }
+  // The program's markers: the lines the stops are for, the line now.
+  function decorate() {
+    const Range = globalThis.monaco?.Range;
+    if (!t.ed || !Range) return;
+    const at = (line) => new Range(line - t.first + 1, 1, line - t.first + 1, 1);
+    t.marks.set([
+      ...(t.tour.lines ?? []).map((l) => ({ range: at(l), options: { glyphMarginClassName: "gl-stophere",
+        glyphMarginHoverMessage: { value: "the tour stops in this line's syscall" } } })),
+      ...(t.line ? [{ range: at(t.line), options: { isWholeLine: true, className: "ln-cursor", glyphMarginClassName: "gl-cursor" } }] : []),
+    ]);
+  }
   function mark(line) {
-    t.rows.forEach((r) => r.classList.toggle("cursor", Number(r.dataset.line) === line));
-    t.rows.find((r) => Number(r.dataset.line) === line)?.scrollIntoView({ block: "nearest" });
+    t.line = line;
+    decorate();
+    t.ed?.revealLineInCenterIfOutsideViewport(line - t.first + 1);
   }
   // A program line: to what the kernel did for it (its next syscall).
   function pickLine(line) {
@@ -135,5 +153,6 @@ export async function tours(app) {
   }
 
   index();
-  return { follow, open, run, finish, list };
+  // (For tests: the program line marked now.)
+  return { follow, open, run, finish, list, pickLine, marked: () => t.line };
 }
