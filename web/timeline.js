@@ -240,7 +240,10 @@ export function timeline(app) {
         const f = frames.find((x) => x.first === first && (name ? x.inlined && x.func === name : !x.inlined));
         const owner = frames.find((x) => x.first === first && !x.inlined);
         if (!f) return null;
-        if (key === t.peek) tip.querySelector(".here").textContent = `here: ${f.file}:${f.line}`;
+        // (Where it was called from: the call outside it, where it is.)
+        const caller = frames[frames.indexOf(f) + 1];
+        if (key === t.peek) tip.querySelector(".here").textContent =
+          (caller ? `called at ${caller.file}:${caller.line} · ` : "") + `now at ${f.file}:${f.line}`;
         return { func: owner?.func ?? f.func, file: f.file, line: f.line };
       });
     }
@@ -262,7 +265,7 @@ export function timeline(app) {
          line(`a syscall by ${taskName(s.task)} · ${span}`, "dim")]
       : [line(f?.name ?? "?", ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f")),
          ...inlinedIn(c, first).map((n) => line(`in ${n} (inlined)`, "f")),
-         line(`${f?.file}:${f?.line} · ${span}`, "dim")]);
+         line(span, "dim")]);
     tip.replaceChildren(...tipLines, line("", "dim here"));
     tip.hidden = false;
     const r = tip.getBoundingClientRect();
