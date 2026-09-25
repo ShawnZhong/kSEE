@@ -80,7 +80,12 @@ pub fn build() {
     let mut inputs = vec!["user/init.c", "user/initramfs.list", "user/ksee.h", "linux/usr/gen_init_cpio",
                           "linux/tools/include/nolibc/arch-wasm.h"];
     inputs.extend(tours.iter().map(String::as_str));
-    if stale("web/initramfs.cpio", &inputs) {
+    // (Stale too if the programs are not the ones built: one renamed or removed.)
+    let built = std::fs::read_to_string("web/initramfs.list").unwrap_or_default();
+    let names: Vec<String> = tours.iter().map(|s| Path::new(s).file_stem().unwrap().to_string_lossy().into_owned()).collect();
+    let same = built.lines().filter(|l| l.starts_with("file /bin/")).count() == names.len()
+        && names.iter().all(|n| built.contains(&format!("file /bin/{n} ")));
+    if !same || stale("web/initramfs.cpio", &inputs) {
         eprintln!("  INIT    web/initramfs.cpio");
         let cc = |out: &str, src: &str, flags: &[&str]| run(Command::new(format!("clang{llvm}"))
             .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-Wl,--no-entry", "-Wl,--export=_start"])
@@ -88,11 +93,12 @@ pub fn build() {
         cc("web/init.wasm", "user/init.c", &[]);
         let mut list = std::fs::read_to_string("user/initramfs.list").unwrap_or_default();
         list += "dir /bin 0755 0 0\n";
+        let _ = std::fs::remove_dir_all("web/bin");
+        let _ = std::fs::remove_dir_all("web/tours");
         std::fs::create_dir_all("web/bin").and_then(|_| std::fs::create_dir_all("web/tours"))
             .unwrap_or_else(|e| crate::fail(&format!("web/bin: {e}")));
         let mut index = Vec::new();
-        for src in &tours {
-            let name = Path::new(src).file_stem().unwrap().to_string_lossy().into_owned();
+        for (src, name) in tours.iter().zip(&names) {
             cc(&format!("web/bin/{name}.wasm"), src, &["-nostdinc", "-isystem", "linux/tools/include/nolibc",
                 "-isystem", "linux/usr/include", "-include", "user/ksee.h"]);
             list += &format!("file /bin/{name} bin/{name}.wasm 0755 0 0\n");
