@@ -40,7 +40,7 @@ SMP, no fork: see Limits).
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ Timeline: overview · tasks · call stacks over time · cursor │
+│ Timeline: overview · call stacks over time · tasks · cursor │
 ├──────────────┬──────────────────────────────┬───────────────┤
 │ Tours,       │ The stop's note              │ Stack: calls, │
 │ programs     │ Source at the cursor         │ arguments,    │
@@ -49,62 +49,41 @@ SMP, no fork: see Limits).
 └──────────────┴──────────────────────────────┴───────────────┘
 ```
 
-## The recording
-
-Every kernel function is instrumented the same way by an LLVM pass
-(plugin/ksee-trace.cpp) after optimization, and writes to one ring:
-
-- each **basic block** (a call's entry block, with its arguments);
-- each **return**, with its value;
-- a call's **locals in memory** (their addresses, once they exist);
-- each **store**, with the value it overwrites (not to a function's own
-  stack slots, except those locals).
-
-The runtime adds a few records (the program's source line before each
-syscall; which task a program is). From these alone the host
-(crates/ksee-core) rebuilds everything: syscalls (wasm_syscall's calls and
-returns), the running task (where __switch_to returns), the call tree and
-call stacks with arguments and locals, source lines within blocks (the
-plugin's line tables), and memory as it was at any record (the stores after
-it, undone from memory as it was when recording stopped).
-
-Recording happens only while asked for (a program runs, or ● Record), so a
-recording holds what was asked for, and the kernel runs uninstrumented
-otherwise (a check per probe).
-
-## Architecture
+## How it works
 
 ```text
-linux/ (arch/wasm) ──clang + plugin──▶ vmlinux (wasm) ─┐
-user/  (init, tours, tests: C on nolibc) ─▶ initramfs ─┼─▶ web/ ─▶ browser
-crates/ksee-runtime (Rust → wasm) ─────────────────────┘
+linux/ (arch/wasm) ──clang + plugin──▶ vmlinux (wasm) ──────┐
+user/ (init, tours, programs: C on nolibc) ─▶ initramfs ────┼─▶ web/ ─▶ browser
+crates/ksee-runtime (Rust → wasm) ──────────────────────────┘
 ```
 
-- **The kernel** (linux/, branch wasm): a minimal `arch/wasm` for Linux 7.2:
-  wasm32, `CONFIG_MMU=n`, one CPU, `PREEMPT_NONE`, an initramfs, a console,
-  a timer. Wasm cannot save a call stack, so each task runs in its own Web
-  Worker, whose stack is the task's; a context switch hands a CPU token
-  from one Worker to the next. All Workers share one kernel memory.
-  Programs are wasm modules with their own memory; a syscall is a call
-  into the kernel's `syscall` export. The page asks the kernel to run a
-  program (arch/wasm/kernel/run.c: a request in kernel memory, and an
-  interrupt, the host's only way to wake the kernel); there is no user
-  fork on wasm, so the kernel starts it as a usermode helper.
-- **The core** (crates/ksee-core, `no_std`, tested natively): everything
-  about a recording that needs no browser: decoding the ring, the
-  Recording (tasks, syscalls, calls and lines, memory as it was), and the
-  views the page shows of it, by name (`view`); kernel types (from DWARF).
-- **The runtime** (crates/ksee-runtime, Rust to wasm, wasm-bindgen): one
-  module, instantiated on the kernel's shared memory by the page and by
-  every Worker. The Workers run the timer or a kernel task, and implement
-  the kernel's imports (`worker`, `imports`); the page runs the Machine:
-  it boots and drives the kernel and snapshots its recording (`machine`),
-  and hands the core's views to JS (`replay`).
+- **The kernel** ([kernel.md](kernel.md)): a minimal `arch/wasm` for Linux
+  7.2. Each task runs in its own Web Worker, all on one shared kernel
+  memory; a context switch hands a CPU token from one Worker to the next.
+  Programs are wasm modules; the page asks the kernel to run one.
+- **The recording** ([recording.md](recording.md)): an LLVM pass
+  instruments every function the same way (blocks, calls with arguments,
+  returns, locals, stores with old values) into one ring.
+- **Rebuilding the past** ([replay.md](replay.md)): from the records alone,
+  crates/ksee-core rebuilds which task ran, call stacks, lines within
+  blocks, syscalls, and memory as it was at any record.
+- **The runtime and the page** ([runtime.md](runtime.md)): one Rust wasm
+  module, shared by the page and the Workers, boots the kernel and reads it
+  directly; the page (web/) lays out what the core computes.
 - **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel, the
   runtime, the programs, and the page's files (types from DWARF, the
   sources, Monaco), into web/.
-- **The page** (web/): tours and programs, the timeline, the source
-  (Monaco), the Stack.
+
+The choices that shape it:
+
+- **Real Linux, minimal port.** Generic kernel code wherever it works;
+  arch/wasm only where wasm differs.
+- **The compiler records, uniformly.** No tracepoints or per-subsystem
+  hooks, so no part of the kernel is out of view.
+- **Record, then replay.** The kernel is never paused; everything the page
+  shows is rebuilt from a recording, so any moment can be revisited.
+- **Rust does the work, JS lays it out**, and what needs no browser is in
+  ksee-core, tested natively.
 
 ## Limits
 
@@ -114,3 +93,4 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
 - Arguments are 32 bits (wider ones lose their high half); locals are only
   those in memory; values in wasm locals are not recorded.
 - A recording is a ring: the oldest records go when it is full.
+- No console input.

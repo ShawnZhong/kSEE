@@ -1,13 +1,14 @@
 // The timeline of the recording. On top, an overview of all of it: which
 // task ran when, the window shown below, the cursor. Below, the window as a
-// stack chart: a strip of which task runs, and under it that task's call
-// stack (Machine.chart), each call a bar, colored by where its function is
+// stack chart (a flame graph): a strip of which task runs, and over it that
+// task's call stack (Machine.chart), outermost at the bottom, each call a bar, colored by where its function is
 // (a syscall's entry named for the syscall). Each depth keeps its row; the
 // rows fit the box, as thin as the deepest stack of the selection needs
 // (so they do not move while zooming). Scroll (or pinch, or W/S) to zoom;
 // drag, Shift+scroll, sideways scroll or A/D to pan; click to put the
 // cursor there; double-click a call to zoom to it; click or drag the
-// overview to move the window.
+// overview to move the window. Hover a call for what it was (and hover a
+// call in the Stack: it is outlined here).
 import { $, taskName } from "./dom.js";
 
 const ROW = 15, STRIP = 12, OVER = 18;
@@ -28,7 +29,8 @@ export function timeline(app) {
   // selection (a syscall's or program's records, and its task); cols: the
   // chart's columns [{ task, frames: [[func, first]] }].
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
-              depth: 1, row: ROW }; // (depth: the deepest stack of the selection seen; row: the rows' height)
+              depth: 1, row: ROW, // (depth: the deepest stack of the selection seen; row: the rows' height)
+              lit: null }; // lit: the call outlined (its first record), hovered here or in the Stack
   const funcs = new Map(), tasks = new Map();
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const who = (addr, i) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr, i)).get(addr));
@@ -117,6 +119,11 @@ export function timeline(app) {
         const on = curCol?.frames[d]?.[1] === first && cur >= t.win.a && cur <= t.win.b;
         ctx.fillStyle = color(f?.file, on);
         ctx.fillRect(x1, y, Math.max(1, w - 1), t.row - 1);
+        if (first === t.lit) {
+          ctx.strokeStyle = css("--fg");
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(x1 + 0.75, y + 0.75, Math.max(1, w - 2.5), t.row - 2.5);
+        }
         if (t.row >= 11) label(ctx, nameOf(id, first), x1, w, y + t.row / 2, on ? "#fff" : "#1f2328");
       }
     }
@@ -193,15 +200,53 @@ export function timeline(app) {
     e.preventDefault();
     act();
   };
-  let drag = null;
-  chart.onpointerdown = (e) => t.win && (drag = { x: e.offsetX, a: t.win.a, b: t.win.b, moved: false });
-  chart.onpointermove = (e) => {
-    if (!drag) {
-      const c = t.cols[Math.floor((e.offsetX / W()) * t.cols.length)], d = rowAt(e.offsetY);
-      const f = c?.frames[d] && fn(c.frames[d][0]);
-      chart.title = f ? `${f.name} (${f.file}:${f.line})` : c ? taskName(who(c.task, t.win.a)) : "";
+  // Hover: the call there outlined, and what it was (a syscall: its
+  // arguments and result; a function: where, and its arguments).
+  const tip = document.body.appendChild(Object.assign(document.createElement("div"), { className: "tip", hidden: true }));
+  const args = new Map(); // first record -> the call's arguments
+  const argsOf = (first) => args.get(first) ?? args.set(first, m.call_stack(first)[0]?.args ?? []).get(first);
+  function hover(e) {
+    const k = Math.floor((e.offsetX / W()) * t.cols.length), d = rowAt(e.offsetY), c = t.cols[k];
+    const [id, first] = c?.frames[d] ?? [];
+    hilite(first ?? null);
+    if (first == null) {
+      tip.hidden = true;
+      chart.title = c && d < 0 ? taskName(who(c.task, t.win.a)) : "";
       return;
     }
+    chart.title = "";
+    const f = fn(id), s = f?.name === "wasm_syscall" ? t.calls.find((x) => x.first === first) : null;
+    let end = k;
+    while (end + 1 < t.cols.length && t.cols[end + 1].frames[d]?.[1] === first) end++;
+    const span = `records ${first + 1}–${at(((end + 1) / t.cols.length) * W()) + 1}`;
+    const line = (text, cls) => Object.assign(document.createElement("div"), { className: cls, textContent: text });
+    tip.replaceChildren(...(s
+      ? [line(`${s.name ?? s.nr}(${s.args.slice(0, 3).join(", ")}…) = ${s.ret ?? "…"}`, ""),
+         line(`a syscall by ${taskName(s.task)} · ${span}`, "dim")]
+      : [line(f?.name ?? "?", ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f")),
+         line(`${f?.file}:${f?.line} · ${span}`, "dim")]));
+    tip.hidden = false;
+    const r = tip.getBoundingClientRect();
+    tip.style.left = `${Math.min(e.clientX + 14, innerWidth - r.width - 8)}px`;
+    tip.style.top = `${e.clientY + 16 + r.height > innerHeight ? e.clientY - r.height - 8 : e.clientY + 16}px`;
+  }
+  chart.onpointerleave = () => {
+    tip.hidden = true;
+    hilite(null);
+  };
+  // Outline the call whose first record is `first` (null: none).
+  function hilite(first) {
+    if (first === t.lit) return;
+    t.lit = first;
+    if (t.win) drawChart();
+  }
+  let drag = null;
+  chart.onpointerdown = (e) => {
+    tip.hidden = true;
+    if (t.win) drag = { x: e.offsetX, a: t.win.a, b: t.win.b, moved: false };
+  };
+  chart.onpointermove = (e) => {
+    if (!drag) return hover(e);
     const dx = e.offsetX - drag.x;
     if (Math.abs(dx) > 3) drag.moved = true;
     if (drag.moved) {
@@ -245,6 +290,7 @@ export function timeline(app) {
     t.calls = calls;
     funcs.clear();
     tasks.clear();
+    args.clear();
     t.buckets = m.timeline(Math.max(1, over.clientWidth));
     t.home = t.where?.() ?? null;
     t.depth = 1;
@@ -294,5 +340,5 @@ export function timeline(app) {
     k.innerHTML = `<i style="background:${color(p, false)}"></i>${name}`;
     return k;
   }));
-  return { refresh, go, mark, select, selectWindow, home: () => t.home, cursor: () => t.cursor, records: () => t.n };
+  return { refresh, go, mark, select, selectWindow, hilite, home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }

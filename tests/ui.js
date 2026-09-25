@@ -78,6 +78,9 @@ const script = opt("eval", `(async () => {
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = [$("badge").textContent, $("mem-note").textContent, $("where").textContent.slice(0, 50)];
   r.chart = $("chart-title").textContent;
+  const box = $("chart").getBoundingClientRect();
+  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: box.left + box.width / 2, clientY: box.bottom - 12 - 2 - 4 }));
+  r.tip = document.querySelector(".tip:not([hidden])")?.innerText.replace(/\\s+/g, " ").slice(0, 60);
   ksee.tours.pickLine(23); await sleep(300);
   r.picked = $("where").textContent.slice(0, 40);
   return r;

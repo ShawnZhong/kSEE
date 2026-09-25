@@ -1,6 +1,9 @@
 # Related work: Linux on WebAssembly
 
-One document per system, written against the source snapshots listed below
+Research notes from before kSEE had a kernel (September 2026), kept for
+their analysis of each system; where they say what kSEE "plans" or
+"should" do, see Outcome below and [../kernel.md](../kernel.md) for what it
+does. One document per system, written against the source snapshots listed below
 (local clones lived in the gitignored `refs/`; re-clone at these commits to
 re-check a claim).
 
@@ -13,26 +16,20 @@ re-check a claim).
 | WasmLinux (okuoku) | [wasmlinux-lkl.md](wasmlinux-lkl.md) | LKL library kernel + user | 6.1 LKL, NOMMU, UP | host thread per task, semaphore handoff under a CPU lock | no license files; dormant since 2024 | 1/5 |
 | v86, JSLinux, WebVM, container2wasm, QEMU-wasm | [emulators.md](emulators.md) | CPU emulator | unmodified guest | Worker = vCPU | various | n/a (ground-truth baseline) |
 
-## Recommendation
+## Outcome
 
-**Fork tombl/linux** (kernel) and vendor `tombl/distro` `packages/kernel`
-(host runtime). Its execution model already *is* kSEE's design: one Worker
-per `task_struct`, one shared kernel `WebAssembly.Memory`, a CPU token handed
-over in `__switch_to`, NOMMU, PREEMPT_NONE, stock LLVM, current kernel. Work
-left for kSEE is instrumentation and UI, not a redesign. LinuxOnTab 2.0 being
-built on tombl is independent evidence that the base is usable.
+The notes recommended forking tombl/linux. kSEE instead wrote its own
+minimal `arch/wasm` on Linux 7.2 ([../kernel.md](../kernel.md)), on
+**tombl's execution model**: one Worker per `task_struct`, one shared kernel
+`WebAssembly.Memory`, a CPU token handed over in `__switch_to`, NOMMU,
+`PREEMPT_NONE`, stock LLVM. A port of its own keeps it small (one CPU from
+the start, no section allowlist to maintain, nothing to rebase onto a
+moving fork), and tracing needed no tracepoints or BTF after all: an LLVM
+pass records everything ([../recording.md](../recording.md)).
 
-Known gaps to close in the fork (details in [tombl-linux.md](tombl-linux.md)):
-
-- tracepoints / trace events / BTF sections are not in the hand-maintained
-  section allowlist; syscall tracepoints are disabled; BTF on wasm unproven;
-- SMP is forced in Kconfig (UP via runtime `ncpus=1`);
-- ticks/IRQs are only noticed at idle, syscall entry, or IRQ re-enable;
-- fast-moving single author: pin a commit and rebase deliberately.
-
-Ideas to borrow later: userspace-only Asyncify fork (LinuxOnTab), safepoint
-budget preemption and boot_info/ring contracts (HardwareJS), emulator runs of
-the same kernel as a differential oracle (emulators).
+Still ideas for later: userspace-only Asyncify fork (LinuxOnTab), safepoint
+preemption (HardwareJS), emulator runs of the same programs as a
+differential oracle (emulators).
 
 ## Source snapshots
 

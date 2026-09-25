@@ -50,8 +50,14 @@ export function callstack(app) {
     s.now = new Map();
     const n = s.frames.length, body = [];
     s.frames.forEach((f, k) => {
-      body.push(head(f.func, f.where, () => app.showFunction(f.func.replace(/ \(inlined\)$/, ""), undefined,
-        k === 0 ? f.line : undefined, k === 0 ? f.file : undefined), k === 0 ? "on" : ""));
+      const h = head(f.func, f.where, () => app.showFunction(f.func.replace(/ \(inlined\)$/, ""), undefined,
+        k === 0 ? f.line : undefined, k === 0 ? f.file : undefined), k === 0 ? "on" : "");
+      // (Hover: the call, outlined in the timeline.)
+      if (f.first != null) {
+        h.onmouseenter = () => app.time.hilite(f.first);
+        h.onmouseleave = () => app.time.hilite(null);
+      }
+      body.push(h);
       if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body);
       if (f.locals?.length) {
         body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3, textContent: "locals" })));

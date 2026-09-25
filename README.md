@@ -7,7 +7,8 @@ browser. Linux is compiled to WebAssembly through a minimal `arch/wasm`
 LLVM pass.
 
 - [docs/design.md](docs/design.md): the goal, the experience, how it works
-- [docs/related/](docs/related/): other Linux-on-Wasm systems
+  (and [docs/](docs/README.md): the kernel port, the recording, rebuilding
+  the past, the runtime and the page)
 
 ## Layout
 
@@ -18,8 +19,8 @@ LLVM pass.
   kernel in Workers, serves the page), `ksee-cli` (`./ksee.sh`: build, test,
   serve; pack the kernel for the page)
 - `web/`: the page; the build puts what it loads there too (gitignored)
-- `user/`: `/init` (starts the page's programs), `tours/`, `programs/`,
-  `tests/` (C on nolibc); `tests/`: see below
+- `user/`: `/init`, `tours/`, `programs/`, `tests/` (C on nolibc)
+- `tests/`: the page's tests (see below)
 
 ## Running
 
@@ -45,6 +46,6 @@ A tour is one C file: `// tour:`, `// question:`, and `// stop FUNCTION:
 NOTE` lines at the top, and `// stops here` on the lines whose syscalls the
 stops are for.
 
-`./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also checks
-the page for exceptions and saves a screenshot, `web/ui.png`. The build is
+`./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs
+the page itself through a tour, and saves a screenshot, `web/ui.png`. The build is
 `ksee build` (crates/ksee-cli/src/build.rs).

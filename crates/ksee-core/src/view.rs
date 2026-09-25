@@ -93,6 +93,8 @@ pub struct ProgramLine {
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Frame {
     pub func: String,
+    /// The call's first record (its block 0).
+    pub first: usize,
     pub file: Option<String>,
     pub line: Option<u32>,
     pub args: Option<Vec<Object>>,
@@ -243,7 +245,7 @@ impl View<'_> {
     pub fn call_stack(&self, i: usize, mem: &dyn Memory) -> Vec<Frame> {
         let t = self.tables;
         let calls = stack::calls_at(&self.rec.records, &self.rec.tasks, i);
-        calls.into_iter().rev().map(|stack::Call { func, args, locals, .. }| {
+        calls.into_iter().rev().map(|stack::Call { func, first, args, locals }| {
             let f = t.functions.get(&func);
             let name = self.name(func);
             let args = args.map(|args| {
@@ -267,7 +269,7 @@ impl View<'_> {
                 }
                 _ => None,
             };
-            Frame { func: name, file: f.map(|f| t.file(f.loc).to_string()), line: f.map(|f| f.loc.line), args, locals }
+            Frame { func: name, first, file: f.map(|f| t.file(f.loc).to_string()), line: f.map(|f| f.loc.line), args, locals }
         }).collect()
     }
 
