@@ -20,7 +20,7 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
 
 **What it is not**: a live debugger (it replays; it does not pause the
 kernel), a syscall playground, a profiler, a full Linux system (no MMU, no
-SMP, no fork: see Limits).
+SMP, no fork (threads and vfork, though): see Limits).
 
 ## The experience
 
@@ -86,8 +86,8 @@ The choices that shape it:
 
 ## Limits
 
-- No MMU: no page tables, faults, copy-on-write or demand paging; no user
-  fork (one program: /init).
+- No MMU: no page tables, faults, copy-on-write or demand paging; no
+  fork (threads and vfork, which share memory; one program: /init).
 - One CPU; no preemption (the kernel reschedules at its usual points).
 - Arguments are 32 bits (wider ones lose their high half); locals are only
   those in memory; values in wasm locals are not recorded.

@@ -1,0 +1,71 @@
+{
+  "title": "How does a thread wait for another to end?",
+  "question": "A thread joins another: it sleeps until the other exits. How does the kernel tell it (with no thread library in between)?",
+  "steps": [
+    {
+      "call": "mmap2",
+      "args": [
+        "NULL",
+        "65536",
+        "PROT_READ | PROT_WRITE",
+        "MAP_PRIVATE | MAP_ANONYMOUS",
+        "-1",
+        "0"
+      ],
+      "stops": [
+        {
+          "func": "do_mmap",
+          "note": "Memory for the new thread's stack."
+        }
+      ]
+    },
+    {
+      "call": "clone",
+      "args": [
+        "CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM | CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID",
+        "$1 + 65536",
+        "NULL",
+        "$1",
+        "0"
+      ],
+      "stops": [
+        {
+          "func": "copy_process",
+          "note": "A new thread, told to write its tid at $1 (CLONE_CHILD_SETTID), and to clear it and wake it when it exits (CLONE_CHILD_CLEARTID)."
+        }
+      ]
+    },
+    {
+      "call": "futex_time64",
+      "args": [
+        "$1",
+        "FUTEX_WAIT",
+        "$2",
+        "NULL"
+      ],
+      "stops": [
+        {
+          "func": "futex_do_wait",
+          "note": "Join: wait while $1 holds the thread's tid. The call blocks."
+        }
+      ]
+    },
+    {
+      "call": "exit",
+      "args": [
+        "0"
+      ],
+      "as": 2,
+      "stops": [
+        {
+          "func": "do_exit",
+          "note": "The thread exits."
+        },
+        {
+          "func": "futex_wake",
+          "note": "Its memory's last use (mm_release): it clears $1 and wakes a waiter on it: the join returns 0."
+        }
+      ]
+    }
+  ]
+}

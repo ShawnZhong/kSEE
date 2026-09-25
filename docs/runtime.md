@@ -19,9 +19,10 @@ Firefox 153, Safari 27.
 ```text
 web/ksee.js      init the runtime; Machine.start
 machine.rs       boot (a new kernel instance on wiped memory), restart,
-                 console, snapshots, syscalls by /init (recorded)
+                 console, snapshots, syscalls by the runners (recorded)
 sched.rs         the tasks: switch_task, idle (suspending), spawn_task
-imports.rs       the kernel's imports; programs (/init's module)
+imports.rs       the kernel's imports; programs, their tasks' stack
+                 pointers; the runners' imports
 replay.rs        views of the recording (ksee_core::view, as JS values)
 state.rs         the machine's state in the runtime
 ```
@@ -35,10 +36,17 @@ the machine (its tasks dropped; a stopped machine's stack that suspends is
 never resumed), let what it had under way end, and boot again.
 
 **The page and the kernel** talk through memory and promises: the page
-raises interrupts (a bit, and a wake-up of idle), and asks for syscalls
-(`Machine.call` returns a promise, which /init settles through
-`ksee.done`); it reads the console's output. A boot is done when /init is
-ready (`ksee.ready`: `Machine.start` and `restart` resolve then).
+raises interrupts (a bit, and a wake-up of idle), and asks a runner (/init,
+or a thread or child of it: see [kernel.md](kernel.md)) for a syscall
+(`Machine.call(name, args, tid)`: a doorbell byte on the runner's console
+line); it reads the console's output. `Machine.quiet()` is a promise of
+the kernel **quiet** (idle, until the page's input: the recording stops
+there), with the calls finished meanwhile: returned (`ksee.done`), ended
+by an execve (the new program's `ksee.ready`) or by their task's exit.
+A call may not have finished then: it blocks (a futex's wait, a pipe's
+read), and finishes as a later call wakes it. A boot is done when /init
+is ready and the kernel quiet (`Machine.start` and `restart` resolve
+then).
 
 **Deterministic.** Nothing of the host's gets in but the page's calls: the
 kernel's clock is virtual (see [kernel.md](kernel.md)), the page's input
@@ -63,7 +71,7 @@ source. Rust does the work: JS only lays it out.
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom); zoom, pan |
 | source.js | the source at the cursor (Monaco): lines that ran, the function, hover values, definitions |
 | callstack.js | the Stack: calls with arguments and locals, the task (current), ✎ who wrote a value |
-| examples.js | the examples: syscalls /init makes, one at a time, recorded; their stops; adding a call |
+| examples.js | the examples: syscalls the runners make, one at a time, recorded; their stops; adding a call |
 | args.js | a syscall's arguments, written as in C, with the kernel's constants |
 | ksee.js | booting |
 

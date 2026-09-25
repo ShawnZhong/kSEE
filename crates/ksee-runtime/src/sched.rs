@@ -153,6 +153,7 @@ pub fn switch_task(prev: u32, next: u32, dead: u32) -> Promise {
         raise(IRQ_TIMER);
     }
     let sp = sp_get();
+    crate::imports::switch_user(prev, next, dead != 0);
     let back = if dead != 0 {
         S.with_borrow_mut(|s| s.tasks.remove(&prev));
         never()
@@ -201,9 +202,9 @@ fn raise(irq: u32) {
     Direct.write_u32(p, Direct.read_u32(p) | 1 << irq);
 }
 
-/// How far idle skips while the page waits: a virtual minute (a kernel
-/// that never gets done waits for the page instead).
-const SKIP_NS: u64 = 60_000_000_000;
+/// How far idle skips while the page waits: a virtual second (a call
+/// that has not returned by then is blocked: it waits for another's).
+const SKIP_NS: u64 = 1_000_000_000;
 
 /// idle (suspending): until an interrupt may be pending.
 pub fn idle() -> Promise {
@@ -226,12 +227,14 @@ pub fn idle() -> Promise {
         raise(IRQ_TIMER);
         return Promise::resolve(&JsValue::NULL);
     }
-    // Nothing to do until the page's input: a call's recording ends here
-    // (and memory stays as it leaves it, until the next call).
+    // Nothing to do until the page's input: quiet. A call's recording
+    // ends here (and memory stays as it leaves it, until the next call).
     Direct.write_u32(k(|k| k.trace.get()) + ksee_core::trace::ON, 0);
     let mut wake = None;
     let p = Promise::new(&mut |ok, _| wake = Some(ok));
     S.with_borrow_mut(|s| s.idle = wake);
+    k(|k| k.quiet.set(true));
+    crate::machine::settle();
     p
 }
 
@@ -243,6 +246,7 @@ pub fn interrupt(irq: u32) {
 
 /// Wake the CPU if it idles (an interrupt is pending).
 fn wake() {
+    k(|k| k.quiet.set(false));
     if let Some(w) = S.with_borrow_mut(|s| s.idle.take()) {
         let _ = w.call0(&JsValue::NULL);
     }

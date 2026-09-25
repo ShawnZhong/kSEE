@@ -42,6 +42,10 @@ page goes to the call's first stop: its note, the source, and the Stack
 Next stop, ◀ / ▶| line by line, or Play. Add your own call below the list:
 write it as in C, `openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`,
 and Enter (Tab completes a syscall's name; the hint shows its signature).
+Some examples have several threads or processes (a futex, a thread's join,
+a pipe between two processes): a call can be made by a thread or child of
+/init (`19: read(3, [64], 64)`), and a call can block, until a later call
+wakes it.
 ✎ on a call made goes back to before it, to make another instead: the page
 starts a fresh kernel and makes the calls before it again, which comes to
 the very same state (the machine is deterministic: its clock is virtual);

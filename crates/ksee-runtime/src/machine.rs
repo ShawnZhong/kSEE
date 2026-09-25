@@ -4,10 +4,10 @@
 
 use std::cell::RefCell;
 
-use js_sys::{Function, Promise, Uint8Array, WebAssembly};
+use js_sys::{Function, Object, Promise, Uint8Array, WebAssembly};
 use ksee_core::recording::Recording;
 use ksee_core::tables::Tables;
-use ksee_core::trace;
+use ksee_core::{trace, Memory};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -107,19 +107,22 @@ impl Machine {
         let global = |name: &str| js::get(&js::get(&kernel, name), "value").as_f64().unwrap_or(0.0) as u32;
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         let trace = trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32;
-        let ready = Promise::new(&mut |ok, fail| k(|k| {
+        k(|k| {
             k.trace.set(trace);
             k.current.set(global("__current_task"));
             k.pending.set(global("wasm_irq_pending"));
             k.deadline.set(global("wasm_timer_deadline"));
             k.clock.set(0);
             k.waiting.set(Some(0));
+            k.quiet.set(false);
             k.halted.set(None);
-            *k.ready.borrow_mut() = Some((ok, fail));
-        }));
+        });
         imports::instantiated(&kernel);
         sched::boot(&kernel)?;
-        JsFuture::from(ready).await?;
+        // (Quiet, with /init ready.)
+        while !k(|k| k.runners.borrow().contains_key(&1)) {
+            JsFuture::from(self.quiet()).await?;
+        }
         Ok(())
     }
 
@@ -133,13 +136,16 @@ impl Machine {
             let _ = set.call2(&JsValue::NULL, &ok, &0.into());
         })).await?;
         sched::stop();
-        // (A call under way gives up.)
-        if let Some(fail) = k(|k| k.call.take()).reject {
+        // (What waits for the old machine gives up.)
+        for (_, fail) in k(|k| k.quiet_waiters.take()) {
             let _ = fail.call1(&JsValue::NULL, &"the kernel started again".into());
         }
         k(|k| {
             k.console_out.borrow_mut().clear();
-            k.console_in.borrow_mut().clear();
+            *k.console_in.borrow_mut() = Default::default();
+            k.runners.borrow_mut().clear();
+            k.calls.borrow_mut().clear();
+            k.finished.borrow_mut().clear();
         });
         *self.rec.borrow_mut() = Default::default();
         *self.past.borrow_mut() = None;
@@ -164,23 +170,29 @@ impl Machine {
         *self.rec.borrow_mut() = Recording::new(t, records, ids);
     }
 
-    // ---- Syscalls, made by /init ----
+    // ---- Syscalls, made by the runners ----
 
-    /// Have /init make syscall `name` (e.g. "openat") with `args` (see
-    /// user/init.c): each a number, a string (as a NUL-terminated buffer),
-    /// { bytes } (a buffer of them: an array or a Uint8Array), or { size }
-    /// (a buffer of that many zero bytes, for the call to fill). A promise
-    /// of { ret, buffers: [the bytes of each buffer argument, as the call
-    /// left them (null for the others)] }. One call at a time, recorded:
-    /// from here until the kernel idles again, waiting for the page (see
-    /// sched::idle); so memory now is memory as the recording ends.
-    pub fn call(&self, name: &str, args: Vec<JsValue>) -> Result<Promise, JsValue> {
+    /// Have runner `tid` (1: /init; see user/init.c) make syscall `name`
+    /// (e.g. "openat") with `args`: each a number, a string (as a
+    /// NUL-terminated buffer), { bytes } (a buffer of them: an array or a
+    /// Uint8Array), or { size } (a buffer of that many zero bytes, for the
+    /// call to fill). { id, from }: the call's id (it finishes when it
+    /// returns; or, when it blocks, later, as another call wakes it: see
+    /// quiet), and the id its recording's records start from. Recorded:
+    /// from here until the kernel is quiet again (see sched::idle); so
+    /// memory now is memory as the recording ends.
+    pub fn call(&self, name: &str, args: Vec<JsValue>, tid: Option<u32>) -> Result<JsValue, JsValue> {
+        let tid = tid.unwrap_or(1);
         let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
             .ok_or_else(|| format!("no syscall {name}"))?;
-        if k(|k| k.call.borrow().asked) {
-            return Err("a call is under way".into());
+        let Some(runner) = k(|k| k.runners.borrow().get(&tid).copied()) else {
+            return Err(format!("no runner {tid}").into());
+        };
+        if k(|k| k.calls.borrow().contains_key(&tid)) {
+            return Err(format!("{tid} is still making its call").into());
         }
-        let mut c = Call { asked: true, nr, data: vec![0; CALL_DATA], ..Default::default() };
+        let id = k(|k| k.asked.get() + 1);
+        let mut c = Call { id, nr, data: vec![0; CALL_DATA], ..Default::default() };
         let mut used = 0usize;
         for (i, a) in args.iter().take(6).enumerate() {
             let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
@@ -207,19 +219,68 @@ impl Machine {
                 None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { size }")? as i64 as u32,
             };
         }
-        let p = Promise::new(&mut |ok, fail| {
-            c.resolve = Some(ok);
-            c.reject = Some(fail);
-        });
         // (The page waits for the kernel now: see Kernel::waiting.)
         k(|k| {
-            *k.call.borrow_mut() = c;
+            k.asked.set(id);
+            k.calls.borrow_mut().insert(tid, c);
             k.waiting.set(Some(k.clock.get()));
-            // (The doorbell: /init waits reading its terminal.)
-            k.console_in.borrow_mut().push_back(b'\n');
+            // (The doorbell: the runner waits reading its console line.)
+            k.console_in.borrow_mut()[runner.line].push_back(b'\n');
         });
-        Direct.write_u32(k(|k| k.trace.get()) + trace::ON, 1);
+        let trace = k(|k| k.trace.get());
+        Direct.write_u32(trace + trace::ON, 1);
+        let o = Object::new();
+        js::set(&o, "id", id);
+        // (Records' ids count the pairs of words ever written: see trace::ring.)
+        js::set(&o, "from", Direct.read_u32(trace) / 2);
         sched::interrupt(IRQ_CONSOLE);
-        Ok(p)
+        Ok(o.into())
+    }
+
+    /// A promise of the kernel quiet (now, or once it is): { finished: [the
+    /// calls finished since the last time: { id, tid, how ("returned",
+    /// "exec": an execve, the new program running; "exited": its task),
+    /// ret, buffers: [the bytes of each buffer argument, as the call left
+    /// them (null for the others)] }], runners: [the runners' tids] }.
+    pub fn quiet(&self) -> Promise {
+        Promise::new(&mut |ok, fail| {
+            k(|k| k.quiet_waiters.borrow_mut().push((ok, fail)));
+            if k(|k| k.quiet.get()) {
+                settle();
+            }
+        })
+    }
+
+    /// The runners' thread ids.
+    pub fn runners(&self) -> Vec<u32> {
+        k(|k| k.runners.borrow().keys().copied().collect())
+    }
+}
+
+/// The kernel is quiet: settle what waits for it (see Machine::quiet).
+pub(crate) fn settle() {
+    let waiters = k(|k| k.quiet_waiters.take());
+    if waiters.is_empty() {
+        return;
+    }
+    let finished = js_sys::Array::new();
+    for f in k(|k| k.finished.take()) {
+        let o = Object::new();
+        js::set(&o, "id", f.id);
+        js::set(&o, "tid", f.tid);
+        js::set(&o, "how", f.how);
+        js::set(&o, "ret", f.ret as f64);
+        let buffers = js_sys::Array::new();
+        for b in &f.buffers {
+            buffers.push(&b.as_deref().map_or(JsValue::NULL, |b| Uint8Array::from(b).into()));
+        }
+        js::set(&o, "buffers", buffers);
+        finished.push(&o);
+    }
+    let news = Object::new();
+    js::set(&news, "finished", finished);
+    js::set(&news, "runners", k(|k| k.runners.borrow().keys().map(|&t| JsValue::from(t)).collect::<js_sys::Array>()));
+    for (ok, _) in waiters {
+        let _ = ok.call1(&JsValue::NULL, &news);
     }
 }

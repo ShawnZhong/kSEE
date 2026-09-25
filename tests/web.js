@@ -28,13 +28,22 @@ async function until(pred, ms = 10000) {
     if (v) return v;
   }
 }
-// Syscall `name` made by /init, recorded: { ret, buffers, s (its syscall summary) }.
-async function call(name, args) {
-  const r = await m.call(name, args);
+// Calls finished (Machine.quiet's news), by id.
+const fin = new Map();
+// Ask runner `tid` to make syscall `name`, recorded, and wait until the
+// kernel is quiet: { id, from, tid, nr } (it may not have finished: blocked).
+async function ask(name, args, tid = 1) {
+  const q = { ...m.call(name, args, tid), tid, nr: m.syscall(name).nr };
+  for (const f of (await m.quiet()).finished) fin.set(f.id, f);
   m.snapshot();
-  const nr = m.syscall(name).nr;
-  // (The last that returned: /init waits for the next call in a read.)
-  return { ...r, s: m.syscalls().findLast((s) => s.nr === nr && s.task.pid === 1 && s.last != null) };
+  return q;
+}
+// Its syscall summary: the first of its runner's, of its number, since it was asked.
+const syscallOf = (q) => m.syscalls().find((s) => s.task.pid === q.tid && s.nr === q.nr && s.id >= q.from);
+// Syscall `name`, made by runner `tid`: { ret, buffers, how, s (its syscall summary) }.
+async function call(name, args, tid = 1) {
+  const q = await ask(name, args, tid);
+  return { ...fin.get(q.id), s: syscallOf(q) };
 }
 const ran = (s, func) => s?.last != null && m.first_call(func, s.first, s.last, s.task.addr) != null;
 
@@ -136,19 +145,36 @@ check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
 check("arguments as in C", arg("O_CREAT | O_WRONLY | O_TRUNC", consts) === 577 && arg("0644", consts) === 420
       && arg("$2", consts, [5, 7]) === 7 && arg("[64]", consts).size === 64 && arg('"a\\n"', consts) === "a\n");
 const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/examples.json", root)));
-for (const ex of examples) {
-  const rets = [], missing = [];
+// (Each on a fresh kernel, as the page runs them; a call may block, and
+// finish as a later one wakes it.)
+// (A step's runner, `as`: the one call `as` started; else /init.)
+async function runExample(ex) {
+  await m.restart();
+  const rets = [], asked = [], started = [], known = new Set(m.runners());
   for (const st of ex.steps) {
     const args = st.args.map((a) => arg(a, consts, rets));
-    const { ret, s } = await call(st.call, args);
-    rets.push(ret);
-    for (const stop of st.stops ?? [])
-      if (m.first_call(stop.func, s.first, s.last ?? m.records() - 1, stop.any ? undefined : s.task.addr) == null) missing.push(stop.func);
+    const q = await ask(st.call, args, st.as ? started[st.as - 1] : 1);
+    asked.push(q);
+    started.push(m.runners().find((t) => !known.has(t)));
+    m.runners().forEach((t) => known.add(t));
+    asked.forEach((a, j) => (rets[j] = fin.get(a.id)?.ret));
   }
-  check(`example ${ex.name}: ${ex.steps.length} calls, their stops found`, !missing.length || console.log("  missing:", missing));
+  return asked;
+}
+for (const ex of examples) {
+  const asked = await runExample(ex), missing = [], blocked = [];
+  ex.steps.forEach((st, j) => {
+    const q = asked[j], s = syscallOf(q), f = fin.get(q.id);
+    if (!f) blocked.push(`${j + 1}. ${st.call}`);
+    for (const stop of st.stops ?? [])
+      if (!s || m.first_call(stop.func, s.first, s.last ?? m.records() - 1, stop.any ? undefined : s.task.addr) == null) missing.push(stop.func);
+  });
+  check(`example ${ex.name}: ${ex.steps.length} calls, all finished, their stops found`,
+        !missing.length && !blocked.length || console.log("  missing:", missing, "blocked:", blocked));
 }
 
 // A fresh kernel, in place: nothing of the calls before (/tmp is gone).
+await call("mkdirat", [-100, "/tmp", 0o755]);
 check("/tmp is there before", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === -17);
 const before = out.length;
 await m.restart();
@@ -158,22 +184,20 @@ check("... on a fresh kernel: /tmp is not there", (await call("mkdirat", [-100, 
 // Deterministic: the same calls on a fresh kernel make the same recording,
 // record for record (the kernel's clock is virtual; see the runtime's sched.rs).
 async function runOf(ex) {
-  await m.restart();
-  const rets = [], seen = [];
-  for (const st of ex.steps) {
-    const { ret, s } = await call(st.call, st.args.map((a) => arg(a, consts, rets)));
-    rets.push(ret);
-    seen.push([s.id, s.first, s.last, ret]);
-  }
+  const seen = (await runExample(ex)).map((q) => {
+    const s = syscallOf(q);
+    return [s?.id, s?.first, s?.last, fin.get(q.id)?.ret];
+  });
   return JSON.stringify([m.records(), seen]);
 }
-{
-  const file = examples.find((x) => x.name === "file");
+for (const name of ["file", "futex"]) {
+  const file = examples.find((x) => x.name === name);
   const one = await runOf(file), two = await runOf(file);
   check(`deterministic: the same calls, the same records (${one.slice(0, 60)}…)`, one === two || console.log(one, "\n", two));
 }
 
 // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts)
+await m.restart();
 m.call("reboot", [0xfee1dead, 672274793, 0x4321fedc, 0]);
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);
 

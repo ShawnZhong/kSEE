@@ -2,7 +2,7 @@
 // go through examples, fail on any exception (or if the script throws), and
 // save a screenshot. Options look at another page, or run another script
 // (--eval; --back: going back, see below).
-//   deno run -A tests/ui.js OUT.png [--url=URL] [--at=PATH] [--wait=ms] [--eval=JS | --back] [--size=WxH]
+//   deno run -A tests/ui.js OUT.png [--url=URL] [--at=PATH] [--wait=ms] [--eval=JS | --back | --pipe] [--size=WxH]
 // $CHROME: a Chromium binary (e.g. Playwright's chrome-headless-shell).
 const [out] = Deno.args.filter((a) => !a.startsWith("--"));
 const opt = (k, d) => Deno.args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
@@ -15,7 +15,8 @@ if (!url) {
   server = new Deno.Command(new URL("../target/release/ksee", import.meta.url).pathname,
     { args: ["serve", new URL("../target/site", import.meta.url).pathname, "--port=8199"], stdout: "null", stderr: "null" }).spawn();
   // (By default the read example: see the script below.)
-  url = `http://127.0.0.1:8199/${opt("at", Deno.args.some((a) => a.startsWith("--eval") || a === "--back") ? "" : "#ex=read")}`;
+  url = `http://127.0.0.1:8199/${opt("at", Deno.args.some((a) => a.startsWith("--eval") || a === "--back") ? ""
+    : Deno.args.includes("--pipe") ? "#ex=pipe" : "#ex=read")}`;
   await new Promise((r) => setTimeout(r, 500));
 }
 // --back: the page opened going back (examples.js, branch): the life of a
@@ -71,7 +72,27 @@ const backScript = `(async () => {
   if (done.length !== 2 || !done[1].includes("= 8")) throw new Error("not back: " + JSON.stringify(done));
   return { done, status: document.querySelector(".tstatus").textContent };
 })()`;
-const script = Deno.args.includes("--back") ? backScript : opt("eval", `(async () => {
+// --pipe: the pipe example (two processes), all its calls: some block
+// (shown so) and finish as a later one wakes them; the child's are its.
+const pipeScript = `(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const lis = () => [...document.querySelectorAll("ol.steps > li")];
+  for (let i = 0; i < 100 && !document.querySelector("ol.steps > li.done"); i++) await sleep(100);
+  const r = { blocked: [] };
+  // (Up to each call that blocks, then all.)
+  for (const k of [1, 5, 9]) {
+    document.querySelectorAll("ol.steps > li > a.mono")[k].click();
+    for (let i = 0; i < 100 && document.querySelectorAll("ol.steps > li.done").length <= k; i++) await sleep(100);
+    r.blocked.push(...[...document.querySelectorAll("ol.steps > li.blocked")].map((li) => li.innerText.split("\\n")[0]));
+  }
+  r.calls = lis().map((li) => li.innerText.split("\\n")[0]);
+  const bad = (k, want) => !r.calls[k]?.includes(want);
+  if (r.blocked.length < 2 || document.querySelector("ol.steps > li.blocked") || bad(1, "= ") || bad(2, "tid ") || bad(2, "execve:")
+      || bad(5, "= 6") || bad(8, "= 0") || bad(9, "= 0"))
+    throw new Error("the pipe: " + JSON.stringify(r));
+  return r;
+})()`;
+const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("--pipe") ? pipeScript : opt("eval", `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (id) => document.getElementById(id);
   const until = async (f, n = 100) => { for (let i = 0; i < n && !f(); i++) await sleep(100); };

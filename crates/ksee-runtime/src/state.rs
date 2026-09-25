@@ -3,7 +3,7 @@
 //! no context to be given), and the probe tables.
 
 use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::OnceLock;
 
 use js_sys::Function;
@@ -24,6 +24,9 @@ pub const KERNEL_BASE: u32 = 0x100_0000;
 /// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h).
 pub const IRQ_TIMER: u32 = 0;
 pub const IRQ_CONSOLE: u32 = 1;
+
+/// Console lines (WASM_CONSOLE_LINES): a runner waits on one of its own.
+pub const LINES: usize = 8;
 
 /// The kernel's clock advances this much at each read (so that a loop on
 /// it ends), besides where idle skips to the next timer (see sched).
@@ -47,15 +50,39 @@ pub struct Kernel {
     /// Whether the page waits for the kernel (a boot, a call; then idle
     /// skips to the next timer), since when (the clock).
     pub waiting: Cell<Option<u64>>,
-    /// Settles the boot's promise: /init is ready (ksee.ready), or the
-    /// kernel halted first.
-    pub ready: RefCell<Option<(Function, Function)>>,
+    /// Whether the kernel is quiet: idle, until the page's input.
+    pub quiet: Cell<bool>,
+    /// What waits for it to be quiet (Machine::quiet): settled with the
+    /// calls finished since the last time (or rejected: it halted).
+    pub quiet_waiters: RefCell<Vec<(Function, Function)>>,
+    pub finished: RefCell<Vec<Finished>>,
     /// The halt code, once the kernel has halted.
     pub halted: Cell<Option<i32>>,
     pub console_out: RefCell<Vec<u8>>,
-    pub console_in: RefCell<VecDeque<u8>>,
-    /// The syscall the page asks /init to make (see Machine::call).
-    pub call: RefCell<Call>,
+    pub console_in: RefCell<[VecDeque<u8>; LINES]>,
+    /// The runners ready for the page's calls, by thread id; the calls
+    /// asked of them (see Machine::call), and the count of calls asked.
+    pub runners: RefCell<BTreeMap<u32, Runner>>,
+    pub calls: RefCell<BTreeMap<u32, Call>>,
+    pub asked: Cell<u32>,
+}
+
+/// A runner (user/init.c): its task, and the console line it waits on.
+#[derive(Clone, Copy)]
+pub struct Runner {
+    pub task: u32,
+    pub line: usize,
+}
+
+/// A call finished: returned (its result, and its buffers as it left them),
+/// or ended by an execve (the new program is running) or by its task's
+/// exit.
+pub struct Finished {
+    pub id: u32,
+    pub tid: u32,
+    pub how: &'static str,
+    pub ret: i64,
+    pub buffers: Vec<Option<Vec<u8>>>,
 }
 
 thread_local! {
@@ -67,11 +94,12 @@ pub fn k<T>(f: impl FnOnce(&Kernel) -> T) -> T {
     K.with(f)
 }
 
-/// A syscall for /init to make (user/init.c): asked, then made (its
-/// promise settled).
+/// A syscall for a runner to make (user/init.c): asked, then taken (the
+/// runner makes it), then finished.
 #[derive(Default)]
 pub struct Call {
-    pub asked: bool,
+    pub id: u32,
+    pub taken: bool,
     pub nr: u32,
     /// Each an integer, or (bit i of `buffers`) the offset of a buffer in
     /// `data` (its length: `lens`).
@@ -79,9 +107,6 @@ pub struct Call {
     pub buffers: u32,
     pub lens: [u32; 6],
     pub data: Vec<u8>,
-    /// Settles Machine::call's promise.
-    pub resolve: Option<Function>,
-    pub reject: Option<Function>,
 }
 
 /// The size of a call's buffers, all together.

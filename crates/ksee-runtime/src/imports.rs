@@ -25,13 +25,14 @@ pub extern "C" fn console_write(p: *const u8, n: u32) {
     k(|k| k.console_out.borrow_mut().extend_from_slice(unsafe { core::slice::from_raw_parts(p, n as usize) }));
 }
 
-/// Pending console input, without blocking.
+/// Console line `line`'s pending input, without blocking.
 #[unsafe(no_mangle)]
-pub extern "C" fn console_read(p: *mut u8, n: u32) -> i32 {
+pub extern "C" fn console_read(line: u32, p: *mut u8, n: u32) -> i32 {
     bulk(p as u32, n);
     let out = unsafe { core::slice::from_raw_parts_mut(p, n as usize) };
     k(|k| {
-        let mut input = k.console_in.borrow_mut();
+        let mut lines = k.console_in.borrow_mut();
+        let Some(input) = lines.get_mut(line as usize) else { return 0 };
         let n = input.len().min(out.len());
         for (o, b) in out.iter_mut().zip(input.drain(..n)) {
             *o = b;
@@ -118,22 +119,79 @@ fn ring_put(words: &[u32]) {
 // ---- Programs ----------------------------------------------------------------
 
 /// The tasks' programs (position-independent modules, in kernel memory):
-/// the one each compiled (exec), until it is instantiated.
+/// the one each compiled (exec), until it is instantiated; and each task's
+/// user stack pointer. A program's __stack_pointer is its instance's
+/// global, which its threads (and a vfork child, until it execs) share: a
+/// task's own value is put back in it when the task gets the CPU.
 #[derive(Default)]
 struct Programs {
     loaded: BTreeMap<u32, WebAssembly::Module>,
+    users: BTreeMap<u32, User>,
     /// The kernel's syscall export (a program's import), and its function
-    /// table (the programs' functions go in it too, and their _start).
+    /// table (the programs' functions go in it too, and their entries).
     syscall: Option<Function>,
     table: Option<WebAssembly::Table>,
+}
+
+struct User {
+    sp: WebAssembly::Global,
+    /// Its value while the task is not running.
+    saved: u32,
 }
 
 thread_local! {
     static PROGRAMS: RefCell<Programs> = RefCell::default();
 }
 
-fn current() -> u32 {
+pub(crate) fn current() -> u32 {
     Direct.read_u32(k(|k| k.current.get()))
+}
+
+/// The current task's thread id.
+fn tid() -> u32 {
+    ksee_core::task::read_task(tables(), &Direct, current()).map_or(0, |t| t.pid as u32)
+}
+
+fn value(g: &WebAssembly::Global) -> u32 {
+    g.value().as_f64().unwrap_or(0.0) as u32
+}
+
+/// `prev` gives the CPU to `next` (see sched::switch_task): their user
+/// stack pointers; a dead `prev` is gone, and so is its runner.
+pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
+    PROGRAMS.with_borrow_mut(|u| {
+        if dead {
+            u.users.remove(&prev);
+        } else if let Some(p) = u.users.get_mut(&prev) {
+            p.saved = value(&p.sp);
+        }
+        if let Some(n) = u.users.get(&next) {
+            n.sp.set_value(&n.saved.into());
+        }
+    });
+    if dead {
+        let gone = k(|k| {
+            let mut runners = k.runners.borrow_mut();
+            let tid = runners.iter().find(|(_, r)| r.task == prev).map(|(&t, _)| t);
+            tid.inspect(|t| {
+                runners.remove(t);
+            })
+        });
+        if let Some(tid) = gone {
+            finish(tid, "exited", 0, Vec::new());
+        }
+    }
+}
+
+/// clone_user: task `p` is a user clone of the current task, on its stack
+/// at `sp` (0: below the current task's, vfork).
+fn clone_user(p: u32, sp: u32) {
+    PROGRAMS.with_borrow_mut(|u| {
+        let Some(me) = u.users.get(&current()) else { return };
+        let saved = if sp != 0 { sp } else { value(&me.sp) };
+        let sp_global = me.sp.clone();
+        u.users.insert(p, User { sp: sp_global, saved });
+    });
 }
 
 const ENOEXEC: i32 = 8;
@@ -183,30 +241,26 @@ fn global(value: u32, mutable: bool) -> Result<WebAssembly::Global, JsValue> {
 
 /// Instantiate the current task's program, its data at `base` and its
 /// stack below `top`: its _start's index in the kernel's function table,
-/// or 0.
-fn user_start(base: u32, top: u32) -> u32 {
+/// or 0; its __wasm_clone_start's (or 0) at `clone_entry`.
+fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
     let (module, syscall, table) = PROGRAMS.with_borrow_mut(|u| (u.loaded.remove(&current()), u.syscall.clone(), u.table.clone()));
     let (Some(module), Some(table)) = (module, table) else { return 0 };
     let start = || -> Result<u32, JsValue> {
         let (_, entries) = dylink(&module).ok_or("no dylink.0")?;
         let table_base = table.grow(entries)?;
+        let sp = global(top, true)?;
         let env = Object::new();
         js::set(&env, "memory", wasm_bindgen::memory());
         js::set(&env, "__indirect_function_table", &table);
         js::set(&env, "__memory_base", global(base, false)?);
         js::set(&env, "__table_base", global(table_base, false)?);
-        js::set(&env, "__stack_pointer", global(top, true)?);
+        js::set(&env, "__stack_pointer", &sp);
         let linux = Object::new();
         js::set(&linux, "syscall", syscall.unwrap());
-        let (ready, call, done) = init_imports();
-        let ksee = Object::new();
-        js::set(&ksee, "ready", ready);
-        js::set(&ksee, "call", call);
-        js::set(&ksee, "done", done);
         let imports = Object::new();
         js::set(&imports, "env", env);
         js::set(&imports, "linux", linux);
-        js::set(&imports, "ksee", ksee);
+        js::set(&imports, "ksee", runner_imports());
         // (GOT.mem: the addresses of data it does not define: only weak
         // symbols, left undefined, so 0.)
         let got = Object::new();
@@ -221,9 +275,18 @@ fn user_start(base: u32, top: u32) -> u32 {
         if let Ok(relocs) = js::get(&exports, "__wasm_apply_data_relocs").dyn_into::<Function>() {
             relocs.call0(&JsValue::NULL)?;
         }
-        let at = table.grow(1)?;
-        table.set(at, &js::get(&exports, "_start").unchecked_into())?;
-        Ok(at)
+        // (Its entries, in the kernel's table, to call directly.)
+        let entry = |name: &str| -> Result<u32, JsValue> {
+            let Ok(f) = js::get(&exports, name).dyn_into::<Function>() else { return Ok(0) };
+            let at = table.grow(1)?;
+            table.set(at, &f)?;
+            Ok(at)
+        };
+        let (start, clone) = (entry("_start")?, entry("__wasm_clone_start")?);
+        bulk(clone_entry, 4);
+        Direct.write_u32(clone_entry, clone);
+        PROGRAMS.with_borrow_mut(|u| u.users.insert(current(), User { sp, saved: top }));
+        Ok(start)
     };
     start().unwrap_or_else(|e| {
         web_sys::console::error_2(&"exec:".into(), &e);
@@ -249,8 +312,8 @@ pub fn kernel() -> Object {
     js::set(&kernel, "idle", sched::suspending(func(Closure::<dyn FnMut() -> Promise>::new(sched::idle))));
     js::set(&kernel, "halt", sched::suspending(func(Closure::<dyn FnMut(i32) -> Promise>::new(|code: i32| {
         k(|k| k.halted.set(Some(code)));
-        if let Some((_, fail)) = k(|k| k.ready.take()) {
-            let _ = fail.call1(&JsValue::NULL, &format!("the kernel halted ({code}) before /init was ready").into());
+        for (_, fail) in k(|k| k.quiet_waiters.take()) {
+            let _ = fail.call1(&JsValue::NULL, &format!("the kernel halted ({code})").into());
         }
         sched::never()
     }))));
@@ -258,7 +321,9 @@ pub fn kernel() -> Object {
         web_sys::console::log_1(&js::get(&js_sys::Error::new("kernel stack"), "stack"));
     })));
     js::set(&kernel, "user_load", func(Closure::<dyn FnMut(u32, u32) -> i32>::new(user_load)));
-    js::set(&kernel, "user_start", func(Closure::<dyn FnMut(u32, u32) -> u32>::new(user_start)));
+    js::set(&kernel, "user_start", func(Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(user_start)));
+    js::set(&kernel, "clone_user", func(Closure::<dyn FnMut(u32, u32)>::new(clone_user)));
+
     let ksee = Object::new();
     js::set(&ksee, "bulk", export("bulk"));
     let env = Object::new();
@@ -271,7 +336,7 @@ pub fn kernel() -> Object {
 }
 
 /// The kernel is instantiated (its `exports`): programs import its syscall
-/// export, and their _start goes in its function table. None of the tasks'
+/// export, and their entries go in its function table. None of the tasks'
 /// programs are left (a new machine).
 pub fn instantiated(exports: &Object) {
     PROGRAMS.with_borrow_mut(|u| {
@@ -283,32 +348,69 @@ pub fn instantiated(exports: &Object) {
     });
 }
 
-/// ksee.ready, ksee.call and ksee.done, for /init (user/init.c): it is
-/// ready (the boot is over), the syscall the page asks for (Kernel::call),
-/// and its result. The request's place in /init's data (kernel memory):
-/// `struct { i32 nr; i32 args[6]; i32 pad; u8 data[CALL_DATA]; }`.
-fn init_imports() -> (JsValue, JsValue, JsValue) {
-    let ready = func(Closure::<dyn FnMut()>::new(|| {
-        k(|k| k.waiting.set(None));
-        if let Some((ok, _)) = k(|k| k.ready.take()) {
-            let _ = ok.call0(&JsValue::NULL);
+// ---- Runners -----------------------------------------------------------------
+
+/// Finish runner `tid`'s call, if it has one (for Machine::quiet); the
+/// page waits no more once none is left.
+pub(crate) fn finish(tid: u32, how: &'static str, ret: i64, buffers: Vec<Option<Vec<u8>>>) {
+    k(|k| {
+        let Some(c) = k.calls.borrow_mut().remove(&tid) else { return };
+        k.finished.borrow_mut().push(Finished { id: c.id, tid, how, ret, buffers });
+        if k.calls.borrow().is_empty() {
+            k.waiting.set(None);
         }
-    }));
+    });
+}
+
+/// The imports of a runner (user/init.c), module ksee: its console line,
+/// ready, the call asked of it, and its result. A request's place in the
+/// runner's memory (kernel memory):
+/// `struct { i32 nr; i32 args[6]; i32 pad; u8 data[CALL_DATA]; }`.
+fn runner_imports() -> Object {
+    let ksee = Object::new();
+    // ksee.line(): the console line the current thread waits on: the
+    // first /init's is 0, another runner's a free one (and one exec'd
+    // keeps its own).
+    js::set(&ksee, "line", func(Closure::<dyn FnMut() -> i32>::new(|| {
+        let (tid, task) = (tid(), current());
+        k(|k| {
+            let mut runners = k.runners.borrow_mut();
+            if let Some(r) = runners.get_mut(&tid) {
+                r.task = task;
+                return r.line as i32;
+            }
+            let line = if tid == 1 { Some(0) } else { (1..LINES).find(|l| runners.values().all(|r| r.line != *l)) };
+            let Some(line) = line else { return -1 };
+            runners.insert(tid, Runner { task, line });
+            line as i32
+        })
+    })));
+    // ksee.ready(): the runner waits for calls. (A call it was making is
+    // over: it was an execve, and this is the new program.)
+    js::set(&ksee, "ready", func(Closure::<dyn FnMut()>::new(|| {
+        let tid = tid();
+        finish(tid, "exec", 0, Vec::new());
+        if tid == 1 && k(|k| k.calls.borrow().is_empty()) {
+            // (The boot's over: let what it left for later run now, while
+            // nothing is recorded.)
+            k(|k| k.waiting.set(Some(k.clock.get())));
+        }
+    })));
     // ksee.call(req): the request into `req` (buffers: pointers into its
     // data); its number, or -1 if there is none.
-    let call = func(Closure::<dyn FnMut(u32) -> i32>::new(|req: u32| {
+    js::set(&ksee, "call", func(Closure::<dyn FnMut(u32) -> i32>::new(|req: u32| {
+        let tid = tid();
         k(|k| {
-            let c = k.call.borrow();
-            if !c.asked {
-                return -1;
-            }
+            let mut calls = k.calls.borrow_mut();
+            let Some(c) = calls.get_mut(&tid).filter(|c| !c.taken) else { return -1 };
+            c.taken = true;
             let mut head = [0u8; 32];
             head[0..4].copy_from_slice(&c.nr.to_le_bytes());
             for (i, &a) in c.args.iter().enumerate() {
                 let v = if c.buffers >> i & 1 != 0 { a + req + 32 } else { a };
                 head[4 + 4 * i..8 + 4 * i].copy_from_slice(&v.to_le_bytes());
             }
-            // (Into /init's memory, which is kernel memory: recorded.)
+            // (Into the runner's memory, which is kernel memory: recorded.)
             bulk(req, 32 + CALL_DATA as u32);
             unsafe {
                 core::ptr::copy_nonoverlapping(head.as_ptr(), req as *mut u8, 32);
@@ -316,31 +418,21 @@ fn init_imports() -> (JsValue, JsValue, JsValue) {
             }
             c.nr as i32
         })
-    }));
-    // ksee.done(ret, req): the result, and the buffers as the call left
-    // them: Machine::call's promise resolved with { ret, buffers: [the bytes
-    // of each buffer argument (null for the others)] }.
-    let done = func(Closure::<dyn FnMut(i64, u32)>::new(|ret: i64, req: u32| {
+    })));
+    // ksee.done(ret, req): the result, and the buffers as the call left them.
+    js::set(&ksee, "done", func(Closure::<dyn FnMut(i64, u32)>::new(|ret: i64, req: u32| {
+        let tid = tid();
         let mut bytes = vec![0; CALL_DATA];
         Direct.read(req + 32, &mut bytes);
-        let c = k(|k| {
-            k.waiting.set(None);
-            k.call.take()
+        let buffers = k(|k| {
+            let calls = k.calls.borrow();
+            let Some(c) = calls.get(&tid) else { return Vec::new() };
+            (0..6).map(|i| {
+                let at = c.args[i] as usize;
+                (c.buffers >> i & 1 != 0).then(|| bytes.get(at..at + c.lens[i] as usize).map(<[u8]>::to_vec)).flatten()
+            }).collect()
         });
-        let buffers = js_sys::Array::new();
-        for i in 0..6 {
-            let at = c.args[i] as usize;
-            buffers.push(&match bytes.get(at..at + c.lens[i] as usize) {
-                Some(b) if c.buffers >> i & 1 != 0 => Uint8Array::from(b).into(),
-                _ => JsValue::NULL,
-            });
-        }
-        let o = Object::new();
-        js::set(&o, "ret", ret as f64);
-        js::set(&o, "buffers", buffers);
-        if let Some(r) = c.resolve {
-            let _ = r.call1(&JsValue::NULL, &o);
-        }
-    }));
-    (ready, call, done)
+        finish(tid, "returned", ret, buffers);
+    })));
+    ksee
 }

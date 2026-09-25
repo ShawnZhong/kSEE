@@ -1,8 +1,8 @@
 // A syscall's arguments, written as in C (in the examples, and the form):
 //   "a string"         a buffer with the string, NUL-terminated
 //   0644, 0x41, -100   numbers (0: octal, 0x: hex)
-//   O_CREAT | O_WRONLY constants, with | and <<: the kernel's own, from its
-//                      UAPI headers (Machine.constants); NULL
+//   O_CREAT | O_WRONLY constants, with |, <<, + and -: the kernel's own,
+//                      from its UAPI headers (Machine.constants); NULL
 //   [64]               a buffer of 64 bytes, for the kernel to fill
 //   {0, 30000000}      a buffer of 64-bit values (a struct timespec, say)
 //   $2                 call 2's result (an fd, say)
@@ -20,10 +20,10 @@ export function arg(text, consts, rets = []) {
   return value(s, consts, rets);
 }
 
-// A C constant expression: numbers, constants, NULL, $n, |, <<, unary -,
+// A C constant expression: numbers, constants, NULL, $n, |, <<, + and -,
 // parentheses.
 function value(text, consts, rets) {
-  const tokens = text.match(/\$\d+|[A-Za-z_]\w*|0x[0-9a-f]+|\d+|<<|[|()-]|\S/gi) ?? [];
+  const tokens = text.match(/\$\d+|[A-Za-z_]\w*|0x[0-9a-f]+|\d+|<<|[|()+-]|\S/gi) ?? [];
   let k = 0;
   const peek = () => tokens[k], take = () => tokens[k++];
   function or() {
@@ -32,8 +32,13 @@ function value(text, consts, rets) {
     return v;
   }
   function shift() {
+    let v = sum();
+    while (peek() === "<<") (take(), (v <<= sum()));
+    return v;
+  }
+  function sum() {
     let v = unary();
-    while (peek() === "<<") (take(), (v <<= unary()));
+    while (peek() === "+" || peek() === "-") v = take() === "+" ? v + unary() : v - unary();
     return v;
   }
   function unary() {

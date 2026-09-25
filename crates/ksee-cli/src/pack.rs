@@ -66,6 +66,12 @@ const CONSTANTS: &[(&str, &[&str])] = &[
     ("linux/time.h", &["CLOCK_", "TIMER_"]),
     ("asm-generic/errno-base.h", &["E"]),
     ("asm-generic/errno.h", &["E"]),
+    ("linux/sched.h", &["CLONE_"]),
+    ("linux/futex.h", &["FUTEX_"]),
+    ("asm-generic/mman-common.h", &["PROT_", "MAP_"]),
+    ("linux/mman.h", &["MAP_"]),
+    ("asm-generic/signal.h", &["SIG"]),
+    ("linux/wait.h", &["P_", "W"]),
 ];
 
 /// Constants from the kernel's UAPI headers (under `include`: after `make

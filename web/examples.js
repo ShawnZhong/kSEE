@@ -3,14 +3,18 @@
 // says which (#ex=NAME). An example is a question
 // about the kernel, and a list of
 // syscalls that asks it (user/examples/*.json), each with stops (a note on a
-// function it runs). /init makes the calls (process.call), one at a time,
+// function it runs). A runner makes each call (Machine.call: /init, or a
+// thread or child process of it, which is a runner too), one at a time,
 // each recorded: then its syscall is selected, and its stops are places in
-// its recording (the first call of the stop's function, on /init's task, or
-// any for a stop that says so). Next goes from one stop to the next. Below
-// the calls, add one: write it as in C, and Enter.
+// its recording (the first call of the stop's function, on the runner's
+// task, or any for a stop that says so). A call may block: it waits for
+// another's (a futex's wake, a pipe's write), and finishes then. Next goes
+// from one stop to the next. Below the calls, add one: write it as in C,
+// and Enter.
 //
-// A step: { call, args, stops? }; its arguments written as in C (see
-// args.js): "a string", 0644, O_CREAT | O_WRONLY, [64], {0, 30000000}, $2.
+// A step: { call, args, stops?, as?, tid? }; its arguments written as in C
+// (see args.js): "a string", 0644, O_CREAT | O_WRONLY, [64], {0, 30000000},
+// $2. Its runner: the one call `as` started, or thread `tid`; else /init.
 import { $, el } from "./dom.js";
 import { arg, made, parseCall, result } from "./args.js";
 
@@ -18,9 +22,10 @@ export async function examples(app) {
   const { m } = app;
   const consts = m.constants();
   const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
-  // The open example: its steps, the ones run ({ ret, text, id, ol }), and
+  // The open example: its steps, the ones asked ({ id, from, tid, nr, how?,
+  // ret?, text?, ol }: how once it finished), the runner each started, and
   // the stops Next goes through (the selected step's: cur, at, k).
-  const t = { ex: null, steps: [], done: [], running: false, cur: { stops: [], ol: null }, at: [], k: -1, list: null, status: null };
+  const t = { ex: null, steps: [], done: [], started: [], running: false, cur: { stops: [], ol: null }, at: [], k: -1, list: null, status: null };
 
   // The example in the URL (#ex=NAME, or #back=: see branch), else the
   // first: { ex, steps, back (the calls to make again, then a new one) }.
@@ -50,6 +55,7 @@ export async function examples(app) {
     t.running = false;
     t.steps = steps.map((s) => ({ ...s })); // (the form adds to them)
     t.done = [];
+    t.started = [];
     t.cur = { stops: [], ol: null };
     t.at = [];
     t.k = -1;
@@ -87,8 +93,21 @@ export async function examples(app) {
   }
 
   const rets = () => t.done.map((d) => d.ret);
-  // A step's call, as written (or with `values` for $n: as made).
-  const text = (s, values) => `${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
+  // A step's runner (a thread id).
+  const tidOf = (s) => s.tid ?? (s.as ? t.started[s.as - 1] : 1);
+  // A step's call, as written (or with `values` for $n: as made); `tid: `
+  // before it if its runner is not /init.
+  const text = (s, values) => `${s.tid ? `${s.tid}: ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
+  // How a call finished, or not yet.
+  const how = (d) => d.how == null ? " … blocked (it waits for another call)"
+    : d.how === "exec" ? " (execve: no return, the new program runs)"
+    : d.how === "exited" ? " (no return: it exited)" : ` = ${result(d.ret, consts)}`;
+  // Who makes step `j`'s call, if not /init.
+  const who = (j) => {
+    const tid = t.done[j]?.tid ?? tidOf(t.steps[j]);
+    return tid === 1 || tid == null ? null : el("span", { className: "mono tid", textContent: `tid ${tid} `,
+      title: t.steps[j].as ? `the runner call ${t.steps[j].as} started (a thread or a child of /init)` : "the runner with this thread id" });
+  };
   function draw() {
     t.list.replaceChildren(...t.steps.map((s, j) => {
       const d = t.done[j];
@@ -96,10 +115,12 @@ export async function examples(app) {
         select(j);
         stop(k);
       } }, el("b", { className: "mono", textContent: st.func }), " ", st.note))) : null;
-      return el("li", { className: d ? "done" : j === t.done.length ? "next" : "" },
+      return el("li", { className: d ? (d.how == null ? "done blocked" : "done") : j === t.done.length ? "next" : "" },
         // (As written; once made, and if $n made it differ, as made too.)
+        s.tid ? null : who(j),
         el("a", { className: "mono", textContent: text(s), onclick: () => (d ? select(j) : upTo(j)) }),
-        d ? el("span", { className: "mono ret", textContent: ` = ${result(d.ret, consts)}` }) : null,
+        d ? el("span", { className: "mono ret", textContent: how(d) }) : null,
+        t.started[j] ? el("span", { className: "dim", textContent: ` → tid ${t.started[j]}, a runner` }) : null,
         // (Change it: go back to before it, and make another.)
         d ? el("a", { className: "who", textContent: " ✎", title: "change this call: go back to before it, and make another instead", onclick: () => {
           t.branch = j;
@@ -117,44 +138,53 @@ export async function examples(app) {
   async function upTo(j) {
     while (t.done.length <= j) if (!(await step())) return;
   }
-  // Make the next call, recorded; then select it.
+  // Make the next call, recorded, and wait until the kernel is quiet; then
+  // select it (it finished, or it blocks).
   async function step() {
     const j = t.done.length, s = t.steps[j];
     if (!s || t.running) return false;
     t.running = true;
     t.status.textContent = `${s.call}…`;
-    let r = null, args;
-    try {
-      args = s.args.map((a) => arg(a, consts, rets()));
-    } catch (e) {
-      t.running = false;
-      t.status.textContent = e.message;
-      return false;
-    }
+    let q, news;
     // (If the kernel starts again meanwhile, the call gives up: another
     // example's, then, not this one's to say.)
     const mine = t.list;
     try {
-      r = await m.call(s.call, args);
+      const args = s.args.map((a) => arg(a, consts, rets())), tid = tidOf(s);
+      q = { ...m.call(s.call, args, tid), tid, nr: m.syscall(s.call).nr, args };
+      t.done[j] = q;
+      const before = new Set(m.runners());
+      news = await m.quiet();
+      if (t.list !== mine) return false;
+      t.started[j] = [...news.runners].find((r) => !before.has(r));
     } catch (e) {
-      if (t.list === mine) t.status.textContent = e.message;
-    } finally {
-      if (t.list === mine) t.running = false;
+      if (t.list === mine) {
+        t.running = false;
+        t.status.textContent = e.message;
+      }
+      return false;
     }
-    if (!r || t.list !== mine) return false;
+    t.running = false;
+    // (The calls it finished: it, or ones it woke.)
+    for (const f of news.finished) {
+      const d = t.done.find((x) => x?.id === f.id);
+      if (d) Object.assign(d, { how: f.how, ret: f.ret, text: outputs(t.steps[t.done.indexOf(d)].call, d.args, f.buffers) });
+    }
     app.refresh();
-    // (Its syscall: the last of them /init made; it waits for the next call in a read, not returned.)
-    const nr = m.syscall(s.call).nr, c = app.calls().findLast((x) => x.nr === nr && x.task.pid === 1 && x.last != null);
-    t.done[j] = { ret: r.ret, text: outputs(s.call, args, r.buffers), id: c?.id };
-    t.status.textContent = j + 1 < t.steps.length ? "" : "That was the last call: add one below, or click a call to see it again.";
+    const woke = news.finished.filter((f) => f.id !== q.id).map((f) => t.done.findIndex((x) => x?.id === f.id) + 1);
+    t.status.textContent = (woke.length ? `It woke call ${woke.join(", ")}: done now. ` : "")
+      + (q.how == null ? "It blocks: make another call to wake it. " : "")
+      + (j + 1 < t.steps.length ? "" : "That was the last call: add one below, or click a call to see it again.");
     draw();
     select(j);
     return true;
   }
+  // Step `j`'s syscall summary: its runner's first of its number since it was asked.
+  const syscallOf = (d) => app.calls().find((x) => x.task.pid === d.tid && x.nr === d.nr && x.id >= d.from);
   // Step `j`'s recording: its syscall selected; its stops found in it.
   function select(j) {
     const d = t.done[j], s = t.steps[j];
-    const c = app.calls().find((x) => x.id === d?.id);
+    const c = d && syscallOf(d);
     if (!c) return (t.status.textContent = "This call's recording is gone: the ring has moved on.");
     app.select(c);
     t.cur = { stops: s.stops ?? [], ol: d.ol };
@@ -181,8 +211,9 @@ export async function examples(app) {
 
   // What a call left in the buffers it was to fill.
   function outputs(call, args, buffers) {
-    return args.map((a, i) => (a?.size != null && buffers?.[i] ? (call === "getdents64"
-      ? `entries: ${dirents(buffers[i]).join(", ")}` : bytes(buffers[i])) : null)).filter(Boolean).join("  ");
+    const shown = (b) => call === "getdents64" ? `entries: ${dirents(b).join(", ")}`
+      : call === "pipe2" ? `fds: ${[...new Int32Array(b.buffer, b.byteOffset, 2)].join(", ")}` : bytes(b);
+    return args.map((a, i) => (a?.size != null && buffers?.[i] ? shown(buffers[i]) : null)).filter(Boolean).join("  ");
   }
   function dirents(b) {
     const v = new DataView(b.buffer, b.byteOffset, b.byteLength), names = [];
@@ -216,21 +247,25 @@ export async function examples(app) {
     };
     const matches = (prefix) => names.filter((n) => n.startsWith(prefix));
     input.oninput = () => {
-      const word = input.value.match(/^\s*([A-Za-z_]\w*)/)?.[1] ?? "";
-      if (!word) return (hint.textContent = "");
+      const word = input.value.match(/^\s*(?:\d+\s*:\s*)?([A-Za-z_]\w*)/)?.[1] ?? "";
+      if (!word) {
+        const others = m.runners().filter((r) => r !== 1);
+        return (hint.textContent = others.length ? `runners: 1 (/init), ${others.join(", ")}: write "${others[0]}: call(...)" for one of them` : "");
+      }
       const sig = input.value.includes("(") && signature(word);
       const also = matches(word);
       hint.textContent = sig || (also.length ? also.slice(0, 8).join("  ") + (also.length > 8 ? "  …" : "") : `no syscall ${word}`);
     };
     input.onkeydown = (e) => {
       if (e.key === "Tab" && !input.value.includes("(")) {
-        const also = matches(input.value.trim());
+        const pre = input.value.match(/^\s*(?:\d+\s*:\s*)?/)[0];
+        const also = matches(input.value.slice(pre.length).trim());
         if (!also.length) return;
         e.preventDefault();
         // (The longest start they share; the "(" if there is only one.)
         let common = also[0];
         for (const n of also) while (!n.startsWith(common)) common = common.slice(0, -1);
-        input.value = also.length === 1 ? `${common}(` : common;
+        input.value = pre + (also.length === 1 ? `${common}(` : common);
         input.oninput();
       } else if (e.key === "Enter") {
         e.preventDefault();
@@ -241,7 +276,9 @@ export async function examples(app) {
       }
     };
     function add() {
-      const c = parseCall(input.value);
+      // (`tid: call(...)`: runner tid makes it.)
+      const [, tid, rest] = input.value.match(/^\s*(?:(\d+)\s*:)?\s*([\s\S]*)$/);
+      const c = parseCall(rest);
       if (!c) return (hint.textContent = "write a call: name(arg, arg, …)");
       const s = m.syscall(c.call);
       if (!s) return (hint.textContent = `no syscall ${c.call}`);
@@ -252,8 +289,10 @@ export async function examples(app) {
       } catch (e) {
         return (hint.textContent = e.message);
       }
-      if (t.branch != null) return branch(t.branch, { call: c.call, args: c.args });
-      t.steps.push({ call: c.call, args: c.args });
+      if (tid && !m.runners().includes(Number(tid))) return (hint.textContent = `no runner ${tid}: the runners are ${m.runners().join(", ")}`);
+      const call = { call: c.call, args: c.args, ...(tid && Number(tid) !== 1 ? { tid: Number(tid) } : {}) };
+      if (t.branch != null) return branch(t.branch, call);
+      t.steps.push(call);
       input.value = "";
       hint.textContent = "";
       draw();

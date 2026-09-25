@@ -53,7 +53,7 @@ where real hardware would deliver them too.
 | Line | Raised by | For |
 |---|---|---|
 | 0, timer | the host, when the deadline passes (at idle, or at a switch) | the clockevent (kernel/time.c) |
-| 1, console | the page | console input (/init's doorbell, below) |
+| 1, console | the page | console input (the runners' doorbells, below) |
 
 The clockevent is one-shot: the kernel writes its deadline to
 `wasm_timer_deadline`; the host raises the timer line once it passes. The
@@ -62,7 +62,10 @@ moves on by a microsecond at each read (so delays, which spin on it, end),
 and, while the page waits for the kernel (a boot, a call), idle skips it
 to the timer's deadline at once; between the page's calls it stands still.
 So a sleep takes no real time, and the machine is deterministic: the same
-calls make the same run, record for record.
+calls make the same run, record for record. The tick stops while the CPU
+idles (`NO_HZ_IDLE`): else a call that blocks would have the host skip
+from tick to tick, recording each; so idle skips at most a virtual second
+ahead, and a call not done by then is blocked (it waits for another).
 
 ## Programs, and /init
 
@@ -86,18 +89,44 @@ allocates from: below it are the kernel image and the runtime's own memory.
 There is no protection otherwise (NOMMU): a program can write the kernel's
 memory.
 
-There is no user fork: a wasm program cannot copy its own stack.
-`copy_thread` refuses one; kernel threads (which start from a function)
-work as usual.
+## Threads, and vfork
 
-So there is one program: **/init** (user/init.c, C on nolibc). It mounts
-the disk, and then makes the syscalls the page asks for, one at a time. It
-waits for them reading its terminal: the page leaves a request with the
+A user `clone` cannot return twice: wasm has no way to copy a call stack.
+So a clone child **starts over**, at its program's clone entry (its
+`__wasm_clone_start` export; `user_start` gives it too), as a libc's
+`clone(fn, stack, ...)` wrapper would call `fn` on the new stack. It must
+share its parent's memory (`CLONE_VM`: without it, a copy at the same
+addresses, which NOMMU cannot give; so no `fork`, as on any NOMMU
+system):
+
+- a **thread** (`CLONE_THREAD`, ...) runs on the stack it was given;
+- **vfork** (`CLONE_VM | CLONE_VFORK`, no stack) runs below its parent's
+  stack, while the parent waits (the kernel's own `CLONE_VFORK`) until the
+  child execs or exits.
+
+`copy_thread` tells the host (`clone_user`): a program's `__stack_pointer`
+is its instance's global, which its threads share, so the host keeps each
+task's value and puts it back when the task gets the CPU. An `execve` from
+user mode runs the new program on the same stack (kernel/syscall.c: the
+old one's frames are never returned to). Futexes are the kernel's own
+(`CONFIG_FUTEX`; one CPU, so plain loads and stores in user space).
+
+## /init, and the runners
+
+There is one program: **/init** (user/init.c, C on nolibc). It mounts the
+disk, and then makes the syscalls the page asks for, one at a time. It
+waits for them reading a console line: the page leaves a request with the
 runtime, and one byte of console input (`WASM_IRQ_CONSOLE`) wakes it; the
 runtime's `ksee.call` import copies the request (the number, the
-arguments, the buffers) into its data (recorded), it makes the syscall, and
-`ksee.done` gives the result back. So every syscall the page shows is a
-real process's, with its fds and its memory.
+arguments, the buffers) into its memory (recorded), it makes the syscall,
+and `ksee.done` gives the result back. So every syscall the page shows is
+a real process's, with its fds and its memory.
+
+A clone child of /init (a thread, a vfork child) is a **runner** too, and
+so is /init exec'd again: each waits on a console line of its own
+(`ttyW1`..., `ksee.line`), as a tty gives each byte to one reader. So the
+page can make calls as several threads and processes: one blocks (a
+futex's wait, a pipe's read), another wakes it.
 
 ## A disk
 
@@ -109,9 +138,11 @@ kernel's; the disk's blocks are that file's pages in memory.
 
 ## Console
 
-kernel/console.c: one console, printk's from `setup_arch` on, whose tty is
-`/dev/console`. Writes go to the host synchronously (`console_write`);
-input comes with `WASM_IRQ_CONSOLE` (`console_read`). (A console of its own rather than hvc: hvc's thread,
+kernel/console.c: tty lines `ttyW0`... (as serial ports: one per runner
+waiting for the page's calls), raw (no line editing, no echo). `ttyW0` is
+printk's console from `setup_arch` on, and `/dev/console`. Writes go to
+the host synchronously (`console_write`); input comes with
+`WASM_IRQ_CONSOLE` (`console_read`, a line's). (A console of its own rather than hvc: hvc's thread,
 kicked after every write, added a task and noise to every recording.)
 
 ## Memory
