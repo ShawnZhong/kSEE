@@ -8,6 +8,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod module;
+pub mod stack;
 pub mod syscalls;
 pub mod tables;
 pub mod task;

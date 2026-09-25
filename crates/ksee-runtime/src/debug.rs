@@ -6,17 +6,23 @@
 //! records where the kernel is and waits (a wasm atomic wait, in the
 //! Worker) until the page resumes it. The kernel is uniprocessor, so every
 //! other task is parked meanwhile: kernel memory is quiet to inspect.
+//!
+//! It does not stop in /init's traffic on the /dev/ksee channel (a read
+//! or write on fd 100, see user/init.c): that is how the page's syscalls
+//! get there, not one of them. The plugin's frames (see Machine::call_stack)
+//! say which syscall the task is in.
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use crate::state::{Direct, CURRENT_TASK, TRACE};
+use crate::state::{Direct, CURRENT_TASK, FRAMES, TRACE};
 use ksee_core::Memory;
 
 /// Run until a breakpoint; stop at the next block; stop at the next block
-/// of one function on one task.
+/// of one function on one task; stop at the next block on one task.
 pub const RUN: u32 = 0;
 pub const STEP: u32 = 1;
 pub const NEXT: u32 = 2;
+pub const TASK: u32 = 3;
 
 const BREAKS: usize = 256;
 /// A breakpoint's block number meaning "any block of the function".
@@ -49,6 +55,49 @@ pub static DEBUG: Debugger = Debugger {
     resume: AtomicU32::new(0),
 };
 
+/// init's channel fd, and the syscalls it uses on it (read, write).
+const CHANNEL_FD: u32 = 100;
+const CHANNEL_NRS: [u32; 2] = [63, 64];
+
+/// A function's id in the trace (plugin/ksee-trace.cpp: FNV-1a of the name).
+const fn fn_id(name: &str) -> u32 {
+    let b = name.as_bytes();
+    let mut h: u32 = 2166136261;
+    let mut i = 0;
+    while i < b.len() {
+        h = (h ^ b[i] as u32).wrapping_mul(16777619);
+        i += 1;
+    }
+    h
+}
+
+/// Whether the current task is in a read or write on the channel: its
+/// innermost wasm_syscall frame (args: nr, a0, ...) says.
+fn in_channel_traffic() -> bool {
+    const SYSCALL: u32 = fn_id("wasm_syscall");
+    let head = FRAMES.load(Ordering::Relaxed);
+    if head == 0 {
+        return false;
+    }
+    let mut frame = Direct.read_u32(head);
+    let top = frame.saturating_add(16 << 10);
+    for _ in 0..64 {
+        if frame == 0 || frame >= top {
+            return false;
+        }
+        if Direct.read_u32(frame + 4) == SYSCALL {
+            let (nr, fd) = (Direct.read_u32(frame + 8), Direct.read_u32(frame + 12));
+            return fd == CHANNEL_FD && CHANNEL_NRS.contains(&nr);
+        }
+        let prev = Direct.read_u32(frame);
+        if prev <= frame {
+            return false;
+        }
+        frame = prev;
+    }
+    false
+}
+
 fn current_task() -> u32 {
     Direct.read_u32(CURRENT_TASK.load(Ordering::Relaxed))
 }
@@ -61,9 +110,10 @@ pub extern "C" fn stop(func: u32, n: u32) {
     let hit = match d.mode.load(Ordering::Acquire) {
         STEP => true,
         NEXT => func == d.next_fn.load(Ordering::Relaxed) && task == d.next_task.load(Ordering::Relaxed),
+        TASK => task == d.next_task.load(Ordering::Relaxed),
         _ => false,
     } || d.is_break(func, n);
-    if !hit {
+    if !hit || in_channel_traffic() {
         return;
     }
     d.mode.store(RUN, Ordering::Relaxed);
@@ -118,7 +168,7 @@ impl Debugger {
 
     /// Let a stopped kernel go, in `mode`.
     pub fn go(&self, mode: u32) {
-        if mode == NEXT {
+        if mode == NEXT || mode == TASK {
             self.next_fn.store(self.at_fn.load(Ordering::Relaxed), Ordering::Relaxed);
             self.next_task.store(self.at_task.load(Ordering::Relaxed), Ordering::Relaxed);
         }

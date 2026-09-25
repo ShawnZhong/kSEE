@@ -19,6 +19,8 @@ pub static EPOCH_MS: AtomicU64 = AtomicU64::new(0);
 /// Addresses in kernel memory: the trace (ksee_trace()) and the variable
 /// holding the current task (KSEE_CURRENT).
 pub static TRACE: AtomicU32 = AtomicU32::new(0);
+/// The address of the innermost frame's pointer (the plugin's __ksee_frames).
+pub static FRAMES: AtomicU32 = AtomicU32::new(0);
 pub static CURRENT_TASK: AtomicU32 = AtomicU32::new(0);
 /// The kernel's pending-interrupt word (wasm_irq_pending).
 pub static PENDING: AtomicU32 = AtomicU32::new(0);

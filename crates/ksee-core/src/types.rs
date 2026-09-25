@@ -68,6 +68,8 @@ pub struct Types {
     pub globals: BTreeMap<String, (u32, u32)>,
     /// Syscalls, by number.
     pub syscalls: BTreeMap<u32, Syscall>,
+    /// Functions' parameters: name -> [(parameter, type)].
+    pub params: BTreeMap<String, Vec<(String, u32)>>,
 }
 
 /// A syscall's name and parameters (None if unknown).
@@ -95,6 +97,7 @@ impl Types {
         let mut values: BTreeMap<u32, Vec<(String, i64)>> = BTreeMap::new();
         let mut globals = BTreeMap::new();
         let mut syscalls = BTreeMap::new();
+        let mut params = BTreeMap::new();
         for line in text.lines() {
             let c: Vec<&str> = line.split('\t').collect();
             let num = |i: usize| c.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -122,6 +125,13 @@ impl Types {
                         }
                     }).collect());
                     syscalls.insert(num(1), Syscall { name: c[2].to_string(), built: c[3] != "!", params });
+                }
+                Some(&"P") if c.len() == 3 => {
+                    let ps = c[2].split(',').filter(|p| !p.is_empty()).map(|p| {
+                        let (n, t) = p.rsplit_once(':').unwrap_or((p, "0"));
+                        (n.to_string(), t.parse().unwrap_or(0))
+                    }).collect();
+                    params.insert(c[1].to_string(), ps);
                 }
                 Some(&"G") if c.len() == 4 => {
                     globals.insert(c[1].to_string(), (num(2), num(3)));
@@ -159,7 +169,7 @@ impl Types {
                 names.entry(t.name.clone()).or_insert(id as u32);
             }
         }
-        Types { types, names, globals, syscalls }
+        Types { types, names, globals, syscalls, params }
     }
 
     pub fn get(&self, id: u32) -> &Type {

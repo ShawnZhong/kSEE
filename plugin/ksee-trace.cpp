@@ -12,7 +12,8 @@
 //   enter  at function entry: the time, the current task and the first
 //          four integer/pointer arguments (truncated to 32 bits)
 //   exit   before each return: the time, the current task and the value
-//   block  at the start of each basic block: the block's index
+//   block  at the start of each basic block: the block's index; before
+//          each return, a return record; and the function's frame (below)
 // and defaults to "enter". Enter and exit probes are inserted before
 // optimization, so they survive inlining. Block probes are inserted after
 // it, so they describe the code that actually runs (and cannot keep the
@@ -38,9 +39,18 @@
 //                         a0, a1, a2, a3
 //   [fn, 3 << 28]         exit fn, followed by time lo, time hi, current,
 //                         value
+//   [fn, 4 << 28]         return from fn (block mode)
 //   [value, 8 << 28 | i]  continuation i of the preceding head
 // fn is a hash of the function name (for a function local to its file, of
 // "file:name"); time comes from the ksee.now import.
+//
+// Frames: a function with block probes also keeps a frame on the (kernel)
+// stack while it runs, u32 { prev, fn, args[6] } (the first six integer or
+// pointer arguments, truncated to 32 bits), linked from __ksee_frames, the
+// innermost; the exported ksee_frames() returns its address. A stopped
+// kernel's host walks it for the call stack and the arguments. (A task
+// switch needs nothing: each frame restores the prev it saw on entry, from
+// its own task's stack.)
 //
 // The linked module describes its probes in a wasm custom section, which
 // wasm-ld concatenates across objects (lines may repeat):
@@ -61,6 +71,7 @@
 
 #include <cstdlib>
 #include <set>
+#include <tuple>
 #include <string>
 #include <vector>
 
@@ -164,7 +175,9 @@ void emitCustomSection(Module &M, StringRef name, StringRef text) {
   M.appendModuleInlineAsm(s + "\"\n.text\n");
 }
 
-enum Kind { KindBlock = 1, KindEnter = 2, KindExit = 3, KindValue = 8 };
+enum Kind { KindBlock = 1, KindEnter = 2, KindExit = 3, KindReturn = 4, KindValue = 8 };
+
+constexpr unsigned FrameArgs = 6;
 
 unsigned ringWords() {
   const char *env = std::getenv("KSEE_RING_WORDS");
@@ -179,7 +192,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   bool late;
   Module *M = nullptr;
   Type *i32 = nullptr, *i64 = nullptr;
-  Function *putBlock = nullptr, *putEnter = nullptr, *putExit = nullptr;
+  Function *putBlock = nullptr, *putEnter = nullptr, *putExit = nullptr, *putReturn = nullptr;
+  GlobalVariable *frames = nullptr;
   std::string probes;
 
   unsigned modesFor(Function &F) {
@@ -220,6 +234,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       putBlock = writerDecl("__ksee_put_block", 2);
       putEnter = writerDecl("__ksee_put_enter", 5);
       putExit = writerDecl("__ksee_put_exit", 2);
+      putReturn = writerDecl("__ksee_put_return", 1);
+      frames = shared(cast<GlobalVariable>(M->getOrInsertGlobal("__ksee_frames", i32)));
       return;
     }
     LLVMContext &C = M->getContext();
@@ -230,12 +246,17 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         ConstantAggregateZero::get(traceTy), "__ksee_trace"));
     trace->setAlignment(Align(8));
 
-    auto *infoTy = FunctionType::get(i32, false);
-    Function *info = shared(Function::Create(infoTy, GlobalValue::ExternalLinkage,
-                                             "__ksee_trace_info", M));
-    info->addFnAttr("wasm-export-name", "ksee_trace");
-    IRBuilder<> IB(BasicBlock::Create(C, "", info));
-    IB.CreateRet(IB.CreatePtrToInt(trace, i32));
+    frames = shared(new GlobalVariable(*M, i32, false, GlobalValue::ExternalLinkage,
+                                       ConstantInt::get(i32, 0), "__ksee_frames"));
+    // Exports that find the ring and the frames.
+    for (auto [name, export_, var] : {std::tuple{"__ksee_trace_info", "ksee_trace", (GlobalVariable *)trace},
+                                      std::tuple{"__ksee_frames_info", "ksee_frames", frames}}) {
+      Function *info = shared(Function::Create(FunctionType::get(i32, false),
+                                               GlobalValue::ExternalLinkage, name, M));
+      info->addFnAttr("wasm-export-name", export_);
+      IRBuilder<> IB(BasicBlock::Create(C, "", info));
+      IB.CreateRet(IB.CreatePtrToInt(var, i32));
+    }
 
     FunctionCallee now = M->getOrInsertFunction("__ksee_now", FunctionType::get(i64, false));
     cast<Function>(now.getCallee())->addFnAttr("wasm-import-module", "ksee");
@@ -309,6 +330,10 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       stamp(B, words);
       value(B, words, F->getArg(1));
     });
+    putReturn = writer("__ksee_put_return", 1, [&](IRBuilder<> &B, Function *F, auto &words) {
+      words.push_back(F->getArg(0));
+      words.push_back(B.getInt32(KindReturn << 28));
+    });
     probes += "R\t" + std::to_string(words) + "\n";
   }
 
@@ -347,6 +372,32 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
           }
         probes += ("B\t" + Twine(id) + "\t" + Twine(n) + "\t" + loc + "\n").str();
       }
+
+    if (modes & Block) {
+      // The frame, before the entry block's probe (so that a stop there
+      // sees the arguments); restored, and a return record, at each return.
+      IRBuilder<> B(&*F.getEntryBlock().getFirstInsertionPt());
+      auto *frameTy = ArrayType::get(i32, 2 + FrameArgs);
+      AllocaInst *frame = B.CreateAlloca(frameTy);
+      frame->setAlignment(Align(4));
+      Value *prev = B.CreateLoad(i32, frames);
+      B.CreateStore(prev, B.CreateConstGEP2_32(frameTy, frame, 0, 0));
+      B.CreateStore(B.getInt32(id), B.CreateConstGEP2_32(frameTy, frame, 0, 1));
+      for (unsigned i = 0; i < FrameArgs; i++)
+        B.CreateStore(i < F.arg_size() ? toI32(B, F.getArg(i)) : B.getInt32(0),
+                      B.CreateConstGEP2_32(frameTy, frame, 0, 2 + i));
+      B.CreateStore(B.CreatePtrToInt(frame, i32), frames);
+      for (BasicBlock *BB : blocks)
+        if (auto *R = dyn_cast<ReturnInst>(BB->getTerminator())) {
+          // (A musttail call must stay right before its return.)
+          Instruction *at = R;
+          if (auto *C = dyn_cast_or_null<CallInst>(R->getPrevNode()); C && C->isMustTailCall())
+            at = C;
+          IRBuilder<> RB(at);
+          RB.CreateStore(prev, frames);
+          RB.CreateCall(putReturn, {RB.getInt32(id)});
+        }
+    }
 
     if (modes & Exit)
       for (BasicBlock *BB : blocks)

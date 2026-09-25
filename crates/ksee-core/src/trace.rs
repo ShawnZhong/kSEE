@@ -9,11 +9,14 @@ pub enum Record {
     Block { func: u32, n: u32 },
     Enter { func: u32, time: u64, current: u32, args: [u32; 4] },
     Exit { func: u32, time: u64, current: u32, value: u32 },
+    /// A return from a function with block probes.
+    Return { func: u32 },
 }
 
 const BLOCK: u32 = 1;
 const ENTER: u32 = 2;
 const EXIT: u32 = 3;
+const RETURN: u32 = 4;
 const VALUE: u32 = 8;
 
 /// Records in `words`, oldest first, starting at a pair boundary. Leading
@@ -71,6 +74,7 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
             let kind = tag >> 28;
             let count = match kind {
                 BLOCK => return Some(Record::Block { func, n: tag & 0x0fff_ffff }),
+                RETURN => return Some(Record::Return { func }),
                 ENTER => 7,
                 EXIT => 4,
                 _ => continue, // a continuation without its head

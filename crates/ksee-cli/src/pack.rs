@@ -78,7 +78,8 @@ pub fn syscalls(unistd: &str, table: &str) -> Vec<SyscallEntry> {
 /// lines, with the parameters of the kernel's __do_sys_FUNC (the body of
 /// SYSCALL_DEFINEn(FUNC, ...)): "name:type:C type" (the C type keeps
 /// const, which tells input buffers from output ones), "?" if unknown, "!"
-/// if the syscall is not built.
+/// if the syscall is not built. Every function gets `P name params`, its
+/// parameters as "name:type" (for the call stack's arguments).
 pub fn types(image: &[u8], syscalls: &[SyscallEntry]) -> Result<String, gimli::Error> {
     let sections: HashMap<String, Vec<u8>> = module::custom_sections(image)
         .filter(|(name, _)| name.starts_with(".debug_"))
@@ -99,12 +100,16 @@ pub fn types(image: &[u8], syscalls: &[SyscallEntry]) -> Result<String, gimli::E
         let mut offsets = Vec::new();
         let mut vars = Vec::new();
         let mut sys = Vec::new();
+        let mut funcs = Vec::new();
         while let Some(e) = entries.next_dfs()? {
             match e.tag() {
                 dw::DW_TAG_structure_type | dw::DW_TAG_union_type | dw::DW_TAG_enumeration_type
                 | dw::DW_TAG_typedef => offsets.push(e.offset()),
                 dw::DW_TAG_subprogram => {
                     let name = attr_string(&cu, e, dw::DW_AT_name)?;
+                    if !name.is_empty() && e.attr(dw::DW_AT_declaration).is_none() {
+                        funcs.push((name.clone(), e.offset()));
+                    }
                     if let Some(sys_name) = name.strip_prefix("__do_sys_") {
                         sys.push((sys_name.to_string(), e.offset()));
                     } else if let Some(sys_name) = name.strip_prefix("__wasm_sys_") {
@@ -127,24 +132,25 @@ pub fn types(image: &[u8], syscalls: &[SyscallEntry]) -> Result<String, gimli::E
         for off in offsets {
             b.canon(&mut cu, off)?;
         }
+        for (name, off) in funcs {
+            if !b.functions.insert(name.clone()) {
+                continue;
+            }
+            let mut sig = Vec::new();
+            for (pname, ty) in params(&unit, off, &cu)? {
+                let t = match ty {
+                    Some(t) => b.canon(&mut cu, t)?,
+                    None => 0,
+                };
+                sig.push(format!("{pname}:{t}"));
+            }
+            b.extra.push(format!("P\t{name}\t{}", sig.join(",")));
+        }
         for (name, off) in sys {
             if b.signatures.contains_key(&name) {
                 continue;
             }
-            let mut params = Vec::new();
-            let mut tree = unit.entries_tree(Some(off))?;
-            let mut children = tree.root()?.children();
-            while let Some(child) = children.next()? {
-                let c = child.entry();
-                if c.tag() == dw::DW_TAG_formal_parameter {
-                    let pname = attr_string(&cu, c, dw::DW_AT_name)?;
-                    let ty = match c.attr_value(dw::DW_AT_type) {
-                        Some(AttributeValue::UnitRef(t)) => Some(t),
-                        _ => None,
-                    };
-                    params.push((pname, ty));
-                }
-            }
+            let params = params(&unit, off, &cu)?;
             let mut sig = Vec::new();
             for (pname, ty) in params {
                 let (t, c) = match ty {
@@ -175,6 +181,25 @@ pub fn types(image: &[u8], syscalls: &[SyscallEntry]) -> Result<String, gimli::E
     Ok(b.text())
 }
 
+/// The formal parameters of the subprogram at `off`: (name, type).
+fn params(unit: &gimli::Unit<R>, off: UnitOffset, cu: &Cu) -> Result<Vec<(String, Option<UnitOffset>)>, gimli::Error> {
+    let mut params = Vec::new();
+    let mut tree = unit.entries_tree(Some(off))?;
+    let mut children = tree.root()?.children();
+    while let Some(child) = children.next()? {
+        let c = child.entry();
+        if c.tag() == dw::DW_TAG_formal_parameter {
+            let pname = attr_string(cu, c, dw::DW_AT_name)?;
+            let ty = match c.attr_value(dw::DW_AT_type) {
+                Some(AttributeValue::UnitRef(t)) => Some(t),
+                _ => None,
+            };
+            params.push((pname, ty));
+        }
+    }
+    Ok(params)
+}
+
 struct Cu<'a, 'b> {
     dwarf: &'a gimli::Dwarf<R<'b>>,
     unit: &'a gimli::Unit<R<'b>>,
@@ -194,6 +219,8 @@ struct Builder {
     by_name: HashMap<(DwTag, String), (u32, bool)>,
     /// Names of globals listed (the first of several statics wins).
     globals: std::collections::HashSet<String>,
+    /// Functions given a P line.
+    functions: std::collections::HashSet<String>,
     /// Syscall name -> "param:type,..." (from __do_sys_NAME).
     signatures: HashMap<String, String>,
     /// Syscall entry points (__wasm_sys_NAME) -> whether just a stub.

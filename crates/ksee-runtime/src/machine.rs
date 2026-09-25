@@ -6,7 +6,7 @@ use js_sys::{Function, Object, Uint8Array, WebAssembly};
 use ksee_core::types::Kind;
 use ksee_core::view::Views;
 use ksee_core::tables::Tables;
-use ksee_core::{syscalls, task, trace, Memory};
+use ksee_core::{stack, syscalls, task, trace, Memory};
 use serde_wasm_bindgen as _;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -144,6 +144,9 @@ impl Machine {
         PENDING.store(global("wasm_irq_pending"), Ordering::Relaxed);
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
+        if let Ok(frames) = js::get(&kernel, "ksee_frames").dyn_into::<Function>() {
+            FRAMES.store(frames.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
+        }
         let timer = Object::new();
         js::set(&timer, "role", "timer");
         js::set(&timer, "deadline", global("wasm_timer_deadline"));
@@ -276,6 +279,7 @@ impl Machine {
             trace::Record::Block { func, n } => ("block", func, Some(n)),
             trace::Record::Enter { func, .. } => ("enter", func, None),
             trace::Record::Exit { func, .. } => ("exit", func, None),
+            trace::Record::Return { func } => ("return", func, None),
         };
         js::set(&o, "i", i as f64);
         js::set(&o, "kind", kind);
@@ -303,8 +307,9 @@ impl Machine {
     }
 
     /// The position of the next (dir > 0) or previous block record from `i`
-    /// that starts a new `unit`: "block", "function" (another function than
-    /// at `i`), or "syscall" (a syscall's first record). `i` if none.
+    /// that starts a new `unit`: "block", "line" (another source line, on
+    /// the task running at `i`), "function" (another function than at `i`),
+    /// or "syscall" (a syscall's first record). `i` if none.
     pub fn seek(&self, i: usize, dir: i32, unit: &str) -> usize {
         let h = self.history.borrow();
         let n = h.records.len();
@@ -318,15 +323,98 @@ impl Machine {
                 if dir > 0 { starts.filter(|&f| f > i).min() } else { starts.filter(|&f| f < i).max() }
             }).unwrap_or(i);
         }
-        let here = func_at(i);
+        let t = tables();
+        let line_at = |j: usize| match h.records.get(j) {
+            Some(&trace::Record::Block { func, n }) => t.blocks.get(&(func, n)).map(|l| (l.file, l.line)),
+            _ => None,
+        };
+        let (here, here_line, task) = (func_at(i), line_at(i), h.tasks.get(i).copied());
         let mut j = i;
         loop {
             if dir > 0 { if j + 1 >= n { return i } j += 1 } else { if j == 0 { return i } j -= 1 }
             let Some(f) = func_at(j) else { continue };
-            if unit != "function" || Some(f) != here {
+            let new = match unit {
+                "function" => Some(f) != here,
+                "line" => h.tasks.get(j).copied() == task && line_at(j).is_some() && line_at(j) != here_line,
+                _ => true,
+            };
+            if new {
                 return j;
             }
         }
+    }
+
+    /// The calls in records `first..=last` (of the task at address `task`,
+    /// or any), rebuilt from the trace (see ksee_core::stack), at least
+    /// `min` records long: [{ func, file, depth, first, last }].
+    pub fn frames(&self, first: usize, last: usize, task: Option<u32>, min: Option<usize>) -> JsValue {
+        let h = self.history.borrow();
+        let t = tables();
+        let list = js_sys::Array::new();
+        for f in stack::frames(&h.records, &h.tasks, first, last, task, min.unwrap_or(1).max(1)) {
+            let o = Object::new();
+            let func = t.functions.get(&f.func);
+            js::set(&o, "func", func.map_or(String::new(), |x| x.name.clone()));
+            js::set(&o, "file", func.map_or("", |x| t.file(x.loc)));
+            js::set(&o, "depth", f.depth);
+            js::set(&o, "first", f.first as f64);
+            js::set(&o, "last", f.last as f64);
+            list.push(&o);
+        }
+        list.into()
+    }
+
+    /// The call stack at record `i` (of the task running then), outermost
+    /// first: [function name].
+    pub fn stack_at(&self, i: usize) -> Vec<String> {
+        let h = self.history.borrow();
+        let t = tables();
+        stack::stack_at(&h.records, &h.tasks, i).into_iter()
+            .map(|f| t.functions.get(&f).map_or(format!("{f:#x}"), |x| x.name.clone())).collect()
+    }
+
+    /// While stopped: the stopped task's calls, innermost first, from the
+    /// frames the plugin keeps on the kernel stack: [{ func, file, line,
+    /// args: [Object (see ksee_core::view)] }]. Arguments are 32 bits
+    /// (wider ones lose their high half); __user pointers point into the
+    /// process, not the kernel.
+    pub fn call_stack(&self) -> JsValue {
+        let list = js_sys::Array::new();
+        let head = FRAMES.load(Ordering::Relaxed);
+        if DEBUG.stopped().is_none() || head == 0 {
+            return list.into();
+        }
+        let t = tables();
+        let mut frame = Direct.read_u32(head);
+        // Outer frames are at higher addresses, on the same (16 KiB) stack.
+        let top = frame.saturating_add(16 << 10);
+        for _ in 0..64 {
+            if frame == 0 || frame >= top {
+                break;
+            }
+            let func = Direct.read_u32(frame + 4);
+            let o = Object::new();
+            let f = t.functions.get(&func);
+            let name = f.map_or(format!("{func:#x}"), |f| f.name.clone());
+            js::set(&o, "func", name.clone());
+            if let Some(f) = f {
+                js::set(&o, "file", t.file(f.loc));
+                js::set(&o, "line", f.loc.line);
+            }
+            let args = js_sys::Array::new();
+            for (i, (pname, ty)) in t.types.params.get(&name).into_iter().flatten().take(6).enumerate() {
+                let raw = Direct.read_u32(frame + 8 + 4 * i as u32).to_le_bytes();
+                args.push(&to_js(&t.types.object(&Bytes(&raw), pname, 0, *ty, 0)));
+            }
+            js::set(&o, "args", args);
+            list.push(&o);
+            let prev = Direct.read_u32(frame);
+            if prev <= frame {
+                break;
+            }
+            frame = prev;
+        }
+        list.into()
     }
 
     /// The trace in `n` buckets, for a timeline: [{ pid, comm, syscall }]
@@ -675,6 +763,12 @@ impl Machine {
     /// same task (over calls).
     pub fn next(&self) {
         DEBUG.go(debug::NEXT);
+    }
+
+    /// From a stop: run to the next block on the same task (not into
+    /// interrupts or other tasks, unless they run on it).
+    pub fn step_task(&self) {
+        DEBUG.go(debug::TASK);
     }
 
     /// From a stop: run until a breakpoint.
