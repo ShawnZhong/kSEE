@@ -146,6 +146,7 @@ impl Machine {
             k.runners.borrow_mut().clear();
             k.calls.borrow_mut().clear();
             k.finished.borrow_mut().clear();
+            k.made.borrow_mut().clear();
         });
         *self.rec.borrow_mut() = Default::default();
         *self.past.borrow_mut() = None;
@@ -176,12 +177,11 @@ impl Machine {
     /// (e.g. "openat") with `args`: each a number, a string (as a
     /// NUL-terminated buffer), { bytes } (a buffer of them: an array or a
     /// Uint8Array), or { size } (a buffer of that many zero bytes, for the
-    /// call to fill). { id, from }: the call's id (it finishes when it
-    /// returns; or, when it blocks, later, as another call wakes it: see
-    /// quiet), and the id its recording's records start from. Recorded:
+    /// call to fill). The call's id: it finishes when it returns; or, when
+    /// it blocks, later, as another call wakes it (see quiet). Recorded:
     /// from here until the kernel is quiet again (see sched::idle); so
     /// memory now is memory as the recording ends.
-    pub fn call(&self, name: &str, args: Vec<JsValue>, tid: Option<u32>) -> Result<JsValue, JsValue> {
+    pub fn call(&self, name: &str, args: Vec<JsValue>, tid: Option<u32>) -> Result<u32, JsValue> {
         let tid = tid.unwrap_or(1);
         let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
             .ok_or_else(|| format!("no syscall {name}"))?;
@@ -229,12 +229,10 @@ impl Machine {
         });
         let trace = k(|k| k.trace.get());
         Direct.write_u32(trace + trace::ON, 1);
-        let o = Object::new();
-        js::set(&o, "id", id);
         // (Records' ids count the pairs of words ever written: see trace::ring.)
-        js::set(&o, "from", Direct.read_u32(trace) / 2);
+        k(|k| k.made.borrow_mut().insert(id, (tid, nr, Direct.read_u32(trace) / 2)));
         sched::interrupt(IRQ_DOORBELL);
-        Ok(o.into())
+        Ok(id)
     }
 
     /// A promise of the kernel quiet (now, or once it is): { finished: [the

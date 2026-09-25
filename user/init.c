@@ -8,7 +8,7 @@
 // the kernel's small C library.
 #include <fcntl.h>
 #include <signal.h>
-#include <stdio.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <unistd.h>
@@ -30,6 +30,11 @@ struct request {
 	char data[4096];
 };
 
+static void say(const char *s)
+{
+	write(1, s, strlen(s));
+}
+
 // (No background work after the mount: the image is initialized in full,
 // and ext4lazyinit need not prefetch its block bitmaps.)
 static void disk(void)
@@ -41,7 +46,7 @@ static void disk(void)
 	loop = open("/dev/loop0", O_RDWR);
 	if (config.fd < 0 || loop < 0 || ioctl(loop, LOOP_CONFIGURE, &config) ||
 	    mount("/dev/loop0", "/mnt", "ext4", 0, "no_prefetch_block_bitmaps"))
-		printf("init: no ext4 disk on /mnt\n");
+		say("init: no ext4 disk on /mnt\n");
 	// (The loop device holds the file; the page's fds start at 3.)
 	close(config.fd);
 	close(loop);
@@ -72,7 +77,7 @@ int main(void)
 	if (getpid() == 1) {
 		mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
 		disk();
-		printf("init: ready for the page's calls\n");
+		say("init: ready for the page's calls\n");
 	}
 	serve();
 }
@@ -83,19 +88,4 @@ __attribute__((export_name("__wasm_clone_start")))
 void clone_start(void)
 {
 	serve();
-}
-
-// 128-bit multiply, which clang emits as a libcall on wasm32 (for 64-bit
-// division by constants, as in printf); there is no compiler-rt.
-__int128 __multi3(__int128 a, __int128 b)
-{
-	union { __int128 ti; struct { unsigned long long low, high; } s; } x = { a }, y = { b }, r;
-	unsigned long long a0 = (unsigned)x.s.low, a1 = x.s.low >> 32;
-	unsigned long long b0 = (unsigned)y.s.low, b1 = y.s.low >> 32;
-	unsigned long long p00 = a0 * b0, p01 = a0 * b1, p10 = a1 * b0, p11 = a1 * b1;
-	unsigned long long mid = (p00 >> 32) + (unsigned)p01 + (unsigned)p10;
-
-	r.s.low = (mid << 32) | (unsigned)p00;
-	r.s.high = p11 + (p01 >> 32) + (p10 >> 32) + (mid >> 32) + x.s.high * y.s.low + x.s.low * y.s.high;
-	return r.ti;
 }

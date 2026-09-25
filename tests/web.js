@@ -6,9 +6,6 @@ import { start } from "../target/site/ksee.js";
 import { arg } from "../target/site/args.js";
 
 const root = new URL("..", import.meta.url);
-// wasm-bindgen's futures (with threads) wake through Atomics.waitAsync,
-// which Deno does not count as pending work: keep the process alive.
-const alive = setInterval(() => {}, 1000);
 const m = await start({
   kernel: new URL("target/site/vmlinux.gz", root),
   initrd: new URL("target/site/initramfs.cpio.gz", root),
@@ -31,19 +28,19 @@ async function until(pred, ms = 10000) {
 // Calls finished (Machine.quiet's news), by id.
 const fin = new Map();
 // Ask runner `tid` to make syscall `name`, recorded, and wait until the
-// kernel is quiet: { id, from, tid, nr } (it may not have finished: blocked).
+// kernel is quiet: the call's id (it may not have finished: blocked).
 async function ask(name, args, tid = 1) {
-  const q = { ...m.call(name, args, tid), tid, nr: m.syscall(name).nr };
+  const id = m.call(name, args, tid);
   for (const f of (await m.quiet()).finished) fin.set(f.id, f);
   m.snapshot();
-  return q;
+  return id;
 }
-// Its syscall summary: the first of its runner's, of its number, since it was asked.
-const syscallOf = (q) => m.syscalls().find((s) => s.task.pid === q.tid && s.nr === q.nr && s.id >= q.from);
+// Its syscall summary.
+const syscallOf = (id) => m.syscalls()[m.syscall_of(id)];
 // Syscall `name`, made by runner `tid`: { ret, buffers, how, s (its syscall summary) }.
 async function call(name, args, tid = 1) {
-  const q = await ask(name, args, tid);
-  return { ...fin.get(q.id), s: syscallOf(q) };
+  const id = await ask(name, args, tid);
+  return { ...fin.get(id), s: syscallOf(id) };
 }
 const ran = (s, func) => s?.last != null && m.first_call(func, s.first, s.last, s.task.addr) != null;
 
@@ -157,14 +154,14 @@ async function runExample(ex) {
     asked.push(q);
     started.push(m.runners().find((t) => !known.has(t)));
     m.runners().forEach((t) => known.add(t));
-    asked.forEach((a, j) => (rets[j] = fin.get(a.id)?.ret));
+    asked.forEach((a, j) => (rets[j] = fin.get(a)?.ret));
   }
   return asked;
 }
 for (const ex of examples) {
   const asked = await runExample(ex), missing = [], blocked = [];
   ex.steps.forEach((st, j) => {
-    const q = asked[j], s = syscallOf(q), f = fin.get(q.id);
+    const q = asked[j], s = syscallOf(q), f = fin.get(q);
     if (!f) blocked.push(`${j + 1}. ${st.call}`);
     for (const stop of st.stops ?? [])
       if (!s || m.first_call(stop.func, s.first, s.last ?? m.records() - 1, stop.any ? undefined : s.task.addr) == null) missing.push(stop.func);
@@ -186,7 +183,7 @@ check("... on a fresh kernel: /tmp is not there", (await call("mkdirat", [-100, 
 async function runOf(ex) {
   const seen = (await runExample(ex)).map((q) => {
     const s = syscallOf(q);
-    return [s?.id, s?.first, s?.last, fin.get(q.id)?.ret];
+    return [s?.id, s?.first, s?.last, fin.get(q)?.ret];
   });
   return JSON.stringify([m.records(), seen]);
 }
@@ -202,6 +199,5 @@ m.call("reboot", [0xfee1dead, 672274793, 0x4321fedc, 0]);
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);
 
 if (failed) console.log(out);
-clearInterval(alive);
 console.log(failed ? "FAIL" : "PASS");
 Deno.exit(failed ? 1 : 0);

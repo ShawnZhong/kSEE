@@ -63,6 +63,9 @@ pub struct Kernel {
     pub runners: RefCell<BTreeMap<u32, Runner>>,
     pub calls: RefCell<BTreeMap<u32, Call>>,
     pub asked: Cell<u32>,
+    /// Every call asked (by id): its runner, its number, and the id its
+    /// recording's records start from (see Machine::syscall_of).
+    pub made: RefCell<BTreeMap<u32, (u32, u32, u32)>>,
 }
 
 /// A runner (user/init.c): its task.

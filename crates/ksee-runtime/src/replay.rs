@@ -6,7 +6,7 @@ use ksee_core::Memory;
 use wasm_bindgen::prelude::*;
 
 use crate::machine::Machine;
-use crate::state::{tables, Direct};
+use crate::state::{k, tables, Direct};
 
 fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
     serde_wasm_bindgen::to_value(v).unwrap_or(JsValue::NULL)
@@ -64,6 +64,18 @@ impl Machine {
     /// The syscalls (view::SyscallSummary), in the order they began.
     pub fn syscalls(&self) -> JsValue {
         self.view(|v| to_js(&v.syscalls()))
+    }
+
+    /// Call `id`'s syscall (see Machine::call), an index in syscalls(): the
+    /// first of its number its runner made since it was asked, if the
+    /// snapshot has it.
+    pub fn syscall_of(&self, id: u32) -> Option<usize> {
+        let (tid, nr, from) = *k(|k| k.made.borrow().get(&id).copied()).as_ref()?;
+        let rec = self.rec.borrow();
+        rec.syscalls.iter().position(|s| {
+            s.nr == nr && rec.ids[s.first] >= from
+                && ksee_core::task::read_task(tables(), &Direct, s.task).is_some_and(|t| t.pid as u32 == tid)
+        })
     }
 
     /// Where the kernel was at record `i` (view::At).

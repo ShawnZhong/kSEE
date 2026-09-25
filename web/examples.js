@@ -22,7 +22,7 @@ export async function examples(app) {
   const { m } = app;
   const consts = m.constants();
   const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
-  // The open example: its steps, the ones asked ({ id, from, tid, nr, how?,
+  // The open example: its steps, the ones asked ({ id, tid, args, how?,
   // ret?, text?, ol }: how once it finished), the runner each started, and
   // the stops Next goes through (the selected step's: cur, at, k).
   const t = { ex: null, steps: [], done: [], started: [], running: false, cur: { stops: [], ol: null }, at: [], k: -1, list: null, status: null };
@@ -151,7 +151,7 @@ export async function examples(app) {
     const mine = t.list;
     try {
       const args = s.args.map((a) => arg(a, consts, rets())), tid = tidOf(s);
-      q = { ...m.call(s.call, args, tid), tid, nr: m.syscall(s.call).nr, args };
+      q = { id: m.call(s.call, args, tid), tid, args };
       t.done[j] = q;
       const before = new Set(m.runners());
       news = await m.quiet();
@@ -179,12 +179,10 @@ export async function examples(app) {
     select(j);
     return true;
   }
-  // Step `j`'s syscall summary: its runner's first of its number since it was asked.
-  const syscallOf = (d) => app.calls().find((x) => x.task.pid === d.tid && x.nr === d.nr && x.id >= d.from);
   // Step `j`'s recording: its syscall selected; its stops found in it.
   function select(j) {
     const d = t.done[j], s = t.steps[j];
-    const c = d && syscallOf(d);
+    const c = d && app.calls()[m.syscall_of(d.id)];
     if (!c) return (t.status.textContent = "This call's recording is gone: the ring has moved on.");
     app.select(c);
     t.cur = { stops: s.stops ?? [], ol: d.ol };
