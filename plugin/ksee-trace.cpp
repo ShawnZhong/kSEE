@@ -60,10 +60,12 @@
 //                L \t fn \t n \t lines: the source lines the block runs, in
 //                  order (each once per stretch between calls), separated
 //                  by ';': FILE:line (:line in the same file as the one
-//                  before), then @function where it is inlined from
-//                  function; "|" where the block calls a function (which
-//                  runs in between). Only for blocks with more than their
-//                  first line.
+//                  before), then, if it is inlined, @function^FILE:line
+//                  per function it is inlined from, innermost first (the
+//                  line: where that function is inlined, in the next one
+//                  out); "|" where the block calls a function (which runs
+//                  in between). Only for blocks with more than their first
+//                  line, or whose first line is inlined.
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugProgramInstruction.h"
@@ -288,9 +290,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         continue;
       std::string path = fileRef(sourcePath(L->getScope()));
       std::string item = path + ":" + std::to_string(L->getLine());
-      if (L->getInlinedAt())
-        if (DISubprogram *SP = L->getScope()->getSubprogram())
-          item += "@" + SP->getName().str();
+      // The functions it is inlined from, innermost first, each with where
+      // it is inlined (a line of the next one out).
+      for (DILocation *At = L; DILocation *Site = At->getInlinedAt(); At = Site) {
+        DISubprogram *SP = At->getScope()->getSubprogram();
+        item += "@" + (SP ? SP->getName().str() : std::string("?")) + "^" +
+                fileRef(sourcePath(Site->getScope())) + ":" + std::to_string(Site->getLine());
+      }
       if (seen.insert(item).second) {
         items.push_back(path == file ? item.substr(path.size()) : item);
         file = path;
@@ -298,7 +304,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     }
     while (!items.empty() && items.back() == "|")
       items.pop_back();
-    if (items.size() <= 1)
+    // (Its first line is on the B line, unless it is inlined.)
+    if (items.empty() || (items.size() == 1 && items[0].find('@') == std::string::npos))
       return "";
     std::string out;
     for (auto &i : items)

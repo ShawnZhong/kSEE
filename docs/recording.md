@@ -71,7 +71,9 @@ The instrumented kernel describes its probes in a custom section,
   records carry;
 - `B fn n FILE:line:column`: where block n starts;
 - `L fn n …`: the source lines block n runs, in order, in stretches between
-  the calls it makes, with the functions they are inlined from;
+  the calls it makes; a line of inlined code carries its inline chain:
+  each function it is inlined from, innermost first, with the line where
+  that function is inlined into the next one out;
 - `V fn names`: the names of fn's locals records;
 - `U`, `P k path`: a unit's files; `R words`: the ring's size.
 

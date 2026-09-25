@@ -52,8 +52,9 @@ export function callstack(app) {
     const n = s.frames.length, body = [];
     s.frames.forEach((f, k) => {
       // (Click: select the call; the source shows where it is.)
-      const on = s.sel == null ? k === 0 : f.first === s.sel;
-      const h = head(f.func, f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f), on ? "on" : "");
+      const on = s.sel == null ? k === 0 : f === s.sel;
+      const h = head(f.func + (f.inlined ? " (inlined)" : ""), f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f),
+        (on ? "on " : "") + (f.inlined ? "inlined" : ""));
       // (Hover: the call, outlined in the timeline.)
       if (f.first != null) {
         h.onmouseenter = () => app.time.hilite(f.first);
@@ -90,15 +91,14 @@ export function callstack(app) {
   }
 
   // The stack at record `i` (null: the last; undefined: none), `step` the
-  // line shown there (Machine.line_steps; its inlined function, if any, is a
-  // frame of its own); `task`: the task there.
+  // line shown there ({ nth }: which of the lines record `i` runs); `task`:
+  // the task there.
   function show(i, step, task) {
     s.last = s.now;
     s.task = task ?? null;
-    const frames = i === undefined ? [] : m.call_stack(i ?? undefined);
-    // (Each call where it is; the innermost at the line stepped to.)
-    s.frames = frames.map((f, k) => (k === 0 && step ? { ...f, file: step.file, line: step.line } : f));
-    if (step?.inlined) s.frames.unshift({ func: `${step.inlined} (inlined)`, file: step.file, line: step.line });
+    // (At a line step: the stack as that line runs; see Machine.call_stack.)
+    const frames = i === undefined ? [] : m.call_stack(i ?? undefined, step?.nth);
+    s.frames = frames;
     s.sel = null;
     // (The stack comes from the recording: nothing recorded, no stack.)
     $("stack-note").textContent = frames.length ? "" : m.recording() || m.records()
@@ -138,13 +138,17 @@ export function callstack(app) {
     if (watch($("watch").value.trim())) $("watch").value = "";
   };
   // Select the call on the stack whose first record is `first` (null: the
-  // innermost): its frame, or null if it is not on the stack.
-  function select(first) {
-    const f = first == null ? s.frames[0] : s.frames.find((f) => f.first === first);
-    s.sel = f?.first ?? null;
+  // innermost; `inlined`: code inlined into it, from that function): its
+  // frame, or null if it is not on the stack.
+  function select(first, inlined) {
+    const f = first == null ? s.frames[0]
+      : s.frames.find((f) => f.first === first && (inlined ? f.inlined && f.func === inlined : !f.inlined));
+    s.sel = f ?? null;
     draw();
     return f ?? null;
   }
+  // The call inlined frame `f` is code of.
+  const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
 
-  return { show, select, watch, resolve, kids, redraw: draw };
+  return { show, select, owner, watch, resolve, kids, redraw: draw };
 }

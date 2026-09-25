@@ -41,6 +41,18 @@ plugin's `L` lines give a block's lines in stretches split at its calls;
 return into it, the next. So stepping goes line by line, into and out of
 calls, including lines inlined from other functions.
 
+## Inlined code
+
+The optimizer inlines many small functions (`fdget_pos`, `current`, the
+`SYSCALL_DEFINE` wrappers), so there is no call record for them, but the
+line tables say which code is inlined from where (its inline chain). A
+call's position is its last line; if that line is inlined, each function of
+the chain is a frame of its own on the stack (no arguments: there was no
+call), at the line inside it, and the real call is at the line where the
+chain starts. The stack chart can show them as calls too (the timeline's
+"inlined" toggle), and the line a record is at names the function its code
+is inlined from.
+
 ## Syscalls and programs
 
 A syscall is a call of `wasm_syscall` (its arguments: the number and the

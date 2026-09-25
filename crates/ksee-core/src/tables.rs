@@ -23,8 +23,9 @@ pub struct Function {
     pub known: u32,
 }
 
-/// A source line a block runs; `inlined`: the function (an index into
-/// [`Tables::names`]) whose code it is, inlined into the block's.
+/// A source line a block runs; `inlined`: if it is code inlined into the
+/// block's function, the functions it is inlined from (an index into
+/// [`Tables::inlines`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Step {
     pub loc: Loc,
@@ -50,8 +51,12 @@ pub struct Tables {
     /// (function, block) -> the lines it runs, in stretches between the
     /// calls it makes (only for blocks with more than their first line).
     pub lines: BTreeMap<(u32, u32), Vec<Vec<Step>>>,
-    /// Names of inlined functions (see [`Step`]).
+    /// Names of inlined functions.
     pub names: Vec<String>,
+    /// Inline chains (see [`Step`]): innermost first, each an inlined
+    /// function (in [`Tables::names`]) and where it is inlined (a line of
+    /// the next one out; the last: of the block's function).
+    pub inlines: Vec<Vec<(u32, Loc)>>,
     /// Function -> the names of its locals in memory (as its Locals records
     /// have their addresses).
     pub locals: BTreeMap<u32, Vec<String>>,
@@ -105,6 +110,7 @@ impl Tables {
         let mut files = Files::default();
         let mut unit = Unit::default();
         let mut names: BTreeMap<String, u32> = BTreeMap::new();
+        let mut chains: BTreeMap<Vec<(u32, Loc)>, u32> = BTreeMap::new();
         for line in probes.lines() {
             let cols: Vec<&str> = line.split('\t').collect();
             match cols.as_slice() {
@@ -140,6 +146,15 @@ impl Tables {
                                 continue;
                             }
                             let (at, inl) = item.split_once('@').map_or((item, None), |(a, f)| (a, Some(f)));
+                            // The functions it is inlined from: name^FILE:line each.
+                            let chain: Vec<(u32, Loc)> = inl.into_iter().flat_map(|c| c.split('@')).map(|level| {
+                                let (name, site) = level.split_once('^').unwrap_or((level, ""));
+                                let k = *names.entry(name.to_string()).or_insert_with(|| {
+                                    t.names.push(name.to_string());
+                                    t.names.len() as u32 - 1
+                                });
+                                (k, unit.loc(site, false))
+                            }).collect();
                             let full;
                             let at = match at.strip_prefix(':') {
                                 Some(line) => {
@@ -151,15 +166,10 @@ impl Tables {
                                     at
                                 }
                             };
-                            let inlined = inl.map(|f| match names.get(f) {
-                                Some(&k) => k,
-                                None => {
-                                    let k = t.names.len() as u32;
-                                    t.names.push(f.to_string());
-                                    names.insert(f.to_string(), k);
-                                    k
-                                }
-                            });
+                            let inlined = (!chain.is_empty()).then(|| *chains.entry(chain.clone()).or_insert_with(|| {
+                                t.inlines.push(chain);
+                                t.inlines.len() as u32 - 1
+                            }));
                             segs.last_mut().unwrap().push(Step { loc: unit.loc(at, false), inlined });
                         }
                         t.lines.insert((id, n), segs);

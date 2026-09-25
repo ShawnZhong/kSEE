@@ -89,6 +89,7 @@ h2.tabs button.on { color: var(--fg); box-shadow: inset 0 -2px var(--accent); }
 .flamehead { display: flex; gap: 12px; font-size: 11.5px; padding: 4px 0 2px; }
 #legend { margin-left: auto; display: flex; gap: 8px; color: var(--dim); }
 .key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
+.key input { margin: 0 3px 0 0; vertical-align: -2px; }
 .flamescroll { height: 190px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
 .transport { display: flex; gap: 4px; align-items: center; padding-top: 4px; font-size: 11.5px; }
 .transport button { padding: 1px 8px; }
@@ -102,6 +103,7 @@ h2.tabs button.on { color: var(--fg); box-shadow: inset 0 -2px var(--accent); }
 table.stack tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); background: var(--panel); }
 table.stack tr.frame.on td { background: var(--sel); }
 table.stack tr.frame a.mono { font-weight: 600; }
+table.stack tr.frame.inlined a.mono { font-weight: 400; font-style: italic; }
 .srcbar { padding: 3px 12px; border-bottom: 1px solid var(--line); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
 /* Tours */
 .row.tour { padding: 8px 12px; }

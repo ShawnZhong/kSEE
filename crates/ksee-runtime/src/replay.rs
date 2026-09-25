@@ -92,24 +92,38 @@ impl Machine {
 
     /// A stack chart of records `first..=last` in `n` columns (see
     /// ksee_core::stack::chart), flattened: per column, the task, the
-    /// depth, then (function, first record) per call, outermost first.
+    /// depth, then per call, outermost first, (function, first record,
+    /// inlined): inlined 0 for a call; for code inlined into the call
+    /// before, 1 + the inlined function (see inline_name), and the
+    /// function it is inlined into.
     pub fn chart(&self, first: usize, last: usize, n: usize) -> Vec<u32> {
         let rec = self.rec.borrow();
         let mut out = Vec::new();
-        for (task, frames) in ksee_core::stack::chart(&rec.records, &rec.tasks, first, last, n) {
-            out.extend([task, frames.len() as u32]);
-            for (f, at) in frames {
-                out.extend([f, at as u32]);
+        self.view(|v| {
+            for (task, calls) in ksee_core::stack::chart(v.tables, &rec.records, &rec.tasks, first, last, n) {
+                let rows: Vec<[u32; 3]> = calls.iter().flat_map(|c| {
+                    let inlined = v.chain(c.step.and_then(|s| s.inlined)).iter().rev().map(|&(k, _)| [c.func, c.first as u32, k + 1]);
+                    core::iter::once([c.func, c.first as u32, 0]).chain(inlined)
+                }).collect();
+                out.extend([task, rows.len() as u32]);
+                out.extend(rows.into_iter().flatten());
             }
-        }
+        });
         out
     }
 
+    /// The name of inlined function `k` (see chart).
+    pub fn inline_name(&self, k: u32) -> String {
+        self.view(|v| v.inline_name(k))
+    }
+
     /// The call stack at record `i` (or the last), innermost first
-    /// (view::Frame), its locals as memory was then (memory_at).
-    pub fn call_stack(&self, i: Option<usize>) -> JsValue {
+    /// (view::Frame), a call where its last line is (at `i`: the `nth` line
+    /// that record runs, see line_steps); its locals as memory was then
+    /// (memory_at).
+    pub fn call_stack(&self, i: Option<usize>, nth: Option<usize>) -> JsValue {
         let Some(i) = i.or(self.records().checked_sub(1)) else { return js_sys::Array::new().into() };
-        self.with_memory(|mem| self.view(|v| to_js(&v.call_stack(i, mem))))
+        self.with_memory(|mem| self.view(|v| to_js(&v.call_stack(i, nth, mem))))
     }
 
     /// The newest write to `addr..addr + len` at or before the moment

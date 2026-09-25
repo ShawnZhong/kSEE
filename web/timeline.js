@@ -18,9 +18,10 @@ const hue = (pid) => (pid * 137) % 360;
 // Calls are colored by where the function is.
 const AREAS = [["fs/", 210, "fs"], ["mm/", 135, "mm"], ["kernel/sched/", 28, "sched"], ["kernel/", 48, "kernel"],
                ["drivers/", 280, "drivers"], ["lib/", 175, "lib"], ["include/", 330, "include"], ["arch/", -1, "arch"]];
-const color = (file, on) => {
-  const h = (AREAS.find(([p]) => file?.startsWith(p)) ?? [null, -1])[1];
-  return h < 0 ? `hsl(0 0% ${on ? 55 : 76}%)` : `hsl(${h} ${on ? 65 : 55}% ${on ? 50 : 74}%)`;
+// (Code inlined into a function: its color, lighter.)
+const color = (file, on, inlined) => {
+  const h = (AREAS.find(([p]) => file?.startsWith(p)) ?? [null, -1])[1], l = (on ? 50 : 74) + (inlined ? 12 : 0);
+  return h < 0 ? `hsl(0 0% ${l + 5}%)` : `hsl(${h} ${on ? 65 : 55}% ${l}%)`;
 };
 
 export function timeline(app) {
@@ -28,12 +29,15 @@ export function timeline(app) {
   const over = $("overview"), chart = $("chart");
   // n: records; calls: syscalls; win: the window shown { a, b }; home: the
   // selection (a syscall's or program's records, and its task); cols: the
-  // chart's columns [{ task, frames: [[func, first]] }].
+  // chart's columns [{ task, frames: [[func, first, inlined]] }] (see
+// Machine.chart: inlined, code inlined into the call below it).
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
               depth: 1, row: ROW, // (depth: the deepest stack of the selection seen; row: the rows' height)
-              lit: null, sel: null }; // the calls outlined (their first records): hovered here or in the Stack; selected
+              lit: null, sel: null, inlined: false }; // the calls outlined (their first records): hovered here or in the Stack; selected
   const funcs = new Map(), tasks = new Map();
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
+  const inames = new Map();
+  const iname = (k) => inames.get(k) ?? inames.set(k, m.inline_name(k)).get(k);
   const who = (addr, i) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr, i)).get(addr));
 
   function canvas(c, h) {
@@ -114,18 +118,18 @@ export function timeline(app) {
     }
     // The stacks (the calls at the cursor: darker).
     for (let d = 0; d < depth; d++) {
-      for (const r of runs((c) => (c.frames[d] ? `${c.frames[d][0]}:${c.frames[d][1]}` : undefined))) {
-        const [id, first] = r.c.frames[d], f = fn(id), y = rowY(d);
+      for (const r of runs((c) => (c.frames[d] ? c.frames[d].join(":") : undefined))) {
+        const [id, first, inl] = r.c.frames[d], f = fn(id), y = rowY(d);
         const x1 = r.from * cw, w = (r.to - r.from) * cw;
         const on = curCol?.frames[d]?.[1] === first && cur >= t.win.a && cur <= t.win.b;
-        ctx.fillStyle = color(f?.file, on);
+        ctx.fillStyle = color(f?.file, on, inl);
         ctx.fillRect(x1, y, Math.max(1, w - 1), t.row - 1);
         if (first === t.lit || first === t.sel) {
           ctx.strokeStyle = css("--fg");
           ctx.lineWidth = 1.5;
           ctx.strokeRect(x1 + 0.75, y + 0.75, Math.max(1, w - 2.5), t.row - 2.5);
         }
-        if (t.row >= 11) label(ctx, nameOf(id, first), x1, w, y + t.row / 2, on ? "#fff" : "#1f2328");
+        if (t.row >= 11) label(ctx, inl ? iname(inl - 1) : nameOf(id, first), x1, w, y + t.row / 2, on ? "#fff" : "#1f2328");
       }
     }
     if (cur >= t.win.a && cur <= t.win.b) {
@@ -150,9 +154,10 @@ export function timeline(app) {
     const flat = m.chart(t.win.a, t.win.b, cols), out = [];
     for (let k = 0; k < flat.length;) {
       const task = flat[k], depth = flat[k + 1], frames = [];
-      for (let d = 0; d < depth; d++) frames.push([flat[k + 2 + 2 * d], flat[k + 3 + 2 * d]]);
-      out.push({ task, frames });
-      k += 2 + 2 * depth;
+      for (let d = 0; d < depth; d++) frames.push(flat.slice(k + 2 + 3 * d, k + 5 + 3 * d));
+      // (all: with the code inlined into each call, shown if asked for.)
+      out.push({ task, all: frames, frames: t.inlined ? frames : frames.filter((f) => !f[2]) });
+      k += 2 + 3 * depth;
     }
     t.cols = out;
   }
@@ -205,10 +210,10 @@ export function timeline(app) {
   // arguments and result; a function: where, and its arguments).
   const tip = document.body.appendChild(Object.assign(document.createElement("div"), { className: "tip", hidden: true }));
   const args = new Map(); // first record -> the call's arguments
-  const argsOf = (first) => args.get(first) ?? args.set(first, m.call_stack(first)[0]?.args ?? []).get(first);
+  const argsOf = (first) => args.get(first) ?? args.set(first, m.call_stack(first)?.find((f) => !f.inlined)?.args ?? []).get(first);
   function hover(e) {
     const k = Math.floor((e.offsetX / W()) * t.cols.length), d = rowAt(e.offsetY), c = t.cols[k];
-    const [id, first] = c?.frames[d] ?? [];
+    const [id, first, inl] = c?.frames[d] ?? [];
     hilite(first ?? null);
     if (first == null) {
       tip.hidden = true;
@@ -221,16 +226,22 @@ export function timeline(app) {
     while (end + 1 < t.cols.length && t.cols[end + 1].frames[d]?.[1] === first) end++;
     const span = `records ${first + 1}–${at(((end + 1) / t.cols.length) * W()) + 1}`;
     const line = (text, cls) => Object.assign(document.createElement("div"), { className: cls, textContent: text });
-    tip.replaceChildren(...(s
+    tip.replaceChildren(...(inl
+      ? [line(`${iname(inl - 1)} (inlined)`, ""), line(`its code, inlined into ${f?.name}: not a call of its own · ${span}`, "dim")]
+      : s
       ? [line(`${s.name ?? s.nr}(${s.args.slice(0, 3).join(", ")}…) = ${s.ret ?? "…"}`, ""),
          line(`a syscall by ${taskName(s.task)} · ${span}`, "dim")]
       : [line(f?.name ?? "?", ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f")),
+         ...inlinedIn(c, first).map((n) => line(`in ${n} (inlined)`, "f")),
          line(`${f?.file}:${f?.line} · ${span}`, "dim")]));
     tip.hidden = false;
     const r = tip.getBoundingClientRect();
     tip.style.left = `${Math.min(e.clientX + 14, innerWidth - r.width - 8)}px`;
     tip.style.top = `${e.clientY + 16 + r.height > innerHeight ? e.clientY - r.height - 8 : e.clientY + 16}px`;
   }
+  // The code inlined into call `first` in column `c`, when it is not shown:
+  // the functions, outermost first.
+  const inlinedIn = (c, first) => (t.inlined ? [] : c.all.filter((f) => f[1] === first && f[2]).map((f) => iname(f[2] - 1)));
   chart.onpointerleave = () => {
     tip.hidden = true;
     hilite(null);
@@ -266,10 +277,10 @@ export function timeline(app) {
     if (!was || was.moved) return;
     // A call: the cursor in it, and the call selected (the source shows
     // where it is then). Elsewhere: the cursor at the next block.
-    const k = Math.floor((e.offsetX / W()) * t.cols.length), first = t.cols[k]?.frames[rowAt(e.offsetY)]?.[1];
+    const k = Math.floor((e.offsetX / W()) * t.cols.length), [, first, inl] = t.cols[k]?.frames[rowAt(e.offsetY)] ?? [];
     if (first == null) return go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
     go(Math.max(first, at(e.offsetX)));
-    app.selectCall(first);
+    app.selectCall(first, inl ? iname(inl - 1) : null);
   };
   chart.ondblclick = (e) => {
     // Zoom to the call there: from its first record to where it ends.
@@ -303,6 +314,7 @@ export function timeline(app) {
     funcs.clear();
     tasks.clear();
     args.clear();
+    inames.clear();
     t.buckets = m.timeline(Math.max(1, over.clientWidth));
     t.home = t.where?.() ?? null;
     t.depth = 1;
@@ -347,11 +359,20 @@ export function timeline(app) {
       setWindow(t.cursor - span / 2, t.cursor + span / 2);
     } else draw();
   }
+  // The legend, and whether to show inlined code as calls.
+  const toggle = Object.assign(document.createElement("label"), { className: "key", title: "Show code inlined into a function as calls of their own (rows get thinner)" });
+  const box = Object.assign(document.createElement("input"), { type: "checkbox", onchange: () => {
+    t.inlined = box.checked;
+    t.depth = 1;
+    load();
+    drawChart();
+  } });
+  toggle.append(box, "inlined");
   $("legend").replaceChildren(...AREAS.map(([p, , name]) => {
     const k = document.createElement("span");
     k.className = "key";
     k.innerHTML = `<i style="background:${color(p, false)}"></i>${name}`;
     return k;
-  }));
+  }), toggle);
   return { refresh, go, mark, select, selectWindow, hilite, selected, home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }

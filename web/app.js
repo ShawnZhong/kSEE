@@ -97,16 +97,19 @@ export function app(m) {
   // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:
   // the Stack marks it, the source shows where it is, the timeline outlines it.
   a.selectFrame = (f) => {
-    if (f.first != null) stack.select(f.first);
+    stack.select(f.first, f.inlined ? f.func : null);
     src.view.cursor = { file: f.file, line: f.line };
     const at = time.cursor() != null ? m.at(time.cursor()) : null;
-    src.showFunction(f.func.replace(/ \(inlined\)$/, ""), at?.syscall ?? undefined, f.line, f.file);
-    time.selected(f.first ?? null);
-    $("where").textContent = `${f.func} ${f.file ?? ""}:${f.line ?? ""}` + (time.cursor() != null ? ` · record ${time.cursor() + 1}` : "");
+    // (Inlined code: in the function it is inlined into, at its own line.)
+    const owner = f.inlined ? stack.owner(f) : f;
+    src.showFunction(owner?.func ?? f.func, at?.syscall ?? undefined, f.line, f.file);
+    time.selected(f.first);
+    $("where").textContent = `${f.func}${f.inlined ? ` (inlined into ${owner?.func})` : ""} ${f.file ?? ""}:${f.line ?? ""}` + (time.cursor() != null ? ` · record ${time.cursor() + 1}` : "");
   };
-  // Select the call on the stack at the cursor whose first record is `first`.
-  a.selectCall = (first) => {
-    const f = stack.select(first);
+  // Select the call on the stack at the cursor whose first record is
+  // `first` (or code inlined into it, from function `inlined`).
+  a.selectCall = (first, inlined) => {
+    const f = stack.select(first, inlined);
     if (f) a.selectFrame(f);
   };
   // The first syscall of task `task` after record `i`.
@@ -121,7 +124,7 @@ export function app(m) {
     stack.show(at.i, null, at.task);
     tour?.follow(at);
     note(null);
-    $("where").textContent = `record ${at.i + 1} of ${time.records()} · ${taskName(at.task)} · ${at.func} ${at.file ?? ""}:${at.line ?? ""}` +
+    $("where").textContent = `record ${at.i + 1} of ${time.records()} · ${taskName(at.task)} · ${at.inlined ? `${at.inlined} in ` : ""}${at.func} ${at.file ?? ""}:${at.line ?? ""}` +
       (s ? ` · in ${s.name}` : "");
     badge();
   };
@@ -172,7 +175,10 @@ export function app(m) {
     const at = m.at(step.i);
     src.view.cursor = { file: step.file, line: step.line };
     src.showFunction(step.func, undefined, step.line, step.file);
-    stack.show(step.i, step, at?.task);
+    // (Which of the lines its record runs: the stack as it runs.)
+    let nth = 0;
+    while (nth < k && st[k - nth - 1].i === step.i) nth++;
+    stack.show(step.i, { ...step, nth }, at?.task);
     tour?.follow(at);
     $("where").textContent = `line ${k + 1} of ${st.length} · ${step.inlined ? `${step.inlined} in ` : ""}${step.func} ${step.file}:${step.line}` +
       (at ? ` · record ${step.i + 1} · ${taskName(at.task)}` : "");

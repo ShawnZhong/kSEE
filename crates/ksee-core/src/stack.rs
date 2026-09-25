@@ -13,6 +13,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use crate::tables::{Step, Tables};
 use crate::trace::Record;
 
 #[derive(Default)]
@@ -28,7 +29,7 @@ impl Stack {
     /// Apply block `(func, n)` at record `i`.
     fn block(&mut self, func: u32, n: u32, i: usize) {
         if n == 0 {
-            if func == crate::tables::Tables::id(TASK_ENTRY) {
+            if func == Tables::id(TASK_ENTRY) {
                 self.frames.clear(); // (a new task)
             }
             self.frames.push((func, i));
@@ -50,28 +51,83 @@ impl Stack {
     }
 }
 
+/// A task's calls, with where each is in its function: the walk that
+/// `lines` and `chart` share.
+#[derive(Default)]
+struct Walk {
+    stack: Stack,
+    /// Per frame: its block, and the stretch of the block's lines next.
+    blocks: Vec<(u32, usize)>,
+    /// Per frame: the last line it ran.
+    at: Vec<Option<Step>>,
+}
+
+impl Walk {
+    /// Apply record `r` (at `i`): the lines it runs, if any: (function,
+    /// depth, lines), a stretch of a block.
+    fn apply(&mut self, t: &Tables, r: &Record, i: usize) -> Option<(u32, u32, Vec<Step>)> {
+        let (func, n, seg) = match *r {
+            Record::Block { func, n } => {
+                self.stack.block(func, n, i);
+                let depth = self.stack.frames.len();
+                self.blocks.resize(depth, (u32::MAX, 0));
+                self.blocks[depth - 1] = (n, 1);
+                (func, n, 0)
+            }
+            Record::Return { func, .. } => {
+                self.stack.exit(func);
+                self.blocks.truncate(self.stack.frames.len());
+                // The caller goes on after the call: its block's next stretch.
+                let (&(f, _), (n, seg)) = (self.stack.frames.last()?, self.blocks.last_mut()?);
+                if *n == u32::MAX {
+                    return None;
+                }
+                *seg += 1;
+                (f, *n, *seg - 1)
+            }
+            _ => return None,
+        };
+        let depth = self.stack.frames.len();
+        let steps = t.segments(func, n).into_iter().nth(seg).unwrap_or_default();
+        self.at.resize(depth, None);
+        // (A new call starts without a line; one going on keeps its last.)
+        if steps.last().is_some() || seg == 0 {
+            self.at[depth - 1] = steps.last().copied();
+        }
+        Some((func, depth as u32 - 1, steps))
+    }
+}
+
+/// A call in a stack chart: `func` from record `first`, at `step` (its last
+/// line then, if known: with the functions it is inlined from).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChartCall {
+    pub func: u32,
+    pub first: usize,
+    pub step: Option<Step>,
+}
+
 /// A stack chart of records `from..=to` in `n` columns: for each column,
 /// the task running at its first record and that task's call stack then,
-/// outermost first, as (function, the call's first record).
-pub fn chart(records: &[Record], tasks: &[u32], from: usize, to: usize, n: usize) -> Vec<(u32, Vec<(u32, usize)>)> {
+/// outermost first.
+pub fn chart(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, n: usize) -> Vec<(u32, Vec<ChartCall>)> {
     let mut out = Vec::with_capacity(n);
     if records.is_empty() || n == 0 || from > to {
         return out;
     }
     let to = to.min(records.len() - 1);
     let span = to - from + 1;
-    let mut stacks: BTreeMap<u32, Stack> = BTreeMap::new();
+    let mut walks: BTreeMap<u32, Walk> = BTreeMap::new();
     let mut col = 0;
     for (i, r) in records.iter().enumerate().take(to + 1) {
-        let t = tasks[i];
-        match *r {
-            Record::Block { func, n } => stacks.entry(t).or_default().block(func, n, i),
-            Record::Return { func, .. } => stacks.entry(t).or_default().exit(func),
-            _ => {}
-        }
+        let task = tasks[i];
+        let w = walks.entry(task).or_default();
+        w.apply(t, r, i);
         // (A column's first record, or several columns' when zoomed in.)
         while col < n && i >= from + col * span / n {
-            out.push((t, stacks.get(&t).map(|s| s.frames.clone()).unwrap_or_default()));
+            let calls = w.stack.frames.iter().enumerate()
+                .map(|(d, &(func, first))| ChartCall { func, first, step: w.at.get(d).copied().flatten() }).collect();
+            out.push((task, calls));
             col += 1;
         }
     }
@@ -79,8 +135,8 @@ pub fn chart(records: &[Record], tasks: &[u32], from: usize, to: usize, n: usize
 }
 
 /// A source line the kernel ran: at `record` (the block's, or the return
-/// after which the block goes on), in `func` (`inlined` from another
-/// function, maybe), `depth` calls deep.
+/// after which the block goes on), in `func` (`inlined` from other
+/// functions, maybe: see Tables::inlines), `depth` calls deep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineStep {
     pub record: usize,
@@ -94,56 +150,25 @@ pub struct LineStep {
 /// order: each block's lines up to its first call, then, as each call
 /// returns, the lines up to the next (Tables::segments). The same line twice
 /// in a row counts once.
-pub fn lines(t: &crate::tables::Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
+pub fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
              task: Option<u32>) -> Vec<LineStep> {
-    // Per task: the frames, each with its block and the stretch it is at.
-    struct At {
-        stack: Stack,
-        blocks: Vec<(u32, usize)>, // per frame: (block, next stretch)
-    }
     let mut out: Vec<LineStep> = Vec::new();
     let to = to.min(records.len().saturating_sub(1));
-    let mut tasks_at: BTreeMap<u32, At> = BTreeMap::new();
-    let emit = |out: &mut Vec<LineStep>, func: u32, n: u32, seg: usize, depth: u32, i: usize| {
-        if i < from {
-            return;
-        }
-        for s in t.segments(func, n).get(seg).into_iter().flatten() {
-            let last = out.last();
-            if last.is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
-                continue;
-            }
-            out.push(LineStep { record: i, func, depth, loc: s.loc, inlined: s.inlined });
-        }
-    };
+    let mut walks: BTreeMap<u32, Walk> = BTreeMap::new();
     for (i, r) in records.iter().enumerate().take(to + 1) {
         let tk = tasks[i];
         if task.is_some_and(|x| x != tk) {
             continue;
         }
-        let at = tasks_at.entry(tk).or_insert_with(|| At { stack: Stack::default(), blocks: Vec::new() });
-        match *r {
-            Record::Block { func, n } => {
-                at.stack.block(func, n, i);
-                let depth = at.stack.frames.len();
-                at.blocks.resize(depth, (u32::MAX, 0));
-                at.blocks[depth - 1] = (n, 1);
-                emit(&mut out, func, n, 0, depth as u32 - 1, i);
+        let Some((func, depth, steps)) = walks.entry(tk).or_default().apply(t, r, i) else { continue };
+        if i < from {
+            continue;
+        }
+        for s in steps {
+            if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
+                continue;
             }
-            Record::Return { func, .. } => {
-                at.stack.exit(func);
-                let depth = at.stack.frames.len();
-                at.blocks.truncate(depth);
-                // The caller goes on after the call: its block's next stretch.
-                if let (Some(&(f, _)), Some((n, seg))) = (at.stack.frames.last(), at.blocks.last_mut()) {
-                    if *n != u32::MAX {
-                        let (block, stretch) = (*n, *seg);
-                        *seg += 1;
-                        emit(&mut out, f, block, stretch, depth as u32 - 1, i);
-                    }
-                }
-            }
-            _ => {}
+            out.push(LineStep { record: i, func, depth, loc: s.loc, inlined: s.inlined });
         }
     }
     out
@@ -223,7 +248,7 @@ mod tests {
     #[test]
     fn a_new_task_starts_empty() {
         // A task that exited in f (never returning), then a new task at its address.
-        let entry = crate::tables::Tables::id(TASK_ENTRY);
+        let entry = Tables::id(TASK_ENTRY);
         let r = [b(entry, 0), b(1, 0), b(entry, 0), b(2, 0)];
         assert_eq!(stack_at(&r, &[7; 4], 3), [entry, 2]);
     }

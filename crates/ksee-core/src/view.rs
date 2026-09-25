@@ -9,7 +9,7 @@ use alloc::collections::BTreeMap;
 
 use crate::recording::Recording;
 use crate::stack::{self, LineStep};
-use crate::tables::Tables;
+use crate::tables::{Loc, Tables};
 use crate::task::read_task;
 use crate::trace::Record;
 use crate::types::{Base, Kind, Types};
@@ -53,6 +53,8 @@ pub struct At {
     pub func: String,
     pub file: Option<String>,
     pub line: Option<u32>,
+    /// The function the code there is inlined from, if.
+    pub inlined: Option<String>,
     pub task: TaskRef,
     /// The syscall in progress on the task (its index), if any.
     pub syscall: Option<usize>,
@@ -95,6 +97,8 @@ pub struct Frame {
     pub func: String,
     /// The call's first record (its block 0).
     pub first: usize,
+    /// Code inlined into the call (the frame outside it), not a call.
+    pub inlined: bool,
     /// Where the call is (the line it runs, or the one calling the frame
     /// inside it; else where its function is).
     pub file: Option<String>,
@@ -206,8 +210,12 @@ impl View<'_> {
 
     pub fn at(&self, i: usize) -> Option<At> {
         let t = self.tables;
+        let mut inlined = None;
         let (kind, func, loc) = match *self.rec.records.get(i)? {
-            Record::Block { func, n } => ("block", func, t.blocks.get(&(func, n)).copied()),
+            Record::Block { func, n } => {
+                inlined = t.segments(func, n).first().and_then(|s| s.first()).and_then(|s| s.inlined);
+                ("block", func, t.blocks.get(&(func, n)).copied())
+            }
             Record::Return { func, .. } => ("return", func, t.functions.get(&func).map(|f| f.loc)),
             Record::Line { .. } => ("line", 0, None),
             Record::Task { .. } => ("task", 0, None),
@@ -220,6 +228,7 @@ impl View<'_> {
             func: t.functions.get(&func).map_or(String::new(), |f| f.name.clone()),
             file: loc.map(|l| t.file(l).to_string()),
             line: loc.map(|l| l.line),
+            inlined: self.chain(inlined).first().map(|&(k, _)| self.inline_name(k)),
             task: self.task(self.rec.tasks[i], i),
             syscall: self.rec.syscall_at(i),
         })
@@ -228,7 +237,7 @@ impl View<'_> {
     fn line(&self, s: &LineStep) -> Line {
         let t = self.tables;
         Line { i: s.record, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
-               inlined: s.inlined.map(|k| t.names.get(k as usize).cloned().unwrap_or_default()) }
+               inlined: self.chain(s.inlined).first().map(|&(k, _)| self.inline_name(k)) }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.
@@ -243,20 +252,33 @@ impl View<'_> {
     }
 
     /// The call stack at record `i`, innermost first; locals read from `mem`
-    /// (memory as it was then).
-    pub fn call_stack(&self, i: usize, mem: &dyn Memory) -> Vec<Frame> {
+    /// (memory as it was then). A call is where its last line is: at `i`,
+    /// the `nth` line that record runs (see lines), or its last. Code
+    /// inlined there is a frame of its own for each function it is inlined
+    /// from (`inlined`, with no arguments: there was no call).
+    pub fn call_stack(&self, i: usize, nth: Option<usize>, mem: &dyn Memory) -> Vec<Frame> {
         let t = self.tables;
         let calls = stack::calls_at(&self.rec.records, &self.rec.tasks, i);
-        // Where each call is: the last line its depth ran since it began.
-        let steps = match (calls.first(), self.rec.tasks.get(i)) {
+        let mut steps = match (calls.first(), self.rec.tasks.get(i)) {
             (Some(c), Some(&task)) => self.rec.lines(t, c.first, i, task),
             _ => Vec::new(),
         };
-        calls.into_iter().enumerate().rev().map(|(depth, stack::Call { func, first, args, locals })| {
+        if let Some(k) = nth {
+            let start = steps.partition_point(|s| s.record < i);
+            steps.truncate((start + k + 1).min(steps.len()));
+        }
+        let mut out = Vec::new();
+        for (depth, stack::Call { func, first, args, locals }) in calls.into_iter().enumerate().rev() {
             let f = t.functions.get(&func);
-            let at = steps.iter().rev().take_while(|s| s.record >= first).find(|s| s.depth as usize == depth)
-                .map(|s| s.loc).or(f.map(|f| f.loc));
             let name = self.name(func);
+            // Where it is: the last line its depth ran since it began.
+            let step = steps.iter().rev().take_while(|s| s.record >= first).find(|s| s.depth as usize == depth);
+            let mut at = step.map(|s| s.loc).or(f.map(|f| f.loc));
+            for &(k, site) in self.chain(step.and_then(|s| s.inlined)) {
+                out.push(Frame { func: self.inline_name(k), first, inlined: true, file: at.map(|l| t.file(l).to_string()),
+                                 line: at.map(|l| l.line), args: None, locals: None });
+                at = Some(site);
+            }
             let args = args.map(|args| {
                 let known = f.map_or(u32::MAX, |f| f.known);
                 t.types.params.get(&name).into_iter().flatten().zip(args).enumerate().map(|(k, ((pname, ty), v))| {
@@ -278,8 +300,20 @@ impl View<'_> {
                 }
                 _ => None,
             };
-            Frame { func: name, first, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args, locals }
-        }).collect()
+            out.push(Frame { func: name, first, inlined: false, file: at.map(|l| t.file(l).to_string()),
+                             line: at.map(|l| l.line), args, locals });
+        }
+        out
+    }
+
+    /// Inline chain `k` (Tables::inlines), or none.
+    pub fn chain(&self, k: Option<u32>) -> &[(u32, Loc)] {
+        k.and_then(|k| self.tables.inlines.get(k as usize)).map_or(&[], Vec::as_slice)
+    }
+
+    /// Inlined function `k`'s name (Tables::names).
+    pub fn inline_name(&self, k: u32) -> String {
+        self.tables.names.get(k as usize).cloned().unwrap_or_default()
     }
 
     /// The newest write to `addr..addr + len` at or before record `at`.
@@ -408,8 +442,24 @@ mod tests {
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1]);
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
-        let lines: Vec<_> = v.call_stack(1, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
+        let lines: Vec<_> = v.call_stack(1, None, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
         assert_eq!(lines, [("g".into(), Some(10)), ("f".into(), Some(2))]);
+    }
+
+    #[test]
+    fn inlined_code_is_a_frame_of_its_own() {
+        // f (1) runs line 1, then h's line 20 (h inlined into f at line 2),
+        // which calls g (2).
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\nB\t1\t0\t0:1:1\n\
+                               L\t1\t0\t0:1;:20@h^0:2;|\nB\t2\t0\t0:10:1\n", "");
+        let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1]);
+        let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
+        let frames: Vec<_> = v.call_stack(1, None, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
+        assert_eq!(frames, [("g".into(), Some(10), false), ("h".into(), Some(20), true), ("f".into(), Some(2), false)]);
+        // At record 0, its first line (nth 0): f at line 1, nothing inlined.
+        let first: Vec<_> = v.call_stack(0, Some(0), &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
+        assert_eq!(first, [("f".into(), Some(1))]);
     }
 
     #[test]
