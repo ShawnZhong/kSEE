@@ -57,6 +57,8 @@ export async function examples(app) {
   }
 
   const rets = () => t.done.map((d) => d.ret);
+  // A step's call, as written (or with `values` for $n: as made).
+  const text = (s, values) => `${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
   function draw() {
     t.list.replaceChildren(...t.steps.map((s, j) => {
       const d = t.done[j];
@@ -65,10 +67,10 @@ export async function examples(app) {
         stop(k);
       } }, el("b", { className: "mono", textContent: st.func }), " ", st.note))) : null;
       return el("li", { className: d ? "done" : j === t.done.length ? "next" : "" },
-        // (As made, once it is: $n as its value.)
-        el("a", { className: "mono", textContent: `${s.call}(${s.args.map((a) => (d ? made(a, rets()) : a)).join(", ")})`,
-                  onclick: () => (d ? select(j) : upTo(j)) }),
+        // (As written; once made, and if $n made it differ, as made too.)
+        el("a", { className: "mono", textContent: text(s), onclick: () => (d ? select(j) : upTo(j)) }),
         d ? el("span", { className: "mono ret", textContent: ` = ${result(d.ret, consts)}` }) : null,
+        d && text(s, rets()) !== text(s) ? el("div", { className: "mono dim", textContent: `as made: ${text(s, rets())}` }) : null,
         d?.text ? el("div", { className: "mono dim", textContent: d.text }) : null,
         d?.ol ?? null);
     }));

@@ -69,7 +69,7 @@ const script = opt("eval", `(async () => {
   // (Its calls, up to the read: the 6th.)
   document.querySelectorAll("ol.steps > li > a")[5].click();
   await until(() => document.querySelectorAll("ol.steps > li.done").length >= 6 && $("note").querySelector("b")?.textContent === "ksys_read");
-  r.calls = [...document.querySelectorAll("ol.steps > li.done")].map((li) => li.firstChild.textContent + li.querySelector(".ret").textContent).slice(4, 6);
+  r.calls = [...document.querySelectorAll("ol.steps > li.done")].map((li) => li.innerText.split("\\n").slice(0, 2).join(" · ")).slice(4, 6);
   r.notes = [];
   for (let k = 0; k < 5; k++) {
     await sleep(300);
