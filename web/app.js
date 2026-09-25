@@ -1,6 +1,6 @@
 // The kSEE page: wires the panels to a booted Machine (crates/ksee-runtime).
 //
-// Run something, recorded (a tour's program, a program, or ● Record); then
+// Run something, recorded (an example's calls, or ● Record); then
 // explore the recording at one cursor: the timeline shows it among the
 // tasks and their calls; the source and the Stack show the code and the
 // values there (memory as it was). ◀ ▶| and Play move it line by line.
@@ -30,7 +30,7 @@ export function app(m) {
     $("badge").textContent = { idle: "○ IDLE", recording: "● RECORDING", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
     $("record").textContent = m.recording() ? "■ Stop recording" : "● Record";
     $("status").textContent = {
-      idle: "Run a tour or a program: the kernel's work for it is recorded, to explore here.",
+      idle: "Open an example and make its calls: the kernel's work for them is recorded, to explore here.",
       recording: `recording… ${time.records()} records`,
       replay: `a recording of ${time.records()} records: move the cursor through it`,
       halted: `the kernel halted (${halted})`,
@@ -83,17 +83,6 @@ export function app(m) {
     }
     time.go(i);
   };
-  // Select the run of program `pid` (Machine.program); the cursor at its start.
-  a.selectProgram = (pid, title) => {
-    const where = () => {
-      const p = m.program(pid);
-      return p && { a: p.first, b: p.last, task: p.task };
-    };
-    const w = where();
-    if (!w) return;
-    time.selectWindow(where, title);
-    time.go(m.seek(w.a, 1, "line"));
-  };
   // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:
   // the Stack marks it, the source shows where it is, the timeline outlines it.
   a.selectFrame = (f) => {
@@ -126,8 +115,7 @@ export function app(m) {
     const f = stack.select(first, inlined);
     if (f) a.selectFrame(f);
   };
-  // The first syscall of task `task` after record `i`.
-  a.syscallAfter = (task, i) => calls.find((s) => s.task.addr === task && s.first > i);
+  a.calls = () => calls;
   // The cursor moved to `at` (see Machine.at).
   a.showAt = (at) => {
     L.pos = null;
@@ -136,16 +124,15 @@ export function app(m) {
     const s = at.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
     if (at.kind === "block") src.showFunction(at.func, s?.index, at.line, at.file);
     stack.show(at.i, null, at.task);
-    tour?.follow(at);
     note(null);
     $("where").textContent = `record ${at.i + 1} of ${time.records()} · ${taskName(at.task)} · ${at.inlined ? `${at.inlined} in ` : ""}${at.func} ${at.file ?? ""}:${at.line ?? ""}` +
       (s ? ` · in ${s.name}` : "");
     badge();
   };
-  let tour = null;
-  examples(a).then((t) => (a.examples = tour = t));
+  let ex = null;
+  examples(a).then((e) => (a.examples = ex = e));
 
-  // A tour's stop `stop` (the `k`th of `n`) at record `i`: the cursor there, and its note.
+  // An example's stop `stop` (the `k`th of `n`) at record `i`: the cursor there, and its note.
   a.goStop = (i, stop, k, n) => {
     time.go(i);
     note(stop, k, n);
@@ -154,10 +141,10 @@ export function app(m) {
     $("note").hidden = !stop;
     if (stop) $("note").replaceChildren(el("span", { className: "dim", textContent: `Stop ${k + 1} of ${n} · ` }),
       el("b", { textContent: stop.func }), `: ${stop.note} `,
-      k + 1 < n ? el("button", { className: "go", textContent: "Next stop ▸", onclick: () => tour?.next() }) : "");
+      k + 1 < n ? el("button", { className: "go", textContent: "Next stop ▸", onclick: () => ex?.next() }) : "");
   }
 
-  // ---- Lines: the line steps of the selection (a syscall or program) ----
+  // ---- Lines: the line steps of the selection (a syscall) ----
   // (Machine.line_steps: every source line it ran, within blocks too.)
   const L = { key: null, steps: [], pos: null };
   function steps() {
@@ -195,7 +182,6 @@ export function app(m) {
     let nth = 0;
     while (nth < k && st[k - nth - 1].i === step.i) nth++;
     stack.show(step.i, { ...step, nth }, at?.task);
-    tour?.follow(at);
     $("where").textContent = `line ${k + 1} of ${st.length} · ${step.inlined ? `${step.inlined} in ` : ""}${step.func} ${step.file}:${step.line}` +
       (at ? ` · record ${step.i + 1} · ${taskName(at.task)}` : "");
     return true;
@@ -279,10 +265,10 @@ export function app(m) {
   let lastRefresh = 0, booting = true;
   function tick() {
     const out = m.console();
-    if (booting && ($("console").textContent + out).includes("ready for the page's programs")) {
+    if (booting && ($("console").textContent + out).includes("ready for the page's calls")) {
       booting = false;
       a.ready = true; // (for the examples, if not loaded yet)
-      tour?.ready();
+      ex?.ready();
     }
     if (out) {
       $("console").textContent += out.replaceAll("\r", "");

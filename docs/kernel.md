@@ -4,10 +4,11 @@ Linux 7.2 compiled to WebAssembly, with nothing emulated: `linux/arch/wasm`
 (submodule, branch `wasm`) is a minimal architecture port, and almost
 everything else is the generic kernel. Outside arch/wasm the port changes
 five files, 78 lines (build scripts, the initramfs's alignment, and nolibc's
-`arch-wasm.h` for the programs).
+`arch-wasm.h` for /init).
 
 The configuration: wasm32, `CONFIG_MMU=n`, one CPU, `PREEMPT_NONE`, an
-initramfs, a console, a timer; the block layer, the loop device and ext4.
+initramfs, a console (with input), a timer; the block layer, the loop
+device and ext4.
 
 ## One Worker per task
 
@@ -51,14 +52,14 @@ would deliver them too.
 | Line | Raised by | For |
 |---|---|---|
 | 0, timer | the timer Worker | the clockevent (kernel/time.c) |
-| 1, run | the page | running a program (below) |
+| 1, console | the page | console input (/init's doorbell, below) |
 
 The clockevent is one-shot: the kernel writes its deadline to
 `wasm_timer_deadline`; the host's timer Worker waits on that word
 (`memory.atomic.wait64`, with a timeout until the deadline) and raises the
 timer line when it passes. The clocksource reads host time.
 
-## Programs
+## Programs, and /init
 
 Programs are wasm modules with **their own memory** (so a program's
 pointers are not kernel addresses; NOMMU without sharing the kernel's
@@ -73,18 +74,14 @@ There is no user fork: a wasm program cannot copy its own stack.
 `copy_thread` refuses one; kernel threads (which start from a function)
 work as usual.
 
-So the kernel starts the page's programs itself (kernel/run.c), the way it
-starts init: as a usermode helper. The request is the exported `wasm_run`:
-
-```c
-struct { u32 state; s32 status; s32 pid; char path[256]; } wasm_run;
-```
-
-The page writes a path, sets `REQUESTED` and raises the run line; the
-interrupt queues work that runs the program with `/dev/console` as its
-fds 0–2, waits for it, and writes its exit status and pid (`DONE`); the page
-takes them and sets `IDLE`. `/init` (user/init.c) mounts the ext4 disk and
-sleeps.
+So there is one program: **/init** (user/init.c, C on nolibc). It mounts
+the disk, and then makes the syscalls the page asks for, one at a time. It
+waits for them reading its terminal: the page puts a request in shared
+memory (the runtime's), and one byte of console input (`WASM_IRQ_CONSOLE`)
+wakes it; the runtime's `ksee.call` import copies the request (the number,
+the arguments, the buffers) into its memory, it makes the syscall, and
+`ksee.done` gives the result back. So every syscall the page shows is a
+real process's, with its fds and its memory.
 
 ## A disk
 
@@ -97,8 +94,8 @@ kernel's; the disk's blocks are that file's pages in memory.
 ## Console
 
 kernel/console.c: one console, printk's from `setup_arch` on, whose tty is
-`/dev/console`. Writes go to the host synchronously (`console_write`); the
-host sends no input. (A console of its own rather than hvc: hvc's thread,
+`/dev/console`. Writes go to the host synchronously (`console_write`);
+input comes with `WASM_IRQ_CONSOLE` (`console_read`). (A console of its own rather than hvc: hvc's thread,
 kicked after every write, added a task and noise to every recording.)
 
 ## Memory
@@ -112,9 +109,9 @@ above RAM is the host's heap.
 ## The host interface
 
 All of it is in arch/wasm/include/asm/wasm.h. Imports (module `kernel`):
-`console_write`, `get_cmdline`, `memory_end`, `time_ns`, `spawn_task`,
+`console_write`, `console_read`, `get_cmdline`, `memory_end`, `time_ns`, `spawn_task`,
 `exit_task`, `halt`, `user_load`, `user_enter`, `user_read`, `user_write`,
 `print_stack`; and `ksee.bulk` (see [recording.md](recording.md)).
 Exports: `boot_stack`, `boot`, `task_entry`, `syscall`, `ksee_trace`, and the
 globals `__stack_pointer`, `wasm_irq_pending`, `wasm_timer_deadline`,
-`__current_task`, `wasm_run`.
+`__current_task`.

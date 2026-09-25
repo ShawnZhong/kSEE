@@ -43,7 +43,6 @@ overwritten the start of a record) and skip to the next head:
 | `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments |
 | `[fn, 2<<28 \| k]` | fn's k locals in memory; their addresses follow |
 | `[fn, 4<<28]` | a return from fn; the value follows |
-| `[line, 5<<28]` | a program's source line (written by the runtime) |
 | `[task, 6<<28]` | a task entering a program: pid and comm follow (the runtime's) |
 | `[addr, 7<<28 \| k]` | a store of 1<<k bytes at addr; the old value follows (k = 7: a range of unknown old contents; its length follows) |
 | `[value, 8<<28 \| i]` | continuation i |
@@ -57,10 +56,8 @@ Probes record **only while `on` is set**: the page turns it on to record (a
 program's run, or ● Record) and off after. Otherwise each probe costs a
 load and a branch.
 
-The two runtime records: the program's **source line** before each syscall
-(user/ksee.h wraps nolibc's calls to call the `ksee.line` import), and a
-**Task record** when a task enters a program (who it is: a task_struct
-address can be another task's later).
+The runtime adds a **Task record** when a task enters a program (who it
+is: a task_struct address can be another task's later).
 
 ## What the kernel says about itself
 

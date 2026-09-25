@@ -58,14 +58,6 @@ pub extern "C" fn time_ns() -> u64 {
     ((js::now_ms() - f64::from_bits(EPOCH_MS.load(Ordering::Relaxed))) * 1e6) as u64
 }
 
-/// ksee.line, for user programs (user/ksee.h): the source line the program
-/// is at, as a record in the kernel's trace ring. (The program holds the
-/// CPU, so no kernel code writes the ring meanwhile.)
-#[unsafe(no_mangle)]
-pub extern "C" fn user_line(line: u32) {
-    ring_put(&[line, ksee_core::trace::LINE << 28]);
-}
-
 /// ksee.bulk, for the kernel (memcpy, memset, wide stores), and for what
 /// the runtime itself writes into kernel memory: Store records with the old
 /// contents of `addr..addr + len`, in 8-byte stores, up to 256 bytes (the
@@ -195,7 +187,6 @@ pub fn kernel(memory: &JsValue, worker: bool) -> Object {
     js::set(&kernel, "print_stack", func(Closure::<dyn FnMut()>::new(|| {
         web_sys::console::log_1(&js::get(&js_sys::Error::new("kernel stack"), "stack"));
     })));
-    let line = export("user_line");
     let (call, done) = call_imports();
     js::set(&kernel, "user_load", func(Closure::<dyn FnMut(u32, u32) -> i32>::new(
         move |image: u32, len: u32| {
@@ -205,7 +196,6 @@ pub fn kernel(memory: &JsValue, worker: bool) -> Object {
                 let linux = Object::new();
                 USER.with_borrow(|u| js::set(&linux, "syscall", u.kernel_syscall.clone().unwrap()));
                 let ksee = Object::new();
-                js::set(&ksee, "line", line.clone());
                 js::set(&ksee, "call", call.clone());
                 js::set(&ksee, "done", done.clone());
                 let imports = Object::new();

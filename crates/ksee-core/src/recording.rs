@@ -33,18 +33,6 @@ pub struct Recording {
     stores: OnceCell<mem::History>,
 }
 
-/// A program's run: from its Task record, until its task_struct is
-/// another's (or the recording ends).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Run {
-    pub task: u32,
-    pub first: usize,
-    pub last: usize,
-    /// Its Line records: (record, the program's source line), before each
-    /// syscall.
-    pub lines: Vec<(usize, u32)>,
-}
-
 impl Recording {
     pub fn new(t: &Tables, records: Vec<Record>, ids: Vec<u32>) -> Recording {
         // The task running at each record: it changes when __switch_to(prev,
@@ -172,27 +160,6 @@ impl Recording {
         }
     }
 
-    /// The latest run of program `pid` (a Task record says which).
-    pub fn program(&self, pid: i32) -> Option<Run> {
-        let (task, first) = self.idents.iter()
-            .flat_map(|(&a, ids)| ids.iter().filter(|(_, t)| t.pid == pid).map(move |(i, _)| (a, *i)))
-            .max_by_key(|&(_, i)| i)?;
-        let until = self.idents[&task].iter().map(|(i, _)| *i).find(|&i| i > first).unwrap_or(self.len());
-        let mut run = Run { task, first, last: first, lines: Vec::new() };
-        for j in first..until {
-            let line = match self.records[j] {
-                Record::Line { line } => Some(line),
-                _ => None,
-            };
-            if self.tasks[j] != task && line.is_none() {
-                continue;
-            }
-            run.last = j;
-            run.lines.extend(line.map(|l| (j, l)));
-        }
-        Some(run)
-    }
-
     /// The first call of function `name` in records `first..=last` (of the
     /// task at address `task`, or any): its record. Code inlined from it
     /// counts too (the first block that runs some).
@@ -281,12 +248,4 @@ mod tests {
         assert_eq!((rec.first_call(&t, "f", 0, 1, None), rec.first_call(&t, "h", 0, 1, None)), (Some(0), Some(1)));
     }
 
-    #[test]
-    fn a_program_runs_until_its_task_is_another() {
-        let t = Tables::default();
-        let r = [task(0x100, 5), Record::Line { line: 3 }, b(9, 0), task(0x100, 6), b(9, 1)];
-        let rec = Recording::new(&t, r.to_vec(), (0..5).collect());
-        assert_eq!(rec.program(5), Some(Run { task: 0x100, first: 0, last: 2, lines: alloc::vec![(1, 3)] }));
-        assert_eq!(rec.program(6).map(|p| (p.first, p.last)), Some((3, 4)));
-    }
 }

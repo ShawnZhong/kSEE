@@ -1,0 +1,165 @@
+{
+  "title": "Directories on ext4",
+  "question": "A directory is a file of names, each pointing to an inode. What happens when one is made, listed, renamed in, and removed?",
+  "steps": [
+    {
+      "show": "mkdir(\"/mnt/dir\", 0755)",
+      "call": "mkdirat",
+      "args": [
+        -100,
+        "/mnt/dir",
+        493
+      ],
+      "stops": [
+        {
+          "func": "ext4_mkdir",
+          "note": "A new directory, all in one journal transaction."
+        },
+        {
+          "func": "__ext4_new_inode",
+          "note": "A free inode for it, from a block group's inode bitmap."
+        },
+        {
+          "func": "ext4_init_new_dir",
+          "note": "Its first block, with its own two entries: \".\" (itself) and \"..\" (its parent)."
+        },
+        {
+          "func": "ext4_add_entry",
+          "note": "The name \"dir\": into a block of /mnt, the parent."
+        }
+      ]
+    },
+    {
+      "show": "open(\"/mnt/dir/a\", O_CREAT | O_WRONLY, 0644)",
+      "call": "openat",
+      "args": [
+        -100,
+        "/mnt/dir/a",
+        65,
+        420
+      ],
+      "stops": [
+        {
+          "func": "ext4_create",
+          "note": "A file in it: another inode, and another name, now in dir's block."
+        }
+      ]
+    },
+    {
+      "show": "close(fd)",
+      "call": "close",
+      "args": [
+        {
+          "ret": 1
+        }
+      ],
+      "stops": []
+    },
+    {
+      "show": "open(\"/mnt/dir\", O_RDONLY | O_DIRECTORY)",
+      "call": "openat",
+      "args": [
+        -100,
+        "/mnt/dir",
+        65536,
+        0
+      ],
+      "stops": []
+    },
+    {
+      "show": "getdents64(dirfd, buf, 256)",
+      "call": "getdents64",
+      "args": [
+        {
+          "ret": 3
+        },
+        {
+          "size": 256
+        },
+        256
+      ],
+      "stops": [
+        {
+          "func": "ext4_readdir",
+          "note": "Read the directory's blocks, entry by entry."
+        },
+        {
+          "func": "filldir64",
+          "note": "Each entry, copied out to the program: \".\", \"..\", \"a\"."
+        }
+      ]
+    },
+    {
+      "show": "close(dirfd)",
+      "call": "close",
+      "args": [
+        {
+          "ret": 3
+        }
+      ],
+      "stops": []
+    },
+    {
+      "show": "rename(\"/mnt/dir/a\", \"/mnt/dir/b\")",
+      "call": "renameat2",
+      "args": [
+        -100,
+        "/mnt/dir/a",
+        -100,
+        "/mnt/dir/b",
+        0
+      ],
+      "stops": [
+        {
+          "func": "ext4_rename",
+          "note": "In one directory: the entry's name changes, \"a\" to \"b\"; the inode stays as it is."
+        }
+      ]
+    },
+    {
+      "show": "rmdir(\"/mnt/dir\")",
+      "call": "unlinkat",
+      "args": [
+        -100,
+        "/mnt/dir",
+        512
+      ],
+      "stops": [
+        {
+          "func": "ext4_empty_dir",
+          "note": "Is it empty? No (\"b\"): the call fails, ENOTEMPTY."
+        }
+      ]
+    },
+    {
+      "show": "unlink(\"/mnt/dir/b\")",
+      "call": "unlinkat",
+      "args": [
+        -100,
+        "/mnt/dir/b",
+        0
+      ],
+      "stops": [
+        {
+          "func": "ext4_free_inode",
+          "note": "\"b\" was the file's only name, and nobody has it open: its inode is freed."
+        }
+      ]
+    },
+    {
+      "show": "rmdir(\"/mnt/dir\")",
+      "call": "unlinkat",
+      "args": [
+        -100,
+        "/mnt/dir",
+        512
+      ],
+      "stops": [
+        {
+          "func": "ext4_free_blocks",
+          "note": "Now empty: the directory's block goes back to the block bitmap, and its inode is freed."
+        }
+      ]
+    }
+  ]
+}

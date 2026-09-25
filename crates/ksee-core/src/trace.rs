@@ -13,8 +13,6 @@ pub enum Record {
     /// The addresses of `func`'s locals in memory (the first `n`; their
     /// names: Tables::locals).
     Locals { func: u32, addrs: [u32; 8], n: u8 },
-    /// A user program's source line (user/ksee.h: before each syscall).
-    Line { line: u32 },
     /// A task entering a user program (after exec): who it is, as the
     /// pointer may later be another task's.
     Task { task: u32, pid: u32, comm: [u32; 4] },
@@ -29,9 +27,7 @@ pub enum Record {
 const BLOCK: u32 = 1;
 const LOCALS: u32 = 2;
 const RETURN: u32 = 4;
-/// The tag of a Line record's head (written by the runtime, not the plugin).
-pub const LINE: u32 = 5;
-/// The tag of a Task record's head (also the runtime's).
+/// The tag of a Task record's head (written by the runtime, not the plugin).
 pub const TASK: u32 = 6;
 /// The tag of a Store record's head (the plugin's, and the runtime's).
 pub const STORE: u32 = 7;
@@ -141,7 +137,6 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                     }
                     return Some(Record::Return { func, value: v[0] });
                 }
-                LINE => return Some(Record::Line { line: func }),
                 STORE => {
                     let class = tag & 0xf;
                     let want = if class == 3 { 2 } else { 1 };

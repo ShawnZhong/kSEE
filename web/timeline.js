@@ -30,7 +30,7 @@ export function timeline(app) {
   const { m } = app;
   const over = $("overview"), chart = $("chart"), strip = $("strip");
   // n: records; calls: syscalls; win: the window shown { a, b }; home: the
-  // selection (a syscall's or program's records, and its task); cols: the
+  // selection (a syscall's records, and its task); cols: the
   // chart's columns [{ task, frames: [[func, first, inlined]] }] (see
 // Machine.chart: inlined, code inlined into the call below it).
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
@@ -62,7 +62,7 @@ export function timeline(app) {
     const ctx = canvas(over, OVER), w = over.clientWidth;
     if (!t.n) {
       ctx.fillStyle = css("--dim");
-      ctx.fillText("Nothing recorded yet: run a tour or a program (or ● Record). What the kernel runs appears here.", 4, OVER / 2);
+      ctx.fillText("Nothing recorded yet: open an example and make its calls (or ● Record). What the kernel runs appears here.", 4, OVER / 2);
       return;
     }
     t.buckets.forEach((b, k) => {

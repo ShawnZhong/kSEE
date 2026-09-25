@@ -53,12 +53,10 @@ chain starts. The stack chart can show them as calls too (the timeline's
 "inlined" toggle), and the line a record is at names the function its code
 is inlined from.
 
-## Syscalls and programs
+## Syscalls
 
 A syscall is a call of `wasm_syscall` (its arguments: the number and the
-syscall's own) up to its return (the result), on one task. A program's run
-goes from its Task record until its task_struct is another's; its Line
-records say which line of the program each syscall is for.
+syscall's own) up to its return (the result), on one task.
 
 ## Memory as it was
 

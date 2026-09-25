@@ -72,23 +72,6 @@ pub struct Line {
     pub inlined: Option<String>,
 }
 
-/// A program's run (see recording::Run).
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Program {
-    pub task: u32,
-    pub first: usize,
-    pub last: usize,
-    pub lines: Vec<ProgramLine>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct ProgramLine {
-    pub i: usize,
-    pub line: u32,
-}
-
 /// A call on a stack, with its arguments (32 bits each: wider ones lose
 /// their high half) and its locals in memory.
 #[derive(Debug, Clone, PartialEq)]
@@ -217,7 +200,6 @@ impl View<'_> {
                 ("block", func, t.blocks.get(&(func, n)).copied())
             }
             Record::Return { func, .. } => ("return", func, t.functions.get(&func).map(|f| f.loc)),
-            Record::Line { .. } => ("line", 0, None),
             Record::Task { .. } => ("task", 0, None),
             Record::Args { .. } => ("args", 0, None),
             Record::Store { .. } => ("store", 0, None),
@@ -243,12 +225,6 @@ impl View<'_> {
     /// The source lines run in records `first..=last` of the task at `task`.
     pub fn lines(&self, first: usize, last: usize, task: u32) -> Vec<Line> {
         self.rec.lines(self.tables, first, last, task).iter().map(|s| self.line(s)).collect()
-    }
-
-    pub fn program(&self, pid: i32) -> Option<Program> {
-        let r = self.rec.program(pid)?;
-        Some(Program { task: r.task, first: r.first, last: r.last,
-                       lines: r.lines.into_iter().map(|(i, line)| ProgramLine { i, line }).collect() })
     }
 
     /// The call stack at record `i`, innermost first; locals read from `mem`

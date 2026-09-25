@@ -1,6 +1,6 @@
-// Boot the kernel under Deno with the page's own module (web/ksee.js), run
-// programs in it (user/examples/, user/tests/), recorded, and
-// check what the recording shows.
+// Boot the kernel under Deno with the page's own module (web/ksee.js), have
+// /init make syscalls (as the page's examples do), recorded, and check what
+// the recordings show.
 //   deno run --allow-read tests/web.js
 import { start, process } from "../web/ksee.js";
 
@@ -28,45 +28,42 @@ async function until(pred, ms = 10000) {
   }
 }
 const proc = process(m);
-// Run program `path`, recording; its pid and exit status.
-async function run(path) {
+// Syscall `name` made by /init, recorded: { ret, buffers, s (its syscall summary) }.
+async function call(name, args) {
   m.record(true);
-  const r = await proc.run(path);
+  const r = await proc.call(name, args);
   m.record(false);
-  return r;
+  m.snapshot();
+  const nr = m.syscall(name).nr;
+  // (The last that returned: /init waits for the next call in a read.)
+  return { ...r, s: m.syscalls().findLast((s) => s.nr === nr && s.task.pid === 1 && s.last != null) };
 }
+const ran = (s, func) => s?.last != null && m.first_call(func, s.first, s.last, s.task.addr) != null;
 
-check("init ready", await until(() => out.includes("ready for the page's programs")));
+check("init ready", await until(() => out.includes("ready for the page's calls")));
 check("not recording at first", !m.recording() && (m.snapshot(), m.records() === 0));
 
-// Syscalls, traced.
-const t = await run("/bin/syscalls");
-check("a program runs, and exits 0", t.pid > 1 && t.status === 0);
-check("its output", await until(() => out.includes("hello kSEE") && out.includes("ls /: init found") &&
-      out.includes("hello from writev") && out.includes("pipe: through a pipe") && out.includes("uname: Linux wasm") && out.includes("slept")));
-m.snapshot();
-const calls = m.syscalls().filter((s) => s.task.pid === t.pid);
-const called = calls.map((s) => s.name);
-for (const n of ["getpid", "write", "mkdirat", "openat", "getdents64", "writev", "pipe2", "read", "uname", "clock_nanosleep_time64"])
-  check(`syscall ${n} traced`, called.includes(n));
-const ran = (name, func) => calls.some((s) => s.name === name && s.last != null
-  && m.first_call(func, s.first, s.last, s.task.addr) != null);
-check("write ran vfs_write", ran("write", "vfs_write"));
-check("getpid ran __task_pid_nr_ns", ran("getpid", "__task_pid_nr_ns"));
-check("mkdirat ran vfs_mkdir", ran("mkdirat", "vfs_mkdir"));
+// Calls, traced.
+const w = (await call("write", [1, "hello kSEE\n", 11])).s;
+check("a write, on /init (pid 1), shown on the console", w?.ret === 11 && w.task.comm === "init" && await until(() => out.includes("hello kSEE")));
+check("write ran vfs_write", ran(w, "vfs_write"));
+check("getpid ran __task_pid_nr_ns", ran((await call("getpid", [])).s, "__task_pid_nr_ns"));
+check("mkdirat ran vfs_mkdir", ran((await call("mkdirat", [-100, "/tmp", 0o755])).s, "vfs_mkdir"));
 // (The tasks of a stack chart's columns: see Machine.chart.)
 const chartTasks = (flat) => {
   const out = [];
   for (let j = 0; j < flat.length; j += 2 + 3 * flat[j + 1]) out.push(flat[j]);
   return out;
 };
-const nap = calls.find((s) => s.name === "clock_nanosleep_time64");
-check("sleeping switched to the idle task and back", ran("clock_nanosleep_time64", "__schedule")
+const ts = { bytes: new Uint8Array(new BigInt64Array([0n, 30000000n]).buffer) };
+const nap = (await call("clock_nanosleep_time64", [1, 0, ts, 0])).s;
+check("sleeping switched to the idle task and back", ran(nap, "__schedule")
       && chartTasks(m.chart(nap.first, nap.last, 50)).some((a) => m.task(a, nap.first).comm === "swapper/0"));
-const w = calls.find((s) => s.name === "write" && s.ret === 11);
-const [vfs] = m.functions("vfs_write", w.index);
+m.snapshot();
+const wi = m.syscalls().findIndex((s) => s.first === w.first);
+const [vfs] = m.functions("vfs_write", wi);
 check("vfs_write block counts", vfs?.blocks.some((b) => b.count > 0) && vfs.blocks.some((b) => b.count === 0));
-check("fs/read_write.c coverage", m.file_coverage("fs/read_write.c", w.index).some((l) => l.count > 0));
+check("fs/read_write.c coverage", m.file_coverage("fs/read_write.c", wi).some((l) => l.count > 0));
 const chart = m.chart(w.first, w.last, 200);
 check("a stack chart of write's records", chart.length > 600 && chart[0] === w.task.addr);
 const steps = m.line_steps(w.first, w.last, w.task.addr);
@@ -77,28 +74,31 @@ while (nth < k && steps[k - nth - 1].i === steps[k].i) nth++;
 const inl = m.call_stack(steps[k].i, nth);
 check(`inlined code is a frame of its own (${steps[k].inlined} in ${steps[k].func})`,
       inl[0]?.inlined && inl[0].func === steps[k].inlined && inl[0].line === steps[k].line && inl.some((f) => f.func === steps[k].func && !f.inlined));
-const flat = m.chart(w.first, w.last, 200);
 let inlinedRows = 0;
-for (let j = 0; j < flat.length; j += 2 + 3 * flat[j + 1]) for (let d = 0; d < flat[j + 1]; d++) if (flat[j + 4 + 3 * d]) inlinedRows++;
+for (let j = 0; j < chart.length; j += 2 + 3 * chart[j + 1]) for (let d = 0; d < chart[j + 1]; d++) if (chart[j + 4 + 3 * d]) inlinedRows++;
 check("and a row of its own in the chart", inlinedRows > 0);
 const mid = steps.find((x) => x.func === "vfs_write").i;
 const stack = m.call_stack(mid);
 const kw = stack.find((f) => f.func === "ksys_write"), kwDef = m.functions("ksys_write")[0];
 check("an outer call is where it calls the next one in", kw?.file === "fs/read_write.c" && kw.line > kwDef.line);
-check("a past call stack, with arguments", stack[0]?.func === "vfs_write"
-      && stack.find((f) => f.func === "ksys_write")?.args?.find((a) => a.name === "count")?.value === "11");
+check("a past call stack, with arguments", stack[0]?.func === "vfs_write" && kw?.args?.find((a) => a.name === "count")?.value === "11");
 check("memory as it was: writes undone", m.memory_at(w.first) > m.memory_at(w.last));
+m.memory_at(inWrite(w));
+const task = m.object("task_struct", w.task.addr, 1);
+check("the task, as it was", task?.children?.find((c) => c.name === "comm")?.value === '"init"');
+check("a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr_running"));
 m.memory_at(null);
-const at = m.at(m.seek(calls.find((s) => s.name === "getpid").first, 1, "block"));
-check("history: a record in getpid", at?.syscall != null && m.syscalls()[at.syscall]?.name === "getpid");
+function inWrite(s) {
+  return m.first_call("vfs_write", s.first, s.last, s.task.addr);
+}
 
-// A tour's program: its source lines, and f_pos over time.
-const r = await run("/bin/read");
-check("the read tour's program", r.status === 0 && await until(() => out.includes("read 26 bytes")));
-m.snapshot();
-const prog = m.program(r.pid);
-check("its source lines are in the trace", prog?.lines.some((l) => l.line === 23));
-const read = m.syscalls().find((s) => s.task.pid === r.pid && s.name === "read");
+// A read: f_pos over time, who wrote it, a local.
+const fd = (await call("openat", [-100, "/tmp/note", 0o1101, 0o644])).ret; // O_CREAT | O_TRUNC | O_WRONLY
+await call("write", [fd, "hello from the page cache\n", 26]);
+await call("close", [fd]);
+const rfd = (await call("openat", [-100, "/tmp/note", 0, 0])).ret;
+const { s: read, buffers } = await call("read", [rfd, { size: 64 }, 64]);
+check("read 26 bytes back", read?.ret === 26 && new TextDecoder().decode(buffers[1]).startsWith("hello from the page cache"));
 const inRead = m.line_steps(read.first, read.last, read.task.addr).find((x) => x.func === "vfs_read").i;
 const file = m.call_stack(inRead)[0].args.find((a) => a.name === "file");
 const fpos = (i) => (m.memory_at(i), m.object_by_id("file", file.target, Number(file.value), 1)?.children?.find((c) => c.name === "f_pos"));
@@ -110,68 +110,39 @@ const pos = (i) => (m.memory_at(i), m.call_stack(i).find((c) => c.func === "ksys
 check("a local on the stack, as it was: ksys_read's pos, 0 then 26",
       pos(inRead) === "0" && pos(readSteps.findLast((x) => x.func === "ksys_read").i) === "26");
 m.memory_at(null);
+await call("close", [rfd]);
 
-// A program's write, in its recording: the call stack there, and the task.
-const hi = await run("/bin/hello");
-check("hello ran", hi.status === 0 && await until(() => out.includes("hello\n")));
-m.snapshot();
-const hw = m.syscalls().find((s) => s.task.pid === hi.pid && s.name === "write");
-const inWrite = m.first_call("vfs_write", hw.first, hw.last, hw.task.addr);
-const live = m.call_stack(inWrite);
-check("the call stack in vfs_write, with arguments", live[0]?.func === "vfs_write" && live.some((f) => f.func === "ksys_write"
-      && f.args?.find((a) => a.name === "count")?.value === "6"));
-m.memory_at(inWrite);
-const task = m.object("task_struct", hw.task.addr, 1);
-check("the task, as it was", task?.children?.find((c) => c.name === "comm")?.value === '"hello"');
-check("a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr_running"));
-m.memory_at(null);
-
-// ext4 (on the loop device, mounted by /init): each example's stops are in its recording.
-for (const [name, funcs] of [["file", ["ext4_create", "__ext4_new_inode", "add_dirent_to_buf", "ext4_da_write_begin", "ext4_sync_file",
-                                       "ext4_mb_new_blocks", "jbd2_journal_commit_transaction", "submit_bio", "__fput",
-                                       "ext4_delete_entry", "ext4_evict_inode", "ext4_free_blocks", "ext4_free_inode"]],
-                             ["dirs", ["ext4_mkdir", "ext4_init_new_dir", "ext4_create", "ext4_readdir", "filldir64", "ext4_rename", "ext4_add_entry",
-                                       "ext4_empty_dir", "ext4_free_inode", "ext4_free_blocks"]]]) {
-  const e = await run(`/bin/${name}`);
-  m.snapshot();
-  const p = m.program(e.pid);
-  const missing = funcs.filter((f) => m.first_call(f, p.first, m.records() - 1) == null);
-  check(`${name}: ${funcs.join(", ")}`, e.status === 0 && !missing.length || console.log("  missing:", missing));
-}
 // A char * shows its string: mkdir's struct filename, its name.
 {
-  const p = m.program(m.syscalls().findLast((s) => s.name === "mkdirat").task.pid), i = m.first_call("filename_create", p.first, m.records() - 1);
+  const mk = (await call("mkdirat", [-100, "/mnt/named", 0o755])).s, i = m.first_call("filename_create", mk.first, mk.last);
   const arg = m.call_stack(i).find((f) => f.func === "filename_create")?.args?.find((a) => a.ty === "struct filename *");
   m.memory_at(i); // (as it was: the name is freed after the syscall)
   // (7.2's struct filename: the name pointer is in an anonymous struct, with the name in iname.)
   const name = arg && m.object_by_id("name", arg.target, Number(arg.value.split(" ")[0]), 2)?.children?.[0]?.children?.find((c) => c.name === "name");
   m.memory_at(null);
-  check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/dir"'));
+  check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/named"'));
+  await call("unlinkat", [-100, "/mnt/named", 0x200]);
+}
+check("a syscall's parameters, typed", JSON.stringify(m.syscall("openat")?.params) ===
+      JSON.stringify([{ name: "dfd", ty: "int" }, { name: "filename", ty: "char *" }, { name: "flags", ty: "int" }, { name: "mode", ty: "umode_t" }]));
+
+// The examples (web/examples/index.json): their calls, and each stop in its call's recording.
+const examples = JSON.parse(await Deno.readTextFile(new URL("web/examples/index.json", root)));
+for (const ex of examples) {
+  const rets = [], missing = [];
+  for (const st of ex.steps) {
+    const args = st.args.map((a) => (a?.ret != null ? rets[a.ret]
+      : a?.i64 ? { bytes: new Uint8Array(new BigInt64Array(a.i64.map(BigInt)).buffer) } : a));
+    const { ret, s } = await call(st.call, args);
+    rets.push(ret);
+    for (const stop of st.stops ?? [])
+      if (m.first_call(stop.func, s.first, s.last ?? m.records() - 1, stop.any ? undefined : s.task.addr) == null) missing.push(stop.func);
+  }
+  check(`example ${ex.name}: ${ex.steps.length} calls, their stops found`, !missing.length || console.log("  missing:", missing));
 }
 
-// Syscalls the page asks /init to make: a file's life, then what it read.
-{
-  const call = (name, args) => proc.call(name, args);
-  const fd = (await call("openat", [-100, "/mnt/called.txt", 0o102, 0o644])).ret; // O_CREAT | O_RDWR
-  const w = (await call("write", [fd, "by the page\n", 12])).ret;
-  const back = await call("pread64", [fd, { size: 12 }, 12, 0]);
-  const text = new TextDecoder().decode(back.buffers[1]);
-  m.record(true);
-  const synced = (await call("fsync", [fd])).ret;
-  m.record(false);
-  m.snapshot();
-  const fsync = m.syscalls().findLast((s) => s.name === "fsync");
-  check(`/init makes the page's calls: fd ${fd}, wrote ${w}, read back ${JSON.stringify(text)}, fsync ${synced}`,
-        fd > 2 && w === 12 && text === "by the page\n" && synced === 0);
-  check("... recorded: fsync, on pid 1, ran ext4_sync_file", fsync?.task.pid === 1
-        && m.first_call("ext4_sync_file", fsync.first, fsync.last, fsync.task.addr) != null);
-  check("... and closes and unlinks", (await call("close", [fd])).ret === 0 && (await call("unlinkat", [-100, "/mnt/called.txt", 0])).ret === 0);
-  check("a syscall's parameters, typed", JSON.stringify(m.syscall("openat")?.params) ===
-        JSON.stringify([{ name: "dfd", ty: "int" }, { name: "filename", ty: "char *" }, { name: "flags", ty: "int" }, { name: "mode", ty: "umode_t" }]));
-}
-
-// LINUX_REBOOT_CMD_POWER_OFF
-proc.run("/bin/poweroff");
+// LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts)
+proc.call("reboot", [0xfee1dead, 672274793, 0x4321fedc, 0]);
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);
 
 if (failed) console.log(out);

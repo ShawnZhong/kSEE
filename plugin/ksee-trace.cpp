@@ -41,7 +41,7 @@
 //                         7: a range whose old contents are not logged,
 //                         followed by its length
 //   [value, 8 << 28 | i]  continuation i of the head before
-// (The host's runtime writes kinds 5 and 6 too, and store records for its
+// (The host's runtime writes kind 6 too, and store records for its
 // own writes into kernel memory.) fn is a hash of the function's name (for a
 // function local to its file, of "file:name").
 //

@@ -27,19 +27,9 @@ pub static CURRENT_TASK: AtomicU32 = AtomicU32::new(0);
 pub static PENDING: AtomicU32 = AtomicU32::new(0);
 pub static DEADLINE: AtomicU32 = AtomicU32::new(0);
 
-/// The kernel's request to run a program (wasm_run, see its
-/// arch/wasm/kernel/run.c): `{ u32 state; s32 status; s32 pid; char path[256]; }`.
-pub static RUN: AtomicU32 = AtomicU32::new(0);
-/// Its states.
-pub const RUN_IDLE: u32 = 0;
-pub const RUN_REQUESTED: u32 = 1;
-pub const RUN_DONE: u32 = 3;
-pub const RUN_PATH: usize = 256;
-
 /// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h).
 pub const IRQ_TIMER: u32 = 0;
-pub const IRQ_RUN: u32 = 1;
-pub const IRQ_CONSOLE: u32 = 2;
+pub const IRQ_CONSOLE: u32 = 1;
 
 /// Raise interrupt line `irq`.
 pub fn interrupt(irq: u32) {

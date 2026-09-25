@@ -6,11 +6,9 @@
 //!   linux/vmlinux          the kernel, instrumented (kbuild)
 //!   web/pkg/               the runtime, and wasm-bindgen's glue (cargo)
 //!   web/vmlinux, web/src/  the kernel for the page (pack)
-//!   web/initramfs.cpio     /init (user/init.c), an ext4 disk image
-//!                          (/disk.img, mkfs.ext4), and the programs, as
-//!                          /bin/NAME: the examples' (user/examples/*.c)
-//!                          and the tests' (user/tests/*.c)
-//!   web/examples/          the examples (their sources), and index.json
+//!   web/initramfs.cpio     /init (user/init.c), and an ext4 disk image
+//!                          (/disk.img, mkfs.ext4)
+//!   web/examples/          index.json: the examples (user/examples/*.json)
 //!   web/vendor/monaco/     the Monaco editor (downloaded once from npm)
 //!
 //! $LLVM is the LLVM version suffix (default -23).
@@ -74,63 +72,50 @@ pub fn build() {
     if stale("web/vmlinux", &["linux/vmlinux"]) {
         crate::pack::pack(Path::new("linux"), Path::new("web"));
     }
-    // The programs use nolibc, with the kernel's UAPI headers.
+    // /init uses nolibc, with the kernel's UAPI headers.
     run(&mut kmake(&["headers"]));
-    let examples = examples();
-    let programs = &examples;
-    let mut inputs = vec!["user/init.c", "user/initramfs.list", "user/ksee.h", "linux/usr/gen_init_cpio",
-                          "linux/tools/include/nolibc/arch-wasm.h"];
-    inputs.extend(examples.iter().map(String::as_str));
-    // (Stale too if the programs are not the ones built: one renamed or removed.)
-    let built = std::fs::read_to_string("web/initramfs.list").unwrap_or_default();
-    let names: Vec<String> = programs.iter().map(|s| Path::new(s).file_stem().unwrap().to_string_lossy().into_owned()).collect();
-    let same = built.lines().filter(|l| l.starts_with("file /bin/")).count() == names.len()
-        && names.iter().all(|n| built.contains(&format!("file /bin/{n} ")));
-    if !same || stale("web/initramfs.cpio", &inputs) {
+    let inputs = ["user/init.c", "user/initramfs.list", "linux/usr/gen_init_cpio",
+                  "linux/tools/include/nolibc/arch-wasm.h"];
+    if stale("web/initramfs.cpio", &inputs) {
         eprintln!("  INIT    web/initramfs.cpio");
-        let cc = |out: &str, src: &str, flags: &[&str]| run(Command::new(format!("clang{llvm}"))
-            .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-Wl,--no-entry", "-Wl,--export=_start"])
-            .args(flags).args(["-o", out, src]));
-        let nolibc = ["-nostdinc", "-isystem", "linux/tools/include/nolibc", "-isystem", "linux/usr/include",
-                      "-include", "user/ksee.h"];
-        cc("web/init.wasm", "user/init.c", &nolibc);
+        run(Command::new(format!("clang{llvm}"))
+            .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-Wl,--no-entry", "-Wl,--export=_start",
+                   "-nostdinc", "-isystem", "linux/tools/include/nolibc", "-isystem", "linux/usr/include",
+                   "-o", "web/init.wasm", "user/init.c"]));
         // The ext4 disk /init mounts (a file, through the loop device).
         let _ = std::fs::remove_file("web/disk.img");
         run(Command::new("mkfs.ext4").args(["-q", "-F", "-b", "1024", "-L", "ksee", "-N", "32", "web/disk.img", "2M"]));
-        let mut list = std::fs::read_to_string("user/initramfs.list").unwrap_or_default();
-        list += "dir /bin 0755 0 0\n";
-        let _ = std::fs::remove_dir_all("web/bin");
-        let _ = std::fs::remove_dir_all("web/examples");
-        std::fs::create_dir_all("web/bin").and_then(|_| std::fs::create_dir_all("web/examples"))
-            .unwrap_or_else(|e| crate::fail(&format!("web/bin: {e}")));
-        for (src, name) in programs.iter().zip(&names) {
-            cc(&format!("web/bin/{name}.wasm"), src, &nolibc);
-            list += &format!("file /bin/{name} bin/{name}.wasm 0755 0 0\n");
-        }
-        // The examples, for the page.
-        let mut index = Vec::new();
-        for src in examples.iter().filter(|p| p.starts_with("user/examples/")) {
-            let name = Path::new(src).file_stem().unwrap().to_string_lossy().into_owned();
-            let text = std::fs::read_to_string(src).unwrap_or_default();
-            std::fs::write(format!("web/examples/{name}.c"), &text)
-                .unwrap_or_else(|e| crate::fail(&format!("web/examples: {e}")));
-            index.push((EXAMPLES.iter().position(|&e| e == name).unwrap_or(EXAMPLES.len()), example_json(&name, &text)));
-        }
-        index.sort();
-        let index: Vec<String> = index.into_iter().map(|(_, e)| e).collect();
-        std::fs::write("web/examples/index.json", format!("[\n{}\n]\n", index.join(",\n")))
-            .unwrap_or_else(|e| crate::fail(&format!("web/examples/index.json: {e}")));
-        std::fs::write("web/initramfs.list", list).unwrap_or_else(|e| crate::fail(&format!("web/initramfs.list: {e}")));
         // (The list's paths are relative to web/.)
         let tool = Path::new("linux/usr/gen_init_cpio").canonicalize()
             .unwrap_or_else(|e| crate::fail(&format!("linux/usr/gen_init_cpio: {e}")));
-        let cpio = Command::new(tool).arg("initramfs.list").current_dir("web").output()
+        let cpio = Command::new(tool).arg(Path::new("user/initramfs.list").canonicalize().unwrap()).current_dir("web").output()
             .unwrap_or_else(|e| crate::fail(&format!("gen_init_cpio: {e}")));
         if !cpio.status.success() {
             crate::fail(&format!("gen_init_cpio: {}", String::from_utf8_lossy(&cpio.stderr)));
         }
         std::fs::write("web/initramfs.cpio", cpio.stdout).unwrap_or_else(|e| crate::fail(&format!("web/initramfs.cpio: {e}")));
     }
+    examples();
+}
+
+/// The examples' order on the page, from the simplest (others after them).
+const EXAMPLES: &[&str] = &["hello", "read", "open-fails", "sleep", "file", "dirs", "yours"];
+
+/// web/examples/index.json: the examples (user/examples/*.json: each a list
+/// of syscalls for /init to make, one at a time), with their names.
+fn examples() {
+    let mut index: Vec<(usize, String)> = std::fs::read_dir("user/examples").into_iter().flatten().flatten()
+        .map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).map(|p| {
+            let name = p.file_stem().unwrap().to_string_lossy().into_owned();
+            let text = String::from_utf8_lossy(&crate::read(&p)).into_owned();
+            let entry = format!("  {{ \"name\": \"{name}\", {}", text.trim().strip_prefix('{').unwrap_or("}").trim_start());
+            (EXAMPLES.iter().position(|&e| e == name).unwrap_or(EXAMPLES.len()), entry)
+        }).collect();
+    index.sort();
+    let index: Vec<String> = index.into_iter().map(|(_, e)| e).collect();
+    std::fs::create_dir_all("web/examples")
+        .and_then(|_| std::fs::write("web/examples/index.json", format!("[\n{}\n]\n", index.join(",\n"))))
+        .unwrap_or_else(|e| crate::fail(&format!("web/examples/index.json: {e}")));
 }
 
 /// The Monaco editor (the page's source view), its prebuilt AMD build
@@ -151,46 +136,6 @@ fn vendor() {
     let _ = std::fs::remove_file("web/vendor/monaco");
     std::os::unix::fs::symlink(format!("monaco-{MONACO}"), "web/vendor/monaco")
         .unwrap_or_else(|e| crate::fail(&format!("web/vendor/monaco: {e}")));
-}
-
-/// The examples' order on the page, from the simplest (others after them).
-const EXAMPLES: &[&str] = &["hello", "read", "open-fails", "sleep", "file", "dirs"];
-
-/// The programs: user/{examples,tests}/*.c, sorted.
-fn examples() -> Vec<String> {
-    let mut list: Vec<String> = ["user/examples", "user/tests"].iter()
-        .flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
-        .map(|e| e.path().to_string_lossy().into_owned())
-        .filter(|p| p.ends_with(".c")).collect();
-    list.sort();
-    list
-}
-
-/// An example's entry in index.json, from its header comments:
-///   // example: TITLE
-///   // question: TEXT
-///   // stop FUNCTION: NOTE        (any number; "FUNCTION, any task": also
-///                                  when another task runs it, as in an
-///                                  interrupt)
-/// and the program's lines that end in "// stops here": the stops are for
-/// the syscalls those make (all of the program's, if none).
-fn example_json(name: &str, text: &str) -> String {
-    let q = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
-    let (mut title, mut question, mut stops) = (String::new(), String::new(), Vec::new());
-    for line in text.lines().map_while(|l| l.strip_prefix("// ")) {
-        if let Some(t) = line.strip_prefix("example: ") {
-            title = t.to_string();
-        } else if let Some(t) = line.strip_prefix("question: ") {
-            question = t.to_string();
-        } else if let Some((f, note)) = line.strip_prefix("stop ").and_then(|t| t.split_once(": ")) {
-            let (f, any) = f.strip_suffix(", any task").map_or((f, false), |f| (f, true));
-            stops.push(format!("{{ \"func\": {}, \"note\": {}, \"any\": {any} }}", q(f), q(note)));
-        }
-    }
-    let lines: Vec<String> = text.lines().enumerate().filter(|(_, l)| l.trim_end().ends_with("// stops here"))
-        .map(|(k, _)| (k + 1).to_string()).collect();
-    format!("  {{ \"name\": {}, \"path\": \"/bin/{name}\", \"title\": {}, \"question\": {}, \"stops\": [{}], \"lines\": [{}] }}",
-            q(name), q(&title), q(&question), stops.join(", "), lines.join(", "))
 }
 
 /// Build, then: core's unit tests and tests/web.js (under Deno); with

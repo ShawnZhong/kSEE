@@ -26,7 +26,7 @@ page (main thread)                      Workers
 web/ksee.js: create the memory,         web/worker.js: init the runtime on
   init the runtime, Machine.start         the memory, worker_entry(msg)
 machine.rs: boot, console, record,      worker.rs: the timer, or a task:
-  run programs, snapshots                 instantiate the kernel, run it
+  syscalls (by /init), snapshots          instantiate the kernel, run it
 replay.rs: views of the recording       imports.rs: the kernel's imports
   (ksee_core::view, as JS values)
                     state.rs: statics shared by both
@@ -47,12 +47,12 @@ waits for the next. Only if no Worker waits does the kernel's Worker ask
 the page (a message) for one more; only the page creates Workers, so that
 it can stop them all at a halt. After the first few tasks, starting a
 process sends no messages. Everything else goes through memory too: the
-page raises interrupts (a bit and a notify), writes `wasm_run`, and reads
-the console ring.
+page raises interrupts (a bit and a notify), puts the syscalls /init is
+to make in `state::CALL`, and reads the console ring.
 
 **Imports**: the frequent ones (`console_write`, `time_ns`, `spawn_task`,
 `ksee.bulk`, ...) are the runtime's own wasm exports, so the kernel calls
-them directly; the rest (Workers, user programs' modules and memories) are
+them directly; the rest (Workers, /init's module and memory) are
 closures reaching Web APIs.
 
 ## The page
@@ -66,7 +66,7 @@ source. Rust does the work: JS only lays it out.
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom); zoom, pan |
 | source.js | the source at the cursor (Monaco): lines that ran, the function, hover values, Watch, definitions |
 | callstack.js | the Stack: calls with arguments and locals, watches, ✎ who wrote a value |
-| examples.js | the examples: a program run recorded, and its stops |
+| examples.js | the examples: syscalls /init makes, one at a time, recorded; their stops; adding a call |
 | ksee.js, worker.js | booting; each Worker's script |
 
 Every view asks the Machine for the moment at the cursor: `at(i)`,
@@ -76,9 +76,10 @@ Every view asks the Machine for the moment at the cursor: `at(i)`,
 ## Tests
 
 - `cargo test -p ksee-core`: the rebuilding, on made-up records.
-- tests/web.js (Deno, with the page's own ksee.js): boots the kernel, runs
-  programs recorded, and checks what the recording shows: syscalls,
-  stacks with arguments, lines, memory as it was, who wrote a value, tasks.
+- tests/web.js (Deno, with the page's own ksee.js): boots the kernel, has
+  /init make syscalls, recorded (and every example's), and checks what the
+  recordings show: stacks with arguments, lines, memory as it was, who
+  wrote a value, tasks, the examples' stops.
 - tests/ui.js: the page in headless Chromium over CDP: the first example
   (it runs by itself), then the read example: walks its stops, hovers, plays; fails on any exception. Saves
   web/ui.png.

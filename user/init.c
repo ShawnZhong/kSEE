@@ -1,8 +1,8 @@
 // /init: the first process. It mounts the ext4 disk (the image /disk.img,
 // through the loop device, on /mnt), then makes the syscalls the page asks
 // for, one at a time: it waits reading its terminal (the console), and a
-// byte there says a call is asked for (see the page's Machine.call). (The
-// kernel runs the page's programs itself: linux/arch/wasm/kernel/run.c.)
+// byte there says a call is asked for (see the page's Machine.call). Plain
+// C on nolibc (linux/tools/include/nolibc), the kernel's small C library.
 #include <fcntl.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
@@ -48,11 +48,26 @@ int main(void)
 	ioctl(0, TCGETS, &t);
 	t.c_lflag &= ~(ICANON | ECHO);
 	ioctl(0, TCSETS, &t);
-	printf("init: ready for the page's programs\n");
+	printf("init: ready for the page's calls\n");
 	for (;;) {
 		if (read(0, &c, 1) != 1 || ksee_call(&req) < 0)
 			continue;
 		ksee_done(__nolibc_syscall6(req.nr, req.args[0], req.args[1], req.args[2],
 					    req.args[3], req.args[4], req.args[5]), &req);
 	}
+}
+
+// 128-bit multiply, which clang emits as a libcall on wasm32 (for 64-bit
+// division by constants, as in printf); there is no compiler-rt.
+__int128 __multi3(__int128 a, __int128 b)
+{
+	union { __int128 ti; struct { unsigned long long low, high; } s; } x = { a }, y = { b }, r;
+	unsigned long long a0 = (unsigned)x.s.low, a1 = x.s.low >> 32;
+	unsigned long long b0 = (unsigned)y.s.low, b1 = y.s.low >> 32;
+	unsigned long long p00 = a0 * b0, p01 = a0 * b1, p10 = a1 * b0, p11 = a1 * b1;
+	unsigned long long mid = (p00 >> 32) + (unsigned)p01 + (unsigned)p10;
+
+	r.s.low = (mid << 32) | (unsigned)p00;
+	r.s.high = p11 + (p01 >> 32) + (p10 >> 32) + (mid >> 32) + x.s.high * y.s.low + x.s.low * y.s.high;
+	return r.ti;
 }

@@ -79,11 +79,6 @@ impl Machine {
         self.rec.borrow().first_call(tables(), name, first, last, task)
     }
 
-    /// The latest run of program `pid` (view::Program), or null.
-    pub fn program(&self, pid: i32) -> JsValue {
-        self.view(|v| to_js(&v.program(pid)))
-    }
-
     /// The source lines run in records `first..=last` of the task at address
     /// `task`, in order (view::Line).
     pub fn line_steps(&self, first: usize, last: usize, task: u32) -> JsValue {

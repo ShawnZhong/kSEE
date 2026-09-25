@@ -53,20 +53,23 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url });
 await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
-// By default: the first example (it runs by itself); then open the read example (it runs, recorded); go through its stops
-// (the note, the Stack, a hover at each); play a little; report.
+// By default: the first example (it makes its call by itself); then the
+// read example: make its calls, go through the read's stops (the note, the
+// Stack, a hover at each), play a little, hover and click the chart; report.
 const script = opt("eval", `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (id) => document.getElementById(id);
+  const until = async (f, n = 100) => { for (let i = 0; i < n && !f(); i++) await sleep(100); };
   const r = { badge: $("badge").textContent };
-  // The first example runs by itself, once the kernel is up.
-  for (let i = 0; i < 100 && !document.querySelector(".tstatus")?.textContent.includes(" ran as "); i++) await sleep(100);
+  await until(() => !$("note").hidden);
   r.first = [document.querySelector(".thead .tt")?.textContent, $("note").querySelector("b")?.textContent];
   [...document.querySelectorAll(".thead a")].find((a) => a.textContent.includes("examples")).click();
   r.examples = document.querySelectorAll(".row.example").length;
   [...document.querySelectorAll(".row.example")].find((e) => e.textContent.includes("read()")).click();
-  for (let i = 0; i < 100 && !document.querySelector(".tstatus")?.textContent.includes(" ran as "); i++) await sleep(100);
-  r.after = [$("badge").textContent, document.querySelector(".tstatus").textContent.slice(0, 30)];
+  // (Its calls, up to the read: the 6th.)
+  document.querySelectorAll("ol.steps > li > a")[5].click();
+  await until(() => document.querySelectorAll("ol.steps > li.done").length >= 6 && $("note").querySelector("b")?.textContent === "ksys_read");
+  r.calls = [...document.querySelectorAll("ol.steps > li.done")].map((li) => li.firstChild.textContent + li.querySelector(".ret").textContent).slice(4, 6);
   r.notes = [];
   for (let k = 0; k < 5; k++) {
     await sleep(300);
@@ -92,8 +95,6 @@ const script = opt("eval", `(async () => {
   for (const type of ["pointerdown", "pointerup"])
     $("chart").dispatchEvent(new PointerEvent(type, { clientX: box.left + box.width / 2, clientY: box.bottom - 12 - 2 - 4 }));
   r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
-  ksee.examples.pickLine(23); await sleep(300);
-  r.picked = $("where").textContent.slice(0, 40);
   return r;
 })()`);
 if (script) {

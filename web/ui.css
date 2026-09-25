@@ -171,3 +171,15 @@ table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-famil
 ol.stops li { cursor: pointer; }
 #note button { margin-left: 8px; }
 #chart:focus { outline: none; }
+
+/* Step lists: the calls, the next one, their results; adding one */
+ol.steps { margin: 8px 12px; padding-left: 22px; }
+ol.steps > li { margin: 4px 0; }
+ol.steps > li > a { cursor: pointer; }
+ol.steps > li.next > a { font-weight: 600; }
+ol.steps > li:not(.done):not(.next) > a { color: var(--dim); }
+ol.steps .ret { color: var(--accent); }
+ol.steps ol.stops { margin: 4px 0 8px; }
+.callform { margin: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
+.callform input { font-size: 12px; padding: 2px 6px; }
+.callform .fields { display: flex; flex-direction: column; gap: 3px; padding-left: 12px; }

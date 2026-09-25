@@ -1,4 +1,4 @@
-//! The page's API: boot a kernel in Workers, drive it (console, programs,
+//! The page's API: boot a kernel in Workers, drive it (console, syscalls,
 //! recording), and take snapshots of its recording (see replay.rs).
 
 use std::cell::RefCell;
@@ -106,7 +106,6 @@ impl Machine {
         CURRENT_TASK.store(global("__current_task"), Ordering::Relaxed);
         PENDING.store(global("wasm_irq_pending"), Ordering::Relaxed);
         DEADLINE.store(global("wasm_timer_deadline"), Ordering::Relaxed);
-        RUN.store(global("wasm_run"), Ordering::Relaxed);
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         // (The page's instance is not needed after this.)
         TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
@@ -200,26 +199,7 @@ impl Machine {
         recording()
     }
 
-    // ---- Running programs ----
-
-    /// Ask the kernel to run program `path` (in the initramfs; see its
-    /// arch/wasm/kernel/run.c). False if a program runs already.
-    pub fn run(&self, path: &str) -> Result<bool, JsValue> {
-        let run = RUN.load(Ordering::Relaxed);
-        let state = unsafe { &*(run as *const AtomicU32) };
-        if state.load(Ordering::Acquire) != RUN_IDLE {
-            return Ok(false);
-        }
-        if path.len() >= RUN_PATH {
-            return Err("path too long".into());
-        }
-        let buf = unsafe { core::slice::from_raw_parts_mut((run + 12) as *mut u8, RUN_PATH) };
-        buf[..path.len()].copy_from_slice(path.as_bytes());
-        buf[path.len()] = 0;
-        state.store(RUN_REQUESTED, Ordering::Release);
-        interrupt(IRQ_RUN);
-        Ok(true)
-    }
+    // ---- Syscalls, made by /init ----
 
     /// Console input (to /init's terminal: see call).
     pub fn input(&self, text: &str) {
@@ -228,9 +208,10 @@ impl Machine {
     }
 
     /// Ask /init to make syscall `nr` with `args` (user/init.c): each a
-    /// number, a string (as a NUL-terminated buffer), or { size } (a buffer
-    /// of that many zero bytes, for the call to fill). False if a call is
-    /// under way already.
+    /// number, a string (as a NUL-terminated buffer), { bytes } (a buffer
+    /// of them: an array or a Uint8Array), or { size } (a buffer of that
+    /// many zero bytes, for the call to fill). False if a call is under way
+    /// already.
     pub fn call(&self, nr: u32, args: Vec<JsValue>) -> Result<bool, JsValue> {
         if CALL.state.load(Ordering::Acquire) != CALL_IDLE {
             return Ok(false);
@@ -241,6 +222,8 @@ impl Machine {
         for (i, a) in args.iter().take(6).enumerate() {
             let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
                 Some([s.as_bytes(), &[0]].concat())
+            } else if !js::get(a, "bytes").is_undefined() {
+                Some(Uint8Array::new(&js::get(a, "bytes")).to_vec())
             } else if let Some(n) = js::get(a, "size").as_f64() {
                 Some(vec![0; n as usize])
             } else {
@@ -258,7 +241,7 @@ impl Machine {
                     used += (b.len() + 7) & !7; // (8-byte aligned)
                     at as u32
                 }
-                None => a.as_f64().ok_or("an argument: a number, a string or { size }")? as i64 as u32,
+                None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { size }")? as i64 as u32,
             };
             CALL.args[i].store(v, Ordering::Relaxed);
         }
@@ -295,18 +278,4 @@ impl Machine {
         o.into()
     }
 
-    /// Once the program `run` started has exited: { status (its exit
-    /// status, or -errno), pid }; null before.
-    pub fn result(&self) -> JsValue {
-        let run = RUN.load(Ordering::Relaxed);
-        let state = unsafe { &*(run as *const AtomicU32) };
-        if state.load(Ordering::Acquire) != RUN_DONE {
-            return JsValue::NULL;
-        }
-        let o = Object::new();
-        js::set(&o, "status", Direct.read_u32(run + 4) as i32);
-        js::set(&o, "pid", Direct.read_u32(run + 8) as i32);
-        state.store(RUN_IDLE, Ordering::Release);
-        o.into()
-    }
 }

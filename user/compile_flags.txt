@@ -5,5 +5,3 @@
 ../linux/tools/include/nolibc
 -isystem
 ../linux/usr/include
--include
-ksee.h

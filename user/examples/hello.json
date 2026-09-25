@@ -1,0 +1,12 @@
+{
+  "title": "What happens when a program prints?",
+  "question": "printf ends in write(1, ...): how do the bytes get from the program to the console?",
+  "steps": [
+    { "show": "write(1, \"hello\\n\", 6)", "call": "write", "args": [1, "hello\n", 6],
+      "stops": [
+        { "func": "ksys_write", "note": "The syscall: the fd (1, the console) turns into the open file, a struct file." },
+        { "func": "vfs_write", "note": "The VFS: is the file open for writing? Then the file's own write: a tty's." },
+        { "func": "n_tty_write", "note": "The tty's line discipline: turn \"\\n\" into \"\\r\\n\", and pass the bytes to the driver." },
+        { "func": "wasm_tty_write", "note": "The console driver (arch/wasm/kernel/console.c): hand the bytes to the host, which shows them." } ] }
+  ]
+}

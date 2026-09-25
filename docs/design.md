@@ -13,10 +13,10 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
 
 - *Learners*: how an OS really works, on real Linux instead of a teaching
   kernel. They start from **examples**: a question ("What happens in
-  read()?", "ext4: what makes a directory?"), a small C program that asks
-  it, and stops in its recording that explain what happens.
+  read()?", "Directories on ext4"), a few syscalls that ask it, made one
+  at a time, and stops in their recordings that explain what happens.
 - *Kernel developers*: what a code path really does, on a real kernel they
-  can read and change. They run **their own programs**, or **record** the
+  can read and change. They make **their own syscalls**, or **record** the
   kernel as it runs.
 
 **What it is not**: a live debugger (it replays; it does not pause the
@@ -25,9 +25,9 @@ SMP, no fork: see Limits).
 
 ## The experience
 
-1. **Run** something, recorded: an example's program (the page runs the
-   first), or the kernel for a while (● Record). Programs run to the end:
-   a recording takes milliseconds.
+1. **Make syscalls**, each recorded: an example's (the page makes the
+   first's), your own (by name, with its parameters as fields), or record
+   the kernel for a while (● Record). A syscall takes milliseconds.
 2. **Explore the recording**, at one cursor:
    - *time*: a timeline of the call stack (who ran, what they called);
      drag, step line by line, Play;
@@ -60,7 +60,7 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
 - **The kernel** ([kernel.md](kernel.md)): a minimal `arch/wasm` for Linux
   7.2. Each task runs in its own Web Worker, all on one shared kernel
   memory; a context switch hands a CPU token from one Worker to the next.
-  Programs are wasm modules; the page asks the kernel to run one.
+  /init makes the syscalls the page asks for (the doorbell: console input).
 - **The recording** ([recording.md](recording.md)): an LLVM pass
   instruments every function the same way (blocks, calls with arguments,
   returns, locals, stores with old values) into one ring.
@@ -71,7 +71,7 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   module, shared by the page and the Workers, boots the kernel and reads it
   directly; the page (web/) lays out what the core computes.
 - **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel, the
-  runtime, the programs, and the page's files (types from DWARF, the
+  runtime, /init, and the page's files (types from DWARF, the
   sources, Monaco), into web/.
 
 The choices that shape it:
@@ -88,7 +88,7 @@ The choices that shape it:
 ## Limits
 
 - No MMU: no page tables, faults, copy-on-write or demand paging; no user
-  fork (programs are started by the kernel).
+  fork (one program: /init).
 - One CPU; no preemption (the kernel reschedules at its usual points).
 - Arguments are 32 bits (wider ones lose their high half); locals are only
   those in memory; values in wasm locals are not recorded.
