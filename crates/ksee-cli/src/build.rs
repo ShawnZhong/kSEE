@@ -4,12 +4,15 @@
 //!
 //!   plugin/ksee-trace.so   the LLVM pass that instruments the kernel
 //!   linux/vmlinux          the kernel, instrumented (kbuild)
-//!   web/pkg/               the runtime, and wasm-bindgen's glue (cargo)
-//!   web/vmlinux, web/src/  the kernel for the page (pack)
-//!   web/initramfs.cpio     /init (user/init.c), and an ext4 disk image
-//!                          (/disk.img, mkfs.ext4)
-//!   web/examples/          index.json: the examples (user/examples/*.json)
-//!   web/vendor/monaco/     the Monaco editor (downloaded once from npm)
+//!
+//! and the site, in target/site (what `ksee serve` serves and `ksee deploy`
+//! pushes): links to web/'s files (the page's own), and
+//!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
+//!   vmlinux, src/          the kernel for the page (pack)
+//!   initramfs.cpio         /init (user/init.c), and an ext4 disk image
+//!                          (/disk.img, mkfs.ext4), from target/initramfs/
+//!   examples.json          the examples (user/examples/*.json)
+//!   monaco/                the Monaco editor (downloaded once from npm)
 //!
 //! $LLVM is the LLVM version suffix (default -23).
 use std::path::Path;
@@ -19,12 +22,15 @@ fn env(name: &str, default: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default.into())
 }
 
-fn run(cmd: &mut Command) {
+pub fn run(cmd: &mut Command) {
     let status = cmd.status().unwrap_or_else(|e| crate::fail(&format!("{:?}: {e}", cmd.get_program())));
     if !status.success() {
         crate::fail(&format!("{:?} failed", cmd.get_program()));
     }
 }
+
+/// The site: what the page loads.
+pub const SITE: &str = "target/site";
 
 /// Whether `out` is missing or older than any of `inputs`.
 fn stale(out: &str, inputs: &[&str]) -> bool {
@@ -62,38 +68,43 @@ pub fn build() {
     eprintln!("  KERNEL  linux/vmlinux");
     run(&mut kmake(&[&format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()))]));
 
-    eprintln!("  RUNTIME web/pkg");
+    site();
+    eprintln!("  RUNTIME {SITE}/pkg");
     run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-runtime",
         "--target", "wasm32-unknown-unknown", "-Zbuild-std=std,panic_abort"]));
-    run(Command::new("wasm-bindgen").args(["--target", "web", "--out-dir", "web/pkg",
+    run(Command::new("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", &format!("{SITE}/pkg"),
         "target/wasm32-unknown-unknown/release/ksee_runtime.wasm"]));
 
-    vendor();
-    if stale("web/vmlinux", &["linux/vmlinux"]) {
-        crate::pack::pack(Path::new("linux"), Path::new("web"));
+    monaco();
+    if stale(&format!("{SITE}/vmlinux"), &["linux/vmlinux"]) {
+        crate::pack::pack(Path::new("linux"), Path::new(SITE));
     }
     // /init uses nolibc, with the kernel's UAPI headers.
     run(&mut kmake(&["headers"]));
     let inputs = ["user/init.c", "user/initramfs.list", "linux/usr/gen_init_cpio",
                   "linux/tools/include/nolibc/arch-wasm.h"];
-    if stale("web/initramfs.cpio", &inputs) {
-        eprintln!("  INIT    web/initramfs.cpio");
+    let cpio_out = format!("{SITE}/initramfs.cpio");
+    if stale(&cpio_out, &inputs) {
+        eprintln!("  INIT    {cpio_out}");
+        let dir = "target/initramfs";
+        std::fs::create_dir_all(dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
         run(Command::new(format!("clang{llvm}"))
             .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-Wl,--no-entry", "-Wl,--export=_start",
                    "-nostdinc", "-isystem", "linux/tools/include/nolibc", "-isystem", "linux/usr/include",
-                   "-o", "web/init.wasm", "user/init.c"]));
+                   "-o", &format!("{dir}/init.wasm"), "user/init.c"]));
         // The ext4 disk /init mounts (a file, through the loop device).
-        let _ = std::fs::remove_file("web/disk.img");
-        run(Command::new("mkfs.ext4").args(["-q", "-F", "-b", "1024", "-L", "ksee", "-N", "32", "web/disk.img", "2M"]));
-        // (The list's paths are relative to web/.)
+        let disk = format!("{dir}/disk.img");
+        let _ = std::fs::remove_file(&disk);
+        run(Command::new("mkfs.ext4").args(["-q", "-F", "-b", "1024", "-L", "ksee", "-N", "32", &disk, "2M"]));
+        // (The list's paths are relative to the dir.)
         let tool = Path::new("linux/usr/gen_init_cpio").canonicalize()
             .unwrap_or_else(|e| crate::fail(&format!("linux/usr/gen_init_cpio: {e}")));
-        let cpio = Command::new(tool).arg(Path::new("user/initramfs.list").canonicalize().unwrap()).current_dir("web").output()
+        let cpio = Command::new(tool).arg(Path::new("user/initramfs.list").canonicalize().unwrap()).current_dir(dir).output()
             .unwrap_or_else(|e| crate::fail(&format!("gen_init_cpio: {e}")));
         if !cpio.status.success() {
             crate::fail(&format!("gen_init_cpio: {}", String::from_utf8_lossy(&cpio.stderr)));
         }
-        std::fs::write("web/initramfs.cpio", cpio.stdout).unwrap_or_else(|e| crate::fail(&format!("web/initramfs.cpio: {e}")));
+        std::fs::write(&cpio_out, cpio.stdout).unwrap_or_else(|e| crate::fail(&format!("{cpio_out}: {e}")));
     }
     examples();
 }
@@ -101,7 +112,7 @@ pub fn build() {
 /// The examples' order on the page, from the simplest (others after them).
 const EXAMPLES: &[&str] = &["hello", "read", "open-fails", "sleep", "file", "dirs", "yours"];
 
-/// web/examples/index.json: the examples (user/examples/*.json: each a list
+/// examples.json: the examples (user/examples/*.json: each a list
 /// of syscalls for /init to make, one at a time), with their names.
 fn examples() {
     let mut index: Vec<(usize, String)> = std::fs::read_dir("user/examples").into_iter().flatten().flatten()
@@ -113,29 +124,45 @@ fn examples() {
         }).collect();
     index.sort();
     let index: Vec<String> = index.into_iter().map(|(_, e)| e).collect();
-    std::fs::create_dir_all("web/examples")
-        .and_then(|_| std::fs::write("web/examples/index.json", format!("[\n{}\n]\n", index.join(",\n"))))
-        .unwrap_or_else(|e| crate::fail(&format!("web/examples/index.json: {e}")));
+    let out = format!("{SITE}/examples.json");
+    std::fs::write(&out, format!("[\n{}\n]\n", index.join(",\n")))
+        .unwrap_or_else(|e| crate::fail(&format!("{out}: {e}")));
 }
 
-/// The Monaco editor (the page's source view), its prebuilt AMD build
-/// (package/min/vs), in web/vendor/monaco/vs.
+/// The Monaco editor (the page's source view): its prebuilt AMD build
+/// (package/min/vs), in monaco/, with the version it is in monaco/VERSION.
 const MONACO: &str = "0.57.0";
 
-fn vendor() {
-    let dir = format!("web/vendor/monaco-{MONACO}");
-    if Path::new(&format!("{dir}/vs/loader.js")).exists() {
+fn monaco() {
+    let dir = format!("{SITE}/monaco");
+    if std::fs::read_to_string(format!("{dir}/VERSION")).is_ok_and(|v| v == MONACO) {
         return;
     }
-    eprintln!("  VENDOR  {dir} (npm: monaco-editor {MONACO})");
+    eprintln!("  MONACO  {dir} (npm: monaco-editor {MONACO})");
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
     let url = format!("https://registry.npmjs.org/monaco-editor/-/monaco-editor-{MONACO}.tgz");
     run(Command::new("sh").arg("-c").arg(format!(
-        "curl -fsSL '{url}' | tar xz -C '{dir}' --strip-components=2 package/min/vs")));
-    // (A fixed name for the page.)
-    let _ = std::fs::remove_file("web/vendor/monaco");
-    std::os::unix::fs::symlink(format!("monaco-{MONACO}"), "web/vendor/monaco")
-        .unwrap_or_else(|e| crate::fail(&format!("web/vendor/monaco: {e}")));
+        "curl -fsSL '{url}' | tar xz -C '{dir}' --strip-components=3 package/min/vs")));
+    std::fs::write(format!("{dir}/VERSION"), MONACO).unwrap_or_else(|e| crate::fail(&format!("{dir}/VERSION: {e}")));
+}
+
+/// Links in the site to web/'s files (so an edit there needs no build), and
+/// none to files no longer there.
+fn site() {
+    std::fs::create_dir_all(SITE).unwrap_or_else(|e| crate::fail(&format!("{SITE}: {e}")));
+    for e in std::fs::read_dir(SITE).into_iter().flatten().flatten() {
+        if e.path().is_symlink() && !e.path().exists() {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+    for e in std::fs::read_dir("web").into_iter().flatten().flatten() {
+        let link = Path::new(SITE).join(e.file_name());
+        if !link.is_symlink() {
+            std::os::unix::fs::symlink(Path::new("../../web").join(e.file_name()), &link)
+                .unwrap_or_else(|err| crate::fail(&format!("{}: {err}", link.display())));
+        }
+    }
 }
 
 /// Build, then: core's unit tests and tests/web.js (under Deno); with
@@ -145,8 +172,8 @@ pub fn test(ui: bool) {
     run(Command::new("cargo").args(["test", "-q", "-p", "ksee-core"]));
     run(Command::new("deno").args(["run", "--allow-read", "tests/web.js"]));
     if ui {
-        run(Command::new("deno").args(["run", "-A", "tests/ui.js", "web/ui.png"]));
-        run(Command::new("deno").args(["run", "-A", "tests/ui.js", "web/ui-back.png", "--back"]));
+        run(Command::new("deno").args(["run", "-A", "tests/ui.js", "target/ui.png"]));
+        run(Command::new("deno").args(["run", "-A", "tests/ui.js", "target/ui-back.png", "--back"]));
     }
 }
 

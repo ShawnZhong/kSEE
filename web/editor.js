@@ -1,13 +1,13 @@
-// Monaco (the editor VS Code is built on; web/vendor/monaco, see
+// Monaco (the editor VS Code is built on; monaco/ in the site, see
 // crates/ksee-cli/src/build.rs), loaded once, for the source views.
 let loading = null;
 
 export function loadMonaco() {
   loading ??= new Promise((resolve, reject) => {
-    const base = new URL("./vendor/monaco/vs", location).href;
+    const base = new URL("./monaco", location).href;
     const script = document.createElement("script");
     script.src = `${base}/loader.js`;
-    script.onerror = () => reject(new Error("no Monaco (web/vendor/monaco): run ./ksee.sh build"));
+    script.onerror = () => reject(new Error("no Monaco (monaco/): run ./ksee.sh build"));
     script.onload = () => {
       globalThis.require.config({ paths: { vs: base } });
       globalThis.require(["vs/editor/editor.main"], () => {

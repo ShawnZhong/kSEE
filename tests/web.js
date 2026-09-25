@@ -2,16 +2,16 @@
 // /init make syscalls (as the page's examples do), recorded, and check what
 // the recordings show.
 //   deno run --allow-read tests/web.js
-import { start, process } from "../web/ksee.js";
-import { arg } from "../web/args.js";
+import { start, process } from "../target/site/ksee.js";
+import { arg } from "../target/site/args.js";
 
 const root = new URL("..", import.meta.url);
 // wasm-bindgen's futures (with threads) wake through Atomics.waitAsync,
 // which Deno does not count as pending work: keep the process alive.
 const alive = setInterval(() => {}, 1000);
 const m = await start({
-  kernel: new URL("web/vmlinux", root),
-  initrd: new URL("web/initramfs.cpio", root),
+  kernel: new URL("target/site/vmlinux", root),
+  initrd: new URL("target/site/initramfs.cpio", root),
 });
 
 let out = "", failed = false;
@@ -127,13 +127,13 @@ await call("close", [rfd]);
 check("a syscall's parameters, typed", JSON.stringify(m.syscall("openat")?.params) ===
       JSON.stringify([{ name: "dfd", ty: "int" }, { name: "filename", ty: "char *" }, { name: "flags", ty: "int" }, { name: "mode", ty: "umode_t" }]));
 
-// The examples (web/examples/index.json): their calls, and each stop in its call's recording.
+// The examples (target/site/examples.json): their calls, and each stop in its call's recording.
 const consts = m.constants();
 check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
       consts.O_CREAT === 64 && consts.AT_FDCWD === -100 && consts.AT_REMOVEDIR === 0x200 && consts.ENOTEMPTY === 39);
 check("arguments as in C", arg("O_CREAT | O_WRONLY | O_TRUNC", consts) === 577 && arg("0644", consts) === 420
       && arg("$2", consts, [5, 7]) === 7 && arg("[64]", consts).size === 64 && arg('"a\\n"', consts) === "a\n");
-const examples = JSON.parse(await Deno.readTextFile(new URL("web/examples/index.json", root)));
+const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/examples.json", root)));
 for (const ex of examples) {
   const rets = [], missing = [];
   for (const st of ex.steps) {

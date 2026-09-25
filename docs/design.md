@@ -53,7 +53,7 @@ SMP, no fork: see Limits).
 
 ```text
 linux/ (arch/wasm) ──clang + plugin──▶ vmlinux (wasm) ──────┐
-user/ (init, examples, tests: C on nolibc) ─▶ initramfs ────┼─▶ web/ ─▶ browser
+user/ (init, examples, tests: C on nolibc) ─▶ initramfs ────┼─▶ site ─▶ browser
 crates/ksee-runtime (Rust → wasm) ──────────────────────────┘
 ```
 
@@ -72,7 +72,7 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   directly; the page (web/) lays out what the core computes.
 - **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel, the
   runtime, /init, and the page's files (types from DWARF, the
-  sources, Monaco), into web/.
+  sources, Monaco), with web/ (the page), into target/site/.
 
 The choices that shape it:
 

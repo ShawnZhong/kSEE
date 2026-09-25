@@ -16,7 +16,7 @@ import { arg, made, parseCall, result } from "./args.js";
 export async function examples(app) {
   const { m, proc } = app;
   const consts = m.constants();
-  const list = await fetch(new URL("./examples/index.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+  const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
   // The open example: its steps, the ones run ({ ret, text, id, ol }), and
   // the stops Next goes through (the selected step's: cur, at, k).
   const t = { ex: null, steps: [], done: [], running: false, cur: { stops: [], ol: null }, at: [], k: -1, list: null, status: null };

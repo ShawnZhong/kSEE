@@ -3,15 +3,18 @@
 //!   ksee                     build, then serve the page
 //!   ksee build               build the kernel, runtime and page (build.rs)
 //!   ksee test [--ui]         build, then run the tests (--ui: in Chromium)
+//!   ksee deploy              build, then push the page to origin's gh-pages
 //!   ksee pack KERNEL OUT     prepare the kernel tree KERNEL (built) for the
 //!                            page, in OUT: OUT/vmlinux, with the kernel's
 //!                            types and syscalls from DWARF, without DWARF;
 //!                            and OUT/src, the sources its probes refer to
 //!   ksee serve [DIR] [--port=N]
-//!                            serve DIR (web) for a browser
+//!                            serve DIR (target/site: the page, as built) for
+//!                            a browser
 //!   ksee type VMLINUX NAME   the layout of a kernel struct, union, enum or
 //!                            typedef
 mod build;
+mod deploy;
 mod pack;
 mod serve;
 
@@ -37,13 +40,14 @@ fn main() -> ExitCode {
     match args[..] {
         [] => {
             build::build();
-            serve::serve(Path::new("web"), port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
+            serve::serve(Path::new(build::SITE), port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
         }
         ["build"] => build::build(),
         ["test"] => build::test(ui),
+        ["deploy"] => deploy::deploy(),
         ["pack", kernel, out] => pack::pack(Path::new(kernel), Path::new(out)),
         ["serve", ref dir @ ..] if dir.len() <= 1 => {
-            let dir = Path::new(dir.first().copied().unwrap_or("web"));
+            let dir = Path::new(dir.first().copied().unwrap_or(build::SITE));
             serve::serve(dir, port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
         }
         ["type", vmlinux, name] => {
@@ -53,7 +57,7 @@ fn main() -> ExitCode {
             print!("{}", types.layout(id));
         }
         _ => {
-            eprintln!("usage: ksee [build | test [--ui] | serve [DIR] [--port=N] | pack KERNEL OUT | type VMLINUX NAME]");
+            eprintln!("usage: ksee [build | test [--ui] | deploy | serve [DIR] [--port=N] | pack KERNEL OUT | type VMLINUX NAME]");
             return ExitCode::from(2);
         }
     }

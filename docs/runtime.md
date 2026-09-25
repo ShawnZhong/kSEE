@@ -83,6 +83,6 @@ Every view asks the Machine for the moment at the cursor: `at(i)`,
   wrote a value, tasks, the examples' stops.
 - tests/ui.js: the page in headless Chromium over CDP: the first example
   (it runs by itself), then the read example: walks its stops, hovers, plays; fails on any exception. Saves
-  web/ui.png.
+  target/ui.png.
 
 `./ksee.sh test --ui` runs all three (`$CHROME`: a headless Chromium).

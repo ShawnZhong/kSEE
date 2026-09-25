@@ -18,7 +18,8 @@ LLVM pass.
   stacks, lines, memory as it was, types), `ksee-runtime` (wasm: boots the
   kernel in Workers, serves the page), `ksee-cli` (`./ksee.sh`: build, test,
   serve; pack the kernel for the page)
-- `web/`: the page; the build puts what it loads there too (gitignored)
+- `web/`: the page (HTML, JS, CSS); the build puts it, with what it loads,
+  in `target/site/` (served, and deployed)
 - `user/`: `init.c` (C on nolibc: it makes the page's syscalls), `examples/`
 - `tests/`: the page's tests (see below)
 
@@ -26,6 +27,7 @@ LLVM pass.
 
     ./ksee.sh              # build what changed, serve http://127.0.0.1:8000/
     ./ksee.sh test         # under Deno: syscalls, and what their recordings show
+    ./ksee.sh deploy       # build, then push the page to gh-pages (GitHub Pages)
     ./ksee.sh type task_struct
 
 The page boots the kernel and opens the first example (or the one in the
@@ -63,4 +65,4 @@ image in the initramfs, through the loop device).
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs
 the page itself through two examples, and saves a screenshot,
-`web/ui.png`. The build is `ksee build` (crates/ksee-cli/src/build.rs).
+`target/ui.png`. The build is `ksee build` (crates/ksee-cli/src/build.rs).

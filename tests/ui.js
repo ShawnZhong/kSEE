@@ -1,4 +1,4 @@
-// The page in headless Chromium (./ksee.sh test --ui): serve web/, load it,
+// The page in headless Chromium (./ksee.sh test --ui): serve the site (target/site), load it,
 // go through examples, fail on any exception (or if the script throws), and
 // save a screenshot. Options look at another page, or run another script
 // (--eval; --back: going back, see below).
@@ -13,7 +13,7 @@ let exceptions = 0;
 let server = null, url = opt("url", "");
 if (!url) {
   server = new Deno.Command(new URL("../target/release/ksee", import.meta.url).pathname,
-    { args: ["serve", new URL("../web", import.meta.url).pathname, "--port=8199"], stdout: "null", stderr: "null" }).spawn();
+    { args: ["serve", new URL("../target/site", import.meta.url).pathname, "--port=8199"], stdout: "null", stderr: "null" }).spawn();
   // (By default the read example: see the script below.)
   url = `http://127.0.0.1:8199/${opt("at", Deno.args.some((a) => a.startsWith("--eval") || a === "--back") ? "" : "#ex=read")}`;
   await new Promise((r) => setTimeout(r, 500));
