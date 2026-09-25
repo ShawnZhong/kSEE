@@ -61,7 +61,7 @@ export async function examples(app) {
       open(list.find((x) => x.name === back.name) ?? list[0], back.steps);
       const n = back.steps.length;
       return upTo(n - 1).then(() => (t.status.textContent = n > 1
-        ? `Went back to before call ${n}: on a fresh kernel, calls 1–${n - 1} made again, then this one.` : ""));
+        ? `Went back to before call ${n}: on a fresh kernel, ${n > 2 ? `calls 1–${n - 1}` : "call 1"} made again, then this one.` : ""));
     }
     if (!t.ex && list.length) {
       open(list[0]);
