@@ -25,25 +25,14 @@ pub static CURRENT_TASK: AtomicU32 = AtomicU32::new(0);
 /// The kernel's pending-interrupt word (wasm_irq_pending).
 pub static PENDING: AtomicU32 = AtomicU32::new(0);
 
-/// The mailbox of the kernel's /dev/ksee channel (see its
-/// drivers/ksee_channel.c): `{ u32 state; u32 len; u8 data[]; }`.
-#[repr(C)]
-pub struct Mailbox {
-    pub state: AtomicU32,
-    pub len: AtomicU32,
-    pub data: core::cell::UnsafeCell<[u8; MAILBOX_SIZE]>,
-}
-pub const MAILBOX_SIZE: usize = 64 << 10;
-unsafe impl Sync for Mailbox {}
-pub static MAILBOX: Mailbox = Mailbox {
-    state: AtomicU32::new(0),
-    len: AtomicU32::new(0),
-    data: core::cell::UnsafeCell::new([0; MAILBOX_SIZE]),
-};
-/// Mailbox states.
-pub const EMPTY: u32 = 0;
-pub const REQUEST: u32 = 1;
-pub const REPLY: u32 = 3;
+/// The kernel's request to run a program (wasm_run, see its
+/// arch/wasm/kernel/run.c): `{ u32 state; s32 status; s32 pid; char path[256]; }`.
+pub static RUN: AtomicU32 = AtomicU32::new(0);
+/// Its states.
+pub const RUN_IDLE: u32 = 0;
+pub const RUN_REQUESTED: u32 = 1;
+pub const RUN_DONE: u32 = 3;
+pub const RUN_PATH: usize = 256;
 
 /// Raise interrupt line `irq` (see WASM_IRQ_* in the kernel's asm/wasm.h).
 pub fn interrupt(irq: u32) {

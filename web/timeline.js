@@ -2,10 +2,11 @@
 // task ran when, the window shown below, the cursor. Below, the window as a
 // stack chart: a strip of which task runs, and under it that task's call
 // stack (Machine.chart), each call a bar, colored by where its function is
-// (a syscall's entry named for the syscall). The calls every column of the
-// window shares are one line above it; the rest fit the box (rows as thin
-// as it takes). Scroll to zoom (sideways: pan), drag to pan, click to put
-// the cursor there, double-click a call to zoom to it; click or drag the
+// (a syscall's entry named for the syscall). Each depth keeps its row; the
+// rows fit the box, as thin as the deepest stack of the selection needs
+// (so they do not move while zooming). Scroll (or pinch, or W/S) to zoom;
+// drag, Shift+scroll, sideways scroll or A/D to pan; click to put the
+// cursor there; double-click a call to zoom to it; click or drag the
 // overview to move the window.
 import { $, taskName } from "./dom.js";
 
@@ -27,7 +28,7 @@ export function timeline(app) {
   // selection (a syscall's or program's records, and its task); cols: the
   // chart's columns [{ task, frames: [[func, first]] }].
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
-              base: 0, row: 15 }; // (base: the depth where rows start; row: their height)
+              depth: 1, row: ROW }; // (depth: the deepest stack of the selection seen; row: the rows' height)
   const funcs = new Map(), tasks = new Map();
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const who = (addr, i) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr, i)).get(addr));
@@ -77,15 +78,11 @@ export function timeline(app) {
     return s ? `${s.name ?? s.nr}()` : f?.name ?? "?";
   };
   function drawChart() {
-    const depth = t.cols.reduce((d, c) => Math.max(d, c.frames.length), 1);
-    // The calls every column shares (same call, same depth): one line.
-    let base = 0;
-    while (base < depth && t.cols.length && t.cols.every((c) => c.frames[base] && c.frames[base][1] === t.cols[0].frames[base][1])) base++;
-    const rows = Math.max(1, depth - base), room = ($("chartbox").clientHeight || 190) - STRIP - 4;
-    t.base = base;
-    t.row = Math.max(5, Math.min(ROW, Math.floor(room / rows)));
-    const ctx = canvas(chart, STRIP + 2 + rows * t.row);
-    $("chart-base").textContent = base ? t.cols[0].frames.slice(0, base).map(([id, first]) => nameOf(id, first)).join(" › ") : "";
+    // (Rows only get thinner as deeper stacks show up, not while zooming.)
+    const depth = (t.depth = Math.max(t.depth, ...t.cols.map((c) => c.frames.length)));
+    const room = ($("chartbox").clientHeight || 190) - STRIP - 4;
+    t.row = Math.max(5, Math.min(ROW, Math.floor(room / depth)));
+    const ctx = canvas(chart, STRIP + 2 + depth * t.row);
     if (!t.win) return;
     const cw = W() / Math.max(1, t.cols.length), cur = t.cursor ?? -1;
     const curCol = t.cols[Math.min(t.cols.length - 1, Math.max(0, Math.floor(x(cur) / cw)))];
@@ -107,9 +104,9 @@ export function timeline(app) {
       label(ctx, taskName(p), r.from * cw, (r.to - r.from) * cw, STRIP / 2, "#1f2328");
     }
     // The stacks (the calls at the cursor: darker).
-    for (let d = base; d < depth; d++) {
+    for (let d = 0; d < depth; d++) {
       for (const r of runs((c) => (c.frames[d] ? `${c.frames[d][0]}:${c.frames[d][1]}` : undefined))) {
-        const [id, first] = r.c.frames[d], f = fn(id), y = STRIP + 2 + (d - base) * t.row;
+        const [id, first] = r.c.frames[d], f = fn(id), y = STRIP + 2 + d * t.row;
         const x1 = r.from * cw, w = (r.to - r.from) * cw;
         const on = curCol?.frames[d]?.[1] === first && cur >= t.win.a && cur <= t.win.b;
         ctx.fillStyle = color(f?.file, on);
@@ -119,7 +116,7 @@ export function timeline(app) {
     }
     if (cur >= t.win.a && cur <= t.win.b) {
       ctx.fillStyle = css("--fg");
-      ctx.fillRect(x(cur) - 1, 0, 2, STRIP + 2 + rows * t.row);
+      ctx.fillRect(x(cur) - 1, 0, 2, STRIP + 2 + depth * t.row);
     }
     $("chart-title").textContent = `${t.title || "the recording"} · records ${t.win.a + 1}–${t.win.b + 1} of ${t.n}`;
   }
@@ -164,23 +161,37 @@ export function timeline(app) {
   };
 
   // ---- Input ----
+  const pan = (px) => {
+    const d = (px / W()) * (t.win.b - t.win.a);
+    setWindow(t.win.a + d, t.win.b + d);
+  };
+  const zoom = (at_, amount) => {
+    const k = Math.exp(Math.max(-0.5, Math.min(0.5, amount)));
+    setWindow(at_ - (at_ - t.win.a) * k, at_ + (t.win.b - at_) * k);
+  };
+  // Scroll or pinch (ctrl+wheel): zoom; sideways or Shift+scroll: pan.
   chart.onwheel = (e) => {
     if (!t.win) return;
     e.preventDefault();
-    const span = t.win.b - t.win.a;
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-      // Sideways (a trackpad): pan.
-      const d = (e.deltaX / W()) * span;
-      return setWindow(t.win.a + d, t.win.b + d);
-    }
-    const i = at(e.offsetX), k = Math.exp(Math.max(-0.5, Math.min(0.5, e.deltaY * 0.002)));
-    setWindow(i - (i - t.win.a) * k, i + (t.win.b - i) * k);
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return pan(e.deltaX);
+    if (e.shiftKey) return pan(e.deltaY);
+    zoom(at(e.offsetX), e.deltaY * (e.ctrlKey ? 0.01 : 0.002));
+  };
+  // W/S: zoom (around the cursor, or the middle); A/D: pan.
+  chart.tabIndex = 0;
+  chart.onkeydown = (e) => {
+    if (!t.win) return;
+    const mid = t.cursor != null && t.cursor >= t.win.a && t.cursor <= t.win.b ? t.cursor : (t.win.a + t.win.b) / 2;
+    const act = { w: () => zoom(mid, -0.25), s: () => zoom(mid, 0.25), a: () => pan(-W() / 8), d: () => pan(W() / 8) }[e.key.toLowerCase()];
+    if (!act) return;
+    e.preventDefault();
+    act();
   };
   let drag = null;
   chart.onpointerdown = (e) => t.win && (drag = { x: e.offsetX, a: t.win.a, b: t.win.b, moved: false });
   chart.onpointermove = (e) => {
     if (!drag) {
-      const c = t.cols[Math.floor((e.offsetX / W()) * t.cols.length)], d = t.base + Math.floor((e.offsetY - STRIP - 2) / t.row);
+      const c = t.cols[Math.floor((e.offsetX / W()) * t.cols.length)], d = Math.floor((e.offsetY - STRIP - 2) / t.row);
       const f = c?.frames[d] && fn(c.frames[d][0]);
       chart.title = f ? `${f.name} (${f.file}:${f.line})` : c ? taskName(who(c.task, t.win.a)) : "";
       return;
@@ -199,7 +210,7 @@ export function timeline(app) {
   };
   chart.ondblclick = (e) => {
     // Zoom to the call there: from its first record to where it ends.
-    const k = Math.floor((e.offsetX / W()) * t.cols.length), d = t.base + Math.floor((e.offsetY - STRIP - 2) / t.row);
+    const k = Math.floor((e.offsetX / W()) * t.cols.length), d = Math.floor((e.offsetY - STRIP - 2) / t.row);
     const key = t.cols[k]?.frames[d]?.[1];
     if (key == null) return;
     let end = k;
@@ -230,6 +241,7 @@ export function timeline(app) {
     tasks.clear();
     t.buckets = m.timeline(Math.max(1, over.clientWidth));
     t.home = t.where?.() ?? null;
+    t.depth = 1;
     if (t.cursor != null && t.cursor >= t.n) t.cursor = null;
     if (!t.n) t.win = null;
     else if (t.home) setWindow(...pad(t.home));
@@ -239,6 +251,7 @@ export function timeline(app) {
   // Select records `where()` gives ({ a, b, task }: asked again after each
   // snapshot, as records move), called `title`: the window at them.
   function selectWindow(where, title) {
+    t.depth = 1;
     t.where = where;
     t.title = title;
     t.home = where();

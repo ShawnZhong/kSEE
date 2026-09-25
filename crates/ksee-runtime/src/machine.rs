@@ -1,6 +1,6 @@
 //! The page's API: boot a kernel in Workers, and look at it.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use js_sys::{Function, Object, Uint8Array, WebAssembly};
 use ksee_core::view::Views;
@@ -162,6 +162,7 @@ impl Machine {
         };
         CURRENT_TASK.store(global("__current_task"), Ordering::Relaxed);
         PENDING.store(global("wasm_irq_pending"), Ordering::Relaxed);
+        RUN.store(global("wasm_run"), Ordering::Relaxed);
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
         let timer = Object::new();
@@ -702,7 +703,7 @@ impl Machine {
         self.with_memory(|mem| to_js(&tables().types.object(mem, label, addr, ty, depth.unwrap_or(1))))
     }
 
-    // ---- Making syscalls (through /init, the agent on /dev/ksee) ----
+    // ---- Running programs ----
 
     /// Every line of `file` where a basic block starts, with how often
     /// blocks there ran in syscall `n` (or the whole trace): [{ line, count }].
@@ -726,37 +727,37 @@ impl Machine {
         list.into()
     }
 
-    /// Ask the kernel to run program `path` (in the initramfs), over the
-    /// kSEE channel (linux/arch/wasm/drivers/ksee_channel.c). False if a
-    /// program runs already.
+    /// Ask the kernel to run program `path` (in the initramfs; see its
+    /// arch/wasm/kernel/run.c). False if a program runs already.
     pub fn run(&self, path: &str) -> Result<bool, JsValue> {
-        if MAILBOX.state.load(Ordering::Acquire) != EMPTY {
+        let run = RUN.load(Ordering::Relaxed);
+        let state = unsafe { &*(run as *const AtomicU32) };
+        if state.load(Ordering::Acquire) != RUN_IDLE {
             return Ok(false);
         }
-        let bytes = path.as_bytes();
-        if bytes.len() > MAILBOX_SIZE {
+        if path.len() >= RUN_PATH {
             return Err("path too long".into());
         }
-        let buf = unsafe { &mut *MAILBOX.data.get() };
-        buf[..bytes.len()].copy_from_slice(bytes);
-        MAILBOX.len.store(bytes.len() as u32, Ordering::Relaxed);
-        MAILBOX.state.store(REQUEST, Ordering::Release);
-        interrupt(2); // WASM_IRQ_CHANNEL
+        let buf = unsafe { core::slice::from_raw_parts_mut((run + 12) as *mut u8, RUN_PATH) };
+        buf[..path.len()].copy_from_slice(path.as_bytes());
+        buf[path.len()] = 0;
+        state.store(RUN_REQUESTED, Ordering::Release);
+        interrupt(2); // WASM_IRQ_RUN
         Ok(true)
     }
 
     /// Once the program `run` started has exited: { status (its exit
     /// status, or -errno), pid }; null before.
     pub fn result(&self) -> JsValue {
-        if MAILBOX.state.load(Ordering::Acquire) != REPLY {
+        let run = RUN.load(Ordering::Relaxed);
+        let state = unsafe { &*(run as *const AtomicU32) };
+        if state.load(Ordering::Acquire) != RUN_DONE {
             return JsValue::NULL;
         }
-        let reply = unsafe { &*MAILBOX.data.get() };
-        let word = |k: usize| i64::from_le_bytes(reply[8 * k..8 * k + 8].try_into().unwrap()) as f64;
         let o = Object::new();
-        js::set(&o, "status", word(0));
-        js::set(&o, "pid", word(1));
-        MAILBOX.state.store(EMPTY, Ordering::Release);
+        js::set(&o, "status", Direct.read_u32(run + 4) as i32);
+        js::set(&o, "pid", Direct.read_u32(run + 8) as i32);
+        state.store(RUN_IDLE, Ordering::Release);
         o.into()
     }
 
@@ -770,10 +771,6 @@ impl Machine {
             matches!(h.records[i], trace::Record::Block { func, n: 0 } if ids.contains(&func))
                 && task.is_none_or(|t| h.tasks[i] == t)
         })
-    }
-
-    fn views_task(&self, addr: u32) -> ksee_core::view::TaskRef {
-        task_ref(addr, live_task(addr))
     }
 
 }

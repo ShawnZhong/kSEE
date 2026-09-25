@@ -37,8 +37,6 @@ pub struct SyscallSummary {
     /// The result (None: still running at the end of the trace).
     pub ret: Option<i32>,
     pub blocks: usize,
-    /// init's own traffic on the /dev/ksee channel, not a program's syscall.
-    pub control: bool,
     /// Its span in the records.
     pub first: usize,
     pub last: Option<usize>,
@@ -103,9 +101,6 @@ impl Views<'_> {
                 self.tables.functions.get(&f)?.name.strip_prefix("__wasm_sys_").map(String::from)
             })
         });
-        let control = funcs.iter().any(|f| {
-            self.tables.functions.get(f).is_some_and(|f| f.name.starts_with("ksee_channel_"))
-        });
         SyscallSummary {
             index,
             task: self.task(s.task, s.first),
@@ -114,7 +109,6 @@ impl Views<'_> {
             args: s.args,
             ret: s.ret,
             blocks: s.blocks.len(),
-            control,
             first: s.first,
             last: s.last,
         }

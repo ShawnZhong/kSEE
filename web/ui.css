@@ -168,5 +168,4 @@ table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-famil
 #tours h3 { margin: 12px 12px 0; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
 ol.stops li { cursor: pointer; }
 #note button { margin-left: 8px; }
-#chart-base { font-size: 11px; padding: 0 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#chart-base:empty { display: none; }
+#chart:focus { outline: none; }

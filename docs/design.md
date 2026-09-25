@@ -86,9 +86,10 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   Worker, whose stack is the task's; a context switch hands a CPU token
   from one Worker to the next. All Workers share one kernel memory.
   Programs are wasm modules with their own memory; a syscall is a call
-  into the kernel's `syscall` export. `/dev/ksee` lets the page ask init to
-  start programs (there is no user fork on wasm: the kernel starts them
-  the way it starts init).
+  into the kernel's `syscall` export. The page asks the kernel to run a
+  program (arch/wasm/kernel/run.c: a request in kernel memory, and an
+  interrupt, the host's only way to wake the kernel); there is no user
+  fork on wasm, so the kernel starts it as a usermode helper.
 - **The runtime** (crates/ksee-runtime, Rust to wasm, wasm-bindgen): boots
   the kernel in Workers, implements its imports, and serves the page: the
   Machine (snapshots of the recording, and views of it).

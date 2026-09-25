@@ -47,14 +47,6 @@ pub extern "C" fn get_cmdline(buf: *mut u8, len: u32) -> u32 {
     n as u32
 }
 
-/// The /dev/ksee channel's mailbox address; its data's size goes to
-/// `*capacity`.
-#[unsafe(no_mangle)]
-pub extern "C" fn channel_mailbox(capacity: *mut u32) -> u32 {
-    unsafe { *capacity = MAILBOX_SIZE as u32 };
-    &MAILBOX as *const Mailbox as u32
-}
-
 #[unsafe(no_mangle)]
 pub extern "C" fn memory_end() -> u32 {
     MEMORY_END.load(Ordering::Relaxed)
@@ -178,8 +170,7 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
     let export = |name: &str| js::get(&rt, name);
 
     let kernel = Object::new();
-    for name in ["console_write", "console_read", "get_cmdline", "memory_end", "time_ns", "halt",
-                 "channel_mailbox"] {
+    for name in ["console_write", "console_read", "get_cmdline", "memory_end", "time_ns", "halt"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "spawn_task", func(Closure::<dyn FnMut(u32, u32)>::new(

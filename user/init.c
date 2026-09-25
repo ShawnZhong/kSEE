@@ -1,5 +1,5 @@
 // /init: the first process. The kernel runs the page's programs itself (see
-// linux/arch/wasm/drivers/ksee_channel.c), so init only has to be there.
+// linux/arch/wasm/kernel/run.c), so init only has to be there.
 // No libc, just the syscall import.
 
 #define NR_write		64
