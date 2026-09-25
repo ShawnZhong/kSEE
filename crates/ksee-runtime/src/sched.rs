@@ -5,20 +5,21 @@
 //! The kernel's switch_task(prev, next) is a suspending import: it returns
 //! a promise, so prev's stack suspends; then next runs, resumed (its own
 //! promise resolved) or, the first time, started (task_entry, promising).
-//! The idle task's idle() suspends until an interrupt may be pending: the
-//! timer's deadline (a setTimeout), or the page's input (see wake). All
+//! The idle task's idle() suspends until an interrupt may be pending. The
+//! kernel's clock is virtual: while the page waits for the kernel (a boot,
+//! a call), idle skips it to the timer's deadline and goes on at once;
+//! else it waits for the page's input (see wake), and time stands still. So
+//! a run is the same every time. All
 //! tasks share the instance's __stack_pointer: each saves it when it
 //! suspends, and has it back before it resumes.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::sync::atomic::Ordering;
 
 use js_sys::{Function, Object, Promise, Reflect, WebAssembly};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::imports::time_ns;
 use crate::js;
 use crate::state::*;
 use ksee_core::Memory;
@@ -36,9 +37,8 @@ struct Sched {
     /// The kernel's exports: task_entry (promising), boot, and the stack pointer.
     task_entry: Option<Function>,
     sp: Option<WebAssembly::Global>,
-    /// What wakes the idle task (it is idle), and its timer.
+    /// What wakes the idle task (it is idle, for the page's input).
     idle: Option<Function>,
-    timer: Option<i32>,
     /// The boot (counted): what an earlier one left to do is not done.
     boot: u32,
     /// Whether the machine runs (between boot and stop). A stack of a
@@ -96,7 +96,7 @@ fn soon(f: impl FnOnce() + 'static) {
 fn on_error(p: &JsValue) {
     let catch: Function = js::get(p, "catch").unchecked_into();
     let _ = catch.call1(p, &Closure::once_into_js(|e: JsValue| {
-        if HALTED.load(Ordering::Acquire) == 0 {
+        if k(|k| k.halted.get()).is_none() {
             web_sys::console::error_2(&"kernel:".into(), &js::get(&e, "stack"));
         }
     }));
@@ -123,16 +123,12 @@ pub fn boot(kernel: &Object) -> Result<(), JsValue> {
 /// Stop the machine: forget every task (their stacks are dropped), and
 /// what it left to do (see soon).
 pub fn stop() {
-    let timer = S.with_borrow_mut(|s| {
+    S.with_borrow_mut(|s| {
         s.tasks.clear();
         s.idle = None;
         s.boot += 1;
         s.running = false;
-        s.timer.take()
     });
-    if let Some(t) = timer {
-        clear_timeout(t);
-    }
 }
 
 /// spawn_task: a new task, `task_entry(task)` on the stack at `sp` when it
@@ -153,9 +149,8 @@ pub fn switch_task(prev: u32, next: u32, dead: u32) -> Promise {
         return never();
     }
     // (A busy machine gets its timer interrupts too: at its switches.)
-    if deadline() <= time_ns() {
-        let p = PENDING.load(Ordering::Relaxed);
-        Direct.write_u32(p, Direct.read_u32(p) | 1 << IRQ_TIMER);
+    if deadline() <= k(|k| k.clock.get()) {
+        raise(IRQ_TIMER);
     }
     let sp = sp_get();
     let back = if dead != 0 {
@@ -199,45 +194,53 @@ fn run(task: u32) {
     }
 }
 
+/// Set interrupt line `irq` pending (the kernel takes it when it next
+/// enables interrupts).
+fn raise(irq: u32) {
+    let p = k(|k| k.pending.get());
+    Direct.write_u32(p, Direct.read_u32(p) | 1 << irq);
+}
+
+/// How far idle skips while the page waits: a virtual minute (a kernel
+/// that never gets done waits for the page instead).
+const SKIP_NS: u64 = 60_000_000_000;
+
 /// idle (suspending): until an interrupt may be pending.
 pub fn idle() -> Promise {
     if !running() {
         return never();
     }
-    if Direct.read_u32(PENDING.load(Ordering::Relaxed)) != 0 {
+    if Direct.read_u32(k(|k| k.pending.get())) != 0 {
+        return Promise::resolve(&JsValue::NULL);
+    }
+    // The page waits: on to the timer's deadline, now.
+    let d = deadline();
+    let skip = k(|k| match k.waiting.get() {
+        Some(since) if d != u64::MAX && d.saturating_sub(since) < SKIP_NS => {
+            k.clock.set(k.clock.get().max(d));
+            true
+        }
+        _ => false,
+    });
+    if skip {
+        raise(IRQ_TIMER);
         return Promise::resolve(&JsValue::NULL);
     }
     let mut wake = None;
     let p = Promise::new(&mut |ok, _| wake = Some(ok));
-    let d = deadline();
-    let timer = (d != u64::MAX).then(|| {
-        let ms = d.saturating_sub(time_ns()) as f64 / 1e6;
-        set_timeout(ms, || interrupt(IRQ_TIMER))
-    });
-    S.with_borrow_mut(|s| {
-        s.idle = wake;
-        s.timer = timer;
-    });
+    S.with_borrow_mut(|s| s.idle = wake);
     p
 }
 
+/// Raise interrupt line `irq` (the page's), and wake the CPU if it idles.
+pub fn interrupt(irq: u32) {
+    raise(irq);
+    wake();
+}
+
 /// Wake the CPU if it idles (an interrupt is pending).
-pub fn wake() {
-    let (wake, timer) = S.with_borrow_mut(|s| (s.idle.take(), s.timer.take()));
-    if let Some(t) = timer {
-        clear_timeout(t);
-    }
-    if let Some(w) = wake {
+fn wake() {
+    if let Some(w) = S.with_borrow_mut(|s| s.idle.take()) {
         let _ = w.call0(&JsValue::NULL);
     }
-}
-
-fn set_timeout(ms: f64, f: impl FnOnce() + 'static) -> i32 {
-    let set: Function = js::get(&js_sys::global(), "setTimeout").unchecked_into();
-    set.call2(&JsValue::NULL, &Closure::once_into_js(f), &ms.into()).ok().and_then(|v| v.as_f64()).unwrap_or(0.0) as i32
-}
-
-fn clear_timeout(t: i32) {
-    let clear: Function = js::get(&js_sys::global(), "clearTimeout").unchecked_into();
-    let _ = clear.call1(&JsValue::NULL, &t.into());
 }

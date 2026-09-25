@@ -74,6 +74,13 @@ task was then).
 What it cannot show: values only in wasm locals (registers, in effect),
 and old contents of bulk writes beyond 256 bytes (known to be unknown).
 
+## Going back
+
+A kernel cannot be put back as it was (its tasks' stacks are the
+browser's), but it can be run again: the machine is deterministic (see
+[runtime.md](runtime.md)), so a fresh kernel given the same calls comes to
+the same state, record for record; then another call can be made instead.
+
 ## Records keep their names
 
 The ring goes on while the page looks at a snapshot, so indexes shift from

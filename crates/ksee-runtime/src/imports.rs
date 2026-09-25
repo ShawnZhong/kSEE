@@ -8,7 +8,6 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::sync::atomic::Ordering;
 
 use js_sys::{Function, Object, Promise, Uint8Array, WebAssembly};
 use wasm_bindgen::prelude::*;
@@ -23,7 +22,7 @@ use ksee_core::Memory;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn console_write(p: *const u8, n: u32) {
-    CONSOLE_OUT.with_borrow_mut(|o| o.extend_from_slice(unsafe { core::slice::from_raw_parts(p, n as usize) }));
+    k(|k| k.console_out.borrow_mut().extend_from_slice(unsafe { core::slice::from_raw_parts(p, n as usize) }));
 }
 
 /// Pending console input, without blocking.
@@ -31,36 +30,44 @@ pub extern "C" fn console_write(p: *const u8, n: u32) {
 pub extern "C" fn console_read(p: *mut u8, n: u32) -> i32 {
     bulk(p as u32, n);
     let out = unsafe { core::slice::from_raw_parts_mut(p, n as usize) };
-    CONSOLE_IN.with_borrow_mut(|i| {
-        let k = i.len().min(out.len());
-        for (o, b) in out.iter_mut().zip(i.drain(..k)) {
+    k(|k| {
+        let mut input = k.console_in.borrow_mut();
+        let n = input.len().min(out.len());
+        for (o, b) in out.iter_mut().zip(input.drain(..n)) {
             *o = b;
         }
-        k as i32
+        n as i32
     })
 }
 
 /// Copy the command line (NUL-terminated) to `buf`.
 #[unsafe(no_mangle)]
 pub extern "C" fn get_cmdline(buf: *mut u8, len: u32) -> u32 {
-    let cmd = CMDLINE.get().map_or(&[][..], Vec::as_slice);
-    let n = cmd.len().min(len as usize - 1);
-    unsafe {
-        core::ptr::copy_nonoverlapping(cmd.as_ptr(), buf, n);
-        *buf.add(n) = 0;
-    }
-    n as u32
+    k(|k| {
+        let cmd = k.cmdline.borrow();
+        let n = cmd.len().min(len as usize - 1);
+        unsafe {
+            core::ptr::copy_nonoverlapping(cmd.as_ptr(), buf, n);
+            *buf.add(n) = 0;
+        }
+        n as u32
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn memory_end() -> u32 {
-    MEMORY_END.load(Ordering::Relaxed)
+    k(|k| k.ram.get())
 }
 
-/// Nanoseconds since the machine started (the kernel's clock).
+/// The kernel's clock (ns): virtual (see Kernel::clock), a tick on at
+/// each read.
 #[unsafe(no_mangle)]
 pub extern "C" fn time_ns() -> u64 {
-    ((js::now_ms() - f64::from_bits(EPOCH_MS.load(Ordering::Relaxed))) * 1e6) as u64
+    k(|k| {
+        let c = k.clock.get() + TICK_NS;
+        k.clock.set(c);
+        c
+    })
 }
 
 /// ksee.bulk, for the kernel (memcpy, memset, wide stores), and for what
@@ -96,7 +103,7 @@ pub extern "C" fn bulk(addr: u32, len: u32) {
 /// Append a record (pairs of words) to the kernel's trace ring (called
 /// while the kernel runs: no kernel code writes it meanwhile).
 fn ring_put(words: &[u32]) {
-    let (trace, size) = (TRACE.load(Ordering::Relaxed), RING_WORDS.load(Ordering::Relaxed));
+    let (trace, size) = (k(|k| k.trace.get()), tables().ring_words);
     if trace == 0 || size == 0 || !recording() {
         return;
     }
@@ -111,7 +118,7 @@ fn ring_put(words: &[u32]) {
 /// A Task record for the current task (it enters a user program): its
 /// pid and comm, as they are now.
 pub(crate) fn task_record() {
-    let task = Direct.read_u32(CURRENT_TASK.load(Ordering::Relaxed));
+    let task = current();
     let Some(t) = ksee_core::task::read_task(tables(), &Direct, task) else { return };
     let mut comm = [0u8; 16];
     let n = t.comm.len().min(16);
@@ -140,7 +147,7 @@ thread_local! {
 }
 
 fn current() -> u32 {
-    Direct.read_u32(CURRENT_TASK.load(Ordering::Relaxed))
+    Direct.read_u32(k(|k| k.current.get()))
 }
 
 /// The part of the current task's program's memory at `p..p+n`, if in bounds.
@@ -160,8 +167,9 @@ fn user_load(image: u32, len: u32) -> u32 {
     let instance = WebAssembly::Module::new(&bytes).and_then(|m| {
         let linux = Object::new();
         js::set(&linux, "syscall", syscall.unwrap());
-        let (call, done) = call_imports();
+        let (ready, call, done) = init_imports();
         let ksee = Object::new();
+        js::set(&ksee, "ready", ready);
         js::set(&ksee, "call", call);
         js::set(&ksee, "done", done);
         let imports = Object::new();
@@ -214,7 +222,10 @@ pub fn kernel() -> Object {
     js::set(&kernel, "switch_task", sched::suspending(func(Closure::<dyn FnMut(u32, u32, u32) -> Promise>::new(sched::switch_task))));
     js::set(&kernel, "idle", sched::suspending(func(Closure::<dyn FnMut() -> Promise>::new(sched::idle))));
     js::set(&kernel, "halt", sched::suspending(func(Closure::<dyn FnMut(i32) -> Promise>::new(|code: i32| {
-        HALTED.store(code as u32 + 1, Ordering::Release);
+        k(|k| k.halted.set(Some(code)));
+        if let Some((_, fail)) = k(|k| k.ready.take()) {
+            let _ = fail.call1(&JsValue::NULL, &format!("the kernel halted ({code}) before /init was ready").into());
+        }
         sched::never()
     }))));
     js::set(&kernel, "print_stack", func(Closure::<dyn FnMut()>::new(|| {
@@ -265,15 +276,23 @@ pub fn instantiated(exports: &Object) {
     });
 }
 
-/// ksee.call and ksee.done, for /init (user/init.c): the syscall the page
-/// asks for (state::CALL). The request's place in the program's memory:
+/// ksee.ready, ksee.call and ksee.done, for /init (user/init.c): it is
+/// ready (the boot is over), the syscall the page asks for (Kernel::call),
+/// and its result. The request's place in the program's memory:
 /// `struct { i32 nr; i32 args[6]; i32 pad; u8 data[CALL_DATA]; }`.
-fn call_imports() -> (JsValue, JsValue) {
+fn init_imports() -> (JsValue, JsValue, JsValue) {
+    let ready = func(Closure::<dyn FnMut()>::new(|| {
+        k(|k| k.waiting.set(None));
+        if let Some((ok, _)) = k(|k| k.ready.take()) {
+            let _ = ok.call0(&JsValue::NULL);
+        }
+    }));
     // ksee.call(req): the request into `req` (buffers: pointers into its
     // data); its number, or -1 if there is none.
     let call = func(Closure::<dyn FnMut(u32) -> i32>::new(|req: u32| {
-        CALL.with_borrow(|c| {
-            if c.state != CallState::Asked {
+        k(|k| {
+            let c = k.call.borrow();
+            if !c.asked {
                 return -1;
             }
             let Some(mem) = user_bytes(req, 32 + CALL_DATA as u32) else { return -1 };
@@ -293,7 +312,10 @@ fn call_imports() -> (JsValue, JsValue) {
     // of each buffer argument (null for the others)] }.
     let done = func(Closure::<dyn FnMut(i64, u32)>::new(|ret: i64, req: u32| {
         let bytes = user_bytes(req + 32, CALL_DATA as u32).map(|m| m.to_vec()).unwrap_or_default();
-        let c = CALL.with_borrow_mut(std::mem::take);
+        let c = k(|k| {
+            k.waiting.set(None);
+            k.call.take()
+        });
         let buffers = js_sys::Array::new();
         for i in 0..6 {
             let at = c.args[i] as usize;
@@ -309,5 +331,5 @@ fn call_imports() -> (JsValue, JsValue) {
             let _ = r.call1(&JsValue::NULL, &o);
         }
     }));
-    (call, done)
+    (ready, call, done)
 }

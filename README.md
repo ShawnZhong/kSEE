@@ -43,9 +43,9 @@ Next stop, ◀ / ▶| line by line, or Play. Add your own call below the list:
 write it as in C, `openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`,
 and Enter (Tab completes a syscall's name; the hint shows its signature).
 ✎ on a call made goes back to before it, to make another instead: the page
-starts a fresh kernel and makes the calls before it again (a kernel's
-tasks' stacks are the browser's, so it cannot be put back as it was); the
-calls are in the URL (`#back=`), a link to them.
+starts a fresh kernel and makes the calls before it again, which comes to
+the very same state (the machine is deterministic: its clock is virtual);
+the calls are in the URL (`#back=`), a link to them.
 
 The timeline shows the recording: the call stacks over time, and which
 task ran (scroll to zoom, drag to pan; hover a call for what it was and a

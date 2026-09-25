@@ -57,7 +57,12 @@ where real hardware would deliver them too.
 
 The clockevent is one-shot: the kernel writes its deadline to
 `wasm_timer_deadline`; the host raises the timer line once it passes. The
-clocksource reads host time; delays spin on it.
+clocksource reads the host's clock, `time_ns`, which is **virtual**: it
+moves on by a microsecond at each read (so delays, which spin on it, end),
+and, while the page waits for the kernel (a boot, a call), idle skips it
+to the timer's deadline at once; between the page's calls it stands still.
+So a sleep takes no real time, and the machine is deterministic: the same
+calls make the same run, record for record.
 
 ## Programs, and /init
 

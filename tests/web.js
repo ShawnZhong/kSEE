@@ -152,6 +152,24 @@ await m.restart();
 check("restarted: init ready again", await until(() => out.slice(before).includes("ready for the page's calls")));
 check("... on a fresh kernel: /tmp is not there", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === 0);
 
+// Deterministic: the same calls on a fresh kernel make the same recording,
+// record for record (the kernel's clock is virtual; see the runtime's sched.rs).
+async function runOf(ex) {
+  await m.restart();
+  const rets = [], seen = [];
+  for (const st of ex.steps) {
+    const { ret, s } = await call(st.call, st.args.map((a) => arg(a, consts, rets)));
+    rets.push(ret);
+    seen.push([s.id, s.first, s.last, ret]);
+  }
+  return JSON.stringify([m.records(), seen]);
+}
+{
+  const file = examples.find((x) => x.name === "file");
+  const one = await runOf(file), two = await runOf(file);
+  check(`deterministic: the same calls, the same records (${one.slice(0, 60)}…)`, one === two || console.log(one, "\n", two));
+}
+
 // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts)
 m.call("reboot", [0xfee1dead, 672274793, 0x4321fedc, 0]);
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);

@@ -1,7 +1,7 @@
 //! Web APIs, reached the same way from the page and Workers (and Deno).
 
 use js_sys::{Reflect, Uint8Array};
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 pub fn get(obj: &JsValue, key: &str) -> JsValue {
     Reflect::get(obj, &key.into()).unwrap_or(JsValue::UNDEFINED)
@@ -9,16 +9,6 @@ pub fn get(obj: &JsValue, key: &str) -> JsValue {
 
 pub fn set(obj: &JsValue, key: &str, value: impl Into<JsValue>) {
     let _ = Reflect::set(obj, &key.into(), &value.into());
-}
-
-thread_local! {
-    static PERFORMANCE: web_sys::Performance =
-        get(&js_sys::global(), "performance").unchecked_into();
-}
-
-/// Wall-clock milliseconds, the same in every Worker.
-pub fn now_ms() -> f64 {
-    PERFORMANCE.with(|p| p.time_origin() + p.now())
 }
 
 /// Copy `len` bytes of an ArrayBuffer-backed view into our memory at `dst`.

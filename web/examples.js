@@ -40,7 +40,7 @@ export async function examples(app) {
     history.replaceState(null, "", back ? `#back=${encodeURIComponent(JSON.stringify({ name: ex.name, steps }))}` : `#ex=${ex.name}`);
     open(ex, steps, back);
     t.status.textContent = "Starting a fresh kernel…";
-    app.restart();
+    app.restart().then(ready);
   }
 
   function open(ex, steps = ex.steps, back = null) {
@@ -269,6 +269,6 @@ export async function examples(app) {
   // (The example, shown while the kernel boots.)
   const u = fromURL();
   if (u.ex) open(u.ex, u.steps, u.back);
-  if (app.ready) ready();
+  ready(); // (The kernel is up: app gets a booted Machine.)
   return { open, next, step, list, ready };
 }

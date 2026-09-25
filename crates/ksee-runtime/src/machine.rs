@@ -3,7 +3,6 @@
 //! snapshots of its recording (see replay.rs).
 
 use std::cell::RefCell;
-use std::sync::atomic::Ordering;
 
 use js_sys::{Function, Promise, Uint8Array, WebAssembly};
 use ksee_core::recording::Recording;
@@ -84,15 +83,13 @@ impl Machine {
         if have < ram {
             memory.grow((ram - have).div_ceil(65536));
         }
-        MEMORY_END.store(ram, Ordering::Relaxed);
+        k(|k| k.ram.set(ram));
 
         let bytes = fetch_bytes(&url).await?;
         let module: WebAssembly::Module =
             JsFuture::from(WebAssembly::compile(&bytes)).await?.unchecked_into();
         let tables = Tables::parse(&section(&module, "ksee.probes"), &section(&module, "ksee.types"));
-        RING_WORDS.store(tables.ring_words, Ordering::Relaxed);
         TABLES.set(tables).map_err(|_| "one machine per page")?;
-        EPOCH_MS.store(js::now_ms().to_bits(), Ordering::Relaxed);
 
         let mut cmdline = s("cmdline").unwrap_or_default();
         // The initramfs goes at the top of RAM; the kernel reserves it.
@@ -103,7 +100,7 @@ impl Machine {
         if !initrd.is_empty() {
             cmdline += &format!(" initrd={:#x},{}", initrd_at(ram, &initrd), initrd.len());
         }
-        let _ = CMDLINE.set(cmdline.trim().as_bytes().to_vec());
+        k(|k| *k.cmdline.borrow_mut() = cmdline.trim().as_bytes().to_vec());
         let m = Machine { module, initrd, rec: Default::default(),
                           past: Default::default(), frozen: Default::default() };
         m.boot().await?;
@@ -111,9 +108,10 @@ impl Machine {
     }
 
     /// Boot: kernel memory as new (zeros, and the initramfs), a new kernel
-    /// instance (instantiating initializes its data), and its boot CPU.
+    /// instance (instantiating initializes its data), and its boot CPU; done
+    /// once /init is ready for calls.
     async fn boot(&self) -> Result<(), JsValue> {
-        let ram = MEMORY_END.load(Ordering::Relaxed);
+        let ram = k(|k| k.ram.get());
         unsafe { core::ptr::write_bytes(KERNEL_BASE as *mut u8, 0, (ram - KERNEL_BASE) as usize) };
         if !self.initrd.is_empty() {
             let at = initrd_at(ram, &self.initrd) as usize;
@@ -123,15 +121,22 @@ impl Machine {
             JsFuture::from(WebAssembly::instantiate_module(&self.module, &imports::kernel())).await?.unchecked_into();
         let kernel = inst.exports();
         let global = |name: &str| js::get(&js::get(&kernel, name), "value").as_f64().unwrap_or(0.0) as u32;
-        CURRENT_TASK.store(global("__current_task"), Ordering::Relaxed);
-        PENDING.store(global("wasm_irq_pending"), Ordering::Relaxed);
-        DEADLINE.store(global("wasm_timer_deadline"), Ordering::Relaxed);
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
-        TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
-        EPOCH_MS.store(js::now_ms().to_bits(), Ordering::Relaxed);
-        HALTED.store(0, Ordering::Release);
+        let trace = trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32;
+        let ready = Promise::new(&mut |ok, fail| k(|k| {
+            k.trace.set(trace);
+            k.current.set(global("__current_task"));
+            k.pending.set(global("wasm_irq_pending"));
+            k.deadline.set(global("wasm_timer_deadline"));
+            k.clock.set(0);
+            k.waiting.set(Some(0));
+            k.halted.set(None);
+            *k.ready.borrow_mut() = Some((ok, fail));
+        }));
         imports::instantiated(&kernel);
-        sched::boot(&kernel)
+        sched::boot(&kernel)?;
+        JsFuture::from(ready).await?;
+        Ok(())
     }
 
     /// Start the kernel again, from scratch: the machine stopped (its tasks
@@ -145,11 +150,13 @@ impl Machine {
         })).await?;
         sched::stop();
         // (A call under way gives up.)
-        if let Some(fail) = CALL.with_borrow_mut(std::mem::take).reject {
+        if let Some(fail) = k(|k| k.call.take()).reject {
             let _ = fail.call1(&JsValue::NULL, &"the kernel started again".into());
         }
-        CONSOLE_OUT.with_borrow_mut(|o| o.clear());
-        CONSOLE_IN.with_borrow_mut(|i| i.clear());
+        k(|k| {
+            k.console_out.borrow_mut().clear();
+            k.console_in.borrow_mut().clear();
+        });
         *self.rec.borrow_mut() = Default::default();
         *self.past.borrow_mut() = None;
         *self.frozen.borrow_mut() = None;
@@ -158,22 +165,19 @@ impl Machine {
 
     /// Console output since the last call.
     pub fn console(&self) -> String {
-        let out = CONSOLE_OUT.with_borrow_mut(std::mem::take);
+        let out = k(|k| k.console_out.take());
         String::from_utf8_lossy(&out).into_owned()
     }
 
     /// The halt code once the kernel has halted.
     pub fn halted(&self) -> Option<i32> {
-        match HALTED.load(Ordering::Acquire) {
-            0 => None,
-            h => Some(h as i32 - 1),
-        }
+        k(|k| k.halted.get())
     }
 
     /// Decode the trace ring (again). The views use the last snapshot.
     pub fn snapshot(&self) {
         let t = tables();
-        let (records, ids) = trace::ring(&Direct, TRACE.load(Ordering::Relaxed), t.ring_words);
+        let (records, ids) = trace::ring(&Direct, k(|k| k.trace.get()), t.ring_words);
         *self.rec.borrow_mut() = Recording::new(t, records, ids);
     }
 
@@ -181,7 +185,7 @@ impl Machine {
     /// kernel memory as it is then: memory as it was in the recording is
     /// that, the recorded stores undone (the kernel goes on, unrecorded).
     pub fn record(&self, on: bool) {
-        let word = TRACE.load(Ordering::Relaxed) + trace::ON;
+        let word = k(|k| k.trace.get()) + trace::ON;
         if on {
             *self.frozen.borrow_mut() = None;
             Direct.write_u32(word, 1);
@@ -191,7 +195,7 @@ impl Machine {
         }
         Direct.write_u32(word, 0);
         self.snapshot();
-        let mut ram = vec![0u8; MEMORY_END.load(Ordering::Relaxed) as usize];
+        let mut ram = vec![0u8; k(|k| k.ram.get()) as usize];
         // (Not from address 0: a null pointer, to Rust. The kernel's memory
         // starts well above it anyway.)
         Direct.read(8, &mut ram[8..]);
@@ -214,10 +218,10 @@ impl Machine {
     pub fn call(&self, name: &str, args: Vec<JsValue>) -> Result<Promise, JsValue> {
         let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
             .ok_or_else(|| format!("no syscall {name}"))?;
-        if CALL.with_borrow(|c| c.state != CallState::Idle) {
+        if k(|k| k.call.borrow().asked) {
             return Err("a call is under way".into());
         }
-        let mut c = Call { state: CallState::Asked, nr, data: vec![0; CALL_DATA], ..Default::default() };
+        let mut c = Call { asked: true, nr, data: vec![0; CALL_DATA], ..Default::default() };
         let mut used = 0usize;
         for (i, a) in args.iter().take(6).enumerate() {
             let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
@@ -248,10 +252,14 @@ impl Machine {
             c.resolve = Some(ok);
             c.reject = Some(fail);
         });
-        CALL.with_borrow_mut(|old| *old = c);
-        // (The doorbell: /init waits reading its terminal.)
-        CONSOLE_IN.with_borrow_mut(|i| i.push_back(b'\n'));
-        interrupt(IRQ_CONSOLE);
+        // (The page waits for the kernel now: see Kernel::waiting.)
+        k(|k| {
+            *k.call.borrow_mut() = c;
+            k.waiting.set(Some(k.clock.get()));
+            // (The doorbell: /init waits reading its terminal.)
+            k.console_in.borrow_mut().push_back(b'\n');
+        });
+        sched::interrupt(IRQ_CONSOLE);
         Ok(p)
     }
 }

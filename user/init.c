@@ -11,8 +11,10 @@
 #include <linux/loop.h>
 #include <asm/termbits.h>
 
-// The call asked for (the runtime fills it in; buffer arguments point into
-// data), and its result.
+// Ready for calls (the page's boot is over); the call asked for (the
+// runtime fills it in; buffer arguments point into data), and its result.
+__attribute__((import_module("ksee"), import_name("ready")))
+void ksee_ready(void);
 __attribute__((import_module("ksee"), import_name("call")))
 int ksee_call(void *req);
 __attribute__((import_module("ksee"), import_name("done")))
@@ -49,6 +51,7 @@ int main(void)
 	t.c_lflag &= ~(ICANON | ECHO);
 	ioctl(0, TCSETS, &t);
 	printf("init: ready for the page's calls\n");
+	ksee_ready();
 	for (;;) {
 		if (read(0, &c, 1) != 1 || ksee_call(&req) < 0)
 			continue;

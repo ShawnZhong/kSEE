@@ -37,7 +37,15 @@ never resumed), let what it had under way end, and boot again.
 **The page and the kernel** talk through memory and promises: the page
 raises interrupts (a bit, and a wake-up of idle), and asks for syscalls
 (`Machine.call` returns a promise, which /init settles through
-`ksee.done`); it reads the console's output.
+`ksee.done`); it reads the console's output. A boot is done when /init is
+ready (`ksee.ready`: `Machine.start` and `restart` resolve then).
+
+**Deterministic.** Nothing of the host's gets in but the page's calls: the
+kernel's clock is virtual (see [kernel.md](kernel.md)), the page's input
+arrives only while the kernel idles, and one thread runs one task at a
+time. So the same calls on a fresh kernel make the same recording, record
+for record (tests/web.js checks it): going back (making calls again) comes
+back to the very same state.
 
 **Imports**: the frequent ones (`console_write`, `time_ns`, `spawn_task`,
 `ksee.bulk`, ...) are the runtime's own wasm exports, so the kernel calls
