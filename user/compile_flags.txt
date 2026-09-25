@@ -1,0 +1,9 @@
+--target=wasm32
+-ffreestanding
+-nostdinc
+-isystem
+../linux/tools/include/nolibc
+-isystem
+../linux/usr/include
+-include
+ksee.h

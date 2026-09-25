@@ -33,6 +33,33 @@ struct History {
     records: Vec<trace::Record>,
     tasks: Vec<u32>,
     times: Vec<u64>,
+    /// Who was at a task_struct address, from Task records: address ->
+    /// [(record, task)]; and where tasks exited (do_exit): address ->
+    /// [record]. The address of an exited task may be another's later.
+    idents: std::collections::BTreeMap<u32, Vec<(usize, task::Task)>>,
+    exits: std::collections::BTreeMap<u32, Vec<usize>>,
+}
+
+impl History {
+    /// The task at `addr` at record `i`: the Task record of its program
+    /// (before or after `i`, as long as it did not exit in between), else
+    /// what the address holds now.
+    fn task_at(&self, addr: u32, i: usize) -> Option<task::Task> {
+        let exited = |a: usize, b: usize| self.exits.get(&addr).is_some_and(|e| e.iter().any(|&x| a <= x && x < b));
+        if let Some(ids) = self.idents.get(&addr) {
+            if let Some((at, t)) = ids.iter().rev().find(|(at, _)| *at <= i) {
+                if !exited(*at, i) {
+                    return Some(t.clone());
+                }
+            }
+            if let Some((at, t)) = ids.iter().find(|(at, _)| *at > i) {
+                if !exited(i, *at) {
+                    return Some(t.clone());
+                }
+            }
+        }
+        live_task(addr)
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -76,6 +103,10 @@ impl ksee_core::Memory for Bytes<'_> {
     }
 }
 
+fn task_ref(addr: u32, t: Option<task::Task>) -> ksee_core::view::TaskRef {
+    ksee_core::view::TaskRef { addr, pid: t.as_ref().map(|t| t.pid), comm: t.map(|t| t.comm) }
+}
+
 fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
     serde_wasm_bindgen::to_value(v).unwrap_or(JsValue::NULL)
 }
@@ -113,6 +144,7 @@ impl Machine {
         let module: WebAssembly::Module =
             JsFuture::from(WebAssembly::compile(&bytes)).await?.unchecked_into();
         let tables = Tables::parse(&section(&module, "ksee.probes"), &section(&module, "ksee.types"));
+        RING_WORDS.store(tables.ring_words, Ordering::Relaxed);
         TABLES.set(tables).map_err(|_| "one machine per page")?;
         MEMORY_END.store(ram, Ordering::Relaxed);
         EPOCH_MS.store(js::now_ms().to_bits(), Ordering::Relaxed);
@@ -236,17 +268,31 @@ impl Machine {
         let (mut task, mut time) = (0, 0);
         let mut tasks = Vec::with_capacity(records.len());
         let mut times = Vec::with_capacity(records.len());
-        for r in &records {
+        let mut idents: std::collections::BTreeMap<u32, Vec<(usize, task::Task)>> = Default::default();
+        let mut exits: std::collections::BTreeMap<u32, Vec<usize>> = Default::default();
+        let do_exit = t.find("do_exit");
+        for (i, r) in records.iter().enumerate() {
             if let trace::Record::Enter { current, time: t, .. } | trace::Record::Exit { current, time: t, .. } = *r {
                 task = current;
                 time = t;
+            }
+            match *r {
+                trace::Record::Task { task: addr, pid, comm } => {
+                    let bytes: Vec<u8> = comm.iter().flat_map(|w| w.to_le_bytes()).take_while(|&b| b != 0).collect();
+                    let who = task::Task { pid: pid as i32, comm: String::from_utf8_lossy(&bytes).into() };
+                    idents.entry(addr).or_default().push((i, who));
+                }
+                trace::Record::Enter { func, current, .. } if Some(func) == do_exit => {
+                    exits.entry(current).or_default().push(i);
+                }
+                _ => {}
             }
             tasks.push(task);
             times.push(time);
         }
         let calls = syscalls::split(entry, records.iter().copied());
         *self.syscalls.borrow_mut() = Some(calls);
-        *self.history.borrow_mut() = History { records, tasks, times };
+        *self.history.borrow_mut() = History { records, tasks, times, idents, exits };
     }
 
     fn with_syscalls<T>(&self, f: impl FnOnce(&[syscalls::Syscall]) -> T) -> T {
@@ -256,8 +302,19 @@ impl Machine {
         f(self.syscalls.borrow().as_deref().unwrap_or(&[]))
     }
 
+    /// Views that name tasks from memory now (for what needs no task).
     fn views(&self) -> Views<'static> {
-        Views { tables: tables(), tasks: &live_task }
+        fn live(addr: u32, _: usize) -> Option<task::Task> {
+            live_task(addr)
+        }
+        Views { tables: tables(), tasks: &live }
+    }
+
+    /// Views that name tasks as they were (see History::task_at).
+    fn with_views<T>(&self, f: impl FnOnce(&Views) -> T) -> T {
+        let h = self.history.borrow();
+        let tasks = |addr: u32, i: usize| h.task_at(addr, i);
+        f(&Views { tables: tables(), tasks: &tasks })
     }
 
     // ---- History: the records of the last snapshot, by position ----
@@ -280,6 +337,8 @@ impl Machine {
             trace::Record::Enter { func, .. } => ("enter", func, None),
             trace::Record::Exit { func, .. } => ("exit", func, None),
             trace::Record::Return { func } => ("return", func, None),
+            trace::Record::Line { .. } => ("line", 0, None),
+            trace::Record::Task { .. } => ("task", 0, None),
         };
         js::set(&o, "i", i as f64);
         js::set(&o, "kind", kind);
@@ -297,7 +356,7 @@ impl Machine {
             js::set(&o, "column", l.column);
         }
         js::set(&o, "time_ns", h.times[i] as f64);
-        js::set(&o, "task", to_js(&self.views_task(h.tasks[i])));
+        js::set(&o, "task", to_js(&task_ref(h.tasks[i], h.task_at(h.tasks[i], i))));
         let task = h.tasks[i];
         let sys = self.with_syscalls(|calls| calls.iter().position(|s| {
             s.task == task && s.first <= i && s.last.is_none_or(|l| i <= l)
@@ -364,6 +423,39 @@ impl Machine {
         list.into()
     }
 
+    /// The latest run of program `pid` (a Task record says which) in the
+    /// last snapshot: { task (address), first, last (records), lines: [{ i,
+    /// line }] (its Line records: the program's source line, before each
+    /// syscall) }, or null.
+    pub fn program(&self, pid: i32) -> JsValue {
+        let h = self.history.borrow();
+        let Some((addr, start)) = h.idents.iter()
+            .flat_map(|(&a, ids)| ids.iter().filter(|(_, t)| t.pid == pid).map(move |(i, _)| (a, *i)))
+            .max_by_key(|&(_, i)| i) else { return JsValue::NULL };
+        // Until the task_struct is another program's (or the trace ends).
+        let until = h.idents[&addr].iter().map(|(i, _)| *i).find(|&i| i > start).unwrap_or(h.records.len());
+        let mut last = start;
+        let lines = js_sys::Array::new();
+        for j in start..until {
+            if h.tasks[j] != addr && !matches!(h.records[j], trace::Record::Line { .. }) {
+                continue;
+            }
+            last = j;
+            if let trace::Record::Line { line } = h.records[j] {
+                let o = Object::new();
+                js::set(&o, "i", j as f64);
+                js::set(&o, "line", line);
+                lines.push(&o);
+            }
+        }
+        let o = Object::new();
+        js::set(&o, "task", addr);
+        js::set(&o, "first", start as f64);
+        js::set(&o, "last", last as f64);
+        js::set(&o, "lines", lines);
+        o.into()
+    }
+
     /// The call stack at record `i` (of the task running then), outermost
     /// first: [function name].
     pub fn stack_at(&self, i: usize) -> Vec<String> {
@@ -425,12 +517,11 @@ impl Machine {
         let spans: Vec<(u32, usize, usize)> = self.with_syscalls(|calls| {
             calls.iter().map(|s| (s.task, s.first, s.last.unwrap_or(usize::MAX))).collect()
         });
-        let mut names: std::collections::BTreeMap<u32, Option<task::Task>> = Default::default();
         let list = js_sys::Array::new();
         for b in 0..n {
             let i = b * total / n.max(1);
             let task = h.tasks.get(i).copied().unwrap_or(0);
-            let info = names.entry(task).or_insert_with(|| live_task(task)).clone();
+            let info = h.task_at(task, i);
             let o = Object::new();
             js::set(&o, "pid", info.as_ref().map_or(-1, |t| t.pid));
             js::set(&o, "comm", info.map_or(String::new(), |t| t.comm));
@@ -470,8 +561,9 @@ impl Machine {
 
     /// The syscalls in the trace (a list of SyscallSummary, see ksee_core::view).
     pub fn syscalls(&self) -> JsValue {
-        let v = self.views();
-        self.with_syscalls(|calls| to_js(&calls.iter().enumerate().map(|(i, s)| v.summary(i, s)).collect::<Vec<_>>()))
+        self.with_syscalls(|calls| self.with_views(|v| {
+            to_js(&calls.iter().enumerate().map(|(i, s)| v.summary(i, s)).collect::<Vec<_>>())
+        }))
     }
 
     /// What syscall `n` ran, as runs of blocks per function.
@@ -745,8 +837,7 @@ impl Machine {
     }
 
     fn views_task(&self, addr: u32) -> ksee_core::view::TaskRef {
-        let t = live_task(addr);
-        ksee_core::view::TaskRef { addr, pid: t.as_ref().map(|t| t.pid), comm: t.map(|t| t.comm) }
+        task_ref(addr, live_task(addr))
     }
 
     /// Stop at the next block the kernel runs.

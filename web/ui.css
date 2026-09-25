@@ -149,10 +149,27 @@ h2.tabs button.on { color: var(--fg); box-shadow: inset 0 -2px var(--accent); }
 .card.on { background: var(--sel); box-shadow: inset 3px 0 var(--accent); }
 .inline { display: flex; gap: 4px; align-items: center; }
 
-/* The call stack, and the source */
-#stack { flex: 0 0 auto; max-height: 30%; border-bottom: 1px solid var(--line); }
-#stack .frame { padding: 2px 12px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#stack .frame.on { font-weight: 600; }
-#stack .args { font-weight: 400; }
+/* The stack, and the source */
+.stackhead { padding: 4px 12px; font-size: 11.5px; border-bottom: 1px solid var(--line); }
+.stackhead:empty { display: none; }
+table.stack tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); background: var(--panel); }
+table.stack tr.frame.on td { background: var(--sel); }
+table.stack tr.frame a.mono { font-weight: 600; }
 .srcbar { padding: 3px 12px; border-bottom: 1px solid var(--line); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+/* Tours */
+.row.tour { padding: 8px 12px; }
+.row.tour .tt, .thead .tt { font-weight: 600; }
+.thead { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.thead .q { color: var(--dim); }
+.tbar { display: flex; gap: 6px; padding-top: 2px; }
+ol.stops { margin: 0; padding: 6px 12px 6px 30px; border-bottom: 1px solid var(--line); font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
+ol.stops li.on { background: var(--at); border-radius: 3px; }
+ol.stops li.done { color: var(--dim); }
+.tstatus { padding: 4px 12px; font-size: 12px; border-bottom: 1px solid var(--line); }
+.tstatus:empty { display: none; }
+table.prog tr { cursor: pointer; }
+table.prog td.bp { color: var(--accent); }
+table.prog tr:hover td.code { background: var(--sel); }
+#note { padding: 8px 12px; background: var(--at); border-bottom: 1px solid var(--line); font-size: 12.5px; }
+#note b { font-family: var(--mono); }
 @media (max-width: 1000px) { body { height: auto; } main { grid-template-columns: 1fr; } .col { min-height: 50vh; } }

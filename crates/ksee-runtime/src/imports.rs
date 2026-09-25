@@ -6,7 +6,7 @@
 //! closures reached through wasm-bindgen.
 
 use std::cell::RefCell;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use js_sys::{Function, Object, Uint8Array, WebAssembly};
 use wasm_bindgen::prelude::*;
@@ -14,6 +14,7 @@ use wasm_bindgen::JsCast;
 
 use crate::js;
 use crate::state::*;
+use ksee_core::Memory;
 
 /// Thrown to unwind a kernel Worker's stack when its task is dead or the
 /// machine halts.
@@ -72,6 +73,45 @@ pub fn wall_ns() -> u64 {
     ((js::now_ms() - f64::from_bits(EPOCH_MS.load(Ordering::Relaxed))) * 1e6) as u64
 }
 
+/// ksee.line, for user programs (user/ksee.h): the source line the program
+/// is at, as a record in the kernel's trace ring. (The program holds the
+/// CPU, so no kernel code writes the ring meanwhile.)
+#[unsafe(no_mangle)]
+pub extern "C" fn user_line(line: u32) {
+    ring_put(&[line, ksee_core::trace::LINE << 28]);
+}
+
+/// Append a record (pairs of words) to the kernel's trace ring, from a
+/// task's Worker while it holds the CPU (so no kernel code writes too).
+fn ring_put(words: &[u32]) {
+    let (trace, size) = (TRACE.load(Ordering::Relaxed), RING_WORDS.load(Ordering::Relaxed));
+    if trace == 0 || size == 0 {
+        return;
+    }
+    let pos = unsafe { &*(trace as *const AtomicU32) };
+    let p = pos.load(Ordering::Relaxed);
+    let ring = trace + ksee_core::trace::RING;
+    for (i, &w) in words.iter().enumerate() {
+        let at = ring + ((p + i as u32) & (size - 1)) * 4;
+        unsafe { (at as *mut u32).write_volatile(w) };
+    }
+    pos.store(p + words.len() as u32, Ordering::Release);
+}
+
+/// A Task record for the current task (it enters a user program): its
+/// pid and comm, as they are now.
+fn task_record() {
+    let task = Direct.read_u32(CURRENT_TASK.load(Ordering::Relaxed));
+    let Some(t) = live_task(task) else { return };
+    let mut comm = [0u8; 16];
+    let n = t.comm.len().min(16);
+    comm[..n].copy_from_slice(&t.comm.as_bytes()[..n]);
+    let word = |i: usize| u32::from_le_bytes(comm[4 * i..4 * i + 4].try_into().unwrap());
+    let value = ksee_core::trace::VALUE_TAG << 28;
+    ring_put(&[task, ksee_core::trace::TASK << 28, t.pid as u32, value, word(0), value | 1,
+               word(1), value | 2, word(2), value | 3, word(3), value | 4]);
+}
+
 /// Record the halt for the page and stop this Worker.
 #[unsafe(no_mangle)]
 pub extern "C" fn halt(code: i32) {
@@ -127,6 +167,7 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
     js::set(&kernel, "print_stack", func(Closure::<dyn FnMut()>::new(|| {
         web_sys::console::log_1(&js::get(&js_sys::Error::new("kernel stack"), "stack"));
     })));
+    let line = export("user_line");
     js::set(&kernel, "user_load", func(Closure::<dyn FnMut(u32, u32) -> i32>::new(
         move |image: u32, len: u32| {
             assert!(worker, "exec on the page");
@@ -134,8 +175,11 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
             let result = WebAssembly::Module::new(&bytes).and_then(|m| {
                 let linux = Object::new();
                 USER.with_borrow(|u| js::set(&linux, "syscall", u.kernel_syscall.clone().unwrap()));
+                let ksee = Object::new();
+                js::set(&ksee, "line", line.clone());
                 let imports = Object::new();
                 js::set(&imports, "linux", linux);
+                js::set(&imports, "ksee", ksee);
                 WebAssembly::Instance::new(&m, &imports)
             });
             match result {
@@ -156,6 +200,7 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
             u.running = Some(inst.clone());
             inst
         });
+        task_record();
         let start: Function = js::get(&inst.exports(), "_start").unchecked_into();
         // A user program's exit unwinds through here (see EXIT); anything
         // else it throws is a crash of the program.

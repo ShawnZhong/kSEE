@@ -48,7 +48,7 @@ pub fn tasks_in(t: &Tables, records: impl IntoIterator<Item = Record>) -> Vec<u3
             Record::Exit { current, .. } => {
                 tasks.insert(current, ());
             }
-            Record::Block { .. } | Record::Return { .. } => {}
+            Record::Block { .. } | Record::Return { .. } | Record::Line { .. } | Record::Task { .. } => {}
         }
     }
     tasks.remove(&0);

@@ -35,7 +35,10 @@
 </section>
 <main>
   <div class="col">
-    <h2>Syscalls to make <span class="dim">/init makes them, in a real process</span></h2>
+    <h2 class="tabs"><button id="tab-tours" class="on">Tours</button><button id="tab-play">Playground</button>
+      <span class="right dim" id="left-note">programs, and what the kernel does for them</span></h2>
+    <div class="tab body" id="pane-tours"><div id="tours"></div></div>
+    <div class="tab" id="pane-play" hidden>
     <div class="nbbar">
       <input id="add" list="syscall-list" placeholder="+ a syscall: write, openat, …" aria-label="add a syscall"><datalist id="syscall-list"></datalist>
       <select id="scenarios" aria-label="scenarios"><option value="">scenarios…</option></select>
@@ -43,17 +46,21 @@
     </div>
     <datalist id="fds"></datalist>
     <div class="body" id="cards"></div>
+    </div>
   </div>
   <div class="col">
-    <h2>Call stack <span class="dim" id="stack-note"></span></h2>
-    <div class="body" id="stack"></div>
+    <div id="note" hidden></div>
     <div class="srcbar mono" id="fn-title">Source</div>
     <div class="body" id="src"><div class="empty">The source at the cursor: lines where blocks ran are green (with counts), untaken ones red. Click a line number to break there.</div></div>
   </div>
   <div class="col">
-    <h2 class="tabs"><button id="tab-objects" class="on">Objects</button><button id="tab-syscalls">Syscalls <span id="nsys" class="dim"></span></button><button id="tab-console">Console <span id="console-new"></span></button>
+    <h2 class="tabs"><button id="tab-stack" class="on">Stack</button><button id="tab-objects">Objects</button><button id="tab-syscalls">Syscalls <span id="nsys" class="dim"></span></button><button id="tab-console">Console <span id="console-new"></span></button>
       <span class="right dim" id="mem-note" title="Objects are read from the kernel's memory as it is now">live memory</span></h2>
-    <div class="tab" id="pane-objects">
+    <div class="tab" id="pane-stack">
+      <div class="stackhead dim" id="stack-note"></div>
+      <div class="body" id="stack"></div>
+    </div>
+    <div class="tab" id="pane-objects" hidden>
       <div class="objbar">
         <button id="pick-task">current task</button><button id="pick-rq">runqueue</button><button id="pick-init">init_task</button>
         <form id="globalf"><input id="global" list="globals" placeholder="global…" size="12" aria-label="global"><datalist id="globals"></datalist></form>

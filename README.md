@@ -29,20 +29,25 @@ kernel `WebAssembly.Memory`.
     ./ksee.sh test         # under Deno: syscalls, the debugger, the trace
     ./ksee.sh type task_struct
 
-The kernel is live (● LIVE): it runs on its own, and the history at the top
-grows (a lane per task, its syscalls as bars). Make syscalls with the cards
-on the left: pick any of the kernel's (or a scenario), fill in its typed
-form (fds by name, flags, structs), and `/init` makes it; the card then
-reads like strace. Its result links to what it ran: the flame chart of its
-calls, rebuilt from the trace, and the source at the cursor.
+Start with a **tour** (on the left): a question about the kernel ("What
+happens in read()?", "Why does open() fail?", …), answered by a small C
+program (user/tours/, plain C on nolibc) that runs as a real process. Run
+it with its stops: the kernel pauses at each, with a note on what is
+happening, the program's line, the call stack with every call's arguments
+(the Stack tab; pointers open into their structs), and the source. Continue
+to the next stop, or ▶| / ▶ Play line by line. Afterwards the program's run
+is in the history (a lane of its own, a flame chart of its calls): click a
+program line for what the kernel did for it.
 
-To go through a syscall line by line, press ⤵ (Step into) on its card: the
-kernel stops where the syscall starts (❚❚ PAUSED), with the call stack and
-each call's arguments (→ opens a pointer's object). ▶| runs a line; ▶ Play
-runs line after line, at the speed picked. Or replay one already made
-(↺ REPLAY): select it and Play, or drag the cursor through the history.
-Click a line number in the source to set a breakpoint. The kernel's clock
-stands still while it is paused.
+The kernel is live (● LIVE): it runs on its own and the history grows. The
+Playground makes any syscall from a typed form (fds by name, flags,
+structs), described as strace would. ⤵ steps into one. Click a line number
+in the source for a breakpoint. The kernel's clock stands still while it is
+paused (❚❚ PAUSED); ↺ REPLAY is the recorded past.
+
+A tour is one C file: `// tour:`, `// question:`, and `// stop FUNCTION:
+NOTE` lines at the top, and `// stops here` on the lines whose syscalls the
+stops are for.
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also checks
 the page for exceptions and saves a screenshot, `web/ui.png`. The build is

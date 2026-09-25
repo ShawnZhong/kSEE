@@ -96,12 +96,14 @@ pub struct Object {
 
 pub struct Views<'a> {
     pub tables: &'a Tables,
-    pub tasks: &'a dyn Fn(u32) -> Option<Task>,
+    /// The task at a task_struct address, at a record (the address may be
+    /// another task's later).
+    pub tasks: &'a dyn Fn(u32, usize) -> Option<Task>,
 }
 
 impl Views<'_> {
-    fn task(&self, addr: u32) -> TaskRef {
-        let t = (self.tasks)(addr);
+    fn task(&self, addr: u32, at: usize) -> TaskRef {
+        let t = (self.tasks)(addr, at);
         TaskRef { addr, pid: t.as_ref().map(|t| t.pid), comm: t.map(|t| t.comm) }
     }
 
@@ -126,7 +128,7 @@ impl Views<'_> {
             first: s.first,
             last: s.last,
             index,
-            task: self.task(s.task),
+            task: self.task(s.task, s.first),
             nr: s.nr,
             name,
             args: s.args,

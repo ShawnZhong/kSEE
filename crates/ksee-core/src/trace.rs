@@ -11,12 +11,22 @@ pub enum Record {
     Exit { func: u32, time: u64, current: u32, value: u32 },
     /// A return from a function with block probes.
     Return { func: u32 },
+    /// A user program's source line (user/ksee.h: before each syscall).
+    Line { line: u32 },
+    /// A task entering a user program (after exec): who it is, as the
+    /// pointer may later be another task's.
+    Task { task: u32, pid: u32, comm: [u32; 4] },
 }
 
 const BLOCK: u32 = 1;
 const ENTER: u32 = 2;
 const EXIT: u32 = 3;
 const RETURN: u32 = 4;
+/// The tag of a Line record's head (written by the runtime, not the plugin).
+pub const LINE: u32 = 5;
+/// The tag of a Task record's head (also the runtime's).
+pub const TASK: u32 = 6;
+pub const VALUE_TAG: u32 = VALUE;
 const VALUE: u32 = 8;
 
 /// Records in `words`, oldest first, starting at a pair boundary. Leading
@@ -75,8 +85,10 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
             let count = match kind {
                 BLOCK => return Some(Record::Block { func, n: tag & 0x0fff_ffff }),
                 RETURN => return Some(Record::Return { func }),
+                LINE => return Some(Record::Line { line: func }),
                 ENTER => 7,
                 EXIT => 4,
+                TASK => 5,
                 _ => continue, // a continuation without its head
             };
             let mut v = [0u32; 7];
@@ -92,6 +104,9 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
             }
             if got < count {
                 continue;
+            }
+            if kind == TASK {
+                return Some(Record::Task { task: func, pid: v[0], comm: [v[1], v[2], v[3], v[4]] });
             }
             let time = v[0] as u64 | (v[1] as u64) << 32;
             return Some(if kind == ENTER {

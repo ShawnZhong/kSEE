@@ -61,6 +61,7 @@ const script = opt("eval", `(async () => {
   const $ = (id) => document.getElementById(id);
   const idle = async () => { for (let i = 0; i < 200 && document.querySelector(".card.running"); i++) await sleep(50); };
   const r = {};
+  $("tab-play").click();
   for (const o of [...$("scenarios").options].slice(1)) {
     $("scenarios").value = o.value;
     $("scenarios").dispatchEvent(new Event("change"));
@@ -70,13 +71,14 @@ const script = opt("eval", `(async () => {
   r.cards = document.querySelectorAll(".card.ok").length;
   r.failed = [...document.querySelectorAll(".card.err")].map((c) => c.innerText);
   // Step into a new write.
+  $("tab-play").click();
   $("add").value = "write";
   $("add").dispatchEvent(new Event("change"));
   const card = [...document.querySelectorAll(".card")].at(-1);
   card.querySelector('.acts button[title^="Step into"]').click();
   for (let i = 0; i < 100 && ksee.state() !== "paused"; i++) await sleep(50);
   r.paused = $("badge").textContent + " " + $("status").textContent;
-  r.stack = [...document.querySelectorAll("#stack .frame")].map((f) => f.innerText).slice(0, 3);
+  r.stack = [...document.querySelectorAll("#stack tr.frame")].map((f) => f.innerText.trim()).slice(0, 3);
   for (let k = 0; k < 3; k++) { $("fwd-line").click(); await sleep(400); }
   r.stepped = $("status").textContent;
   $("cont").click();
@@ -89,6 +91,22 @@ const script = opt("eval", `(async () => {
   $("play").click();
   r.where = $("where").textContent;
   r.flame = !$("flamebox").hidden;
+  // A tour, with its stops: each note, then the program's run selected.
+  $("tab-tours").click();
+  $("now").click();
+  [...document.querySelectorAll(".row.tour")].find((e) => e.textContent.includes("read()")).click();
+  await sleep(500);
+  document.querySelector(".tbar .go").click();
+  r.notes = [];
+  for (let k = 0; k < 6 && !document.querySelector(".tstatus").textContent.includes("exited"); k++) {
+    for (let i = 0; i < 100 && !(ksee.state() === "paused" && !$("note").hidden); i++) await sleep(50);
+    r.notes.push($("note").querySelector("b")?.textContent);
+    $("cont").click();
+    await sleep(300);
+  }
+  for (let i = 0; i < 100 && !document.querySelector(".tstatus").textContent.includes("exited"); i++) await sleep(100);
+  r.tour = document.querySelector(".tstatus").textContent.slice(0, 40);
+  r.line = document.querySelector("table.prog tr.cursor")?.innerText;
   return r;
 })()`);
 if (script) {
@@ -99,7 +117,6 @@ if (script) {
 const shot = await send("Page.captureScreenshot", { format: "png" });
 await Deno.writeFile(out, Uint8Array.from(atob(shot.result.data), (c) => c.charCodeAt(0)));
 console.log(`saved ${out}`);
-chrome.kill();
-server?.kill();
+for (const p of [chrome, server]) try { p?.kill(); } catch { /* already gone */ }
 console.log(exceptions ? `FAIL (${exceptions} exceptions)` : "PASS");
 Deno.exit(exceptions ? 1 : 0);

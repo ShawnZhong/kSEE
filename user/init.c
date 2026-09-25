@@ -11,19 +11,27 @@
 //   WRITE    addr = a, len = b, data ret: 0 (-EFAULT)
 //   READ     addr = a, len = b       ret: b (-EFAULT), then the bytes
 //   RESET                            frees everything ALLOC gave
+//   SPAWN    path = data (NUL-ended) ret: the pid of a new child running
+//                                    the program (-errno)
+//   WAIT     pid = a                 ret: its exit status, when it exits
 //
 // The channel is fd 100 (KSEE_FD), so that the page's own files get the
 // usual numbers, and the debugger can tell this traffic from the page's
 // syscalls (it does not stop in it; see crates/ksee-runtime/src/debug.rs).
 
-enum { SYSCALL = 1, ALLOC, WRITE, READ, RESET };
+enum { SYSCALL = 1, ALLOC, WRITE, READ, RESET, SPAWN, WAIT };
 
 #define NR_dup3		24
+#define NR_ioctl	29
 #define NR_mount	40
 #define NR_close	57
 #define NR_openat	56
 #define NR_read		63
 #define NR_write	64
+#define NR_waitid	95
+#define P_PID		1
+#define WEXITED		4
+#define KSEE_SPAWN	0x6b01	/* _IO('k', 1) */
 #define AT_FDCWD	-100
 #define O_RDWR		02
 #define ENOMEM		12
@@ -103,6 +111,19 @@ static unsigned long serve(struct request *r, long n)
 		used = 0;
 		*ret = 0;
 		break;
+	case SPAWN:
+		// (A child of this process: the kernel's /dev/ksee starts it.)
+		r->data[n - sizeof(*r) - 1] = 0;
+		*ret = __syscall(NR_ioctl, KSEE_FD, KSEE_SPAWN, (long)r->data, 0, 0, 0);
+		break;
+	case WAIT: {
+		// siginfo_t: si_signo, si_errno, si_code, then si_pid, si_uid, si_status.
+		int info[32] = { 0 };
+		long err = __syscall(NR_waitid, P_PID, r->a, (long)info, WEXITED, 0, 0);
+
+		*ret = err < 0 ? err : info[5];
+		break;
+	}
 	default:
 		*ret = -EINVAL;
 	}

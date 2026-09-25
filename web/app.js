@@ -11,7 +11,7 @@
 // stack and the source show the code there. Play moves it line by line:
 // through the recorded trace in REPLAY, or by running the kernel, a line at
 // a time, when PAUSED.
-import { $, taskName } from "./dom.js";
+import { $, el, taskName } from "./dom.js";
 import { process } from "./ksee.js";
 import { cards } from "./cards.js";
 import { syscalls } from "./syscalls.js";
@@ -19,6 +19,7 @@ import { source } from "./source.js";
 import { objects } from "./objects.js";
 import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
+import { tours } from "./tours.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -61,6 +62,7 @@ export function app(m) {
     return all;
   };
   $("show-control").onchange = refresh;
+  a.refresh = refresh;
 
   // ---- Selecting and moving the cursor ----
 
@@ -79,6 +81,22 @@ export function app(m) {
     }
     time.go(i);
   };
+  // Select the run of program `pid` (Machine.program): its calls; the
+  // cursor at its start.
+  a.selectProgram = (pid, title) => {
+    const where = () => {
+      const p = m.program(pid);
+      return p && { a: p.first, b: p.last, task: p.task };
+    };
+    const w = where();
+    if (!w) return;
+    time.selectWindow(where, title);
+    list.mark(null);
+    nb.mark(null);
+    time.go(m.seek(w.a, 1, "line"));
+  };
+  // The first syscall of task `task` after record `i`.
+  a.syscallAfter = (task, i) => list.all().find((s) => s.task.addr === task && s.first > i);
   a.selectKey = (key) => {
     const s = list.byKey(key) ?? (refresh(), list.byKey(key));
     if (s) a.select(s);
@@ -97,6 +115,8 @@ export function app(m) {
     const s = at.syscall != null ? list.byIndex(at.syscall) : null;
     if (at.kind === "block") src.showFunction(at.func, s?.index, at.line, at.file);
     stack.show(at);
+    tour?.follow(at);
+    note(null);
     $("where").textContent = `record ${at.i + 1} of ${time.records()} · ${taskName(at.task)} · ${at.func} ${at.file ?? ""}:${at.line ?? ""}` +
       (s ? ` · in ${s.name}` : "");
     badge();
@@ -111,6 +131,16 @@ export function app(m) {
     badge();
   };
   const nb = cards(a);
+  let tour = null;
+  tours(a).then((t) => (tour = t));
+
+  // A tour's note for a stop (null: none).
+  function note(stop, k, n) {
+    $("note").hidden = !stop;
+    if (stop) $("note").replaceChildren(el("span", { className: "dim", textContent: `Stop ${k + 1} of ${n} · ` }),
+      el("b", { textContent: stop.func }), `: ${stop.note} `,
+      el("span", { className: "dim", textContent: "(Continue: to the next stop; ▶| or Play: line by line)" }));
+  }
 
   // ---- Stopping ----
   let oneShot = null; // the handler "Step into" breaks at
@@ -128,14 +158,38 @@ export function app(m) {
       m.break_function(oneShot, false);
       oneShot = null;
     }
+    // A tour's stops are for its program's syscalls (not, say, its exec,
+    // which reads the program's file), unless one says any task; and only
+    // on the program's lines the tour marks.
+    const stops = a.tour?.stops ?? [];
+    const k = stops.findIndex((s) => s.func === at.func);
+    if (k >= 0) {
+      // (The program may stop before the page knows its pid: not init's, then.)
+      const pid = a.tour.pid ?? (at.task.pid > 1 ? at.task.pid : null);
+      const inSyscall = m.call_stack().some((f) => f.func === "wasm_syscall");
+      let skip = !stops[k].any && (pid == null || at.task.pid !== pid || !inSyscall);
+      if (!skip && a.tour.lines?.length) {
+        refresh();
+        const line = pid != null ? m.program(pid)?.lines.at(-1)?.line : null;
+        skip = !a.tour.lines.includes(line);
+      }
+      if (skip) {
+        m.resume();
+        return;
+      }
+    }
     const s = refresh().findLast((s) => s.task.addr === at.task.addr && s.duration_ns == null);
     if (s) a.select(s, true);
+    stack.stopped();
     showStop(at);
     objs.stopped(at.task);
+    note(k >= 0 ? stops[k] : null, k, stops.length);
+    tour?.follow(null, at);
     badge();
   }
   $("pause").onclick = () => m.pause();
   $("cont").onclick = () => {
+    note(null);
     stopPlay();
     src.view.stop = null;
     m.resume();
@@ -234,16 +288,21 @@ export function app(m) {
   });
 
   // ---- The state column's tabs ----
-  let current = "objects";
+  let current = "stack";
   function tab(name) {
     current = name;
-    for (const t of ["objects", "syscalls", "console"]) {
+    for (const t of ["stack", "objects", "syscalls", "console"]) {
       $(`tab-${t}`).classList.toggle("on", t === name);
       $(`pane-${t}`).hidden = t !== name;
     }
     if (name === "console") $("console-new").textContent = "";
   }
-  for (const t of ["objects", "syscalls", "console"]) $(`tab-${t}`).onclick = () => tab(t);
+  for (const t of ["stack", "objects", "syscalls", "console"]) $(`tab-${t}`).onclick = () => tab(t);
+  for (const t of ["tours", "play"])
+    $(`tab-${t}`).onclick = () => ["tours", "play"].forEach((u) => {
+      $(`tab-${u}`).classList.toggle("on", u === t);
+      $(`pane-${u}`).hidden = u !== t;
+    });
 
   // ---- The loop: console, stops, and (live) the history growing ----
   let lastStop = null, lastNow = 0, lastRefresh = 0;

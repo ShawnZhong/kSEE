@@ -5,3 +5,6 @@
 /initramfs.cpio
 /init.wasm
 /ui.png
+bin/
+tours/
+initramfs.list

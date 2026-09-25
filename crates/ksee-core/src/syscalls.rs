@@ -66,7 +66,7 @@ pub fn split(entry: u32, records: impl IntoIterator<Item = Record>) -> Vec<Sysca
                     s.blocks.push((func, n));
                 }
             }
-            Record::Return { .. } => {}
+            Record::Return { .. } | Record::Line { .. } | Record::Task { .. } => {}
         }
     }
     done.extend(open.into_values());

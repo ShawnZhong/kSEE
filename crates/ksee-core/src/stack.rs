@@ -87,7 +87,7 @@ pub fn frames(records: &[Record], tasks: &[u32], from: usize, to: usize, task: O
         match *r {
             Record::Block { func, n } => stacks.entry(t).or_default().block(func, n, i, &mut keep),
             Record::Exit { func, .. } | Record::Return { func } => stacks.entry(t).or_default().exit(func, i, &mut keep),
-            Record::Enter { .. } => {}
+            Record::Enter { .. } | Record::Line { .. } | Record::Task { .. } => {}
         }
     }
     // The calls still in progress at `to`.
@@ -110,7 +110,7 @@ pub fn stack_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<u32> {
             match *r {
                 Record::Block { func, n } => s.block(func, n, i, &mut |_| {}),
                 Record::Exit { func, .. } | Record::Return { func } => s.exit(func, i, &mut |_| {}),
-                Record::Enter { .. } => {}
+                Record::Enter { .. } | Record::Line { .. } | Record::Task { .. } => {}
             }
         }
     }

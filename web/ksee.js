@@ -32,5 +32,9 @@ export function process(machine) {
     read: async (addr, len) => (await request(4, addr, len)).data,
     // Free everything alloc gave.
     reset: async () => (await request(5)).ret,
+    // A program (a path in the initramfs) as a child of init: its pid; then
+    // its exit status, once it exits.
+    spawn: async (path) => (await request(6, 0, 0, [], new TextEncoder().encode(path + "\0"))).ret,
+    wait: async (pid) => (await request(7, pid)).ret,
   };
 }

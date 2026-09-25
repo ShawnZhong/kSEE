@@ -6,7 +6,9 @@
 //!   linux/vmlinux          the kernel, instrumented (kbuild)
 //!   web/pkg/               the runtime, and wasm-bindgen's glue (cargo)
 //!   web/vmlinux, web/src/  the kernel for the page (pack)
-//!   web/initramfs.cpio     /init (user/init.c)
+//!   web/initramfs.cpio     /init (user/init.c), and the tours' programs
+//!                          (user/tours/*.c, as /bin/NAME)
+//!   web/tours/             the tours: their sources, and index.json
 //!
 //! $LLVM is the LLVM version suffix (default -23); $KSEE_TRACE and
 //! $KSEE_CURRENT override what the plugin instruments.
@@ -79,20 +81,80 @@ pub fn build() {
     if stale("web/vmlinux", &["linux/vmlinux"]) {
         crate::pack::pack(Path::new("linux"), Path::new("web"));
     }
-    if stale("web/initramfs.cpio", &["user/init.c", "user/initramfs.list", "linux/usr/gen_init_cpio"]) {
+    // The tours' programs use nolibc, with the kernel's UAPI headers.
+    run(&mut kmake(&["headers"]));
+    let tours = tours();
+    let mut inputs = vec!["user/init.c", "user/initramfs.list", "user/ksee.h", "linux/usr/gen_init_cpio",
+                          "linux/tools/include/nolibc/arch-wasm.h"];
+    inputs.extend(tours.iter().map(String::as_str));
+    if stale("web/initramfs.cpio", &inputs) {
         eprintln!("  INIT    web/initramfs.cpio");
-        run(Command::new(format!("clang{llvm}")).args(["--target=wasm32", "-O2", "-ffreestanding", "-nostdlib",
-            "-Wl,--no-entry", "-Wl,--export=_start", "-o", "web/init.wasm", "user/init.c"]));
+        let cc = |out: &str, src: &str, flags: &[&str]| run(Command::new(format!("clang{llvm}"))
+            .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-Wl,--no-entry", "-Wl,--export=_start"])
+            .args(flags).args(["-o", out, src]));
+        cc("web/init.wasm", "user/init.c", &[]);
+        let mut list = std::fs::read_to_string("user/initramfs.list").unwrap_or_default();
+        list += "dir /bin 0755 0 0\n";
+        std::fs::create_dir_all("web/bin").and_then(|_| std::fs::create_dir_all("web/tours"))
+            .unwrap_or_else(|e| crate::fail(&format!("web/bin: {e}")));
+        let mut index = Vec::new();
+        for src in &tours {
+            let name = Path::new(src).file_stem().unwrap().to_string_lossy().into_owned();
+            cc(&format!("web/bin/{name}.wasm"), src, &["-nostdinc", "-isystem", "linux/tools/include/nolibc",
+                "-isystem", "linux/usr/include", "-include", "user/ksee.h"]);
+            list += &format!("file /bin/{name} bin/{name}.wasm 0755 0 0\n");
+            let text = std::fs::read_to_string(src).unwrap_or_default();
+            std::fs::write(format!("web/tours/{name}.c"), &text).unwrap_or_else(|e| crate::fail(&format!("web/tours: {e}")));
+            index.push(tour_json(&name, &text));
+        }
+        std::fs::write("web/tours/index.json", format!("[\n{}\n]\n", index.join(",\n")))
+            .unwrap_or_else(|e| crate::fail(&format!("web/tours/index.json: {e}")));
+        std::fs::write("web/initramfs.list", list).unwrap_or_else(|e| crate::fail(&format!("web/initramfs.list: {e}")));
         // (The list's paths are relative to web/.)
         let tool = Path::new("linux/usr/gen_init_cpio").canonicalize()
             .unwrap_or_else(|e| crate::fail(&format!("linux/usr/gen_init_cpio: {e}")));
-        let cpio = Command::new(tool).arg("../user/initramfs.list").current_dir("web").output()
+        let cpio = Command::new(tool).arg("initramfs.list").current_dir("web").output()
             .unwrap_or_else(|e| crate::fail(&format!("gen_init_cpio: {e}")));
         if !cpio.status.success() {
             crate::fail(&format!("gen_init_cpio: {}", String::from_utf8_lossy(&cpio.stderr)));
         }
         std::fs::write("web/initramfs.cpio", cpio.stdout).unwrap_or_else(|e| crate::fail(&format!("web/initramfs.cpio: {e}")));
     }
+}
+
+/// The tours' programs, user/tours/*.c, sorted.
+fn tours() -> Vec<String> {
+    let mut list: Vec<String> = std::fs::read_dir("user/tours").into_iter().flatten().flatten()
+        .map(|e| e.path().to_string_lossy().into_owned()).filter(|p| p.ends_with(".c")).collect();
+    list.sort();
+    list
+}
+
+/// A tour's entry in index.json, from its program's header comments:
+///   // tour: TITLE
+///   // question: TEXT
+///   // stop FUNCTION: NOTE        (any number; "FUNCTION, any task": also
+///                                  when another task runs it, as in an
+///                                  interrupt)
+/// and the program's lines that end in "// stops here": the stops are for
+/// the syscalls those make (all of the program's, if none).
+fn tour_json(name: &str, text: &str) -> String {
+    let q = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+    let (mut title, mut question, mut stops) = (String::new(), String::new(), Vec::new());
+    for line in text.lines().map_while(|l| l.strip_prefix("// ")) {
+        if let Some(t) = line.strip_prefix("tour: ") {
+            title = t.to_string();
+        } else if let Some(t) = line.strip_prefix("question: ") {
+            question = t.to_string();
+        } else if let Some((f, note)) = line.strip_prefix("stop ").and_then(|t| t.split_once(": ")) {
+            let (f, any) = f.strip_suffix(", any task").map_or((f, false), |f| (f, true));
+            stops.push(format!("{{ \"func\": {}, \"note\": {}, \"any\": {any} }}", q(f), q(note)));
+        }
+    }
+    let lines: Vec<String> = text.lines().enumerate().filter(|(_, l)| l.trim_end().ends_with("// stops here"))
+        .map(|(k, _)| (k + 1).to_string()).collect();
+    format!("  {{ \"name\": {}, \"path\": \"/bin/{name}\", \"title\": {}, \"question\": {}, \"stops\": [{}], \"lines\": [{}] }}",
+            q(name), q(&title), q(&question), stops.join(", "), lines.join(", "))
 }
 
 /// Build, then: core's unit tests and tests/web.js (under Deno); with

@@ -64,6 +64,16 @@ check("unknown syscalls are errors", bad === "no syscall nosuch");
 await session.reset();
 check("reset forgets the fds", session.fds.length === 0);
 
+// A tour's program: a real child process of init, with its source lines.
+const proc = process(m);
+const pid = await proc.spawn("/bin/read");
+check("spawn a program", pid > 1);
+check("it exits with status 0", (await proc.wait(pid)) === 0 && await until(() => out.includes("read 26 bytes")));
+m.snapshot();
+const prog = m.program(pid);
+check("its syscalls are its own", m.syscalls().some((s) => s.task.pid === pid && s.name === "read" && s.ret === 26));
+check("its source lines are in the trace", prog?.lines.some((l) => l.line === 23));
+
 // Stop in vfs_write, look around, step, go on.
 check("breakpoint set", m.break_function("vfs_write", true));
 const pending = session.call("write", { fd: "1", buf: "hi\\n", count: "auto" });

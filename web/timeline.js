@@ -120,7 +120,7 @@ export function timeline(app) {
       ctx.fillRect(fx(cur) - 1, 0, 2, depth * ROW + 2);
     }
     const s = t.all.find((s) => app.key(s) === t.sel);
-    $("flame-title").textContent = s ? `${s.name} by ${taskName(s.task)}: its calls` : "calls";
+    $("flame-title").textContent = t.title ? `${t.title}: its calls` : s ? `${s.name} by ${taskName(s.task)}: its calls` : "calls";
   }
   const frameAt = (e) => {
     const i = fi(e.offsetX), d = Math.floor(e.offsetY / ROW);
@@ -179,8 +179,10 @@ export function timeline(app) {
     if (t.buckets.some((b) => b.pid >= 0 && !ls.has(b.pid))) t.lanes.push({ pid: null, comm: "other tasks" });
     // The selected syscall's records moved as the ring went on.
     const s = t.all.find((s) => app.key(s) === t.sel);
+    const w = !s && t.where?.();
     if (s) show(s);
-    else t.win = null;
+    else if (w) (t.home = w), (t.win = { ...w });
+    else t.win = t.title = t.where = null;
     loadFrames();
     draw();
   }
@@ -217,8 +219,24 @@ export function timeline(app) {
   lanes.onpointerup = () => (dragging = false);
   addEventListener("resize", () => t.n && refresh(t.all));
 
+  // The flame chart shows the window `where()` gives, { a, b, task } (asked
+  // again after each snapshot: records move as the ring goes on; null: no
+  // more), called `title` (a program's run, say).
+  function selectWindow(where, title) {
+    const w = where();
+    if (!w) return;
+    t.sel = null;
+    t.title = title;
+    t.where = where;
+    t.home = w;
+    t.win = { ...t.home };
+    loadFrames();
+    draw();
+  }
+
   // The flame chart shows syscall `s`.
   function show(s) {
+    t.title = t.where = null;
     t.home = { a: s.first, b: s.last ?? t.n - 1, task: s.task.addr };
     t.win = { ...t.home };
   }
@@ -236,6 +254,6 @@ export function timeline(app) {
   }
   $("legend").replaceChildren(...AREAS.map(([p, , name]) =>
     el("span", { className: "key" }, el("i", { style: `background:${color(p, false)}` }), name)));
-  return { refresh, go, select, cursor: () => t.cursor, records: () => t.n,
+  return { refresh, go, select, selectWindow, cursor: () => t.cursor, records: () => t.n,
            selected: () => t.all.find((s) => app.key(s) === t.sel) };
 }

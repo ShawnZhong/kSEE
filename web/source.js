@@ -9,7 +9,7 @@ const KEYWORDS = new Set(("auto break case char const continue default do double
 
 // C, roughly: comments (also across lines), strings, preprocessor lines,
 // keywords, numbers. One list of nodes per line.
-function highlight(lines) {
+export function highlight(lines) {
   let comment = false;
   return lines.map((line) => {
     const out = [];
