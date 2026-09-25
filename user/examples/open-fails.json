@@ -2,16 +2,79 @@
   "title": "Why does open() fail?",
   "question": "Opening a file that is not there fails with ENOENT. Where in the kernel is that decided?",
   "steps": [
-    { "show": "mkdir(\"/tmp\", 0755)", "call": "mkdirat", "args": [-100, "/tmp", 493], "stops": [] },
-    { "show": "open(\"/tmp/missing\", O_RDONLY)", "call": "openat", "args": [-100, "/tmp/missing", 0, 0],
+    {
+      "show": "mkdirat(AT_FDCWD, \"/tmp\", 0755)",
+      "call": "mkdirat",
+      "args": [
+        -100,
+        "/tmp",
+        493
+      ],
+      "stops": []
+    },
+    {
+      "show": "openat(AT_FDCWD, \"/tmp/missing\", O_RDONLY)",
+      "call": "openat",
+      "args": [
+        -100,
+        "/tmp/missing",
+        0,
+        0
+      ],
       "stops": [
-        { "func": "path_openat", "note": "Opening walks the path, one name at a time, from the root (/) down." },
-        { "func": "lookup_fast", "note": "Look each name up in the dentry cache: the kernel's memory of the names it has seen. \"tmp\" is there." },
-        { "func": "lookup_open", "note": "The last name, \"missing\", is not in the cache: ask the directory. (With O_CREAT, this is where the file would be made.)" },
-        { "func": "simple_lookup", "note": "tmpfs keeps all its names in the cache, so the name does not exist: remember that, as a negative dentry (a name without an inode). Opening a name without an inode fails: -ENOENT." } ] },
-    { "show": "open(\"/tmp/missing\", O_RDONLY | O_CREAT, 0644)", "call": "openat", "args": [-100, "/tmp/missing", 64, 420],
-      "stops": [ { "func": "lookup_open", "note": "The same walk, but with O_CREAT: the negative dentry gets an inode, a new file." } ] },
-    { "show": "close(fd)", "call": "close", "args": [{ "ret": 2 }], "stops": [] },
-    { "show": "unlink(\"/tmp/missing\")", "call": "unlinkat", "args": [-100, "/tmp/missing", 0], "stops": [] }
+        {
+          "func": "path_openat",
+          "note": "Opening walks the path, one name at a time, from the root (/) down."
+        },
+        {
+          "func": "lookup_fast",
+          "note": "Look each name up in the dentry cache: the kernel's memory of the names it has seen. \"tmp\" is there."
+        },
+        {
+          "func": "lookup_open",
+          "note": "The last name, \"missing\", is not in the cache: ask the directory. (With O_CREAT, this is where the file would be made.)"
+        },
+        {
+          "func": "simple_lookup",
+          "note": "tmpfs keeps all its names in the cache, so the name does not exist: remember that, as a negative dentry (a name without an inode). Opening a name without an inode fails: -ENOENT."
+        }
+      ]
+    },
+    {
+      "show": "openat(AT_FDCWD, \"/tmp/missing\", O_RDONLY | O_CREAT, 0644)",
+      "call": "openat",
+      "args": [
+        -100,
+        "/tmp/missing",
+        64,
+        420
+      ],
+      "stops": [
+        {
+          "func": "lookup_open",
+          "note": "The same walk, but with O_CREAT: the negative dentry gets an inode, a new file."
+        }
+      ]
+    },
+    {
+      "show": "close(fd)",
+      "call": "close",
+      "args": [
+        {
+          "ret": 2
+        }
+      ],
+      "stops": []
+    },
+    {
+      "show": "unlinkat(AT_FDCWD, \"/tmp/missing\", 0)",
+      "call": "unlinkat",
+      "args": [
+        -100,
+        "/tmp/missing",
+        0
+      ],
+      "stops": []
+    }
   ]
 }

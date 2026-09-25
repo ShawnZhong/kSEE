@@ -2,89 +2,371 @@
   { "name": "hello", "title": "What happens when a program prints?",
   "question": "printf ends in write(1, ...): how do the bytes get from the program to the console?",
   "steps": [
-    { "show": "write(1, \"hello\\n\", 6)", "call": "write", "args": [1, "hello\n", 6],
+    {
+      "show": "write(1, \"hello\\n\", 6)",
+      "call": "write",
+      "args": [
+        1,
+        "hello\n",
+        6
+      ],
       "stops": [
-        { "func": "ksys_write", "note": "The syscall: the fd (1, the console) turns into the open file, a struct file." },
-        { "func": "vfs_write", "note": "The VFS: is the file open for writing? Then the file's own write: a tty's." },
-        { "func": "n_tty_write", "note": "The tty's line discipline: turn \"\\n\" into \"\\r\\n\", and pass the bytes to the driver." },
-        { "func": "wasm_tty_write", "note": "The console driver (arch/wasm/kernel/console.c): hand the bytes to the host, which shows them." } ] }
+        {
+          "func": "ksys_write",
+          "note": "The syscall: the fd (1, the console) turns into the open file, a struct file."
+        },
+        {
+          "func": "vfs_write",
+          "note": "The VFS: is the file open for writing? Then the file's own write: a tty's."
+        },
+        {
+          "func": "n_tty_write",
+          "note": "The tty's line discipline: turn \"\\n\" into \"\\r\\n\", and pass the bytes to the driver."
+        },
+        {
+          "func": "wasm_tty_write",
+          "note": "The console driver (arch/wasm/kernel/console.c): hand the bytes to the host, which shows them."
+        }
+      ]
+    }
   ]
 },
   { "name": "read", "title": "What happens in read()?",
   "question": "A program asks for 64 bytes of a file. Which parts of the kernel does that go through?",
   "steps": [
-    { "show": "mkdir(\"/tmp\", 0755)", "call": "mkdirat", "args": [-100, "/tmp", 493], "stops": [] },
-    { "show": "open(\"/tmp/note\", O_CREAT | O_WRONLY | O_TRUNC, 0644)", "call": "openat", "args": [-100, "/tmp/note", 577, 420], "stops": [] },
-    { "show": "write(fd, \"hello from the page cache\\n\", 26)", "call": "write", "args": [{ "ret": 1 }, "hello from the page cache\n", 26], "stops": [] },
-    { "show": "close(fd)", "call": "close", "args": [{ "ret": 1 }], "stops": [] },
-    { "show": "open(\"/tmp/note\", O_RDONLY)", "call": "openat", "args": [-100, "/tmp/note", 0, 0], "stops": [] },
-    { "show": "read(fd, buf, 64)", "call": "read", "args": [{ "ret": 4 }, { "size": 64 }, 64],
+    {
+      "show": "mkdirat(AT_FDCWD, \"/tmp\", 0755)",
+      "call": "mkdirat",
+      "args": [
+        -100,
+        "/tmp",
+        493
+      ],
+      "stops": []
+    },
+    {
+      "show": "openat(AT_FDCWD, \"/tmp/note\", O_CREAT | O_WRONLY | O_TRUNC, 0644)",
+      "call": "openat",
+      "args": [
+        -100,
+        "/tmp/note",
+        577,
+        420
+      ],
+      "stops": []
+    },
+    {
+      "show": "write(fd, \"hello from the page cache\\n\", 26)",
+      "call": "write",
+      "args": [
+        {
+          "ret": 1
+        },
+        "hello from the page cache\n",
+        26
+      ],
+      "stops": []
+    },
+    {
+      "show": "close(fd)",
+      "call": "close",
+      "args": [
+        {
+          "ret": 1
+        }
+      ],
+      "stops": []
+    },
+    {
+      "show": "openat(AT_FDCWD, \"/tmp/note\", O_RDONLY)",
+      "call": "openat",
+      "args": [
+        -100,
+        "/tmp/note",
+        0,
+        0
+      ],
+      "stops": []
+    },
+    {
+      "show": "read(fd, buf, 64)",
+      "call": "read",
+      "args": [
+        {
+          "ret": 4
+        },
+        {
+          "size": 64
+        },
+        64
+      ],
       "stops": [
-        { "func": "ksys_read", "note": "The syscall itself: fdget_pos turns the fd into the open file (a struct file), and the position to read at." },
-        { "func": "vfs_read", "note": "The VFS, the same for every filesystem: is the file open for reading, is the range sane? Then it calls the filesystem's own read_iter." },
-        { "func": "filemap_read", "note": "The page cache: a file's data lives in memory pages. Find the page for the position, and copy from it to the program." } ] },
-    { "show": "close(fd)", "call": "close", "args": [{ "ret": 4 }], "stops": [] }
+        {
+          "func": "ksys_read",
+          "note": "The syscall itself: fdget_pos turns the fd into the open file (a struct file), and the position to read at."
+        },
+        {
+          "func": "vfs_read",
+          "note": "The VFS, the same for every filesystem: is the file open for reading, is the range sane? Then it calls the filesystem's own read_iter."
+        },
+        {
+          "func": "filemap_read",
+          "note": "The page cache: a file's data lives in memory pages. Find the page for the position, and copy from it to the program."
+        }
+      ]
+    },
+    {
+      "show": "close(fd)",
+      "call": "close",
+      "args": [
+        {
+          "ret": 4
+        }
+      ],
+      "stops": []
+    }
   ]
 },
   { "name": "open-fails", "title": "Why does open() fail?",
   "question": "Opening a file that is not there fails with ENOENT. Where in the kernel is that decided?",
   "steps": [
-    { "show": "mkdir(\"/tmp\", 0755)", "call": "mkdirat", "args": [-100, "/tmp", 493], "stops": [] },
-    { "show": "open(\"/tmp/missing\", O_RDONLY)", "call": "openat", "args": [-100, "/tmp/missing", 0, 0],
+    {
+      "show": "mkdirat(AT_FDCWD, \"/tmp\", 0755)",
+      "call": "mkdirat",
+      "args": [
+        -100,
+        "/tmp",
+        493
+      ],
+      "stops": []
+    },
+    {
+      "show": "openat(AT_FDCWD, \"/tmp/missing\", O_RDONLY)",
+      "call": "openat",
+      "args": [
+        -100,
+        "/tmp/missing",
+        0,
+        0
+      ],
       "stops": [
-        { "func": "path_openat", "note": "Opening walks the path, one name at a time, from the root (/) down." },
-        { "func": "lookup_fast", "note": "Look each name up in the dentry cache: the kernel's memory of the names it has seen. \"tmp\" is there." },
-        { "func": "lookup_open", "note": "The last name, \"missing\", is not in the cache: ask the directory. (With O_CREAT, this is where the file would be made.)" },
-        { "func": "simple_lookup", "note": "tmpfs keeps all its names in the cache, so the name does not exist: remember that, as a negative dentry (a name without an inode). Opening a name without an inode fails: -ENOENT." } ] },
-    { "show": "open(\"/tmp/missing\", O_RDONLY | O_CREAT, 0644)", "call": "openat", "args": [-100, "/tmp/missing", 64, 420],
-      "stops": [ { "func": "lookup_open", "note": "The same walk, but with O_CREAT: the negative dentry gets an inode, a new file." } ] },
-    { "show": "close(fd)", "call": "close", "args": [{ "ret": 2 }], "stops": [] },
-    { "show": "unlink(\"/tmp/missing\")", "call": "unlinkat", "args": [-100, "/tmp/missing", 0], "stops": [] }
+        {
+          "func": "path_openat",
+          "note": "Opening walks the path, one name at a time, from the root (/) down."
+        },
+        {
+          "func": "lookup_fast",
+          "note": "Look each name up in the dentry cache: the kernel's memory of the names it has seen. \"tmp\" is there."
+        },
+        {
+          "func": "lookup_open",
+          "note": "The last name, \"missing\", is not in the cache: ask the directory. (With O_CREAT, this is where the file would be made.)"
+        },
+        {
+          "func": "simple_lookup",
+          "note": "tmpfs keeps all its names in the cache, so the name does not exist: remember that, as a negative dentry (a name without an inode). Opening a name without an inode fails: -ENOENT."
+        }
+      ]
+    },
+    {
+      "show": "openat(AT_FDCWD, \"/tmp/missing\", O_RDONLY | O_CREAT, 0644)",
+      "call": "openat",
+      "args": [
+        -100,
+        "/tmp/missing",
+        64,
+        420
+      ],
+      "stops": [
+        {
+          "func": "lookup_open",
+          "note": "The same walk, but with O_CREAT: the negative dentry gets an inode, a new file."
+        }
+      ]
+    },
+    {
+      "show": "close(fd)",
+      "call": "close",
+      "args": [
+        {
+          "ret": 2
+        }
+      ],
+      "stops": []
+    },
+    {
+      "show": "unlinkat(AT_FDCWD, \"/tmp/missing\", 0)",
+      "call": "unlinkat",
+      "args": [
+        -100,
+        "/tmp/missing",
+        0
+      ],
+      "stops": []
+    }
   ]
 },
   { "name": "sleep", "title": "Where does the time go when a program sleeps?",
   "question": "Sleeping for 30 ms takes 30 ms, but the kernel works for a tiny part of it. What happens in between?",
   "steps": [
-    { "show": "clock_nanosleep(CLOCK_MONOTONIC, 0, { 0 s, 30 ms }, NULL)", "call": "clock_nanosleep_time64", "args": [1, 0, { "i64": [0, 30000000] }, 0],
+    {
+      "show": "clock_nanosleep_time64(CLOCK_MONOTONIC, 0, &(struct timespec){ 0, 30000000 }, NULL)",
+      "call": "clock_nanosleep_time64",
+      "args": [
+        1,
+        0,
+        {
+          "i64": [
+            0,
+            30000000
+          ]
+        },
+        0
+      ],
       "stops": [
-        { "func": "hrtimer_nanosleep", "note": "Set a high-resolution timer for 30 ms from now." },
-        { "func": "schedule", "note": "Nothing to do until then: give the CPU away. The idle task (swapper) runs, and waits for an interrupt." },
-        { "func": "hrtimer_wakeup", "any": true, "note": "30 ms later, the timer's interrupt: wake the sleeper up (it is runnable again)." } ] }
+        {
+          "func": "hrtimer_nanosleep",
+          "note": "Set a high-resolution timer for 30 ms from now."
+        },
+        {
+          "func": "schedule",
+          "note": "Nothing to do until then: give the CPU away. The idle task (swapper) runs, and waits for an interrupt."
+        },
+        {
+          "func": "hrtimer_wakeup",
+          "any": true,
+          "note": "30 ms later, the timer's interrupt: wake the sleeper up (it is runnable again)."
+        }
+      ]
+    }
   ]
 },
   { "name": "file", "title": "The life of a file on ext4",
   "question": "A file is created, written, made durable, closed, and deleted: one syscall at a time. What does ext4 do at each step?",
   "steps": [
-    { "show": "open(\"/mnt/note.txt\", O_CREAT | O_WRONLY, 0644)", "call": "openat", "args": [-100, "/mnt/note.txt", 65, 420],
+    {
+      "show": "openat(AT_FDCWD, \"/mnt/note.txt\", O_CREAT | O_WRONLY, 0644)",
+      "call": "openat",
+      "args": [
+        -100,
+        "/mnt/note.txt",
+        65,
+        420
+      ],
       "stops": [
-        { "func": "ext4_create", "note": "The name is not there, and O_CREAT: ext4 makes the file, all in one journal transaction." },
-        { "func": "__ext4_new_inode", "note": "A free inode: find one in a block group's inode bitmap, and mark it used." },
-        { "func": "add_dirent_to_buf", "note": "The name \"note.txt\": into free space in a block of the directory, next to the other names." } ] },
-    { "show": "write(fd, \"hello, ext4\\n\", 12)", "call": "write", "args": [{ "ret": 0 }, "hello, ext4\n", 12],
+        {
+          "func": "ext4_create",
+          "note": "The name is not there, and O_CREAT: ext4 makes the file, all in one journal transaction."
+        },
+        {
+          "func": "__ext4_new_inode",
+          "note": "A free inode: find one in a block group's inode bitmap, and mark it used."
+        },
+        {
+          "func": "add_dirent_to_buf",
+          "note": "The name \"note.txt\": into free space in a block of the directory, next to the other names."
+        }
+      ]
+    },
+    {
+      "show": "write(fd, \"hello, ext4\\n\", 12)",
+      "call": "write",
+      "args": [
+        {
+          "ret": 0
+        },
+        "hello, ext4\n",
+        12
+      ],
       "stops": [
-        { "func": "ext4_buffered_write_iter", "note": "The bytes go into the page cache, and the page is marked dirty. Nothing is on the disk yet." },
-        { "func": "ext4_da_write_begin", "note": "Delayed allocation: no disk block is chosen yet; one is only reserved." } ] },
-    { "show": "fsync(fd)", "call": "fsync", "args": [{ "ret": 0 }],
+        {
+          "func": "ext4_buffered_write_iter",
+          "note": "The bytes go into the page cache, and the page is marked dirty. Nothing is on the disk yet."
+        },
+        {
+          "func": "ext4_da_write_begin",
+          "note": "Delayed allocation: no disk block is chosen yet; one is only reserved."
+        }
+      ]
+    },
+    {
+      "show": "fsync(fd)",
+      "call": "fsync",
+      "args": [
+        {
+          "ret": 0
+        }
+      ],
       "stops": [
-        { "func": "ext4_sync_file", "note": "Now the data must reach the disk." },
-        { "func": "ext4_mb_new_blocks", "note": "Write the dirty page back: the multiblock allocator picks it a free block, from the block bitmap." },
-        { "func": "jbd2_journal_commit_transaction", "any": true, "note": "The journal (jbd2, its own thread) commits the metadata changes: the bitmaps, the inode, the directory block." },
-        { "func": "submit_bio", "any": true, "note": "The block layer: an I/O request to the disk, /dev/loop0, whose blocks are a file in memory." } ] },
-    { "show": "close(fd)", "call": "close", "args": [{ "ret": 0 }],
-      "stops": [ { "func": "__fput", "note": "The last reference to the open file goes. The file stays: it still has a name." } ] },
-    { "show": "unlink(\"/mnt/note.txt\")", "call": "unlinkat", "args": [-100, "/mnt/note.txt", 0],
+        {
+          "func": "ext4_sync_file",
+          "note": "Now the data must reach the disk."
+        },
+        {
+          "func": "ext4_mb_new_blocks",
+          "note": "Write the dirty page back: the multiblock allocator picks it a free block, from the block bitmap."
+        },
+        {
+          "func": "jbd2_journal_commit_transaction",
+          "any": true,
+          "note": "The journal (jbd2, its own thread) commits the metadata changes: the bitmaps, the inode, the directory block."
+        },
+        {
+          "func": "submit_bio",
+          "any": true,
+          "note": "The block layer: an I/O request to the disk, /dev/loop0, whose blocks are a file in memory."
+        }
+      ]
+    },
+    {
+      "show": "close(fd)",
+      "call": "close",
+      "args": [
+        {
+          "ret": 0
+        }
+      ],
       "stops": [
-        { "func": "ext4_delete_entry", "note": "The name leaves the directory block (its space joins the entry before)." },
-        { "func": "ext4_evict_inode", "note": "No names and no users left: the inode is evicted..." },
-        { "func": "ext4_free_blocks", "note": "... its data block goes back to the block bitmap..." },
-        { "func": "ext4_free_inode", "note": "... and the inode to the inode bitmap." } ] }
+        {
+          "func": "__fput",
+          "note": "The last reference to the open file goes. The file stays: it still has a name."
+        }
+      ]
+    },
+    {
+      "show": "unlinkat(AT_FDCWD, \"/mnt/note.txt\", 0)",
+      "call": "unlinkat",
+      "args": [
+        -100,
+        "/mnt/note.txt",
+        0
+      ],
+      "stops": [
+        {
+          "func": "ext4_delete_entry",
+          "note": "The name leaves the directory block (its space joins the entry before)."
+        },
+        {
+          "func": "ext4_evict_inode",
+          "note": "No names and no users left: the inode is evicted..."
+        },
+        {
+          "func": "ext4_free_blocks",
+          "note": "... its data block goes back to the block bitmap..."
+        },
+        {
+          "func": "ext4_free_inode",
+          "note": "... and the inode to the inode bitmap."
+        }
+      ]
+    }
   ]
 },
   { "name": "dirs", "title": "Directories on ext4",
   "question": "A directory is a file of names, each pointing to an inode. What happens when one is made, listed, renamed in, and removed?",
   "steps": [
     {
-      "show": "mkdir(\"/mnt/dir\", 0755)",
+      "show": "mkdirat(AT_FDCWD, \"/mnt/dir\", 0755)",
       "call": "mkdirat",
       "args": [
         -100,
@@ -111,7 +393,7 @@
       ]
     },
     {
-      "show": "open(\"/mnt/dir/a\", O_CREAT | O_WRONLY, 0644)",
+      "show": "openat(AT_FDCWD, \"/mnt/dir/a\", O_CREAT | O_WRONLY, 0644)",
       "call": "openat",
       "args": [
         -100,
@@ -137,7 +419,7 @@
       "stops": []
     },
     {
-      "show": "open(\"/mnt/dir\", O_RDONLY | O_DIRECTORY)",
+      "show": "openat(AT_FDCWD, \"/mnt/dir\", O_RDONLY | O_DIRECTORY)",
       "call": "openat",
       "args": [
         -100,
@@ -181,7 +463,7 @@
       "stops": []
     },
     {
-      "show": "rename(\"/mnt/dir/a\", \"/mnt/dir/b\")",
+      "show": "renameat2(AT_FDCWD, \"/mnt/dir/a\", AT_FDCWD, \"/mnt/dir/b\", 0)",
       "call": "renameat2",
       "args": [
         -100,
@@ -198,7 +480,7 @@
       ]
     },
     {
-      "show": "rmdir(\"/mnt/dir\")",
+      "show": "unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)",
       "call": "unlinkat",
       "args": [
         -100,
@@ -213,7 +495,7 @@
       ]
     },
     {
-      "show": "unlink(\"/mnt/dir/b\")",
+      "show": "unlinkat(AT_FDCWD, \"/mnt/dir/b\", 0)",
       "call": "unlinkat",
       "args": [
         -100,
@@ -228,7 +510,7 @@
       ]
     },
     {
-      "show": "rmdir(\"/mnt/dir\")",
+      "show": "unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)",
       "call": "unlinkat",
       "args": [
         -100,

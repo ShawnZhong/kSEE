@@ -3,7 +3,7 @@
   "question": "A directory is a file of names, each pointing to an inode. What happens when one is made, listed, renamed in, and removed?",
   "steps": [
     {
-      "show": "mkdir(\"/mnt/dir\", 0755)",
+      "show": "mkdirat(AT_FDCWD, \"/mnt/dir\", 0755)",
       "call": "mkdirat",
       "args": [
         -100,
@@ -30,7 +30,7 @@
       ]
     },
     {
-      "show": "open(\"/mnt/dir/a\", O_CREAT | O_WRONLY, 0644)",
+      "show": "openat(AT_FDCWD, \"/mnt/dir/a\", O_CREAT | O_WRONLY, 0644)",
       "call": "openat",
       "args": [
         -100,
@@ -56,7 +56,7 @@
       "stops": []
     },
     {
-      "show": "open(\"/mnt/dir\", O_RDONLY | O_DIRECTORY)",
+      "show": "openat(AT_FDCWD, \"/mnt/dir\", O_RDONLY | O_DIRECTORY)",
       "call": "openat",
       "args": [
         -100,
@@ -100,7 +100,7 @@
       "stops": []
     },
     {
-      "show": "rename(\"/mnt/dir/a\", \"/mnt/dir/b\")",
+      "show": "renameat2(AT_FDCWD, \"/mnt/dir/a\", AT_FDCWD, \"/mnt/dir/b\", 0)",
       "call": "renameat2",
       "args": [
         -100,
@@ -117,7 +117,7 @@
       ]
     },
     {
-      "show": "rmdir(\"/mnt/dir\")",
+      "show": "unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)",
       "call": "unlinkat",
       "args": [
         -100,
@@ -132,7 +132,7 @@
       ]
     },
     {
-      "show": "unlink(\"/mnt/dir/b\")",
+      "show": "unlinkat(AT_FDCWD, \"/mnt/dir/b\", 0)",
       "call": "unlinkat",
       "args": [
         -100,
@@ -147,7 +147,7 @@
       ]
     },
     {
-      "show": "rmdir(\"/mnt/dir\")",
+      "show": "unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)",
       "call": "unlinkat",
       "args": [
         -100,
