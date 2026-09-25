@@ -139,6 +139,29 @@ impl Machine {
         self.view(|v| to_js(&v.timeline(n)))
     }
 
+    /// Syscall `name` (e.g. "openat"): { nr, params: [{ name, ty }] } (its
+    /// parameters as SYSCALL_DEFINE declares them), or null.
+    pub fn syscall(&self, name: &str) -> JsValue {
+        let types = &tables().types;
+        let Some((&nr, _)) = types.syscalls.iter().find(|(_, n)| n.as_str() == name) else { return JsValue::NULL };
+        let o = Object::new();
+        js::set(&o, "nr", nr);
+        let params = js_sys::Array::new();
+        for (pname, ty) in types.params.get(&format!("__do_sys_{name}")).into_iter().flatten() {
+            let p = Object::new();
+            js::set(&p, "name", pname.clone());
+            js::set(&p, "ty", types.name(*ty));
+            params.push(&p);
+        }
+        js::set(&o, "params", params);
+        o.into()
+    }
+
+    /// The syscalls' names (the kernel's syscall table).
+    pub fn syscall_names(&self) -> Vec<String> {
+        tables().types.syscalls.values().cloned().collect()
+    }
+
     /// Function `id`: { name, file, line }.
     pub fn function(&self, id: u32) -> JsValue {
         let t = tables();

@@ -39,6 +39,7 @@ pub const RUN_PATH: usize = 256;
 /// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h).
 pub const IRQ_TIMER: u32 = 0;
 pub const IRQ_RUN: u32 = 1;
+pub const IRQ_CONSOLE: u32 = 2;
 
 /// Raise interrupt line `irq`.
 pub fn interrupt(irq: u32) {
@@ -103,6 +104,44 @@ impl Spawns {
 }
 
 pub static CONSOLE_OUT: ByteRing = ByteRing::new();
+pub static CONSOLE_IN: ByteRing = ByteRing::new();
+
+/// A syscall the page asks /init to make (user/init.c; see Machine::call):
+/// the page fills it and sets CALL_ASKED; /init takes it (ksee.call), makes
+/// it, and gives the result back (ksee.done): CALL_DONE.
+pub static CALL: Call = Call::new();
+pub const CALL_IDLE: u32 = 0;
+pub const CALL_ASKED: u32 = 1;
+pub const CALL_DONE: u32 = 2;
+
+pub struct Call {
+    pub state: AtomicU32,
+    pub nr: AtomicU32,
+    /// Each an integer, or (bit i of `buffers`) the offset of a buffer in
+    /// `data` (its length: `lens`).
+    pub args: [AtomicU32; 6],
+    pub buffers: AtomicU32,
+    pub lens: [AtomicU32; 6],
+    /// The result (i64 bits).
+    pub ret: AtomicU64,
+    pub data: core::cell::UnsafeCell<[u8; CALL_DATA]>,
+}
+pub const CALL_DATA: usize = 4096;
+
+// (data: written by one side at a time, the state word says which.)
+unsafe impl Sync for Call {}
+
+impl Call {
+    const fn new() -> Self {
+        Call { state: AtomicU32::new(0), nr: AtomicU32::new(0), args: [const { AtomicU32::new(0) }; 6],
+               buffers: AtomicU32::new(0), lens: [const { AtomicU32::new(0) }; 6], ret: AtomicU64::new(0),
+               data: core::cell::UnsafeCell::new([0; CALL_DATA]) }
+    }
+
+    pub fn data(&self) -> &mut [u8; CALL_DATA] {
+        unsafe { &mut *self.data.get() }
+    }
+}
 
 pub fn tables() -> &'static Tables {
     TABLES.get().expect("no kernel loaded")

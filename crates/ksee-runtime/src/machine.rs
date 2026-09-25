@@ -221,6 +221,80 @@ impl Machine {
         Ok(true)
     }
 
+    /// Console input (to /init's terminal: see call).
+    pub fn input(&self, text: &str) {
+        CONSOLE_IN.put(text.as_bytes());
+        interrupt(IRQ_CONSOLE);
+    }
+
+    /// Ask /init to make syscall `nr` with `args` (user/init.c): each a
+    /// number, a string (as a NUL-terminated buffer), or { size } (a buffer
+    /// of that many zero bytes, for the call to fill). False if a call is
+    /// under way already.
+    pub fn call(&self, nr: u32, args: Vec<JsValue>) -> Result<bool, JsValue> {
+        if CALL.state.load(Ordering::Acquire) != CALL_IDLE {
+            return Ok(false);
+        }
+        let data = CALL.data();
+        data.fill(0);
+        let (mut used, mut buffers) = (0usize, 0u32);
+        for (i, a) in args.iter().take(6).enumerate() {
+            let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
+                Some([s.as_bytes(), &[0]].concat())
+            } else if let Some(n) = js::get(a, "size").as_f64() {
+                Some(vec![0; n as usize])
+            } else {
+                None
+            };
+            let v = match buffer {
+                Some(b) => {
+                    if used + b.len() > CALL_DATA {
+                        return Err("the call's buffers are too big".into());
+                    }
+                    let at = used;
+                    data[at..at + b.len()].copy_from_slice(&b);
+                    buffers |= 1 << i;
+                    CALL.lens[i].store(b.len() as u32, Ordering::Relaxed);
+                    used += (b.len() + 7) & !7; // (8-byte aligned)
+                    at as u32
+                }
+                None => a.as_f64().ok_or("an argument: a number, a string or { size }")? as i64 as u32,
+            };
+            CALL.args[i].store(v, Ordering::Relaxed);
+        }
+        for i in args.len()..6 {
+            CALL.args[i].store(0, Ordering::Relaxed);
+        }
+        CALL.nr.store(nr, Ordering::Relaxed);
+        CALL.buffers.store(buffers, Ordering::Relaxed);
+        CALL.state.store(CALL_ASKED, Ordering::Release);
+        self.input("\n"); // (the doorbell: /init waits reading its terminal)
+        Ok(true)
+    }
+
+    /// Once the call is made: { ret, buffers: [the bytes of each buffer
+    /// argument, as the call left them (null for the others)] }; null before.
+    pub fn call_result(&self) -> JsValue {
+        if CALL.state.load(Ordering::Acquire) != CALL_DONE {
+            return JsValue::NULL;
+        }
+        let o = Object::new();
+        js::set(&o, "ret", CALL.ret.load(Ordering::Relaxed) as i64 as f64);
+        let buffers = js_sys::Array::new();
+        let bits = CALL.buffers.load(Ordering::Relaxed);
+        for i in 0..6 {
+            if bits >> i & 1 == 0 {
+                buffers.push(&JsValue::NULL);
+                continue;
+            }
+            let (at, n) = (CALL.args[i].load(Ordering::Relaxed) as usize, CALL.lens[i].load(Ordering::Relaxed) as usize);
+            buffers.push(&Uint8Array::from(&CALL.data()[at..at + n]));
+        }
+        js::set(&o, "buffers", buffers);
+        CALL.state.store(CALL_IDLE, Ordering::Release);
+        o.into()
+    }
+
     /// Once the program `run` started has exited: { status (its exit
     /// status, or -errno), pid }; null before.
     pub fn result(&self) -> JsValue {

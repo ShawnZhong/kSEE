@@ -149,6 +149,27 @@ for (const [name, funcs] of [["file", ["ext4_create", "__ext4_new_inode", "add_d
   check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/dir"'));
 }
 
+// Syscalls the page asks /init to make: a file's life, then what it read.
+{
+  const call = (name, args) => proc.call(name, args);
+  const fd = (await call("openat", [-100, "/mnt/called.txt", 0o102, 0o644])).ret; // O_CREAT | O_RDWR
+  const w = (await call("write", [fd, "by the page\n", 12])).ret;
+  const back = await call("pread64", [fd, { size: 12 }, 12, 0]);
+  const text = new TextDecoder().decode(back.buffers[1]);
+  m.record(true);
+  const synced = (await call("fsync", [fd])).ret;
+  m.record(false);
+  m.snapshot();
+  const fsync = m.syscalls().findLast((s) => s.name === "fsync");
+  check(`/init makes the page's calls: fd ${fd}, wrote ${w}, read back ${JSON.stringify(text)}, fsync ${synced}`,
+        fd > 2 && w === 12 && text === "by the page\n" && synced === 0);
+  check("... recorded: fsync, on pid 1, ran ext4_sync_file", fsync?.task.pid === 1
+        && m.first_call("ext4_sync_file", fsync.first, fsync.last, fsync.task.addr) != null);
+  check("... and closes and unlinks", (await call("close", [fd])).ret === 0 && (await call("unlinkat", [-100, "/mnt/called.txt", 0])).ret === 0);
+  check("a syscall's parameters, typed", JSON.stringify(m.syscall("openat")?.params) ===
+        JSON.stringify([{ name: "dfd", ty: "int" }, { name: "filename", ty: "char *" }, { name: "flags", ty: "int" }, { name: "mode", ty: "umode_t" }]));
+}
+
 // LINUX_REBOOT_CMD_POWER_OFF
 proc.run("/bin/poweroff");
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);

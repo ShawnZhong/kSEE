@@ -12,10 +12,22 @@ export async function start({ kernel, initrd, cmdline = "", ramMiB = 64 }) {
 }
 
 // Running programs: the kernel runs one (a path in the initramfs), and says
-// its pid and exit status when it has exited (see Machine.run).
+// its pid and exit status when it has exited (see Machine.run). And syscalls
+// /init makes for the page: call(name, args) (see Machine.call) gives
+// { ret, buffers }.
 export function process(machine) {
   const tick = () => new Promise((r) => setTimeout(r, 2));
   return {
+    call: async (name, args) => {
+      const s = machine.syscall(name);
+      if (!s) throw new Error(`no syscall ${name}`);
+      while (!machine.call(s.nr, args)) await tick();
+      for (;;) {
+        const r = machine.call_result();
+        if (r) return r;
+        await tick();
+      }
+    },
     run: async (path) => {
       while (!machine.run(path)) await tick();
       for (;;) {

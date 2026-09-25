@@ -28,6 +28,13 @@ pub extern "C" fn console_write(p: *const u8, n: u32) {
     CONSOLE_OUT.put(unsafe { core::slice::from_raw_parts(p, n as usize) });
 }
 
+/// Pending console input, without blocking.
+#[unsafe(no_mangle)]
+pub extern "C" fn console_read(p: *mut u8, n: u32) -> i32 {
+    bulk(p as u32, n);
+    CONSOLE_IN.take(unsafe { core::slice::from_raw_parts_mut(p, n as usize) }) as i32
+}
+
 /// Copy the command line (NUL-terminated) to `buf`.
 #[unsafe(no_mangle)]
 pub extern "C" fn get_cmdline(buf: *mut u8, len: u32) -> u32 {
@@ -181,7 +188,7 @@ pub fn kernel(memory: &JsValue, worker: bool) -> Object {
     let export = |name: &str| js::get(&rt, name);
 
     let kernel = Object::new();
-    for name in ["console_write", "get_cmdline", "memory_end", "time_ns", "halt", "spawn_task"] {
+    for name in ["console_write", "console_read", "get_cmdline", "memory_end", "time_ns", "halt", "spawn_task"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "exit_task", func(Closure::<dyn FnMut()>::new(|| wasm_bindgen::throw_str(EXIT))));
@@ -189,6 +196,7 @@ pub fn kernel(memory: &JsValue, worker: bool) -> Object {
         web_sys::console::log_1(&js::get(&js_sys::Error::new("kernel stack"), "stack"));
     })));
     let line = export("user_line");
+    let (call, done) = call_imports();
     js::set(&kernel, "user_load", func(Closure::<dyn FnMut(u32, u32) -> i32>::new(
         move |image: u32, len: u32| {
             assert!(worker, "exec on the page");
@@ -198,6 +206,8 @@ pub fn kernel(memory: &JsValue, worker: bool) -> Object {
                 USER.with_borrow(|u| js::set(&linux, "syscall", u.kernel_syscall.clone().unwrap()));
                 let ksee = Object::new();
                 js::set(&ksee, "line", line.clone());
+                js::set(&ksee, "call", call.clone());
+                js::set(&ksee, "done", done.clone());
                 let imports = Object::new();
                 js::set(&imports, "linux", linux);
                 js::set(&imports, "ksee", ksee);
@@ -257,6 +267,42 @@ pub fn kernel(memory: &JsValue, worker: bool) -> Object {
     js::set(&imports, "kernel", kernel);
     js::set(&imports, "ksee", ksee);
     imports
+}
+
+/// ksee.call and ksee.done, for /init (user/init.c): the syscall the page
+/// asks for (state::CALL). The request's place in the program's memory:
+/// `struct { i32 nr; i32 args[6]; i32 pad; u8 data[CALL_DATA]; }`.
+fn call_imports() -> (JsValue, JsValue) {
+    // ksee.call(req): the request into `req` (buffers: pointers into its
+    // data); its number, or -1 if there is none.
+    let call = func(Closure::<dyn FnMut(u32) -> i32>::new(|req: u32| {
+        if CALL.state.load(Ordering::Acquire) != CALL_ASKED {
+            return -1;
+        }
+        let Some(mem) = user_bytes(req, 32 + CALL_DATA as u32) else { return -1 };
+        let mut head = [0u8; 32];
+        let buffers = CALL.buffers.load(Ordering::Relaxed);
+        head[0..4].copy_from_slice(&CALL.nr.load(Ordering::Relaxed).to_le_bytes());
+        for (i, a) in CALL.args.iter().enumerate() {
+            let mut v = a.load(Ordering::Relaxed);
+            if buffers >> i & 1 != 0 {
+                v += req + 32;
+            }
+            head[4 + 4 * i..8 + 4 * i].copy_from_slice(&v.to_le_bytes());
+        }
+        mem.subarray(0, 32).copy_from(&head);
+        mem.subarray(32, 32 + CALL_DATA as u32).copy_from(CALL.data());
+        CALL.nr.load(Ordering::Relaxed) as i32
+    }));
+    // ksee.done(ret, req): the result, and the buffers as the call left them.
+    let done = func(Closure::<dyn FnMut(i64, u32)>::new(|ret: i64, req: u32| {
+        if let Some(mem) = user_bytes(req + 32, CALL_DATA as u32) {
+            mem.copy_to(CALL.data());
+        }
+        CALL.ret.store(ret as u64, Ordering::Relaxed);
+        CALL.state.store(CALL_DONE, Ordering::Release);
+    }));
+    (call, done)
 }
 
 /// Remember this Worker's kernel, for user programs' syscall import.
