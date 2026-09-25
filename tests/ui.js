@@ -108,6 +108,16 @@ const script = opt("eval", `(async () => {
   const kh = ksee.time.home();
   if (kh?.a !== ksys.first || kh?.b !== ksee.m.call_end(ksys.first)) throw new Error("ksys_read's selection: " + JSON.stringify(kh) + ", not from " + ksys.first);
   r.dblclicked = $("chart-title").textContent;
+  // Your own call: type it, Tab completes the name, Enter makes it.
+  [...document.querySelectorAll(".thead a")].find((a) => a.textContent.includes("examples")).click();
+  [...document.querySelectorAll(".row.example")].find((e) => e.textContent.includes("Your own")).click();
+  const input = document.querySelector(".callform input"), key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
+  input.value = "mkdira"; key("Tab");
+  input.value += "AT_FDCWD, "; input.dispatchEvent(new Event("input"));
+  r.typed = [input.value, document.querySelector(".callform .hint").textContent];
+  input.value = 'openat(AT_FDCWD, "/mnt/mine", O_CREAT | O_WRONLY, 0644)'; key("Enter");
+  await until(() => document.querySelector("ol.steps > li.done"));
+  r.mine = document.querySelector("ol.steps > li.done")?.innerText.trim();
   return r;
 })()`);
 if (script) {

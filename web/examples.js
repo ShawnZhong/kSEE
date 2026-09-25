@@ -4,12 +4,12 @@
 // each recorded: then its syscall is selected, and its stops are places in
 // its recording (the first call of the stop's function, on /init's task, or
 // any for a stop that says so). Next goes from one stop to the next. Below
-// the calls, a form adds one: a syscall by name, its parameters as fields.
+// the calls, add one: write it as in C, and Enter.
 //
 // A step: { call, args, stops? }; its arguments written as in C (see
 // args.js): "a string", 0644, O_CREAT | O_WRONLY, [64], {0, 30000000}, $2.
 import { $, el } from "./dom.js";
-import { arg, made, result } from "./args.js";
+import { arg, made, parseCall, result } from "./args.js";
 
 export async function examples(app) {
   const { m, proc } = app;
@@ -160,22 +160,60 @@ export async function examples(app) {
     return /^[\x20-\x7e\n\t]*$/.test(s) ? JSON.stringify(s) : [...b.subarray(0, 32)].map((x) => x.toString(16).padStart(2, "0")).join(" ");
   }
 
-  // Add a call: a syscall by name, its parameters as fields (typed, from the
-  // kernel's own declarations).
+  // Add a call, written as in C: `openat(AT_FDCWD, "/mnt/x", O_CREAT, 0644)`,
+  // Enter to make it. A hint below: the syscalls the name may be, or its
+  // signature (the kernel's own declaration); Tab completes the name.
   function form() {
-    const names = el("datalist", { id: "syscall-names" }, ...m.syscall_names().map((n) => el("option", { value: n })));
-    const name = el("input", { className: "mono", placeholder: "add a call: openat, write, …" });
-    name.setAttribute("list", "syscall-names");
-    const fields = el("div", { className: "fields" });
-    name.onchange = () => fields.replaceChildren(...(m.syscall(name.value)?.params ?? []).map((p) =>
-      el("input", { className: "mono", placeholder: `${p.name} (${p.ty})`, title: `${p.name}: ${p.ty}` })));
-    const add = el("button", { textContent: "＋ Add and make it", onclick: () => {
-      if (!m.syscall(name.value)) return (t.status.textContent = `no syscall ${name.value}`);
-      t.steps.push({ call: name.value, args: [...fields.querySelectorAll("input")].map((f) => f.value.trim() || "0") });
+    const names = m.syscall_names();
+    const input = el("input", { className: "mono", placeholder: 'add a call: openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)',
+                                spellcheck: false, autocomplete: "off" });
+    const hint = el("div", { className: "mono dim hint" });
+    const signature = (name) => {
+      const s = m.syscall(name);
+      return s && `${name}(${s.params.map((p) => `${p.ty}${p.ty.endsWith("*") ? "" : " "}${p.name}`).join(", ")})`;
+    };
+    const matches = (prefix) => names.filter((n) => n.startsWith(prefix));
+    input.oninput = () => {
+      const word = input.value.match(/^\s*([A-Za-z_]\w*)/)?.[1] ?? "";
+      if (!word) return (hint.textContent = "");
+      const sig = input.value.includes("(") && signature(word);
+      const also = matches(word);
+      hint.textContent = sig || (also.length ? also.slice(0, 8).join("  ") + (also.length > 8 ? "  …" : "") : `no syscall ${word}`);
+    };
+    input.onkeydown = (e) => {
+      if (e.key === "Tab" && !input.value.includes("(")) {
+        const also = matches(input.value.trim());
+        if (!also.length) return;
+        e.preventDefault();
+        // (The longest start they share; the "(" if there is only one.)
+        let common = also[0];
+        for (const n of also) while (!n.startsWith(common)) common = common.slice(0, -1);
+        input.value = also.length === 1 ? `${common}(` : common;
+        input.oninput();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        add();
+      }
+    };
+    function add() {
+      const c = parseCall(input.value);
+      if (!c) return (hint.textContent = "write a call: name(arg, arg, …)");
+      const s = m.syscall(c.call);
+      if (!s) return (hint.textContent = `no syscall ${c.call}`);
+      if (c.args.length > s.params.length) return (hint.textContent = `${signature(c.call)}: ${s.params.length} arguments, not ${c.args.length}`);
+      try {
+        // (Checked now: $n as if the calls before were made.)
+        c.args.forEach((a) => arg(a, consts, t.steps.map(() => 0)));
+      } catch (e) {
+        return (hint.textContent = e.message);
+      }
+      t.steps.push({ call: c.call, args: c.args });
+      input.value = "";
+      hint.textContent = "";
       draw();
       upTo(t.steps.length - 1);
-    } });
-    return el("div", { className: "callform" }, names, name, fields, add);
+    }
+    return el("div", { className: "callform" }, input, hint);
   }
 
   index();

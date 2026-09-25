@@ -182,4 +182,4 @@ ol.steps .ret { color: var(--accent); }
 ol.steps ol.stops { margin: 4px 0 8px; }
 .callform { margin: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
 .callform input { font-size: 12px; padding: 2px 6px; }
-.callform .fields { display: flex; flex-direction: column; gap: 3px; padding-left: 12px; }
+.callform .hint { font-size: 11px; min-height: 1.4em; white-space: pre-wrap; }

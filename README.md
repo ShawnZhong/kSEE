@@ -35,7 +35,8 @@ them for the page, one at a time (▶ Next call), each recorded, and the
 page goes to the call's first stop: its note, the source, and the Stack
 (the call stack, with each call's arguments and locals, as they were).
 Next stop, ◀ / ▶| line by line, or Play. Add your own call below the list:
-a syscall by name, its parameters as fields.
+write it as in C, `openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`,
+and Enter (Tab completes a syscall's name; the hint shows its signature).
 
 The timeline shows the recording: the call stacks over time, and which
 task ran (scroll to zoom, drag to pan; hover a call for what it was and a

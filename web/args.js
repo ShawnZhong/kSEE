@@ -62,6 +62,34 @@ function value(text, consts, rets) {
   return v;
 }
 
+// A call written as in C, `name(arg, arg, ...)` (a ; at the end is fine):
+// { call, args (their texts) }, or null if it is not one.
+export function parseCall(text) {
+  const m = String(text).trim().replace(/;$/, "").match(/^([A-Za-z_]\w*)\s*\(([\s\S]*)\)$/);
+  if (!m) return null;
+  // (The arguments: split at the commas outside strings, () and {}.)
+  const args = [];
+  let cur = "", depth = 0, quote = false;
+  for (let i = 0; i < m[2].length; i++) {
+    const c = m[2][i];
+    if (quote) {
+      cur += c;
+      if (c === "\\") cur += m[2][++i] ?? "";
+      else if (c === '"') quote = false;
+    } else if (c === "," && depth === 0) {
+      args.push(cur.trim());
+      cur = "";
+    } else {
+      if (c === '"') quote = true;
+      else if (c === "(" || c === "{") depth++;
+      else if (c === ")" || c === "}") depth--;
+      cur += c;
+    }
+  }
+  if (cur.trim()) args.push(cur.trim());
+  return { call: m[1], args };
+}
+
 // Argument `text` as the call was made: $n replaced by its value.
 export const made = (text, rets) => String(text).replace(/\$(\d+)/g, (m, n) => (rets[n - 1] ?? m));
 
