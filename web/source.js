@@ -2,8 +2,8 @@
 // lines where blocks ran (how often: hover the line number; untaken ones
 // marked), the
 // function's lines, and the cursor. Hover a name for its value at the
-// cursor (an argument, a global, and fields: file->f_pos); right-click to
-// watch it; F12 or Ctrl+click on a function to open its source.
+// cursor (an argument, a global, and fields: file->f_pos); F12 or
+// Ctrl+click on a function to open its source.
 import { $ } from "./dom.js";
 import { loadMonaco, readOnly } from "./editor.js";
 
@@ -66,11 +66,6 @@ export function source(app) {
         return h && { range: new monaco.Range(pos.lineNumber, h.start + 1, pos.lineNumber, h.end + 1), contents: h.contents };
       },
     });
-    ed.addAction({ id: "ksee.watch", label: "Watch", contextMenuGroupId: "navigation", contextMenuOrder: 0,
-      run: () => {
-        const pos = ed.getPosition(), e = exprAt(ed.getModel().getLineContent(pos.lineNumber), pos.column - 1);
-        if (e) app.stack.watch(e.expr, inFunction(pos.lineNumber) ? v.fn.name : null);
-      } });
     ed.addAction({ id: "ksee.definition", label: "Go to the function's source", contextMenuGroupId: "navigation",
       contextMenuOrder: 1, keybindings: [monaco.KeyCode.F12], run: () => definition(ed.getPosition()) });
   });

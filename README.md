@@ -47,7 +47,7 @@ task ran (scroll to zoom, drag to pan; hover a call for what it was and a
 preview of where, click it to go there; click a syscall, or double-click
 any call, to select it: its records from its start to its end, with
 whatever else ran in between). Hover
-a name in the source for its value at the cursor; right-click to watch it;
+a name in the source for its value at the cursor;
 ✎ on a value says which code last wrote it. ● Record records the kernel
 until you stop it.
 

@@ -64,8 +64,8 @@ source. Rust does the work: JS only lays it out.
 |---|---|
 | app.js | wires the panels to the Machine; the state (idle, recording, replay, halted); the cursor; line steps and Play |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom); zoom, pan |
-| source.js | the source at the cursor (Monaco): lines that ran, the function, hover values, Watch, definitions |
-| callstack.js | the Stack: calls with arguments and locals, watches, ✎ who wrote a value |
+| source.js | the source at the cursor (Monaco): lines that ran, the function, hover values, definitions |
+| callstack.js | the Stack: calls with arguments and locals, the task (current), ✎ who wrote a value |
 | examples.js | the examples: syscalls /init makes, one at a time, recorded; their stops; adding a call |
 | args.js | a syscall's arguments, written as in C, with the kernel's constants |
 | ksee.js, worker.js | booting; each Worker's script |

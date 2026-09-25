@@ -33,7 +33,7 @@ SMP, no fork: see Limits).
      drag, step line by line, Play;
    - *code*: the source line at the cursor, the lines that ran;
    - *values*: the call stack with each call's arguments and locals,
-     watches, and a name's value on hover; memory as it was at the cursor;
+     the task running, and a name's value on hover; memory as it was at the cursor;
      ✎: which code last wrote a value.
    An example's stops are places in the recording, with a note each: Next goes
    to the next one.
@@ -45,7 +45,7 @@ SMP, no fork: see Limits).
 │ Examples     │ The stop's note              │ Stack: calls, │
 │              │ Source at the cursor         │ arguments,    │
 │              │ (lines that ran)             │ locals,       │
-│              │                              │ watches       │
+│              │                              │ current task  │
 └──────────────┴──────────────────────────────┴───────────────┘
 ```
 

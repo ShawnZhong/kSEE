@@ -209,18 +209,6 @@ export function app(m) {
     e.preventDefault();
   });
 
-  // ---- The right column's tabs ----
-  let current = "stack";
-  function tab(name) {
-    current = name;
-    for (const t of ["stack", "console"]) {
-      $(`tab-${t}`).classList.toggle("on", t === name);
-      $(`pane-${t}`).hidden = t !== name;
-    }
-    if (name === "console") $("console-new").textContent = "";
-  }
-  for (const t of ["stack", "console"]) $(`tab-${t}`).onclick = () => tab(t);
-
   // ---- Resizing: the columns, and the timeline's height ----
   const sizes = { left: 340, right: 380, chart: 190 };
   try { Object.assign(sizes, JSON.parse(localStorage.getItem("ksee.sizes") ?? "{}")); } catch { /* none kept */ }
@@ -264,7 +252,6 @@ export function app(m) {
     if (out) {
       $("console").textContent += out.replaceAll("\r", "");
       $("pane-console").scrollTop = $("pane-console").scrollHeight;
-      if (current !== "console") $("console-new").textContent = "•";
     }
     const code = m.halted();
     if (code !== undefined) {

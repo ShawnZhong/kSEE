@@ -33,6 +33,8 @@
   <div class="col">
     <h2>Examples <span class="dim">what the kernel does, recorded</span></h2>
     <div class="body" id="examples"></div>
+    <h2 class="sub">Console <span class="dim">what the calls print</span></h2>
+    <div class="body consolebox" id="pane-console"><pre id="console"></pre></div>
   </div>
   <div class="vsplit" data-col="left" title="drag to resize"></div>
   <div class="col">
@@ -42,14 +44,9 @@
   </div>
   <div class="vsplit" data-col="right" title="drag to resize"></div>
   <div class="col">
-    <h2 class="tabs"><button id="tab-stack" class="on">Stack</button><button id="tab-console">Console <span id="console-new"></span></button>
-      <span class="right dim" id="mem-note" title="Values are read from memory as it was at the cursor">memory now</span></h2>
-    <div class="tab" id="pane-stack">
-      <div class="stackhead dim" id="stack-note"></div>
-      <div class="body" id="stack"></div>
-      <form class="watchbar" id="watchf"><input id="watch" list="globals" placeholder="+ watch: a global (runqueues), an argument, file->f_pos …" aria-label="watch an expression"><datalist id="globals"></datalist></form>
-    </div>
-    <div class="tab body" id="pane-console" hidden><pre id="console"></pre></div>
+    <h2>Stack <span class="right dim" id="mem-note" title="Values are read from memory as it was at the cursor">memory now</span></h2>
+    <div class="stackhead dim" id="stack-note"></div>
+    <div class="body" id="stack"></div>
   </div>
 </main>
 <script type="module">

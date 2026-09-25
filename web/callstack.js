@@ -1,9 +1,8 @@
 // The Stack tab: the call stack at the cursor, innermost first, each call
 // with its arguments and its locals in memory as a tree (like a debugger's
 // variables), rebuilt from the trace (Machine.call_stack: a call's
-// arguments are in its record, its locals' addresses in another);
-// then the watches: the task at the cursor, and expressions (a global, or
-// a call's argument, and fields: "file->f_pos"; see resolve). Pointers open into
+// arguments are in its record, its locals' addresses in another); at the
+// bottom, the task running then (current). Pointers open into
 // what they point to, structs into their fields, read from memory as it was
 // at the cursor (Machine.memory_at); what is open stays open while
 // stepping; values that changed since the cursor last moved are
@@ -15,7 +14,7 @@ import { $, el } from "./dom.js";
 export function callstack(app) {
   const { m } = app;
   // Open paths, and the values shown before (to highlight changes).
-  const s = { open: new Set(), last: new Map(), now: new Map(), frames: [], task: null, watches: [], sel: null };
+  const s = { open: new Set(), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
 
   // The children of value `o` (an Object, see ksee_core::view), if it has any.
   function kids(o) {
@@ -72,25 +71,13 @@ export function callstack(app) {
         rows(f.locals, `${n - k}/${f.func}/locals`, 1, body);
       }
     });
-    // The watches: the task at the cursor, then the globals asked for.
-    const watches = [];
-    if (s.task) watches.push({ title: `current: ${s.task.comm ?? "?"}(${s.task.pid ?? "?"})`, key: "task",
-                               value: () => m.object("task_struct", s.task.addr, 1) });
-    for (const g of s.watches) watches.push({ title: g, key: `watch/${g}`, value: () => resolve(g), remove: g });
-    if (watches.length) body.push(el("tr", { className: "sep" }, el("td", { colSpan: 3, textContent: "watch" })));
-    for (const w of watches) {
-      const o = w.value();
-      const h = head(w.title, "", () => {
-        s.open.has(w.key) ? s.open.delete(w.key) : s.open.add(w.key);
+    // At the bottom: the task running then (its task_struct, as it was).
+    if (s.task && s.frames.length) {
+      body.push(head(`current: ${s.task.comm ?? "?"}(${s.task.pid ?? "?"})`, "the task running", () => {
+        s.open.has("task") ? s.open.delete("task") : s.open.add("task");
         draw();
-      }, "watch");
-      if (w.remove) h.firstChild.append(el("a", { className: "who", textContent: "  ✕", title: "stop watching", onclick: () => {
-        s.watches = s.watches.filter((x) => x !== w.remove);
-        draw();
-      } }));
-      body.push(h);
-      if (!o) body.push(el("tr", {}, el("td", { colSpan: 3, className: "dim", style: "padding-left:24px", textContent: "not here (no such name at the cursor)" })));
-      else if (s.open.has(w.key)) rows(o.children ?? [o], w.key, 1, body);
+      }, "task"));
+      if (s.open.has("task")) rows(m.object("task_struct", s.task.addr, 1)?.children ?? [], "task", 1, body);
     }
     $("stack").replaceChildren(el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
   }
@@ -129,19 +116,6 @@ export function callstack(app) {
     return o ? { ...o, name: expr } : null;
   }
 
-  // Watch expression `expr` (opened); `only` as for resolve, to check it.
-  function watch(expr, only) {
-    if (!resolve(expr, only)) return false;
-    if (!s.watches.includes(expr)) s.watches.push(expr);
-    s.open.add(`watch/${expr}`);
-    draw();
-    return true;
-  }
-  $("globals").append(...m.globals().map((g) => el("option", { value: g })));
-  $("watchf").onsubmit = (e) => {
-    e.preventDefault();
-    if (watch($("watch").value.trim())) $("watch").value = "";
-  };
   // Select the call on the stack whose first record is `first` (null: the
   // innermost; `inlined`: code inlined into it, from that function): its
   // frame, or null if it is not on the stack.
@@ -155,5 +129,5 @@ export function callstack(app) {
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
 
-  return { show, select, owner, watch, resolve, kids };
+  return { show, select, owner, resolve, kids };
 }

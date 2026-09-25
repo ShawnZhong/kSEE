@@ -198,11 +198,6 @@ impl Machine {
         self.with_memory(|mem| to_js(&tables().types.object(mem, label, addr, ty, depth.unwrap_or(1))))
     }
 
-    /// The names of variables with fixed addresses (runqueues, init_task, ...).
-    pub fn globals(&self) -> Vec<String> {
-        tables().types.globals.keys().cloned().collect()
-    }
-
     /// The value of the variable `name` (view::Object), or null.
     pub fn global(&self, name: &str, depth: Option<u32>) -> JsValue {
         match tables().types.globals.get(name) {
