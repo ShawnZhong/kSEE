@@ -40,40 +40,23 @@ pub const UNKNOWN: u32 = 7;
 pub const VALUE_TAG: u32 = VALUE;
 const VALUE: u32 = 8;
 
-/// Records in `words`, oldest first, starting at a pair boundary. Leading
-/// continuations (of a record the ring has overwritten) and truncated
-/// records are skipped.
-pub fn decode(words: &[u32]) -> Vec<Record> {
-    Decoder::new(words.len() as u32 / 2, |i| (words[2 * i as usize], words[2 * i as usize + 1]))
-        .collect()
-}
-
 /// Offset of the ring's words in the trace header (`{ u32 pos; u32 pad;
 /// u32 on; u32 pad; u32 ring[words]; }`, see plugin/ksee-trace.cpp).
 pub const RING: u32 = 16;
 /// Offset of the `on` word (probes record only while it is nonzero).
 pub const ON: u32 = 8;
 
-/// The ring at `trace`, decoded in place.
-pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> impl Iterator<Item = Record> + '_ {
-    let (first, len) = window(mem, trace, words);
-    let pairs = words / 2;
-    Decoder::new(len, move |i| {
-        let slot = (first + i) % pairs;
-        let a = trace + RING + slot * 8;
-        (mem.read_u32(a), mem.read_u32(a + 4))
-    })
-}
-
 /// The ring at `trace`, decoded, with each record's id: the number of the
 /// pair it starts at, counting every pair ever written (so an id stays the
 /// same while the ring goes on; indexes do not).
-pub fn ring_ids(mem: &dyn Memory, trace: u32, words: u32) -> (Vec<Record>, Vec<u32>) {
-    let (first, len) = window(mem, trace, words);
+pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> (Vec<Record>, Vec<u32>) {
+    // The ring's current contents: `len` pairs from pair `first`.
+    let pos = mem.read_u32(trace) & !1;
+    let len = pos.min(words) / 2;
+    let first = pos / 2 - len;
     let pairs = words / 2;
     let mut d = Decoder::new(len, move |i| {
-        let slot = (first + i) % pairs;
-        let a = trace + RING + slot * 8;
+        let a = trace + RING + (first + i) % pairs * 8;
         (mem.read_u32(a), mem.read_u32(a + 4))
     });
     let (mut records, mut ids) = (Vec::new(), Vec::new());
@@ -82,13 +65,6 @@ pub fn ring_ids(mem: &dyn Memory, trace: u32, words: u32) -> (Vec<Record>, Vec<u
         ids.push(first + d.head);
     }
     (records, ids)
-}
-
-/// (first pair, number of pairs) of the ring's current contents.
-pub fn window(mem: &dyn Memory, trace: u32, words: u32) -> (u32, u32) {
-    let pos = mem.read_u32(trace) & !1;
-    let len = pos.min(words) / 2;
-    (pos / 2 - len, len)
 }
 
 /// Decodes `len` pairs obtained from `pair(i)`.
@@ -194,6 +170,14 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
 pub(crate) mod tests {
     use super::*;
 
+/// Records in `words`, oldest first, starting at a pair boundary. Leading
+/// continuations (of a record the ring has overwritten) and truncated
+/// records are skipped.
+fn decode(words: &[u32]) -> Vec<Record> {
+    Decoder::new(words.len() as u32 / 2, |i| (words[2 * i as usize], words[2 * i as usize + 1]))
+        .collect()
+}
+
     pub fn block(func: u32, n: u32) -> Vec<u32> {
         alloc::vec![func, BLOCK << 28 | n]
     }
@@ -238,7 +222,8 @@ pub(crate) mod tests {
             let at = RING as usize + slot * 4;
             m[at..at + 4].copy_from_slice(&w.to_le_bytes());
         }
-        let got: Vec<Record> = ring(&Ring(m), 0, 4).collect();
+        let (got, ids) = ring(&Ring(m), 0, 4);
         assert_eq!(got, [Record::Block { func: 9, n: 1 }, Record::Block { func: 9, n: 2 }]);
+        assert_eq!(ids, [1, 2]);
     }
 }

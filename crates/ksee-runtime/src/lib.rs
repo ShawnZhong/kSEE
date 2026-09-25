@@ -7,17 +7,22 @@
 //! (CONFIG_WASM_HOST_MEMORY), so it reads kernel objects and the trace
 //! ring directly.
 //!
-//! * [`machine`]: the page's API: boot a kernel, console, views.
-//! * [`worker`]: what each Worker runs: the timer, or a kernel task.
+//! The page runs:
+//! * [`machine`]: its API: boot a kernel, drive it, snapshot its recording;
+//! * [`replay`]: its views of the recording (ksee_core::view, as JS values).
+//!
+//! The kernel's Workers run:
+//! * [`worker`]: the timer, or a kernel task;
 //! * [`imports`]: the kernel's imports. The frequent ones are this
 //!   module's exports (direct wasm calls); the rest reach Web APIs.
-//! * [`debug`]: breakpoints and stepping (stopping the kernel in a probe).
-//! * [`state`]: statics shared by all instances.
+//!
+//! Both share [`state`]: statics in the shared memory.
 
 #![feature(stdarch_wasm_atomic_wait)]
 
 mod imports;
 mod js;
 pub mod machine;
+mod replay;
 mod state;
 mod worker;

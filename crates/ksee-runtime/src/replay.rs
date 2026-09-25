@@ -1,0 +1,177 @@
+//! The page's views of the last snapshot of the recording (see
+//! ksee_core::view): each is a view, as a JS value.
+
+use js_sys::Object;
+use ksee_core::view::View;
+use ksee_core::Memory;
+use wasm_bindgen::prelude::*;
+
+use crate::js;
+use crate::machine::{Frozen, Machine};
+use crate::state::{tables, Direct};
+
+fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
+    serde_wasm_bindgen::to_value(v).unwrap_or(JsValue::NULL)
+}
+
+impl Machine {
+    fn view<T>(&self, f: impl FnOnce(&View) -> T) -> T {
+        let rec = self.rec.borrow();
+        f(&View { tables: tables(), rec: &rec, now: &Direct })
+    }
+
+    /// Run `f` on memory as the views should see it (see memory_at).
+    fn with_memory<T>(&self, f: impl FnOnce(&dyn Memory) -> T) -> T {
+        let Some(at) = *self.past.borrow() else { return f(&Direct) };
+        let frozen = self.frozen.borrow();
+        let end: &dyn Memory = match &*frozen {
+            Some(ram) => &Frozen(ram),
+            None => &Direct,
+        };
+        f(&self.rec.borrow().memory_at(end, at))
+    }
+}
+
+#[wasm_bindgen]
+impl Machine {
+    /// How many records the last snapshot holds.
+    pub fn records(&self) -> usize {
+        self.rec.borrow().len()
+    }
+
+    /// Record `i`'s id: it names the record in later snapshots too, where
+    /// its index has moved on.
+    pub fn record_id(&self, i: usize) -> Option<u32> {
+        self.rec.borrow().ids.get(i).copied()
+    }
+
+    /// Show memory (object, object_by_id, global, call_stack's locals) as it
+    /// was after record `i`, or as it is now (None): how many stores that
+    /// undoes.
+    pub fn memory_at(&self, i: Option<usize>) -> usize {
+        *self.past.borrow_mut() = i;
+        i.map_or(0, |i| self.rec.borrow().stores().after(i))
+    }
+
+    /// The syscalls (view::SyscallSummary), in the order they began.
+    pub fn syscalls(&self) -> JsValue {
+        self.view(|v| to_js(&v.syscalls()))
+    }
+
+    /// Where the kernel was at record `i` (view::At).
+    pub fn at(&self, i: usize) -> JsValue {
+        self.view(|v| to_js(&v.at(i)))
+    }
+
+    /// Who the task at address `task` was at record `i` (view::TaskRef).
+    pub fn task(&self, task: u32, i: usize) -> JsValue {
+        self.view(|v| to_js(&v.task(task, i)))
+    }
+
+    /// See ksee_core::recording::Recording::seek.
+    pub fn seek(&self, i: usize, dir: i32, unit: &str) -> usize {
+        self.rec.borrow().seek(tables(), i, dir, unit)
+    }
+
+    /// The first call of function `name` in records `first..=last` (of the
+    /// task at address `task`, or any): its record.
+    pub fn first_call(&self, name: &str, first: usize, last: usize, task: Option<u32>) -> Option<usize> {
+        self.rec.borrow().first_call(tables(), name, first, last, task)
+    }
+
+    /// The latest run of program `pid` (view::Program), or null.
+    pub fn program(&self, pid: i32) -> JsValue {
+        self.view(|v| to_js(&v.program(pid)))
+    }
+
+    /// The source lines run in records `first..=last` of the task at address
+    /// `task`, in order (view::Line).
+    pub fn line_steps(&self, first: usize, last: usize, task: u32) -> JsValue {
+        self.view(|v| to_js(&v.lines(first, last, task)))
+    }
+
+    /// A stack chart of records `first..=last` in `n` columns (see
+    /// ksee_core::stack::chart), flattened: per column, the task, the
+    /// depth, then (function, first record) per call, outermost first.
+    pub fn chart(&self, first: usize, last: usize, n: usize) -> Vec<u32> {
+        let rec = self.rec.borrow();
+        let mut out = Vec::new();
+        for (task, frames) in ksee_core::stack::chart(&rec.records, &rec.tasks, first, last, n) {
+            out.extend([task, frames.len() as u32]);
+            for (f, at) in frames {
+                out.extend([f, at as u32]);
+            }
+        }
+        out
+    }
+
+    /// The call stack at record `i` (or the last), innermost first
+    /// (view::Frame), its locals as memory was then (memory_at).
+    pub fn call_stack(&self, i: Option<usize>) -> JsValue {
+        let Some(i) = i.or(self.records().checked_sub(1)) else { return js_sys::Array::new().into() };
+        self.with_memory(|mem| self.view(|v| to_js(&v.call_stack(i, mem))))
+    }
+
+    /// The newest write to `addr..addr + len` at or before the moment
+    /// memory_at shows (view::Write), or null if the recording has none.
+    pub fn last_write(&self, addr: u32, len: u32) -> JsValue {
+        let at = self.past.borrow().unwrap_or(usize::MAX);
+        self.view(|v| to_js(&v.last_write(addr, len, at)))
+    }
+
+    /// The task running at the start of each of `n` buckets of the
+    /// recording, for its overview (view::TaskRef).
+    pub fn timeline(&self, n: usize) -> JsValue {
+        self.view(|v| to_js(&v.timeline(n)))
+    }
+
+    /// Function `id`: { name, file, line }.
+    pub fn function(&self, id: u32) -> JsValue {
+        let t = tables();
+        let Some(f) = t.functions.get(&id) else { return JsValue::NULL };
+        let o = Object::new();
+        js::set(&o, "name", f.name.clone());
+        js::set(&o, "file", t.file(f.loc));
+        js::set(&o, "line", f.loc.line);
+        o.into()
+    }
+
+    /// The functions called `name` (view::Function), with how often each
+    /// block ran in syscall `n` (or the whole recording).
+    pub fn functions(&self, name: &str, n: Option<usize>) -> JsValue {
+        self.view(|v| to_js(&v.functions(name, n)))
+    }
+
+    /// Every line of `file` where a block starts, with how often blocks
+    /// there ran in syscall `n` (or the whole recording): [{ line, count }].
+    pub fn file_coverage(&self, file: &str, n: Option<usize>) -> JsValue {
+        self.view(|v| to_js(&v.coverage(file, n)))
+    }
+
+    /// The value of the type named `name` at `addr` (view::Object),
+    /// aggregates expanded `depth` levels.
+    pub fn object(&self, name: &str, addr: u32, depth: Option<u32>) -> JsValue {
+        match tables().types.find(name) {
+            Some(ty) => self.object_by_id(name, ty, addr, depth),
+            None => JsValue::NULL,
+        }
+    }
+
+    /// Like `object`, by type id (an Object's `expand` or `target`).
+    pub fn object_by_id(&self, label: &str, ty: u32, addr: u32, depth: Option<u32>) -> JsValue {
+        self.with_memory(|mem| to_js(&tables().types.object(mem, label, addr, ty, depth.unwrap_or(1))))
+    }
+
+    /// The names of variables with fixed addresses (runqueues, init_task, ...).
+    pub fn globals(&self) -> Vec<String> {
+        tables().types.globals.keys().cloned().collect()
+    }
+
+    /// The value of the variable `name` (view::Object), or null.
+    pub fn global(&self, name: &str, depth: Option<u32>) -> JsValue {
+        match tables().types.globals.get(name) {
+            Some(&(addr, ty)) => self.object_by_id(name, ty, addr, depth),
+            None => JsValue::NULL,
+        }
+    }
+}

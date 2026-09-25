@@ -189,28 +189,16 @@ pub fn calls_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<Call> {
     }).collect()
 }
 
-/// The call stack of the task running at record `at`, outermost first.
-pub fn stack_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<u32> {
-    let Some(&task) = tasks.get(at) else { return Vec::new() };
-    let mut s = Stack::default();
-    for (i, r) in records.iter().enumerate().take(at + 1) {
-        if tasks[i] == task {
-            match *r {
-                Record::Block { func, n } => s.block(func, n, i),
-                Record::Return { func, .. } => s.exit(func),
-                _ => {}
-            }
-        }
-    }
-    s.frames.into_iter().map(|(f, _)| f).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn b(func: u32, n: u32) -> Record {
         Record::Block { func, n }
+    }
+
+    fn stack_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<u32> {
+        calls_at(records, tasks, at).into_iter().map(|c| c.func).collect()
     }
 
     #[test]

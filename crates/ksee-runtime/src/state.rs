@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use ksee_core::tables::Tables;
-use ksee_core::{task, Memory};
+use ksee_core::Memory;
 
 /// The probe tables, set once by the page before boot.
 pub static TABLES: OnceLock<Tables> = OnceLock::new();
@@ -66,10 +66,6 @@ impl Memory for Direct {
         // Racing the kernel only garbles what is read.
         unsafe { core::ptr::copy_nonoverlapping(addr as *const u8, buf.as_mut_ptr(), buf.len()) }
     }
-}
-
-pub fn live_task(p: u32) -> Option<task::Task> {
-    task::read_task(tables(), &Direct, p)
 }
 
 /// A byte ring written by one side and read by the other; the writer drops

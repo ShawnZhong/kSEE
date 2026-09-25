@@ -1,12 +1,14 @@
-//! The page's API: boot a kernel in Workers, and look at it.
+//! The page's API: boot a kernel in Workers, drive it (console, programs,
+//! recording), and take snapshots of its recording (see replay.rs).
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use js_sys::{Function, Object, Uint8Array, WebAssembly};
-use ksee_core::view::Views;
+use ksee_core::recording::Recording;
 use ksee_core::tables::Tables;
-use ksee_core::{stack, syscalls, task, trace, Memory};
-use serde_wasm_bindgen as _;
+use ksee_core::{trace, Memory};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -15,88 +17,29 @@ use crate::imports;
 use crate::js;
 use crate::state::*;
 
-/// A booted machine.
+/// A booted machine. Its views of the recording are in replay.rs.
 #[wasm_bindgen]
 pub struct Machine {
-    /// The page's kernel instance (it only reads the kernel).
-    kernel: Object,
-    workers: std::rc::Rc<std::cell::RefCell<Vec<web_sys::Worker>>>,
-    syscalls: std::cell::RefCell<Option<Vec<syscalls::Syscall>>>,
-    history: std::cell::RefCell<History>,
-    /// Memory as it was after a record (memory_at), for the views; None:
-    /// now. mem: the trace's stores, indexed (for the snapshot whose last
-    /// record's id it has). frozen: kernel memory when recording stopped
-    /// (the past is that, stores undone; the kernel went on unrecorded).
-    past: std::cell::RefCell<Option<usize>>,
-    mem: std::cell::RefCell<Option<(u32, ksee_core::mem::History)>>,
-    frozen: std::cell::RefCell<Option<Vec<u8>>>,
-}
-
-/// The last snapshot's records, and the task and time at each.
-#[derive(Default)]
-struct History {
-    records: Vec<trace::Record>,
-    /// Each record's id (trace::ring_ids).
-    ids: Vec<u32>,
-    tasks: Vec<u32>,
-    /// Who was at a task_struct address, from Task records: address ->
-    /// [(record, task)]; and where tasks exited (do_exit): address ->
-    /// [record]. The address of an exited task may be another's later.
-    idents: std::collections::BTreeMap<u32, Vec<(usize, task::Task)>>,
-    exits: std::collections::BTreeMap<u32, Vec<usize>>,
-}
-
-impl History {
-    /// The task at `addr` at record `i`: the Task record of its program
-    /// (before or after `i`, as long as it did not exit in between), else
-    /// what the address holds now.
-    fn task_at(&self, addr: u32, i: usize) -> Option<task::Task> {
-        let exited = |a: usize, b: usize| self.exits.get(&addr).is_some_and(|e| e.iter().any(|&x| a <= x && x < b));
-        if let Some(ids) = self.idents.get(&addr) {
-            if let Some((at, t)) = ids.iter().rev().find(|(at, _)| *at <= i) {
-                if !exited(*at, i) {
-                    return Some(t.clone());
-                }
-            }
-            if let Some((at, t)) = ids.iter().find(|(at, _)| *at > i) {
-                if !exited(i, *at) {
-                    return Some(t.clone());
-                }
-            }
-        }
-        live_task(addr)
-    }
+    workers: Rc<RefCell<Vec<web_sys::Worker>>>,
+    /// The last snapshot of the trace.
+    pub(crate) rec: RefCell<Recording>,
+    /// The moment the views show memory at (a record), or None: now.
+    pub(crate) past: RefCell<Option<usize>>,
+    /// Kernel memory when recording stopped: memory as it was is that, the
+    /// recorded stores undone (the kernel went on, unrecorded).
+    pub(crate) frozen: RefCell<Option<Vec<u8>>>,
 }
 
 /// Kernel memory as it was when recording stopped.
-struct Frozen<'a>(&'a [u8]);
+pub(crate) struct Frozen<'a>(pub &'a [u8]);
 
-impl ksee_core::Memory for Frozen<'_> {
+impl Memory for Frozen<'_> {
     fn read(&self, addr: u32, buf: &mut [u8]) {
         match self.0.get(addr as usize..addr as usize + buf.len()) {
             Some(b) => buf.copy_from_slice(b),
             None => Direct.read(addr, buf),
         }
     }
-}
-
-/// Bytes decoded as if they were memory at address 0.
-struct Bytes<'a>(&'a [u8]);
-
-impl ksee_core::Memory for Bytes<'_> {
-    fn read(&self, addr: u32, buf: &mut [u8]) {
-        for (i, b) in buf.iter_mut().enumerate() {
-            *b = self.0.get(addr as usize + i).copied().unwrap_or(0);
-        }
-    }
-}
-
-fn task_ref(addr: u32, t: Option<task::Task>) -> ksee_core::view::TaskRef {
-    ksee_core::view::TaskRef { addr, pid: t.as_ref().map(|t| t.pid), comm: t.map(|t| t.comm) }
-}
-
-fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
-    serde_wasm_bindgen::to_value(v).unwrap_or(JsValue::NULL)
 }
 
 async fn fetch_bytes(url: &str) -> Result<Uint8Array, JsValue> {
@@ -150,7 +93,7 @@ impl Machine {
         // Instantiating here runs the kernel's start function, which
         // initializes its data, before any Worker runs it (asynchronously:
         // browsers refuse large synchronous instantiation on the page).
-        let workers = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let workers = Rc::new(RefCell::new(Vec::new()));
         let spawn = Machine::spawner(module.clone(), worker_url, workers.clone());
         let imports = imports::kernel(&wasm_bindgen::memory(), spawn.clone(), false);
         let inst: WebAssembly::Instance =
@@ -164,6 +107,7 @@ impl Machine {
         PENDING.store(global("wasm_irq_pending"), Ordering::Relaxed);
         RUN.store(global("wasm_run"), Ordering::Relaxed);
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
+        // (The page's instance is not needed after this.)
         TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
         let timer = Object::new();
         js::set(&timer, "role", "timer");
@@ -173,15 +117,14 @@ impl Machine {
         let boot = Object::new();
         js::set(&boot, "role", "boot");
         spawn.call1(&JsValue::NULL, &boot)?;
-        Ok(Machine { kernel, workers, syscalls: Default::default(), history: Default::default(), past: Default::default(), mem: Default::default(),
-                    frozen: Default::default() })
+        Ok(Machine { workers, rec: Default::default(), past: Default::default(), frozen: Default::default() })
     }
 
     /// A function that starts a Worker for `msg` (a role, or a task that a
     /// Worker asked for) and keeps it, so that `halted` can stop it.
     fn spawner(module: WebAssembly::Module, url: String,
-               workers: std::rc::Rc<std::cell::RefCell<Vec<web_sys::Worker>>>) -> Function {
-        let this: std::rc::Rc<std::cell::RefCell<Option<Function>>> = Default::default();
+               workers: Rc<RefCell<Vec<web_sys::Worker>>>) -> Function {
+        let this: Rc<RefCell<Option<Function>>> = Default::default();
         let me = this.clone();
         let f = Closure::<dyn FnMut(JsValue)>::new(move |msg: JsValue| {
             let opts = web_sys::WorkerOptions::new();
@@ -234,81 +177,18 @@ impl Machine {
         Some(h as i32 - 1)
     }
 
-    fn ring(&self) -> u32 {
-        let f: Function = js::get(&self.kernel, "ksee_trace").unchecked_into();
-        f.call0(&JsValue::NULL).ok().and_then(|v| v.as_f64()).unwrap_or(0.0) as u32
-    }
-
-    /// Decode the trace ring (again). The views below use the last snapshot.
+    /// Decode the trace ring (again). The views use the last snapshot.
     pub fn snapshot(&self) {
         let t = tables();
-        let entry = t.find(syscalls::ENTRY).unwrap_or(0);
-        let (records, ids) = trace::ring_ids(&Direct, self.ring(), t.ring_words);
-        // The task running at each record: it changes when __switch_to(prev,
-        // next) returns (in next), and when a new task starts
-        // (wasm_task_entry(p)); a Task record says so too.
-        let (switch, start, do_exit) = (t.find("__switch_to"), t.find("wasm_task_entry"), t.find("do_exit"));
-        let args = |i: usize| match records.get(i + 1) {
-            Some(&trace::Record::Args { args, .. }) => Some(args),
-            _ => None,
-        };
-        let (mut task, mut next) = (0, None);
-        let mut tasks = Vec::with_capacity(records.len());
-        let mut idents: std::collections::BTreeMap<u32, Vec<(usize, task::Task)>> = Default::default();
-        let mut exits: std::collections::BTreeMap<u32, Vec<usize>> = Default::default();
-        for (i, r) in records.iter().enumerate() {
-            match *r {
-                trace::Record::Block { func, n: 0 } if Some(func) == switch => next = args(i).map(|a| a[1]),
-                trace::Record::Block { func, n: 0 } if Some(func) == start => {
-                    task = args(i).map_or(task, |a| a[0]);
-                    next = None;
-                }
-                trace::Record::Block { func, n: 0 } if Some(func) == do_exit => exits.entry(task).or_default().push(i),
-                trace::Record::Return { func, .. } if Some(func) == switch => task = next.take().unwrap_or(task),
-                trace::Record::Task { task: addr, pid, comm } => {
-                    task = addr;
-                    let bytes: Vec<u8> = comm.iter().flat_map(|w| w.to_le_bytes()).take_while(|&b| b != 0).collect();
-                    let who = task::Task { pid: pid as i32, comm: String::from_utf8_lossy(&bytes).into() };
-                    idents.entry(addr).or_default().push((i, who));
-                }
-                _ => {}
-            }
-            tasks.push(task);
-        }
-        let calls = syscalls::split(entry, &records, &tasks);
-        *self.syscalls.borrow_mut() = Some(calls);
-        *self.history.borrow_mut() = History { records, ids, tasks, idents, exits };
+        let (records, ids) = trace::ring(&Direct, TRACE.load(Ordering::Relaxed), t.ring_words);
+        *self.rec.borrow_mut() = Recording::new(t, records, ids);
     }
-
-    fn with_syscalls<T>(&self, f: impl FnOnce(&[syscalls::Syscall]) -> T) -> T {
-        if self.syscalls.borrow().is_none() {
-            self.snapshot();
-        }
-        f(self.syscalls.borrow().as_deref().unwrap_or(&[]))
-    }
-
-    /// Views that name tasks from memory now (for what needs no task).
-    fn views(&self) -> Views<'static> {
-        fn live(addr: u32, _: usize) -> Option<task::Task> {
-            live_task(addr)
-        }
-        Views { tables: tables(), tasks: &live }
-    }
-
-    /// Views that name tasks as they were (see History::task_at).
-    fn with_views<T>(&self, f: impl FnOnce(&Views) -> T) -> T {
-        let h = self.history.borrow();
-        let tasks = |addr: u32, i: usize| h.task_at(addr, i);
-        f(&Views { tables: tables(), tasks: &tasks })
-    }
-
-    // ---- History: the records of the last snapshot, by position ----
 
     /// Record the trace (on) or not. Stopping takes a snapshot, and keeps
     /// kernel memory as it is then: memory as it was in the recording is
     /// that, the recorded stores undone (the kernel goes on, unrecorded).
     pub fn record(&self, on: bool) {
-        let word = unsafe { &*((self.ring() + trace::ON) as *const std::sync::atomic::AtomicU32) };
+        let word = unsafe { &*((TRACE.load(Ordering::Relaxed) + trace::ON) as *const AtomicU32) };
         if on {
             *self.frozen.borrow_mut() = None;
             word.store(1, Ordering::Release);
@@ -330,402 +210,7 @@ impl Machine {
         recording()
     }
 
-    /// Memory for the views (object, object_by_id, global) as it was after
-    /// record `i` of the last snapshot (the stores since undone; see
-    /// ksee_core::mem), or as it is now (None): how many stores are undone.
-    pub fn memory_at(&self, i: Option<usize>) -> i32 {
-        *self.past.borrow_mut() = i;
-        match i {
-            Some(i) => self.with_history(|h| h.after(i) as i32),
-            None => 0,
-        }
-    }
-
-    /// The newest write to `addr..addr + len` at or before the moment
-    /// memory_at shows (or the end of the trace): { i (the store's record),
-    /// func, file, line, task, old }, or null if the trace has none.
-    pub fn last_write(&self, addr: u32, len: u32) -> JsValue {
-        let at = self.past.borrow().unwrap_or(usize::MAX);
-        let found = {
-            let h = self.history.borrow();
-            let at = at.min(h.records.len().saturating_sub(1));
-            self.with_history(|m| m.last_write(&h.records, addr, len, at))
-        };
-        let Some((i, old)) = found else { return JsValue::NULL };
-        let o = self.at(i);
-        if o.is_null() {
-            return o;
-        }
-        js::set(&o, "old", old as f64);
-        // The line that made it: where the function running then is (after
-        // a return into the middle of a block, the caller's).
-        let h = self.history.borrow();
-        let t = tables();
-        if let Some(step) = stack::lines(t, &h.records, &h.tasks, i.saturating_sub(4000), i, h.tasks.get(i).copied()).last() {
-            js::set(&o, "func", t.functions.get(&step.func).map_or(String::new(), |f| f.name.clone()));
-            js::set(&o, "file", t.file(step.loc));
-            js::set(&o, "line", step.loc.line);
-            if let Some(k) = step.inlined {
-                js::set(&o, "inlined", t.names.get(k as usize).cloned().unwrap_or_default());
-            }
-        }
-        o
-    }
-
-    /// Run `f` on the stores of the last snapshot, indexed (once per snapshot).
-    fn with_history<T>(&self, f: impl FnOnce(&ksee_core::mem::History) -> T) -> T {
-        let key = self.history.borrow().ids.last().copied().unwrap_or(0);
-        let mut mem = self.mem.borrow_mut();
-        if mem.as_ref().is_none_or(|(k, _)| *k != key) {
-            *mem = Some((key, ksee_core::mem::History::new(&self.history.borrow().records)));
-        }
-        f(&mem.as_ref().unwrap().1)
-    }
-
-    /// Run `f` on memory as the views should see it (memory_at).
-    fn with_memory<T>(&self, f: impl FnOnce(&dyn Memory) -> T) -> T {
-        let frozen = self.frozen.borrow();
-        let base: &dyn Memory = match &*frozen {
-            Some(ram) => &Frozen(ram),
-            None => &Direct,
-        };
-        match *self.past.borrow() {
-            Some(at) => self.with_history(|history| f(&ksee_core::mem::PastMemory { base, history, at })),
-            None => f(&Direct),
-        }
-    }
-
-    /// Record `i`'s id: it names the record in later snapshots too (see
-    /// index_of), where its index has moved on.
-    pub fn record_id(&self, i: usize) -> Option<u32> {
-        self.history.borrow().ids.get(i).copied()
-    }
-
-    /// How many records the last snapshot holds.
-    pub fn records(&self) -> usize {
-        self.history.borrow().records.len()
-    }
-
-    /// Where the kernel was at record `i`: { i, kind, func, block, file,
-    /// line, column, task: { addr, pid, comm }, syscall } (syscall:
-    /// the index of the syscall in progress on that task, if any).
-    pub fn at(&self, i: usize) -> JsValue {
-        let h = self.history.borrow();
-        let Some(r) = h.records.get(i) else { return JsValue::NULL };
-        let t = tables();
-        let o = Object::new();
-        let (kind, func, block) = match *r {
-            trace::Record::Block { func, n } => ("block", func, Some(n)),
-            trace::Record::Return { func, .. } => ("return", func, None),
-            trace::Record::Line { .. } => ("line", 0, None),
-            trace::Record::Task { .. } => ("task", 0, None),
-            trace::Record::Args { .. } => ("args", 0, None),
-            trace::Record::Store { .. } => ("store", 0, None),
-            trace::Record::Locals { .. } => ("locals", 0, None),
-        };
-        js::set(&o, "i", i as f64);
-        js::set(&o, "kind", kind);
-        js::set(&o, "func", t.functions.get(&func).map_or(String::new(), |f| f.name.clone()));
-        let loc = match block {
-            Some(n) => {
-                js::set(&o, "block", n);
-                t.blocks.get(&(func, n)).copied()
-            }
-            None => t.functions.get(&func).map(|f| f.loc),
-        };
-        if let Some(l) = loc {
-            js::set(&o, "file", t.file(l));
-            js::set(&o, "line", l.line);
-            js::set(&o, "column", l.column);
-        }
-        js::set(&o, "task", to_js(&task_ref(h.tasks[i], h.task_at(h.tasks[i], i))));
-        let task = h.tasks[i];
-        let sys = self.with_syscalls(|calls| calls.iter().position(|s| {
-            s.task == task && s.first <= i && s.last.is_none_or(|l| i <= l)
-        }));
-        js::set(&o, "syscall", sys.map_or(JsValue::NULL, |s| (s as f64).into()));
-        o.into()
-    }
-
-    /// The position of the next (dir > 0) or previous block record from `i`
-    /// that starts a new `unit`: "block", "line" (another source line, on
-    /// the task running at `i`), or "function" (another function than at
-    /// `i`). `i` if none.
-    pub fn seek(&self, i: usize, dir: i32, unit: &str) -> usize {
-        let h = self.history.borrow();
-        let n = h.records.len();
-        let func_at = |j: usize| match h.records.get(j) {
-            Some(trace::Record::Block { func, .. }) => Some(*func),
-            _ => None,
-        };
-        let t = tables();
-        let line_at = |j: usize| match h.records.get(j) {
-            Some(&trace::Record::Block { func, n }) => t.blocks.get(&(func, n)).map(|l| (l.file, l.line)),
-            _ => None,
-        };
-        let (here, here_line, task) = (func_at(i), line_at(i), h.tasks.get(i).copied());
-        let mut j = i;
-        loop {
-            if dir > 0 { if j + 1 >= n { return i } j += 1 } else { if j == 0 { return i } j -= 1 }
-            let Some(f) = func_at(j) else { continue };
-            let new = match unit {
-                "function" => Some(f) != here,
-                "line" => h.tasks.get(j).copied() == task && line_at(j).is_some() && line_at(j) != here_line,
-                _ => true,
-            };
-            if new {
-                return j;
-            }
-        }
-    }
-
-    /// The latest run of program `pid` (a Task record says which) in the
-    /// last snapshot: { task (address), first, last (records), lines: [{ i,
-    /// line }] (its Line records: the program's source line, before each
-    /// syscall) }, or null.
-    pub fn program(&self, pid: i32) -> JsValue {
-        let h = self.history.borrow();
-        let Some((addr, start)) = h.idents.iter()
-            .flat_map(|(&a, ids)| ids.iter().filter(|(_, t)| t.pid == pid).map(move |(i, _)| (a, *i)))
-            .max_by_key(|&(_, i)| i) else { return JsValue::NULL };
-        // Until the task_struct is another program's (or the trace ends).
-        let until = h.idents[&addr].iter().map(|(i, _)| *i).find(|&i| i > start).unwrap_or(h.records.len());
-        let mut last = start;
-        let lines = js_sys::Array::new();
-        for j in start..until {
-            if h.tasks[j] != addr && !matches!(h.records[j], trace::Record::Line { .. }) {
-                continue;
-            }
-            last = j;
-            if let trace::Record::Line { line } = h.records[j] {
-                let o = Object::new();
-                js::set(&o, "i", j as f64);
-                js::set(&o, "line", line);
-                lines.push(&o);
-            }
-        }
-        let o = Object::new();
-        js::set(&o, "task", addr);
-        js::set(&o, "first", start as f64);
-        js::set(&o, "last", last as f64);
-        js::set(&o, "lines", lines);
-        o.into()
-    }
-
-    /// The source lines run in records `first..=last` of the task at address
-    /// `task`, in order (see ksee_core::stack::lines): [{ i (the record),
-    /// func, depth, file, line, inlined (the function the line is inlined
-    /// from, if) }].
-    pub fn line_steps(&self, first: usize, last: usize, task: u32) -> JsValue {
-        let h = self.history.borrow();
-        let t = tables();
-        let list = js_sys::Array::new();
-        for s in stack::lines(t, &h.records, &h.tasks, first, last, Some(task)) {
-            let o = Object::new();
-            js::set(&o, "i", s.record as f64);
-            js::set(&o, "func", t.functions.get(&s.func).map_or(String::new(), |f| f.name.clone()));
-            js::set(&o, "depth", s.depth);
-            js::set(&o, "file", t.file(s.loc));
-            js::set(&o, "line", s.loc.line);
-            if let Some(k) = s.inlined {
-                js::set(&o, "inlined", t.names.get(k as usize).cloned().unwrap_or_default());
-            }
-            list.push(&o);
-        }
-        list.into()
-    }
-
-    /// A stack chart of records `first..=last` in `n` columns (see
-    /// ksee_core::stack::chart), flattened: per column, the task, the
-    /// depth, then (function, first record) per call, outermost first.
-    pub fn chart(&self, first: usize, last: usize, n: usize) -> Vec<u32> {
-        let h = self.history.borrow();
-        let mut out = Vec::new();
-        for (task, frames) in stack::chart(&h.records, &h.tasks, first, last, n) {
-            out.extend([task, frames.len() as u32]);
-            for (f, at) in frames {
-                out.extend([f, at as u32]);
-            }
-        }
-        out
-    }
-
-    /// Function `id`: { name, file, line }.
-    pub fn function(&self, id: u32) -> JsValue {
-        let t = tables();
-        let Some(f) = t.functions.get(&id) else { return JsValue::NULL };
-        let o = Object::new();
-        js::set(&o, "name", f.name.clone());
-        js::set(&o, "file", t.file(f.loc));
-        js::set(&o, "line", f.loc.line);
-        o.into()
-    }
-
-    /// Who the task at address `task` was at record `i`: { addr, pid, comm }.
-    pub fn task(&self, task: u32, i: usize) -> JsValue {
-        let h = self.history.borrow();
-        to_js(&task_ref(task, h.task_at(task, i)))
-    }
-
-    /// The call stack at record `i` of the last snapshot (or its last: at
-    /// a stop, take a snapshot first), innermost first, rebuilt from the
-    /// trace: [{ func, file, line, args: [Object (see ksee_core::view)] }]
-    /// (arguments are 32 bits: wider ones lose their high half; __user
-    /// pointers point into the process, not the kernel).
-    pub fn call_stack(&self, i: Option<usize>) -> JsValue {
-        let h = self.history.borrow();
-        let t = tables();
-        let list = js_sys::Array::new();
-        let Some(i) = i.or(h.records.len().checked_sub(1)) else { return list.into() };
-        for stack::Call { func, args, locals, .. } in stack::calls_at(&h.records, &h.tasks, i).into_iter().rev() {
-            let o = Object::new();
-            let f = t.functions.get(&func);
-            let name = f.map_or(format!("{func:#x}"), |f| f.name.clone());
-            js::set(&o, "func", name.clone());
-            if let Some(f) = f {
-                js::set(&o, "file", t.file(f.loc));
-                js::set(&o, "line", f.loc.line);
-            }
-            if let Some(args) = args {
-                let known = f.map_or(u32::MAX, |f| f.known);
-                let list = js_sys::Array::new();
-                for (k, ((pname, ty), v)) in t.types.params.get(&name).into_iter().flatten().zip(args).enumerate() {
-                    let mut arg = t.types.object(&Bytes(&v.to_le_bytes()), pname, 0, *ty, 0);
-                    if known >> k & 1 == 0 {
-                        // (Not passed any more: the optimizer took it away.)
-                        arg.value = Some("(optimized out)".into());
-                        arg.children = None;
-                        arg.expand = None;
-                        arg.target = None;
-                    }
-                    list.push(&to_js(&arg));
-                }
-                js::set(&o, "args", list);
-            }
-            // Its locals in memory, as they were (memory_at).
-            if let (Some(addrs), Some(names)) = (locals, t.locals.get(&func)) {
-                let types = t.types.locals.get(&name);
-                let list = js_sys::Array::new();
-                for (addr, var) in addrs.into_iter().zip(names) {
-                    let Some(&(_, ty)) = types.and_then(|v| v.iter().find(|(n, _)| n == var)) else { continue };
-                    list.push(&self.with_memory(|mem| to_js(&t.types.object(mem, var, addr, ty, 0))));
-                }
-                js::set(&o, "locals", list);
-            }
-            list.push(&o);
-        }
-        list.into()
-    }
-
-    /// The trace in `n` buckets, for a timeline: [{ pid, comm }] (the task
-    /// running at each bucket's start; pid -1 if not known).
-    pub fn timeline(&self, n: usize) -> JsValue {
-        let h = self.history.borrow();
-        let total = h.records.len().max(1);
-        let list = js_sys::Array::new();
-        for b in 0..n {
-            let i = b * total / n.max(1);
-            let info = h.tasks.get(i).and_then(|&task| h.task_at(task, i));
-            let o = Object::new();
-            js::set(&o, "pid", info.as_ref().map_or(-1, |t| t.pid));
-            js::set(&o, "comm", info.map_or(String::new(), |t| t.comm));
-            list.push(&o);
-        }
-        list.into()
-    }
-
-    /// The syscalls in the trace (a list of SyscallSummary, see ksee_core::view).
-    pub fn syscalls(&self) -> JsValue {
-        self.with_syscalls(|calls| self.with_views(|v| {
-            to_js(&calls.iter().enumerate().map(|(i, s)| v.summary(i, s)).collect::<Vec<_>>())
-        }))
-    }
-
-    /// The instrumented functions called `name` (usually one), with how
-    /// often each block ran in syscall `n` (or the whole trace).
-    pub fn functions(&self, name: &str, n: Option<usize>) -> JsValue {
-        let t = tables();
-        let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
-        let counts = self.block_counts(n, |f| ids.contains(&f));
-        let v = self.views();
-        to_js(&ids.iter().filter_map(|&id| v.function(id, &counts)).collect::<Vec<_>>())
-    }
-
-    /// How often each block ran in syscall `n` (or the whole trace), for
-    /// the functions `keep` accepts.
-    fn block_counts(&self, n: Option<usize>, keep: impl Fn(u32) -> bool)
-                    -> std::collections::BTreeMap<(u32, u32), u64> {
-        let mut counts = std::collections::BTreeMap::new();
-        let mut add = |f: u32, b: u32| if keep(f) { *counts.entry((f, b)).or_default() += 1 };
-        match n {
-            Some(n) => self.with_syscalls(|calls| {
-                for &(f, b) in calls.get(n).map(|s| &s.blocks[..]).unwrap_or(&[]) {
-                    add(f, b);
-                }
-            }),
-            None => {
-                for r in trace::ring(&Direct, self.ring(), tables().ring_words) {
-                    if let trace::Record::Block { func, n } = r {
-                        add(func, n);
-                    }
-                }
-            }
-        }
-        counts
-    }
-
-    /// The value of the type named `name` at `addr` (an Object, see
-    /// ksee_core::view), aggregates expanded `depth` levels.
-    pub fn object(&self, name: &str, addr: u32, depth: Option<u32>) -> JsValue {
-        let types = &tables().types;
-        match types.find(name) {
-            Some(id) => self.with_memory(|mem| to_js(&types.object(mem, name, addr, id, depth.unwrap_or(1)))),
-            None => JsValue::NULL,
-        }
-    }
-
-    /// The names of variables with fixed addresses (runqueues, init_task, ...).
-    pub fn globals(&self) -> Vec<String> {
-        tables().types.globals.keys().cloned().collect()
-    }
-
-    /// The value of the variable `name` (an Object), or null.
-    pub fn global(&self, name: &str, depth: Option<u32>) -> JsValue {
-        let types = &tables().types;
-        match types.globals.get(name) {
-            Some(&(addr, ty)) => self.with_memory(|mem| to_js(&types.object(mem, name, addr, ty, depth.unwrap_or(1)))),
-            None => JsValue::NULL,
-        }
-    }
-
-    /// Like `object`, by type id (an Object's `expand` or `target`).
-    pub fn object_by_id(&self, label: &str, ty: u32, addr: u32, depth: Option<u32>) -> JsValue {
-        self.with_memory(|mem| to_js(&tables().types.object(mem, label, addr, ty, depth.unwrap_or(1))))
-    }
-
     // ---- Running programs ----
-
-    /// Every line of `file` where a basic block starts, with how often
-    /// blocks there ran in syscall `n` (or the whole trace): [{ line, count }].
-    pub fn file_coverage(&self, file: &str, n: Option<usize>) -> JsValue {
-        let t = tables();
-        let counts = self.block_counts(n, |_| true);
-        let mut lines: std::collections::BTreeMap<u32, u64> = Default::default();
-        for (&(f, b), l) in &t.blocks {
-            if t.file(*l) == file {
-                let c = lines.entry(l.line).or_default();
-                *c = (*c).max(counts.get(&(f, b)).copied().unwrap_or(0));
-            }
-        }
-        let list = js_sys::Array::new();
-        for (line, count) in lines {
-            let o = Object::new();
-            js::set(&o, "line", line);
-            js::set(&o, "count", count as f64);
-            list.push(&o);
-        }
-        list.into()
-    }
 
     /// Ask the kernel to run program `path` (in the initramfs; see its
     /// arch/wasm/kernel/run.c). False if a program runs already.
@@ -760,17 +245,4 @@ impl Machine {
         state.store(RUN_IDLE, Ordering::Release);
         o.into()
     }
-
-    /// The first call of function `name` in records `first..=last` (of the
-    /// task at address `task`, or any), if there is one: its record.
-    pub fn first_call(&self, name: &str, first: usize, last: usize, task: Option<u32>) -> Option<usize> {
-        let t = tables();
-        let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
-        let h = self.history.borrow();
-        (first..=last.min(h.records.len().saturating_sub(1))).find(|&i| {
-            matches!(h.records[i], trace::Record::Block { func, n: 0 } if ids.contains(&func))
-                && task.is_none_or(|t| h.tasks[i] == t)
-        })
-    }
-
 }

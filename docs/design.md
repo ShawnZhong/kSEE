@@ -90,11 +90,16 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   program (arch/wasm/kernel/run.c: a request in kernel memory, and an
   interrupt, the host's only way to wake the kernel); there is no user
   fork on wasm, so the kernel starts it as a usermode helper.
-- **The runtime** (crates/ksee-runtime, Rust to wasm, wasm-bindgen): boots
-  the kernel in Workers, implements its imports, and serves the page: the
-  Machine (snapshots of the recording, and views of it).
-- **The core** (crates/ksee-core): decoding and rebuilding, no browser: the
-  trace, stacks and lines, memory as it was, kernel types (from DWARF).
+- **The core** (crates/ksee-core, `no_std`, tested natively): everything
+  about a recording that needs no browser: decoding the ring, the
+  Recording (tasks, syscalls, calls and lines, memory as it was), and the
+  views the page shows of it, by name (`view`); kernel types (from DWARF).
+- **The runtime** (crates/ksee-runtime, Rust to wasm, wasm-bindgen): one
+  module, instantiated on the kernel's shared memory by the page and by
+  every Worker. The Workers run the timer or a kernel task, and implement
+  the kernel's imports (`worker`, `imports`); the page runs the Machine:
+  it boots and drives the kernel and snapshots its recording (`machine`),
+  and hands the core's views to JS (`replay`).
 - **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel, the
   runtime, the programs, and the page's files (types from DWARF, the
   sources, Monaco), into web/.

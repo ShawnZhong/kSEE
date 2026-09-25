@@ -117,7 +117,7 @@ fn ring_put(words: &[u32]) {
 /// pid and comm, as they are now.
 pub(crate) fn task_record() {
     let task = Direct.read_u32(CURRENT_TASK.load(Ordering::Relaxed));
-    let Some(t) = live_task(task) else { return };
+    let Some(t) = ksee_core::task::read_task(tables(), &Direct, task) else { return };
     let mut comm = [0u8; 16];
     let n = t.comm.len().min(16);
     comm[..n].copy_from_slice(&t.comm.as_bytes()[..n]);

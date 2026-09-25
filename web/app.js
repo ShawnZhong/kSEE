@@ -13,8 +13,6 @@ import { tours } from "./tours.js";
 
 export function app(m) {
   const a = { m, proc: process(m) };
-  // A syscall's identity across snapshots (indexes move as the ring goes on).
-  a.key = (s) => `${s.task.addr}:${m.record_id(s.first)}`;
   const src = source(a), time = timeline(a), stack = callstack(a);
   a.showFunction = src.showFunction;
   a.src = src;

@@ -93,7 +93,7 @@ export function callstack(app) {
     if (step?.inlined) s.frames.unshift({ func: `${step.inlined} (inlined)`, where: `${step.file}:${step.line}`, line: step.line, file: step.file });
     // (The stack comes from the recording: nothing recorded, no stack.)
     $("stack-note").textContent = frames.length ? "" : m.recording() || m.records()
-      ? "The call stack at the cursor, with arguments: pause the kernel, or pick a moment in the history."
+      ? "The call stack at the cursor, with arguments: pick a moment in the recording."
       : "Not recording: the call stack comes from the recording. Run a tour, or ● Record.";
     draw();
   }

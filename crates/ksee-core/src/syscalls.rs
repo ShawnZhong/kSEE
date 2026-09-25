@@ -1,6 +1,6 @@
 //! Syscalls in the trace: the calls of the syscall entry (wasm_syscall: its
 //! call record's arguments are the number and the syscall's arguments; its
-//! return's value is the result), per task, with the blocks they ran.
+//! return's value is the result), per task.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -17,8 +17,6 @@ pub struct Syscall {
     pub args: [u32; 5],
     /// The result (None: still running at the end of the trace).
     pub ret: Option<i32>,
-    /// The blocks it ran, in order: (function, block).
-    pub blocks: Vec<(u32, u32)>,
     /// Its first and last records.
     pub first: usize,
     pub last: Option<usize>,
@@ -38,7 +36,7 @@ pub fn split(entry: u32, records: &[Record], tasks: &[u32]) -> Vec<Syscall> {
                     _ => [0; 6],
                 };
                 let s = Syscall { task, nr: a[0], args: [a[1], a[2], a[3], a[4], a[5]], ret: None,
-                                  blocks: alloc::vec![(func, 0)], first: i, last: None };
+                                  first: i, last: None };
                 if let Some(old) = open.insert(task, s) {
                     done.push(old); // (it never returned)
                 }
@@ -48,11 +46,6 @@ pub fn split(entry: u32, records: &[Record], tasks: &[u32]) -> Vec<Syscall> {
                     s.ret = Some(value as i32);
                     s.last = Some(i);
                     done.push(s);
-                }
-            }
-            Record::Block { func, n } => {
-                if let Some(s) = open.get_mut(&task) {
-                    s.blocks.push((func, n));
                 }
             }
             _ => {}
@@ -77,6 +70,5 @@ mod tests {
         let s = split(1, &r, &tasks);
         assert_eq!(s.len(), 1);
         assert_eq!((s[0].task, s[0].nr, s[0].args[0], s[0].ret, s[0].first, s[0].last), (7, 64, 1, Some(3), 0, Some(4)));
-        assert_eq!(s[0].blocks, [(1, 0), (2, 0)]);
     }
 }

@@ -1,5 +1,14 @@
-//! kSEE core: the kernel's probe tables and types, trace decoding, and views
-//! of the trace. `no_std` so that the same code runs in the wasm runtime
+//! kSEE core: everything about a recording that needs no browser.
+//!
+//! * [`tables`], [`types`]: what the kernel says about itself (the plugin's
+//!   probe tables; types from DWARF, see crates/ksee-cli's pack).
+//! * [`trace`]: decoding the trace ring into records.
+//! * [`recording`]: what the host rebuilds from the records: tasks,
+//!   syscalls ([`syscalls`]), calls and lines ([`stack`]), memory as it was
+//!   ([`mem`]).
+//! * [`view`]: what the page shows of it.
+//!
+//! `no_std`, so that the same code runs in the wasm runtime
 //! (crates/ksee-runtime) and natively (crates/ksee-cli, tests).
 #![no_std]
 
@@ -9,6 +18,7 @@ extern crate std;
 
 pub mod mem;
 pub mod module;
+pub mod recording;
 pub mod stack;
 pub mod syscalls;
 pub mod tables;

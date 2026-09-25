@@ -57,7 +57,7 @@ export function timeline(app) {
       return;
     }
     t.buckets.forEach((b, k) => {
-      ctx.fillStyle = b.pid < 0 ? css("--line") : `hsl(${hue(b.pid)} 50% ${b.pid === 0 ? 85 : 62}%)`;
+      ctx.fillStyle = b.pid == null ? css("--line") : `hsl(${hue(b.pid)} 50% ${b.pid === 0 ? 85 : 62}%)`;
       ctx.fillRect(k, 3, 1, OVER - 6);
     });
     const ox = (i) => (i / Math.max(1, t.n - 1)) * w;

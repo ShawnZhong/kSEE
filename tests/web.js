@@ -63,7 +63,7 @@ check("fs/read_write.c coverage", m.file_coverage("fs/read_write.c", w.index).so
 const chart = m.chart(w.first, w.last, 200);
 check("a stack chart of write's records", chart.length > 400 && chart[0] === w.task.addr);
 const steps = m.line_steps(w.first, w.last, w.task.addr);
-check("write, line by line (more lines than blocks)", steps.length > w.blocks && steps.some((x) => x.inlined));
+check("write, line by line (inlined lines too)", steps.length > 50 && steps.some((x) => x.inlined));
 const mid = steps.find((x) => x.func === "vfs_write").i;
 const stack = m.call_stack(mid);
 check("a past call stack, with arguments", stack[0]?.func === "vfs_write"
