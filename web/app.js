@@ -215,7 +215,7 @@ export function app(m) {
   try { Object.assign(sizes, JSON.parse(localStorage.getItem("ksee.sizes") ?? "{}")); } catch { /* none kept */ }
   const layout = () => {
     $("main").style.gridTemplateColumns = `${sizes.left}px 5px minmax(300px, 1fr) 5px ${sizes.right}px`;
-    $("chartbox").style.maxHeight = `${sizes.chart}px`;
+    $("chartbox").style.height = `${sizes.chart}px`;
     try { localStorage.setItem("ksee.sizes", JSON.stringify(sizes)); } catch { /* not kept */ }
   };
   const drag = (handle, move) => (handle.onpointerdown = (e) => {

@@ -2,9 +2,11 @@
 // task ran when, the window shown below, the cursor. Below, the window as a
 // stack chart: a strip of which task runs, and under it that task's call
 // stack (Machine.chart), each call a bar, colored by where its function is
-// (a syscall's entry named for the syscall). Scroll to zoom, drag to pan,
-// click to put the cursor there, double-click a call to zoom to it; click
-// or drag the overview to move the window.
+// (a syscall's entry named for the syscall). The calls every column of the
+// window shares are one line above it; the rest fit the box (rows as thin
+// as it takes). Scroll to zoom (sideways: pan), drag to pan, click to put
+// the cursor there, double-click a call to zoom to it; click or drag the
+// overview to move the window.
 import { $, taskName } from "./dom.js";
 
 const ROW = 15, STRIP = 12, OVER = 18;
@@ -24,7 +26,8 @@ export function timeline(app) {
   // n: records; calls: syscalls; win: the window shown { a, b }; home: the
   // selection (a syscall's or program's records, and its task); cols: the
   // chart's columns [{ task, frames: [[func, first]] }].
-  const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [] };
+  const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
+              base: 0, row: 15 }; // (base: the depth where rows start; row: their height)
   const funcs = new Map(), tasks = new Map();
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const who = (addr, i) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr, i)).get(addr));
@@ -67,9 +70,22 @@ export function timeline(app) {
       ctx.fillRect(ox(t.cursor) - 1, 0, 2, OVER);
     }
   }
+  // A call's name (a syscall's entry: named for the syscall).
+  const nameOf = (id, first) => {
+    const f = fn(id);
+    const s = f?.name === "wasm_syscall" ? t.calls.find((c) => c.first === first) : null;
+    return s ? `${s.name ?? s.nr}()` : f?.name ?? "?";
+  };
   function drawChart() {
     const depth = t.cols.reduce((d, c) => Math.max(d, c.frames.length), 1);
-    const ctx = canvas(chart, STRIP + 2 + depth * ROW);
+    // The calls every column shares (same call, same depth): one line.
+    let base = 0;
+    while (base < depth && t.cols.length && t.cols.every((c) => c.frames[base] && c.frames[base][1] === t.cols[0].frames[base][1])) base++;
+    const rows = Math.max(1, depth - base), room = ($("chartbox").clientHeight || 190) - STRIP - 4;
+    t.base = base;
+    t.row = Math.max(5, Math.min(ROW, Math.floor(room / rows)));
+    const ctx = canvas(chart, STRIP + 2 + rows * t.row);
+    $("chart-base").textContent = base ? t.cols[0].frames.slice(0, base).map(([id, first]) => nameOf(id, first)).join(" › ") : "";
     if (!t.win) return;
     const cw = W() / Math.max(1, t.cols.length), cur = t.cursor ?? -1;
     const curCol = t.cols[Math.min(t.cols.length - 1, Math.max(0, Math.floor(x(cur) / cw)))];
@@ -91,21 +107,19 @@ export function timeline(app) {
       label(ctx, taskName(p), r.from * cw, (r.to - r.from) * cw, STRIP / 2, "#1f2328");
     }
     // The stacks (the calls at the cursor: darker).
-    for (let d = 0; d < depth; d++) {
+    for (let d = base; d < depth; d++) {
       for (const r of runs((c) => (c.frames[d] ? `${c.frames[d][0]}:${c.frames[d][1]}` : undefined))) {
-        const [id, first] = r.c.frames[d], f = fn(id), y = STRIP + 2 + d * ROW;
+        const [id, first] = r.c.frames[d], f = fn(id), y = STRIP + 2 + (d - base) * t.row;
         const x1 = r.from * cw, w = (r.to - r.from) * cw;
         const on = curCol?.frames[d]?.[1] === first && cur >= t.win.a && cur <= t.win.b;
         ctx.fillStyle = color(f?.file, on);
-        ctx.fillRect(x1, y, Math.max(1, w - 1), ROW - 1);
-        // (A syscall's entry: named for the syscall.)
-        const s = f?.name === "wasm_syscall" ? t.calls.find((c) => c.first === first) : null;
-        label(ctx, s ? `${s.name ?? s.nr}()` : f?.name ?? "?", x1, w, y + ROW / 2, on ? "#fff" : "#1f2328");
+        ctx.fillRect(x1, y, Math.max(1, w - 1), t.row - 1);
+        if (t.row >= 11) label(ctx, nameOf(id, first), x1, w, y + t.row / 2, on ? "#fff" : "#1f2328");
       }
     }
     if (cur >= t.win.a && cur <= t.win.b) {
       ctx.fillStyle = css("--fg");
-      ctx.fillRect(x(cur) - 1, 0, 2, STRIP + 2 + depth * ROW);
+      ctx.fillRect(x(cur) - 1, 0, 2, STRIP + 2 + rows * t.row);
     }
     $("chart-title").textContent = `${t.title || "the recording"} · records ${t.win.a + 1}–${t.win.b + 1} of ${t.n}`;
   }
@@ -153,14 +167,20 @@ export function timeline(app) {
   chart.onwheel = (e) => {
     if (!t.win) return;
     e.preventDefault();
-    const i = at(e.offsetX), k = e.deltaY > 0 ? 1.25 : 0.8;
+    const span = t.win.b - t.win.a;
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      // Sideways (a trackpad): pan.
+      const d = (e.deltaX / W()) * span;
+      return setWindow(t.win.a + d, t.win.b + d);
+    }
+    const i = at(e.offsetX), k = Math.exp(Math.max(-0.5, Math.min(0.5, e.deltaY * 0.002)));
     setWindow(i - (i - t.win.a) * k, i + (t.win.b - i) * k);
   };
   let drag = null;
   chart.onpointerdown = (e) => t.win && (drag = { x: e.offsetX, a: t.win.a, b: t.win.b, moved: false });
   chart.onpointermove = (e) => {
     if (!drag) {
-      const c = t.cols[Math.floor((e.offsetX / W()) * t.cols.length)], d = Math.floor((e.offsetY - STRIP - 2) / ROW);
+      const c = t.cols[Math.floor((e.offsetX / W()) * t.cols.length)], d = t.base + Math.floor((e.offsetY - STRIP - 2) / t.row);
       const f = c?.frames[d] && fn(c.frames[d][0]);
       chart.title = f ? `${f.name} (${f.file}:${f.line})` : c ? taskName(who(c.task, t.win.a)) : "";
       return;
@@ -179,7 +199,7 @@ export function timeline(app) {
   };
   chart.ondblclick = (e) => {
     // Zoom to the call there: from its first record to where it ends.
-    const k = Math.floor((e.offsetX / W()) * t.cols.length), d = Math.floor((e.offsetY - STRIP - 2) / ROW);
+    const k = Math.floor((e.offsetX / W()) * t.cols.length), d = t.base + Math.floor((e.offsetY - STRIP - 2) / t.row);
     const key = t.cols[k]?.frames[d]?.[1];
     if (key == null) return;
     let end = k;

@@ -726,44 +726,37 @@ impl Machine {
         list.into()
     }
 
-    /// Send init (the process on /dev/ksee, see user/init.c) a request:
-    /// `op` with `a`, `b`, up to six `args` and `data`. False if one is
-    /// pending. See web/ksee.js for the operations.
-    pub fn post(&self, op: u32, a: u32, b: u32, args: Vec<f64>, data: Option<Vec<u8>>) -> Result<bool, JsValue> {
+    /// Ask the kernel to run program `path` (in the initramfs), over the
+    /// kSEE channel (linux/arch/wasm/drivers/ksee_channel.c). False if a
+    /// program runs already.
+    pub fn run(&self, path: &str) -> Result<bool, JsValue> {
         if MAILBOX.state.load(Ordering::Acquire) != EMPTY {
             return Ok(false);
         }
-        let mut out = Vec::with_capacity(64);
-        for v in [op, a, b, 0] {
-            out.extend(v.to_le_bytes());
-        }
-        for i in 0..6 {
-            out.extend((args.get(i).copied().unwrap_or(0.0) as i64).to_le_bytes());
-        }
-        out.extend(data.unwrap_or_default());
-        if out.len() > MAILBOX_SIZE {
-            return Err("request too large".into());
+        let bytes = path.as_bytes();
+        if bytes.len() > MAILBOX_SIZE {
+            return Err("path too long".into());
         }
         let buf = unsafe { &mut *MAILBOX.data.get() };
-        buf[..out.len()].copy_from_slice(&out);
-        MAILBOX.len.store(out.len() as u32, Ordering::Relaxed);
+        buf[..bytes.len()].copy_from_slice(bytes);
+        MAILBOX.len.store(bytes.len() as u32, Ordering::Relaxed);
         MAILBOX.state.store(REQUEST, Ordering::Release);
         interrupt(2); // WASM_IRQ_CHANNEL
         Ok(true)
     }
 
-    /// The reply to the last request, once init has sent it: { ret, data }.
-    pub fn take(&self) -> JsValue {
+    /// Once the program `run` started has exited: { status (its exit
+    /// status, or -errno), pid }; null before.
+    pub fn result(&self) -> JsValue {
         if MAILBOX.state.load(Ordering::Acquire) != REPLY {
             return JsValue::NULL;
         }
-        let len = (MAILBOX.len.load(Ordering::Relaxed) as usize).min(MAILBOX_SIZE);
-        let reply = unsafe { &*MAILBOX.data.get() }[..len].to_vec();
-        MAILBOX.state.store(EMPTY, Ordering::Release);
-        let ret = i64::from_le_bytes(reply.get(..8).and_then(|b| b.try_into().ok()).unwrap_or([0; 8]));
+        let reply = unsafe { &*MAILBOX.data.get() };
+        let word = |k: usize| i64::from_le_bytes(reply[8 * k..8 * k + 8].try_into().unwrap()) as f64;
         let o = Object::new();
-        js::set(&o, "ret", ret as f64);
-        js::set(&o, "data", Uint8Array::from(reply.get(8..).unwrap_or(&[])));
+        js::set(&o, "status", word(0));
+        js::set(&o, "pid", word(1));
+        MAILBOX.state.store(EMPTY, Ordering::Release);
         o.into()
     }
 

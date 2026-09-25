@@ -31,10 +31,9 @@ const proc = process(m);
 // Run program `path`, recording; its pid and exit status.
 async function run(path) {
   m.record(true);
-  const pid = await proc.spawn(path);
-  const status = await proc.wait(pid);
+  const r = await proc.run(path);
   m.record(false);
-  return { pid, status };
+  return r;
 }
 
 check("init ready", await until(() => out.includes("ready for the page's programs")));
@@ -109,7 +108,7 @@ check("a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr
 m.memory_at(null);
 
 // LINUX_REBOOT_CMD_POWER_OFF
-proc.spawn("/bin/poweroff");
+proc.run("/bin/poweroff");
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);
 
 if (failed) console.log(out);

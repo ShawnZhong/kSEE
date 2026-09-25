@@ -11,22 +11,18 @@ export async function start({ kernel, initrd, cmdline = "", ramMiB = 64 }) {
   return Machine.start({ kernel: String(kernel), initrd: initrd && String(initrd), cmdline, worker, ram });
 }
 
-// init, which starts the page's programs, on the kernel's /dev/ksee
-// channel (see user/init.c). Each operation waits for init's reply.
+// Running programs: the kernel runs one (a path in the initramfs), and says
+// its pid and exit status when it has exited (see Machine.run).
 export function process(machine) {
-  const request = async (op, a = 0, b = 0, args = [], data) => {
-    while (!machine.post(op, a >>> 0, b >>> 0, args, data)) await tick();
-    for (;;) {
-      const r = machine.take();
-      if (r) return r;
-      await tick();
-    }
-  };
   const tick = () => new Promise((r) => setTimeout(r, 2));
   return {
-    // A program (a path in the initramfs) as a child of init: its pid; then
-    // its exit status, once it exits.
-    spawn: async (path) => (await request(1, 0, 0, [], new TextEncoder().encode(path + "\0"))).ret,
-    wait: async (pid) => (await request(2, pid)).ret,
+    run: async (path) => {
+      while (!machine.run(path)) await tick();
+      for (;;) {
+        const r = machine.result();
+        if (r) return r;
+        await tick();
+      }
+    },
   };
 }

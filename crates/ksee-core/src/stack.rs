@@ -5,7 +5,10 @@
 //! further down the stack is a return to it: the frames above it pop. A
 //! block of a function not on the stack (its entry was before the trace
 //! began) starts the stack again from it. A return record pops the
-//! function's frame (and any above it).
+//! function's frame (and any above it). A task starts (wasm_task_entry)
+//! with nothing on its stack: a task that exited never returns from its
+//! last calls (do_exit, do_task_dead, __switch_to), and a new task may get
+//! its task_struct.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -18,10 +21,16 @@ struct Stack {
     frames: Vec<(u32, usize)>,
 }
 
+/// The function a task starts in (arch/wasm/kernel/process.c).
+pub const TASK_ENTRY: &str = "wasm_task_entry";
+
 impl Stack {
     /// Apply block `(func, n)` at record `i`.
     fn block(&mut self, func: u32, n: u32, i: usize) {
         if n == 0 {
+            if func == crate::tables::Tables::id(TASK_ENTRY) {
+                self.frames.clear(); // (a new task)
+            }
             self.frames.push((func, i));
         } else if self.frames.last().is_some_and(|&(f, _)| f == func) {
             // Still in the same function.
@@ -221,6 +230,14 @@ mod tests {
         let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 0 }, Record::Return { func: 1, value: 0 }];
         let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| (s.loc.line, s.record, s.depth)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (10, 1, 1), (3, 2, 0)]);
+    }
+
+    #[test]
+    fn a_new_task_starts_empty() {
+        // A task that exited in f (never returning), then a new task at its address.
+        let entry = crate::tables::Tables::id(TASK_ENTRY);
+        let r = [b(entry, 0), b(1, 0), b(entry, 0), b(2, 0)];
+        assert_eq!(stack_at(&r, &[7; 4], 3), [entry, 2]);
     }
 
     #[test]

@@ -69,9 +69,8 @@ export async function tours(app) {
     t.status.textContent = "running…";
     m.record(true);
     try {
-      const pid = await proc.spawn(t.tour.path);
-      if (pid < 0) throw new Error(`could not start ${t.tour.path}: ${pid}`);
-      const status = await proc.wait(pid);
+      const { pid, status } = await proc.run(t.tour.path);
+      if (status < 0 || !pid) throw new Error(`could not run ${t.tour.path}: ${status}`);
       t.run = { pid };
       t.status.textContent = `${t.tour.path} ran as pid ${pid} (exit status ${status}): click a line for what the kernel did for it.`;
     } catch (e) {
