@@ -6,7 +6,5 @@
 pub const SYSCALL: &str = "wasm_syscall";
 /// Where a task starts (arch/wasm/kernel/process.c), with an empty stack.
 pub const TASK_ENTRY: &str = "wasm_task_entry";
-/// The context switch: switch(prev, next) returns in next's Worker.
+/// The context switch: switch(prev, next) returns on next's stack.
 pub const SWITCH: &str = "__switch_to";
-/// A task's end.
-pub const EXIT: &str = "do_exit";

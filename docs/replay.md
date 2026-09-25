@@ -13,11 +13,11 @@ known places, so a pass over the records tracks it:
 - a call of `__switch_to(prev, next)` notes `next`; the task changes when
   that call **returns** (on the next task's stack);
 - a new task starts in `wasm_task_entry(p)`;
-- a Task record names the task that writes it.
+- before the first switch, its `prev` ran.
 
-Who a task was (pid, comm) comes from its program's Task record, as long as
-it did not exit (`do_exit`) in between; else from memory now. A task_struct
-address is reused by later tasks.
+Who a task is (pid, comm) comes from its task_struct, in memory now: the
+recorded calls are /init's, which never exits nor execs again (a kernel
+thread that exited meanwhile may show as whoever has its address now).
 
 ## Calls and stacks
 

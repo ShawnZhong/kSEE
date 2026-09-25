@@ -41,7 +41,7 @@ export function timeline(app) {
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const inames = new Map();
   const iname = (k) => inames.get(k) ?? inames.set(k, m.inline_name(k)).get(k);
-  const who = (addr, i) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr, i)).get(addr));
+  const who = (addr) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr)).get(addr));
 
   function canvas(c, h) {
     const dpr = devicePixelRatio;
@@ -63,7 +63,7 @@ export function timeline(app) {
     const ctx = canvas(over, OVER), w = over.clientWidth;
     if (!t.n) {
       ctx.fillStyle = css("--dim");
-      ctx.fillText("Nothing recorded yet: open an example and make its calls (or ● Record). What the kernel runs appears here.", 4, OVER / 2);
+      ctx.fillText("Nothing recorded yet: open an example and make its calls. What the kernel runs appears here.", 4, OVER / 2);
       return;
     }
     t.buckets.forEach((b, k) => {

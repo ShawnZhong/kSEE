@@ -134,16 +134,12 @@ export async function examples(app) {
     // (If the kernel starts again meanwhile, the call gives up: another
     // example's, then, not this one's to say.)
     const mine = t.list;
-    m.record(true);
     try {
       r = await m.call(s.call, args);
     } catch (e) {
       if (t.list === mine) t.status.textContent = e.message;
     } finally {
-      if (t.list === mine) {
-        m.record(false);
-        t.running = false;
-      }
+      if (t.list === mine) t.running = false;
     }
     if (!r || t.list !== mine) return false;
     app.refresh();

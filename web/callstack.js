@@ -93,9 +93,9 @@ export function callstack(app) {
     s.frames = frames;
     s.sel = null;
     // (The stack comes from the recording: nothing recorded, no stack.)
-    $("stack-note").textContent = frames.length ? "" : m.recording() || m.records()
+    $("stack-note").textContent = frames.length ? "" : m.records()
       ? "The call stack at the cursor, with arguments: pick a moment in the recording."
-      : "Not recording: the call stack comes from the recording. Open an example, or ● Record.";
+      : "Nothing recorded yet: the call stack comes from the recording. Make a call.";
     draw();
   }
 

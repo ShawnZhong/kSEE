@@ -1,6 +1,6 @@
 // The kSEE page: wires the panels to a booted Machine (crates/ksee-runtime).
 //
-// Run something, recorded (an example's calls, or ● Record); then
+// Make calls, each recorded (an example's, or your own); then
 // explore the recording at one cursor: the timeline shows it among the
 // tasks and their calls; the source and the Stack show the code and the
 // values there (memory as it was). ◀ ▶| and Play move it line by line.
@@ -16,17 +16,15 @@ export function app(m) {
   // (The panels, for each other and for tests.)
   Object.assign(a, { src, time, stack });
 
-  // ---- The state: recording, or exploring the recording ----
+  // ---- The state: a recording to explore, or none yet ----
   let halted = null;
-  const state = () => (halted != null ? "halted" : m.recording() ? "recording" : time.records() ? "replay" : "idle");
+  const state = () => (halted != null ? "halted" : time.records() ? "replay" : "idle");
   function badge() {
     const st = state();
     $("badge").className = `badge ${st}`;
-    $("badge").textContent = { idle: "○ IDLE", recording: "● RECORDING", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
-    $("record").textContent = m.recording() ? "■ Stop recording" : "● Record";
+    $("badge").textContent = { idle: "○ IDLE", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
     $("status").textContent = {
       idle: "Open an example and make its calls: the kernel's work for them is recorded, to explore here.",
-      recording: `recording… ${time.records()} records`,
       replay: `a recording of ${time.records()} records: move the cursor through it`,
       halted: `the kernel halted (${halted})`,
     }[st];
@@ -41,11 +39,6 @@ export function app(m) {
     return calls;
   };
   a.refresh = refresh;
-  $("record").onclick = () => {
-    m.record(!m.recording());
-    refresh();
-    badge();
-  };
 
   // ---- Memory: as it was at the cursor ----
   let memAt;
@@ -238,8 +231,7 @@ export function app(m) {
   drag($("hsplit"), (s, _, dy) => (sizes.chart = Math.max(60, s.chart + dy)));
   layout();
 
-  // ---- The loop: the console; while recording, the timeline grows ----
-  let lastRefresh = 0;
+  // ---- The loop: the console ----
   // Start the kernel again (a fresh one: the page stays); done once /init
   // is ready for calls.
   a.restart = async () => {
@@ -261,10 +253,6 @@ export function app(m) {
     if (code !== undefined && halted == null) {
       halted = code;
       stopPlay();
-    }
-    if (m.recording() && performance.now() - lastRefresh > 1000) {
-      lastRefresh = performance.now();
-      refresh();
     }
     badge();
     setTimeout(tick, 50);

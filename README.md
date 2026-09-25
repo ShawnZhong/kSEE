@@ -53,8 +53,7 @@ preview of where, click it to go there; click a syscall, or double-click
 any call, to select it: its records from its start to its end, with
 whatever else ran in between). Hover
 a name in the source for its value at the cursor;
-✎ on a value says which code last wrote it. ● Record records the kernel
-until you stop it.
+✎ on a value says which code last wrote it.
 
 An example is one JSON file in user/examples/: a title, a question, and
 steps: `{ call, args, stops: [{ func, note, any? }] }`, the arguments

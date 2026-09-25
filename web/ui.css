@@ -45,7 +45,6 @@ a:hover { text-decoration: underline; }
 .row.control { opacity: .55; }
 .row .call { font-family: var(--mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row .meta { color: var(--dim); font-size: 11.5px; }
-.row .live { color: var(--miss); }
 .run { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; }
 .run .where { grid-column: 1 / -1; color: var(--dim); font-size: 11px; font-family: var(--mono); }
 .count { font-family: var(--mono); font-size: 11px; color: var(--dim); }
@@ -70,10 +69,8 @@ table.src tr.cursor td.code { box-shadow: inset 3px 0 var(--accent); background:
 
 /* The state */
 .badge { font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); white-space: nowrap; }
-.badge.live { color: #fff; background: var(--miss); border-color: var(--miss); animation: pulse 2s infinite; }
 .badge.paused { color: var(--miss); border-color: var(--miss); }
 .badge.replay { color: #fff; background: var(--accent); border-color: var(--accent); }
-@keyframes pulse { 50% { opacity: .6; } }
 #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* The history */
@@ -125,8 +122,6 @@ a.who:hover { color: var(--accent); }
 .vsplit { cursor: col-resize; background: var(--line); width: 5px; opacity: .5; }
 .vsplit:hover, .hsplit:hover { background: var(--accent); opacity: .6; }
 .hsplit { cursor: row-resize; height: 4px; background: var(--line); opacity: .5; }
-.badge.recording { color: #fff; background: var(--miss); border-color: var(--miss); animation: pulse 2s infinite; }
-.badge.live { color: var(--miss); background: none; animation: none; }
 
 /* Objects (in the Stack) */
 table.objs { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12px; table-layout: fixed; }

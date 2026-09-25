@@ -226,6 +226,9 @@ pub fn idle() -> Promise {
         raise(IRQ_TIMER);
         return Promise::resolve(&JsValue::NULL);
     }
+    // Nothing to do until the page's input: a call's recording ends here
+    // (and memory stays as it leaves it, until the next call).
+    Direct.write_u32(k(|k| k.trace.get()) + ksee_core::trace::ON, 0);
     let mut wake = None;
     let p = Promise::new(&mut |ok, _| wake = Some(ok));
     S.with_borrow_mut(|s| s.idle = wake);

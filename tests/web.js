@@ -30,9 +30,7 @@ async function until(pred, ms = 10000) {
 }
 // Syscall `name` made by /init, recorded: { ret, buffers, s (its syscall summary) }.
 async function call(name, args) {
-  m.record(true);
   const r = await m.call(name, args);
-  m.record(false);
   m.snapshot();
   const nr = m.syscall(name).nr;
   // (The last that returned: /init waits for the next call in a read.)
@@ -41,7 +39,7 @@ async function call(name, args) {
 const ran = (s, func) => s?.last != null && m.first_call(func, s.first, s.last, s.task.addr) != null;
 
 check("init ready", await until(() => out.includes("ready for the page's calls")));
-check("not recording at first", !m.recording() && (m.snapshot(), m.records() === 0));
+check("nothing recorded at first", (m.snapshot(), m.records() === 0));
 
 // Calls, traced.
 const w = (await call("write", [1, "hello kSEE\n", 11])).s;
@@ -58,7 +56,7 @@ const chartTasks = (flat) => {
 const ts = { bytes: new Uint8Array(new BigInt64Array([0n, 30000000n]).buffer) };
 const nap = (await call("clock_nanosleep_time64", [1, 0, ts, 0])).s;
 check("sleeping switched to the idle task and back", ran(nap, "__schedule")
-      && chartTasks(m.chart(nap.first, nap.last, 50)).some((a) => m.task(a, nap.first).comm === "swapper/0"));
+      && chartTasks(m.chart(nap.first, nap.last, 50)).some((a) => m.task(a).comm === "swapper/0"));
 m.snapshot();
 const wi = m.syscalls().findIndex((s) => s.first === w.first);
 const [vfs] = m.functions("vfs_write", wi);

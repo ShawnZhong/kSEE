@@ -1,16 +1,14 @@
 //! A recording: the records of the trace ring, and what the host rebuilds
-//! from them alone: the task running at each record, who the tasks were,
-//! the syscalls, and the stores (memory as it was).
+//! from them alone: the task running at each record, the syscalls, and the
+//! stores (memory as it was).
 
 use alloc::collections::BTreeMap;
-use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::OnceCell;
 
 use crate::stack::{self, LineStep};
 use crate::syscalls::{self, Syscall};
 use crate::tables::Tables;
-use crate::task::Task;
 use crate::trace::Record;
 use crate::{arch, mem, Memory};
 
@@ -24,11 +22,6 @@ pub struct Recording {
     pub tasks: Vec<u32>,
     /// In the order they began.
     pub syscalls: Vec<Syscall>,
-    /// Who was at a task_struct address, from Task records: address ->
-    /// [(record, task)]; and where tasks exited (do_exit): address ->
-    /// [record]. The address of an exited task may be another's later.
-    idents: BTreeMap<u32, Vec<(usize, Task)>>,
-    exits: BTreeMap<u32, Vec<usize>>,
     /// The stores, indexed (once asked for).
     stores: OnceCell<mem::History>,
 }
@@ -37,47 +30,38 @@ impl Recording {
     pub fn new(t: &Tables, records: Vec<Record>, ids: Vec<u32>) -> Recording {
         // The task running at each record: it changes when __switch_to(prev,
         // next) returns (in next), and when a new task starts
-        // (wasm_task_entry(p)); a Task record says so too.
-        let (switch, start, do_exit) = (t.find(arch::SWITCH), t.find(arch::TASK_ENTRY), t.find(arch::EXIT));
+        // (wasm_task_entry(p)).
+        let (switch, start) = (t.find(arch::SWITCH), t.find(arch::TASK_ENTRY));
         let args = |i: usize| match records.get(i + 1) {
             Some(&Record::Args { args, .. }) => Some(args),
             _ => None,
         };
         let (mut task, mut next, mut first_prev) = (0, None, None);
         let mut tasks = Vec::with_capacity(records.len());
-        let mut idents: BTreeMap<u32, Vec<(usize, Task)>> = BTreeMap::new();
-        let mut exits: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
         for (i, r) in records.iter().enumerate() {
             match *r {
                 Record::Block { func, n: 0 } if Some(func) == switch => {
-                    first_prev = first_prev.or(args(i).map(|a| (i, a[0])));
+                    first_prev = first_prev.or(args(i).map(|a| a[0]));
                     next = args(i).map(|a| a[1]);
                 }
                 Record::Block { func, n: 0 } if Some(func) == start => {
                     task = args(i).map_or(task, |a| a[0]);
                     next = None;
                 }
-                Record::Block { func, n: 0 } if Some(func) == do_exit => exits.entry(task).or_default().push(i),
                 Record::Return { func, .. } if Some(func) == switch => task = next.take().unwrap_or(task),
-                Record::Task { task: addr, pid, comm } => {
-                    task = addr;
-                    let bytes: Vec<u8> = comm.iter().flat_map(|w| w.to_le_bytes()).take_while(|&b| b != 0).collect();
-                    let who = Task { pid: pid as i32, comm: String::from_utf8_lossy(&bytes).into() };
-                    idents.entry(addr).or_default().push((i, who));
-                }
                 _ => {}
             }
             tasks.push(task);
         }
-        // (Before the first switch, the task it switches from ran: until
+        // (Until the first switch, the task it switches from ran: until
         // then, the records say no more.)
-        if let Some((at, prev)) = first_prev {
-            for t in tasks[..at].iter_mut().take_while(|t| **t == 0) {
+        if let Some(prev) = first_prev {
+            for t in tasks.iter_mut().take_while(|t| **t == 0) {
                 *t = prev;
             }
         }
         let syscalls = syscalls::split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks);
-        Recording { records, ids, tasks, syscalls, idents, exits, stores: OnceCell::new() }
+        Recording { records, ids, tasks, syscalls, stores: OnceCell::new() }
     }
 
     pub fn len(&self) -> usize {
@@ -97,22 +81,6 @@ impl Recording {
     /// `end` (memory as it was when the recording ended).
     pub fn memory_at<'a>(&'a self, end: &'a dyn Memory, at: usize) -> mem::PastMemory<'a> {
         mem::PastMemory { base: end, history: self.stores(), at }
-    }
-
-    /// The task at `addr` at record `i`, as a Task record of its program
-    /// says (before or after `i`, as long as it did not exit in between).
-    pub fn task_at(&self, addr: u32, i: usize) -> Option<Task> {
-        let exited = |a: usize, b: usize| self.exits.get(&addr).is_some_and(|e| e.iter().any(|&x| a <= x && x < b));
-        let ids = self.idents.get(&addr)?;
-        if let Some((at, t)) = ids.iter().rev().find(|(at, _)| *at <= i) {
-            if !exited(*at, i) {
-                return Some(t.clone());
-            }
-        }
-        match ids.iter().find(|(at, _)| *at > i) {
-            Some((at, t)) if !exited(i, *at) => Some(t.clone()),
-            _ => None,
-        }
     }
 
     /// The syscall in progress on the task running at record `i` (its index).
@@ -223,20 +191,14 @@ mod tests {
         Record::Block { func, n }
     }
 
-    fn task(addr: u32, pid: u32) -> Record {
-        Record::Task { task: addr, pid, comm: [u32::from_le_bytes(*b"hi\0\0"), 0, 0, 0] }
-    }
-
     #[test]
     fn tasks_switch_where_switch_to_returns() {
         let t = Tables::parse("F\t1\t__switch_to\t0:1\t3\n", "");
         let switch = t.find("__switch_to").unwrap();
-        let r = [task(0x100, 5), b(switch, 0), Record::Args { args: [0x100, 0x200, 0, 0, 0, 0], n: 2 },
+        let r = [b(9, 1), b(switch, 0), Record::Args { args: [0x100, 0x200, 0, 0, 0, 0], n: 2 },
                  Record::Return { func: switch, value: 0 }, b(9, 1)];
         let rec = Recording::new(&t, r.to_vec(), (0..5).collect());
         assert_eq!(rec.tasks, [0x100, 0x100, 0x100, 0x200, 0x200]);
-        assert_eq!(rec.task_at(0x100, 4).map(|t| (t.pid, t.comm)), Some((5, "hi".into())));
-        assert_eq!(rec.task_at(0x200, 4), None);
     }
 
     #[test]

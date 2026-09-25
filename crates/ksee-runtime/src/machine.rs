@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use js_sys::{Function, Promise, Uint8Array, WebAssembly};
 use ksee_core::recording::Recording;
 use ksee_core::tables::Tables;
-use ksee_core::{trace, Memory};
+use ksee_core::trace;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -28,26 +28,11 @@ pub struct Machine {
     pub(crate) rec: RefCell<Recording>,
     /// The moment the views show memory at (a record), or None: now.
     pub(crate) past: RefCell<Option<usize>>,
-    /// Kernel memory when recording stopped: memory as it was is that, the
-    /// recorded stores undone (the kernel went on, unrecorded).
-    pub(crate) frozen: RefCell<Option<Vec<u8>>>,
 }
 
 /// Where the initramfs goes: at the top of RAM (page-aligned).
 fn initrd_at(ram: u32, initrd: &[u8]) -> u32 {
     (ram - initrd.len() as u32) & !0xfff
-}
-
-/// Kernel memory as it was when recording stopped.
-pub(crate) struct Frozen<'a>(pub &'a [u8]);
-
-impl Memory for Frozen<'_> {
-    fn read(&self, addr: u32, buf: &mut [u8]) {
-        match self.0.get(addr as usize..addr as usize + buf.len()) {
-            Some(b) => buf.copy_from_slice(b),
-            None => Direct.read(addr, buf),
-        }
-    }
 }
 
 async fn fetch_bytes(url: &str) -> Result<Uint8Array, JsValue> {
@@ -101,8 +86,7 @@ impl Machine {
             cmdline += &format!(" initrd={:#x},{}", initrd_at(ram, &initrd), initrd.len());
         }
         k(|k| *k.cmdline.borrow_mut() = cmdline.trim().as_bytes().to_vec());
-        let m = Machine { module, initrd, rec: Default::default(),
-                          past: Default::default(), frozen: Default::default() };
+        let m = Machine { module, initrd, rec: Default::default(), past: Default::default() };
         m.boot().await?;
         Ok(m)
     }
@@ -159,7 +143,6 @@ impl Machine {
         });
         *self.rec.borrow_mut() = Default::default();
         *self.past.borrow_mut() = None;
-        *self.frozen.borrow_mut() = None;
         self.boot().await
     }
 
@@ -181,32 +164,6 @@ impl Machine {
         *self.rec.borrow_mut() = Recording::new(t, records, ids);
     }
 
-    /// Record the trace (on) or not. Stopping takes a snapshot, and keeps
-    /// kernel memory as it is then: memory as it was in the recording is
-    /// that, the recorded stores undone (the kernel goes on, unrecorded).
-    pub fn record(&self, on: bool) {
-        let word = k(|k| k.trace.get()) + trace::ON;
-        if on {
-            *self.frozen.borrow_mut() = None;
-            Direct.write_u32(word, 1);
-            // Who runs now (the trace names tasks by their switches).
-            imports::task_record();
-            return;
-        }
-        Direct.write_u32(word, 0);
-        self.snapshot();
-        let mut ram = vec![0u8; k(|k| k.ram.get()) as usize];
-        // (Not from address 0: a null pointer, to Rust. The kernel's memory
-        // starts well above it anyway.)
-        Direct.read(8, &mut ram[8..]);
-        *self.frozen.borrow_mut() = Some(ram);
-    }
-
-    /// Whether the trace records.
-    pub fn recording(&self) -> bool {
-        recording()
-    }
-
     // ---- Syscalls, made by /init ----
 
     /// Have /init make syscall `name` (e.g. "openat") with `args` (see
@@ -214,7 +171,9 @@ impl Machine {
     /// { bytes } (a buffer of them: an array or a Uint8Array), or { size }
     /// (a buffer of that many zero bytes, for the call to fill). A promise
     /// of { ret, buffers: [the bytes of each buffer argument, as the call
-    /// left them (null for the others)] }. One call at a time.
+    /// left them (null for the others)] }. One call at a time, recorded:
+    /// from here until the kernel idles again, waiting for the page (see
+    /// sched::idle); so memory now is memory as the recording ends.
     pub fn call(&self, name: &str, args: Vec<JsValue>) -> Result<Promise, JsValue> {
         let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
             .ok_or_else(|| format!("no syscall {name}"))?;
@@ -259,6 +218,7 @@ impl Machine {
             // (The doorbell: /init waits reading its terminal.)
             k.console_in.borrow_mut().push_back(b'\n');
         });
+        Direct.write_u32(k(|k| k.trace.get()) + trace::ON, 1);
         sched::interrupt(IRQ_CONSOLE);
         Ok(p)
     }

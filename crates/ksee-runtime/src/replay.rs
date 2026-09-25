@@ -5,7 +5,7 @@ use ksee_core::view::View;
 use ksee_core::Memory;
 use wasm_bindgen::prelude::*;
 
-use crate::machine::{Frozen, Machine};
+use crate::machine::Machine;
 use crate::state::{tables, Direct};
 
 fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
@@ -21,12 +21,7 @@ impl Machine {
     /// Run `f` on memory as the views should see it (see memory_at).
     fn with_memory<T>(&self, f: impl FnOnce(&dyn Memory) -> T) -> T {
         let Some(at) = *self.past.borrow() else { return f(&Direct) };
-        let frozen = self.frozen.borrow();
-        let end: &dyn Memory = match &*frozen {
-            Some(ram) => &Frozen(ram),
-            None => &Direct,
-        };
-        f(&self.rec.borrow().memory_at(end, at))
+        f(&self.rec.borrow().memory_at(&Direct, at))
     }
 }
 
@@ -76,9 +71,9 @@ impl Machine {
         self.view(|v| to_js(&v.at(i)))
     }
 
-    /// Who the task at address `task` was at record `i` (view::TaskRef).
-    pub fn task(&self, task: u32, i: usize) -> JsValue {
-        self.view(|v| to_js(&v.task(task, i)))
+    /// Who the task at address `task` is (view::TaskRef).
+    pub fn task(&self, task: u32) -> JsValue {
+        self.view(|v| to_js(&v.task(task)))
     }
 
     /// See ksee_core::recording::Recording::seek.

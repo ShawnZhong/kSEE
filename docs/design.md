@@ -16,8 +16,7 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
   read()?", "Directories on ext4"), a few syscalls that ask it, made one
   at a time, and stops in their recordings that explain what happens.
 - *Kernel developers*: what a code path really does, on a real kernel they
-  can read and change. They make **their own syscalls**, or **record** the
-  kernel as it runs.
+  can read and change. They make **their own syscalls**.
 
 **What it is not**: a live debugger (it replays; it does not pause the
 kernel), a syscall playground, a profiler, a full Linux system (no MMU, no
@@ -26,8 +25,8 @@ SMP, no fork: see Limits).
 ## The experience
 
 1. **Make syscalls**, each recorded: an example's (the page makes the
-   first's), your own (by name, with its parameters as fields), or record
-   the kernel for a while (● Record). A syscall takes milliseconds.
+   first's), or your own (a call written as in C). A syscall takes
+   milliseconds.
 2. **Explore the recording**, at one cursor:
    - *time*: a timeline of the call stack (who ran, what they called);
      drag, step line by line, Play;

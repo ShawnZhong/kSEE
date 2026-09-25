@@ -13,9 +13,6 @@ pub enum Record {
     /// The addresses of `func`'s locals in memory (the first `n`; their
     /// names: Tables::locals).
     Locals { func: u32, addrs: [u32; 8], n: u8 },
-    /// A task entering a user program (after exec): who it is, as the
-    /// pointer may later be another task's.
-    Task { task: u32, pid: u32, comm: [u32; 4] },
     /// The arguments of the call whose entry block (Block n 0) is just
     /// before: the first `n` of `args`.
     Args { args: [u32; 6], n: u8 },
@@ -27,8 +24,6 @@ pub enum Record {
 const BLOCK: u32 = 1;
 const LOCALS: u32 = 2;
 const RETURN: u32 = 4;
-/// The tag of a Task record's head (written by the runtime, not the plugin).
-pub const TASK: u32 = 6;
 /// The tag of a Store record's head (the plugin's, and the runtime's).
 pub const STORE: u32 = 7;
 /// A Store record's size class for a range of unknown old contents.
@@ -109,8 +104,8 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
             self.head = self.next;
             self.next += 1;
             let kind = tag >> 28;
-            let mut v = [0u32; 7];
-            let count = match kind {
+            let mut v = [0u32; 2];
+            match kind {
                 BLOCK => {
                     let n = tag & 0x0fff_ffff;
                     // An entry block: the call's arguments follow (as many as it has).
@@ -149,13 +144,8 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                         Record::Store { addr: func, size: 1 << class, old: v[0] as u64 | (v[1] as u64) << 32 }
                     });
                 }
-                TASK => 5,
                 _ => continue, // a continuation without its head
-            };
-            if self.values(&mut v, count) < count {
-                continue; // truncated
             }
-            return Some(Record::Task { task: func, pid: v[0], comm: [v[1], v[2], v[3], v[4]] });
         }
         None
     }

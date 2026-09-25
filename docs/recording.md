@@ -52,12 +52,10 @@ is stored with release order after each record, so a reader sees whole
 records. One writer at a time: the kernel is uniprocessor, and the runtime
 writes its own records only while the kernel runs (one thread).
 
-Probes record **only while `on` is set**: the page turns it on to record (a
-program's run, or ● Record) and off after. Otherwise each probe costs a
-load and a branch.
-
-The runtime adds a **Task record** when a task enters a program (who it
-is: a task_struct address can be another task's later).
+Probes record **only while `on` is set**: the runtime turns it on for each
+call the page asks /init to make (Machine.call), and off when the kernel
+idles for the page's input again: until the next call, memory stays as the
+recording leaves it. Otherwise each probe costs a load and a branch.
 
 ## What the kernel says about itself
 

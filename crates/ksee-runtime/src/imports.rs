@@ -115,27 +115,12 @@ fn ring_put(words: &[u32]) {
     Direct.write_u32(trace, p + words.len() as u32);
 }
 
-/// A Task record for the current task (it enters a user program): its
-/// pid and comm, as they are now.
-pub(crate) fn task_record() {
-    let task = current();
-    let Some(t) = ksee_core::task::read_task(tables(), &Direct, task) else { return };
-    let mut comm = [0u8; 16];
-    let n = t.comm.len().min(16);
-    comm[..n].copy_from_slice(&t.comm.as_bytes()[..n]);
-    let word = |i: usize| u32::from_le_bytes(comm[4 * i..4 * i + 4].try_into().unwrap());
-    let value = ksee_core::trace::VALUE_TAG << 28;
-    ring_put(&[task, ksee_core::trace::TASK << 28, t.pid as u32, value, word(0), value | 1,
-               word(1), value | 2, word(2), value | 3, word(3), value | 4]);
-}
-
 // ---- Programs ----------------------------------------------------------------
 
-/// The tasks' programs: the one each loaded (exec), and the one it runs.
+/// The tasks' programs: the memory of the one each loaded last (exec).
 #[derive(Default)]
 struct Programs {
-    loaded: BTreeMap<u32, WebAssembly::Instance>,
-    running: BTreeMap<u32, WebAssembly::Memory>,
+    memories: BTreeMap<u32, WebAssembly::Memory>,
     /// The kernel's syscall export (a program's import), and its function
     /// table (where a program's _start goes, for the kernel to call it).
     syscall: Option<Function>,
@@ -153,7 +138,7 @@ fn current() -> u32 {
 /// The part of the current task's program's memory at `p..p+n`, if in bounds.
 fn user_bytes(p: u32, n: u32) -> Option<Uint8Array> {
     PROGRAMS.with_borrow(|u| {
-        let buf = u.running.get(&current())?.buffer();
+        let buf = u.memories.get(&current())?.buffer();
         let len = js::get(&buf, "byteLength").as_f64()? as u64;
         (p as u64 + n as u64 <= len).then(|| Uint8Array::new_with_byte_offset_and_length(&buf, p, n))
     })
@@ -190,19 +175,8 @@ fn user_load(image: u32, len: u32) -> u32 {
     if table.set(at, &start).is_err() {
         return 0;
     }
-    PROGRAMS.with_borrow_mut(|u| u.loaded.insert(current(), inst));
+    PROGRAMS.with_borrow_mut(|u| u.memories.insert(current(), js::get(&inst.exports(), "memory").unchecked_into()));
     at
-}
-
-/// The current task enters the program it loaded.
-fn user_enter() {
-    PROGRAMS.with_borrow_mut(|u| {
-        let task = current();
-        if let Some(inst) = u.loaded.remove(&task) {
-            u.running.insert(task, js::get(&inst.exports(), "memory").unchecked_into());
-        }
-    });
-    task_record();
 }
 
 fn func<F: ?Sized + wasm_bindgen::closure::WasmClosure>(c: Closure<F>) -> JsValue {
@@ -232,7 +206,6 @@ pub fn kernel() -> Object {
         web_sys::console::log_1(&js::get(&js_sys::Error::new("kernel stack"), "stack"));
     })));
     js::set(&kernel, "user_load", func(Closure::<dyn FnMut(u32, u32) -> u32>::new(user_load)));
-    js::set(&kernel, "user_enter", func(Closure::<dyn FnMut()>::new(user_enter)));
     // Both return the number of bytes not copied.
     js::set(&kernel, "user_read", func(Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(
         |to: u32, from: u32, n: u32| match user_bytes(from, n) {

@@ -118,7 +118,7 @@ above RAM is the host's heap.
 All of it is in arch/wasm/include/asm/wasm.h. Imports (module `kernel`):
 `console_write`, `console_read`, `get_cmdline`, `memory_end`, `time_ns`,
 `spawn_task`, `switch_task` and `idle` (suspending), `halt`, `user_load`,
-`user_enter`, `user_read`, `user_write`, `print_stack`; and `ksee.bulk` (see [recording.md](recording.md)).
+`user_read`, `user_write`, `print_stack`; and `ksee.bulk` (see [recording.md](recording.md)).
 Exports: `boot_stack`, `boot`, `task_entry`, `syscall`, `ksee_trace`, and the
 globals `__stack_pointer`, `wasm_irq_pending`, `wasm_timer_deadline`,
 `__current_task`.

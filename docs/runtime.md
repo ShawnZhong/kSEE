@@ -19,7 +19,7 @@ Firefox 153, Safari 27.
 ```text
 web/ksee.js      init the runtime; Machine.start
 machine.rs       boot (a new kernel instance on wiped memory), restart,
-                 console, record, snapshots, syscalls by /init
+                 console, snapshots, syscalls by /init (recorded)
 sched.rs         the tasks: switch_task, idle (suspending), spawn_task
 imports.rs       the kernel's imports; programs (/init's module)
 replay.rs        views of the recording (ksee_core::view, as JS values)
@@ -59,7 +59,7 @@ source. Rust does the work: JS only lays it out.
 
 | Module | Does |
 |---|---|
-| app.js | wires the panels to the Machine; the state (idle, recording, replay, halted); the cursor; line steps and Play |
+| app.js | wires the panels to the Machine; the state (idle, replay, halted); the cursor; line steps and Play |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom); zoom, pan |
 | source.js | the source at the cursor (Monaco): lines that ran, the function, hover values, definitions |
 | callstack.js | the Stack: calls with arguments and locals, the task (current), ✎ who wrote a value |

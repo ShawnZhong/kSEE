@@ -200,9 +200,9 @@ impl View<'_> {
         self.tables.functions.get(&func).map_or_else(|| format!("{func:#x}"), |f| f.name.clone())
     }
 
-    /// Who the task at `addr` was at record `i`.
-    pub fn task(&self, addr: u32, i: usize) -> TaskRef {
-        let t = self.rec.task_at(addr, i).or_else(|| read_task(self.tables, self.now, addr));
+    /// Who the task at `addr` is (as memory says now).
+    pub fn task(&self, addr: u32) -> TaskRef {
+        let t = read_task(self.tables, self.now, addr);
         TaskRef { addr, pid: t.as_ref().map(|t| t.pid), comm: t.map(|t| t.comm) }
     }
 
@@ -210,7 +210,7 @@ impl View<'_> {
         self.rec.syscalls.iter().enumerate().map(|(index, s)| SyscallSummary {
             index,
             id: self.rec.ids.get(s.first).copied().unwrap_or(0),
-            task: self.task(s.task, s.first),
+            task: self.task(s.task),
             nr: s.nr,
             name: self.tables.types.syscalls.get(&s.nr).cloned(),
             args: s.args,
@@ -229,7 +229,6 @@ impl View<'_> {
                 ("block", func, t.blocks.get(&(func, n)).copied())
             }
             Record::Return { func, .. } => ("return", func, t.functions.get(&func).map(|f| f.loc)),
-            Record::Task { .. } => ("task", 0, None),
             Record::Args { .. } => ("args", 0, None),
             Record::Store { .. } => ("store", 0, None),
             Record::Locals { .. } => ("locals", 0, None),
@@ -240,7 +239,7 @@ impl View<'_> {
             file: loc.map(|l| t.file(l).to_string()),
             line: loc.map(|l| l.line),
             inlined: self.chain(inlined).first().map(|&(k, _)| self.inline_name(k)),
-            task: self.task(self.rec.tasks[i], i),
+            task: self.task(self.rec.tasks[i]),
             syscall: self.rec.syscall_at(i),
         })
     }
@@ -325,7 +324,7 @@ impl View<'_> {
     pub fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
         let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
         let line = line.map(|s| self.line(&s));
-        Some(Write { i, old, task: self.task(self.rec.tasks[i], i), func: line.as_ref().map(|l| l.func.clone()),
+        Some(Write { i, old, task: self.task(self.rec.tasks[i]), func: line.as_ref().map(|l| l.func.clone()),
                      file: line.as_ref().map(|l| l.file.clone()), line: line.as_ref().map(|l| l.line),
                      inlined: line.and_then(|l| l.inlined) })
     }
@@ -335,7 +334,7 @@ impl View<'_> {
         let total = self.rec.len().max(1);
         (0..n).filter_map(|b| {
             let i = b * total / n;
-            Some(self.task(*self.rec.tasks.get(i)?, i))
+            Some(self.task(*self.rec.tasks.get(i)?))
         }).collect()
     }
 
