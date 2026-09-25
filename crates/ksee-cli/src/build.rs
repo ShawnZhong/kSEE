@@ -95,7 +95,9 @@ pub fn build() {
         eprintln!("  INIT    {SITE}/initramfs.cpio.gz");
         std::fs::create_dir_all(dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
         run(Command::new(format!("clang{llvm}"))
-            .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-Wl,--no-entry", "-Wl,--export=_start",
+            // (Position-independent, in the kernel's memory: see binfmt_wasm.c.)
+            .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-fPIC", "-Wl,-pie",
+                   "-Wl,--experimental-pic", "-Wl,--import-memory", "-Wl,--no-entry", "-Wl,--export=_start",
                    "-nostdinc", "-isystem", "linux/tools/include/nolibc", "-isystem", "linux/usr/include",
                    "-o", &format!("{dir}/init.wasm"), "user/init.c"]));
         // The ext4 disk /init mounts (a file, through the loop device).

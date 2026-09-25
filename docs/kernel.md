@@ -66,15 +66,25 @@ calls make the same run, record for record.
 
 ## Programs, and /init
 
-Programs are wasm modules with **their own memory** (so a program's
-pointers are not kernel addresses; NOMMU without sharing the kernel's
-memory). kernel/binfmt_wasm.c recognizes them in `exec`: the host compiles
-and instantiates the module (`user_load`), and puts its `_start` in the
+Programs are **position-independent** wasm modules (`-fPIC -pie`, the
+tool conventions' dynamic linking) that import the kernel's memory: as on
+any NOMMU system, a program lives in pages the kernel gives it, and its
+pointers are kernel addresses. kernel/binfmt_wasm.c recognizes them in
+`exec`: the host compiles the module (`user_load`: how much data it
+needs), the kernel maps it pages for its data and a 64 KiB stack
+(`vm_mmap`), and the host instantiates it there (`user_start`: its
+`__memory_base` and `__stack_pointer`) and puts its `_start` in the
 kernel's function table, which the task calls when it returns to user mode
 (a direct call: nothing of the host's may be on a stack it suspends). A
 syscall is a plain wasm call into the kernel's `syscall` export
-(kernel/syscall.c). `copy_from_user`/`copy_to_user` are host imports that
-copy between the two memories (`user_read`, `user_write`).
+(kernel/syscall.c).
+
+So `copy_from_user`/`copy_to_user` are plain copies (`UACCESS_MEMCPY`),
+recorded like any other, and a program's buffers are in the recording's
+memory. `access_ok` checks that a user pointer is in the RAM the kernel
+allocates from: below it are the kernel image and the runtime's own memory.
+There is no protection otherwise (NOMMU): a program can write the kernel's
+memory.
 
 There is no user fork: a wasm program cannot copy its own stack.
 `copy_thread` refuses one; kernel threads (which start from a function)
@@ -82,10 +92,10 @@ work as usual.
 
 So there is one program: **/init** (user/init.c, C on nolibc). It mounts
 the disk, and then makes the syscalls the page asks for, one at a time. It
-waits for them reading its terminal: the page puts a request in the runtime's
-memory (the runtime's), and one byte of console input (`WASM_IRQ_CONSOLE`)
-wakes it; the runtime's `ksee.call` import copies the request (the number,
-the arguments, the buffers) into its memory, it makes the syscall, and
+waits for them reading its terminal: the page leaves a request with the
+runtime, and one byte of console input (`WASM_IRQ_CONSOLE`) wakes it; the
+runtime's `ksee.call` import copies the request (the number, the
+arguments, the buffers) into its data (recorded), it makes the syscall, and
 `ksee.done` gives the result back. So every syscall the page shows is a
 real process's, with its fds and its memory.
 
@@ -118,7 +128,7 @@ above RAM is the host's heap.
 All of it is in arch/wasm/include/asm/wasm.h. Imports (module `kernel`):
 `console_write`, `console_read`, `get_cmdline`, `memory_end`, `time_ns`,
 `spawn_task`, `switch_task` and `idle` (suspending), `halt`, `user_load`,
-`user_read`, `user_write`, `print_stack`; and `ksee.bulk` (see [recording.md](recording.md)).
+`user_start`, `print_stack`; and `ksee.bulk` (see [recording.md](recording.md)).
 Exports: `boot_stack`, `boot`, `task_entry`, `syscall`, `ksee_trace`, and the
 globals `__stack_pointer`, `wasm_irq_pending`, `wasm_timer_deadline`,
 `__current_task`.

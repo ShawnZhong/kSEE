@@ -101,6 +101,9 @@ const inRead = m.line_steps(read.first, read.last, read.task.addr).find((x) => x
 const file = m.call_stack(inRead)[0].args.find((a) => a.name === "file");
 const fpos = (i) => (m.memory_at(i), m.object_by_id("file", file.target, Number(file.value), 1)?.children?.find((c) => c.name === "f_pos"));
 check("f_pos before the read, and after", fpos(read.first)?.value === "0" && fpos(read.last)?.value === "26");
+// (/init's buffer is kernel memory: the read fills it, recorded.)
+const buf = (i) => (m.memory_at(i), m.call_stack(inRead)[0].args.find((a) => a.name === "buf")?.value);
+check("the user's buffer, before the read and after", !/hello/.test(buf(read.first)) && /"hello from the page cache/.test(buf(read.last)));
 const who = (m.memory_at(read.last), m.last_write(fpos(read.last).addr, 8));
 check("who wrote f_pos: ksys_read", who?.func === "ksys_read");
 const readSteps = m.line_steps(read.first, read.last, read.task.addr);
@@ -109,6 +112,8 @@ check("a local on the stack, as it was: ksys_read's pos, 0 then 26",
       pos(inRead) === "0" && pos(readSteps.findLast((x) => x.func === "ksys_read").i) === "26");
 m.memory_at(null);
 await call("close", [rfd]);
+// (A user pointer must be in RAM: not the runtime's memory, below it.)
+check("a bad user pointer: EFAULT", (await call("write", [1, 0x1000, 4])).ret === -14 && (await call("getpid", [])).ret === 1);
 
 // A char * shows its string: mkdir's struct filename, its name.
 {

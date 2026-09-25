@@ -2,7 +2,7 @@
 //!
 //! Frequent ones (time, console, command line, bulk stores, spawn_task)
 //! are this module's exports, so the kernel calls them directly. The rest
-//! need JS objects (promises, programs' modules and memories) and are
+//! need JS objects (promises, programs' modules) and are
 //! closures reached through wasm-bindgen; switch_task, idle and halt
 //! suspend the kernel's stack (see sched.rs).
 
@@ -117,12 +117,13 @@ fn ring_put(words: &[u32]) {
 
 // ---- Programs ----------------------------------------------------------------
 
-/// The tasks' programs: the memory of the one each loaded last (exec).
+/// The tasks' programs (position-independent modules, in kernel memory):
+/// the one each compiled (exec), until it is instantiated.
 #[derive(Default)]
 struct Programs {
-    memories: BTreeMap<u32, WebAssembly::Memory>,
+    loaded: BTreeMap<u32, WebAssembly::Module>,
     /// The kernel's syscall export (a program's import), and its function
-    /// table (where a program's _start goes, for the kernel to call it).
+    /// table (the programs' functions go in it too, and their _start).
     syscall: Option<Function>,
     table: Option<WebAssembly::Table>,
 }
@@ -135,21 +136,66 @@ fn current() -> u32 {
     Direct.read_u32(k(|k| k.current.get()))
 }
 
-/// The part of the current task's program's memory at `p..p+n`, if in bounds.
-fn user_bytes(p: u32, n: u32) -> Option<Uint8Array> {
-    PROGRAMS.with_borrow(|u| {
-        let buf = u.memories.get(&current())?.buffer();
-        let len = js::get(&buf, "byteLength").as_f64()? as u64;
-        (p as u64 + n as u64 <= len).then(|| Uint8Array::new_with_byte_offset_and_length(&buf, p, n))
-    })
+const ENOEXEC: i32 = 8;
+
+/// A module's dylink.0 memory info (the tool conventions' dynamic linking):
+/// the bytes its data needs, and the table entries.
+fn dylink(module: &WebAssembly::Module) -> Option<(u32, u32)> {
+    let sections = WebAssembly::Module::custom_sections(module, "dylink.0");
+    let b = Uint8Array::new(&sections.get(0)).to_vec();
+    let mut at = 0;
+    let mut leb = || {
+        let (mut v, mut shift) = (0u32, 0);
+        loop {
+            let byte = *b.get(at)?;
+            at += 1;
+            v |= ((byte & 0x7f) as u32) << shift;
+            shift += 7;
+            if byte & 0x80 == 0 {
+                return Some(v);
+            }
+        }
+    };
+    // (Subsection 1, WASM_DYLINK_MEM_INFO, comes first.)
+    let (kind, _len) = (leb()?, leb()?);
+    if kind != 1 {
+        return None;
+    }
+    let (mem_size, _align, table_size) = (leb()?, leb()?, leb()?);
+    Some((mem_size, table_size))
 }
 
-/// Load program `image` for the current task: its _start's index in the
-/// kernel's function table, or 0.
-fn user_load(image: u32, len: u32) -> u32 {
-    let bytes = js::copy_from(image as *const u8, len);
-    let (syscall, table) = PROGRAMS.with_borrow(|u| (u.syscall.clone(), u.table.clone()));
-    let instance = WebAssembly::Module::new(&bytes).and_then(|m| {
+/// Compile program `image` for the current task: the bytes its data
+/// needs, or -ENOEXEC.
+fn user_load(image: u32, len: u32) -> i32 {
+    let Ok(module) = WebAssembly::Module::new(&js::copy_from(image as *const u8, len)) else { return -ENOEXEC };
+    let Some((data, _)) = dylink(&module) else { return -ENOEXEC };
+    PROGRAMS.with_borrow_mut(|u| u.loaded.insert(current(), module));
+    data as i32
+}
+
+fn global(value: u32, mutable: bool) -> Result<WebAssembly::Global, JsValue> {
+    let desc = Object::new();
+    js::set(&desc, "value", "i32");
+    js::set(&desc, "mutable", mutable);
+    WebAssembly::Global::new(&desc, &value.into())
+}
+
+/// Instantiate the current task's program, its data at `base` and its
+/// stack below `top`: its _start's index in the kernel's function table,
+/// or 0.
+fn user_start(base: u32, top: u32) -> u32 {
+    let (module, syscall, table) = PROGRAMS.with_borrow_mut(|u| (u.loaded.remove(&current()), u.syscall.clone(), u.table.clone()));
+    let (Some(module), Some(table)) = (module, table) else { return 0 };
+    let start = || -> Result<u32, JsValue> {
+        let (_, entries) = dylink(&module).ok_or("no dylink.0")?;
+        let table_base = table.grow(entries)?;
+        let env = Object::new();
+        js::set(&env, "memory", wasm_bindgen::memory());
+        js::set(&env, "__indirect_function_table", &table);
+        js::set(&env, "__memory_base", global(base, false)?);
+        js::set(&env, "__table_base", global(table_base, false)?);
+        js::set(&env, "__stack_pointer", global(top, true)?);
         let linux = Object::new();
         js::set(&linux, "syscall", syscall.unwrap());
         let (ready, call, done) = init_imports();
@@ -158,25 +204,31 @@ fn user_load(image: u32, len: u32) -> u32 {
         js::set(&ksee, "call", call);
         js::set(&ksee, "done", done);
         let imports = Object::new();
+        js::set(&imports, "env", env);
         js::set(&imports, "linux", linux);
         js::set(&imports, "ksee", ksee);
-        WebAssembly::Instance::new(&m, &imports)
-    });
-    let inst = match instance {
-        Ok(i) => i,
-        Err(e) => {
-            web_sys::console::error_2(&"exec:".into(), &e);
-            return 0;
+        // (GOT.mem: the addresses of data it does not define: only weak
+        // symbols, left undefined, so 0.)
+        let got = Object::new();
+        for i in WebAssembly::Module::imports(&module).iter() {
+            if js::get(&i, "module").as_string().as_deref() == Some("GOT.mem") {
+                js::set(&got, &js::get(&i, "name").as_string().unwrap_or_default(), global(0, true)?);
+            }
         }
+        js::set(&imports, "GOT.mem", got);
+        let inst = WebAssembly::Instance::new(&module, &imports)?;
+        let exports = inst.exports();
+        if let Ok(relocs) = js::get(&exports, "__wasm_apply_data_relocs").dyn_into::<Function>() {
+            relocs.call0(&JsValue::NULL)?;
+        }
+        let at = table.grow(1)?;
+        table.set(at, &js::get(&exports, "_start").unchecked_into())?;
+        Ok(at)
     };
-    let table = table.unwrap();
-    let Ok(at) = table.grow(1) else { return 0 };
-    let start: Function = js::get(&inst.exports(), "_start").unchecked_into();
-    if table.set(at, &start).is_err() {
-        return 0;
-    }
-    PROGRAMS.with_borrow_mut(|u| u.memories.insert(current(), js::get(&inst.exports(), "memory").unchecked_into()));
-    at
+    start().unwrap_or_else(|e| {
+        web_sys::console::error_2(&"exec:".into(), &e);
+        0
+    })
 }
 
 fn func<F: ?Sized + wasm_bindgen::closure::WasmClosure>(c: Closure<F>) -> JsValue {
@@ -205,26 +257,8 @@ pub fn kernel() -> Object {
     js::set(&kernel, "print_stack", func(Closure::<dyn FnMut()>::new(|| {
         web_sys::console::log_1(&js::get(&js_sys::Error::new("kernel stack"), "stack"));
     })));
-    js::set(&kernel, "user_load", func(Closure::<dyn FnMut(u32, u32) -> u32>::new(user_load)));
-    // Both return the number of bytes not copied.
-    js::set(&kernel, "user_read", func(Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(
-        |to: u32, from: u32, n: u32| match user_bytes(from, n) {
-            Some(src) => {
-                bulk(to, n); // (what it overwrites, for the memory history)
-                js::copy_to(&src, to as *mut u8);
-                0
-            }
-            None => n,
-        })));
-    js::set(&kernel, "user_write", func(Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(
-        |to: u32, from: u32, n: u32| match user_bytes(to, n) {
-            Some(dst) => {
-                dst.copy_from(unsafe { core::slice::from_raw_parts(from as *const u8, n as usize) });
-                0
-            }
-            None => n,
-        })));
-
+    js::set(&kernel, "user_load", func(Closure::<dyn FnMut(u32, u32) -> i32>::new(user_load)));
+    js::set(&kernel, "user_start", func(Closure::<dyn FnMut(u32, u32) -> u32>::new(user_start)));
     let ksee = Object::new();
     js::set(&ksee, "bulk", export("bulk"));
     let env = Object::new();
@@ -251,7 +285,7 @@ pub fn instantiated(exports: &Object) {
 
 /// ksee.ready, ksee.call and ksee.done, for /init (user/init.c): it is
 /// ready (the boot is over), the syscall the page asks for (Kernel::call),
-/// and its result. The request's place in the program's memory:
+/// and its result. The request's place in /init's data (kernel memory):
 /// `struct { i32 nr; i32 args[6]; i32 pad; u8 data[CALL_DATA]; }`.
 fn init_imports() -> (JsValue, JsValue, JsValue) {
     let ready = func(Closure::<dyn FnMut()>::new(|| {
@@ -268,15 +302,18 @@ fn init_imports() -> (JsValue, JsValue, JsValue) {
             if !c.asked {
                 return -1;
             }
-            let Some(mem) = user_bytes(req, 32 + CALL_DATA as u32) else { return -1 };
             let mut head = [0u8; 32];
             head[0..4].copy_from_slice(&c.nr.to_le_bytes());
             for (i, &a) in c.args.iter().enumerate() {
                 let v = if c.buffers >> i & 1 != 0 { a + req + 32 } else { a };
                 head[4 + 4 * i..8 + 4 * i].copy_from_slice(&v.to_le_bytes());
             }
-            mem.subarray(0, 32).copy_from(&head);
-            mem.subarray(32, 32 + CALL_DATA as u32).copy_from(&c.data);
+            // (Into /init's memory, which is kernel memory: recorded.)
+            bulk(req, 32 + CALL_DATA as u32);
+            unsafe {
+                core::ptr::copy_nonoverlapping(head.as_ptr(), req as *mut u8, 32);
+                core::ptr::copy_nonoverlapping(c.data.as_ptr(), (req + 32) as *mut u8, CALL_DATA);
+            }
             c.nr as i32
         })
     }));
@@ -284,7 +321,8 @@ fn init_imports() -> (JsValue, JsValue, JsValue) {
     // them: Machine::call's promise resolved with { ret, buffers: [the bytes
     // of each buffer argument (null for the others)] }.
     let done = func(Closure::<dyn FnMut(i64, u32)>::new(|ret: i64, req: u32| {
-        let bytes = user_bytes(req + 32, CALL_DATA as u32).map(|m| m.to_vec()).unwrap_or_default();
+        let mut bytes = vec![0; CALL_DATA];
+        Direct.read(req + 32, &mut bytes);
         let c = k(|k| {
             k.waiting.set(None);
             k.call.take()

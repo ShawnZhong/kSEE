@@ -184,11 +184,15 @@ pub struct View<'a> {
     pub now: &'a dyn Memory,
 }
 
-/// Bytes, as if they were memory at address 0.
-struct Bytes<'a>(&'a [u8]);
+/// An argument's value, as if it were memory at address 0; past it, memory
+/// (what a pointer argument points to).
+struct Arg<'a>(&'a [u8], &'a dyn Memory);
 
-impl Memory for Bytes<'_> {
+impl Memory for Arg<'_> {
     fn read(&self, addr: u32, buf: &mut [u8]) {
+        if addr as usize >= self.0.len() {
+            return self.1.read(addr, buf);
+        }
         for (i, b) in buf.iter_mut().enumerate() {
             *b = self.0.get(addr as usize + i).copied().unwrap_or(0);
         }
@@ -286,7 +290,7 @@ impl View<'_> {
             let args = args.map(|args| {
                 let known = f.map_or(u32::MAX, |f| f.known);
                 t.types.params.get(&name).into_iter().flatten().zip(args).enumerate().map(|(k, ((pname, ty), v))| {
-                    let mut arg = t.types.object(&Bytes(&v.to_le_bytes()), pname, 0, *ty, 0);
+                    let mut arg = t.types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
                     if known >> k & 1 == 0 {
                         // (Not passed any more: the optimizer took it away.)
                         arg = Object { value: Some("(optimized out)".into()), children: None, expand: None, target: None, ..arg };
@@ -451,7 +455,7 @@ impl Types {
 
 /// The C string at `p`, quoted (up to 64 characters, then "…"), if what is
 /// there looks like one: printable, with at least one character. (A
-/// pointer may not be to kernel memory: a __user one is to the program's.)
+/// __user one too: a program's memory is kernel memory.)
 fn c_string(mem: &dyn Memory, p: u32) -> Option<String> {
     let mut buf = [0u8; 65];
     mem.read(p, &mut buf);
