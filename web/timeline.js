@@ -10,7 +10,8 @@
 // Scroll (or pinch, or W/S) to zoom; drag to pan, in time and up and down
 // through deep stacks; Shift+scroll, sideways scroll or A/D to pan in time. Hover a call
 // for what it was (the source previews where it is); click to put the
-// cursor there and select it; double-click a call to zoom to it. Click or
+// cursor there and select it (a syscall: its records, from entry to exit);
+// double-click a call to select its records, from its first to its return. Click or
 // drag the overview to move the window.
 import { $, taskName } from "./dom.js";
 
@@ -181,8 +182,9 @@ export function timeline(app) {
     load();
     draw();
   }
+  // (A selection with a little room either side, to see where it starts and ends.)
   const pad = (w) => {
-    const p = Math.max(10, Math.round((w.b - w.a) * 0.03));
+    const p = Math.max(4, Math.round((w.b - w.a) * 0.02));
     return [w.a - p, w.b + p];
   };
 
@@ -316,18 +318,29 @@ export function timeline(app) {
     // where it is then). Elsewhere: the cursor at the next block.
     const k = Math.floor((e.offsetX / W()) * t.cols.length), [, first, inl] = t.cols[k]?.frames[rowAt(e.offsetY - (chart.clientHeight - t.depth * t.row))] ?? [];
     if (first == null) return go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
+    // (A syscall: selected, its records from its entry to its exit.)
+    const s = !inl && t.syscallAt.get(first);
+    if (s) return app.select(s);
     go(Math.max(first, at(e.offsetX)));
     app.selectCall(first, inl ? iname(inl - 1) : null);
   };
   chart.ondblclick = (e) => {
-    // Zoom to the call there: from its first record to where it ends.
+    // Select the call there: its records, from its first to its return.
     const k = Math.floor((e.offsetX / W()) * t.cols.length), d = rowAt(e.offsetY - (chart.clientHeight - t.depth * t.row));
-    const key = t.cols[k]?.frames[d]?.[1];
-    if (key == null) return;
-    let end = k;
-    while (end + 1 < t.cols.length && t.cols[end + 1].frames[d]?.[1] === key) end++;
-    setWindow(...pad({ a: key, b: at(((end + 1) / t.cols.length) * W()) }));
+    const [id, first, inl] = t.cols[k]?.frames[d] ?? [];
+    if (first == null || inl || t.syscallAt.has(first)) return;
+    selectCall(first, fn(id)?.name ?? "a call");
+    go(m.seek(first, 1, "line"));
   };
+  // Select the call from record `first` (called `title`): its records, from
+  // its first to where it returns (found again after a snapshot, by id).
+  function selectCall(first, title) {
+    const id = m.record_id(first), task = t.cols.find((c) => c.frames.some((f) => f[1] === first))?.task;
+    selectWindow(() => {
+      const a = m.record_index(id);
+      return a == null ? null : { a, b: m.call_end(a) ?? t.n - 1, task };
+    }, title);
+  }
   let overDrag = false;
   const overMove = (e) => {
     if (!t.win) return;

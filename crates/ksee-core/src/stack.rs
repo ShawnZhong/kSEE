@@ -182,6 +182,32 @@ pub struct Call {
     pub locals: Option<Vec<u32>>,
 }
 
+/// Where the call from record `first` (a block 0) ends: the last record of
+/// its task's while it is on the stack (its return), or None if it has not
+/// ended when the records do.
+pub fn call_end(records: &[Record], tasks: &[u32], first: usize) -> Option<usize> {
+    let &task = tasks.get(first)?;
+    let mut s = Stack::default();
+    let mut depth = None;
+    for (i, r) in records.iter().enumerate() {
+        if tasks[i] != task {
+            continue;
+        }
+        match *r {
+            Record::Block { func, n } => s.block(func, n, i),
+            Record::Return { func, .. } => s.exit(func),
+            _ => continue,
+        }
+        match depth {
+            None if i == first => depth = Some(s.frames.len()),
+            // (Gone: returned, or its stack started again.)
+            Some(d) if s.frames.get(d - 1).is_none_or(|&(_, at)| at != first) => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// The call stack of the task running at record `at`, outermost first.
 pub fn calls_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<Call> {
     let Some(&task) = tasks.get(at) else { return Vec::new() };
@@ -248,6 +274,14 @@ mod tests {
         let entry = Tables::id(crate::arch::TASK_ENTRY);
         let r = [b(entry, 0), b(1, 0), b(entry, 0), b(2, 0)];
         assert_eq!(stack_at(&r, &[7; 4], 3), [entry, 2]);
+    }
+
+    #[test]
+    fn calls_end_where_they_return() {
+        // f (1) calls g (2), which returns; f goes on, then returns. (Task 8 runs between.)
+        let r = [b(1, 0), b(2, 0), b(9, 0), Record::Return { func: 2, value: 0 }, b(1, 1), Record::Return { func: 1, value: 0 }, b(3, 0)];
+        let t = [7, 7, 8, 7, 7, 7, 7];
+        assert_eq!((call_end(&r, &t, 1), call_end(&r, &t, 0), call_end(&r, &t, 6)), (Some(3), Some(5), None));
     }
 
     #[test]

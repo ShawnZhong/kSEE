@@ -43,6 +43,21 @@ impl Machine {
         self.rec.borrow().ids.get(i).copied()
     }
 
+    /// The record with id `id` (see record_id), if the snapshot still has
+    /// it. (A call's arguments have its block's id: the block's.)
+    pub fn record_index(&self, id: u32) -> Option<usize> {
+        let ids = &self.rec.borrow().ids;
+        let i = ids.partition_point(|&x| x < id);
+        (ids.get(i) == Some(&id)).then_some(i)
+    }
+
+    /// Where the call from record `first` ends (its return), or None if it
+    /// has not when the recording does (see ksee_core::stack::call_end).
+    pub fn call_end(&self, first: usize) -> Option<usize> {
+        let rec = self.rec.borrow();
+        ksee_core::stack::call_end(&rec.records, &rec.tasks, first)
+    }
+
     /// Show memory (object, object_by_id, global, call_stack's locals) as it
     /// was after record `i`, or as it is now (None): how many stores that
     /// undoes.

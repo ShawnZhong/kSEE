@@ -97,6 +97,17 @@ const script = opt("eval", `(async () => {
   for (const type of ["pointerdown", "pointerup"])
     $("chart").dispatchEvent(new PointerEvent(type, at));
   r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
+  // (A syscall's box: the syscall selected, entry to exit.)
+  const home = ksee.time.home();
+  if (home?.a !== read.first || home?.b !== read.last) throw new Error("the read's selection: " + JSON.stringify(home) + ", not " + read.first + ".." + read.last);
+  r.selected = $("chart-title").textContent;
+  // (Any call's box, double-clicked: the call, from its first record to its return.)
+  const ksys = ksee.m.call_stack(ksee.m.first_call("ksys_read", read.first, read.last, read.task.addr)).find((f) => f.func === "ksys_read");
+  const kb = ksee.time.boxOf(ksys.first);
+  $("chart").dispatchEvent(new MouseEvent("dblclick", { clientX: kb.x, clientY: kb.y }));
+  const kh = ksee.time.home();
+  if (kh?.a !== ksys.first || kh?.b !== ksee.m.call_end(ksys.first)) throw new Error("ksys_read's selection: " + JSON.stringify(kh) + ", not from " + ksys.first);
+  r.dblclicked = $("chart-title").textContent;
   return r;
 })()`);
 if (script) {

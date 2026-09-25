@@ -39,7 +39,9 @@ a syscall by name, its parameters as fields.
 
 The timeline shows the recording: the call stacks over time, and which
 task ran (scroll to zoom, drag to pan; hover a call for what it was and a
-preview of where, click it to go there, double-click to zoom to it). Hover
+preview of where, click it to go there; click a syscall, or double-click
+any call, to select it: its records from its start to its end, with
+whatever else ran in between). Hover
 a name in the source for its value at the cursor; right-click to watch it;
 ✎ on a value says which code last wrote it. ● Record records the kernel
 until you stop it.
