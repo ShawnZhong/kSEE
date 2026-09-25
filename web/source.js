@@ -69,7 +69,7 @@ export function source(app) {
     ed.addAction({ id: "ksee.watch", label: "Watch", contextMenuGroupId: "navigation", contextMenuOrder: 0,
       run: () => {
         const pos = ed.getPosition(), e = exprAt(ed.getModel().getLineContent(pos.lineNumber), pos.column - 1);
-        if (e) app.watch(e.expr, inFunction(pos.lineNumber) ? v.fn.name : null);
+        if (e) app.stack.watch(e.expr, inFunction(pos.lineNumber) ? v.fn.name : null);
       } });
     ed.addAction({ id: "ksee.definition", label: "Go to the function's source", contextMenuGroupId: "navigation",
       contextMenuOrder: 1, keybindings: [monaco.KeyCode.F12], run: () => definition(ed.getPosition()) });
@@ -86,9 +86,9 @@ export function source(app) {
   function hover(line, text, k) {
     const e = exprAt(text, k);
     // (Arguments only in the shown function's own lines; elsewhere, globals.)
-    const o = e && app.resolve(e.expr, inFunction(line) ? v.fn.name : null);
+    const o = e && app.stack.resolve(e.expr, inFunction(line) ? v.fn.name : null);
     if (!o) return null;
-    const fields = o.value == null || (o.target != null && o.value !== "NULL") ? (app.kids(o) ?? []).slice(0, 10) : [];
+    const fields = o.value == null || (o.target != null && o.value !== "NULL") ? (app.stack.kids(o) ?? []).slice(0, 10) : [];
     const code = [`${e.expr} = ${o.value ?? "{…}"}  // ${o.ty}`, ...fields.map((c) => `  .${c.name} = ${c.value ?? "{…}"}`)].join("\n");
     return { start: e.start, end: e.end, text: code,
              contents: [{ value: "```c\n" + code + "\n```" }] };

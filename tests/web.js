@@ -3,6 +3,7 @@
 // the recordings show.
 //   deno run --allow-read tests/web.js
 import { start, process } from "../web/ksee.js";
+import { arg } from "../web/args.js";
 
 const root = new URL("..", import.meta.url);
 // wasm-bindgen's futures (with threads) wake through Atomics.waitAsync,
@@ -127,12 +128,16 @@ check("a syscall's parameters, typed", JSON.stringify(m.syscall("openat")?.param
       JSON.stringify([{ name: "dfd", ty: "int" }, { name: "filename", ty: "char *" }, { name: "flags", ty: "int" }, { name: "mode", ty: "umode_t" }]));
 
 // The examples (web/examples/index.json): their calls, and each stop in its call's recording.
+const consts = m.constants();
+check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
+      consts.O_CREAT === 64 && consts.AT_FDCWD === -100 && consts.AT_REMOVEDIR === 0x200 && consts.ENOTEMPTY === 39);
+check("arguments as in C", arg("O_CREAT | O_WRONLY | O_TRUNC", consts) === 577 && arg("0644", consts) === 420
+      && arg("$2", consts, [5, 7]) === 7 && arg("[64]", consts).size === 64 && arg('"a\\n"', consts) === "a\n");
 const examples = JSON.parse(await Deno.readTextFile(new URL("web/examples/index.json", root)));
 for (const ex of examples) {
   const rets = [], missing = [];
   for (const st of ex.steps) {
-    const args = st.args.map((a) => (a?.ret != null ? rets[a.ret]
-      : a?.i64 ? { bytes: new Uint8Array(new BigInt64Array(a.i64.map(BigInt)).buffer) } : a));
+    const args = st.args.map((a) => arg(a, consts, rets));
     const { ret, s } = await call(st.call, args);
     rets.push(ret);
     for (const stop of st.stops ?? [])

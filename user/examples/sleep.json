@@ -3,18 +3,12 @@
   "question": "Sleeping for 30 ms takes 30 ms, but the kernel works for a tiny part of it. What happens in between?",
   "steps": [
     {
-      "show": "clock_nanosleep_time64(CLOCK_MONOTONIC, 0, &(struct timespec){ 0, 30000000 }, NULL)",
       "call": "clock_nanosleep_time64",
       "args": [
-        1,
-        0,
-        {
-          "i64": [
-            0,
-            30000000
-          ]
-        },
-        0
+        "CLOCK_MONOTONIC",
+        "0",
+        "{0, 30000000}",
+        "NULL"
       ],
       "stops": [
         {

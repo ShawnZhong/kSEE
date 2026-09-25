@@ -3,23 +3,19 @@
   "question": "Opening a file that is not there fails with ENOENT. Where in the kernel is that decided?",
   "steps": [
     {
-      "show": "mkdirat(AT_FDCWD, \"/tmp\", 0755)",
       "call": "mkdirat",
       "args": [
-        -100,
-        "/tmp",
-        493
-      ],
-      "stops": []
+        "AT_FDCWD",
+        "\"/tmp\"",
+        "0755"
+      ]
     },
     {
-      "show": "openat(AT_FDCWD, \"/tmp/missing\", O_RDONLY)",
       "call": "openat",
       "args": [
-        -100,
-        "/tmp/missing",
-        0,
-        0
+        "AT_FDCWD",
+        "\"/tmp/missing\"",
+        "O_RDONLY"
       ],
       "stops": [
         {
@@ -41,13 +37,12 @@
       ]
     },
     {
-      "show": "openat(AT_FDCWD, \"/tmp/missing\", O_RDONLY | O_CREAT, 0644)",
       "call": "openat",
       "args": [
-        -100,
-        "/tmp/missing",
-        64,
-        420
+        "AT_FDCWD",
+        "\"/tmp/missing\"",
+        "O_RDONLY | O_CREAT",
+        "0644"
       ],
       "stops": [
         {
@@ -57,24 +52,18 @@
       ]
     },
     {
-      "show": "close(fd)",
       "call": "close",
       "args": [
-        {
-          "ret": 2
-        }
-      ],
-      "stops": []
+        "$3"
+      ]
     },
     {
-      "show": "unlinkat(AT_FDCWD, \"/tmp/missing\", 0)",
       "call": "unlinkat",
       "args": [
-        -100,
-        "/tmp/missing",
-        0
-      ],
-      "stops": []
+        "AT_FDCWD",
+        "\"/tmp/missing\"",
+        "0"
+      ]
     }
   ]
 }

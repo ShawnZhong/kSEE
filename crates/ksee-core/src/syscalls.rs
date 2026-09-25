@@ -7,9 +7,6 @@ use alloc::vec::Vec;
 
 use crate::trace::Record;
 
-/// The syscall entry's name.
-pub const ENTRY: &str = "wasm_syscall";
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Syscall {
     pub task: u32,

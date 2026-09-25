@@ -16,6 +16,7 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+pub mod arch;
 pub mod mem;
 pub mod module;
 pub mod recording;

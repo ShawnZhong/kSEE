@@ -3,13 +3,12 @@
   "question": "A file is created, written, made durable, closed, and deleted: one syscall at a time. What does ext4 do at each step?",
   "steps": [
     {
-      "show": "openat(AT_FDCWD, \"/mnt/note.txt\", O_CREAT | O_WRONLY, 0644)",
       "call": "openat",
       "args": [
-        -100,
-        "/mnt/note.txt",
-        65,
-        420
+        "AT_FDCWD",
+        "\"/mnt/note.txt\"",
+        "O_CREAT | O_WRONLY",
+        "0644"
       ],
       "stops": [
         {
@@ -27,14 +26,11 @@
       ]
     },
     {
-      "show": "write(fd, \"hello, ext4\\n\", 12)",
       "call": "write",
       "args": [
-        {
-          "ret": 0
-        },
-        "hello, ext4\n",
-        12
+        "$1",
+        "\"hello, ext4\\n\"",
+        "12"
       ],
       "stops": [
         {
@@ -48,12 +44,9 @@
       ]
     },
     {
-      "show": "fsync(fd)",
       "call": "fsync",
       "args": [
-        {
-          "ret": 0
-        }
+        "$1"
       ],
       "stops": [
         {
@@ -77,12 +70,9 @@
       ]
     },
     {
-      "show": "close(fd)",
       "call": "close",
       "args": [
-        {
-          "ret": 0
-        }
+        "$1"
       ],
       "stops": [
         {
@@ -92,12 +82,11 @@
       ]
     },
     {
-      "show": "unlinkat(AT_FDCWD, \"/mnt/note.txt\", 0)",
       "call": "unlinkat",
       "args": [
-        -100,
-        "/mnt/note.txt",
-        0
+        "AT_FDCWD",
+        "\"/mnt/note.txt\"",
+        "0"
       ],
       "stops": [
         {

@@ -22,14 +22,11 @@ struct Stack {
     frames: Vec<(u32, usize)>,
 }
 
-/// The function a task starts in (arch/wasm/kernel/process.c).
-pub const TASK_ENTRY: &str = "wasm_task_entry";
-
 impl Stack {
     /// Apply block `(func, n)` at record `i`.
     fn block(&mut self, func: u32, n: u32, i: usize) {
         if n == 0 {
-            if func == Tables::id(TASK_ENTRY) {
+            if func == Tables::id(crate::arch::TASK_ENTRY) {
                 self.frames.clear(); // (a new task)
             }
             self.frames.push((func, i));
@@ -248,7 +245,7 @@ mod tests {
     #[test]
     fn a_new_task_starts_empty() {
         // A task that exited in f (never returning), then a new task at its address.
-        let entry = Tables::id(TASK_ENTRY);
+        let entry = Tables::id(crate::arch::TASK_ENTRY);
         let r = [b(entry, 0), b(1, 0), b(entry, 0), b(2, 0)];
         assert_eq!(stack_at(&r, &[7; 4], 3), [entry, 2]);
     }

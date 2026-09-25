@@ -3,12 +3,11 @@
   "question": "A directory is a file of names, each pointing to an inode. What happens when one is made, listed, renamed in, and removed?",
   "steps": [
     {
-      "show": "mkdirat(AT_FDCWD, \"/mnt/dir\", 0755)",
       "call": "mkdirat",
       "args": [
-        -100,
-        "/mnt/dir",
-        493
+        "AT_FDCWD",
+        "\"/mnt/dir\"",
+        "0755"
       ],
       "stops": [
         {
@@ -30,13 +29,12 @@
       ]
     },
     {
-      "show": "openat(AT_FDCWD, \"/mnt/dir/a\", O_CREAT | O_WRONLY, 0644)",
       "call": "openat",
       "args": [
-        -100,
-        "/mnt/dir/a",
-        65,
-        420
+        "AT_FDCWD",
+        "\"/mnt/dir/a\"",
+        "O_CREAT | O_WRONLY",
+        "0644"
       ],
       "stops": [
         {
@@ -46,37 +44,25 @@
       ]
     },
     {
-      "show": "close(fd)",
       "call": "close",
       "args": [
-        {
-          "ret": 1
-        }
-      ],
-      "stops": []
+        "$2"
+      ]
     },
     {
-      "show": "openat(AT_FDCWD, \"/mnt/dir\", O_RDONLY | O_DIRECTORY)",
       "call": "openat",
       "args": [
-        -100,
-        "/mnt/dir",
-        65536,
-        0
-      ],
-      "stops": []
+        "AT_FDCWD",
+        "\"/mnt/dir\"",
+        "O_RDONLY | O_DIRECTORY"
+      ]
     },
     {
-      "show": "getdents64(dirfd, buf, 256)",
       "call": "getdents64",
       "args": [
-        {
-          "ret": 3
-        },
-        {
-          "size": 256
-        },
-        256
+        "$4",
+        "[256]",
+        "256"
       ],
       "stops": [
         {
@@ -90,24 +76,19 @@
       ]
     },
     {
-      "show": "close(dirfd)",
       "call": "close",
       "args": [
-        {
-          "ret": 3
-        }
-      ],
-      "stops": []
+        "$4"
+      ]
     },
     {
-      "show": "renameat2(AT_FDCWD, \"/mnt/dir/a\", AT_FDCWD, \"/mnt/dir/b\", 0)",
       "call": "renameat2",
       "args": [
-        -100,
-        "/mnt/dir/a",
-        -100,
-        "/mnt/dir/b",
-        0
+        "AT_FDCWD",
+        "\"/mnt/dir/a\"",
+        "AT_FDCWD",
+        "\"/mnt/dir/b\"",
+        "0"
       ],
       "stops": [
         {
@@ -117,12 +98,11 @@
       ]
     },
     {
-      "show": "unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)",
       "call": "unlinkat",
       "args": [
-        -100,
-        "/mnt/dir",
-        512
+        "AT_FDCWD",
+        "\"/mnt/dir\"",
+        "AT_REMOVEDIR"
       ],
       "stops": [
         {
@@ -132,12 +112,11 @@
       ]
     },
     {
-      "show": "unlinkat(AT_FDCWD, \"/mnt/dir/b\", 0)",
       "call": "unlinkat",
       "args": [
-        -100,
-        "/mnt/dir/b",
-        0
+        "AT_FDCWD",
+        "\"/mnt/dir/b\"",
+        "0"
       ],
       "stops": [
         {
@@ -147,12 +126,11 @@
       ]
     },
     {
-      "show": "unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)",
       "call": "unlinkat",
       "args": [
-        -100,
-        "/mnt/dir",
-        512
+        "AT_FDCWD",
+        "\"/mnt/dir\"",
+        "AT_REMOVEDIR"
       ],
       "stops": [
         {

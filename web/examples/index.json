@@ -3,12 +3,11 @@
   "question": "printf ends in write(1, ...): how do the bytes get from the program to the console?",
   "steps": [
     {
-      "show": "write(1, \"hello\\n\", 6)",
       "call": "write",
       "args": [
-        1,
-        "hello\n",
-        6
+        "1",
+        "\"hello\\n\"",
+        "6"
       ],
       "stops": [
         {
@@ -35,70 +34,50 @@
   "question": "A program asks for 64 bytes of a file. Which parts of the kernel does that go through?",
   "steps": [
     {
-      "show": "mkdirat(AT_FDCWD, \"/tmp\", 0755)",
       "call": "mkdirat",
       "args": [
-        -100,
-        "/tmp",
-        493
-      ],
-      "stops": []
+        "AT_FDCWD",
+        "\"/tmp\"",
+        "0755"
+      ]
     },
     {
-      "show": "openat(AT_FDCWD, \"/tmp/note\", O_CREAT | O_WRONLY | O_TRUNC, 0644)",
       "call": "openat",
       "args": [
-        -100,
-        "/tmp/note",
-        577,
-        420
-      ],
-      "stops": []
+        "AT_FDCWD",
+        "\"/tmp/note\"",
+        "O_CREAT | O_WRONLY | O_TRUNC",
+        "0644"
+      ]
     },
     {
-      "show": "write(fd, \"hello from the page cache\\n\", 26)",
       "call": "write",
       "args": [
-        {
-          "ret": 1
-        },
-        "hello from the page cache\n",
-        26
-      ],
-      "stops": []
+        "$2",
+        "\"hello from the page cache\\n\"",
+        "26"
+      ]
     },
     {
-      "show": "close(fd)",
       "call": "close",
       "args": [
-        {
-          "ret": 1
-        }
-      ],
-      "stops": []
+        "$2"
+      ]
     },
     {
-      "show": "openat(AT_FDCWD, \"/tmp/note\", O_RDONLY)",
       "call": "openat",
       "args": [
-        -100,
-        "/tmp/note",
-        0,
-        0
-      ],
-      "stops": []
+        "AT_FDCWD",
+        "\"/tmp/note\"",
+        "O_RDONLY"
+      ]
     },
     {
-      "show": "read(fd, buf, 64)",
       "call": "read",
       "args": [
-        {
-          "ret": 4
-        },
-        {
-          "size": 64
-        },
-        64
+        "$5",
+        "[64]",
+        "64"
       ],
       "stops": [
         {
@@ -116,14 +95,10 @@
       ]
     },
     {
-      "show": "close(fd)",
       "call": "close",
       "args": [
-        {
-          "ret": 4
-        }
-      ],
-      "stops": []
+        "$5"
+      ]
     }
   ]
 },
@@ -131,23 +106,19 @@
   "question": "Opening a file that is not there fails with ENOENT. Where in the kernel is that decided?",
   "steps": [
     {
-      "show": "mkdirat(AT_FDCWD, \"/tmp\", 0755)",
       "call": "mkdirat",
       "args": [
-        -100,
-        "/tmp",
-        493
-      ],
-      "stops": []
+        "AT_FDCWD",
+        "\"/tmp\"",
+        "0755"
+      ]
     },
     {
-      "show": "openat(AT_FDCWD, \"/tmp/missing\", O_RDONLY)",
       "call": "openat",
       "args": [
-        -100,
-        "/tmp/missing",
-        0,
-        0
+        "AT_FDCWD",
+        "\"/tmp/missing\"",
+        "O_RDONLY"
       ],
       "stops": [
         {
@@ -169,13 +140,12 @@
       ]
     },
     {
-      "show": "openat(AT_FDCWD, \"/tmp/missing\", O_RDONLY | O_CREAT, 0644)",
       "call": "openat",
       "args": [
-        -100,
-        "/tmp/missing",
-        64,
-        420
+        "AT_FDCWD",
+        "\"/tmp/missing\"",
+        "O_RDONLY | O_CREAT",
+        "0644"
       ],
       "stops": [
         {
@@ -185,24 +155,18 @@
       ]
     },
     {
-      "show": "close(fd)",
       "call": "close",
       "args": [
-        {
-          "ret": 2
-        }
-      ],
-      "stops": []
+        "$3"
+      ]
     },
     {
-      "show": "unlinkat(AT_FDCWD, \"/tmp/missing\", 0)",
       "call": "unlinkat",
       "args": [
-        -100,
-        "/tmp/missing",
-        0
-      ],
-      "stops": []
+        "AT_FDCWD",
+        "\"/tmp/missing\"",
+        "0"
+      ]
     }
   ]
 },
@@ -210,18 +174,12 @@
   "question": "Sleeping for 30 ms takes 30 ms, but the kernel works for a tiny part of it. What happens in between?",
   "steps": [
     {
-      "show": "clock_nanosleep_time64(CLOCK_MONOTONIC, 0, &(struct timespec){ 0, 30000000 }, NULL)",
       "call": "clock_nanosleep_time64",
       "args": [
-        1,
-        0,
-        {
-          "i64": [
-            0,
-            30000000
-          ]
-        },
-        0
+        "CLOCK_MONOTONIC",
+        "0",
+        "{0, 30000000}",
+        "NULL"
       ],
       "stops": [
         {
@@ -245,13 +203,12 @@
   "question": "A file is created, written, made durable, closed, and deleted: one syscall at a time. What does ext4 do at each step?",
   "steps": [
     {
-      "show": "openat(AT_FDCWD, \"/mnt/note.txt\", O_CREAT | O_WRONLY, 0644)",
       "call": "openat",
       "args": [
-        -100,
-        "/mnt/note.txt",
-        65,
-        420
+        "AT_FDCWD",
+        "\"/mnt/note.txt\"",
+        "O_CREAT | O_WRONLY",
+        "0644"
       ],
       "stops": [
         {
@@ -269,14 +226,11 @@
       ]
     },
     {
-      "show": "write(fd, \"hello, ext4\\n\", 12)",
       "call": "write",
       "args": [
-        {
-          "ret": 0
-        },
-        "hello, ext4\n",
-        12
+        "$1",
+        "\"hello, ext4\\n\"",
+        "12"
       ],
       "stops": [
         {
@@ -290,12 +244,9 @@
       ]
     },
     {
-      "show": "fsync(fd)",
       "call": "fsync",
       "args": [
-        {
-          "ret": 0
-        }
+        "$1"
       ],
       "stops": [
         {
@@ -319,12 +270,9 @@
       ]
     },
     {
-      "show": "close(fd)",
       "call": "close",
       "args": [
-        {
-          "ret": 0
-        }
+        "$1"
       ],
       "stops": [
         {
@@ -334,12 +282,11 @@
       ]
     },
     {
-      "show": "unlinkat(AT_FDCWD, \"/mnt/note.txt\", 0)",
       "call": "unlinkat",
       "args": [
-        -100,
-        "/mnt/note.txt",
-        0
+        "AT_FDCWD",
+        "\"/mnt/note.txt\"",
+        "0"
       ],
       "stops": [
         {
@@ -366,12 +313,11 @@
   "question": "A directory is a file of names, each pointing to an inode. What happens when one is made, listed, renamed in, and removed?",
   "steps": [
     {
-      "show": "mkdirat(AT_FDCWD, \"/mnt/dir\", 0755)",
       "call": "mkdirat",
       "args": [
-        -100,
-        "/mnt/dir",
-        493
+        "AT_FDCWD",
+        "\"/mnt/dir\"",
+        "0755"
       ],
       "stops": [
         {
@@ -393,13 +339,12 @@
       ]
     },
     {
-      "show": "openat(AT_FDCWD, \"/mnt/dir/a\", O_CREAT | O_WRONLY, 0644)",
       "call": "openat",
       "args": [
-        -100,
-        "/mnt/dir/a",
-        65,
-        420
+        "AT_FDCWD",
+        "\"/mnt/dir/a\"",
+        "O_CREAT | O_WRONLY",
+        "0644"
       ],
       "stops": [
         {
@@ -409,37 +354,25 @@
       ]
     },
     {
-      "show": "close(fd)",
       "call": "close",
       "args": [
-        {
-          "ret": 1
-        }
-      ],
-      "stops": []
+        "$2"
+      ]
     },
     {
-      "show": "openat(AT_FDCWD, \"/mnt/dir\", O_RDONLY | O_DIRECTORY)",
       "call": "openat",
       "args": [
-        -100,
-        "/mnt/dir",
-        65536,
-        0
-      ],
-      "stops": []
+        "AT_FDCWD",
+        "\"/mnt/dir\"",
+        "O_RDONLY | O_DIRECTORY"
+      ]
     },
     {
-      "show": "getdents64(dirfd, buf, 256)",
       "call": "getdents64",
       "args": [
-        {
-          "ret": 3
-        },
-        {
-          "size": 256
-        },
-        256
+        "$4",
+        "[256]",
+        "256"
       ],
       "stops": [
         {
@@ -453,24 +386,19 @@
       ]
     },
     {
-      "show": "close(dirfd)",
       "call": "close",
       "args": [
-        {
-          "ret": 3
-        }
-      ],
-      "stops": []
+        "$4"
+      ]
     },
     {
-      "show": "renameat2(AT_FDCWD, \"/mnt/dir/a\", AT_FDCWD, \"/mnt/dir/b\", 0)",
       "call": "renameat2",
       "args": [
-        -100,
-        "/mnt/dir/a",
-        -100,
-        "/mnt/dir/b",
-        0
+        "AT_FDCWD",
+        "\"/mnt/dir/a\"",
+        "AT_FDCWD",
+        "\"/mnt/dir/b\"",
+        "0"
       ],
       "stops": [
         {
@@ -480,12 +408,11 @@
       ]
     },
     {
-      "show": "unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)",
       "call": "unlinkat",
       "args": [
-        -100,
-        "/mnt/dir",
-        512
+        "AT_FDCWD",
+        "\"/mnt/dir\"",
+        "AT_REMOVEDIR"
       ],
       "stops": [
         {
@@ -495,12 +422,11 @@
       ]
     },
     {
-      "show": "unlinkat(AT_FDCWD, \"/mnt/dir/b\", 0)",
       "call": "unlinkat",
       "args": [
-        -100,
-        "/mnt/dir/b",
-        0
+        "AT_FDCWD",
+        "\"/mnt/dir/b\"",
+        "0"
       ],
       "stops": [
         {
@@ -510,12 +436,11 @@
       ]
     },
     {
-      "show": "unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)",
       "call": "unlinkat",
       "args": [
-        -100,
-        "/mnt/dir",
-        512
+        "AT_FDCWD",
+        "\"/mnt/dir\"",
+        "AT_REMOVEDIR"
       ],
       "stops": [
         {
@@ -527,7 +452,7 @@
   ]
 },
   { "name": "yours", "title": "Your own syscalls",
-  "question": "Make any syscall, with the arguments you give: /init makes it, recorded. Arguments: numbers (0644, 0x41, -100), \"strings\", [64] (a buffer of 64 bytes, for the kernel to fill), $1 (the result of call 1).",
+  "question": "Make any syscall, with the arguments you give, written as in C: /init makes it, recorded. Numbers (0644, 0x41, -100), the kernel's constants (O_CREAT | O_WRONLY, AT_FDCWD), \"strings\", [64] (a buffer of 64 bytes, for the kernel to fill), {0, 30000000} (64-bit values: a struct timespec), $1 (the result of call 1).",
   "steps": []
 }
 ]

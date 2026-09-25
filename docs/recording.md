@@ -77,5 +77,6 @@ The instrumented kernel describes its probes in a custom section,
 `ksee pack` (crates/ksee-cli) reads the kernel's DWARF and adds
 `ksee.types`: the types (deduplicated across units, as pahole does for
 BTF), globals, each function's parameters and locals with their types, and
-the syscalls' names. The page's kernel is a copy of vmlinux with that
+the syscalls' names, and constants from the UAPI headers (`O_*`, `AT_*`,
+`CLOCK_*`, errno's `E*`: for the page's calls, written as in C). The page's kernel is a copy of vmlinux with that
 section and without DWARF, plus the sources the probes name.

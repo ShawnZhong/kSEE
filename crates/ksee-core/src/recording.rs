@@ -12,7 +12,7 @@ use crate::syscalls::{self, Syscall};
 use crate::tables::Tables;
 use crate::task::Task;
 use crate::trace::Record;
-use crate::{mem, Memory};
+use crate::{arch, mem, Memory};
 
 #[derive(Debug, Default)]
 pub struct Recording {
@@ -38,7 +38,7 @@ impl Recording {
         // The task running at each record: it changes when __switch_to(prev,
         // next) returns (in next), and when a new task starts
         // (wasm_task_entry(p)); a Task record says so too.
-        let (switch, start, do_exit) = (t.find("__switch_to"), t.find(stack::TASK_ENTRY), t.find("do_exit"));
+        let (switch, start, do_exit) = (t.find(arch::SWITCH), t.find(arch::TASK_ENTRY), t.find(arch::EXIT));
         let args = |i: usize| match records.get(i + 1) {
             Some(&Record::Args { args, .. }) => Some(args),
             _ => None,
@@ -76,7 +76,7 @@ impl Recording {
                 *t = prev;
             }
         }
-        let syscalls = syscalls::split(t.find(syscalls::ENTRY).unwrap_or(0), &records, &tasks);
+        let syscalls = syscalls::split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks);
         Recording { records, ids, tasks, syscalls, idents, exits, stores: OnceCell::new() }
     }
 

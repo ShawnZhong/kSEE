@@ -18,7 +18,10 @@ pub fn pack(kernel: &Path, out: &Path) {
     let text = |p: &Path| String::from_utf8_lossy(&crate::read(p)).into_owned();
     let image = crate::read(&kernel.join("vmlinux"));
     let calls = syscalls(&text(&generated.join("uapi/asm/unistd_32.h")));
-    let types = types(&image, &calls).unwrap_or_else(|e| crate::fail(&format!("DWARF: {e}")));
+    let mut types = types(&image, &calls).unwrap_or_else(|e| crate::fail(&format!("DWARF: {e}")));
+    for (name, value) in constants(&kernel.join("usr/include")) {
+        types += &format!("C\t{name}\t{value}\n");
+    }
     let packed = rewrite(&image, &types);
     std::fs::create_dir_all(out).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", out.display())));
     std::fs::write(out.join("vmlinux"), &packed).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", out.display())));
@@ -54,6 +57,88 @@ pub fn syscalls(unistd: &str) -> Vec<(u32, String)> {
         let (name, nr) = l.strip_prefix("#define __NR_")?.split_once(char::is_whitespace)?;
         Some((nr.trim().parse().ok()?, name.to_string()))
     }).collect()
+}
+
+/// The UAPI headers the page's constants come from, with the prefixes kept.
+const CONSTANTS: &[(&str, &[&str])] = &[
+    ("asm-generic/fcntl.h", &["O_"]),
+    ("linux/fcntl.h", &["AT_"]),
+    ("linux/time.h", &["CLOCK_", "TIMER_"]),
+    ("asm-generic/errno-base.h", &["E"]),
+    ("asm-generic/errno.h", &["E"]),
+];
+
+/// Constants from the kernel's UAPI headers (under `include`: after `make
+/// headers`), for the page (`C name value`: flags, errno names): each
+/// `#define NAME VALUE` whose value is a number, or `|`, `<<`, `-` and
+/// parentheses of numbers and constants before it.
+pub fn constants(include: &Path) -> Vec<(String, i64)> {
+    let mut out: Vec<(String, i64)> = Vec::new();
+    for (file, prefixes) in CONSTANTS {
+        let text = String::from_utf8_lossy(&crate::read(&include.join(file))).into_owned();
+        for line in text.lines() {
+            let Some(rest) = line.trim_start().strip_prefix("#define") else { continue };
+            let rest = rest.split("/*").next().unwrap_or("").trim();
+            let Some((name, value)) = rest.split_once(char::is_whitespace) else { continue };
+            if !prefixes.iter().any(|p| name.starts_with(p)) || name.contains('(') || out.iter().any(|(n, _)| n == name) {
+                continue;
+            }
+            if let Some(v) = eval(value.trim(), &out) {
+                out.push((name.to_string(), v));
+            }
+        }
+    }
+    out
+}
+
+/// A C constant expression: numbers (decimal, 0x hex, 0 octal), constants
+/// in `known`, `|`, `<<`, unary `-`, parentheses.
+fn eval(s: &str, known: &[(String, i64)]) -> Option<i64> {
+    fn or(t: &mut &str, k: &[(String, i64)]) -> Option<i64> {
+        let mut v = shift(t, k)?;
+        while let Some(r) = t.trim_start().strip_prefix('|') {
+            *t = r;
+            v |= shift(t, k)?;
+        }
+        Some(v)
+    }
+    fn shift(t: &mut &str, k: &[(String, i64)]) -> Option<i64> {
+        let mut v = unary(t, k)?;
+        while let Some(r) = t.trim_start().strip_prefix("<<") {
+            *t = r;
+            v <<= unary(t, k)?;
+        }
+        Some(v)
+    }
+    fn unary(t: &mut &str, k: &[(String, i64)]) -> Option<i64> {
+        *t = t.trim_start();
+        if let Some(r) = t.strip_prefix('-') {
+            *t = r;
+            return Some(-unary(t, k)?);
+        }
+        if let Some(r) = t.strip_prefix('(') {
+            *t = r;
+            let v = or(t, k)?;
+            *t = t.trim_start().strip_prefix(')')?;
+            return Some(v);
+        }
+        let n = t.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(t.len());
+        let (word, rest) = t.split_at(n);
+        *t = rest;
+        let word = word.trim_end_matches(['U', 'L', 'u', 'l']);
+        if let Some(h) = word.strip_prefix("0x") {
+            i64::from_str_radix(h, 16).ok()
+        } else if word.len() > 1 && word.starts_with('0') {
+            i64::from_str_radix(&word[1..], 8).ok()
+        } else if word.starts_with(|c: char| c.is_ascii_digit()) {
+            word.parse().ok()
+        } else {
+            k.iter().find(|(n, _)| n == word).map(|&(_, v)| v)
+        }
+    }
+    let mut t = s;
+    let v = or(&mut t, known)?;
+    t.trim().is_empty().then_some(v)
 }
 
 /// The type table as ksee.types text: types, globals, every function's

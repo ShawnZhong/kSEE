@@ -84,8 +84,10 @@ const script = opt("eval", `(async () => {
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = [$("badge").textContent, $("mem-note").textContent, $("where").textContent.slice(0, 50)];
   r.chart = $("chart-title").textContent;
-  const box = $("chart").getBoundingClientRect();
-  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: box.left + box.width / 2, clientY: box.bottom - 12 - 2 - 4 }));
+  // (The read's own box: its syscall entry's.)
+  const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === 1 && x.last != null);
+  const box = ksee.time.boxOf(read.first), at = { clientX: box?.x, clientY: box?.y };
+  $("chart").dispatchEvent(new PointerEvent("pointermove", at));
   r.tip = document.querySelector(".tip:not([hidden])")?.innerText.replace(/\\s+/g, " ").slice(0, 60);
   await sleep(400);
   r.preview = [$("fn-title").textContent.slice(0, 40), document.querySelector(".tip .here")?.textContent];
@@ -93,7 +95,7 @@ const script = opt("eval", `(async () => {
   await sleep(300);
   r.unpreviewed = !$("fn-title").classList.contains("preview");
   for (const type of ["pointerdown", "pointerup"])
-    $("chart").dispatchEvent(new PointerEvent(type, { clientX: box.left + box.width / 2, clientY: box.bottom - 12 - 2 - 4 }));
+    $("chart").dispatchEvent(new PointerEvent(type, at));
   r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
   return r;
 })()`);

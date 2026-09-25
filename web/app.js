@@ -14,12 +14,8 @@ import { examples } from "./examples.js";
 export function app(m) {
   const a = { m, proc: process(m) };
   const src = source(a), time = timeline(a), stack = callstack(a);
-  a.src = src;
-  a.time = time;
-  // Expressions at the cursor (hover in the source; watches).
-  a.resolve = (expr, only) => stack.resolve(expr, only);
-  a.kids = (o) => stack.kids(o);
-  a.watch = (expr, only) => stack.watch(expr, only);
+  // (The panels, for each other and for tests.)
+  Object.assign(a, { src, time, stack });
 
   // ---- The state: recording, or exploring the recording ----
   let halted = null;
@@ -72,16 +68,11 @@ export function app(m) {
 
   // ---- Selecting, and moving the cursor ----
 
-  // Select syscall `s`: its records; the cursor at its first line past the entry.
+  // Select syscall `s`: its records; the cursor where its own code starts
+  // (its handler's first line, past the syscall entry).
   a.select = (s) => {
     time.select(s);
-    let i = s.first;
-    for (let k = 0; k < 4; k++) {
-      const at = m.at(i);
-      if (at?.kind === "block" && at.func !== "wasm_syscall" && !at.func.startsWith("__wasm_sys_")) break;
-      i = m.seek(i, 1, "function");
-    }
-    time.go(i);
+    time.go(m.seek(s.first, 1, "function"));
   };
   // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:
   // the Stack marks it, the source shows where it is, the timeline outlines it.

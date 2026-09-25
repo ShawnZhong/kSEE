@@ -6,17 +6,14 @@
 // any for a stop that says so). Next goes from one stop to the next. Below
 // the calls, a form adds one: a syscall by name, its parameters as fields.
 //
-// A step: { call, args, show?, stops? }. An argument: a number, a string, {
-// size } (a buffer for the kernel to fill), { i64: [...] } (a buffer of
-// 64-bit values, a struct timespec, say), or { ret: k } (step k's result, as
-// an fd).
+// A step: { call, args, stops? }; its arguments written as in C (see
+// args.js): "a string", 0644, O_CREAT | O_WRONLY, [64], {0, 30000000}, $2.
 import { $, el } from "./dom.js";
-
-const ERRNO = { 1: "EPERM", 2: "ENOENT", 9: "EBADF", 13: "EACCES", 14: "EFAULT", 17: "EEXIST", 20: "ENOTDIR", 21: "EISDIR",
-                22: "EINVAL", 24: "EMFILE", 28: "ENOSPC", 36: "ENAMETOOLONG", 38: "ENOSYS", 39: "ENOTEMPTY" };
+import { arg, made, result } from "./args.js";
 
 export async function examples(app) {
   const { m, proc } = app;
+  const consts = m.constants();
   const list = await fetch(new URL("./examples/index.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
   // The open example: its steps, the ones run ({ ret, text, id, ol }), and
   // the stops Next goes through (the selected step's: cur, at, k).
@@ -59,9 +56,7 @@ export async function examples(app) {
     }
   }
 
-  const show = (a) => (typeof a === "string" ? JSON.stringify(a) : a?.size != null ? `[${a.size}]`
-    : a?.i64 ? `{ ${a.i64.join(", ")} }` : a?.ret != null ? `$${a.ret + 1}` : String(a));
-  const result = (r) => (r < 0 ? `${r} (${ERRNO[-r] ?? "an error"})` : String(r));
+  const rets = () => t.done.map((d) => d.ret);
   function draw() {
     t.list.replaceChildren(...t.steps.map((s, j) => {
       const d = t.done[j];
@@ -70,9 +65,10 @@ export async function examples(app) {
         stop(k);
       } }, el("b", { className: "mono", textContent: st.func }), " ", st.note))) : null;
       return el("li", { className: d ? "done" : j === t.done.length ? "next" : "" },
-        el("a", { className: "mono", textContent: s.show ?? `${s.call}(${s.args.map(show).join(", ")})`,
+        // (As made, once it is: $n as its value.)
+        el("a", { className: "mono", textContent: `${s.call}(${s.args.map((a) => (d ? made(a, rets()) : a)).join(", ")})`,
                   onclick: () => (d ? select(j) : upTo(j)) }),
-        d ? el("span", { className: "mono ret", textContent: ` = ${result(d.ret)}` }) : null,
+        d ? el("span", { className: "mono ret", textContent: ` = ${result(d.ret, consts)}` }) : null,
         d?.text ? el("div", { className: "mono dim", textContent: d.text }) : null,
         d?.ol ?? null);
     }));
@@ -88,9 +84,14 @@ export async function examples(app) {
     if (!s || t.running) return false;
     t.running = true;
     t.status.textContent = `${s.call}…`;
-    const args = s.args.map((a) => (a?.ret != null ? t.done[a.ret]?.ret ?? -1
-      : a?.i64 ? { bytes: new Uint8Array(new BigInt64Array(a.i64.map(BigInt)).buffer) } : a));
-    let r = null;
+    let r = null, args;
+    try {
+      args = s.args.map((a) => arg(a, consts, rets()));
+    } catch (e) {
+      t.running = false;
+      t.status.textContent = e.message;
+      return false;
+    }
     m.record(true);
     try {
       r = await proc.call(s.call, args);
@@ -104,7 +105,7 @@ export async function examples(app) {
     app.refresh();
     // (Its syscall: the last of them /init made; it waits for the next call in a read, not returned.)
     const nr = m.syscall(s.call).nr, c = app.calls().findLast((x) => x.nr === nr && x.task.pid === 1 && x.last != null);
-    t.done[j] = { ret: r.ret, text: outputs(s, r.buffers), id: c?.id };
+    t.done[j] = { ret: r.ret, text: outputs(s.call, args, r.buffers), id: c?.id };
     t.status.textContent = j + 1 < t.steps.length ? "" : "That was the last call: add one below, or click a call to see it again.";
     draw();
     select(j);
@@ -139,8 +140,8 @@ export async function examples(app) {
   };
 
   // What a call left in the buffers it was to fill.
-  function outputs(s, buffers) {
-    return s.args.map((a, i) => (a?.size != null && buffers?.[i] ? (s.call === "getdents64"
+  function outputs(call, args, buffers) {
+    return args.map((a, i) => (a?.size != null && buffers?.[i] ? (call === "getdents64"
       ? `entries: ${dirents(buffers[i]).join(", ")}` : bytes(buffers[i])) : null)).filter(Boolean).join("  ");
   }
   function dirents(b) {
@@ -169,26 +170,12 @@ export async function examples(app) {
     name.onchange = () => fields.replaceChildren(...(m.syscall(name.value)?.params ?? []).map((p) =>
       el("input", { className: "mono", placeholder: `${p.name} (${p.ty})`, title: `${p.name}: ${p.ty}` })));
     const add = el("button", { textContent: "＋ Add and make it", onclick: () => {
-      const values = [...fields.querySelectorAll("input")].map((f) => f.value.trim());
       if (!m.syscall(name.value)) return (t.status.textContent = `no syscall ${name.value}`);
-      try {
-        t.steps.push({ call: name.value, args: values.map(arg), show: `${name.value}(${values.join(", ")})`, stops: [] });
-      } catch (e) {
-        return (t.status.textContent = e.message);
-      }
+      t.steps.push({ call: name.value, args: [...fields.querySelectorAll("input")].map((f) => f.value.trim() || "0") });
       draw();
       upTo(t.steps.length - 1);
     } });
     return el("div", { className: "callform" }, names, name, fields, add);
-  }
-  function arg(v) {
-    if (/^\$\d+$/.test(v)) return { ret: Number(v.slice(1)) - 1 };
-    if (/^\[\d+\]$/.test(v)) return { size: Number(v.slice(1, -1)) };
-    if (/^".*"$/.test(v)) return JSON.parse(v);
-    if (/^-?0[0-7]+$/.test(v)) return parseInt(v, 8);
-    if (/^-?(0x[0-9a-f]+|\d+)$/i.test(v)) return Number(v);
-    if (v === "") return 0;
-    throw new Error(`an argument is a number, "a string", [size] or $n (call n's result): ${v}`);
   }
 
   index();

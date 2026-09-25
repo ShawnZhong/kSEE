@@ -3,12 +3,11 @@
   "question": "printf ends in write(1, ...): how do the bytes get from the program to the console?",
   "steps": [
     {
-      "show": "write(1, \"hello\\n\", 6)",
       "call": "write",
       "args": [
-        1,
-        "hello\n",
-        6
+        "1",
+        "\"hello\\n\"",
+        "6"
       ],
       "stops": [
         {

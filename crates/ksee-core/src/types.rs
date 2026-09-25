@@ -72,6 +72,8 @@ pub struct Types {
     pub params: BTreeMap<String, Vec<(String, u32)>>,
     /// Functions' local variables: name -> [(variable, type)].
     pub locals: BTreeMap<String, Vec<(String, u32)>>,
+    /// Constants from the UAPI headers (flags, errno names): name -> value.
+    pub constants: BTreeMap<String, i64>,
 }
 
 impl Types {
@@ -84,6 +86,7 @@ impl Types {
         let mut syscalls = BTreeMap::new();
         let mut params = BTreeMap::new();
         let mut locals = BTreeMap::new();
+        let mut constants = BTreeMap::new();
         for line in text.lines() {
             let c: Vec<&str> = line.split('\t').collect();
             let num = |i: usize| c.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -103,6 +106,11 @@ impl Types {
                 }),
                 Some(&"S") if c.len() >= 3 => {
                     syscalls.insert(num(1), c[2].to_string());
+                }
+                Some(&"C") if c.len() == 3 => {
+                    if let Ok(v) = c[2].parse() {
+                        constants.insert(c[1].to_string(), v);
+                    }
                 }
                 Some(&kind @ ("P" | "Q")) if c.len() == 3 => {
                     let list = c[2].split(',').filter(|p| !p.is_empty()).map(|p| {
@@ -147,7 +155,7 @@ impl Types {
                 names.entry(t.name.clone()).or_insert(id as u32);
             }
         }
-        Types { types, names, globals, syscalls, params, locals }
+        Types { types, names, globals, syscalls, params, locals, constants }
     }
 
     pub fn get(&self, id: u32) -> &Type {

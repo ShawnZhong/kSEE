@@ -126,6 +126,31 @@ pub struct Function {
     pub blocks: Vec<Block>,
 }
 
+/// Where a function is.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Place {
+    pub name: String,
+    pub file: String,
+    pub line: u32,
+}
+
+/// A syscall: its number, and its parameters (as SYSCALL_DEFINE declares
+/// them).
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct SyscallInfo {
+    pub nr: u32,
+    pub params: Vec<Param>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Param {
+    pub name: String,
+    pub ty: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct LineCount {
@@ -312,6 +337,21 @@ impl View<'_> {
             let i = b * total / n;
             Some(self.task(*self.rec.tasks.get(i)?, i))
         }).collect()
+    }
+
+    /// Function `id`: where it is.
+    pub fn place(&self, id: u32) -> Option<Place> {
+        let f = self.tables.functions.get(&id)?;
+        Some(Place { name: f.name.clone(), file: self.tables.file(f.loc).to_string(), line: f.loc.line })
+    }
+
+    /// Syscall `name` (e.g. "openat").
+    pub fn syscall(&self, name: &str) -> Option<SyscallInfo> {
+        let types = &self.tables.types;
+        let (&nr, _) = types.syscalls.iter().find(|(_, n)| n.as_str() == name)?;
+        let params = types.params.get(&format!("__do_sys_{name}")).into_iter().flatten()
+            .map(|(pname, ty)| Param { name: pname.clone(), ty: types.name(*ty) }).collect();
+        Some(SyscallInfo { nr, params })
     }
 
     /// The functions called `name` (usually one), with how often each block

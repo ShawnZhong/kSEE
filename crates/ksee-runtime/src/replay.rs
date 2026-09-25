@@ -1,12 +1,10 @@
 //! The page's views of the last snapshot of the recording (see
 //! ksee_core::view): each is a view, as a JS value.
 
-use js_sys::Object;
 use ksee_core::view::View;
 use ksee_core::Memory;
 use wasm_bindgen::prelude::*;
 
-use crate::js;
 use crate::machine::{Frozen, Machine};
 use crate::state::{tables, Direct};
 
@@ -134,21 +132,18 @@ impl Machine {
         self.view(|v| to_js(&v.timeline(n)))
     }
 
-    /// Syscall `name` (e.g. "openat"): { nr, params: [{ name, ty }] } (its
-    /// parameters as SYSCALL_DEFINE declares them), or null.
+    /// Syscall `name` (e.g. "openat"): view::SyscallInfo, or null.
     pub fn syscall(&self, name: &str) -> JsValue {
-        let types = &tables().types;
-        let Some((&nr, _)) = types.syscalls.iter().find(|(_, n)| n.as_str() == name) else { return JsValue::NULL };
-        let o = Object::new();
-        js::set(&o, "nr", nr);
-        let params = js_sys::Array::new();
-        for (pname, ty) in types.params.get(&format!("__do_sys_{name}")).into_iter().flatten() {
-            let p = Object::new();
-            js::set(&p, "name", pname.clone());
-            js::set(&p, "ty", types.name(*ty));
-            params.push(&p);
+        self.view(|v| to_js(&v.syscall(name)))
+    }
+
+    /// Constants from the kernel's UAPI headers (O_*, AT_*, CLOCK_*, and
+    /// errno's E*): { name: value }.
+    pub fn constants(&self) -> JsValue {
+        let o = js_sys::Object::new();
+        for (name, &v) in &tables().types.constants {
+            let _ = js_sys::Reflect::set(&o, &name.into(), &(v as f64).into());
         }
-        js::set(&o, "params", params);
         o.into()
     }
 
@@ -157,15 +152,9 @@ impl Machine {
         tables().types.syscalls.values().cloned().collect()
     }
 
-    /// Function `id`: { name, file, line }.
+    /// Function `id`: where it is (view::Place).
     pub fn function(&self, id: u32) -> JsValue {
-        let t = tables();
-        let Some(f) = t.functions.get(&id) else { return JsValue::NULL };
-        let o = Object::new();
-        js::set(&o, "name", f.name.clone());
-        js::set(&o, "file", t.file(f.loc));
-        js::set(&o, "line", f.loc.line);
-        o.into()
+        self.view(|v| to_js(&v.place(id)))
     }
 
     /// The functions called `name` (view::Function), with how often each

@@ -45,9 +45,11 @@ a name in the source for its value at the cursor; right-click to watch it;
 until you stop it.
 
 An example is one JSON file in user/examples/: a title, a question, and
-steps: `{ call, args, show, stops: [{ func, note, any? }] }` (an argument:
-a number, a string, `{ "size": n }` for a buffer to fill, `{ "i64": [...] }`,
-or `{ "ret": k }`, step k's result). /init mounts an ext4 disk on /mnt (an
+steps: `{ call, args, stops: [{ func, note, any? }] }`, the arguments
+written as in C: `"AT_FDCWD"`, `"O_CREAT | O_WRONLY"` (the kernel's own
+constants, from its UAPI headers), `"0644"`, `"\"a string\""`, `"[64]"`
+(a buffer for the kernel to fill), `"{0, 30000000}"` (64-bit values),
+`"$1"` (call 1's result); see web/args.js. /init mounts an ext4 disk on /mnt (an
 image in the initramfs, through the loop device).
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs

@@ -35,7 +35,7 @@ export function timeline(app) {
 // Machine.chart: inlined, code inlined into the call below it).
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
               depth: 1, row: ROW, // (depth: the deepest stack of the selection seen; row: the rows' height)
-              lit: null, sel: null, inlined: false }; // the calls outlined (their first records): hovered here or in the Stack; selected
+              lit: null, sel: null, inlined: false, syscallAt: new Map() }; // the calls outlined (their first records): hovered here or in the Stack; selected
   const funcs = new Map(), tasks = new Map();
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const inames = new Map();
@@ -80,11 +80,10 @@ export function timeline(app) {
       ctx.fillRect(ox(t.cursor) - 1, 0, 2, OVER);
     }
   }
-  // A call's name (a syscall's entry: named for the syscall).
+  // A call's name (a syscall's entry, from its first record: the syscall's).
   const nameOf = (id, first) => {
-    const f = fn(id);
-    const s = f?.name === "wasm_syscall" ? t.calls.find((c) => c.first === first) : null;
-    return s ? `${s.name ?? s.nr}()` : f?.name ?? "?";
+    const s = t.syscallAt.get(first);
+    return s ? `${s.name ?? s.nr}()` : fn(id)?.name ?? "?";
   };
   // A flame graph: the outermost calls at the bottom, over the task strip
   // (as in the Stack, the innermost is on top). Rows get thinner to fit the
@@ -253,7 +252,7 @@ export function timeline(app) {
       return;
     }
     chart.title = "";
-    const f = fn(id), s = f?.name === "wasm_syscall" ? t.calls.find((x) => x.first === first) : null;
+    const f = fn(id), s = t.syscallAt.get(first);
     let end = k;
     while (end + 1 < t.cols.length && t.cols[end + 1].frames[d]?.[1] === first) end++;
     const span = `records ${first + 1}–${at(((end + 1) / t.cols.length) * W()) + 1}`;
@@ -349,6 +348,7 @@ export function timeline(app) {
   function refresh(calls) {
     t.n = m.records();
     t.calls = calls;
+    t.syscallAt = new Map(calls.map((c) => [c.first, c]));
     funcs.clear();
     tasks.clear();
     args.clear();
@@ -411,5 +411,16 @@ export function timeline(app) {
     k.innerHTML = `<i style="background:${color(p, false)}"></i>${name}`;
     return k;
   }), toggle);
-  return { refresh, go, mark, select, selectWindow, hilite, selected, home: () => t.home, cursor: () => t.cursor, records: () => t.n };
+  // Where the box of the call from record `first` is, on the page: its
+  // middle ({ x, y }, client coordinates), or null if it is not shown.
+  function boxOf(first) {
+    const r = chart.getBoundingClientRect(), cw = W() / Math.max(1, t.cols.length);
+    const base = chart.clientHeight - t.depth * t.row;
+    for (let k = 0; k < t.cols.length; k++) {
+      const d = t.cols[k].frames.findIndex((f) => f[1] === first && !f[2]);
+      if (d >= 0) return { x: r.left + (k + 0.5) * cw, y: r.top + base + rowY(d) + t.row / 2 };
+    }
+    return null;
+  }
+  return { refresh, go, mark, select, selectWindow, hilite, selected, boxOf, home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }
