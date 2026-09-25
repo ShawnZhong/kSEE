@@ -178,4 +178,9 @@ ol.steps ol.stops { margin: 4px 0 8px; }
 
 /* The console, under the examples */
 h2.sub { border-top: 1px solid var(--line); }
-.consolebox { flex: 0 0 140px; }
+.consolebox { flex: 0 0 80px; }
+
+/* The examples' selector */
+.thead .nav { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; }
+.thead .nav select { flex: 1; min-width: 0; font: inherit; font-weight: 600; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+.thead .nav button { padding: 1px 8px; }

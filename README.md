@@ -28,8 +28,10 @@ LLVM pass.
     ./ksee.sh test         # under Deno: syscalls, and what their recordings show
     ./ksee.sh type task_struct
 
-The page boots the kernel and opens the first example. An **example** (on
-the left) is a question about the kernel ("What happens in read()?", "The
+The page boots the kernel and opens the first example (or the one in the
+URL, `#ex=read`); the selector above it, and ◀ ▶, switch examples, each on
+a fresh kernel (the page starts again), so that each starts from the same
+state. An **example** (on the left) is a question about the kernel ("What happens in read()?", "The
 life of a file on ext4", …) and a few syscalls that ask it: /init makes
 them for the page, one at a time (▶ Next call), each recorded, and the
 page goes to the call's first stop: its note, the source, and the Stack

@@ -1,4 +1,6 @@
-// The examples. An example is a question about the kernel, and a list of
+// The examples, one at a time: a selector (and ◀ ▶) switches, on a fresh
+// kernel (see go); the URL says which (#ex=NAME). An example is a question
+// about the kernel, and a list of
 // syscalls that asks it (user/examples/*.json), each with stops (a note on a
 // function it runs). /init makes the calls (process.call), one at a time,
 // each recorded: then its syscall is selected, and its stops are places in
@@ -19,14 +21,22 @@ export async function examples(app) {
   // the stops Next goes through (the selected step's: cur, at, k).
   const t = { ex: null, steps: [], done: [], running: false, cur: { stops: [], ol: null }, at: [], k: -1, list: null, status: null };
 
-  function index() {
-    t.ex = null;
-    const row = (x) => el("div", { className: "row example", onclick: () => open(x) },
-      el("div", { className: "tt", textContent: x.title }), x.question ? el("div", { className: "meta", textContent: x.question }) : null);
-    $("examples").replaceChildren(
-      el("div", { className: "note", textContent: "Each asks a question about the kernel with a few syscalls: open one, make its calls, and follow their stops." }),
-      ...list.map(row),
-      el("div", { className: "note dim", textContent: "Your own: a JSON file in user/examples/, then ./ksee.sh build." }));
+  // The example in the URL (#ex=NAME, or #back=: see branch), else the
+  // first: { ex, steps, back (the calls to make again, then a new one) }.
+  function fromURL() {
+    const h = location.hash, name = h.match(/^#ex=([\w-]+)$/)?.[1];
+    let back = null;
+    try {
+      back = JSON.parse(decodeURIComponent(h.match(/^#back=(.*)$/)?.[1] ?? "null"));
+    } catch { /* none */ }
+    const ex = list.find((x) => x.name === (back?.name ?? name)) ?? list[0];
+    return { ex, steps: back?.steps ?? ex?.steps ?? [], back };
+  }
+  // Switch to example `ex`: on a fresh kernel (the page starts again), so
+  // that it always starts from the same state.
+  function go(ex) {
+    location.hash = `ex=${ex.name}`;
+    location.reload();
   }
 
   function open(ex, steps = ex.steps) {
@@ -39,34 +49,28 @@ export async function examples(app) {
     t.k = -1;
     t.status = el("div", { className: "tstatus dim" });
     t.list = el("ol", { className: "steps" });
+    const k = list.indexOf(ex);
+    const pick = el("select", { className: "pick", title: "the examples (each starts on a fresh kernel)", onchange: () => go(list[pick.selectedIndex]) },
+      ...list.map((x) => el("option", { textContent: x.title, selected: x === ex })));
     $("examples").replaceChildren(
       el("div", { className: "thead" },
-        el("a", { textContent: "‹ examples", onclick: index }),
-        el("div", { className: "tt", textContent: ex.title }),
+        el("div", { className: "nav" },
+          el("button", { textContent: "◀", title: "the example before", disabled: k <= 0, onclick: () => go(list[k - 1]) }), pick,
+          el("button", { textContent: "▶", title: "the next example", disabled: k < 0 || k + 1 >= list.length, onclick: () => go(list[k + 1]) })),
         ex.question ? el("div", { className: "q", textContent: ex.question }) : null,
         el("div", { className: "tbar" }, el("button", { className: "go", textContent: "▶ Next call", onclick: () => step() }))),
       t.list, form(), t.status);
     draw();
   }
 
-  // The kernel is up: open the first example, and make its first call; or,
-  // after going back (see branch), the example as it was, and its calls up
-  // to the one changed.
+  // The kernel is up: make the example's first call; or, after going back
+  // (see branch), its calls up to the one changed.
   function ready() {
-    let back = null;
-    try {
-      back = JSON.parse(decodeURIComponent(location.hash.match(/^#back=(.*)$/)?.[1] ?? "null"));
-    } catch { /* none */ }
-    if (back) {
-      open(list.find((x) => x.name === back.name) ?? list[0], back.steps);
-      const n = back.steps.length;
-      return upTo(n - 1).then(() => (t.status.textContent = n > 1
-        ? `Went back to before call ${n}: on a fresh kernel, ${n > 2 ? `calls 1–${n - 1}` : "call 1"} made again, then this one.` : ""));
-    }
-    if (!t.ex && list.length) {
-      open(list[0]);
-      step();
-    }
+    const { back } = fromURL();
+    if (!back) return step();
+    const n = back.steps.length;
+    return upTo(n - 1).then(() => (t.status.textContent = n > 1
+      ? `Went back to before call ${n}: on a fresh kernel, ${n > 2 ? `calls 1–${n - 1}` : "call 1"} made again, then this one.` : ""));
   }
   // Go back to before call `j` and make `call` instead: a kernel cannot be
   // put back as it was (its tasks' stacks are its Workers'), so the page
@@ -254,7 +258,9 @@ export async function examples(app) {
     return el("div", { className: "callform" }, input, hint);
   }
 
-  index();
+  // (The example, shown while the kernel boots.)
+  const u = fromURL();
+  if (u.ex) open(u.ex, u.steps);
   if (app.ready) ready();
   return { open, next, step, list, ready };
 }

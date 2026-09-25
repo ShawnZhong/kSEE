@@ -14,7 +14,8 @@ let server = null, url = opt("url", "");
 if (!url) {
   server = new Deno.Command(new URL("../target/release/ksee", import.meta.url).pathname,
     { args: ["serve", new URL("../web", import.meta.url).pathname, "--port=8199"], stdout: "null", stderr: "null" }).spawn();
-  url = `http://127.0.0.1:8199/${opt("at", "")}`;
+  // (By default the read example: see the script below.)
+  url = `http://127.0.0.1:8199/${opt("at", Deno.args.some((a) => a.startsWith("--eval") || a === "--back") ? "" : "#ex=read")}`;
   await new Promise((r) => setTimeout(r, 500));
 }
 // --back: the page opened going back (examples.js, branch): the life of a
@@ -60,9 +61,9 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url });
 await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
-// By default: the first example (it makes its call by itself); then the
-// read example: make its calls, go through the read's stops (the note, the
-// Stack, a hover at each), play a little, hover and click the chart; report.
+// By default: the read example (#ex=read): its first call is made by itself;
+// make the rest, go through the read's stops (the note, the Stack, a hover
+// at each), play a little, hover and click the chart, add a call; report.
 const backScript = `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (let i = 0; i < 100 && document.querySelectorAll("ol.steps > li.done").length < 2; i++) await sleep(100);
@@ -75,11 +76,10 @@ const script = Deno.args.includes("--back") ? backScript : opt("eval", `(async (
   const $ = (id) => document.getElementById(id);
   const until = async (f, n = 100) => { for (let i = 0; i < n && !f(); i++) await sleep(100); };
   const r = { badge: $("badge").textContent };
-  await until(() => !$("note").hidden);
-  r.first = [document.querySelector(".thead .tt")?.textContent, $("note").querySelector("b")?.textContent];
-  [...document.querySelectorAll(".thead a")].find((a) => a.textContent.includes("examples")).click();
-  r.examples = document.querySelectorAll(".row.example").length;
-  [...document.querySelectorAll(".row.example")].find((e) => e.textContent.includes("read()")).click();
+  await until(() => document.querySelector("ol.steps > li.done"));
+  const pick = document.querySelector(".thead select");
+  r.first = [pick.selectedOptions[0]?.textContent, document.querySelector("ol.steps > li.done")?.innerText.split("\\n")[0]];
+  r.examples = pick.options.length;
   // (Its calls, up to the read: the 6th.)
   document.querySelectorAll("ol.steps > li > a")[5].click();
   await until(() => document.querySelectorAll("ol.steps > li.done").length >= 6 && $("note").querySelector("b")?.textContent === "ksys_read");
@@ -128,15 +128,13 @@ const script = Deno.args.includes("--back") ? backScript : opt("eval", `(async (
   if (kh?.a !== ksys.first || kh?.b !== ksee.m.call_end(ksys.first)) throw new Error("ksys_read's selection: " + JSON.stringify(kh) + ", not from " + ksys.first);
   r.dblclicked = $("chart-title").textContent;
   // Your own call: type it, Tab completes the name, Enter makes it.
-  [...document.querySelectorAll(".thead a")].find((a) => a.textContent.includes("examples")).click();
-  [...document.querySelectorAll(".row.example")].find((e) => e.textContent.includes("Your own")).click();
   const input = document.querySelector(".callform input"), key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
   input.value = "mkdira"; key("Tab");
   input.value += "AT_FDCWD, "; input.dispatchEvent(new Event("input"));
   r.typed = [input.value, document.querySelector(".callform .hint").textContent];
   input.value = 'openat(AT_FDCWD, "/mnt/mine", O_CREAT | O_WRONLY, 0644)'; key("Enter");
-  await until(() => document.querySelector("ol.steps > li.done"));
-  r.mine = document.querySelector("ol.steps > li.done")?.innerText.trim();
+  await until(() => document.querySelectorAll("ol.steps > li.done").length >= 8);
+  r.mine = [...document.querySelectorAll("ol.steps > li.done")].at(-1)?.innerText.split("\\n")[0];
   return r;
 })()`);
 if (script) {
