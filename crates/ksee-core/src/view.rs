@@ -403,7 +403,13 @@ impl Types {
             }
             Kind::Pointer(to) => {
                 let p = mem.read_u32(addr);
-                o.value = Some(if p == 0 { "NULL".into() } else { format!("{p:#x}") });
+                // (A char *: and the string it points to, if it looks like one.)
+                let text = if p != 0 && self.is_string(*to) { c_string(mem, p) } else { None };
+                o.value = Some(match text {
+                    _ if p == 0 => "NULL".into(),
+                    Some(t) => format!("{p:#x} {t}"),
+                    None => format!("{p:#x}"),
+                });
                 let target = self.resolve(*to);
                 if p != 0 && matches!(self.get(target).kind, Kind::Struct(_) | Kind::Union(_)) {
                     o.target = Some(target);
@@ -418,9 +424,25 @@ impl Types {
         o
     }
 
+    /// Whether `elem` is a char (so an array or pointer of it is a string).
     fn is_string(&self, elem: u32) -> bool {
         matches!(self.get(self.resolve(elem)).kind, Kind::Base(Base::Char)) && self.size_of(elem) == 1
     }
+}
+
+/// The C string at `p`, quoted (up to 64 characters, then "…"), if what is
+/// there looks like one: printable, with at least one character. (A
+/// pointer may not be to kernel memory: a __user one is to the program's.)
+fn c_string(mem: &dyn Memory, p: u32) -> Option<String> {
+    let mut buf = [0u8; 65];
+    mem.read(p, &mut buf);
+    let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    let text = &buf[..n.min(64)];
+    if text.is_empty() || !text.iter().all(|&c| (0x20..0x7f).contains(&c) || c == b'\n' || c == b'\t') {
+        return None;
+    }
+    let s = format!("{:?}", String::from_utf8_lossy(text));
+    Some(if n > 64 { s + "…" } else { s })
 }
 
 #[cfg(test)]
@@ -460,6 +482,18 @@ mod tests {
         // At record 0, its first line (nth 0): f at line 1, nothing inlined.
         let first: Vec<_> = v.call_stack(0, Some(0), &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
         assert_eq!(first, [("f".into(), Some(1))]);
+    }
+
+    #[test]
+    fn char_pointers_show_their_strings() {
+        let t = Types::parse("T\t1\tbase\tchar\t1\tc\nT\t2\tptr\t\t4\t1\n");
+        let mut m = alloc::vec![0u8; 128];
+        m[0..4].copy_from_slice(&8u32.to_le_bytes());
+        m[8..12].copy_from_slice(b"tmp\0");
+        m[4..8].copy_from_slice(&16u32.to_le_bytes()); // (to bytes that are no string)
+        m[16] = 0xff;
+        let value = |at| t.object(&Mem(m.clone()), "p", at, 2, 0).value.unwrap();
+        assert_eq!((value(0).as_str(), value(4).as_str()), ("0x8 \"tmp\"", "0x10"));
     }
 
     #[test]

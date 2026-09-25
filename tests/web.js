@@ -136,6 +136,16 @@ for (const [name, funcs] of [["ext4-write", ["ext4_sync_file", "ext4_mb_new_bloc
   const missing = funcs.filter((f) => m.first_call(f, p.first, m.records() - 1) == null);
   check(`${name}: ${funcs.join(", ")}`, e.status === 0 && !missing.length || console.log("  missing:", missing));
 }
+// A char * shows its string: mkdir's struct filename, its name.
+{
+  const p = m.program(m.syscalls().findLast((s) => s.name === "mkdirat").task.pid), i = m.first_call("filename_create", p.first, m.records() - 1);
+  const arg = m.call_stack(i).find((f) => f.func === "filename_create")?.args?.find((a) => a.ty === "struct filename *");
+  m.memory_at(i); // (as it was: the name is freed after the syscall)
+  // (7.2's struct filename: the name pointer is in an anonymous struct, with the name in iname.)
+  const name = arg && m.object_by_id("name", arg.target, Number(arg.value.split(" ")[0]), 2)?.children?.[0]?.children?.find((c) => c.name === "name");
+  m.memory_at(null);
+  check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/notes"'));
+}
 
 // LINUX_REBOOT_CMD_POWER_OFF
 proc.run("/bin/poweroff");
