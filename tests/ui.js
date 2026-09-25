@@ -1,5 +1,5 @@
-// The page in headless Chromium (./ksee.sh test --ui): serve web/, load it, run the example
-// notebooks, fail on any exception, and save a screenshot. Options
+// The page in headless Chromium (./ksee.sh test --ui): serve web/, load it, run the scenarios,
+// step into a syscall and play it, fail on any exception, and save a screenshot. Options
 // look at another page or script (to check the UI while working on it).
 //   deno run -A tests/ui.js OUT.png [--url=URL] [--wait=ms] [--eval=JS] [--size=WxH]
 // $CHROME: a Chromium binary (e.g. Playwright's chrome-headless-shell).
@@ -53,23 +53,43 @@ const send = (method, params = {}) => new Promise((r) => {
 await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url });
-await new Promise((r) => setTimeout(r, Number(opt("wait", "8000"))));
-// By default: run each example notebook, then report what the page shows.
+await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
+// By default: run the scenarios; step into a write, play some lines while
+// paused, continue; replay the write; report what the page shows.
 const script = opt("eval", `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const pick = document.getElementById("examples");
-  for (const o of [...pick.options].slice(1)) {
-    pick.value = o.value;
-    pick.dispatchEvent(new Event("change"));
-    for (let i = 0; i < 100 && document.querySelector(".cell.running"); i++) await sleep(50);
-    await sleep(300);
+  const $ = (id) => document.getElementById(id);
+  const idle = async () => { for (let i = 0; i < 200 && document.querySelector(".card.running"); i++) await sleep(50); };
+  const r = {};
+  for (const o of [...$("scenarios").options].slice(1)) {
+    $("scenarios").value = o.value;
+    $("scenarios").dispatchEvent(new Event("change"));
+    await sleep(100);
+    await idle();
   }
-  const lanes = document.getElementById("lanes");
-  lanes.dispatchEvent(new PointerEvent("pointerdown", { clientX: lanes.getBoundingClientRect().left + lanes.clientWidth * 0.6, clientY: lanes.getBoundingClientRect().top + 5, bubbles: true }));
-  await sleep(300);
-  return { ok: document.querySelectorAll(".cell.ok").length, err: [...document.querySelectorAll(".cell.err")].map((c) => c.innerText),
-           runs: document.querySelectorAll("#runs .row").length, src: document.querySelectorAll("#src tr").length,
-           where: document.getElementById("where").textContent };
+  r.cards = document.querySelectorAll(".card.ok").length;
+  r.failed = [...document.querySelectorAll(".card.err")].map((c) => c.innerText);
+  // Step into a new write.
+  $("add").value = "write";
+  $("add").dispatchEvent(new Event("change"));
+  const card = [...document.querySelectorAll(".card")].at(-1);
+  card.querySelector('.acts button[title^="Step into"]').click();
+  for (let i = 0; i < 100 && ksee.state() !== "paused"; i++) await sleep(50);
+  r.paused = $("badge").textContent + " " + $("status").textContent;
+  r.stack = [...document.querySelectorAll("#stack .frame")].map((f) => f.innerText).slice(0, 3);
+  for (let k = 0; k < 3; k++) { $("fwd-line").click(); await sleep(400); }
+  r.stepped = $("status").textContent;
+  $("cont").click();
+  await idle();
+  r.card = card.innerText;
+  // Replay it: the write is selected, the cursor at its start.
+  r.replay = $("badge").textContent;
+  $("play").click();
+  await sleep(1500);
+  $("play").click();
+  r.where = $("where").textContent;
+  r.flame = !$("flamebox").hidden;
+  return r;
 })()`);
 if (script) {
   const r = await send("Runtime.evaluate", { expression: script, awaitPromise: true, returnByValue: true });

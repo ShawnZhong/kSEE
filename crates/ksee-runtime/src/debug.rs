@@ -14,7 +14,8 @@
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use crate::state::{Direct, CURRENT_TASK, FRAMES, TRACE};
+use crate::imports::wall_ns;
+use crate::state::{Direct, CURRENT_TASK, FRAMES, PAUSED_NS, STOPPED_AT, TRACE};
 use ksee_core::Memory;
 
 /// Run until a breakpoint; stop at the next block; stop at the next block
@@ -121,6 +122,7 @@ pub extern "C" fn stop(func: u32, n: u32) {
     d.at_block.store(n, Ordering::Relaxed);
     d.at_task.store(task, Ordering::Relaxed);
     let generation = d.resume.load(Ordering::Acquire);
+    STOPPED_AT.store(wall_ns().max(1), Ordering::Release);
     d.stopped.store(1, Ordering::Release);
     d.rearm();
     while d.resume.load(Ordering::Acquire) == generation {
@@ -129,6 +131,11 @@ pub extern "C" fn stop(func: u32, n: u32) {
         }
     }
     d.stopped.store(0, Ordering::Release);
+    // (Paused time first: a reader in between sees the clock a bit behind,
+    // not ahead.)
+    let at = STOPPED_AT.load(Ordering::Acquire);
+    PAUSED_NS.fetch_add(wall_ns().saturating_sub(at), Ordering::AcqRel);
+    STOPPED_AT.store(0, Ordering::Release);
 }
 
 impl Debugger {

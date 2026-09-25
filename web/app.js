@@ -1,31 +1,60 @@
 // The kSEE page: wires the panels to a booted Machine (crates/ksee-runtime).
 //
-// One cursor: a position in the history (the trace ring), or now. The
-// history shows it among the tasks and their syscalls; the code column
-// shows the syscall there (its call path) and the source at the cursor;
-// the state column shows kernel objects (always live memory). The
-// notebook makes syscalls; the debugger controls stop the kernel, and a
-// stop is now.
+// The kernel is live: it runs on its own, and the history (the trace ring)
+// grows. The page is in one of three states:
+//   LIVE     running; the history follows now
+//   PAUSED   the debugger stopped the kernel (Pause, a breakpoint, Step
+//            into); now is the stop, and objects are exact
+//   REPLAY   the cursor is in the history (a picked moment, or playing a
+//            syscall back); the kernel goes on meanwhile
+// One cursor: the history shows it among the tasks and the calls; the call
+// stack and the source show the code there. Play moves it line by line:
+// through the recorded trace in REPLAY, or by running the kernel, a line at
+// a time, when PAUSED.
 import { $, taskName } from "./dom.js";
 import { process } from "./ksee.js";
-import { cells } from "./cells.js";
+import { cards } from "./cards.js";
 import { syscalls } from "./syscalls.js";
 import { source } from "./source.js";
 import { objects } from "./objects.js";
 import { timeline } from "./timeline.js";
+import { callstack } from "./callstack.js";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function app(m) {
   const a = { m, proc: process(m) };
   // A syscall's identity across snapshots (indexes shift as the ring wraps).
   a.key = (s) => `${s.task.addr}:${s.start_ns}`;
-  const list = syscalls(a), src = source(a), objs = objects(a), time = timeline(a);
+  const list = syscalls(a), src = source(a), objs = objects(a), time = timeline(a), stack = callstack(a);
   a.showFunction = src.showFunction;
   a.inspect = (...args) => {
     tab("objects");
     objs.inspect(...args);
   };
+  a.showBytes = (name, object) => {
+    tab("objects");
+    objs.inspect(name, null, 0, true, object);
+  };
 
-  // A new snapshot of the trace, everywhere.
+  // ---- The state ----
+  let halted = null;
+  const state = () => (halted != null ? "halted" : time.cursor() != null ? "replay" : m.stopped() ? "paused" : "live");
+  function badge() {
+    const st = state(), at = m.stopped();
+    $("badge").className = `badge ${st}`;
+    $("badge").textContent = { live: "● LIVE", paused: "❚❚ PAUSED", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
+    $("pause").disabled = st === "halted" || !!at;
+    $("cont").disabled = !at;
+    $("over").disabled = !(at && st === "paused");
+    $("mem-note").textContent = st === "replay" ? "live memory, not at the cursor" : "live memory";
+    if (st === "paused") status(`in ${at.func} (${at.file}:${at.line}) on ${taskName(at.task)}`);
+    if (st === "halted") status(`the kernel halted (${halted})`);
+    if (st === "replay") status(at ? "the recorded past; the kernel is paused at now" : "the recorded past; the kernel runs on");
+  }
+  const status = (text) => ($("status").textContent = text);
+
+  // A new snapshot of the trace, everywhere (the cursor back at now).
   const refresh = () => {
     const all = list.refresh();
     time.refresh(all);
@@ -33,43 +62,176 @@ export function app(m) {
   };
   $("show-control").onchange = refresh;
 
-  // Select syscall `s`: its span in the history, its call path, and the
-  // run of `fn` in the source.
-  a.select = (s, fn, line) => {
-    list.show(s, fn, line);
-    time.select(a.key(s));
+  // ---- Selecting and moving the cursor ----
+
+  // Select syscall `s`: its span, its calls; the cursor at its first line
+  // past the entry (unless `stay`: the kernel is stopped in it).
+  a.select = (s, stay = false) => {
+    list.mark(a.key(s));
     nb.mark(a.key(s));
+    time.select(s);
+    if (stay) return;
+    let i = s.first;
+    for (let k = 0; k < 4; k++) {
+      const at = m.at(i);
+      if (at?.kind === "block" && at.func !== "wasm_syscall" && !at.func.startsWith("__wasm_sys_")) break;
+      i = m.seek(i, 1, "function");
+    }
+    time.go(i);
   };
   a.selectKey = (key) => {
     const s = list.byKey(key) ?? (refresh(), list.byKey(key));
     if (s) a.select(s);
     else $("where").textContent = "that syscall is no longer in the trace ring";
   };
-  // The notebook made syscall `name`: the snapshot with it, selected.
+  // A card made syscall `name`: the snapshot with it, selected.
   a.madeSyscall = (name) => {
+    if (m.stopped()) return null;
     const s = refresh().findLast((s) => !s.control && s.name === name && s.task.pid === 1);
-    if (s && !m.stopped()) a.select(s);
+    if (s) a.select(s);
     return s;
   };
-  // The cursor moved to `at` (see Machine.at), or back to now.
+  // The cursor moved to `at` (see Machine.at).
   a.showAt = (at) => {
     src.view.cursor = at;
-    $("mem-note").textContent = "live memory, not at the cursor";
     const s = at.syscall != null ? list.byIndex(at.syscall) : null;
-    if (s) {
-      list.show(s, at.func, at.line);
-      time.select(a.key(s), at.i);
-      nb.mark(a.key(s));
-    } else src.showFunction(at.func, undefined, at.line);
+    if (at.kind === "block") src.showFunction(at.func, s?.index, at.line, at.file);
+    stack.show(at);
+    $("where").textContent = `record ${at.i + 1} of ${time.records()} · ${taskName(at.task)} · ${at.func} ${at.file ?? ""}:${at.line ?? ""}` +
+      (s ? ` · in ${s.name}` : "");
+    badge();
   };
+  // Back at now: the stop, or the kernel running.
   a.showNow = () => {
     src.view.cursor = null;
-    $("mem-note").textContent = "live memory";
     const at = m.stopped();
     if (at) showStop(at);
-    else if (src.view.fn) src.showFunction(src.view.fn.name, src.view.syscall);
+    else stack.show(null);
+    $("where").textContent = "";
+    badge();
   };
-  const nb = cells(a);
+  const nb = cards(a);
+
+  // ---- Stopping ----
+  let oneShot = null; // the handler "Step into" breaks at
+  a.stepInto = (name) => {
+    oneShot = `__wasm_sys_${name}`;
+    m.break_function(oneShot, true);
+  };
+  function showStop(at) {
+    src.view.stop = at;
+    src.showFunction(at.func, undefined, at.line, at.file);
+    stack.show(null, at);
+  }
+  function onStop(at) {
+    if (oneShot) {
+      m.break_function(oneShot, false);
+      oneShot = null;
+    }
+    const s = refresh().findLast((s) => s.task.addr === at.task.addr && s.duration_ns == null);
+    if (s) a.select(s, true);
+    showStop(at);
+    objs.stopped(at.task);
+    badge();
+  }
+  $("pause").onclick = () => m.pause();
+  $("cont").onclick = () => {
+    stopPlay();
+    src.view.stop = null;
+    m.resume();
+  };
+
+  // Run the kernel until the stopped task is on another source line (or
+  // `over`: the next line of the same function). False if it went on
+  // running instead (the syscall returned, and the task sleeps).
+  let stepping = false;
+  async function lineStep(over = false) {
+    const start = m.stopped();
+    if (!start || stepping) return false;
+    stepping = true;
+    let at = start;
+    try {
+      for (let k = 0; k < 2000; k++) {
+        const last = at.stop;
+        over ? m.next() : m.step_task();
+        at = null;
+        for (let w = 0; w < 200 && !(at = m.stopped()); w++) await sleep(5);
+        if (!at || at.stop === last) {
+          m.resume(); // gone on (it would stop in the next syscall)
+          return false;
+        }
+        if (at.file !== start.file || at.line !== start.line) break;
+      }
+    } finally {
+      stepping = false;
+    }
+    lastStop = at.stop;
+    onStop(at);
+    return true;
+  }
+
+  // ---- The transport: line by line, and Play ----
+  const selectedEnd = () => time.selected()?.last ?? time.records() - 1;
+  async function forward() {
+    const cur = time.cursor();
+    if (cur == null) return m.stopped() ? lineStep() : false;
+    const next = m.seek(cur, 1, "line");
+    if (next === cur || next > selectedEnd()) {
+      // The end of what was recorded: go on in the kernel if it is stopped there.
+      if (m.stopped() && next === cur) {
+        time.go(null);
+        return lineStep();
+      }
+      return false;
+    }
+    time.go(next);
+    return true;
+  }
+  function back() {
+    const cur = time.cursor() ?? time.records() - 1;
+    time.go(m.seek(cur, -1, "line"));
+  }
+  let playing = null;
+  function stopPlay() {
+    clearTimeout(playing);
+    playing = null;
+    $("play").textContent = "▶ Play";
+  }
+  function play() {
+    if (playing) return stopPlay();
+    if (state() === "live") {
+      const s = time.selected();
+      if (!s) return status("pick a syscall to play (a card's result, or a bar in the history), or pause the kernel");
+      a.select(s);
+    }
+    $("play").textContent = "❚❚ Pause";
+    const tickPlay = async () => {
+      if (!playing) return;
+      if (!(await forward())) return stopPlay();
+      playing = setTimeout(tickPlay, Number($("speed").value));
+    };
+    playing = setTimeout(tickPlay, 0);
+  }
+  $("play").onclick = play;
+  $("fwd-line").onclick = () => forward();
+  $("back-line").onclick = back;
+  $("over").onclick = () => lineStep(true);
+  $("to-start").onclick = () => {
+    const s = time.selected();
+    if (s) a.select(s);
+  };
+  $("now").onclick = () => {
+    stopPlay();
+    time.go(null);
+  };
+  addEventListener("keydown", (e) => {
+    if (e.target.closest("input, select, textarea")) return;
+    if (e.key === "ArrowRight") forward();
+    else if (e.key === "ArrowLeft") back();
+    else if (e.key === " ") play();
+    else return;
+    e.preventDefault();
+  });
 
   // ---- The state column's tabs ----
   let current = "objects";
@@ -83,30 +245,8 @@ export function app(m) {
   }
   for (const t of ["objects", "syscalls", "console"]) $(`tab-${t}`).onclick = () => tab(t);
 
-  // ---- Running and stopping ----
-  const buttons = { pause: $("pause"), step: $("step"), next: $("next"), cont: $("cont") };
-  buttons.pause.onclick = () => m.pause();
-  buttons.step.onclick = () => m.step();
-  buttons.next.onclick = () => m.next();
-  buttons.cont.onclick = () => m.resume();
-  const status = (text, stopped = false) => {
-    $("status").textContent = text;
-    $("status").className = stopped ? "stopped" : "dim";
-  };
-  function showStop(at) {
-    const s = refresh().findLast((s) => s.task.addr === at.task.addr && s.duration_ns == null);
-    if (s) a.select(s, at.func, at.line);
-    else src.showFunction(at.func, undefined, at.line);
-  }
-  function onStop(at) {
-    src.view.stop = at;
-    src.view.cursor = null;
-    status(`stopped in ${at.func} (${at.file}:${at.line}) on ${taskName(at.task)}`, true);
-    showStop(at);
-    objs.stopped(at.task);
-  }
-
-  let lastStop = null, lastNow = 0;
+  // ---- The loop: console, stops, and (live) the history growing ----
+  let lastStop = null, lastNow = 0, lastRefresh = 0;
   function tick() {
     const out = m.console();
     if (out) {
@@ -116,28 +256,37 @@ export function app(m) {
     }
     const code = m.halted();
     if (code !== undefined) {
+      halted = code;
+      stopPlay();
       src.view.stop = null;
-      status(`halted (${code})`);
-      Object.values(buttons).forEach((b) => (b.disabled = true));
       refresh();
+      badge();
       return;
     }
     const at = m.stopped();
     // (A new stop, also after a step: each has its own number.)
-    if (at && at.stop !== lastStop) onStop(at);
-    if (!at && lastStop != null) src.view.stop = null;
-    // Where the kernel is now (its latest block), a few times a second.
-    if (!at && performance.now() - lastNow > 250) {
-      lastNow = performance.now();
-      const now = m.now();
-      if (now) status(`running · now ${taskName(now.task)} in ${now.func} (${now.file}:${now.line})`);
+    if (!stepping) {
+      if (at && at.stop !== lastStop) onStop(at);
+      if (!at && lastStop != null) src.view.stop = null;
+      lastStop = at?.stop ?? null;
     }
-    lastStop = at?.stop ?? null;
-    buttons.pause.disabled = !!at;
-    buttons.step.disabled = buttons.next.disabled = buttons.cont.disabled = !at;
+    const st = state(), t = performance.now();
+    if (st === "live" && t - lastNow > 250) {
+      lastNow = t;
+      const now = m.now();
+      if (now) status(`now ${taskName(now.task)} in ${now.func} (${now.file}:${now.line})`);
+      // The history grows (not while a card waits for its result).
+      if (t - lastRefresh > 1500 && !document.hidden) {
+        lastRefresh = t;
+        refresh();
+      }
+    }
+    badge();
     setTimeout(tick, 30);
   }
   refresh();
+  stack.show(null);
   tick();
+  a.state = state;
   return a;
 }

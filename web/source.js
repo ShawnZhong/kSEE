@@ -82,12 +82,14 @@ export function source(app) {
     $("fn-title").textContent = file + ran;
   }
 
-  function showFunction(name, syscall, focus) {
+  // Function `name` (its blocks' counts from syscall `syscall`), in `file`
+  // (a block's own, when it is inlined from a header) at line `focus`.
+  function showFunction(name, syscall, focus, file) {
     const [f] = m.functions(name, syscall);
     if (!f) return;
     v.fn = f;
     v.syscall = syscall;
-    showFile(f.file, focus);
+    showFile(file ?? f.file, focus);
   }
   return { view: v, showFunction, showFile };
 }

@@ -7,44 +7,52 @@
 <link rel="stylesheet" href="./ui.css">
 </head>
 <body>
-<header><b>kSEE</b><span id="status" class="dim">loading the kernel…</span>
+<header><b>kSEE</b>
+  <span id="badge" class="badge">loading</span><span id="status" class="dim">loading the kernel…</span>
   <span class="controls">
-    <button id="pause" disabled title="Stop at the next basic block">Pause</button>
-    <button id="step" disabled title="Run to the next basic block">Step</button>
-    <button id="next" disabled title="Run to the next block of this function (over calls)">Next</button>
-    <button id="cont" disabled title="Run until a breakpoint">Continue</button>
+    <button id="pause" disabled title="Stop the kernel at its next basic block">Pause</button>
+    <button id="cont" disabled title="Let the kernel run (until a breakpoint)">Continue</button>
   </span></header>
 <section id="history">
-  <div class="tl">
-    <span class="tlbtn"><button id="back-sys" title="previous syscall">⏮</button><button id="back-fn" title="previous function">◀◀</button><button id="back-blk" title="previous block (←)">◀</button></span>
-    <canvas id="lanes" tabindex="0" aria-label="history: tasks and their syscalls over the trace"></canvas>
-    <span class="tlbtn"><button id="fwd-blk" title="next block (→)">▶</button><button id="fwd-fn" title="next function">▶▶</button><button id="fwd-sys" title="next syscall">⏭</button>
-      <button id="live" title="back to now: the end of the trace">Now</button></span>
+  <canvas id="lanes" aria-label="history: tasks and their syscalls over the trace"></canvas>
+  <div id="flamebox" hidden>
+    <div class="flamehead"><span id="flame-title" class="dim"></span><span id="legend"></span></div>
+    <div class="flamescroll"><canvas id="flame" aria-label="the calls of the selected syscall"></canvas></div>
   </div>
-  <div class="tlinfo"><span id="where" class="mono dim"></span>
-    <label class="dim right"><input type="checkbox" id="show-control"> init's channel traffic</label></div>
+  <div class="transport">
+    <button id="to-start" title="To the start of the selected syscall">⏮</button>
+    <button id="back-line" title="Back a line (←)">◀</button>
+    <button id="play" class="go" title="Play: line by line (space)">▶ Play</button>
+    <button id="fwd-line" title="Forward a line (→); at now, while paused, the kernel runs a line">▶|</button>
+    <button id="over" title="Over: to the next line of this function (while paused)">⤼</button>
+    <button id="now" title="Back to now">Now ⏭</button>
+    <select id="speed" aria-label="speed" title="Play speed">
+      <option value="1000">slow</option><option value="400" selected>1 line / 0.4 s</option><option value="120">fast</option><option value="30">faster</option>
+    </select>
+    <span id="where" class="mono dim"></span>
+    <label class="dim right"><input type="checkbox" id="show-control"> init's channel traffic</label>
+  </div>
 </section>
 <main>
   <div class="col">
-    <h2>Notebook <span class="dim">syscalls /init makes, with values in its memory</span></h2>
+    <h2>Syscalls to make <span class="dim">/init makes them, in a real process</span></h2>
     <div class="nbbar">
-      <select id="examples" aria-label="example notebooks"><option value="">examples…</option></select>
-      <input id="add" list="syscall-list" placeholder="+ syscall…" aria-label="add a syscall"><datalist id="syscall-list"></datalist>
-      <span class="right"><button id="runall" class="go" title="Reset, then run every line">Run all</button><button id="reset" title="Forget the values and free init's memory">Reset</button></span>
+      <input id="add" list="syscall-list" placeholder="+ a syscall: write, openat, …" aria-label="add a syscall"><datalist id="syscall-list"></datalist>
+      <select id="scenarios" aria-label="scenarios"><option value="">scenarios…</option></select>
+      <span class="right"><button id="runall" title="Run every card, in order">Run all</button><button id="clear" title="Remove the cards; forget the fds; free init's memory">Clear</button></span>
     </div>
-    <div class="body" id="cells"></div>
+    <datalist id="fds"></datalist>
+    <div class="body" id="cards"></div>
   </div>
   <div class="col">
-    <h2><span class="what" id="run-title">Ran</span><span class="right dim" id="run-meta"></span></h2>
-    <div class="codecol">
-      <div class="body" id="runs"><div class="empty">Run a line, or pick a syscall in the history: the functions it ran, in order.</div></div>
-      <div class="body" id="src"><div class="empty">The source of the function at the cursor: lines where blocks ran are green (with counts), untaken ones red. Click a line number to break there.</div></div>
-    </div>
-    <div class="srcbar mono dim" id="fn-title"></div>
+    <h2>Call stack <span class="dim" id="stack-note"></span></h2>
+    <div class="body" id="stack"></div>
+    <div class="srcbar mono" id="fn-title">Source</div>
+    <div class="body" id="src"><div class="empty">The source at the cursor: lines where blocks ran are green (with counts), untaken ones red. Click a line number to break there.</div></div>
   </div>
   <div class="col">
     <h2 class="tabs"><button id="tab-objects" class="on">Objects</button><button id="tab-syscalls">Syscalls <span id="nsys" class="dim"></span></button><button id="tab-console">Console <span id="console-new"></span></button>
-      <span class="right dim" id="mem-note" title="Objects are read from the kernel's memory now, not as it was at the cursor">live memory</span></h2>
+      <span class="right dim" id="mem-note" title="Objects are read from the kernel's memory as it is now">live memory</span></h2>
     <div class="tab" id="pane-objects">
       <div class="objbar">
         <button id="pick-task">current task</button><button id="pick-rq">runqueue</button><button id="pick-init">init_task</button>
@@ -53,7 +61,7 @@
         <input id="objfilter" placeholder="filter fields" size="10" aria-label="filter">
       </div>
       <div id="crumbs"></div>
-      <div class="body" id="objtable"><div class="empty">Stop the kernel (a breakpoint, or Pause) and look at the current task, the runqueue, a global, or any type at an address. → follows a pointer; fields changed since the last stop are highlighted.</div></div>
+      <div class="body" id="objtable"><div class="empty">Pause the kernel (or step into a syscall) and look at the current task, the runqueue, a global, or any type at an address; → in the call stack opens an argument. Fields changed since the last stop are highlighted.</div></div>
     </div>
     <div class="tab body" id="pane-syscalls" hidden><div id="syscalls"></div></div>
     <div class="tab body" id="pane-console" hidden><pre id="console"></pre></div>

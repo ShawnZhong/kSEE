@@ -29,15 +29,20 @@ kernel `WebAssembly.Memory`.
     ./ksee.sh test         # under Deno: syscalls, the debugger, the trace
     ./ksee.sh type task_struct
 
-Make syscalls from the page's notebook: lines like
-`fd = openat(AT_FDCWD, "/tmp/hello", O_WRONLY|O_CREAT, 0644)` or
-`st = new struct stat`, which `/init` runs (pick an example, or
-"+ syscall" for any of the kernel's, with its buffers set up). A line's
-result links to what it ran: the functions in order and their source (the
-whole file, with the lines that ran and how often). The history at the top
-shows each task's syscalls over the trace ring; click or drag to replay.
-Click a line number to set a breakpoint: the kernel stops there; step, and
-look at the current task, the runqueue, any global or type.
+The kernel is live (● LIVE): it runs on its own, and the history at the top
+grows (a lane per task, its syscalls as bars). Make syscalls with the cards
+on the left: pick any of the kernel's (or a scenario), fill in its typed
+form (fds by name, flags, structs), and `/init` makes it; the card then
+reads like strace. Its result links to what it ran: the flame chart of its
+calls, rebuilt from the trace, and the source at the cursor.
+
+To go through a syscall line by line, press ⤵ (Step into) on its card: the
+kernel stops where the syscall starts (❚❚ PAUSED), with the call stack and
+each call's arguments (→ opens a pointer's object). ▶| runs a line; ▶ Play
+runs line after line, at the speed picked. Or replay one already made
+(↺ REPLAY): select it and Play, or drag the cursor through the history.
+Click a line number in the source to set a breakpoint. The kernel's clock
+stands still while it is paused.
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also checks
 the page for exceptions and saves a screenshot, `web/ui.png`. The build is

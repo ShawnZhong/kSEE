@@ -8,9 +8,10 @@ export function objects(app) {
   // stack: what is shown, as breadcrumbs: [{ title, type (name or id), addr }]
   const o = { stack: [], open: new Set(), filter: "", last: new Map(), now: new Map() };
 
-  function inspect(title, type, addr, reset = true) {
+  // `object`: a value already decoded (a syscall's output, not in kernel memory).
+  function inspect(title, type, addr, reset = true, object = null) {
     if (reset) o.stack = [];
-    o.stack.push({ title, type, addr });
+    o.stack.push({ title, type, addr, object });
     o.open = new Set();
     draw();
   }
@@ -24,7 +25,7 @@ export function objects(app) {
       o.stack = o.stack.slice(0, i + 1);
       draw();
     } })]));
-    const root = typeof top.type === "number" ? m.object_by_id("", top.type, top.addr, 2) : m.object(top.type, top.addr, 2);
+    const root = top.object ?? (typeof top.type === "number" ? m.object_by_id("", top.type, top.addr, 2) : m.object(top.type, top.addr, 2));
     if (!root) return $("objtable").replaceChildren(el("div", { className: "empty", textContent: `${top.type}: no such type` }));
     o.now = new Map();
     const rows = [], f = o.filter.toLowerCase();
@@ -34,7 +35,7 @@ export function objects(app) {
         const expandable = c.children || c.expand != null;
         const open = expandable && (o.open.has(p) || (f && depth < 3));
         let kids = c.children;
-        if (open && !kids && c.expand != null) kids = m.object_by_id(c.name, c.expand, c.addr, 1).children;
+        if (open && !kids && c.expand != null && !top.object) kids = m.object_by_id(c.name, c.expand, c.addr, 1).children;
         const value = c.value ?? (kids ? summary(kids) : "{…}");
         o.now.set(p, value);
         const changed = o.last.has(p) && o.last.get(p) !== value;
@@ -53,7 +54,7 @@ export function objects(app) {
       }
     };
     walk(root.children, "", 0);
-    $("objtable").replaceChildren(el("div", { className: "objhead mono", textContent: `${root.ty} at ${hex(top.addr)}` }),
+    $("objtable").replaceChildren(el("div", { className: "objhead mono", textContent: top.object ? `${root.ty}, as the syscall returned it` : `${root.ty} at ${hex(top.addr)}` }),
       el("table", { className: "objs" }, el("tbody", {}, ...rows)));
   }
 

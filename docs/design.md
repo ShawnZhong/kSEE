@@ -132,30 +132,38 @@ synchronous duration from downstream effects, e.g. `read()` → page-cache miss
 
 ## UI
 
-One cursor, a position in the history (the trace ring) or now; every panel
-shows the cursor's moment.
+The kernel is live; the page is in one of three states, shown in its
+header: **LIVE** (running; the history follows now), **PAUSED** (the
+debugger stopped it; objects are exact), **REPLAY** (the cursor is in the
+recorded past; the kernel goes on). One cursor; every panel shows its
+moment.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ History: a lane per task, its syscalls as bars; the cursor  │
+│ History: a lane per task, syscalls as bars                  │
+│ Flame chart of the selected syscall (calls by depth)        │
+│ ⏮ ◀ ▶ Play ▶| ⤼ Now   speed                                 │
 ├──────────────┬──────────────────────────────┬───────────────┤
-│ Notebook     │ Call path │ Source (whole    │ Objects       │
-│ (syscalls    │ of the    │ file, lines that │ (live memory) │
-│ /init makes) │ syscall   │ ran, the cursor) │ Syscalls, Con.│
+│ Syscall cards│ Call stack (args when paused)│ Objects       │
+│ (typed forms,│ Source (whole file, lines    │ (live memory) │
+│ /init makes  │ that ran, the cursor)        │ Syscalls, Con.│
+│ them)        │                              │               │
 └──────────────┴──────────────────────────────┴───────────────┘
 ```
 
-- The **notebook** is how the page talks to the kernel: strace-like lines
-  (`fd = openat(AT_FDCWD, "/tmp/x", O_CREAT|O_WRONLY, 0644)`), with named
-  values and buffers or structs laid out by their kernel types in /init's
-  memory (`st = new struct stat`, `iov = new struct iovec[2] {…}`). /init
-  runs each line in a real process, over the /dev/ksee channel
-  (web/notebook.js, user/init.c).
-- Selecting a syscall (a line's result, a bar, the Syscalls tab) selects its
-  span; moving the cursor shows the function and line there.
-- The debugger's stop is now: breakpoints (click a line number), Step, Next,
-  Continue. Objects are read from memory as it is, so they match the cursor
-  only at now.
+- **Cards** are how the page talks to the kernel: a form per syscall built
+  from its DWARF signature (fds by name, flag chips, struct fields,
+  outputs decoded), no language to learn. /init makes each call in a real
+  process, over the /dev/ksee channel (web/calls.js, user/init.c); the
+  debugger never stops in that channel's own traffic.
+- **Calls** come from the trace: every block, and every return, is
+  recorded, so the call tree is rebuilt exactly (ksee_core::stack). While
+  paused, the plugin's frames on the kernel stack give the call stack with
+  arguments, decoded by their types.
+- **Play** goes line by line: through the recorded trace (REPLAY), or by
+  running the kernel a line at a time on the stopped task (PAUSED). Step
+  into stops the kernel where a card's syscall starts. The kernel's clock
+  stands still while it is paused.
 
 Scrubbing changes the visualization's historical state, not the machine.
 Primary question: **what changed, why, and where in Linux source?**
