@@ -32,6 +32,9 @@ pub struct TaskRef {
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SyscallSummary {
     pub index: usize,
+    /// Its first record's id (see Recording::ids): the same in later
+    /// snapshots, where its index has moved on.
+    pub id: u32,
     pub task: TaskRef,
     pub nr: u32,
     pub name: Option<String>,
@@ -181,6 +184,7 @@ impl View<'_> {
     pub fn syscalls(&self) -> Vec<SyscallSummary> {
         self.rec.syscalls.iter().enumerate().map(|(index, s)| SyscallSummary {
             index,
+            id: self.rec.ids.get(s.first).copied().unwrap_or(0),
             task: self.task(s.task, s.first),
             nr: s.nr,
             name: self.tables.types.syscalls.get(&s.nr).cloned(),

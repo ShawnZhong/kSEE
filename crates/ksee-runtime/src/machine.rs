@@ -201,12 +201,6 @@ impl Machine {
 
     // ---- Syscalls, made by /init ----
 
-    /// Console input (to /init's terminal: see call).
-    pub fn input(&self, text: &str) {
-        CONSOLE_IN.put(text.as_bytes());
-        interrupt(IRQ_CONSOLE);
-    }
-
     /// Ask /init to make syscall `nr` with `args` (user/init.c): each a
     /// number, a string (as a NUL-terminated buffer), { bytes } (a buffer
     /// of them: an array or a Uint8Array), or { size } (a buffer of that
@@ -251,7 +245,9 @@ impl Machine {
         CALL.nr.store(nr, Ordering::Relaxed);
         CALL.buffers.store(buffers, Ordering::Relaxed);
         CALL.state.store(CALL_ASKED, Ordering::Release);
-        self.input("\n"); // (the doorbell: /init waits reading its terminal)
+        // (The doorbell: /init waits reading its terminal.)
+        CONSOLE_IN.put(b"\n");
+        interrupt(IRQ_CONSOLE);
         Ok(true)
     }
 

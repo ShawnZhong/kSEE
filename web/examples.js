@@ -18,7 +18,7 @@ const ERRNO = { 1: "EPERM", 2: "ENOENT", 9: "EBADF", 13: "EACCES", 14: "EFAULT",
 export async function examples(app) {
   const { m, proc } = app;
   const list = await fetch(new URL("./examples/index.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
-  // The open example: its steps, the ones run ({ ret, text, key, ol }), and
+  // The open example: its steps, the ones run ({ ret, text, id, ol }), and
   // the stops Next goes through (the selected step's: cur, at, k).
   const t = { ex: null, steps: [], done: [], running: false, cur: { stops: [], ol: null }, at: [], k: -1, list: null, status: null };
 
@@ -104,7 +104,7 @@ export async function examples(app) {
     app.refresh();
     // (Its syscall: the last of them /init made; it waits for the next call in a read, not returned.)
     const nr = m.syscall(s.call).nr, c = app.calls().findLast((x) => x.nr === nr && x.task.pid === 1 && x.last != null);
-    t.done[j] = { ret: r.ret, text: outputs(s, r.buffers), key: c && `${c.task.addr}:${m.record_id(c.first)}` };
+    t.done[j] = { ret: r.ret, text: outputs(s, r.buffers), id: c?.id };
     t.status.textContent = j + 1 < t.steps.length ? "" : "That was the last call: add one below, or click a call to see it again.";
     draw();
     select(j);
@@ -113,7 +113,7 @@ export async function examples(app) {
   // Step `j`'s recording: its syscall selected; its stops found in it.
   function select(j) {
     const d = t.done[j], s = t.steps[j];
-    const c = app.calls().find((x) => `${x.task.addr}:${m.record_id(x.first)}` === d?.key);
+    const c = app.calls().find((x) => x.id === d?.id);
     if (!c) return (t.status.textContent = "This call's recording is gone: the ring has moved on.");
     app.select(c);
     t.cur = { stops: s.stops ?? [], ol: d.ol };

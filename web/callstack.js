@@ -155,5 +155,5 @@ export function callstack(app) {
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
 
-  return { show, select, owner, watch, resolve, kids, redraw: draw };
+  return { show, select, owner, watch, resolve, kids };
 }

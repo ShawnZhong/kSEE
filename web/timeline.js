@@ -374,9 +374,8 @@ export function timeline(app) {
   // Select syscall `s` (found again in later snapshots by its task and
   // its first record's id: indexes move as the ring goes on).
   function select(s) {
-    const id = (c) => `${c.task.addr}:${m.record_id(c.first)}`, key = id(s);
     selectWindow(() => {
-      const c = t.calls.find((c) => id(c) === key) ?? s;
+      const c = t.calls.find((c) => c.id === s.id) ?? s;
       return { a: c.first, b: c.last ?? t.n - 1, task: c.task.addr };
     }, `${s.name ?? s.nr} by ${taskName(s.task)}`);
   }

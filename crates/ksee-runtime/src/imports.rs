@@ -151,7 +151,6 @@ pub extern "C" fn halt(code: i32) {
 struct User {
     kernel_syscall: Option<Function>,
     loaded: Option<WebAssembly::Instance>,
-    running: Option<WebAssembly::Instance>,
     memory: Option<WebAssembly::Memory>,
 }
 
@@ -218,7 +217,6 @@ pub fn kernel(memory: &JsValue, worker: bool) -> Object {
         let inst = USER.with_borrow_mut(|u| {
             let inst = u.loaded.take().expect("no program loaded");
             u.memory = Some(js::get(&inst.exports(), "memory").unchecked_into());
-            u.running = Some(inst.clone());
             inst
         });
         task_record();
@@ -304,7 +302,6 @@ pub fn set_kernel(exports: &Object) {
 pub fn reset_user() {
     USER.with_borrow_mut(|u| {
         u.loaded = None;
-        u.running = None;
         u.memory = None;
     });
 }
