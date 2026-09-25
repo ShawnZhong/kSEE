@@ -125,6 +125,7 @@ export function source(app) {
 
   async function showFile(file, focus) {
     v.file = file;
+    v.focus = focus;
     const [text] = await Promise.all([fetchFile(file), ready]);
     if (v.file !== file) return; // changed while loading
     const mdl = model(file, text ?? `// ${file}: not in this site's sources.`);
@@ -136,17 +137,39 @@ export function source(app) {
     if (focus) ed.revealLineInCenterIfOutsideViewport(to);
     else ed.revealLineNearTop(to);
     const ran = fn ? ` · ${fn.name}: ${fn.blocks.filter((b) => b.count > 0).length} of ${fn.blocks.length} blocks ran` : "";
-    $("fn-title").textContent = file + ran;
+    $("fn-title").textContent = (saved ? "preview · " : "") + file + ran;
+    $("fn-title").classList.toggle("preview", !!saved);
   }
 
   // Function `name` (its blocks' counts from syscall `syscall`), in `file`
   // (a block's own, when it is inlined from a header) at line `focus`.
-  function showFunction(name, syscall, focus, file) {
+  function show(name, syscall, focus, file) {
     const [f] = m.functions(name, syscall);
     if (!f) return;
     v.fn = f;
     v.syscall = syscall;
     showFile(file ?? f.file, focus);
+  }
+  function showFunction(name, syscall, focus, file) {
+    saved = null;
+    show(name, syscall, focus, file);
+  }
+
+  // A preview (hovering a call): function `func` at `file:line`, until
+  // unpreview goes back to what was shown (or another showFunction keeps it).
+  let saved = null;
+  function preview(func, file, line) {
+    saved ??= { fn: v.fn, syscall: v.syscall, cursor: v.cursor, file: v.file, focus: v.focus, top: ed?.getScrollTop() };
+    v.cursor = { file, line };
+    show(func, v.syscall, line, file);
+  }
+  async function unpreview() {
+    if (!saved) return;
+    const was = saved;
+    saved = null;
+    Object.assign(v, { fn: was.fn, syscall: was.syscall, cursor: was.cursor });
+    if (was.file) await showFile(was.file, was.focus);
+    if (!saved && was.top != null) ed.setScrollTop(was.top);
   }
 
   // For tests: the hover at the first `needle` of the shown function (and
@@ -162,5 +185,5 @@ export function source(app) {
     return null;
   }
 
-  return { view: v, showFunction, showFile, hoverAt, ready };
+  return { view: v, showFunction, showFile, preview, unpreview, hoverAt, ready };
 }

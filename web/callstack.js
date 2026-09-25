@@ -56,10 +56,15 @@ export function callstack(app) {
       const h = head(f.func + (f.inlined ? " (inlined)" : ""), f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f),
         (on ? "on " : "") + (f.inlined ? "inlined" : ""));
       // (Hover: the call, outlined in the timeline.)
-      if (f.first != null) {
-        h.onmouseenter = () => app.time.hilite(f.first);
-        h.onmouseleave = () => app.time.hilite(null);
-      }
+      // (Hover: the call outlined in the timeline, and a preview of where it is.)
+      h.onmouseenter = () => {
+        app.time.hilite(f.first);
+        app.preview(() => ({ func: f.inlined ? owner(f)?.func ?? f.func : f.func, file: f.file, line: f.line }));
+      };
+      h.onmouseleave = () => {
+        app.time.hilite(null);
+        app.preview(null);
+      };
       body.push(h);
       if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body);
       if (f.locals?.length) {

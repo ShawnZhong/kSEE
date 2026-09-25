@@ -85,12 +85,14 @@ h2.tabs button.on { color: var(--fg); box-shadow: inset 0 -2px var(--accent); }
 /* The history */
 #history { border-bottom: 1px solid var(--line); background: var(--panel); padding: 4px 12px; }
 #overview { display: block; width: 100%; height: 18px; cursor: pointer; }
-#chart { display: block; flex-shrink: 0; width: 100%; cursor: crosshair; }
+#chart { display: block; width: 100%; cursor: crosshair; }
 .flamehead { display: flex; gap: 12px; font-size: 11.5px; padding: 4px 0 2px; }
 #legend { margin-left: auto; display: flex; gap: 8px; color: var(--dim); }
 .key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
 .key input { margin: 0 3px 0 0; vertical-align: -2px; }
-.flamescroll { height: 190px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+.flamescroll { height: 190px; overflow: hidden auto; overscroll-behavior: contain; }
+#strip { display: block; width: 100%; cursor: pointer; }
+#chart-title.hint { color: var(--accent); }
 .transport { display: flex; gap: 4px; align-items: center; padding-top: 4px; font-size: 11.5px; }
 .transport button { padding: 1px 8px; }
 .transport select { font: inherit; font-size: 11.5px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }

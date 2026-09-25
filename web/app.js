@@ -97,6 +97,7 @@ export function app(m) {
   // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:
   // the Stack marks it, the source shows where it is, the timeline outlines it.
   a.selectFrame = (f) => {
+    clearTimeout(peek);
     stack.select(f.first, f.inlined ? f.func : null);
     src.view.cursor = { file: f.file, line: f.line };
     const at = time.cursor() != null ? m.at(time.cursor()) : null;
@@ -105,6 +106,19 @@ export function app(m) {
     src.showFunction(owner?.func ?? f.func, at?.syscall ?? undefined, f.line, f.file);
     time.selected(f.first);
     $("where").textContent = `${f.func}${f.inlined ? ` (inlined into ${owner?.func})` : ""} ${f.file ?? ""}:${f.line ?? ""}` + (time.cursor() != null ? ` · record ${time.cursor() + 1}` : "");
+  };
+  // Preview a call in the source while it is hovered (in the timeline or
+  // the Stack): `get()` says where ({ func: the function to show, file,
+  // line }); null: back to what was shown. (After a pause: no flicker
+  // while the pointer crosses the chart.)
+  let peek = 0;
+  a.preview = (get) => {
+    clearTimeout(peek);
+    peek = setTimeout(() => {
+      const p = get?.();
+      if (p) src.preview(p.func, p.file, p.line);
+      else src.unpreview();
+    }, get ? 150 : 80);
   };
   // Select the call on the stack at the cursor whose first record is
   // `first` (or code inlined into it, from function `inlined`).
