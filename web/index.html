@@ -55,8 +55,13 @@ import { start } from "./ksee.js";
 import { app } from "./app.js";
 
 const params = new URLSearchParams(location.search);
-// (window.ksee: for the console, and tests/ui.js)
-window.ksee = app(await start({ kernel: "./vmlinux", initrd: "./initramfs.cpio", cmdline: params.get("cmdline") ?? "" }));
+// (Not cross-origin isolated: coi.js reloads the page, if it can.)
+if (!crossOriginIsolated) {
+  document.getElementById("status").textContent = "needs cross-origin isolation (reloading…)";
+} else {
+  // (window.ksee: for the console, and tests/ui.js)
+  window.ksee = app(await start({ kernel: "./vmlinux.gz", initrd: "./initramfs.cpio.gz", cmdline: params.get("cmdline") ?? "" }));
+}
 </script>
 </body>
 </html>

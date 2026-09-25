@@ -8,9 +8,12 @@
 //! and the site, in target/site (what `ksee serve` serves and `ksee deploy`
 //! pushes): links to web/'s files (the page's own), and
 //!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
-//!   vmlinux, src/          the kernel for the page (pack)
-//!   initramfs.cpio         /init (user/init.c), and an ext4 disk image
+//!   vmlinux.gz, src/       the kernel for the page (pack; target/vmlinux)
+//!   initramfs.cpio.gz      /init (user/init.c), and an ext4 disk image
 //!                          (/disk.img, mkfs.ext4), from target/initramfs/
+//!
+//! (Gzipped by the build: hosts compress them less, or not at all; the
+//! page unpacks them.)
 //!   examples.json          the examples (user/examples/*.json)
 //!   monaco/                the Monaco editor (downloaded once from npm)
 //!
@@ -76,17 +79,20 @@ pub fn build() {
         "target/wasm32-unknown-unknown/release/ksee_runtime.wasm"]));
 
     monaco();
-    if stale(&format!("{SITE}/vmlinux"), &["linux/vmlinux"]) {
+    if stale("target/vmlinux", &["linux/vmlinux"]) {
         crate::pack::pack(Path::new("linux"), Path::new(SITE));
+        std::fs::rename(format!("{SITE}/vmlinux"), "target/vmlinux")
+            .unwrap_or_else(|e| crate::fail(&format!("target/vmlinux: {e}")));
+        gzip("target/vmlinux", &format!("{SITE}/vmlinux.gz"));
     }
     // /init uses nolibc, with the kernel's UAPI headers.
     run(&mut kmake(&["headers"]));
     let inputs = ["user/init.c", "user/initramfs.list", "linux/usr/gen_init_cpio",
                   "linux/tools/include/nolibc/arch-wasm.h"];
-    let cpio_out = format!("{SITE}/initramfs.cpio");
+    let dir = "target/initramfs";
+    let cpio_out = format!("{dir}/initramfs.cpio");
     if stale(&cpio_out, &inputs) {
-        eprintln!("  INIT    {cpio_out}");
-        let dir = "target/initramfs";
+        eprintln!("  INIT    {SITE}/initramfs.cpio.gz");
         std::fs::create_dir_all(dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
         run(Command::new(format!("clang{llvm}"))
             .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-Wl,--no-entry", "-Wl,--export=_start",
@@ -105,8 +111,14 @@ pub fn build() {
             crate::fail(&format!("gen_init_cpio: {}", String::from_utf8_lossy(&cpio.stderr)));
         }
         std::fs::write(&cpio_out, cpio.stdout).unwrap_or_else(|e| crate::fail(&format!("{cpio_out}: {e}")));
+        gzip(&cpio_out, &format!("{SITE}/initramfs.cpio.gz"));
     }
     examples();
+}
+
+fn gzip(from: &str, to: &str) {
+    let out = std::fs::File::create(to).unwrap_or_else(|e| crate::fail(&format!("{to}: {e}")));
+    run(Command::new("gzip").args(["-9nc", from]).stdout(out));
 }
 
 /// The examples' order on the page, from the simplest (others after them).

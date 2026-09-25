@@ -10,6 +10,6 @@ set -e
 cd "$(dirname "$0")"
 cargo build -q --release -p ksee-cli
 case "$1" in
-type) exec target/release/ksee type target/site/vmlinux "$2" ;;
+type) exec target/release/ksee type target/vmlinux "$2" ;;
 *) exec target/release/ksee "$@" ;;
 esac

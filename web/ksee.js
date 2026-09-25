@@ -8,7 +8,17 @@ export async function start({ kernel, initrd, cmdline = "", ramMiB = 64 }) {
   const memory = new WebAssembly.Memory({ initial: ram >> 16, maximum: 65536, shared: true });
   await init({ module_or_path: new URL("./pkg/ksee_runtime_bg.wasm", import.meta.url), memory });
   const worker = new URL("./worker.js", import.meta.url).href;
-  return Machine.start({ kernel: String(kernel), initrd: initrd && String(initrd), cmdline, worker, ram });
+  [kernel, initrd] = await Promise.all([kernel, initrd].map((u) => u && unpacked(String(u))));
+  return Machine.start({ kernel, initrd, cmdline, worker, ram });
+}
+
+// A .gz file (the build gzips the kernel and the initramfs), unpacked, as a
+// URL for the runtime to fetch; any other URL as it is.
+async function unpacked(url) {
+  if (!url.endsWith(".gz")) return url;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: ${r.status}`);
+  return URL.createObjectURL(await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).blob());
 }
 
 // Syscalls /init makes for the page: call(name, args) (see Machine.call)

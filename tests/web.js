@@ -10,8 +10,8 @@ const root = new URL("..", import.meta.url);
 // which Deno does not count as pending work: keep the process alive.
 const alive = setInterval(() => {}, 1000);
 const m = await start({
-  kernel: new URL("target/site/vmlinux", root),
-  initrd: new URL("target/site/initramfs.cpio", root),
+  kernel: new URL("target/site/vmlinux.gz", root),
+  initrd: new URL("target/site/initramfs.cpio.gz", root),
 });
 
 let out = "", failed = false;

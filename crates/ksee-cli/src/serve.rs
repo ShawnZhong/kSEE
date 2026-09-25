@@ -62,6 +62,7 @@ fn mime(p: &Path) -> &'static str {
         Some("js" | "mjs") => "text/javascript",
         Some("wasm") => "application/wasm",
         Some("css") => "text/css",
+        Some("gz") => "application/gzip",
         _ => match p.file_name().and_then(|n| n.to_str()) {
             Some("vmlinux") => "application/wasm",
             _ => "application/octet-stream",
