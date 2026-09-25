@@ -1,5 +1,6 @@
-// The examples, one at a time: a selector (and ◀ ▶) switches, on a fresh
-// kernel (see go); the URL says which (#ex=NAME). An example is a question
+// The examples, one at a time: a selector (and ◀ ▶) switches, each on a
+// fresh kernel (see go: the kernel starts again, the page stays); the URL
+// says which (#ex=NAME). An example is a question
 // about the kernel, and a list of
 // syscalls that asks it (user/examples/*.json), each with stops (a note on a
 // function it runs). /init makes the calls (process.call), one at a time,
@@ -32,16 +33,21 @@ export async function examples(app) {
     const ex = list.find((x) => x.name === (back?.name ?? name)) ?? list[0];
     return { ex, steps: back?.steps ?? ex?.steps ?? [], back };
   }
-  // Switch to example `ex`: on a fresh kernel (the page starts again), so
-  // that it always starts from the same state.
-  function go(ex) {
-    location.hash = `ex=${ex.name}`;
-    location.reload();
+  // Switch to example `ex` (its calls `steps`; `back`: to make them again,
+  // see branch): on a fresh kernel, so that it always starts from the same
+  // state (the kernel starts again; the page stays).
+  function go(ex, steps = ex.steps, back = null) {
+    history.replaceState(null, "", back ? `#back=${encodeURIComponent(JSON.stringify({ name: ex.name, steps }))}` : `#ex=${ex.name}`);
+    open(ex, steps, back);
+    t.status.textContent = "Starting a fresh kernel…";
+    app.restart();
   }
 
-  function open(ex, steps = ex.steps) {
+  function open(ex, steps = ex.steps, back = null) {
     t.ex = ex;
+    t.back = back;
     t.branch = null;
+    t.running = false;
     t.steps = steps.map((s) => ({ ...s })); // (the form adds to them)
     t.done = [];
     t.cur = { stops: [], ol: null };
@@ -50,7 +56,7 @@ export async function examples(app) {
     t.status = el("div", { className: "tstatus dim" });
     t.list = el("ol", { className: "steps" });
     const k = list.indexOf(ex);
-    const pick = el("select", { className: "pick", title: "the examples (each starts on a fresh kernel)", onchange: () => go(list[pick.selectedIndex]) },
+    const pick = el("select", { className: "pick", title: "the examples (each on a fresh kernel)", onchange: () => go(list[pick.selectedIndex]) },
       ...list.map((x) => el("option", { textContent: x.title, selected: x === ex })));
     $("examples").replaceChildren(
       el("div", { className: "thead" },
@@ -66,21 +72,18 @@ export async function examples(app) {
   // The kernel is up: make the example's first call; or, after going back
   // (see branch), its calls up to the one changed.
   function ready() {
-    const { back } = fromURL();
-    if (!back) return step();
-    const n = back.steps.length;
+    if (!t.back) return step();
+    const n = t.steps.length;
     return upTo(n - 1).then(() => (t.status.textContent = n > 1
       ? `Went back to before call ${n}: on a fresh kernel, ${n > 2 ? `calls 1–${n - 1}` : "call 1"} made again, then this one.` : ""));
   }
   // Go back to before call `j` and make `call` instead: a kernel cannot be
-  // put back as it was (its tasks' stacks are its Workers'), so the page
-  // starts again (a fresh kernel), and makes calls 1..j-1 again, then it.
-  // (The calls are in the URL, #back=: a link to this, too.)
+  // put back as it was (its tasks' stacks are its Workers'), so it starts
+  // again (a fresh kernel), and calls 1..j-1 are made again, then it. (The
+  // calls are in the URL, #back=: a link to this, too.)
   function branch(j, call) {
     const old = t.steps[j];
-    const steps = [...t.steps.slice(0, j), { ...call, stops: old?.call === call.call ? old.stops : undefined }];
-    location.hash = `back=${encodeURIComponent(JSON.stringify({ name: t.ex.name, steps }))}`;
-    location.reload();
+    go(t.ex, [...t.steps.slice(0, j), { ...call, stops: old?.call === call.call ? old.stops : undefined }], true);
   }
 
   const rets = () => t.done.map((d) => d.ret);
@@ -128,16 +131,21 @@ export async function examples(app) {
       t.status.textContent = e.message;
       return false;
     }
+    // (If the kernel starts again meanwhile, the call gives up: another
+    // example's, then, not this one's to say.)
+    const mine = t.list;
     m.record(true);
     try {
       r = await proc.call(s.call, args);
     } catch (e) {
-      t.status.textContent = e.message;
+      if (t.list === mine) t.status.textContent = e.message;
     } finally {
-      m.record(false);
-      t.running = false;
+      if (t.list === mine) {
+        m.record(false);
+        t.running = false;
+      }
     }
-    if (!r) return false;
+    if (!r || t.list !== mine) return false;
     app.refresh();
     // (Its syscall: the last of them /init made; it waits for the next call in a read, not returned.)
     const nr = m.syscall(s.call).nr, c = app.calls().findLast((x) => x.nr === nr && x.task.pid === 1 && x.last != null);
@@ -260,7 +268,7 @@ export async function examples(app) {
 
   // (The example, shown while the kernel boots.)
   const u = fromURL();
-  if (u.ex) open(u.ex, u.steps);
+  if (u.ex) open(u.ex, u.steps, u.back);
   if (app.ready) ready();
   return { open, next, step, list, ready };
 }

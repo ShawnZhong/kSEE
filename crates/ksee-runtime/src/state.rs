@@ -10,6 +10,23 @@ use ksee_core::Memory;
 /// The probe tables, set once by the page before boot.
 pub static TABLES: OnceLock<Tables> = OnceLock::new();
 pub static CMDLINE: OnceLock<Vec<u8>> = OnceLock::new();
+/// The machine's generation: restart counts it up. A Worker of an earlier
+/// one is stale: it stops (see stale).
+pub static GEN: AtomicU32 = AtomicU32::new(0);
+
+thread_local! {
+    /// This Worker's generation (GEN when it started).
+    pub static MY_GEN: core::cell::Cell<u32> = const { core::cell::Cell::new(0) };
+}
+
+/// Whether this Worker is of an earlier machine (it is to stop).
+pub fn stale() -> bool {
+    MY_GEN.get() != GEN.load(Ordering::Acquire)
+}
+
+/// Where the kernel's memory starts (CONFIG_WASM_HOST_MEMORY: below it,
+/// the runtime's own static data and stacks).
+pub const KERNEL_BASE: u32 = 0x100_0000;
 /// End of the kernel's RAM (it may use memory below it).
 pub static MEMORY_END: AtomicU32 = AtomicU32::new(0);
 /// 0 while running, else the halt code + 1.
@@ -37,7 +54,8 @@ pub fn interrupt(irq: u32) {
     if p != 0 {
         unsafe {
             (*(p as *const AtomicU32)).fetch_or(1 << irq, Ordering::SeqCst);
-            core::arch::wasm32::memory_atomic_notify(p as *mut i32, 1);
+            // (All waiters: any but one are stale Workers, see stale.)
+            core::arch::wasm32::memory_atomic_notify(p as *mut i32, u32::MAX);
         }
     }
 }
@@ -65,29 +83,44 @@ impl Spawns {
                  taken: AtomicU32::new(0), idle: AtomicU32::new(0) }
     }
 
+    /// Empty (for a new kernel: no task waits, and no Worker).
+    pub fn reset(&self) {
+        self.put.store(0, Ordering::Relaxed);
+        self.taken.store(0, Ordering::Relaxed);
+        self.idle.store(0, Ordering::Relaxed);
+    }
+
     /// Queue task `task` (its stack pointer `sp`) for a Worker. Whether
     /// none waits (so another is needed).
     pub fn put(&self, task: u32, sp: u32) -> bool {
         let n = self.put.load(Ordering::Relaxed);
         self.slots[n as usize % Self::SLOTS].store((task as u64) << 32 | sp as u64, Ordering::Relaxed);
         self.put.store(n + 1, Ordering::Release);
-        unsafe { core::arch::wasm32::memory_atomic_notify(self.put.as_ptr() as *mut i32, 1) };
+        unsafe { core::arch::wasm32::memory_atomic_notify(self.put.as_ptr() as *mut i32, u32::MAX) };
         self.idle.load(Ordering::Acquire) == 0
     }
 
-    /// The next task to run: (task, sp); waits for one.
-    pub fn take(&self) -> (u32, u32) {
+    /// The next task to run: (task, sp); waits for one. None: this Worker
+    /// is stale (see stale).
+    pub fn take(&self) -> Option<(u32, u32)> {
         loop {
+            if stale() {
+                return None;
+            }
             let (t, put) = (self.taken.load(Ordering::Acquire), self.put.load(Ordering::Acquire));
             if t < put {
                 if self.taken.compare_exchange(t, t + 1, Ordering::AcqRel, Ordering::Relaxed).is_ok() {
                     let v = self.slots[t as usize % Self::SLOTS].load(Ordering::Relaxed);
-                    return ((v >> 32) as u32, v as u32);
+                    return Some(((v >> 32) as u32, v as u32));
                 }
                 continue;
             }
             self.idle.fetch_add(1, Ordering::AcqRel);
             unsafe { core::arch::wasm32::memory_atomic_wait32(self.put.as_ptr() as *mut i32, put as i32, -1) };
+            // (Stale: the counts are a new machine's, not to touch.)
+            if stale() {
+                return None;
+            }
             self.idle.fetch_sub(1, Ordering::AcqRel);
         }
     }
@@ -176,6 +209,12 @@ impl ByteRing {
     fn byte(&self, i: u32) -> (&AtomicU32, u32) {
         let i = i % Self::CAP;
         (&self.buf[(i / 4) as usize], (i % 4) * 8)
+    }
+
+    /// Empty.
+    pub fn reset(&self) {
+        self.head.store(0, Ordering::Relaxed);
+        self.tail.store(0, Ordering::Relaxed);
     }
 
     pub fn put(&self, data: &[u8]) {

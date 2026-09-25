@@ -20,6 +20,19 @@ use ksee_core::Memory;
 /// machine halts.
 pub const EXIT: &str = "ksee:exit";
 pub const HALT: &str = "ksee:halt";
+/// Thrown to unwind a stale Worker's stack (the machine started again).
+pub const RESTART: &str = "ksee:restart";
+
+/// The kernel waits here (for the CPU, or an interrupt): memory.atomic.wait32
+/// on `addr` while it holds `old`; then, if the machine has started again
+/// meanwhile, this Worker's kernel is gone: unwind, and stop.
+#[unsafe(no_mangle)]
+pub extern "C" fn wait(addr: *mut i32, old: i32) {
+    unsafe { core::arch::wasm32::memory_atomic_wait32(addr, old, -1) };
+    if stale() {
+        wasm_bindgen::throw_str(RESTART);
+    }
+}
 
 // ---- Exports the kernel imports directly -------------------------------------
 
@@ -179,7 +192,7 @@ pub fn kernel(memory: &JsValue, worker: bool) -> Object {
     let export = |name: &str| js::get(&rt, name);
 
     let kernel = Object::new();
-    for name in ["console_write", "console_read", "get_cmdline", "memory_end", "time_ns", "halt", "spawn_task"] {
+    for name in ["console_write", "console_read", "get_cmdline", "memory_end", "time_ns", "halt", "spawn_task", "wait"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "exit_task", func(Closure::<dyn FnMut()>::new(|| wasm_bindgen::throw_str(EXIT))));

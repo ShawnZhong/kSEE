@@ -23,18 +23,25 @@ async function unpacked(url) {
 
 // Syscalls /init makes for the page: call(name, args) (see Machine.call)
 // gives { ret, buffers }.
+// cancel(): calls under way give up (the kernel starts again).
 export function process(machine) {
   const tick = () => new Promise((r) => setTimeout(r, 2));
+  let gen = 0;
   return {
     call: async (name, args) => {
-      const s = machine.syscall(name);
+      const s = machine.syscall(name), mine = gen;
       if (!s) throw new Error(`no syscall ${name}`);
-      while (!machine.call(s.nr, args)) await tick();
+      while (!machine.call(s.nr, args)) {
+        await tick();
+        if (gen !== mine) throw new Error("the kernel started again");
+      }
       for (;;) {
+        if (gen !== mine) throw new Error("the kernel started again");
         const r = machine.call_result();
         if (r) return r;
         await tick();
       }
     },
+    cancel: () => gen++,
   };
 }

@@ -146,6 +146,13 @@ for (const ex of examples) {
   check(`example ${ex.name}: ${ex.steps.length} calls, their stops found`, !missing.length || console.log("  missing:", missing));
 }
 
+// A fresh kernel, in place: nothing of the calls before (/tmp is gone).
+check("/tmp is there before", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === -17);
+const before = out.length;
+await m.restart();
+check("restarted: init ready again", await until(() => out.slice(before).includes("ready for the page's calls")));
+check("... on a fresh kernel: /tmp is not there", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === 0);
+
 // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts)
 proc.call("reboot", [0xfee1dead, 672274793, 0x4321fedc, 0]);
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);

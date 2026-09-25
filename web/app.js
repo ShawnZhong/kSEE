@@ -242,6 +242,20 @@ export function app(m) {
   // ---- The loop: the console; while recording, the timeline grows ----
   // (Once /init is ready, the examples run the first one.)
   let lastRefresh = 0, booting = true;
+  // Start the kernel again (a fresh one: the page stays); once /init is
+  // ready, the examples go on (ready).
+  a.restart = async () => {
+    booting = true;
+    a.ready = false;
+    halted = null;
+    stopPlay();
+    a.proc.cancel();
+    $("console").textContent = "";
+    await m.restart();
+    refresh();
+    stack.show(undefined);
+    badge();
+  };
   function tick() {
     const out = m.console();
     if (booting && ($("console").textContent + out).includes("ready for the page's calls")) {
@@ -254,11 +268,9 @@ export function app(m) {
       $("pane-console").scrollTop = $("pane-console").scrollHeight;
     }
     const code = m.halted();
-    if (code !== undefined) {
+    if (code !== undefined && halted == null) {
       halted = code;
       stopPlay();
-      badge();
-      return;
     }
     if (m.recording() && performance.now() - lastRefresh > 1000) {
       lastRefresh = performance.now();

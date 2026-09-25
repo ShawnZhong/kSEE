@@ -135,6 +135,14 @@ const script = Deno.args.includes("--back") ? backScript : opt("eval", `(async (
   input.value = 'openat(AT_FDCWD, "/mnt/mine", O_CREAT | O_WRONLY, 0644)'; key("Enter");
   await until(() => document.querySelectorAll("ol.steps > li.done").length >= 8);
   r.mine = [...document.querySelectorAll("ol.steps > li.done")].at(-1)?.innerText.split("\\n")[0];
+  // Another example, from the selector: on a fresh kernel, the page staying.
+  window.stayed = true;
+  const sel = document.querySelector(".thead select");
+  sel.selectedIndex = [...sel.options].findIndex((o) => o.textContent.includes("Directories"));
+  sel.dispatchEvent(new Event("change"));
+  await until(() => document.querySelector("ol.steps > li.done"));
+  r.switched = [location.hash, window.stayed, document.querySelector("ol.steps > li.done")?.innerText.split("\\n")[0]];
+  if (location.hash !== "#ex=dirs" || !window.stayed || !r.switched[2]?.startsWith("mkdirat")) throw new Error("not switched: " + JSON.stringify(r.switched));
   return r;
 })()`);
 if (script) {

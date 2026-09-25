@@ -8,30 +8,36 @@ use js_sys::{Function, WebAssembly};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::imports::{self, EXIT, HALT};
+use crate::imports::{self, EXIT, HALT, RESTART};
 use crate::js;
 use crate::state::{self, interrupt, DEADLINE, HALTED, IRQ_TIMER};
 
 /// Called with the page's message (see machine.rs, `spawn`).
 #[wasm_bindgen]
 pub fn worker_entry(msg: JsValue) {
+    state::MY_GEN.set(state::GEN.load(Ordering::Acquire));
     match js::get(&msg, "role").as_string().as_deref() {
-        Some("timer") => timer(),
+        Some("timer") => {
+            timer();
+            js_sys::global().unchecked_into::<web_sys::DedicatedWorkerGlobalScope>().close();
+        }
         Some(role) => tasks(&msg, role == "boot"),
         None => panic!("worker without a role"),
     }
 }
 
 /// The timer thread: turns the kernel's clockevent deadline (u64 ns,
-/// u64::MAX if none) into the timer interrupt.
-fn timer() -> ! {
+/// u64::MAX if none) into the timer interrupt; until it is stale.
+fn timer() {
     let deadline = DEADLINE.load(Ordering::Relaxed);
     let d = unsafe { &*(deadline as *const AtomicU64) };
-    loop {
+    while !state::stale() {
         let when = d.load(Ordering::SeqCst);
         let now = imports::time_ns();
         if when == u64::MAX || when > now {
             let timeout = if when == u64::MAX { -1 } else { (when - now) as i64 };
+            // (Not for ever: to see if it is stale.)
+            let timeout = if timeout < 0 { 1_000_000_000 } else { timeout.min(1_000_000_000) };
             unsafe { core::arch::wasm32::memory_atomic_wait64(deadline as *mut i64, when as i64, timeout) };
             continue;
         }
@@ -79,7 +85,7 @@ fn tasks(msg: &JsValue, boot: bool) {
                 call("boot", &[])
             })
         } else {
-            let (task, sp) = state::SPAWN.take();
+            let Some((task, sp)) = state::SPAWN.take() else { break };
             imports::reset_user();
             set_sp(sp.into());
             call("task_entry", &[task.into()])
@@ -87,7 +93,7 @@ fn tasks(msg: &JsValue, boot: bool) {
         // (A task's end unwinds its stack: EXIT; the machine's, HALT.)
         if let Err(e) = result {
             let message = js_sys::Error::from(e.clone()).message();
-            if HALTED.load(Ordering::Acquire) != 0 || message == HALT {
+            if HALTED.load(Ordering::Acquire) != 0 || message == HALT || message == RESTART || state::stale() {
                 break;
             }
             if message != EXIT {

@@ -21,6 +21,11 @@ use crate::state::*;
 #[wasm_bindgen]
 pub struct Machine {
     workers: Rc<RefCell<Vec<web_sys::Worker>>>,
+    /// Starts a Worker (see spawner).
+    spawn: Rc<dyn Fn(&str)>,
+    /// The kernel's memory before it first ran (its data initialized, the
+    /// initramfs in place), from KERNEL_BASE: what restart puts back.
+    pristine: Vec<u8>,
     /// The last snapshot of the trace.
     pub(crate) rec: RefCell<Recording>,
     /// The moment the views show memory at (a record), or None: now.
@@ -109,9 +114,41 @@ impl Machine {
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         // (The page's instance is not needed after this.)
         TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
+        let mut pristine = vec![0u8; (ram - KERNEL_BASE) as usize];
+        Direct.read(KERNEL_BASE, &mut pristine);
         spawn("timer");
         spawn("boot");
-        Ok(Machine { workers, rec: Default::default(), past: Default::default(), frozen: Default::default() })
+        Ok(Machine { workers, spawn, pristine, rec: Default::default(), past: Default::default(), frozen: Default::default() })
+    }
+
+    /// Start the kernel again, from scratch: its Workers stopped, its memory
+    /// as before it first ran, the runtime's shared state emptied, and a new
+    /// boot. (The page stays: no reload.)
+    pub async fn restart(&self) -> Result<(), JsValue> {
+        // (Any Worker that outlives terminate is stale now, and stops.)
+        GEN.fetch_add(1, Ordering::AcqRel);
+        for w in self.workers.borrow_mut().drain(..) {
+            w.terminate();
+        }
+        // (A Worker stops soon after, not at once: let them.)
+        let pause = js_sys::Promise::new(&mut |ok, _| {
+            let set: Function = js::get(&js_sys::global(), "setTimeout").unchecked_into();
+            let _ = set.call2(&JsValue::NULL, &ok, &50.into());
+        });
+        JsFuture::from(pause).await?;
+        unsafe { core::ptr::copy_nonoverlapping(self.pristine.as_ptr(), KERNEL_BASE as *mut u8, self.pristine.len()) };
+        SPAWN.reset();
+        CALL.state.store(CALL_IDLE, Ordering::Release);
+        CONSOLE_OUT.reset();
+        CONSOLE_IN.reset();
+        HALTED.store(0, Ordering::Release);
+        EPOCH_MS.store(js::now_ms().to_bits(), Ordering::Relaxed);
+        *self.rec.borrow_mut() = Default::default();
+        *self.past.borrow_mut() = None;
+        *self.frozen.borrow_mut() = None;
+        (self.spawn)("timer");
+        (self.spawn)("boot");
+        Ok(())
     }
 
     /// A function that starts a Worker for `role` ("timer", "boot", or
