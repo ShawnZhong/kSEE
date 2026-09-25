@@ -172,4 +172,7 @@ table.prog td.bp { color: var(--accent); }
 table.prog tr:hover td.code { background: var(--sel); }
 #note { padding: 8px 12px; background: var(--at); border-bottom: 1px solid var(--line); font-size: 12.5px; }
 #note b { font-family: var(--mono); }
+#mem-note.past { color: var(--accent); font-weight: 600; }
+a.who { color: var(--dim); font-size: 11px; }
+a.who:hover { color: var(--accent); }
 @media (max-width: 1000px) { body { height: auto; } main { grid-template-columns: 1fr; } .col { min-height: 50vh; } }

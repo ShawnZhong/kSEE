@@ -31,6 +31,7 @@ pub extern "C" fn console_write(p: *const u8, n: u32) {
 /// Pending console input, without blocking.
 #[unsafe(no_mangle)]
 pub extern "C" fn console_read(p: *mut u8, n: u32) -> i32 {
+    bulk(p as u32, n);
     CONSOLE_IN.take(unsafe { core::slice::from_raw_parts_mut(p, n as usize) }) as i32
 }
 
@@ -79,6 +80,44 @@ pub fn wall_ns() -> u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn user_line(line: u32) {
     ring_put(&[line, ksee_core::trace::LINE << 28]);
+}
+
+/// ksee.bulk, for the kernel (memcpy, memset, wide stores), and for what
+/// the runtime itself writes into kernel memory: log the old contents of
+/// `addr..addr + len` in the memory ring, in 8-byte stores, up to 256 bytes
+/// (the rest as a range of unknown old contents).
+#[unsafe(no_mangle)]
+pub extern "C" fn bulk(addr: u32, len: u32) {
+    let (mem, words, trace) = (MEM.load(Ordering::Relaxed), MEM_WORDS.load(Ordering::Relaxed), TRACE.load(Ordering::Relaxed));
+    if mem == 0 || words == 0 || len == 0 {
+        return;
+    }
+    let main = (Direct.read_u32(trace) >> 1) & (ksee_core::mem::MAIN - 1);
+    let pos = unsafe { &*(mem as *const AtomicU32) };
+    let mut p = pos.load(Ordering::Relaxed);
+    let mut put = |w: [u32; 4]| {
+        for (i, v) in w.into_iter().enumerate() {
+            let at = mem + ksee_core::mem::RING + ((p + i as u32) & (words - 1)) * 4;
+            unsafe { (at as *mut u32).write_volatile(v) };
+        }
+        p += 4;
+    };
+    let logged = len.min(256);
+    let mut off = 0;
+    while off < logged {
+        let n = (logged - off).min(8);
+        let class = match n { 8.. => 3, 4..=7 => 2, 2..=3 => 1, _ => 0 };
+        let size = 1u32 << class;
+        let mut old = [0u8; 8];
+        Direct.read(addr + off, &mut old[..size as usize]);
+        let v = u64::from_le_bytes(old);
+        put([addr + off, class << 29 | main, v as u32, (v >> 32) as u32]);
+        off += size;
+    }
+    if len > logged {
+        put([addr + logged, ksee_core::mem::UNKNOWN << 29 | main, len - logged, 0]);
+    }
+    pos.store(p, Ordering::Release);
 }
 
 /// Append a record (pairs of words) to the kernel's trace ring, from a
@@ -212,6 +251,7 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
     js::set(&kernel, "user_read", func(Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(
         |to: u32, from: u32, n: u32| match user_bytes(from, n) {
             Some(src) => {
+                bulk(to, n); // (what it overwrites, for the memory history)
                 js::copy_to(&src, to as *mut u8);
                 0
             }
@@ -229,6 +269,7 @@ pub fn kernel(memory: &JsValue, spawn: Function, worker: bool) -> Object {
     let ksee = Object::new();
     js::set(&ksee, "now", export("time_ns"));
     js::set(&ksee, "stop", export("stop"));
+    js::set(&ksee, "bulk", export("bulk"));
     let env = Object::new();
     js::set(&env, "memory", memory.clone());
     let imports = Object::new();

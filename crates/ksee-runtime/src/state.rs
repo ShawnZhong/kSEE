@@ -19,6 +19,9 @@ pub static EPOCH_MS: AtomicU64 = AtomicU64::new(0);
 /// Addresses in kernel memory: the trace (ksee_trace()) and the variable
 /// holding the current task (KSEE_CURRENT).
 pub static TRACE: AtomicU32 = AtomicU32::new(0);
+/// The memory ring (the stores' old values: ksee_core::mem), and its size in words.
+pub static MEM: AtomicU32 = AtomicU32::new(0);
+pub static MEM_WORDS: AtomicU32 = AtomicU32::new(0);
 /// The trace ring's size in words.
 pub static RING_WORDS: AtomicU32 = AtomicU32::new(0);
 /// While the debugger has the kernel stopped: when (imports::wall_ns, 0

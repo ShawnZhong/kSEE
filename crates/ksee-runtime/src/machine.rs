@@ -25,6 +25,11 @@ pub struct Machine {
     workers: std::rc::Rc<std::cell::RefCell<Vec<web_sys::Worker>>>,
     syscalls: std::cell::RefCell<Option<Vec<syscalls::Syscall>>>,
     history: std::cell::RefCell<History>,
+    /// Memory as it was at a record (memory_at: the record, and its age),
+    /// for the views; None: now. mem: the stores, indexed (for the
+    /// snapshot whose last record's id it has).
+    past: std::cell::RefCell<Option<(usize, u32)>>,
+    mem: std::cell::RefCell<Option<(u32, ksee_core::mem::History)>>,
 }
 
 /// The last snapshot's records, and the task and time at each.
@@ -147,6 +152,7 @@ impl Machine {
             JsFuture::from(WebAssembly::compile(&bytes)).await?.unchecked_into();
         let tables = Tables::parse(&section(&module, "ksee.probes"), &section(&module, "ksee.types"));
         RING_WORDS.store(tables.ring_words, Ordering::Relaxed);
+        MEM_WORDS.store(tables.mem_words, Ordering::Relaxed);
         TABLES.set(tables).map_err(|_| "one machine per page")?;
         MEMORY_END.store(ram, Ordering::Relaxed);
         EPOCH_MS.store(js::now_ms().to_bits(), Ordering::Relaxed);
@@ -178,6 +184,9 @@ impl Machine {
         PENDING.store(global("wasm_irq_pending"), Ordering::Relaxed);
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         TRACE.store(trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
+        if let Ok(mem) = js::get(&kernel, "ksee_mem").dyn_into::<Function>() {
+            MEM.store(mem.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
+        }
         if let Ok(frames) = js::get(&kernel, "ksee_frames").dyn_into::<Function>() {
             FRAMES.store(frames.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32, Ordering::Relaxed);
         }
@@ -189,7 +198,7 @@ impl Machine {
         let boot = Object::new();
         js::set(&boot, "role", "boot");
         spawn.call1(&JsValue::NULL, &boot)?;
-        Ok(Machine { kernel, workers, syscalls: Default::default(), history: Default::default() })
+        Ok(Machine { kernel, workers, syscalls: Default::default(), history: Default::default(), past: Default::default(), mem: Default::default() })
     }
 
     /// A function that starts a Worker for `msg` (a role, or a task that a
@@ -320,6 +329,79 @@ impl Machine {
     }
 
     // ---- History: the records of the last snapshot, by position ----
+
+    /// Memory for the views (object, object_by_id, global) as it was at
+    /// record `i` of the last snapshot (the stores since undone; see
+    /// ksee_core::mem), or as it is now (None). The number of stores undone,
+    /// or -1 if the memory ring does not reach back that far.
+    pub fn memory_at(&self, i: Option<usize>) -> i32 {
+        let Some(i) = i else {
+            *self.past.borrow_mut() = None;
+            return 0;
+        };
+        let Some(at) = self.history.borrow().ids.get(i).copied() else { return -1 };
+        let mut mem = self.mem.borrow_mut();
+        // (Built once per snapshot.)
+        let key = self.history.borrow().ids.last().copied().unwrap_or(0);
+        if mem.as_ref().is_none_or(|(k, _)| *k != key) {
+            *mem = Some((key, ksee_core::mem::History::new(&self.stores(), self.main_pairs())));
+        }
+        let h = &mem.as_ref().unwrap().1;
+        let age = h.age(at);
+        *self.past.borrow_mut() = Some((i, age));
+        if h.reaches(age) { h.after(age) as i32 } else { -1 }
+    }
+
+    /// The newest write to `addr..addr + len` at or before the moment
+    /// memory_at shows (or now): { i (the record of the block that made
+    /// it), func, file, line, task }, or null if the memory ring has none.
+    pub fn last_write(&self, addr: u32, len: u32) -> JsValue {
+        let stores = self.stores();
+        let now = self.main_pairs();
+        let before = match &*self.past.borrow() {
+            Some((i, _)) => self.history.borrow().ids.get(*i).copied().unwrap_or(now),
+            None => now,
+        };
+        let Some(s) = ksee_core::mem::last_write(&stores, addr, len, before, now) else { return JsValue::NULL };
+        // The block before it: the record just before its main pair count.
+        let main = now.wrapping_sub(now.wrapping_sub(s.main) & (ksee_core::mem::MAIN - 1));
+        let i = self.index_of(main).saturating_sub(1);
+        let at = self.at(i);
+        if at.is_null() {
+            return at;
+        }
+        js::set(&at, "old", s.old as f64);
+        // The line then: where the function running it is (after a return
+        // into the middle of a block, the caller; not the block's first line).
+        let h = self.history.borrow();
+        let t = tables();
+        if let Some(step) = stack::lines(t, &h.records, &h.tasks, i.saturating_sub(4000), i, h.tasks.get(i).copied()).last() {
+            js::set(&at, "func", t.functions.get(&step.func).map_or(String::new(), |f| f.name.clone()));
+            js::set(&at, "file", t.file(step.loc));
+            js::set(&at, "line", step.loc.line);
+            if let Some(k) = step.inlined {
+                js::set(&at, "inlined", t.names.get(k as usize).cloned().unwrap_or_default());
+            }
+        }
+        at
+    }
+
+    fn stores(&self) -> Vec<ksee_core::mem::Store> {
+        ksee_core::mem::stores(&Direct, MEM.load(Ordering::Relaxed), MEM_WORDS.load(Ordering::Relaxed).max(4))
+    }
+
+    /// The main ring's pair count now (modulo mem::MAIN, as stores have it).
+    fn main_pairs(&self) -> u32 {
+        (Direct.read_u32(self.ring()) >> 1) & (ksee_core::mem::MAIN - 1)
+    }
+
+    /// Run `f` on memory as the views should see it (memory_at).
+    fn with_memory<T>(&self, f: impl FnOnce(&dyn Memory) -> T) -> T {
+        match (&*self.past.borrow(), &*self.mem.borrow()) {
+            (Some((_, age)), Some((_, history))) => f(&ksee_core::mem::PastMemory { live: &Direct, history, age: *age }),
+            _ => f(&Direct),
+        }
+    }
 
     /// Record `i`'s id: it names the record in later snapshots too (see
     /// index_of), where its index has moved on.
@@ -646,7 +728,7 @@ impl Machine {
     pub fn object(&self, name: &str, addr: u32, depth: Option<u32>) -> JsValue {
         let types = &tables().types;
         match types.find(name) {
-            Some(id) => to_js(&types.object(&Direct, name, addr, id, depth.unwrap_or(1))),
+            Some(id) => self.with_memory(|mem| to_js(&types.object(mem, name, addr, id, depth.unwrap_or(1)))),
             None => JsValue::NULL,
         }
     }
@@ -660,14 +742,14 @@ impl Machine {
     pub fn global(&self, name: &str, depth: Option<u32>) -> JsValue {
         let types = &tables().types;
         match types.globals.get(name) {
-            Some(&(addr, ty)) => to_js(&types.object(&Direct, name, addr, ty, depth.unwrap_or(1))),
+            Some(&(addr, ty)) => self.with_memory(|mem| to_js(&types.object(mem, name, addr, ty, depth.unwrap_or(1)))),
             None => JsValue::NULL,
         }
     }
 
     /// Like `object`, by type id (an Object's `expand` or `target`).
     pub fn object_by_id(&self, label: &str, ty: u32, addr: u32, depth: Option<u32>) -> JsValue {
-        to_js(&tables().types.object(&Direct, label, addr, ty, depth.unwrap_or(1)))
+        self.with_memory(|mem| to_js(&tables().types.object(mem, label, addr, ty, depth.unwrap_or(1))))
     }
 
     /// The task_struct of `pid`, among the tasks the trace mentions.

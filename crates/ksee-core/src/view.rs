@@ -86,6 +86,8 @@ pub struct Object {
     pub name: String,
     pub ty: String,
     pub addr: u32,
+    /// Its size in bytes.
+    pub size: u32,
     pub value: Option<String>,
     pub children: Option<Vec<Object>>,
     /// Type id to expand this value (an aggregate not expanded yet).
@@ -187,7 +189,7 @@ impl Types {
         let id = self.resolve(ty);
         let t = self.get(id);
         let mut o = Object {
-            name: name.to_string(), ty: self.name(ty), addr,
+            name: name.to_string(), ty: self.name(ty), addr, size: self.size_of(ty),
             value: None, children: None, expand: None, target: None,
         };
         match &t.kind {

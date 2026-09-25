@@ -43,6 +43,8 @@ use crate::types::Types;
 pub struct Tables {
     /// Size of the trace ring in words.
     pub ring_words: u32,
+    /// Size of the memory ring (the stores' old values) in words.
+    pub mem_words: u32,
     pub functions: BTreeMap<u32, Function>,
     /// (function, block) -> where the block's first instruction is.
     pub blocks: BTreeMap<(u32, u32), Loc>,
@@ -111,6 +113,7 @@ impl Tables {
                     }
                 }
                 ["R", words] => t.ring_words = words.parse().unwrap_or(0),
+                ["W", words] => t.mem_words = words.parse().unwrap_or(0),
                 ["F", id, name, location, rest @ ..] => {
                     let Ok(id) = id.parse() else { continue };
                     let arg_types = match rest.first() {

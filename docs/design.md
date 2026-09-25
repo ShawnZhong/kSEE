@@ -160,6 +160,15 @@ moment.
   recorded, so the call tree is rebuilt exactly (ksee_core::stack). While
   paused, the plugin's frames on the kernel stack give the call stack with
   arguments, decoded by their types.
+- **Lines within blocks**: the plugin writes each block's source lines (in
+  order, split at the calls it makes, with the function a line is inlined
+  from), so steps and Play go by source line, not by block; an inlined
+  function is a frame of its own.
+- **Memory history**: the plugin logs the old value of every store (not to
+  a function's own stack slots) in a second ring; the host undoes the ones
+  after the cursor, so objects are as they were then, and ✎ says which
+  code last wrote a field. Bulk writes (memcpy, memset, copies from user
+  space) go through the runtime, which logs up to 256 bytes of each.
 - **Play** goes line by line: through the recorded trace (REPLAY), or by
   running the kernel a line at a time on the stopped task (PAUSED). Step
   into stops the kernel where a card's syscall starts. The kernel's clock

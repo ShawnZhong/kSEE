@@ -1,6 +1,7 @@
 // The objects view: a kernel object as a table of fields (nested ones
 // expand in place), pointers to follow (breadcrumbs lead back), a filter,
-// and the fields that changed since the last stop highlighted.
+// and the fields that changed since the last stop (or cursor move)
+// highlighted. ✎: which code last wrote a field (the memory history).
 import { $, el, hex } from "./dom.js";
 
 export function objects(app) {
@@ -46,7 +47,8 @@ export function objects(app) {
                 o.open.has(p) ? o.open.delete(p) : o.open.add(p);
                 draw();
               } }), c.name),
-            el("td", { className: "fval", title: value }, value, c.target != null
+            el("td", { className: "fval", title: value }, value,
+              c.value != null && !top.object ? app.writer(c) : null, c.target != null
               ? el("a", { className: "follow", textContent: " →", title: "follow the pointer", onclick: () => inspect(`*${c.name}`, c.target, Number(c.value), false) })
               : null),
             el("td", { className: "ftype", textContent: c.ty })));
@@ -82,11 +84,17 @@ export function objects(app) {
   $("pick-rq").onclick = () => global("runqueues");
   $("pick-init").onclick = () => global("init_task");
 
+  // The memory shown changed (the cursor moved): compare with what was shown.
+  function moved() {
+    o.last = o.now;
+    if (o.stack.length) draw();
+  }
+
   // At a stop: the values shown before become the ones to compare with.
   function stopped(task) {
     o.last = o.now;
     if (o.stack.length) draw();
     else inspect(`current: ${task.comm}`, "task_struct", task.addr);
   }
-  return { inspect, stopped };
+  return { inspect, stopped, moved };
 }

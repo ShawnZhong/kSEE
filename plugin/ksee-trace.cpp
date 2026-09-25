@@ -46,6 +46,16 @@
 // fn is a hash of the function name (for a function local to its file, of
 // "file:name"); time comes from the ksee.now import.
 //
+// Memory: a function with block probes also logs each store it makes (not
+// to its own stack slots), before it, to a second ring, __ksee_mem = { u32
+// pos; u32 pad; u32 ring[KSEE_MEM_WORDS]; } (ksee_mem() finds it), four
+// words a store: { address, class << 29 | main, old low, old high }: the
+// old value (the host undoes stores to see memory as it was). main is the
+// main ring's pos / 2 then (which records came before it), modulo 2^29;
+// class: 0-3 a 1, 2, 4 or 8 byte store, 7 a range whose old contents are
+// not logged (length in old low). Bulk writes (memcpy, memset, and wider
+// stores) go to the ksee.bulk(address, length) import, which logs them.
+//
 // Frames: a function with block probes also keeps a frame on the (kernel)
 // stack while it runs, u32 { prev, fn, args[6] } (the first six integer or
 // pointer arguments, truncated to 32 bits), linked from __ksee_frames, the
@@ -61,6 +71,7 @@
 //   ksee.probes  U
 //                P \t k \t path       file k
 //                R \t ring words
+//                W \t memory ring words
 //                F \t fn \t name \t FILE:line \t argument types
 //                B \t fn \t n \t FILE:line:column
 //                L \t fn \t n \t lines: the source lines the block runs, in
@@ -74,6 +85,9 @@
 // kernel's types are extracted from its DWARF after linking: ksee pack.)
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
@@ -193,6 +207,14 @@ enum Kind { KindBlock = 1, KindEnter = 2, KindExit = 3, KindReturn = 4, KindValu
 
 constexpr unsigned FrameArgs = 6;
 
+unsigned memWords() {
+  const char *env = std::getenv("KSEE_MEM_WORDS");
+  unsigned n = env ? std::strtoul(env, nullptr, 0) : 1u << 21;
+  if (n < 4 || (n & (n - 1)))
+    report_fatal_error("KSEE_MEM_WORDS must be a power of two");
+  return n;
+}
+
 unsigned ringWords() {
   const char *env = std::getenv("KSEE_RING_WORDS");
   unsigned n = env ? std::strtoul(env, nullptr, 0) : 1u << 20;
@@ -207,6 +229,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   Module *M = nullptr;
   Type *i32 = nullptr, *i64 = nullptr;
   Function *putBlock = nullptr, *putEnter = nullptr, *putExit = nullptr, *putReturn = nullptr;
+  Function *putStore[4] = {}; // 1, 2, 4, 8 bytes
+  FunctionCallee bulk;
   GlobalVariable *frames = nullptr;
   std::string probes;
   // This object's files, numbered for the probes' lines.
@@ -245,6 +269,63 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         name, FunctionType::get(Type::getVoidTy(M->getContext()), params, false)).getCallee());
   }
 
+  void declareBulk() {
+    bulk = M->getOrInsertFunction("__ksee_bulk", FunctionType::get(Type::getVoidTy(M->getContext()), {i32, i32}, false));
+    cast<Function>(bulk.getCallee())->addFnAttr("wasm-import-module", "ksee");
+    cast<Function>(bulk.getCallee())->addFnAttr("wasm-import-name", "bulk");
+  }
+
+  // The store writers: log the old value at the address a store is about
+  // to write (see Memory above).
+  void createStoreWriters(GlobalVariable *mem, Type *memTy, unsigned words, GlobalVariable *trace, Type *traceTy) {
+    LLVMContext &C = M->getContext();
+    for (unsigned k = 0; k < 4; k++) {
+      Function *F = shared(Function::Create(FunctionType::get(Type::getVoidTy(C), {i32}, false),
+                                            GlobalValue::ExternalLinkage, ("__ksee_put_store" + Twine(1 << k)).str(), M));
+      F->addFnAttr(Attribute::NoInline);
+      IRBuilder<> B(BasicBlock::Create(C, "", F));
+      Value *addr = F->getArg(0);
+      Type *ty = IntegerType::get(C, 8 << k);
+      LoadInst *old = B.CreateAlignedLoad(ty, B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1));
+      Value *wide = B.CreateZExt(old, i64);
+      Value *main = B.CreateLShr(B.CreateLoad(i32, B.CreateStructGEP(traceTy, trace, 0)), 1);
+      Value *tag = B.CreateOr(B.CreateAnd(main, 0x1fffffff), B.getInt32(k << 29));
+      Value *pos = B.CreateStructGEP(memTy, mem, 0), *ring = B.CreateStructGEP(memTy, mem, 2);
+      Value *p = B.CreateLoad(i32, pos);
+      Value *vals[4] = {addr, tag, B.CreateTrunc(wide, i32), B.CreateTrunc(B.CreateLShr(wide, 32), i32)};
+      for (unsigned i = 0; i < 4; i++)
+        B.CreateStore(vals[i], B.CreateGEP(i32, ring, B.CreateAnd(B.CreateAdd(p, B.getInt32(i)), B.getInt32(words - 1))));
+      B.CreateAlignedStore(B.CreateAdd(p, B.getInt32(4)), pos, Align(4))->setAtomic(AtomicOrdering::Release);
+      B.CreateRetVoid();
+      putStore[k] = F;
+    }
+  }
+
+  // Log the store (or atomic, or memset/memcpy) `I` is about to make, if it
+  // is not to its function's own stack.
+  void logStore(Instruction *I) {
+    const DataLayout &DL = M->getDataLayout();
+    Value *ptr = nullptr, *len = nullptr;
+    uint64_t size = 0;
+    if (auto *S = dyn_cast<StoreInst>(I))
+      ptr = S->getPointerOperand(), size = DL.getTypeStoreSize(S->getValueOperand()->getType());
+    else if (auto *A = dyn_cast<AtomicRMWInst>(I))
+      ptr = A->getPointerOperand(), size = DL.getTypeStoreSize(A->getValOperand()->getType());
+    else if (auto *X = dyn_cast<AtomicCmpXchgInst>(I))
+      ptr = X->getPointerOperand(), size = DL.getTypeStoreSize(X->getNewValOperand()->getType());
+    else if (auto *MI = dyn_cast<MemIntrinsic>(I))
+      ptr = MI->getRawDest(), len = MI->getLength();
+    if (!ptr || isa<AllocaInst>(getUnderlyingObject(ptr)))
+      return;
+    IRBuilder<> B(I);
+    Value *addr = B.CreatePtrToInt(ptr, i32);
+    int k = size == 1 ? 0 : size == 2 ? 1 : size == 4 ? 2 : size == 8 ? 3 : -1;
+    if (!len && k >= 0)
+      B.CreateCall(putStore[k], {addr});
+    else
+      B.CreateCall(bulk, {addr, len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size)});
+  }
+
   // The per-kind writers, declared (or, in the home object, defined along
   // with the ring and the export that finds it).
   void createRuntime() {
@@ -255,9 +336,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       putEnter = writerDecl("__ksee_put_enter", 5);
       putExit = writerDecl("__ksee_put_exit", 2);
       putReturn = writerDecl("__ksee_put_return", 1);
+      for (unsigned k = 0; k < 4; k++)
+        putStore[k] = writerDecl(("__ksee_put_store" + Twine(1 << k)).str(), 1);
       frames = shared(cast<GlobalVariable>(M->getOrInsertGlobal("__ksee_frames", i32)));
+      declareBulk();
       return;
     }
+    declareBulk();
     LLVMContext &C = M->getContext();
     unsigned words = ringWords();
     auto *traceTy = StructType::get(C, {i32, i32, ArrayType::get(i32, words)});
@@ -268,8 +353,16 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
 
     frames = shared(new GlobalVariable(*M, i32, false, GlobalValue::ExternalLinkage,
                                        ConstantInt::get(i32, 0), "__ksee_frames"));
-    // Exports that find the ring and the frames.
+    unsigned memN = memWords();
+    auto *memTy = StructType::get(C, {i32, i32, ArrayType::get(i32, memN)});
+    auto *mem = shared(new GlobalVariable(*M, memTy, false, GlobalValue::ExternalLinkage,
+                                          ConstantAggregateZero::get(memTy), "__ksee_mem"));
+    mem->setAlignment(Align(8));
+    createStoreWriters(mem, memTy, memN, trace, traceTy);
+    probes += "W\t" + std::to_string(memN) + "\n";
+    // Exports that find the rings and the frames.
     for (auto [name, export_, var] : {std::tuple{"__ksee_trace_info", "ksee_trace", (GlobalVariable *)trace},
+                                      std::tuple{"__ksee_mem_info", "ksee_mem", mem},
                                       std::tuple{"__ksee_frames_info", "ksee_frames", frames}}) {
       Function *info = shared(Function::Create(FunctionType::get(i32, false),
                                                GlobalValue::ExternalLinkage, name, M));
@@ -440,6 +533,12 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     SmallVector<BasicBlock *> blocks;
     for (BasicBlock &BB : F)
       blocks.push_back(&BB);
+    // The function's own writes to memory (before any probe is added).
+    SmallVector<Instruction *> writes;
+    if (modes & Block)
+      for (Instruction &I : instructions(F))
+        if (isa<StoreInst, AtomicRMWInst, AtomicCmpXchgInst, MemIntrinsic>(I))
+          writes.push_back(&I);
 
     if (modes & Block)
       for (auto [n, BB] : enumerate(blocks)) {
@@ -500,6 +599,9 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         args.push_back(B.getInt32(0));
       B.CreateCall(putEnter, args);
     }
+
+    for (Instruction *I : writes)
+      logStore(I);
 
     std::string where = "?", argTypes;
     if (SP) {

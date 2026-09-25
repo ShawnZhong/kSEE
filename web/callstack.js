@@ -35,7 +35,7 @@ export function callstack(app) {
             open ? s.open.delete(p) : s.open.add(p);
             draw();
           } }), o.name),
-        el("td", { className: "fval", title: value }, value,
+        el("td", { className: "fval", title: value }, value, o.value != null ? app.writer(o) : null,
           o.target != null && o.value !== "NULL" ? el("a", { className: "follow", textContent: " ↗", title: "open in Objects",
             onclick: () => app.inspect(o.name, o.target, Number(o.value)) }) : null),
         el("td", { className: "ftype", textContent: o.ty })));

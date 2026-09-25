@@ -48,7 +48,6 @@ export function app(m) {
     $("pause").disabled = st === "halted" || !!at;
     $("cont").disabled = !at;
     $("over").disabled = !(at && st === "paused");
-    $("mem-note").textContent = st === "replay" ? "live memory, not at the cursor" : "live memory";
     if (st === "paused") status(`in ${at.func} (${at.file}:${at.line}) on ${taskName(at.task)}`);
     if (st === "halted") status(`the kernel halted (${halted})`);
     if (st === "replay") status(at ? "the recorded past; the kernel is paused at now" : "the recorded past; the kernel runs on");
@@ -63,6 +62,27 @@ export function app(m) {
   };
   $("show-control").onchange = refresh;
   a.refresh = refresh;
+
+  // ---- Memory: as it is, or as it was at the cursor (the memory history) ----
+  let memAt = null;
+  function memoryAt(i) {
+    if (i === memAt) return;
+    memAt = i;
+    const undone = m.memory_at(i ?? undefined);
+    $("mem-note").textContent = i == null ? "memory now"
+      : undone < 0 ? "memory now: the memory log does not reach back this far"
+      : `memory at the cursor (${undone} writes undone)`;
+    $("mem-note").className = "right " + (i != null && undone >= 0 ? "past" : "dim");
+    objs.moved();
+  }
+  // ✎ for a value (an Object): which code last wrote it; click: go there.
+  a.writer = (o) => el("a", { className: "who", textContent: " ✎", title: "who last wrote this?", onclick: (e) => {
+    e.stopPropagation();
+    const w = m.last_write(o.addr, o.size || 4);
+    if (!w) return ($("where").textContent = `✎ ${o.name}: not written since the memory log began`);
+    time.go(w.i);
+    $("where").textContent = `✎ ${o.name} was last written here: by ${w.inlined ? `${w.inlined} in ` : ""}${w.func} (${w.file}:${w.line}), on ${taskName(w.task)}; before, it held 0x${w.old.toString(16)}`;
+  } });
 
   // ---- Selecting and moving the cursor ----
 
@@ -112,6 +132,7 @@ export function app(m) {
   // The cursor moved to `at` (see Machine.at).
   a.showAt = (at) => {
     L.pos = null;
+    memoryAt(at.i);
     src.view.cursor = at;
     const s = at.syscall != null ? list.byIndex(at.syscall) : null;
     if (at.kind === "block") src.showFunction(at.func, s?.index, at.line, at.file);
@@ -125,6 +146,7 @@ export function app(m) {
   // Back at now: the stop, or the kernel running.
   a.showNow = () => {
     L.pos = null;
+    memoryAt(null);
     src.view.cursor = null;
     const at = m.stopped();
     if (at) showStop(at);
@@ -232,6 +254,7 @@ export function app(m) {
     if (!step) return false;
     L.pos = k;
     time.mark(step.i);
+    memoryAt(time.cursor());
     const at = m.at(step.i), stop = m.stopped();
     src.view.cursor = time.cursor() == null ? null : { file: step.file, line: step.line };
     src.showFunction(step.func, time.selected()?.index, step.line, step.file);
@@ -388,5 +411,6 @@ export function app(m) {
   stack.show(null);
   tick();
   a.state = state;
+  a.time = time;
   return a;
 }

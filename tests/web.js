@@ -73,6 +73,12 @@ m.snapshot();
 const prog = m.program(pid);
 check("its syscalls are its own", m.syscalls().some((s) => s.task.pid === pid && s.name === "read" && s.ret === 26));
 check("its source lines are in the trace", prog?.lines.some((l) => l.line === 23));
+const read = m.syscalls().find((s) => s.task.pid === pid && s.name === "read");
+const steps = m.line_steps(read.first, read.last, read.task.addr);
+check("its read, line by line (more lines than blocks)", steps.length > read.blocks && steps.some((x) => x.inlined));
+check("memory as it was: some writes undone", m.memory_at(read.first) > m.memory_at(read.last));
+m.memory_at(null);
+
 
 // Stop in vfs_write, look around, step, go on.
 check("breakpoint set", m.break_function("vfs_write", true));
