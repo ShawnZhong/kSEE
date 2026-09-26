@@ -99,14 +99,12 @@
   document.querySelector('h2.tabs a[data-tab="trace"]').click();
   await sleep(100);
   r.trace = [$("trace-note").textContent, [...document.querySelectorAll("#trace li a.mono")].map((a) => a.textContent).slice(0, 6), $("trace").querySelector(".head")?.textContent];
-  if (!r.trace[1].some((x) => x === "vfs_read") || !/^\d+ calls · to depth 1 2 3 all$/.test(r.trace[2] ?? "")) throw new Error("the calls: " + JSON.stringify(r.trace));
-  // (To depth 1: the root's calls only.)
-  document.querySelector("#trace .head a").click();
-  if (document.querySelectorAll("#trace li ul li").length) throw new Error("depth 1 shows deeper calls");
-  document.querySelectorAll("#trace .head a")[3].click();
-  const all = document.querySelectorAll("#trace li a.mono").length, vfs = [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "vfs_read");
-  vfs.querySelector(":scope > a.tw").click();
-  if (document.querySelectorAll("#trace li a.mono").length >= all) throw new Error("folding: " + $("trace").innerText.slice(0, 200));
+  // (The direct calls to begin with: ksys_read; ▸ opens its calls: vfs_read among them, inlined code too.)
+  if (!/^\d+ calls$/.test(r.trace[2] ?? "") || document.querySelectorAll("#trace li ul li").length) throw new Error("the calls: " + JSON.stringify(r.trace));
+  const ksysLi = [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "ksys_read");
+  ksysLi.querySelector(":scope > a.tw").click();
+  const inner = [...document.querySelectorAll("#trace li ul li > a.mono")].map((a) => a.textContent);
+  if (!inner.includes("vfs_read") || !document.querySelector("#trace a.inl")) throw new Error("ksys_read's calls: " + JSON.stringify(inner));
   [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "vfs_read").querySelector(":scope > a.tw").click();
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   if (document.querySelector("#trace li.on > a.mono")?.textContent !== "vfs_read") throw new Error("the cursor's call not marked: " + document.querySelector("#trace li.on")?.textContent);

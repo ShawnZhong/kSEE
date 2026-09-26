@@ -225,80 +225,79 @@ pub fn calls_of(records: &[Record], from: usize, to: usize, funcs: &[u32]) -> Ve
 
 /// A call in a call tree: `func` from record `first` to `last` (its
 /// return, or where the records end), with the calls it made (`calls`, in
-/// order; `small`: how many more, too small to list); `records`: how many
-/// records are its, its callees' included.
+/// order); `records`: how many records are its, its callees' included.
+/// `inlined`: not a call but code inlined into the call before it, from
+/// function `func` (an index into Tables::names), as the stack chart and
+/// the call stack show it.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct CallNode {
     pub func: u32,
+    pub inlined: bool,
     pub first: usize,
     pub last: usize,
     pub records: u32,
-    pub small: u32,
     pub calls: Vec<CallNode>,
 }
 
 /// The calls of task `task` in records `from..=to` as a tree, in order:
-/// what a syscall did. Calls on the stack before `from` are not in it (a
-/// syscall's entry, say: its callees are the roots). Pruned: calls deeper
-/// than `depth`, or of fewer than `min` records, are counted in their
-/// caller's `small`, not listed. A call `skip` says to (a syscall's
-/// wrappers) is not a node: its calls are its caller's, at its depth.
-pub fn call_tree(records: &[Record], tasks: &[u32], from: usize, to: usize, task: u32, depth: usize, min: u32,
-                 skip: &dyn Fn(u32) -> bool) -> Vec<CallNode> {
+/// what a syscall did, with the code inlined into each call as calls of
+/// its own (see CallNode::inlined). Calls on the stack before `from` are
+/// not in it (a syscall's entry, say: its callees are the roots). A call
+/// `skip` says to (a syscall's wrappers), or inlined code `skip_inlined`
+/// says to, is not a node: its calls are its caller's.
+pub fn call_tree(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: u32,
+                 skip: &dyn Fn(u32) -> bool, skip_inlined: &dyn Fn(u32) -> bool) -> Vec<CallNode> {
     let to = to.min(records.len().saturating_sub(1));
-    let mut stack = Stack::default();
-    // (The calls open, outermost first, and the finished ones at the top.)
-    let mut open: Vec<CallNode> = Vec::new();
+    let mut w = Walk::default();
+    // (The nodes open, outermost first, each by what it is: a call's first
+    // record, or an inlined function; and the finished ones at the top.)
+    let mut open: Vec<((bool, usize), CallNode)> = Vec::new();
     let mut roots: Vec<CallNode> = Vec::new();
-    let mut close = |open: &mut Vec<CallNode>, roots: &mut Vec<CallNode>, i: usize| {
-        let mut c = open.pop().expect("an open call");
+    let close = |open: &mut Vec<((bool, usize), CallNode)>, roots: &mut Vec<CallNode>, i: usize| {
+        let (_, mut c) = open.pop().expect("an open call");
         c.last = i;
         c.records = (i - c.first + 1) as u32;
-        let level = open.iter().filter(|o| !skip(o.func)).count();
-        let (deep, tiny) = (level >= depth, c.records < min);
-        let into = |p: &mut Vec<CallNode>, small: &mut u32| {
-            if skip(c.func) {
-                p.append(&mut c.calls);
-                *small += c.small;
-            } else if deep || tiny {
-                *small += 1 + c.small + c.calls.len() as u32;
-            } else {
-                p.push(c);
-            }
-        };
         match open.last_mut() {
-            Some(p) => into(&mut p.calls, &mut p.small),
-            None => {
-                let mut none = 0;
-                into(roots, &mut none);
-            }
+            Some((_, p)) => p.calls.push(c),
+            None => roots.push(c),
         }
     };
     for (i, r) in records.iter().enumerate().take(to + 1) {
         if tasks[i] != task {
             continue;
         }
-        match *r {
-            Record::Block { func, n } => stack.block(func, n, i),
-            Record::Return { func, .. } => stack.exit(func),
-            _ => continue,
-        }
-        if i < from {
+        if w.apply(t, r, i).is_none() || i < from {
             continue;
         }
-        // The frames since `from`, against the calls open: the ones gone
-        // close, the new ones open.
-        let inside: Vec<(u32, usize)> = stack.frames.iter().copied().filter(|&(_, first)| first >= from).collect();
+        // What is on the stack since `from`: each call, then the code
+        // inlined at the line it is at (outermost first), as the chart nests
+        // them; against the nodes open: the ones gone close, new ones open.
+        let mut want: Vec<(bool, usize)> = Vec::new();
+        for (d, &(func, first)) in w.stack.frames.iter().enumerate() {
+            if first < from {
+                continue;
+            }
+            if !skip(func) {
+                want.push((false, first));
+            }
+            let chain = w.at.get(d).copied().flatten().and_then(|s| s.inlined).map_or(&[][..], |k| t.inlines.get(k as usize).map_or(&[][..], Vec::as_slice));
+            for &(k, _) in chain.iter().rev() {
+                if !skip_inlined(k) {
+                    want.push((true, k as usize));
+                }
+            }
+        }
         let mut k = 0;
-        while k < open.len() && k < inside.len() && open[k].first == inside[k].1 {
+        while k < open.len() && k < want.len() && open[k].0 == want[k] {
             k += 1;
         }
         while open.len() > k {
             close(&mut open, &mut roots, i);
         }
-        for &(func, first) in &inside[k..] {
-            open.push(CallNode { func, first, last: first, records: 1, small: 0, calls: Vec::new() });
+        for &(inlined, id) in &want[k..] {
+            let func = if inlined { id as u32 } else { w.stack.frames.iter().find(|f| f.1 == id).map_or(0, |f| f.0) };
+            open.push(((inlined, id), CallNode { func, inlined, first: i, last: i, records: 1, calls: Vec::new() }));
         }
     }
     while !open.is_empty() {
@@ -400,25 +399,30 @@ mod tests {
     }
 
     #[test]
-    fn a_call_tree_nests_and_prunes() {
+    fn a_call_tree_nests_calls_and_inlined_code() {
         // 1 calls 2 (which calls 3, then returns) and then 4; task 8 runs between.
+        let t = Tables::default();
         let ret = |f| Record::Return { func: f, value: 0 };
         let r = [b(1, 0), b(2, 0), b(3, 0), b(9, 0), ret(3), ret(2), b(1, 1), b(4, 0), ret(4), ret(1)];
-        let t = [7, 7, 7, 8, 7, 7, 7, 7, 7, 7];
+        let tk = [7, 7, 7, 8, 7, 7, 7, 7, 7, 7];
         let none = |_: u32| false;
-        let tree = call_tree(&r, &t, 0, 9, 7, 8, 1, &none);
+        let tree = call_tree(&t, &r, &tk, 0, 9, 7, &none, &none);
         let shape: Vec<_> = tree.iter().map(|c| (c.func, c.calls.iter().map(|d| (d.func, d.calls.len(), d.records)).collect::<Vec<_>>())).collect();
         assert_eq!(shape, [(1, alloc::vec![(2, 1, 5), (4, 0, 2)])]);
-        // From record 1 on: 1 is an ancestor, not in the tree; depth 1: 3 is small.
-        let tree = call_tree(&r, &t, 1, 9, 7, 1, 1, &none);
-        assert_eq!(tree.iter().map(|c| (c.func, c.small, c.calls.len())).collect::<Vec<_>>(), [(2, 1, 0), (4, 0, 0)]);
-        // Calls of fewer than 3 records are small: 4 (2 records) is, 3 (3) is not.
-        let tree = call_tree(&r, &t, 0, 9, 7, 8, 3, &none);
-        assert_eq!(tree[0].calls.iter().map(|c| (c.func, c.small, c.calls.len())).collect::<Vec<_>>(), [(2, 0, 1)]);
-        assert_eq!(tree[0].small, 1);
-        // 1 skipped (a wrapper): its calls are the roots, and 3 is at depth 1.
-        let tree = call_tree(&r, &t, 0, 9, 7, 1, 1, &|f| f == 1);
-        assert_eq!(tree.iter().map(|c| (c.func, c.calls.len(), c.small)).collect::<Vec<_>>(), [(2, 0, 1), (4, 0, 0)]);
+        // From record 1 on: 1 is an ancestor, not in the tree.
+        let tree = call_tree(&t, &r, &tk, 1, 9, 7, &none, &none);
+        assert_eq!(tree.iter().map(|c| (c.func, c.calls.len())).collect::<Vec<_>>(), [(2, 1), (4, 0)]);
+        // 1 skipped (a wrapper): its calls are the roots.
+        let tree = call_tree(&t, &r, &tk, 0, 9, 7, &|f| f == 1, &none);
+        assert_eq!(tree.iter().map(|c| (c.func, c.calls.len())).collect::<Vec<_>>(), [(2, 1), (4, 0)]);
+        // f (1) runs line 1, then h's line 20 (h inlined into f at line 2), which calls g (2):
+        // h is a node of its own, inlined, and g is its call.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\nB\t1\t0\t0:1:1\n\
+                               L\t1\t0\t0:1;:20@h^0:2;|\nB\t2\t0\t0:10:1\n", "");
+        let r = [b(1, 0), b(2, 0), ret(2), ret(1)];
+        let tree = call_tree(&t, &r, &[7; 4], 0, 3, 7, &none, &none);
+        let h = &tree[0].calls[0];
+        assert_eq!((tree[0].func, tree[0].inlined, h.inlined, t.names[h.func as usize].as_str(), h.calls[0].func), (1, false, true, "h", 2));
     }
 
     #[test]
