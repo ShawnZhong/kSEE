@@ -12,8 +12,6 @@
 import { $, el } from "./dom.js";
 import { objects } from "./objects.js";
 import { watch } from "./watch.js";
-import { changes } from "./changes.js";
-import { records } from "./records.js";
 
 export function callstack(app) {
   const { m } = app;
@@ -23,13 +21,10 @@ export function callstack(app) {
   // The current task's fields shown first.
   const KEY = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 
-  const w = watch(app), ch = changes(app, w.add), raw = records(app);
+  const w = watch(app);
   const { rows, kids } = objects(app, s, draw, w.add);
   // (The tabs: the pane chosen.)
-  for (const a of document.querySelectorAll("h2.tabs a")) a.onclick = () => {
-    $("right").dataset.tab = a.dataset.tab;
-    if (a.dataset.tab === "records") raw.draw();
-  };
+  for (const a of document.querySelectorAll("h2.tabs a")) a.onclick = () => ($("right").dataset.tab = a.dataset.tab);
   const head = (text, where, onclick, cls = "") => el("tr", { className: "frame " + cls },
     el("td", { colSpan: 3 }, el("a", { className: "mono", textContent: text, onclick }),
       el("span", { className: "dim", textContent: where ? `  ${where}` : "" })));
@@ -78,8 +73,7 @@ export function callstack(app) {
     // (No recording: nothing to watch; else the watched values at the cursor.)
     if (i === undefined) w.reset();
     else w.draw();
-    ch.draw();
-    if ($("right").dataset.tab === "records") raw.draw();
+    app.trace?.mark();
     // (At a line step: the stack as that line runs; see Machine.call_stack.)
     const frames = i === undefined ? [] : m.call_stack(i ?? undefined, step?.nth);
     s.frames = frames;
@@ -130,5 +124,5 @@ export function callstack(app) {
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
 
-  return { show, select, level, owner, resolve, kids };
+  return { show, select, level, owner, resolve, kids, watch: w.add };
 }

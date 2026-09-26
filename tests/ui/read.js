@@ -95,24 +95,21 @@
   // (A syscall's box: the syscall selected, entry to exit.)
   const home = ksee.time.home();
   if (home?.a !== read.first || home?.b !== read.last) throw new Error("the read's selection: " + JSON.stringify(home) + ", not " + read.first + ".." + read.last);
-  // The Changes tab: what the read changed, by object (the struct file's f_pos among them); an object watched.
-  document.querySelector('h2.tabs a[data-tab="changes"]').click();
-  r.changes = [$("changes-note").textContent, [...document.querySelectorAll("#changes .whead a")].map((a) => a.textContent).slice(0, 6)];
-  const fileChange = [...document.querySelectorAll("#changes .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
-  if (!fileChange) throw new Error("the read's changes: " + JSON.stringify(r.changes));
+  // The Trace tab: the read as a tree of calls; the root's changes (the struct file's f_pos among them), an
+  // object watched; a call opened: its records, the cursor's marked.
+  document.querySelector('h2.tabs a[data-tab="trace"]').click();
+  await sleep(100);
+  r.trace = [$("trace-note").textContent, [...document.querySelectorAll("#trace .call a.mono")].map((a) => a.textContent).slice(0, 6)];
+  if (!r.trace[1].some((x) => x === "vfs_read")) throw new Error("the trace: " + JSON.stringify(r.trace));
+  document.querySelector("#trace .call a.what").click();
+  const fileChange = [...document.querySelectorAll("#trace .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
+  if (!fileChange) throw new Error("the read's changes: " + $("trace").innerText.slice(0, 300));
   fileChange.querySelector(".whead a").click();
-  document.querySelector('h2.tabs a[data-tab="stack"]').click();
   if (!$("watch").innerText.includes("f_pos")) throw new Error("watching the file: " + $("watch").innerText.slice(0, 100));
-  // (The file said as what it is: its fd and name.)
   if (!/fd 3 note\.txt/.test($("watch").innerText)) throw new Error("the file's name: " + $("watch").innerText.slice(0, 100));
-  // The Records tab: the raw trace around the cursor, the cursor's record marked.
-  document.querySelector('h2.tabs a[data-tab="records"]').click();
-  r.records = [$("records-note").textContent, document.querySelector("#records tr.on")?.innerText];
-  if (!document.querySelector("#records tr.on") || !document.querySelector("#records tr.store")) throw new Error("the records: " + JSON.stringify(r.records));
-  // (Scrolled to the top: more before.)
-  const first = document.querySelector("#records tr").dataset.i;
-  $("records").scrollTop = 0; $("records").dispatchEvent(new Event("scroll"));
-  if (Number(first) > 0 && document.querySelector("#records tr").dataset.i === first) throw new Error("the records did not grow");
+  document.querySelector("#trace .call a.tw").click(); // (the root opened: its own records)
+  ksee.time.go(read.first + 3);
+  if (!document.querySelector("#trace li.rec.on") || !document.querySelector("#trace li.rec.store")) throw new Error("the records: " + $("trace").innerText.slice(0, 300));
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)

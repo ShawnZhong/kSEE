@@ -78,8 +78,7 @@ Rust does the work: JS only lays it out.
 | callstack.js | the Call stack: calls with arguments and locals, the task (current); the right column's tabs |
 | objects.js | values as trees (the Call stack's, the Watch's): pointers open into what they point to, structs into their fields; who last wrote a value |
 | watch.js | the Watch: values clicked, each followed as the cursor moves, with every write to it in its lifetime |
-| changes.js | the Changes: what the selected call changed, by object |
-| records.js | the Records: the raw trace around the cursor |
+| trace.js | the Trace: the selected call as a tree of calls; a call's records, and what it changed, by object |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
 | args.js | a program's line: `name = call(args)`, `tid: call(args)` (the arguments themselves are ksee-core's args.rs: `Machine.arg`) |

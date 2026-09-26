@@ -53,19 +53,15 @@ impl Machine {
         (ids.get(i) == Some(&id)).then_some(i)
     }
 
-    /// The calls of syscall `n` as a tree (ksee_core::stack::call_tree:
-    /// its callees, in order, pruned to `depth` deep and calls of `min`
-    /// records or more), as JS values; [] if the snapshot has no syscall `n`.
-    pub fn call_tree(&self, n: usize, depth: usize, min: u32) -> JsValue {
+    /// The calls of `task` in records `first..=last` (a call's: its
+    /// callees) as a tree (ksee_core::stack::call_tree: in order, pruned to
+    /// `depth` deep and calls of `min` records or more; a syscall's
+    /// wrappers are not nodes), as JS values.
+    pub fn call_tree(&self, first: usize, last: usize, task: u32, depth: usize, min: u32) -> JsValue {
         let rec = self.rec.borrow();
-        match rec.syscalls.get(n) {
-            Some(s) => {
-                let t = tables();
-                let wrapper = |f: u32| t.functions.get(&f).is_some_and(|f| ksee_core::arch::SYSCALL_WRAPPERS.iter().any(|w| f.name.starts_with(w)));
-                to_js(&ksee_core::stack::call_tree(&rec.records, &rec.tasks, s.first + 1, s.last.unwrap_or(usize::MAX), s.task, depth, min, &wrapper))
-            }
-            None => js_sys::Array::new().into(),
-        }
+        let t = tables();
+        let wrapper = |f: u32| t.functions.get(&f).is_some_and(|f| ksee_core::arch::SYSCALL_WRAPPERS.iter().any(|w| f.name.starts_with(w)));
+        to_js(&ksee_core::stack::call_tree(&rec.records, &rec.tasks, first + 1, last, task, depth, min, &wrapper))
     }
 
     /// The calls of function `name` in records `first..=last`: each call's

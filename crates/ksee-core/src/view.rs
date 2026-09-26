@@ -121,7 +121,8 @@ pub struct Change {
 
 /// An object written in a span of records: `what` it is ("struct file
 /// 0x1234", "ksys_read's iocb", "current task_struct"), of type `ty` (id
-/// `id`) at `addr`; `n` writes to it, the newest `writes` of them.
+/// `id`) at `addr`; `n` writes to it, the newest `writes` of them; `call`:
+/// the call (its first record) it lives as long as, for a local or a frame.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Changed {
@@ -131,6 +132,7 @@ pub struct Changed {
     pub addr: u32,
     pub n: usize,
     pub writes: Vec<Change>,
+    pub call: Option<usize>,
 }
 
 /// The newest write to a value: at record `i`, on `task`, by the code at
@@ -606,17 +608,17 @@ impl View<'_> {
         // said as what it is, as memory at the span's end says: see describe.)
         let task = self.rec.tasks.get(first).copied().unwrap_or(0);
         let end = self.rec.memory_at(self.now, last.min(records_len(self.rec)));
-        let mut regions: Vec<(String, u32, u32, u32)> = Vec::new();
+        let mut regions: Vec<(String, u32, u32, u32, Option<usize>)> = Vec::new();
         let mut seen = alloc::collections::BTreeSet::new();
-        let mut add = |what: String, ty: u32, addr: u32, size: Option<u32>| {
+        let mut add = |what: String, ty: u32, addr: u32, size: Option<u32>, call: Option<usize>| {
             let ty = types.resolve(ty);
             if addr != 0 && seen.insert((addr, ty)) {
                 let what = self.describe(&end, ty, addr, task).unwrap_or(what);
-                regions.push((what, ty, addr, size.unwrap_or_else(|| types.size_of(ty))));
+                regions.push((what, ty, addr, size.unwrap_or_else(|| types.size_of(ty)), call));
             }
         };
         if let Some(ty) = types.find("task_struct") {
-            add("current task_struct".into(), ty, task, None);
+            add("current task_struct".into(), ty, task, None, None);
         }
         let records = &self.rec.records;
         // (The calls open on each task: (function, frame base).)
@@ -633,17 +635,17 @@ impl View<'_> {
                     // (Its frame: up to its caller's, if the caller is known.)
                     let stack = open.entry(self.rec.tasks[i]).or_default();
                     if let Some(&(_, caller)) = stack.last() && caller > frame {
-                        add(format!("{}'s frame", f.name), 0, frame, Some(caller - frame));
+                        add(format!("{}'s frame", f.name), 0, frame, Some(caller - frame), Some(i));
                     }
                     stack.push((func, frame));
                     for ((pname, ty), &v) in types.params.get(&f.name).into_iter().flatten().zip(&args) {
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
-                            add(format!("{} {v:#x} ({}'s {pname})", types.name(types.resolve(to)), f.name), to, v, None);
+                            add(format!("{} {v:#x} ({}'s {pname})", types.name(types.resolve(to)), f.name), to, v, None, None);
                         }
                     }
                     for (var, ty, off) in types.locals.get(&f.name).into_iter().flatten() {
-                        add(format!("{}'s {var}", f.name), *ty, frame.wrapping_add(*off), None);
+                        add(format!("{}'s {var}", f.name), *ty, frame.wrapping_add(*off), None, Some(i));
                     }
                 }
                 _ => {}
@@ -660,13 +662,13 @@ impl View<'_> {
                 None => other += 1,
             }
         }
-        let mut out: Vec<Changed> = regions.iter().zip(hits).filter(|(_, h)| !h.is_empty()).map(|((what, ty, addr, _), h)| Changed {
+        let mut out: Vec<Changed> = regions.iter().zip(hits).filter(|(_, h)| !h.is_empty()).map(|((what, ty, addr, _, call), h)| Changed {
             what: what.clone(), ty: types.name(*ty), id: *ty, addr: *addr, n: h.len(),
-            writes: h[h.len().saturating_sub(limit)..].iter().map(|&i| self.change(*addr, *ty, i)).collect(),
+            writes: h[h.len().saturating_sub(limit)..].iter().map(|&i| self.change(*addr, *ty, i)).collect(), call: *call,
         }).collect();
         out.sort_by_key(|c| c.writes[0].i);
         if other > 0 {
-            out.push(Changed { what: "other".into(), ty: String::new(), id: 0, addr: 0, n: other, writes: Vec::new() });
+            out.push(Changed { what: "other".into(), ty: String::new(), id: 0, addr: 0, n: other, writes: Vec::new(), call: None });
         }
         out
     }

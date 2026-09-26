@@ -44,8 +44,7 @@
   <div class="col" id="right" data-tab="stack">
     <h2 class="tabs">
       <a data-tab="stack" title="the calls at the cursor, their values as they were then">Call stack</a>
-      <a data-tab="changes" title="what the selected call changed, by object">Changes</a>
-      <a data-tab="records" title="the raw trace around the cursor: what the views are built from">Records</a>
+      <a data-tab="trace" title="the selected call as a tree of the calls it made; a call opens to its records and what it changed">Trace</a>
     </h2>
     <div class="pane" data-tab="stack">
       <div class="stackhead dim" id="stack-note"></div>
@@ -54,13 +53,9 @@
       <div class="stackhead dim" id="watch-note"></div>
       <div class="body" id="watch"></div>
     </div>
-    <div class="pane" data-tab="changes">
-      <div class="stackhead dim" id="changes-note"></div>
-      <div class="body" id="changes"></div>
-    </div>
-    <div class="pane" data-tab="records">
-      <div class="stackhead dim" id="records-note"></div>
-      <div class="body" id="records"></div>
+    <div class="pane" data-tab="trace">
+      <div class="stackhead dim" id="trace-note"></div>
+      <div class="body" id="trace"></div>
     </div>
   </div>
 </main>

@@ -100,40 +100,34 @@ table.stack tr.frame.on td { background: var(--sel); }
 table.stack tr.frame a.mono { font-weight: 600; }
 table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
 
-/* The right column's tabs (Call stack, Changes): the pane chosen */
+/* The right column's tabs (Call stack, Trace): the pane chosen */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
-#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="changes"] .pane[data-tab="changes"], #right[data-tab="records"] .pane[data-tab="records"] { display: flex; }
-#right[data-tab="outline"] .pane[data-tab="outline"] { display: flex; }
-#right[data-tab="outline"] a[data-tab="outline"] { color: var(--fg); border-bottom-color: var(--accent); }
+#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="trace"] .pane[data-tab="trace"] { display: flex; }
 h2.tabs { gap: 0; padding: 0 4px; }
-
-/* The Outline: the records by area, the calls as a tree */
-#outline .areas { display: flex; height: 14px; margin: 6px 12px; border-radius: 3px; overflow: hidden; font-size: 10px; line-height: 14px; color: #1f2328; }
-#outline .areas .area { overflow: hidden; text-align: center; white-space: nowrap; }
-#outline ul.tree, #outline ul.tree ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }
-#outline ul.tree { padding: 0 12px 8px; }
-#outline li { margin: 1px 0; }
-#outline li a.mono { font-size: 12px; }
-#outline li.small { font-size: 11px; }
 h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
-#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="changes"] a[data-tab="changes"], #right[data-tab="records"] a[data-tab="records"] { color: var(--fg); border-bottom-color: var(--accent); }
+#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"] { color: var(--fg); border-bottom-color: var(--accent); }
 
-/* The Records: the raw trace, a line a record */
-table.raw { border-collapse: collapse; width: 100%; font-size: 11px; }
-table.raw td { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-table.raw td:first-child { width: 5em; text-align: right; }
-table.raw tr { cursor: pointer; }
-table.raw tr:hover { background: var(--sel); }
-table.raw tr.on { background: var(--at); }
-table.raw tr.block td:last-child { color: var(--fg); font-weight: 600; }
-table.raw tr.store td:last-child { color: var(--accent); }
-table.raw tr.return td:last-child { color: var(--kw); }
-table.raw tr.task td:last-child { color: var(--run); }
-
-/* The Changes: an object each, its writes */
-.changed { border-bottom: 1px solid var(--line); padding-bottom: 4px; }
-.changed .whead { padding: 4px 8px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The Trace: the areas bar; the tree of calls, each with its records and what it changed */
+#trace .areas { display: flex; height: 14px; margin: 6px 12px; border-radius: 3px; overflow: hidden; font-size: 10px; line-height: 14px; color: #1f2328; }
+#trace .areas .area { overflow: hidden; text-align: center; white-space: nowrap; }
+#trace ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }
+#trace ul.tree { padding: 0 8px 8px; }
+#trace li { margin: 1px 0; }
+#trace .call { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#trace .call a.tw { color: var(--dim); display: inline-block; width: 1.2em; }
+#trace .call a.what { font-size: 11px; }
+#trace li.small { font-size: 11px; }
+#trace li.rec { font: 11px/1.5 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; padding-left: 1.2em; }
+#trace li.rec .idx { display: inline-block; min-width: 4em; text-align: right; }
+#trace li.rec:hover { background: var(--sel); }
+#trace li.rec.on { background: var(--at); }
+#trace li.rec.store { color: var(--accent); }
+#trace li.rec.return { color: var(--kw); }
+#trace li.rec.task { color: var(--run); }
+#trace .changes { margin: 2px 0 4px 1.2em; border-left: 2px solid var(--line); }
+.changed .whead { padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.changed .note, #trace .changes .note { padding: 1px 8px; font-size: 11px; }
 .changed ol, .watched ol { margin: 2px 0; padding-left: 26px; font: 11px/1.5 var(--mono); }
 .changed li a, .watched li a { white-space: nowrap; }
 .changed li.on, .watched li.on { background: var(--at); }

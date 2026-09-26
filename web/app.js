@@ -9,7 +9,7 @@ import { source } from "./source.js";
 import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
-import { outline } from "./outline.js";
+import { trace } from "./trace.js";
 
 export function app(m) {
   const a = { m };
@@ -114,8 +114,8 @@ export function app(m) {
       if (at) view(at);
     });
   };
-  const out = outline(a);
-  a.outlined = () => out.draw();
+  a.trace = trace(a, stack.watch);
+  a.outlined = () => a.trace.draw();
   examples(a);
 
   // ---- Lines: the line steps of the selection (a syscall) ----
