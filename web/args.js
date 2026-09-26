@@ -5,14 +5,25 @@
 //                      from its UAPI headers (Machine.constants); NULL
 //   [64]               a buffer of 64 bytes, for the kernel to fill
 //   {0, 30000000}      a buffer of 64-bit values (a struct timespec, say)
+//   {"init", NULL}     an array of strings (char *: argv, say)
 //   $2                 call 2's result (an fd, say)
 
 // The value of argument `text` for Machine.call: a number, a string,
-// { size } or { bytes }. `rets`: the results of the calls so far.
+// { size }, { bytes } or { strings }. `rets`: the results of the calls so
+// far.
 export function arg(text, consts, rets = []) {
   const s = String(text).trim();
   if (/^".*"$/s.test(s)) return JSON.parse(s);
   if (/^\[\d+\]$/.test(s)) return { size: Number(s.slice(1, -1)) };
+  // (With a string in it: an array of char *, NULL a null pointer: argv.)
+  if (/^\{.*\}$/.test(s) && /"/.test(s)) {
+    const items = s.slice(1, -1).match(/"(?:[^"\\]|\\.)*"|[^,\s]+/g) ?? [];
+    return { strings: items.map((x) => {
+      if (x.startsWith('"')) return JSON.parse(x);
+      if (value(x, consts, rets) === 0) return null;
+      throw new Error(`not a string or NULL: ${x}`);
+    }) };
+  }
   if (/^\{.*\}$/.test(s)) {
     const values = s.slice(1, -1).split(",").map((x) => BigInt(value(x, consts, rets)));
     return { bytes: new Uint8Array(new BigInt64Array(values).buffer) };

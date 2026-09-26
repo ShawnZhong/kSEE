@@ -236,9 +236,15 @@ fn runner_imports() -> Object {
             }
             // (Into the runner's memory, which is kernel memory: recorded.)
             bulk(req, 32 + CALL_DATA as u32);
+            let mut data = c.data.clone();
+            for &r in &c.relocs {
+                let w = r as usize;
+                let v = u32::from_le_bytes(data[w..w + 4].try_into().unwrap()) + req + 32;
+                data[w..w + 4].copy_from_slice(&v.to_le_bytes());
+            }
             unsafe {
                 core::ptr::copy_nonoverlapping(head.as_ptr(), req as *mut u8, 32);
-                core::ptr::copy_nonoverlapping(c.data.as_ptr(), (req + 32) as *mut u8, CALL_DATA);
+                core::ptr::copy_nonoverlapping(data.as_ptr(), (req + 32) as *mut u8, CALL_DATA);
             }
             c.nr as i32
         })

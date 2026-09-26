@@ -154,6 +154,7 @@ check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
       consts.O_CREAT === 64 && consts.AT_FDCWD === -100 && consts.AT_REMOVEDIR === 0x200 && consts.ENOTEMPTY === 39);
 check("arguments as in C", arg("O_CREAT | O_WRONLY | O_TRUNC", consts) === 577 && arg("0644", consts) === 420
       && arg("$2", consts, [5, 7]) === 7 && arg("[64]", consts).size === 64 && arg('"a\\n"', consts) === "a\n");
+check("an array of strings as in C (argv)", JSON.stringify(arg('{"init", "-x", NULL}', consts)) === '{"strings":["init","-x",null]}');
 const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/examples.json", root)));
 // (Each on a fresh kernel, as the page runs them; a call may block, and
 // finish as a later one wakes it.)
@@ -211,6 +212,7 @@ await m.restart();
 m.call("reboot", [0xfee1dead, 672274793, 0x4321fedc, 0]);
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);
 
+check("no warning from the kernel (an execve has its argv)", !out.includes("NULL argv"));
 if (failed) console.log(out);
 console.log(failed ? "FAIL" : "PASS");
 Deno.exit(failed ? 1 : 0);

@@ -39,7 +39,7 @@
       "call": "execve",
       "args": [
         "\"/init\"",
-        "NULL",
+        "{\"init\", NULL}",
         "NULL"
       ],
       "as": 2,

@@ -103,6 +103,9 @@ pub struct Call {
     pub buffers: u32,
     pub lens: [u32; 6],
     pub data: Vec<u8>,
+    /// The words of `data` that are pointers into it (an array of strings'
+    /// elements): offsets there, made addresses where the runner has it.
+    pub relocs: Vec<u32>,
 }
 
 /// The size of a call's buffers, all together.

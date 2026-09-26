@@ -177,8 +177,9 @@ impl Machine {
     /// Have runner `tid` (1: /init; see user/init.c) make syscall `name`
     /// (e.g. "openat") with `args`: each a number, a string (as a
     /// NUL-terminated buffer), { bytes } (a buffer of them: an array or a
-    /// Uint8Array), or { size } (a buffer of that many zero bytes, for the
-    /// call to fill). The call's id: it finishes when it returns; or, when
+    /// Uint8Array), { size } (a buffer of that many zero bytes, for the
+    /// call to fill), or { strings } (an array of char *, null for NULL:
+    /// argv). The call's id: it finishes when it returns; or, when
     /// it blocks, later, as another call wakes it (see quiet). Recorded:
     /// from here until the kernel is quiet again (see sched::idle); so
     /// memory now is memory as the recording ends.
@@ -231,11 +232,39 @@ impl Machine {
 }
 
 /// Call `id`, syscall `nr` with `args` (see Machine::call): each a number,
-/// or a buffer (a string, { bytes }, { size }) packed into its data.
+/// or a buffer (a string, { bytes }, { size }, { strings }) packed into its
+/// data.
 fn pack(id: u32, nr: u32, args: &[JsValue]) -> Result<Call, JsValue> {
     let mut c = Call { id, nr, data: vec![0; CALL_DATA], ..Default::default() };
     let mut used = 0usize;
+    // (Bytes `b` into the data, 8-byte aligned: their offset there.)
+    let mut put = |c: &mut Call, b: &[u8]| -> Result<u32, JsValue> {
+        if used + b.len() > CALL_DATA {
+            return Err("the call's buffers are too big".into());
+        }
+        c.data[used..used + b.len()].copy_from_slice(b);
+        let at = used;
+        used += (b.len() + 7) & !7;
+        Ok(at as u32)
+    };
     for (i, a) in args.iter().take(6).enumerate() {
+        // { strings: [s, …, null] }: an array of char * (null: NULL), as argv.
+        if let Ok(list) = js::get(a, "strings").dyn_into::<js_sys::Array>() {
+            let mut words = Vec::new();
+            for s in list.iter() {
+                words.push(match s.as_string() {
+                    Some(s) => Some(put(&mut c, &[s.as_bytes(), &[0]].concat())?),
+                    None => None,
+                });
+            }
+            let array: Vec<u8> = words.iter().flat_map(|w| w.unwrap_or(0).to_le_bytes()).collect();
+            let at = put(&mut c, &array)?;
+            c.relocs.extend(words.iter().enumerate().filter(|(_, w)| w.is_some()).map(|(k, _)| at + 4 * k as u32));
+            c.args[i] = at;
+            c.buffers |= 1 << i;
+            c.lens[i] = array.len() as u32;
+            continue;
+        }
         let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
             Some([s.as_bytes(), &[0]].concat())
         } else if !js::get(a, "bytes").is_undefined() {
@@ -245,15 +274,9 @@ fn pack(id: u32, nr: u32, args: &[JsValue]) -> Result<Call, JsValue> {
         };
         c.args[i] = match buffer {
             Some(b) => {
-                if used + b.len() > CALL_DATA {
-                    return Err("the call's buffers are too big".into());
-                }
-                c.data[used..used + b.len()].copy_from_slice(&b);
                 c.buffers |= 1 << i;
                 c.lens[i] = b.len() as u32;
-                let at = used;
-                used += (b.len() + 7) & !7; // (8-byte aligned)
-                at as u32
+                put(&mut c, &b)?
             }
             None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { size }")? as i64 as u32,
         };
