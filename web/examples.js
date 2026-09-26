@@ -10,7 +10,10 @@
 // lead into the recording: `[label](2)` is call 2 (its recording
 // selected), `[label](2:vfs_read)` the first call of vfs_read in it (on
 // the call's task; `:any` on any task), the cursor there; the first such
-// link is where the cursor starts. `code` in backticks. The program is
+// link is where the cursor starts; `[label](try:1)` runs the example's
+// `tries[0]`, another program (calls separated by ";"), instead: to see
+// what changes (the run is compared with the example's). `code` in
+// backticks. The program is
 // below, a call a line: click one for its recording; type in it to change
 // it (Enter: the program runs again, on a fresh kernel), empty it (or ✕)
 // to remove it; add a call at the end; ↺ for the example's own program
@@ -240,6 +243,10 @@ export async function examples(app) {
   function explain() {
     t.links = [];
     const paras = (t.ex.text ?? []).map((para) => el("p", {}, ...para.split(/(\[[^\]]*\]\([^)]*\)|`[^`]*`)/).map((part) => {
+      // (A try: `[label](try:1)`, the example's `tries[0]`, a program to run instead: see the top.)
+      const tr = part.match(/^\[([^\]]*)\]\(try:(\d+)\)$/), prog = tr && t.ex.tries?.[Number(tr[2]) - 1];
+      if (tr) return el("a", { className: "try", textContent: tr[1], title: prog ? `run this program instead, and compare:\n${prog}` : "no such try",
+        onclick: prog ? () => go(t.ex, program(prog), true) : null });
       const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?\)$/);
       if (link) {
         const l = { j: Number(link[2]) - 1, func: link[3], any: !!link[4] };

@@ -80,17 +80,22 @@ const CONSTANTS: &[(&str, &[&str])] = &[
 /// parentheses of numbers and constants before it.
 pub fn constants(include: &Path) -> Vec<(String, i64)> {
     let mut out: Vec<(String, i64)> = Vec::new();
+    // (Every define seen, for the ones after it: O_SYNC is (__O_SYNC|O_DSYNC).)
+    let mut known: Vec<(String, i64)> = Vec::new();
     for (file, prefixes) in CONSTANTS {
         let text = String::from_utf8_lossy(&crate::read(&include.join(file))).into_owned();
         for line in text.lines() {
             let Some(rest) = line.trim_start().strip_prefix("#define") else { continue };
             let rest = rest.split("/*").next().unwrap_or("").trim();
             let Some((name, value)) = rest.split_once(char::is_whitespace) else { continue };
-            if !prefixes.iter().any(|p| name.starts_with(p)) || name.contains('(') || out.iter().any(|(n, _)| n == name) {
+            if name.contains('(') || known.iter().any(|(n, _)| n == name) {
                 continue;
             }
-            if let Ok(v) = ksee_core::args::eval(value.trim(), &|n| out.iter().find(|(k, _)| k == n).map(|&(_, v)| v)) {
-                out.push((name.to_string(), v));
+            if let Ok(v) = ksee_core::args::eval(value.trim(), &|n| known.iter().find(|(k, _)| k == n).map(|&(_, v)| v)) {
+                known.push((name.to_string(), v));
+                if prefixes.iter().any(|p| name.starts_with(p)) && !name.starts_with("__") {
+                    out.push((name.to_string(), v));
+                }
             }
         }
     }

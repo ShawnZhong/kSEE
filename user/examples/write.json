@@ -7,7 +7,11 @@
     "1. [ksys_write](2:ksys_write) turns the fd into the open file; with O_APPEND, the position is the file's end, not the file's position.",
     "2. [generic_perform_write](2:generic_perform_write) copies the bytes from the program into the file's pages in the page cache. In ramfs that is where the file is, so this is the whole write.",
     "3. [simple_write_end](2:simple_write_end) makes the file 5 bytes longer: its inode's size grows.",
-    "Try: drop O_APPEND from the open: the write then overwrites the file's start (the position is 0). Or write more than fits in one page (4096 bytes: `write(fd, [5000], 5000)` writes zeros): the loop in `generic_perform_write` runs twice."
+    "Try: [without O_APPEND](try:1) the write overwrites the file's start, the position being 0. [A write of 4000 bytes](try:2) (zeros), appended after what is there, crosses a page boundary, so the loop in `generic_perform_write` runs twice."
+  ],
+  "tries": [
+    "fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY); write(fd, \"more\\n\", 5); close(fd)",
+    "fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND); write(fd, [4000], 4000); close(fd)"
   ],
   "steps": [
     {

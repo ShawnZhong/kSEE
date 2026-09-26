@@ -7,7 +7,10 @@
     "1. [ext4_create](1:ext4_create) makes the file, all inside one journal transaction, so that a crash leaves all of it or none of it.",
     "2. [__ext4_new_inode](1:__ext4_new_inode) finds a free inode in a block group's inode bitmap and marks it used.",
     "3. [add_dirent_to_buf](1:add_dirent_to_buf) writes the name \"new.txt\" into free space in a block of the directory, next to the other names.",
-    "Try: make the file in a directory that does not exist, `\"/mnt/nowhere/new.txt\"`: the lookup fails before ext4_create ever runs. Or compare with the in-memory create: the Outline shows how much more a disk file system does."
+    "Try: [a file in a directory that does not exist](try:1): the lookup fails before ext4_create ever runs. Then compare this example with the in-memory create: the Outline shows how much more a disk file system does."
+  ],
+  "tries": [
+    "fd = openat(AT_FDCWD, \"/mnt/nowhere/new.txt\", O_CREAT | O_WRONLY, 0644)"
   ],
   "steps": [
     {

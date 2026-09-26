@@ -3,6 +3,7 @@
 // the recordings show.
 //   deno run --allow-read tests/web.js
 import { start } from "../target/site/ksee.js";
+import { parseCall } from "../target/site/args.js";
 
 const root = new URL("..", import.meta.url);
 const m = await start({
@@ -222,6 +223,12 @@ for (const ex of examples) {
   for (const [, n, func, any] of (ex.text ?? []).join(" ").matchAll(/\]\((\d+)(?::([\w.]+))?(:any)?\)/g)) {
     const s = syscallOf(asked[Number(n) - 1]);
     if (!s || (func && m.first_call(func, s.first, s.last ?? m.records() - 1, any ? undefined : s.task.addr) == null)) missing.push(`${n}:${func ?? ""}`);
+  }
+  // (Its tries: each a program that runs; its calls finish, or block on purpose.)
+  for (const [k, prog] of (ex.tries ?? []).entries()) {
+    const steps = prog.split(";").map((c) => parseCall(c.trim())).filter(Boolean);
+    const ran = await runExample({ ...ex, steps });
+    check(`example ${ex.name}, try ${k + 1}: ${steps.length} calls made (${prog.slice(0, 50)}…)`, ran.length === steps.length && steps.length > 0);
   }
   check(`example ${ex.name}: ${ex.steps.length} calls, all finished, the explanation's links found`,
         !missing.length && !blocked.length || console.log("  missing:", missing, "blocked:", blocked));

@@ -8,7 +8,11 @@
     "2. Removing the directory: [ext4_empty_dir](2:ext4_empty_dir) asks whether it is empty. It is not (\"b.txt\" is in it), so the call fails with ENOTEMPTY.",
     "3. Removing the file: [ext4_delete_entry](3:ext4_delete_entry) takes the name out of the directory block, and since it was the file's only name and nobody has it open, [ext4_free_inode](3:ext4_free_inode) frees the inode.",
     "4. Now the directory is empty: [ext4_free_blocks](4:ext4_free_blocks) gives its block back to the block bitmap, and its inode is freed too.",
-    "Try: open b.txt before removing it (add `fd = openat(AT_FDCWD, \"/mnt/dir/b.txt\", O_RDONLY)` before call 3): the name goes, but the inode stays until the close. Or rename across directories, to \"/mnt/b.txt\"."
+    "Try: [open b.txt before removing it](try:1): the name goes, but the inode stays until the close, which is where `ext4_free_inode` runs then. Or [rename across directories](try:2), to /mnt/b.txt."
+  ],
+  "tries": [
+    "renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/dir/b.txt\", 0); fd = openat(AT_FDCWD, \"/mnt/dir/b.txt\", O_RDONLY); unlinkat(AT_FDCWD, \"/mnt/dir/b.txt\", 0); close(fd)",
+    "renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/b.txt\", 0)"
   ],
   "steps": [
     {

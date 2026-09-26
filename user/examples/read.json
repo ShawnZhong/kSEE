@@ -7,7 +7,11 @@
     "1. [ksys_read](2:ksys_read) is the syscall's entry: the fd turns into the open file (a `struct file`) and the position to read at, which starts at 0.",
     "2. [vfs_read](2:vfs_read) is the VFS, the same for every file system: is the file open for reading, is the range sane, then it calls the file system's own read.",
     "3. [filemap_read](2:filemap_read) is the page cache: a file's data lives in memory pages. Find the page at the position, copy from it to the program's buffer. In ramfs the pages are all the file is, so this is where the bytes come from.",
-    "Look at the Outline tab on the right for the whole call as a tree, and at the Call stack for `count` and `buf`. Try: read again after this read (add `read(fd, [64], 64)`): the position has moved, so the second read returns 0, the end of the file. Or read 4 bytes at a time."
+    "Look at the Outline tab on the right for the whole call as a tree, and at the Call stack for `count` and `buf`. Try: [read twice](try:1): the position has moved, so the second read returns 0, the end of the file; or [4 bytes at a time](try:2)."
+  ],
+  "tries": [
+    "fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, [64], 64); read(fd, [64], 64); close(fd)",
+    "fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, [4], 4); read(fd, [4], 4); close(fd)"
   ],
   "steps": [
     {

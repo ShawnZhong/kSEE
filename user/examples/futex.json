@@ -10,7 +10,11 @@
     "4. The thread waits, saying it expects the word to hold 1. [futex_wait_setup](4:futex_wait_setup) checks the word with the waiter queue's lock held: it holds 0, so the call returns at once with EAGAIN. That check under the lock is the whole trick: a wake-up cannot slip in between the check and the sleep.",
     "5. Now it waits expecting 0, which is right: [futex_do_wait](5:futex_do_wait) queues the thread on the futex's hash bucket and [schedule](5:schedule) gives the CPU away. The call blocks: it returns only when someone wakes it.",
     "6. /init wakes one waiter: [futex_wake](6:futex_wake) finds the waiters queued on this word (its key: this process's memory, this address), and [wake_up_q](6:wake_up_q) wakes the thread. Its wait returns 0.",
-    "Try: wake with 0 waiters allowed (`FUTEX_WAKE_PRIVATE, 0`): the thread stays blocked. Or wait on `mem + 4` and wake `mem`: a different word, so nobody wakes."
+    "Try: [wake with 0 waiters allowed](try:1): the thread stays blocked until a real wake. Or [wait on another word](try:2), `mem + 4`, and wake `mem`: a different key, so nobody wakes, until `mem + 4` is woken."
+  ],
+  "tries": [
+    "mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0); thread: futex_time64(mem, FUTEX_WAIT_PRIVATE, 0, NULL); futex_time64(mem, FUTEX_WAKE_PRIVATE, 0, NULL); futex_time64(mem, FUTEX_WAKE_PRIVATE, 1, NULL)",
+    "mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0); thread: futex_time64(mem + 4, FUTEX_WAIT_PRIVATE, 0, NULL); futex_time64(mem, FUTEX_WAKE_PRIVATE, 1, NULL); futex_time64(mem + 4, FUTEX_WAKE_PRIVATE, 1, NULL)"
   ],
   "steps": [
     {

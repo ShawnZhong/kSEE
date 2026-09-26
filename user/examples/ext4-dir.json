@@ -6,7 +6,10 @@
     "The same mkdir as in memory, but on ext4. What does a directory look like on a disk?",
     "1. [ext4_mkdir](1:ext4_mkdir) makes the directory in one journal transaction. On a disk a directory is a file of names, so [ext4_init_new_dir](1:ext4_init_new_dir) writes its first block with its own two entries, \".\" (itself) and \"..\" (its parent), and [ext4_add_entry](1:ext4_add_entry) puts the name \"sub\" into a block of /mnt, the parent.",
     "2. Listing /mnt: [ext4_readdir](3:ext4_readdir) reads the directory's blocks and hands out one entry after another.",
-    "Try: list the new directory instead (`openat(AT_FDCWD, \"/mnt/sub\", O_RDONLY | O_DIRECTORY)`): only \".\" and \"..\". Or make a file in it first, then list it."
+    "Try: [list the new directory instead](try:1): only \".\" and \"..\". Or make a file in it first, then list it."
+  ],
+  "tries": [
+    "mkdirat(AT_FDCWD, \"/mnt/sub\", 0755); fd = openat(AT_FDCWD, \"/mnt/sub\", O_RDONLY | O_DIRECTORY); getdents64(fd, [256], 256); close(fd)"
   ],
   "steps": [
     {

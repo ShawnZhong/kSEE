@@ -165,6 +165,8 @@ table.raw tr.task td:last-child { color: var(--run); }
 .explain a.place.on { background: var(--at); border-radius: 2px; }
 .explain .place.gone { color: var(--dim); text-decoration: line-through; }
 .explain code { font-size: 12px; }
+.explain a.try { border: 1px solid var(--accent); border-radius: 3px; padding: 0 5px; font-size: 12px; white-space: nowrap; }
+.explain a.try:hover { text-decoration: none; background: var(--sel); }
 
 /* The program: a call a line (its editor, its result), the one at the tutorial's stop */
 .ptitle { margin: 10px 12px 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }

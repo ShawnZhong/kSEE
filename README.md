@@ -86,7 +86,8 @@ An example is one JSON file in user/examples/: a title, a question, `text`
 (the explanation: paragraphs, with links into the recording as
 `[label](2:vfs_read)`, the first call of vfs_read in call 2's recording,
 `:any` for one on any task, or `[label](2)`, call 2 itself; `code` in
-backticks), and steps: `{ call, name?, tid?, args }` (`name`:
+backticks; `[label](try:1)` runs the example's `tries[0]`, another program
+written as calls separated by `;`, to see what changes), and steps: `{ call, name?, tid?, args }` (`name`:
 a name for the call's result, which later arguments may use, as `fd` or
 `$2`; `tid`: the runner that makes it, a number or a result's name, `child`
 for the one a clone started; else /init), and a `group` (the selector's:

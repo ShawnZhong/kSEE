@@ -11,7 +11,10 @@
     "5. /init closes its reading end, keeps the writing end, and writes hello: [anon_pipe_write](8:anon_pipe_write) puts the bytes into the pipe's buffer, and [try_to_wake_up](8:try_to_wake_up:any) wakes the reader. cat's read returns the 6 bytes, and it writes them to its output: see the Console.",
     "6. /init closes the writing end: [pipe_release](9:pipe_release:any) finds no writer left and wakes the readers. cat's read returns 0, the end of its input, and it exits, sending SIGCHLD to its parent; it stays a zombie until the parent asks how it ended.",
     "7. [do_wait](10:do_wait) is that asking: [wait_task_zombie](10:wait_task_zombie) takes the child's exit status (it exited, with 0), and [release_task](10:release_task) reaps it. The child is gone.",
-    "Try: remove the child's `close(4)` (✕ on its line): cat then never sees the end of its input, and its read after hello blocks. Or write twice before closing."
+    "Try: [write twice, and let the child keep fd 4](try:1): cat prints both lines, but after /init closes its writing end cat's own fd 4 keeps the pipe open, so its read blocks for ever, it never exits, and the waitid blocks too."
+  ],
+  "tries": [
+    "pipe2([8], 0); child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0); child: dup3(3, 0, 0); child: close(3); child: execve(\"/bin/cat\", {\"cat\", NULL}, NULL); close(3); write(4, \"hello\\n\", 6); write(4, \"again\\n\", 6); close(4); waitid(P_PID, child, [128], WEXITED, NULL)"
   ],
   "steps": [
     {
