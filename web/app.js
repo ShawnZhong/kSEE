@@ -25,7 +25,7 @@ export function app(m) {
     $("badge").textContent = { idle: "○ IDLE", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
     $("status").textContent = {
       idle: "Nothing recorded yet: an example's calls are, as it opens.",
-      replay: `a recording of ${time.records()} records: move the cursor through it`,
+      replay: "Move the cursor through the recording: the timeline, ◀ ▶|, Play.",
       halted: `the kernel halted (${halted})`,
     }[st];
   }
@@ -67,7 +67,7 @@ export function app(m) {
     const owner = f.inlined ? stack.owner(f) : f;
     src.showFunction(owner?.func ?? f.func, at?.syscall ?? undefined, f.line, f.file);
     time.selected(f.first);
-    $("where").textContent = `${f.func}${f.inlined ? ` (inlined into ${owner?.func})` : ""} ${f.file ?? ""}:${f.line ?? ""}` + (time.cursor() != null ? ` · record ${time.cursor() + 1}` : "");
+    $("where").textContent = `${f.func}${f.inlined ? ` (inlined into ${owner?.func})` : ""} ${f.file ?? ""}:${f.line ?? ""}`;
   };
   // Preview a call while it is hovered (in the timeline or the Stack):
   // `get()` says where ({ func: the function to show, file, line, i?: the
@@ -106,7 +106,7 @@ export function app(m) {
     const s = at.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
     if (at.kind === "block") src.showFunction(at.func, s?.index, at.line, at.file);
     stack.show(at.i, null, at.task);
-    $("where").textContent = `record ${at.i + 1} of ${time.records()} · ${taskName(at.task)} · ${at.inlined ? `${at.inlined} in ` : ""}${at.func} ${at.file ?? ""}:${at.line ?? ""}` +
+    $("where").textContent = `${taskName(at.task)} · ${at.inlined ? `${at.inlined} in ` : ""}${at.func} ${at.file ?? ""}:${at.line ?? ""}` +
       (s ? ` · in ${s.name}` : "");
     badge();
   };
@@ -151,7 +151,7 @@ export function app(m) {
     while (nth < k && st[k - nth - 1].i === step.i) nth++;
     stack.show(step.i, { ...step, nth }, at?.task);
     $("where").textContent = `line ${k + 1} of ${st.length} · ${step.inlined ? `${step.inlined} in ` : ""}${step.func} ${step.file}:${step.line}` +
-      (at ? ` · record ${step.i + 1} · ${taskName(at.task)}` : "");
+      (at ? ` · ${taskName(at.task)}` : "");
     return true;
   }
   const forward = () => steps().length > 0 && showStep(position() + 1);

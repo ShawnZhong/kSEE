@@ -128,6 +128,9 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   $("chart").dispatchEvent(new PointerEvent("pointermove", at));
   await sleep(400);
   r.preview = [$("fn-title").textContent.slice(0, 40), document.querySelector(".tip .here")?.textContent, $("stack").classList.contains("preview")];
+  // (Moving on in the same call: the tip keeps where it is.)
+  $("chart").dispatchEvent(new PointerEvent("pointermove", { ...at, clientX: at.clientX + 1 }));
+  if (!document.querySelector(".tip .here")?.textContent) throw new Error("the tip lost where the call is");
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
   await sleep(300);
   r.unpreviewed = !$("fn-title").classList.contains("preview") && !$("stack").classList.contains("preview");

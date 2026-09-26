@@ -145,7 +145,7 @@ export function timeline(app) {
       sctx.fillStyle = css("--fg");
       sctx.fillRect(x(cur) - 1, 0, 2, STRIP);
     }
-    $("chart-title").textContent = `${t.title || "the recording"} · records ${t.win.a + 1}–${t.win.b + 1} of ${t.n}`;
+    $("chart-title").textContent = t.title || "the recording";
   }
   function label(ctx, text, x1, w, y, fill) {
     if (w < 24) return;
@@ -243,6 +243,7 @@ export function timeline(app) {
     if (key !== t.peek) {
       // A preview of where the call is there (see app.preview), and so the tip's place.
       t.peek = key;
+      t.here = "";
       const i = first == null ? 0 : Math.max(first, at(e.offsetX));
       app.preview(first == null ? null : () => {
         const frames = m.call_stack(i), name = inl ? iname(inl - 1) : null;
@@ -252,7 +253,7 @@ export function timeline(app) {
         // (Where it was called from: the call outside it, where it is.)
         const caller = frames[frames.indexOf(f) + 1];
         // (And what runs then, on top of it.)
-        if (key === t.peek) tip.querySelector(".here").textContent =
+        if (key === t.peek) tip.querySelector(".here").textContent = t.here =
           (caller ? `called at ${caller.file}:${caller.line} · ` : "") + `now at ${f.file}:${f.line}` +
           (frames[0] && frames[0] !== f ? ` · running: ${frames[0].func}${frames[0].inlined ? " (inlined)" : ""} (${frames[0].file}:${frames[0].line})` : "");
         return { func: owner?.func ?? f.func, file: f.file, line: f.line, i };
@@ -265,19 +266,16 @@ export function timeline(app) {
     }
     chart.title = "";
     const f = fn(id), s = t.syscallAt.get(first);
-    let end = k;
-    while (end + 1 < t.cols.length && t.cols[end + 1].frames[d]?.[1] === first) end++;
-    const span = `records ${first + 1}–${at(((end + 1) / t.cols.length) * W()) + 1}`;
     const line = (text, cls) => Object.assign(document.createElement("div"), { className: cls, textContent: text });
     const tipLines = (inl
-      ? [line(`${iname(inl - 1)} (inlined)`, ""), line(`its code, inlined into ${f?.name}: not a call of its own · ${span}`, "dim")]
+      ? [line(`${iname(inl - 1)} (inlined)`, ""), line(`its code, inlined into ${f?.name}: not a call of its own`, "dim")]
       : s
       ? [line(`${s.name ?? s.nr}(${s.args.slice(0, 3).join(", ")}…) = ${s.ret ?? "…"}`, ""),
-         line(`a syscall by ${taskName(s.task)} · ${span}`, "dim")]
+         line(`a syscall by ${taskName(s.task)}`, "dim")]
       : [line(f?.name ?? "?", ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f")),
-         ...inlinedIn(c, first).map((n) => line(`in ${n} (inlined)`, "f")),
-         line(span, "dim")]);
-    tip.replaceChildren(...tipLines, line("", "dim here"));
+         ...inlinedIn(c, first).map((n) => line(`in ${n} (inlined)`, "f"))]);
+    // (Where it is, called from: kept once found, see above.)
+    tip.replaceChildren(...tipLines, line(t.here ?? "", "dim here"));
     tip.hidden = false;
     const r = tip.getBoundingClientRect();
     tip.style.left = `${Math.min(e.clientX + 14, innerWidth - r.width - 8)}px`;
@@ -328,9 +326,9 @@ export function timeline(app) {
     // where it is then). Elsewhere: the cursor at the next block.
     const { c, d } = hit(e), [, first, inl] = c?.frames[d] ?? [];
     if (first == null) return go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
-    // (A syscall: selected, its records from its entry to its exit.)
+    // (A syscall: selected too, its records from its entry to its exit.)
     const s = !inl && t.syscallAt.get(first);
-    if (s) return app.select(s);
+    if (s) select(s);
     go(Math.max(first, at(e.offsetX)));
     app.selectCall(first, inl ? iname(inl - 1) : null);
   };
