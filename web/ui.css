@@ -83,6 +83,10 @@ table.objs td.fname { width: 36%; }
 table.objs td.fval { color: var(--accent); width: 40%; }
 table.objs td.ftype { color: var(--dim); }
 table.objs tr.changed td { background: var(--chg); }
+table.objs td.fval.mem { cursor: pointer; }
+table.objs tr.history td { white-space: normal; font-size: 11px; background: var(--bg); }
+table.objs tr.history ol { margin: 2px 0; padding-left: 18px; }
+table.objs tr.history li.on { background: var(--at); }
 .tw { color: var(--dim); display: inline-block; width: 1.2em; }
 table.stack tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); background: var(--panel); }
 table.stack tr.frame.on td { background: var(--sel); }

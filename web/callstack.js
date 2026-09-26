@@ -7,7 +7,8 @@
 // what they point to, structs into their fields, read from memory as it was
 // at the cursor (Machine.memory_at); what is open stays open while
 // stepping; values that changed since the cursor last moved are
-// highlighted; hover a value for who last wrote it. Click a call to select
+// highlighted; hover a value for who last wrote it, click it for its
+// history (every write to it, each a link to that moment). Click a call to select
 // it: the source shows where it is (for an outer call, the line calling
 // the next one in).
 import { $, el } from "./dom.js";
@@ -41,11 +42,31 @@ export function callstack(app) {
             open ? s.open.delete(p) : s.open.add(p);
             draw();
           } }), o.name),
-        // (Hover a value: who last wrote it, and what it was before.)
-        el("td", { className: "fval", title: value, onmouseenter: (e) => (e.target.title = `${value}\n${wroteIt(o)}`) }, value),
+        // (Hover a value: who last wrote it, and what it was before; click: its history.)
+        // (Only a value in memory has one, a scalar: not an argument, which is in its call's record.)
+        o.addr && o.size && o.value != null
+          ? el("td", { className: "fval mem", title: value, onmouseenter: (e) => (e.target.title = `${value}\n${wroteIt(o)}\n(click: its history)`),
+                       onclick: () => ((s.history = s.history === p ? null : p), draw()) }, value)
+          : el("td", { className: "fval", title: value }, value),
         el("td", { className: "ftype", textContent: o.ty })));
+      if (s.history === p) out.push(history(o, depth));
       if (open) rows(kids(o) ?? [], p, depth + 1, out);
     }
+  }
+  // Value `o`'s history (Machine.writes): its writes, the newest 8, each a
+  // link to that moment; the one in effect at the cursor marked.
+  function history(o, depth) {
+    const all = m.writes(o.addr, Math.min(o.size, 8));
+    const cur = app.time.cursor() ?? Infinity, now = all.findLastIndex((w) => w.i <= cur);
+    const items = all.slice(-8).map((w) => {
+      const at = w.at ? `${w.at.inlined ?? w.at.func} ${w.at.file}:${w.at.line}` : "?";
+      return el("li", { className: all.indexOf(w) === now ? "on" : "" },
+        el("a", { textContent: `${w.before} → ${w.after}`, onclick: () => app.time.go(w.i) }),
+        el("span", { className: "dim", textContent: ` ${at} · ${w.task.comm ?? "?"}(${w.task.pid ?? "?"})` }));
+    });
+    return el("tr", { className: "history" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
+      items.length ? el("ol", {}, ...items) : el("span", { className: "dim", textContent: "not written in the recording" }),
+      all.length > 8 ? el("div", { className: "dim", textContent: `(${all.length - 8} earlier)` }) : null));
   }
   // The newest write to `o` at the cursor (Machine.last_write): where, by
   // whom, and the value it overwrote.

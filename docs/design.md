@@ -38,7 +38,8 @@ SMP, no fork (threads and vfork, though): see Limits).
      line (its next run, or its last); Play;
    - *code*: the source line at the cursor, the lines that ran;
    - *values*: the call stack with each call's arguments and locals,
-     the task running, and a name's value on hover (who last wrote it);
+     the task running, and a name's value on hover (who last wrote it; a
+     value's history: every write to it);
      memory as it was at the cursor.
    An example's tutorial is its stops, places in the recording with a note
    each: ◀ ▶ (or [ ]) go from one to the next.

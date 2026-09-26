@@ -105,6 +105,19 @@ pub struct Frame {
     pub locals: Option<Vec<Object>>,
 }
 
+/// A write to a value, in its history: at record `i`, from `before` to
+/// `after` (its bytes, up to 8, as a number: decimal, or hex if large), on
+/// `task`, by the code at `at`.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Change {
+    pub i: usize,
+    pub before: String,
+    pub after: String,
+    pub task: TaskRef,
+    pub at: Option<Line>,
+}
+
 /// The newest write to a value: at record `i`, on `task`, by the code at
 /// `at` (the line, if known); `old` what it overwrote.
 #[derive(Debug, Clone, PartialEq)]
@@ -445,6 +458,15 @@ impl View<'_> {
     pub fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
         let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
         Some(Write { i, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)) })
+    }
+
+    /// A value's history: the newest `limit` stores to `addr..addr + len`
+    /// in the recording, oldest first (see Recording::writes).
+    pub fn writes(&self, addr: u32, len: u32, limit: usize) -> Vec<Change> {
+        let num = |v: u64| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
+        self.rec.writes(self.tables, self.now, addr, len, limit).into_iter().map(|(i, before, after, line)| Change {
+            i, before: num(before), after: num(after), task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)),
+        }).collect()
     }
 
     /// The task running at the start of each of `n` buckets of the recording.

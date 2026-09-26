@@ -161,6 +161,12 @@ impl Machine {
         self.view(|v| to_js(&v.last_write(addr, len, at)))
     }
 
+    /// A value's history: the newest writes to `addr..addr + len` in the
+    /// recording, oldest first (view::Change).
+    pub fn writes(&self, addr: u32, len: u32) -> JsValue {
+        self.view(|v| to_js(&v.writes(addr, len, 64)))
+    }
+
     /// The task running at the start of each of `n` buckets of the
     /// recording, for its overview (view::TaskRef).
     pub fn timeline(&self, n: usize) -> JsValue {

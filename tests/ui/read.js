@@ -20,6 +20,12 @@
     if (!next || next.disabled) break;
     next.click();
   }
+  // A value's history: click one in the Stack (one in memory: a local's, a task's field), its writes listed.
+  const v = document.querySelector("#stack td.fval.mem");
+  v?.click();
+  r.history = [v?.textContent, document.querySelectorAll("#stack tr.history li").length, document.querySelector("#stack tr.history")?.innerText.slice(0, 80)];
+  if (!document.querySelector("#stack tr.history")) throw new Error("no history: " + JSON.stringify(r.history));
+  v?.click();
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = $("where").textContent.slice(0, 50);
   // Run to a line (the source's F4): the line where the cursor is, its next run; and ] for the next stop.

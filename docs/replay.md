@@ -78,7 +78,9 @@ runs until the next call: so memory now is memory as the recording ends.
 
 The same index answers "who last wrote this?": the newest store to a range
 at or before the cursor, and the line it was on (where `lines` says the
-task was then).
+task was then); and a value's history (`writes`): every store to it, each
+with the value before (the store's old bytes) and after (memory as it was
+just after it).
 
 What it cannot show: values only in wasm locals (registers, in effect),
 and old contents of bulk writes beyond 256 bytes (known to be unknown).

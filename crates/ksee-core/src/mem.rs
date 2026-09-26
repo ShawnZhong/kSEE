@@ -64,13 +64,26 @@ impl History {
     /// `at`: (its record, the old value).
     pub fn last_write(&self, records: &[Record], addr: u32, len: u32, at: usize) -> Option<(usize, u64)> {
         let end = self.stores.partition_point(|&i| i <= at);
-        self.stores[..end].iter().rev().find_map(|&i| match records[i] {
-            Record::Store { addr: a, size, old } => {
-                let n = if size == 0 { old as u32 } else { size };
-                (a < addr.saturating_add(len) && addr < a.saturating_add(n)).then_some((i, old))
-            }
-            _ => None,
-        })
+        self.stores[..end].iter().rev().find_map(|&i| overlaps(records[i], addr, len).then(|| match records[i] {
+            Record::Store { old, .. } => (i, old),
+            _ => unreachable!(),
+        }))
+    }
+
+    /// The stores to any of `addr..addr + len`, oldest first: their records.
+    pub fn writes(&self, records: &[Record], addr: u32, len: u32) -> Vec<usize> {
+        self.stores.iter().copied().filter(|&i| overlaps(records[i], addr, len)).collect()
+    }
+}
+
+/// Whether store `r` writes any of `addr..addr + len`.
+fn overlaps(r: Record, addr: u32, len: u32) -> bool {
+    match r {
+        Record::Store { addr: a, size, old } => {
+            let n = if size == 0 { old as u32 } else { size };
+            a < addr.saturating_add(len) && addr < a.saturating_add(n)
+        }
+        _ => false,
     }
 }
 

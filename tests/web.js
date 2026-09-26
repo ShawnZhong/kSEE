@@ -116,6 +116,13 @@ const buf = (i) => (m.memory_at(i), m.call_stack(inRead)[0].args.find((a) => a.n
 check("the user's buffer, before the read and after", !/hello/.test(buf(read.first)) && /"hello from the page cache/.test(buf(read.last)));
 const who = (m.memory_at(read.last), m.last_write(fpos(read.last).addr, 8));
 check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
+// A value's history: f_pos's writes, the read's among them (0 to 26, by ksys_read).
+{
+  const h = m.writes(fpos(read.last).addr, 8), w = h.find((x) => x.i >= read.first && x.i <= read.last);
+  check(`f_pos's history: ${h.length} writes, the read's ${w?.before} → ${w?.after} by ${w?.at?.func}`,
+        w?.before === "0" && w?.after === "26" && w?.at?.func === "ksys_read" && h.every((x, k) => k === 0 || h[k - 1].i < x.i));
+}
+m.memory_at(null);
 const readSteps = m.line_steps(read.first, read.last, read.task.addr);
 // Run to a line: the next time it runs, and back.
 {
