@@ -150,7 +150,6 @@ table.stack tr.task td { background: var(--panel); }
 #src { overflow: hidden; }
 .prog { border-top: 1px solid var(--line); }
 .ln-hit { background: var(--hit-bg); }
-.ln-miss { background: color-mix(in srgb, var(--miss) 7%, transparent); }
 .ln-infn { border-left: 3px solid var(--accent); margin-left: 3px; }
 .ln-cursor { background: var(--sel); box-shadow: inset 3px 0 var(--accent); }
 .gl-cursor::before, .gl-stophere::before { display: block; text-align: center; font-size: 12px; }

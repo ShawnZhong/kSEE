@@ -5,7 +5,7 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 
 use crate::recording::Recording;
 use crate::stack::{self, LineStep};
@@ -376,17 +376,15 @@ impl View<'_> {
     }
 
     /// The lines of `file` that code ran, in syscall `n` (or the whole
-    /// recording), with how often (the most of the blocks running it); and
-    /// the lines of the functions that ran that did not (count 0). Lines
-    /// inlined into a block are its too.
+    /// recording), with how often (the most of the blocks running it).
+    /// Lines inlined into a block are its too.
     pub fn coverage(&self, file: &str, n: Option<usize>) -> Vec<LineCount> {
         let t = self.tables;
         let counts = self.rec.block_counts(n);
-        let ran: BTreeSet<u32> = counts.iter().filter(|(_, c)| **c > 0).map(|(&(f, _), _)| f).collect();
         let files: Vec<u32> = (0..t.files.len() as u32).filter(|&k| t.files[k as usize] == file).collect();
         let mut lines: BTreeMap<u32, u64> = BTreeMap::new();
-        for (&(f, b), &l) in t.blocks.iter().filter(|((f, _), _)| ran.contains(f)) {
-            let c = counts.get(&(f, b)).copied().unwrap_or(0);
+        for (&(f, b), &c) in counts.iter().filter(|(_, c)| **c > 0) {
+            let Some(&l) = t.blocks.get(&(f, b)) else { continue };
             let mut mark = |loc: Loc| {
                 if files.contains(&loc.file) {
                     let e = lines.entry(loc.line).or_default();
