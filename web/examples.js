@@ -11,7 +11,8 @@
 // recording (on the call's task, or any for a stop that says so), the
 // cursor there. The program is below it, a call a line: click one for its
 // recording; type in it to change it (Enter: the program runs again, on a
-// fresh kernel); add a call at the end.
+// fresh kernel), empty it (or ✕) to remove it; add a call at the end; ↺
+// for the example's own program again.
 //
 // A step: { call, args, stops?, as?, tid? }; its arguments written as in C
 // (see args.js): "a string", 0644, O_CREAT | O_WRONLY, [64], {0, 30000000},
@@ -73,6 +74,7 @@ export async function examples(app) {
   function go(ex, steps = ex.steps, changed = false) {
     open(ex, steps);
     t.changed = changed;
+    t.reset.hidden = !changed;
     toURL(-1);
     t.status.textContent = "Starting a fresh kernel…";
     app.restart().then(run);
@@ -99,7 +101,8 @@ export async function examples(app) {
     t.form = form();
     $("examples").replaceChildren(
       ex.question ? el("div", { className: "q", textContent: ex.question }) : null,
-      t.tut, el("div", { className: "ptitle dim", textContent: "The program" }), t.list, t.status);
+      t.tut, el("div", { className: "ptitle dim" }, "Program", t.reset = el("a", { textContent: "↺ the example's", hidden: true,
+        title: "the example's own program again (yours is in the URL until then)", onclick: () => go(ex) })), t.list, t.status);
     draw();
     tutorial();
   }
@@ -134,6 +137,13 @@ export async function examples(app) {
     go(t.ex, steps, true);
   }
 
+  // Remove step `j`: the program runs again without it.
+  function remove(j) {
+    const steps = t.steps.filter((_, k) => k !== j);
+    t.keep = t.pos;
+    go(t.ex, steps, true);
+  }
+
   const rets = () => t.done.map((d) => d.ret);
   // A step's runner (a thread id).
   const tidOf = (s) => s.tid ?? (s.as ? t.started[s.as - 1] : 1);
@@ -157,12 +167,13 @@ export async function examples(app) {
       const d = t.done[j];
       const e = callEditor({ m, consts, rets: () => rets().slice(0, j), text: text(s), inline: true, common,
         focus: () => pick(j),
-        done: (c) => (text(c) === text(s) ? e.input.blur() : change(j, c)),
+        done: (c) => (c == null ? remove(j) : text(c) === text(s) ? e.input.blur() : change(j, c)),
         cancel: () => ((e.input.value = text(s)), e.input.blur()) });
-      e.input.title = "type to change the call (Enter: run the program again with it; Esc: not)";
+      e.input.title = "type to change the call (Enter: run the program again with it; Esc, or leaving it: not; emptied: remove it)";
       return el("li", { className: [d ? "done" : "", d && d.how == null ? "blocked" : "", t.tour[t.pos]?.j === j ? "on" : ""].join(" ").trim() },
         el("div", { className: "line" }, s.tid ? null : who(j), e.el,
-          d ? el("span", { className: "mono ret", textContent: how(d) }) : null),
+          d ? el("span", { className: "mono ret", textContent: how(d) }) : null,
+          el("a", { className: "rm", textContent: "✕", title: "remove the call (the program runs again without it)", onclick: () => remove(j) })),
         t.started[j] ? el("div", { className: "dim more", textContent: `→ tid ${t.started[j]}, a runner` }) : null,
         d && text(s, rets()) !== text(s) ? el("div", { className: "mono dim more", textContent: `as made: ${text(s, rets())}` }) : null,
         d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null);
@@ -179,9 +190,9 @@ export async function examples(app) {
     });
     t.tut.replaceChildren(
       el("div", { className: "tnav" },
-        el("button", { textContent: "◀", title: "the stop before", disabled: t.pos <= 0, onclick: () => stop(t.pos - 1) }),
+        el("button", { textContent: "◀ Back", title: "the stop before ([)", disabled: t.pos <= 0, onclick: () => stop(t.pos - 1) }),
         el("span", { className: "dim", textContent: t.pos >= 0 ? `Stop ${t.pos + 1} of ${n}` : `${n} stops` }),
-        el("button", { className: "go", textContent: "Next stop ▶", title: "the next stop", disabled: t.pos + 1 >= n, onclick: () => stop(t.pos + 1) })),
+        el("button", { className: "go", textContent: "Next ▶", title: "the next stop (])", disabled: t.pos + 1 >= n, onclick: () => stop(t.pos + 1) })),
       el("ol", { className: "stops" }, ...items));
     items[t.pos]?.scrollIntoView({ block: "nearest" });
   }

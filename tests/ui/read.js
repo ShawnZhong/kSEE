@@ -118,6 +118,37 @@
   await until(() => location.hash.includes("&p=") && document.querySelectorAll("ol.steps > li.done").length === n && line(lis()[3]).includes("= 0"));
   r.edited = [lis().length, line(lis()[3])];
   if (r.edited[0] !== n || !r.edited[1].includes("/mnt/other")) throw new Error("editing: " + JSON.stringify(r));
+  // Removing a call (✕): the program runs again without it; ↺: the example's own program back.
+  lis()[3].querySelector(".rm").click();
+  await until(() => document.querySelectorAll("ol.steps > li.done").length === n - 1 && !location.hash.includes("/mnt/other"));
+  r.removed = lis().length;
+  document.querySelector(".ptitle a").click();
+  await until(() => !location.hash.includes("&p=") && document.querySelectorAll("ol.steps > li.done").length === n);
+  r.reset = [lis().length, line(lis()[3])];
+  if (r.removed !== n - 1 || r.reset[0] !== n || r.reset[1].includes("/mnt/other")) throw new Error("remove, reset: " + JSON.stringify(r));
+  // Code navigation: the lens over the shown function (who called it), F12 to a function, and to a field.
+  ksee.src.showFunction("ext4_mkdir");
+  await sleep(1200);
+  r.lens = [...document.querySelectorAll(".codelens-decoration")].map((e) => e.innerText.replace(/\s+/g, " ")).slice(0, 2);
+  const ed = ksee.src.editor, find = (needle, off) => {
+    const mdl = ed.getModel();
+    for (let k = 1; k <= mdl.getLineCount(); k++) { const c = mdl.getLineContent(k).indexOf(needle); if (c >= 0) return { lineNumber: k, column: c + 1 + off }; }
+    return null;
+  };
+  const goto = async (needle, off) => {
+    const at = find(needle, off);
+    if (!at) throw new Error(`no "${needle}" in ${$("fn-title").textContent}`);
+    ed.setPosition(at);
+    ed.focus();
+    ed.trigger("test", "editor.action.revealDefinition", null);
+    await sleep(1000);
+  };
+  await goto("ext4_append(handle", 1);
+  r.def = $("fn-title").textContent;
+  await goto("dir->i_sb", 5);
+  r.field = [$("fn-title").textContent, ed.getModel().getLineContent(ed.getPosition().lineNumber).trim()];
+  if (!r.lens[0]?.includes("called") || !r.def.includes("ext4_append") || !r.field[0].includes("fs.h") || !r.field[1].includes("i_sb"))
+    throw new Error("navigation: " + JSON.stringify(r));
   // The console, folded to its last line; the current task, open to its key fields.
   r.console = [$("pane-console").classList.contains("folded"), $("console").textContent];
   r.current = [...document.querySelectorAll("#stack tr.task, #stack tr.task ~ tr")].slice(0, 3).map((tr) => tr.innerText.replace(/\s+/g, " ").trim());

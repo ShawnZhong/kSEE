@@ -114,6 +114,10 @@ ol.steps > li { margin: 4px 0; }
 ol.steps > li.on { background: var(--sel); border-radius: 3px; }
 ol.steps .line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; }
 ol.steps .line .calledit { flex: 1 1 12em; min-width: 0; }
+ol.steps .line .rm { color: var(--dim); font-size: 11px; visibility: hidden; }
+ol.steps > li:hover .line .rm { visibility: visible; }
+.ptitle { display: flex; align-items: baseline; }
+.ptitle a { margin-left: auto; text-transform: none; letter-spacing: 0; }
 ol.steps .ret { color: var(--accent); margin-left: auto; white-space: nowrap; }
 ol.steps > li.blocked .ret { color: var(--pp); font-style: italic; }
 ol.steps .tid { font-size: 11px; color: var(--kw); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; white-space: nowrap; }

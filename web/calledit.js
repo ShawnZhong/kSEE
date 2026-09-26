@@ -5,8 +5,8 @@
 // (Machine.syscall says which),
 // and $n: the calls' results so far), ↑ ↓ to choose, Tab or Enter to take
 // one; below, the syscall's signature, the parameter at the cursor in
-// bold. Enter (with no list open) makes the call; Esc closes the list, or
-// gives up.
+// bold. Enter (with no list open) makes the call (a program's line
+// emptied: removes it, `done(null)`); Esc closes the list, or gives up.
 import { el } from "./dom.js";
 import { arg, parseCall } from "./args.js";
 
@@ -144,7 +144,8 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
   input.onfocus = () => (requestAnimationFrame(show), focus?.());
   input.onclick = show;
   input.onkeyup = (e) => e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End" ? show() : undefined;
-  input.onblur = () => (list.hidden = true);
+  // (A program's line left: as the call is; Enter applies, nothing else.)
+  input.onblur = () => ((list.hidden = true), inline && cancel?.());
   input.onkeydown = (e) => {
     const open = !list.hidden;
     if (open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -157,6 +158,8 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
       take(open ? sel : 0);
     } else if (e.key === "Enter" && open) {
       take(sel);
+    } else if (e.key === "Enter" && inline && !input.value.trim()) {
+      done(null); // (emptied: the call goes)
     } else if (e.key === "Enter") {
       const c = written();
       if (typeof c === "string") return (hint.textContent = c, e.preventDefault());
