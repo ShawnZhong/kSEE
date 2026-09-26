@@ -17,7 +17,7 @@
 // (see args.js): "a string", 0644, O_CREAT | O_WRONLY, [64], {0, 30000000},
 // $2. Its runner: the one call `as` started, or thread `tid`; else /init.
 import { $, el } from "./dom.js";
-import { arg, made, result } from "./args.js";
+import { arg, made, parseCall, result } from "./args.js";
 import { callEditor } from "./calledit.js";
 
 export async function examples(app) {
@@ -30,23 +30,50 @@ export async function examples(app) {
   // where it is.
   const t = { ex: null, steps: [], done: [], started: [], tour: [], pos: -1, keep: -1, list: null, tut: null, status: null };
 
-  // The example in the URL (#ex=NAME, or #back=: see change), else the
-  // first: { ex, steps, back (changed from the example's) }.
+  // The URL: #ex=NAME, the example; &p=CALLS, its program if changed (the
+  // calls as written, separated by ";": see program); &stop=N, where the
+  // tutorial is. { ex, steps, changed, stop }.
   function fromURL() {
-    const h = location.hash, name = h.match(/^#ex=([\w-]+)$/)?.[1];
-    let back = null;
-    try {
-      back = JSON.parse(decodeURIComponent(h.match(/^#back=(.*)$/)?.[1] ?? "null"));
-    } catch { /* none */ }
-    const ex = list.find((x) => x.name === (back?.name ?? name)) ?? list[0];
-    return { ex, steps: back?.steps ?? ex?.steps ?? [], back: !!back };
+    const q = Object.fromEntries(location.hash.slice(1).split("&").filter(Boolean).map((kv) => {
+      const k = kv.indexOf("=");
+      return [kv.slice(0, k), decodeURIComponent(kv.slice(k + 1))];
+    }));
+    const ex = list.find((x) => x.name === q.ex) ?? list[0];
+    const steps = q.p != null ? program(q.p, ex?.steps ?? []) : ex?.steps ?? [];
+    return { ex, steps, changed: q.p != null, stop: q.stop ? Number(q.stop) - 1 : -1 };
   }
-  // Switch to example `ex` (its program `steps`; `back`: changed from the
-  // example's, see change), on a fresh kernel, so that it always starts
+  function toURL(stop = t.pos) {
+    const p = t.changed ? `&p=${encodeURIComponent(t.steps.map((s) => text(s, null, true)).join("; "))}` : "";
+    history.replaceState(null, "", `#ex=${t.ex.name}${p}${stop >= 0 ? `&stop=${stop + 1}` : ""}`);
+  }
+  // Program `text` (calls as written, separated by ";" outside strings),
+  // the stops of `was`'s calls kept where a call is the same syscall.
+  function program(text, was) {
+    const calls = [];
+    let cur = "", quote = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quote && c === "\\") (cur += c + (text[++i] ?? ""));
+      else if (c === '"') ((quote = !quote), (cur += c));
+      else if (c === ";" && !quote) ((calls.push(cur)), (cur = ""));
+      else cur += c;
+    }
+    calls.push(cur);
+    return calls.map((c) => c.trim()).filter(Boolean).map((c, j) => {
+      // ("19: …": runner 19; "@2: …": the runner call 2 started.)
+      const [, at, n, rest] = c.match(/^(?:(@?)(\d+)\s*:)?\s*([\s\S]*)$/);
+      const call = parseCall(rest) ?? { call: rest, args: [] };
+      const who = n ? (at ? { as: Number(n) } : { tid: Number(n) }) : {};
+      return { ...call, ...who, stops: was[j]?.call === call.call ? was[j].stops : undefined };
+    });
+  }
+  // Switch to example `ex` (its program `steps`, `changed` from the
+  // example's: see change), on a fresh kernel, so that it always starts
   // from the same state; and make its calls.
-  function go(ex, steps = ex.steps, back = false) {
-    history.replaceState(null, "", back ? `#back=${encodeURIComponent(JSON.stringify({ name: ex.name, steps }))}` : `#ex=${ex.name}`);
+  function go(ex, steps = ex.steps, changed = false) {
     open(ex, steps);
+    t.changed = changed;
+    toURL(-1);
     t.status.textContent = "Starting a fresh kernel…";
     app.restart().then(run);
   }
@@ -58,6 +85,7 @@ export async function examples(app) {
     t.started = [];
     t.tour = [];
     t.pos = -1;
+    t.changed = false;
     t.status = el("div", { className: "tstatus dim" });
     t.tut = el("div", { className: "tour" });
     t.list = el("ol", { className: "steps" });
@@ -99,7 +127,8 @@ export async function examples(app) {
   // was. (The program is in the URL, #back=: a link to it.)
   function change(j, call) {
     const old = t.steps[j], steps = [...t.steps];
-    steps[j] = { ...call, stops: old?.call === call.call ? old.stops : undefined };
+    // (Its runner kept, unless another is written.)
+    steps[j] = { ...call, ...(call.tid == null && old?.as ? { as: old.as } : {}), stops: old?.call === call.call ? old.stops : undefined };
     t.keep = t.pos;
     go(t.ex, steps, true);
   }
@@ -108,8 +137,9 @@ export async function examples(app) {
   // A step's runner (a thread id).
   const tidOf = (s) => s.tid ?? (s.as ? t.started[s.as - 1] : 1);
   // A step's call, as written (or with `values` for $n: as made); `tid: `
-  // before it if its runner is not /init.
-  const text = (s, values) => `${s.tid ? `${s.tid}: ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
+  // before it if its runner is not /init (and, `all`, `@k: ` if it is the
+  // one call k started: see program).
+  const text = (s, values, all) => `${s.tid ? `${s.tid}: ` : all && s.as ? `@${s.as}: ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
   // How a call finished, or not yet.
   const how = (d) => d.how == null ? "… blocked"
     : d.how === "exec" ? "(no return: the new program runs)"
@@ -203,6 +233,7 @@ export async function examples(app) {
     app.time.go(s.at);
     tutorial();
     mark(s.j);
+    toURL();
   }
   // (Call `j`'s line marked, the others not.)
   const mark = (j) => [...t.list.children].forEach((li, k) => li.classList.toggle("on", k === j));
@@ -233,6 +264,8 @@ export async function examples(app) {
   function form() {
     const e = callEditor({ m, consts, rets, placeholder: 'add a call: openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)', done: async (c) => {
       t.steps.push(c);
+      t.changed = true;
+      toURL();
       e.input.value = "";
       draw();
       if (await step()) pick(t.steps.length - 1);
@@ -241,7 +274,10 @@ export async function examples(app) {
   }
 
   // (The example, shown while the kernel boots; its calls made once it is up.)
+  // (The URL's tutorial stop, once there is a tutorial: see run.)
   const u = fromURL();
   if (u.ex) open(u.ex, u.steps);
+  t.changed = u.changed;
+  t.keep = u.stop;
   run();
 }

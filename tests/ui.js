@@ -19,11 +19,11 @@ if (!url) {
     : Deno.args.includes("--pipe") ? "#ex=pipe" : "#ex=read")}`;
   await new Promise((r) => setTimeout(r, 500));
 }
-// --back: the page opened going back (examples.js, branch): the life of a
-// file, its first call made again, then another instead of its second.
-const back = { name: "file", steps: [{ call: "openat", args: ["AT_FDCWD", '"/mnt/note.txt"', "O_CREAT | O_WRONLY", "0644"] },
-                                     { call: "write", args: ["$1", '"changed\\n"', "8"] }] };
-if (Deno.args.includes("--back")) url += `#back=${encodeURIComponent(JSON.stringify(back))}`;
+// --back: the page opened with a program changed (examples.js, the URL's
+// p=): the life of a file, its first call, then another instead of its
+// second; the tutorial at its second stop.
+const back = 'openat(AT_FDCWD, "/mnt/note.txt", O_CREAT | O_WRONLY, 0644); write($1, "changed;\\n", 9)';
+if (Deno.args.includes("--back")) url += `#ex=file&p=${encodeURIComponent(back)}&stop=2`;
 if (!Deno.env.get("CHROME")) {
   console.log("set CHROME to a (headless) Chromium binary");
   Deno.exit(2);
@@ -72,8 +72,10 @@ const backScript = `(async () => {
   ${lineOf}
   for (let i = 0; i < 100 && document.querySelectorAll("ol.steps > li.done").length < 2; i++) await sleep(100);
   const done = [...document.querySelectorAll("ol.steps > li.done")].map(line);
-  if (done.length !== 2 || !done[1].includes("= 8")) throw new Error("not back: " + JSON.stringify(done));
-  return { done, status: document.querySelector(".tstatus").textContent };
+  const stop = document.querySelector(".tour .tnav span")?.textContent;
+  if (done.length !== 2 || !done[1].includes("= 9") || !stop?.startsWith("Stop 2 of") || !location.hash.includes("stop=2"))
+    throw new Error("not back: " + JSON.stringify([done, stop, location.hash]));
+  return { done, stop, url: location.hash };
 })()`;
 // --pipe: the pipe example (two processes), all its calls made: the ones
 // that blocked finished as later ones woke them; the child's are its.
@@ -176,7 +178,7 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   sel.dispatchEvent(new Event("change"));
   await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".tour li.on"));
   r.switched = [location.hash, window.stayed, line(lis()[0])];
-  if (location.hash !== "#ex=dirs" || !window.stayed || !r.switched[2]?.startsWith("mkdirat")) throw new Error("not switched: " + JSON.stringify(r.switched));
+  if (!location.hash.startsWith("#ex=dirs") || !window.stayed || !r.switched[2]?.startsWith("mkdirat")) throw new Error("not switched: " + JSON.stringify(r.switched));
   // Typing a call: constants that fit the parameter first, Tab takes one; the parameter in bold.
   const inp = document.querySelector(".callform textarea");
   inp.focus();
@@ -191,7 +193,7 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   e3.focus();
   e3.value = 'mkdirat(AT_FDCWD, "/mnt/other", 0700)';
   e3.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-  await until(() => location.hash.startsWith("#back=") && document.querySelectorAll("ol.steps > li.done").length === n && line(lis()[3]).includes("= 0"));
+  await until(() => location.hash.includes("&p=") && document.querySelectorAll("ol.steps > li.done").length === n && line(lis()[3]).includes("= 0"));
   r.edited = [lis().length, line(lis()[3])];
   if (r.edited[0] !== n || !r.edited[1].includes("/mnt/other")) throw new Error("editing: " + JSON.stringify(r));
   // The console, folded to its last line; the current task, open to its key fields.

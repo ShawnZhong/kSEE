@@ -37,15 +37,17 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
   const hint = el("div", { className: "mono dim hint" });
   let items = [], sel = 0;
 
-  // Where the cursor is: { name, tid, start (of the word), word, param (its
-  // index, in an argument) }.
+  // Where the cursor is: { name (the syscall's: the whole call's, wherever
+  // the cursor), start (of the word at the cursor), word, param (its index,
+  // if the cursor is in the arguments) }.
   function context() {
-    const before = input.value.slice(0, input.selectionStart ?? input.value.length);
-    const pre = before.match(/^\s*(?:(\d+)\s*:\s*)?/);
-    const rest = before.slice(pre[0].length), open = rest.indexOf("(");
+    const v = input.value, before = v.slice(0, input.selectionStart ?? v.length);
+    const pre = v.match(/^\s*(?:@?\d+\s*:\s*)?/)[0].length, paren = v.indexOf("(", pre);
+    const name = v.slice(pre, paren < 0 ? v.length : paren).trim();
     const word = before.match(/[$A-Za-z_]\w*$|\$$/)?.[0] ?? "";
-    const at = { tid: pre[1], start: before.length - word.length, word };
-    if (open < 0) return { ...at, name: rest.trim(), param: null };
+    const at = { name, start: before.length - word.length, word };
+    const rest = before.slice(pre), open = rest.indexOf("(");
+    if (open < 0) return { ...at, typed: rest.trim(), param: null };
     // (Which argument: the commas outside strings, () and {} before it.)
     let param = 0, depth = 0, quote = false;
     for (let i = open + 1; i < rest.length; i++) {
@@ -62,7 +64,7 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
   // What fits at the cursor: [{ text (to put in), label, detail }].
   function suggest(c) {
     if (c.param == null) {
-      const w = c.name;
+      const w = c.typed;
       if (!w) return [];
       const starts = names.filter((n) => n.startsWith(w)), inside = names.filter((n) => !n.startsWith(w) && n.includes(w));
       return [...starts, ...inside].slice(0, 12).map((n) => ({ text: `${n}(`, label: n, detail: signature(n), name: true }));
@@ -94,7 +96,7 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
     items = suggest(c);
     sel = Math.min(sel, Math.max(0, items.length - 1));
     // (Nothing to choose from, or only what is written already.)
-    const open = items.length > 0 && !(items.length === 1 && items[0].label === (c.param == null ? c.name : c.word));
+    const open = items.length > 0 && !(items.length === 1 && items[0].label === (c.param == null ? c.typed : c.word));
     list.hidden = !open;
     list.replaceChildren(...(open ? items : []).map((it, k) => el("li", {
       className: k === sel ? "on" : "", onmousedown: (e) => (e.preventDefault(), take(k)) },
@@ -110,7 +112,7 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
   function take(k) {
     const it = items[k], c = context(), v = input.value, end = input.selectionStart ?? v.length;
     let start = c.start;
-    if (it.name) start = v.slice(0, end).match(/^\s*(?:\d+\s*:\s*)?/)[0].length;
+    if (it.name) start = v.slice(0, end).match(/^\s*(?:@?\d+\s*:\s*)?/)[0].length;
     input.value = v.slice(0, start) + it.text + v.slice(end);
     fit();
     const at = start + it.text.length;
@@ -119,9 +121,14 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
     show();
   }
 
-  // The call written: { call, args, tid? }, or an error.
+  // The call written: { call, args, tid? (or as?: "@k:", the runner call k
+  // started) }, or an error.
   function written() {
-    const [, tid, rest] = input.value.match(/^\s*(?:(\d+)\s*:)?\s*([\s\S]*)$/);
+    const [, at, tid, rest] = input.value.match(/^\s*(?:(@?)(\d+)\s*:)?\s*([\s\S]*)$/);
+    if (at) {
+      const c = parseCall(rest);
+      return c ? { call: c.call, args: c.args, as: Number(tid) } : "write a call: name(arg, arg, …)";
+    }
     const c = parseCall(rest);
     if (!c) return "write a call: name(arg, arg, …)";
     const s = m.syscall(c.call);
@@ -138,7 +145,10 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
   }
 
   input.oninput = () => ((sel = 0), fit(), show());
-  input.onfocus = () => (show(), focus?.());
+  // (As the cursor moves too: the parameter it is in.)
+  input.onfocus = () => (requestAnimationFrame(show), focus?.());
+  input.onclick = show;
+  input.onkeyup = (e) => e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End" ? show() : undefined;
   input.onblur = () => (list.hidden = true);
   input.onkeydown = (e) => {
     const open = !list.hidden;
