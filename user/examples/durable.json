@@ -1,0 +1,61 @@
+{
+  "title": "How does a write reach the disk?",
+  "group": "Files",
+  "question": "A write goes to memory first. What does fsync() do to make it durable?",
+  "steps": [
+    {
+      "call": "openat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/log.txt\"",
+        "O_CREAT | O_WRONLY",
+        "0644"
+      ]
+    },
+    {
+      "call": "write",
+      "args": [
+        "$1",
+        "\"hello, ext4\\n\"",
+        "12"
+      ],
+      "stops": [
+        {
+          "func": "ext4_buffered_write_iter",
+          "note": "Into the page cache: the page is dirty, and no block is chosen for it yet (delayed allocation). Nothing is on the disk."
+        }
+      ]
+    },
+    {
+      "call": "fsync",
+      "args": [
+        "$1"
+      ],
+      "stops": [
+        {
+          "func": "ext4_sync_file",
+          "note": "Now the data must reach the disk."
+        },
+        {
+          "func": "ext4_mb_new_blocks",
+          "note": "Write the dirty page back: the multiblock allocator picks it a block, from the block bitmap."
+        },
+        {
+          "func": "jbd2_journal_commit_transaction",
+          "note": "The journal (jbd2, its own thread) commits the metadata changes: the bitmaps, the inode, the directory block.",
+          "any": true
+        },
+        {
+          "func": "submit_bio",
+          "note": "The block layer: an I/O request to the disk, /dev/loop0, whose blocks are a file in memory."
+        }
+      ]
+    },
+    {
+      "call": "close",
+      "args": [
+        "$1"
+      ]
+    }
+  ]
+}

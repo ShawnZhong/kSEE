@@ -92,8 +92,11 @@ export async function examples(app) {
     t.tut = el("div", { className: "tour" });
     t.list = el("ol", { className: "steps" });
     const k = list.indexOf(ex);
+    // (Grouped by their `group`, in order: Start here, Files, ...)
+    const groups = [...new Set(list.map((x) => x.group ?? ""))];
     const pick = el("select", { className: "pick", title: "the examples (each on a fresh kernel)", onchange: () => go(list[pick.selectedIndex]) },
-      ...list.map((x) => el("option", { textContent: x.title, selected: x === ex })));
+      ...groups.map((g) => el("optgroup", { label: g }, ...list.filter((x) => (x.group ?? "") === g)
+        .map((x) => el("option", { textContent: x.title, selected: x === ex })))));
     // (The examples' navigation: in the panel's title.)
     $("ex-head").replaceChildren(el("b", { textContent: "kSEE" }),
       el("button", { textContent: "◀", title: "the example before", disabled: k <= 0, onclick: () => go(list[k - 1]) }), pick,

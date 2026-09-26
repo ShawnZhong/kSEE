@@ -1,6 +1,7 @@
 {
   "title": "How do two processes talk through a pipe?",
   "question": "/init makes a pipe and starts a child that runs cat, reading from it, as a shell does for `echo hello | cat`. What does the kernel do as one process waits for the other?",
+  "group": "Threads and processes",
   "steps": [
     {
       "call": "pipe2",

@@ -217,7 +217,7 @@ async function runOf(ex) {
   });
   return JSON.stringify([m.records(), seen]);
 }
-for (const name of ["file", "futex"]) {
+for (const name of ["create", "futex"]) {
   const file = examples.find((x) => x.name === name);
   const one = await runOf(file), two = await runOf(file);
   check(`deterministic: the same calls, the same records (${one.slice(0, 60)}…)`, one === two || console.log(one, "\n", two));

@@ -12,10 +12,12 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
 **Who it is for**
 
 - *Learners*: how an OS really works, on real Linux instead of a teaching
-  kernel. They start from **examples**: a question ("What happens in
-  read()?", "Directories on ext4", "How do two processes talk through a
-  pipe?"), a program of syscalls that asks it, and a tutorial: stops in
-  the recording that explain what happens.
+  kernel. They start from **examples**, grouped by topic (start here,
+  files, time, threads and processes): a question ("What happens in
+  read()?", "What is a directory?", "How do two processes talk through a
+  pipe?"), a program of a few syscalls that asks it, and a short tutorial:
+  stops in the recording that explain what happens. The first, printing
+  "hello", is also a first look at kSEE itself.
 - *Kernel developers*: what a code path really does, on a real kernel they
   can read and change. They make **their own syscalls**.
 

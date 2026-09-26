@@ -34,8 +34,9 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
 The page boots the kernel and opens the first example (or the one in the
 URL, `#ex=read`); the selector above it, and ◀ ▶, switch examples, each on
 a fresh kernel (the page starts again), so that each starts from the same
-state. An **example** (on the left) is a question about the kernel ("What happens in read()?", "The
-life of a file on ext4", …), a program of syscalls that asks it, and a
+state. An **example** (on the left) is a question about the kernel ("What
+happens in read()?", "What is a directory?", …), a program of syscalls that
+asks it, and a
 tutorial: /init (or a thread or child of it) makes the calls as the
 example opens, each recorded, and
 the tutorial goes from stop to stop (◀ ▶, or click one): a note on a
@@ -54,7 +55,8 @@ kernel and makes the calls again, which comes to the very same state
 up to the change (the machine is deterministic: its clock is virtual);
 the calls are in the URL (`#ex=NAME&p=CALLS&stop=N`: the program if
 changed, its calls separated by `;`, and the tutorial's stop), a link to
-them. Add a call at the
+them. ✕ (or emptying its line) removes a call, ↺ brings the example's
+own program back, and an edit left without Enter goes back to what it was. Add a call at the
 end. As you type, a list shows what fits (syscalls, the constants for the
 parameter, the results so far as `$n`), and the signature. Some examples
 have several threads or processes (a futex, a thread's join, a pipe
@@ -69,17 +71,21 @@ any call, to select it: its records from its start to its end, with
 whatever else ran in between). Hover
 a name in the source for its value at the cursor, and a value in the Stack
 for who last wrote it; Ctrl+click (or F12) a name for its definition: a
-function, a type, a global.
+function, a type, a global, a struct's member. Over a function, the source
+says who called it in the recording, each caller a link to the call.
 
 An example is one JSON file in user/examples/: a title, a question, and
-steps: `{ call, args, as?, stops: [{ func, note, any? }] }` (`as`: the
+steps: `{ call, args, as?, stops: [{ func, note, any? }] }`, and a `group`
+(the selector's: "Start here", "Files", "Time", "Threads and processes";
+the order is `EXAMPLES` in crates/ksee-cli/src/build.rs) (`as`: the
 runner call `as` started, a thread or child; else /init), the arguments
 written as in C: `"AT_FDCWD"`, `"O_CREAT | O_WRONLY"` (the kernel's own
 constants, from its UAPI headers), `"0644"`, `"\"a string\""`, `"[64]"`
 (a buffer for the kernel to fill), `"{0, 30000000}"` (64-bit values),
 `"{\"init\", NULL}"` (an array of strings: argv), `"$1"` (call 1's
 result), `"$1 + 65536"`; see web/args.js. /init mounts an ext4 disk on /mnt (an
-image in the initramfs, through the loop device).
+image in the initramfs, through the loop device), with files for the
+examples to start from: `/mnt/note.txt`, `/mnt/dir/a.txt`.
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs
 the page itself (tests/ui/: the read example, a changed program from the

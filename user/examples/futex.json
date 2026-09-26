@@ -1,6 +1,7 @@
 {
   "title": "How does a thread sleep until another says so?",
   "question": "Two threads share memory. One waits for a word to change, the other wakes it: a futex. How does the kernel make sure no wake-up is lost?",
+  "group": "Threads and processes",
   "steps": [
     {
       "call": "mmap2",

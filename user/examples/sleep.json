@@ -1,6 +1,7 @@
 {
   "title": "Where does the time go when a program sleeps?",
   "question": "Sleeping for 30 ms takes 30 ms, but the kernel works for a tiny part of it. What happens in between?",
+  "group": "Time",
   "steps": [
     {
       "call": "clock_nanosleep_time64",

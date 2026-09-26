@@ -1,20 +1,13 @@
 {
   "title": "Why does open() fail?",
-  "question": "Opening a file that is not there fails with ENOENT. Where in the kernel is that decided?",
+  "question": "Opening a file that is not there fails with ENOENT; opening a directory for writing, with EISDIR. Where in the kernel is each decided?",
+  "group": "Files",
   "steps": [
-    {
-      "call": "mkdirat",
-      "args": [
-        "AT_FDCWD",
-        "\"/tmp\"",
-        "0755"
-      ]
-    },
     {
       "call": "openat",
       "args": [
         "AT_FDCWD",
-        "\"/tmp/missing\"",
+        "\"/mnt/missing\"",
         "O_RDONLY"
       ],
       "stops": [
@@ -24,15 +17,11 @@
         },
         {
           "func": "lookup_fast",
-          "note": "Look each name up in the dentry cache: the kernel's memory of the names it has seen. \"tmp\" is there."
+          "note": "Each name is looked up in the dentry cache first: the kernel's memory of the names it has seen. \"mnt\" is there."
         },
         {
-          "func": "lookup_open",
-          "note": "The last name, \"missing\", is not in the cache: ask the directory. (With O_CREAT, this is where the file would be made.)"
-        },
-        {
-          "func": "simple_lookup",
-          "note": "tmpfs keeps all its names in the cache, so the name does not exist: remember that, as a negative dentry (a name without an inode). Opening a name without an inode fails: -ENOENT."
+          "func": "ext4_lookup",
+          "note": "\"missing\" is not in the cache: ask ext4, which reads the directory. No such name: remember that (a negative dentry), and fail: ENOENT."
         }
       ]
     },
@@ -40,29 +29,14 @@
       "call": "openat",
       "args": [
         "AT_FDCWD",
-        "\"/tmp/missing\"",
-        "O_RDONLY | O_CREAT",
-        "0644"
+        "\"/mnt/dir\"",
+        "O_WRONLY"
       ],
       "stops": [
         {
-          "func": "lookup_open",
-          "note": "The same walk, but with O_CREAT: the negative dentry gets an inode, a new file."
+          "func": "do_open",
+          "note": "The name is found, but it is a directory: it cannot be opened for writing, EISDIR."
         }
-      ]
-    },
-    {
-      "call": "close",
-      "args": [
-        "$3"
-      ]
-    },
-    {
-      "call": "unlinkat",
-      "args": [
-        "AT_FDCWD",
-        "\"/tmp/missing\"",
-        "0"
       ]
     }
   ]

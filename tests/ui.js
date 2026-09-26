@@ -14,7 +14,7 @@ let server = null, url = opt("url", "");
 if (!url) {
   server = new Deno.Command(new URL("../target/release/ksee", import.meta.url).pathname,
     { args: ["serve", new URL("../target/site", import.meta.url).pathname, "--port=8199"], stdout: "null", stderr: "null" }).spawn();
-  // (By default the read example: see the script below.)
+  // (By default the read example: see tests/ui/read.js.)
   url = `http://127.0.0.1:8199/${opt("at", Deno.args.some((a) => a.startsWith("--eval") || a === "--back") ? ""
     : Deno.args.includes("--pipe") ? "#ex=pipe" : "#ex=read")}`;
   await new Promise((r) => setTimeout(r, 500));
@@ -22,8 +22,8 @@ if (!url) {
 // --back: the page opened with a program changed (examples.js, the URL's
 // p=): the life of a file, its first call, then another instead of its
 // second; the tutorial at its second stop.
-const back = 'openat(AT_FDCWD, "/mnt/note.txt", O_CREAT | O_WRONLY, 0644); write($1, "changed;\\n", 9)';
-if (Deno.args.includes("--back")) url += `#ex=file&p=${encodeURIComponent(back)}&stop=2`;
+const back = 'openat(AT_FDCWD, "/mnt/b.txt", O_CREAT | O_WRONLY, 0644); write($1, "changed;\\n", 9)';
+if (Deno.args.includes("--back")) url += `#ex=create&p=${encodeURIComponent(back)}&stop=2`;
 if (!Deno.env.get("CHROME")) {
   console.log("set CHROME to a (headless) Chromium binary");
   Deno.exit(2);

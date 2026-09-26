@@ -1,72 +1,54 @@
 {
   "title": "What happens in read()?",
-  "question": "A program asks for 64 bytes of a file. Which parts of the kernel does that go through?",
+  "group": "Files",
+  "question": "A program opens a file on the disk and asks for 64 bytes of it. Which parts of the kernel does that go through?",
   "steps": [
     {
-      "call": "mkdirat",
-      "args": [
-        "AT_FDCWD",
-        "\"/tmp\"",
-        "0755"
-      ]
-    },
-    {
       "call": "openat",
       "args": [
         "AT_FDCWD",
-        "\"/tmp/note\"",
-        "O_CREAT | O_WRONLY | O_TRUNC",
-        "0644"
-      ]
-    },
-    {
-      "call": "write",
-      "args": [
-        "$2",
-        "\"hello from the page cache\\n\"",
-        "26"
-      ]
-    },
-    {
-      "call": "close",
-      "args": [
-        "$2"
-      ]
-    },
-    {
-      "call": "openat",
-      "args": [
-        "AT_FDCWD",
-        "\"/tmp/note\"",
+        "\"/mnt/note.txt\"",
         "O_RDONLY"
+      ],
+      "stops": [
+        {
+          "func": "do_sys_openat2",
+          "note": "Open the file: find it by its path, and give the program a number for it, a file descriptor: the lowest free one, 3."
+        }
       ]
     },
     {
       "call": "read",
       "args": [
-        "$5",
+        "$1",
         "[64]",
         "64"
       ],
       "stops": [
         {
           "func": "ksys_read",
-          "note": "The syscall itself: fdget_pos turns the fd into the open file (a struct file), and the position to read at."
+          "note": "The syscall itself: the fd turns into the open file (a struct file), and the position to read at."
         },
         {
           "func": "vfs_read",
-          "note": "The VFS, the same for every filesystem: is the file open for reading, is the range sane? Then it calls the filesystem's own read_iter."
+          "note": "The VFS, the same for every filesystem: is the file open for reading, is the range sane? Then it calls ext4's read."
         },
         {
           "func": "filemap_read",
-          "note": "The page cache: a file's data lives in memory pages. Find the page for the position, and copy from it to the program."
+          "note": "The page cache: a file's data lives in memory pages. Find the page for the position (read from the disk the first time), and copy from it to the program."
         }
       ]
     },
     {
       "call": "close",
       "args": [
-        "$5"
+        "$1"
+      ],
+      "stops": [
+        {
+          "func": "__fput",
+          "note": "The last reference to the open file goes: fd 3 is free again."
+        }
       ]
     }
   ]

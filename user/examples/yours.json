@@ -1,5 +1,6 @@
 {
   "title": "Your own syscalls",
   "question": "Make any syscall, with the arguments you give, written as in C: /init makes it, recorded. Numbers (0644, 0x41, -100), the kernel's constants (O_CREAT | O_WRONLY, AT_FDCWD), \"strings\", [64] (a buffer of 64 bytes, for the kernel to fill), {0, 30000000} (64-bit values: a struct timespec), $1 (the result of call 1).",
+  "group": "Your own",
   "steps": []
 }

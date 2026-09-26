@@ -146,7 +146,9 @@ No block device is emulated: the initramfs holds an ext4 image
 (`/disk.img`, made by `mkfs.ext4` at build time), and /init attaches it to
 the loop device (the kernel's own driver: a file as a block device) and
 mounts it on `/mnt`. So ext4, jbd2 and the block layer are all the real
-kernel's; the disk's blocks are that file's pages in memory.
+kernel's; the disk's blocks are that file's pages in memory. The image
+comes with files for the examples to start from (`mkfs.ext4 -d`):
+`/mnt/note.txt`, `/mnt/dir/a.txt`.
 
 ## Console
 

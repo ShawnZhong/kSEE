@@ -1,0 +1,61 @@
+{
+  "title": "What is a directory?",
+  "question": "A directory is a file of names, each pointing to an inode. What happens when one is made, and when one is listed?",
+  "group": "Files",
+  "steps": [
+    {
+      "call": "mkdirat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/sub\"",
+        "0755"
+      ],
+      "stops": [
+        {
+          "func": "ext4_mkdir",
+          "note": "A new directory: an inode, like a file's, all in one journal transaction."
+        },
+        {
+          "func": "ext4_init_new_dir",
+          "note": "Its first block, with its own two entries: \".\" (itself) and \"..\" (its parent)."
+        },
+        {
+          "func": "ext4_add_entry",
+          "note": "The name \"sub\": into a block of /mnt, the parent."
+        }
+      ]
+    },
+    {
+      "call": "openat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt\"",
+        "O_RDONLY | O_DIRECTORY"
+      ]
+    },
+    {
+      "call": "getdents64",
+      "args": [
+        "$2",
+        "[256]",
+        "256"
+      ],
+      "stops": [
+        {
+          "func": "ext4_readdir",
+          "note": "Listing: read the directory's blocks, entry by entry."
+        },
+        {
+          "func": "filldir64",
+          "note": "Each entry, copied out to the program: its name, its inode, its type."
+        }
+      ]
+    },
+    {
+      "call": "close",
+      "args": [
+        "$2"
+      ]
+    }
+  ]
+}

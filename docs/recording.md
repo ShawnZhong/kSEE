@@ -90,7 +90,9 @@ BTF), globals, each function's parameters and locals with their types, the
 syscalls' names, constants from the UAPI headers (`O_*`, `AT_*`,
 `CLOCK_*`, `CLONE_*`, `FUTEX_*`, errno's `E*`, …: for the page's calls,
 written as in C), and `W name file line` lines: where a function (an
-inline one too), a type or a global is declared, from DWARF's
-decl_file/decl_line (the page's Ctrl+click and F12 go there:
-`Machine.definition`). The page's kernel is a copy of vmlinux with that
+inline one too, which has no probe), a struct, union, enum or typedef, a
+global, or a member (as `struct.member`) is declared, from DWARF's
+decl_file/decl_line (the page's Ctrl+click and F12, Monaco's own
+go-to-definition, go there: `Machine.definition(name)`, `.member` a member
+of any struct). The page's kernel is a copy of vmlinux with that
 section and without DWARF, plus the sources the probes name.

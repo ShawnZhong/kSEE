@@ -1,6 +1,7 @@
 {
-  "title": "What happens when a program prints?",
-  "question": "printf ends in write(1, ...): how do the bytes get from the program to the console?",
+  "title": "Start here: a program prints hello",
+  "group": "Start here",
+  "question": "A program prints \"hello\": write(1, \"hello\\n\", 6). kSEE recorded what the kernel did for it. Follow the three stops.",
   "steps": [
     {
       "call": "write",
@@ -12,15 +13,15 @@
       "stops": [
         {
           "func": "ksys_write",
-          "note": "The syscall: the fd (1, the console) turns into the open file, a struct file."
+          "note": "This is the kernel's code for write(), as it ran: the lines in green ran. The timeline above shows the calls it made."
         },
         {
           "func": "vfs_write",
-          "note": "The VFS: is the file open for writing? Then the file's own write: the console device's."
+          "note": "On the right, the Stack: the calls that led here, with their arguments. count is 6, the bytes of \"hello\\n\"."
         },
         {
           "func": "console_dev_write",
-          "note": "The console driver (arch/wasm/kernel/console.c): copy the bytes from the program, and hand them to the host, which shows them."
+          "note": "Here the bytes go to the console (bottom left). Now step with ◀ ▶, a line at a time, forwards or back."
         }
       ]
     }

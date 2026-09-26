@@ -83,7 +83,9 @@ source. Rust does the work: JS only lays it out.
 Every view asks the Machine for the moment at the cursor: `at(i)`,
 `call_stack(i)`, `line_steps`, `chart`, `memory_at(i)` then `object` /
 `global` (memory as it was), `last_write`, `run_of` (a line's next or last
-run), `definition`.
+run), `definition`, `callers` (who called a function in the recording, or
+in one syscall: each caller at each line, a count, the first call's
+record: the source's code lens over the function).
 
 ## Tests
 

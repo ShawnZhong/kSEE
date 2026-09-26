@@ -105,11 +105,19 @@ pub fn build() {
                        "-nostdinc", "-isystem", "linux/tools/include/nolibc", "-isystem", "linux/usr/include",
                        "-o", &format!("{dir}/{p}.wasm"), &format!("user/{p}.c")]));
         }
-        // The ext4 disk /init mounts (a file, through the loop device).
+        // The ext4 disk /init mounts (a file, through the loop device), with
+        // files for the examples to start from: note.txt, dir/a.txt.
         let disk = format!("{dir}/disk.img");
         let _ = std::fs::remove_file(&disk);
+        let files = format!("{dir}/disk");
+        let _ = std::fs::remove_dir_all(&files);
+        for (path, text) in [("note.txt", "hello from the disk\n"), ("dir/a.txt", "a\n")] {
+            let p = Path::new(&files).join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).and_then(|_| std::fs::write(&p, text))
+                .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", p.display())));
+        }
         // (Initialized in full: no background work after the mount, ext4lazyinit's.)
-        run(Command::new("mkfs.ext4").args(["-q", "-F", "-b", "1024", "-L", "ksee", "-N", "32",
+        run(Command::new("mkfs.ext4").args(["-q", "-F", "-b", "1024", "-L", "ksee", "-N", "32", "-d", &files,
                                             "-E", "lazy_itable_init=0,lazy_journal_init=0", &disk, "2M"]));
         // (The list's paths are relative to the dir.)
         let tool = Path::new("linux/usr/gen_init_cpio").canonicalize()
@@ -131,7 +139,8 @@ fn gzip(from: &str, to: &str) {
 }
 
 /// The examples' order on the page, from the simplest (others after them).
-const EXAMPLES: &[&str] = &["hello", "read", "open-fails", "sleep", "file", "dirs", "futex", "join", "pipe", "yours"];
+const EXAMPLES: &[&str] = &["hello", "read", "open-fails", "create", "dir", "durable", "remove", "sleep",
+                               "futex", "join", "pipe", "yours"];
 
 /// examples.json: the examples (user/examples/*.json: each a list
 /// of syscalls for /init to make, one at a time), with their names.

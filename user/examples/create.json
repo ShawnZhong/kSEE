@@ -1,0 +1,60 @@
+{
+  "title": "How is a file made?",
+  "question": "A program creates a file on ext4 and writes to it. What does the file system do?",
+  "group": "Files",
+  "steps": [
+    {
+      "call": "openat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/new.txt\"",
+        "O_CREAT | O_WRONLY",
+        "0644"
+      ],
+      "stops": [
+        {
+          "func": "ext4_create",
+          "note": "The name is not there, and O_CREAT: ext4 makes the file, all in one journal transaction."
+        },
+        {
+          "func": "__ext4_new_inode",
+          "note": "A free inode for it: found in a block group's inode bitmap, and marked used."
+        },
+        {
+          "func": "add_dirent_to_buf",
+          "note": "The name \"new.txt\": into free space in a block of the directory, next to the other names."
+        }
+      ]
+    },
+    {
+      "call": "write",
+      "args": [
+        "$1",
+        "\"hello, ext4\\n\"",
+        "12"
+      ],
+      "stops": [
+        {
+          "func": "ext4_buffered_write_iter",
+          "note": "The bytes go into the page cache, and the page is marked dirty. Nothing is on the disk yet."
+        },
+        {
+          "func": "ext4_da_write_begin",
+          "note": "Delayed allocation: no disk block is chosen yet; one is only reserved."
+        }
+      ]
+    },
+    {
+      "call": "close",
+      "args": [
+        "$1"
+      ],
+      "stops": [
+        {
+          "func": "__fput",
+          "note": "The last reference to the open file goes. The file stays: it has a name."
+        }
+      ]
+    }
+  ]
+}

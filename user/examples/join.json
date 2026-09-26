@@ -1,6 +1,7 @@
 {
   "title": "How does a thread wait for another to end?",
   "question": "A thread joins another: it sleeps until the other exits. How does the kernel tell it (with no thread library in between)?",
+  "group": "Threads and processes",
   "steps": [
     {
       "call": "mmap2",

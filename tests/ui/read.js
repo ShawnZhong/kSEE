@@ -8,7 +8,7 @@
   const pick = document.querySelector("#ex-head select");
   r.first = [pick.selectedOptions[0]?.textContent, line(lis()[0])];
   r.examples = pick.options.length;
-  r.calls = lis().map(line).slice(4, 6);
+  r.calls = lis().map(line);
   r.notes = [];
   for (let k = 0; k < 5; k++) {
     await sleep(300);
@@ -50,6 +50,7 @@
   r.chart = $("chart-title").textContent;
   // (The read's own box: its syscall entry's.)
   const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === 1 && x.last != null);
+  ksee.select(read); // (its box in the window: the tutorial may have ended in another call)
   const box = ksee.time.boxOf(read.first), at = { clientX: box?.x, clientY: box?.y };
   $("chart").dispatchEvent(new PointerEvent("pointermove", at));
   r.tip = document.querySelector(".tip:not([hidden])")?.innerText.replace(/\s+/g, " ").slice(0, 60);
@@ -86,17 +87,18 @@
   input.value = "mkdira"; key("Tab");
   input.value += "AT_FDCWD, "; input.dispatchEvent(new Event("input"));
   r.typed = [input.value, document.querySelector(".callform .hint").textContent];
+  const had = lis().length;
   input.value = 'openat(AT_FDCWD, "/mnt/mine", O_CREAT | O_WRONLY, 0644)'; key("Enter");
-  await until(() => document.querySelectorAll("ol.steps > li.done").length >= 8);
+  await until(() => document.querySelectorAll("ol.steps > li.done").length > had);
   r.mine = line(lis().at(-1));
   // Another example, from the selector: on a fresh kernel, the page staying.
   window.stayed = true;
   const sel = document.querySelector("#ex-head select");
-  sel.selectedIndex = [...sel.options].findIndex((o) => o.textContent.includes("Directories"));
+  sel.selectedIndex = [...sel.options].findIndex((o) => o.textContent.includes("directory"));
   sel.dispatchEvent(new Event("change"));
   await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".tour li.on"));
   r.switched = [location.hash, window.stayed, line(lis()[0])];
-  if (!location.hash.startsWith("#ex=dirs") || !window.stayed || !r.switched[2]?.startsWith("mkdirat")) throw new Error("not switched: " + JSON.stringify(r.switched));
+  if (!location.hash.startsWith("#ex=dir&") && location.hash !== "#ex=dir" || !window.stayed || !r.switched[2]?.startsWith("mkdirat")) throw new Error("not switched: " + JSON.stringify(r.switched));
   // Typing a call: constants that fit the parameter first, Tab takes one; the parameter in bold.
   const inp = document.querySelector(".callform textarea");
   inp.focus();

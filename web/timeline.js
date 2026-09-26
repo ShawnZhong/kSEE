@@ -243,7 +243,10 @@ export function timeline(app) {
     if (key !== t.peek) {
       // A preview of where the call is there (see app.preview), and so the tip's place.
       t.peek = key;
-      t.here = "";
+      // (Where it is: kept while the pointer stays in the call, until found again.)
+      const call = first == null ? null : `${first}:${inl}`;
+      if (call !== t.peekCall) t.here = "";
+      t.peekCall = call;
       const i = first == null ? 0 : Math.max(first, at(e.offsetX));
       app.preview(first == null ? null : () => {
         const frames = m.call_stack(i), name = inl ? iname(inl - 1) : null;

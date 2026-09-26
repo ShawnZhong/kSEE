@@ -1,0 +1,69 @@
+{
+  "title": "Renaming and removing",
+  "question": "A name moves, a directory will not go while it has names in it, and a file goes when its last name does. What does ext4 do?",
+  "group": "Files",
+  "steps": [
+    {
+      "call": "renameat2",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/dir/a.txt\"",
+        "AT_FDCWD",
+        "\"/mnt/dir/b.txt\"",
+        "0"
+      ],
+      "stops": [
+        {
+          "func": "ext4_rename",
+          "note": "In one directory: the entry's name changes, \"a.txt\" to \"b.txt\"; the inode stays as it is."
+        }
+      ]
+    },
+    {
+      "call": "unlinkat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/dir\"",
+        "AT_REMOVEDIR"
+      ],
+      "stops": [
+        {
+          "func": "ext4_empty_dir",
+          "note": "Is it empty? No (\"b.txt\"): the call fails, ENOTEMPTY."
+        }
+      ]
+    },
+    {
+      "call": "unlinkat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/dir/b.txt\"",
+        "0"
+      ],
+      "stops": [
+        {
+          "func": "ext4_delete_entry",
+          "note": "The name leaves the directory block."
+        },
+        {
+          "func": "ext4_free_inode",
+          "note": "It was the file's only name, and nobody has it open: its inode is freed."
+        }
+      ]
+    },
+    {
+      "call": "unlinkat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/dir\"",
+        "AT_REMOVEDIR"
+      ],
+      "stops": [
+        {
+          "func": "ext4_free_blocks",
+          "note": "Now empty: the directory's block goes back to the block bitmap, and its inode is freed."
+        }
+      ]
+    }
+  ]
+}
