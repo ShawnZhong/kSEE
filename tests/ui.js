@@ -20,10 +20,10 @@ if (!url) {
   await new Promise((r) => setTimeout(r, 500));
 }
 // --back: the page opened with a program changed (examples.js, the URL's
-// p=): the life of a file, its first call, then another instead of its
+// p=): the write example, its first call, then another instead of its
 // second; the tutorial at its second stop.
-const back = 'openat(AT_FDCWD, "/mnt/b.txt", O_CREAT | O_WRONLY, 0644); write($1, "changed;\\n", 9)';
-if (Deno.args.includes("--back")) url += `#ex=create&p=${encodeURIComponent(back)}&stop=2`;
+const back = 'openat(AT_FDCWD, "/note.txt", O_WRONLY | O_APPEND); write($1, "changed;\\n", 9)';
+if (Deno.args.includes("--back")) url += `#ex=write&p=${encodeURIComponent(back)}&stop=2`;
 if (!Deno.env.get("CHROME")) {
   console.log("set CHROME to a (headless) Chromium binary");
   Deno.exit(2);
