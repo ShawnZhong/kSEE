@@ -116,9 +116,9 @@ impl Machine {
         let mut out = Vec::new();
         self.view(|v| {
             for (task, calls) in ksee_core::stack::chart(v.tables, &rec.records, &rec.tasks, first, last, n) {
+                // (Each call, then the code inlined into it: outermost first.)
                 let rows: Vec<[u32; 3]> = calls.iter().flat_map(|c| {
-                    let inlined = v.chain(c.step.and_then(|s| s.inlined)).iter().rev().map(|&(k, _)| [c.func, c.first as u32, k + 1]);
-                    core::iter::once([c.func, c.first as u32, 0]).chain(inlined)
+                    v.nest(c).into_iter().rev().map(|(k, _)| [c.func, c.first as u32, k.map_or(0, |k| k + 1)])
                 }).collect();
                 out.extend([task, rows.len() as u32]);
                 out.extend(rows.into_iter().flatten());

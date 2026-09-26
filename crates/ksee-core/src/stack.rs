@@ -49,7 +49,7 @@ impl Stack {
 }
 
 /// A task's calls, with where each is in its function: the walk that
-/// `lines` and `chart` share.
+/// `lines`, `chart` and `stack_at` share.
 #[derive(Default)]
 struct Walk {
     stack: Stack,
@@ -60,6 +60,12 @@ struct Walk {
 }
 
 impl Walk {
+    /// The calls now, outermost first, each at its last line.
+    fn calls(&self) -> Vec<ChartCall> {
+        self.stack.frames.iter().enumerate()
+            .map(|(d, &(func, first))| ChartCall { func, first, step: self.at.get(d).copied().flatten() }).collect()
+    }
+
     /// Apply record `r` (at `i`): the lines it runs, if any: (function,
     /// depth, lines), a stretch of a block.
     fn apply(&mut self, t: &Tables, r: &Record, i: usize) -> Option<(u32, u32, Vec<Step>)> {
@@ -122,9 +128,7 @@ pub fn chart(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usi
         w.apply(t, r, i);
         // (A column's first record, or several columns' when zoomed in.)
         while col < n && i >= from + col * span / n {
-            let calls = w.stack.frames.iter().enumerate()
-                .map(|(d, &(func, first))| ChartCall { func, first, step: w.at.get(d).copied().flatten() }).collect();
-            out.push((task, calls));
+            out.push((task, w.calls()));
             col += 1;
         }
     }
@@ -141,6 +145,12 @@ pub struct LineStep {
     pub depth: u32,
     pub loc: crate::tables::Loc,
     pub inlined: Option<u32>,
+}
+
+/// Whether two lines are the same (`lines` counts a line run twice in a
+/// row once).
+fn same_line(a: &Step, b: &Step) -> bool {
+    a.loc.file == b.loc.file && a.loc.line == b.loc.line && a.inlined == b.inlined
 }
 
 /// The source lines run in records `from..=to` (of task `task`, or any), in
@@ -162,7 +172,7 @@ pub fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usi
             continue;
         }
         for s in steps {
-            if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
+            if out.last().is_some_and(|l| same_line(&Step { loc: l.loc, inlined: l.inlined }, &s)) {
                 continue;
             }
             out.push(LineStep { record: i, func, depth, loc: s.loc, inlined: s.inlined });
@@ -171,16 +181,6 @@ pub fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usi
     out
 }
 
-/// A call on a stack: `func`, from record `first`, with its arguments (the
-/// Args record after its entry block) and its locals' addresses (its
-/// Locals record, once it has run), if the trace has them.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Call {
-    pub func: u32,
-    pub first: usize,
-    pub args: Option<Vec<u32>>,
-    pub locals: Option<Vec<u32>>,
-}
 
 /// Where the call from record `first` (a block 0) ends: the last record of
 /// its task's while it is on the stack (its return), or None if it has not
@@ -208,33 +208,46 @@ pub fn call_end(records: &[Record], tasks: &[u32], first: usize) -> Option<usize
     None
 }
 
-/// The call stack of the task running at record `at`, outermost first.
-pub fn calls_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<Call> {
+/// The call stack of the task running at record `at`, outermost first,
+/// each call at its last line (as `lines` has them); the innermost, if
+/// `nth`, at the nth of the lines record `at` runs.
+pub fn stack_at(t: &Tables, records: &[Record], tasks: &[u32], at: usize, nth: Option<usize>) -> Vec<ChartCall> {
     let Some(&task) = tasks.get(at) else { return Vec::new() };
-    let mut s = Stack::default();
+    let mut w = Walk::default();
+    // (The line before, as `lines` skips a line that repeats it.)
+    let mut last: Option<Step> = None;
     for (i, r) in records.iter().enumerate().take(at + 1) {
-        if tasks[i] == task {
-            match *r {
-                Record::Block { func, n } => s.block(func, n, i),
-                Record::Return { func, .. } => s.exit(func),
-                _ => {}
+        if tasks[i] != task {
+            continue;
+        }
+        let Some((_, depth, steps)) = w.apply(t, r, i) else { continue };
+        if let (true, Some(k)) = (i == at, nth) {
+            let skip = usize::from(matches!((&last, steps.first()), (Some(l), Some(s)) if same_line(l, s)));
+            if let Some(&s) = steps.get(skip + k) {
+                w.at[depth as usize] = Some(s);
             }
         }
+        last = steps.last().copied().or(last);
     }
-    s.frames.into_iter().map(|(func, first)| {
-        let args = match records.get(first + 1) {
-            Some(&Record::Args { args, n }) if matches!(records[first], Record::Block { n: 0, .. }) => Some(args[..n as usize].to_vec()),
+    w.calls()
+}
+
+/// Call `first`'s arguments (the Args record after its entry block) and its
+/// locals' addresses (its Locals record, soon after, on its task, if it got
+/// that far by record `at`), if the trace has them.
+pub fn args_locals(records: &[Record], tasks: &[u32], func: u32, first: usize, at: usize) -> (Option<Vec<u32>>, Option<Vec<u32>>) {
+    let args = match records.get(first + 1) {
+        Some(&Record::Args { args, n }) if matches!(records[first], Record::Block { n: 0, .. }) => Some(args[..n as usize].to_vec()),
+        _ => None,
+    };
+    let task = tasks.get(first).copied();
+    let locals = (first..records.len().min(at + 1).min(first + 256))
+        .filter(|&i| tasks.get(i).copied() == task)
+        .find_map(|i| match records[i] {
+            Record::Locals { func: f, addrs, n } if f == func => Some(addrs[..n as usize].to_vec()),
             _ => None,
-        };
-        // (Soon after the entry, on the same task, if it got that far.)
-        let locals = (first..records.len().min(at + 1).min(first + 256))
-            .filter(|&i| tasks[i] == task)
-            .find_map(|i| match records[i] {
-                Record::Locals { func: f, addrs, n } if f == func => Some(addrs[..n as usize].to_vec()),
-                _ => None,
-            });
-        Call { func, first, args, locals }
-    }).collect()
+        });
+    (args, locals)
 }
 
 #[cfg(test)]
@@ -246,7 +259,7 @@ mod tests {
     }
 
     fn stack_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<u32> {
-        calls_at(records, tasks, at).into_iter().map(|c| c.func).collect()
+        super::stack_at(&Tables::default(), records, tasks, at, None).into_iter().map(|c| c.func).collect()
     }
 
     #[test]

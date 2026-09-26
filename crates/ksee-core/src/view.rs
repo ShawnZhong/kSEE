@@ -268,27 +268,12 @@ impl View<'_> {
     /// from (`inlined`, with no arguments: there was no call).
     pub fn call_stack(&self, i: usize, nth: Option<usize>, mem: &dyn Memory) -> Vec<Frame> {
         let t = self.tables;
-        let calls = stack::calls_at(&self.rec.records, &self.rec.tasks, i);
-        let mut steps = match (calls.first(), self.rec.tasks.get(i)) {
-            (Some(c), Some(&task)) => self.rec.lines(t, c.first, i, task),
-            _ => Vec::new(),
-        };
-        if let Some(k) = nth {
-            let start = steps.partition_point(|s| s.record < i);
-            steps.truncate((start + k + 1).min(steps.len()));
-        }
+        let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         let mut out = Vec::new();
-        for (depth, stack::Call { func, first, args, locals }) in calls.into_iter().enumerate().rev() {
-            let f = t.functions.get(&func);
-            let name = self.name(func);
-            // Where it is: the last line its depth ran since it began.
-            let step = steps.iter().rev().take_while(|s| s.record >= first).find(|s| s.depth as usize == depth);
-            let mut at = step.map(|s| s.loc).or(f.map(|f| f.loc));
-            for &(k, site) in self.chain(step.and_then(|s| s.inlined)) {
-                out.push(Frame { func: self.inline_name(k), first, inlined: true, file: at.map(|l| t.file(l).to_string()),
-                                 line: at.map(|l| l.line), args: None, locals: None });
-                at = Some(site);
-            }
+        for c in stack::stack_at(t, records, tasks, i, nth).into_iter().rev() {
+            let f = t.functions.get(&c.func);
+            let name = self.name(c.func);
+            let (args, locals) = stack::args_locals(records, tasks, c.func, c.first, i);
             let args = args.map(|args| {
                 let known = f.map_or(u32::MAX, |f| f.known);
                 t.types.params.get(&name).into_iter().flatten().zip(args).enumerate().map(|(k, ((pname, ty), v))| {
@@ -300,7 +285,7 @@ impl View<'_> {
                     arg
                 }).collect()
             });
-            let locals = match (locals, t.locals.get(&func)) {
+            let locals = match (locals, t.locals.get(&c.func)) {
                 (Some(addrs), Some(names)) => {
                     let types = t.types.locals.get(&name);
                     Some(addrs.into_iter().zip(names).filter_map(|(addr, var)| {
@@ -310,9 +295,30 @@ impl View<'_> {
                 }
                 _ => None,
             };
-            out.push(Frame { func: name, first, inlined: false, file: at.map(|l| t.file(l).to_string()),
-                             line: at.map(|l| l.line), args, locals });
+            // (The code inlined into it first, innermost first; then it.)
+            let frame = |func, inlined, at: Option<Loc>| Frame {
+                func, first: c.first, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args: None, locals: None,
+            };
+            let nest = self.nest(&c);
+            let (&(_, at), inner) = nest.split_last().expect("a call");
+            out.extend(inner.iter().map(|&(k, at)| frame(self.inline_name(k.unwrap_or(0)), true, at)));
+            out.push(Frame { args, locals, ..frame(name, false, at) });
         }
+        out
+    }
+
+    /// Call `c` and the code inlined into it where it is, innermost first:
+    /// each inlined function (Some: its index, see inline_name) at its line
+    /// there, then the call (None) at its own line (where the outermost
+    /// inlined code is inlined, or the line it is at).
+    pub fn nest(&self, c: &stack::ChartCall) -> Vec<(Option<u32>, Option<Loc>)> {
+        let mut at = c.step.map(|s| s.loc).or(self.tables.functions.get(&c.func).map(|f| f.loc));
+        let mut out = Vec::new();
+        for &(k, site) in self.chain(c.step.and_then(|s| s.inlined)) {
+            out.push((Some(k), at));
+            at = Some(site);
+        }
+        out.push((None, at));
         out
     }
 
