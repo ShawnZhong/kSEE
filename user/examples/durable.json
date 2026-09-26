@@ -2,6 +2,9 @@
   "title": "How does a write reach the disk?",
   "group": "Files on ext4",
   "question": "A write is in memory until it is written back. fsync() makes it durable now: what does that take?",
+  "text": [
+    "Call 3, [fsync(fd)](3): [ext4_sync_file](3:ext4_sync_file) Now the data must reach the disk. [ext4_mb_new_blocks](3:ext4_mb_new_blocks) Write the dirty page back: now a block is chosen for it, by the multiblock allocator, from the block bitmap. [jbd2_journal_commit_transaction](3:jbd2_journal_commit_transaction:any) The journal (jbd2, its own thread) commits the metadata changes: the bitmaps, the inode, the directory block. [submit_bio](3:submit_bio) The block layer: an I/O request to the disk, /dev/loop0, whose blocks are a file in memory."
+  ],
   "steps": [
     {
       "call": "openat",
@@ -25,25 +28,6 @@
       "call": "fsync",
       "args": [
         "fd"
-      ],
-      "stops": [
-        {
-          "func": "ext4_sync_file",
-          "note": "Now the data must reach the disk."
-        },
-        {
-          "func": "ext4_mb_new_blocks",
-          "note": "Write the dirty page back: now a block is chosen for it, by the multiblock allocator, from the block bitmap."
-        },
-        {
-          "func": "jbd2_journal_commit_transaction",
-          "note": "The journal (jbd2, its own thread) commits the metadata changes: the bitmaps, the inode, the directory block.",
-          "any": true
-        },
-        {
-          "func": "submit_bio",
-          "note": "The block layer: an I/O request to the disk, /dev/loop0, whose blocks are a file in memory."
-        }
       ]
     },
     {

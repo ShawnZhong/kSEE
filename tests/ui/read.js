@@ -1,25 +1,26 @@
-// The default: the read example (#ex=read): its calls made by themselves; its tutorial's stops (the note,
-// the Call stack, a hover at each), stepping, play, the chart (hover, click), typing and changing calls,
+// The default: the read example (#ex=read): its calls made by themselves; its explanation's links (the
+// Call stack, a hover at each), stepping, play, the chart (hover, click), typing and changing calls,
 // another example; returns a report.
 (async () => {
     const r = {};
-  // (All its calls made, the tutorial at its first stop.)
-  await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".tour li.on"));
+  // (All its calls made, the cursor at the explanation's first link.)
+  await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".explain a.place.on"));
   const pick = document.querySelector("#ex-head select");
   r.first = [pick.selectedOptions[0]?.textContent, line(lis()[0])];
   r.examples = pick.options.length;
   r.calls = lis().map(line);
+  // The explanation's links, each gone to: the function's call, the Call stack there.
   r.notes = [];
-  for (let k = 0; k < 5; k++) {
+  const places = [...document.querySelectorAll(".explain a.place")];
+  for (const [k, a] of places.entries()) {
+    a.click();
     await sleep(300);
-    r.notes.push(document.querySelector(".tour li.on b")?.textContent);
-    if (k === 0) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
-    if (k === 0) r.args = [...document.querySelectorAll("#stack tr")].slice(1, 4).map((f) => f.innerText.replace(/\s+/g, " ").trim());
-    if (r.notes.at(-1) === "vfs_read") r.hover = await ksee.src.hoverAt("file->f_mode & FMODE_READ", "f_mode");
-    const next = document.querySelector(".tour button.go");
-    if (!next || next.disabled) break;
-    next.click();
+    r.notes.push([a.textContent, $("where").textContent.slice(0, 60)]);
+    if (k === 1) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
+    if (k === 1) r.args = [...document.querySelectorAll("#stack tr")].slice(1, 4).map((f) => f.innerText.replace(/\s+/g, " ").trim());
+    if (a.textContent === "vfs_read") r.hover = await ksee.src.hoverAt("file->f_mode & FMODE_READ", "f_mode");
   }
+  if (r.notes.length < 3 || !r.notes.some(([n, w]) => n === "vfs_read" && w.includes("vfs_read")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
   // Watch a value: click one in the Call stack (one in memory: a local's, a task's field); the Watch shows it,
   // its writes listed (a local's in its frame's lifetime), ▶ goes to the next.
   const v = document.querySelector("#stack td.fval.mem");
@@ -32,22 +33,16 @@
   if ($("watch").children.length) throw new Error("the watch stays");
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = $("where").textContent.slice(0, 50);
-  // Run to a line (the source's F4): the line where the cursor is, its next run; and ] for the next stop.
+  // Run to a line (the source's F4): the line where the cursor is, its next run.
   const here = $("where").textContent;
-  const tourAt = document.querySelector(".tour .tnav span").textContent;
-  dispatchEvent(new KeyboardEvent("keydown", { key: "[" }));
-  const before = document.querySelector(".tour .tnav span").textContent;
-  dispatchEvent(new KeyboardEvent("keydown", { key: "]" }));
-  r.nextStop = [tourAt, before, document.querySelector(".tour .tnav span").textContent];
-  if (r.nextStop[1] === r.nextStop[0] || r.nextStop[2] !== r.nextStop[0]) throw new Error("[ ] did not move the tutorial: " + JSON.stringify(r.nextStop));
   const [, file, ln] = here.match(/ (\S+):(\d+)/) ?? [];
   const was = ksee.time.cursor();
   if (file) ksee.runTo(file, Number(ln), 1);
   r.ranTo = [here, $("where").textContent, was, ksee.time.cursor()];
   if (!file || !(r.ranTo[3] > was) || r.ranTo[1] !== here) throw new Error("run to: " + JSON.stringify(r.ranTo));
   // Stepping: into a call, over the next, out of it (the Call stack's calls, deep), from the
-  // first stop (a known place: ksys_read's entry), so that the run is the same every time.
-  document.querySelector(".tour ol.stops li").click();
+  // explanation's first link (a known place: ksys_read's entry), so that the run is the same every time.
+  document.querySelector(".explain a.place").click();
   await sleep(300);
   const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
   const press = (kind) => { $("step-by").value = kind; $("step-fwd").click(); };
@@ -180,15 +175,6 @@
   fbox.value = "nope_fn"; fkey("Enter");
   r.noFn = document.querySelector(".findhint").textContent;
   if (!r.found.at(-2).match(/^\d+ of \d+$/) || !r.found.at(-1) || r.noFn !== "no function nope_fn") throw new Error("find: " + JSON.stringify(r));
-  // A stop of one's own, at the cursor, with a note: in the tour, and in the URL.
-  document.querySelector(".tour .addstop").click();
-  const noteBox = document.querySelector(".tour input.note");
-  noteBox.value = "my own note"; noteBox.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-  await sleep(500);
-  r.myStop = [document.querySelector(".tour li.on.mine")?.textContent.replace(/\s+/g, " ").trim(), decodeURIComponent(location.hash)];
-  if (!r.myStop[0]?.includes("my own note") || !r.myStop[1].includes("&stops=") || !r.myStop[1].includes(":my own note")) throw new Error("own stop: " + JSON.stringify(r));
-  document.querySelector(".tour li.mine .rm").click();
-  if (document.querySelector(".tour li.mine") || location.hash.includes("stops=")) throw new Error("own stop not removed: " + location.hash);
   // The console, folded to its last line; the current task, open to its key fields.
   r.console = [$("pane-console").classList.contains("folded"), $("console").textContent];
   r.current = [...document.querySelectorAll("#stack tr.task, #stack tr.task ~ tr")].slice(0, 3).map((tr) => tr.innerText.replace(/\s+/g, " ").trim());

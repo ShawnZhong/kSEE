@@ -2,21 +2,23 @@
 // fresh kernel (the kernel starts again, the page stays); the URL says
 // which (#ex=NAME). An example is a question about the kernel, a program
 // that asks it (user/examples/*.json: syscalls, one after the other), and
-// a tutorial: stops, each a note on a function one of the calls runs.
+// its explanation: paragraphs of text with links into the recording.
 //
 // Opening an example makes all its calls, each recorded (a runner makes
 // each: /init, or a thread or child of it; see Machine.call). A call may
-// block, and finish as a later one wakes it. Then the tutorial goes from
-// stop to stop (◀ ▶): each is the first call of its function in its call's
-// recording (on the call's task, or any for a stop that says so), the
-// cursor there. The program is below it, a call a line: click one for its
-// recording; type in it to change it (Enter: the program runs again, on a
-// fresh kernel), empty it (or ✕) to remove it; add a call at the end; ↺
-// for the example's own program again. A program changed from the
+// block, and finish as a later one wakes it. Then the explanation's links
+// lead into the recording: `[label](2)` is call 2 (its recording
+// selected), `[label](2:vfs_read)` the first call of vfs_read in it (on
+// the call's task; `:any` on any task), the cursor there; the first such
+// link is where the cursor starts. `code` in backticks. The program is
+// below, a call a line: click one for its recording; type in it to change
+// it (Enter: the program runs again, on a fresh kernel), empty it (or ✕)
+// to remove it; add a call at the end; ↺ for the example's own program
+// again. A program changed from the
 // example's is compared with the example's run, call by call: the
 // functions a call ran more, or less, than the example's did (see diff).
 //
-// A step: { call, args, name?, tid?, stops? }; its arguments written as in
+// A step: { call, args, name?, tid? }; its arguments written as in
 // C (see args.js and Machine.arg): "a string", 0644, O_CREAT | O_WRONLY,
 // [64], {0, 30000000}, fd or $2 (a result: `name` names a call's). Its
 // runner: thread `tid` (a number, or a result: "child", "$2"); else /init.
@@ -29,40 +31,31 @@ export async function examples(app) {
   const consts = m.constants();
   const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
   // The open example: its steps, the calls asked ({ id, tid, args, how?,
-  // ret?, text?: how once it finished), the runner each started; the
-  // tutorial's stops ({ j: the call, k: its stop, at: the record }) and
-  // where it is.
-  const t = { ex: null, steps: [], done: [], started: [], tour: [], pos: -1, keep: -1, list: null, tut: null, status: null, diff: null };
+  // ret?, text?: how once it finished), the runner each started; its
+  // explanation's links ({ j: the call, func?, any?, at?: the record, a:
+  // the element }).
+  const t = { ex: null, steps: [], done: [], started: [], links: [], list: null, text: null, status: null, diff: null };
   // Each example's own run, once made: per call, the functions it ran and
   // how often (Machine.call_counts): what a changed program is compared with.
   const baselines = new Map();
 
   // The URL: #ex=NAME, the example; &p=CALLS, its program if changed (the
-  // calls as written, separated by ";": see program); &stop=N, where the
-  // tutorial is. { ex, steps, changed, stop }.
+  // calls as written, separated by ";": see program). { ex, steps, changed }.
   function fromURL() {
     const q = Object.fromEntries(location.hash.slice(1).split("&").filter(Boolean).map((kv) => {
       const k = kv.indexOf("=");
       return [kv.slice(0, k), decodeURIComponent(kv.slice(k + 1))];
     }));
     const ex = list.find((x) => x.name === q.ex) ?? list[0];
-    const steps = q.p != null ? program(q.p, ex?.steps ?? []) : (ex?.steps ?? []).map((s) => ({ ...s }));
-    // (&stops=: one's own stops, "call:func:note" each, ";" between: a tour of one's own.)
-    for (const st of (q.stops ?? "").split(";").filter(Boolean)) {
-      const [j, func, ...note] = st.split(":"), s = steps[Number(j) - 1];
-      if (s && func) s.stops = [...(s.stops ?? []), { func, note: note.join(":"), mine: true }];
-    }
-    return { ex, steps, changed: q.p != null, stop: q.stop ? Number(q.stop) - 1 : -1 };
+    const steps = q.p != null ? program(q.p) : (ex?.steps ?? []).map((s) => ({ ...s }));
+    return { ex, steps, changed: q.p != null };
   }
-  function toURL(stop = t.pos) {
+  function toURL() {
     const p = t.changed ? `&p=${encodeURIComponent(t.steps.map((s) => text(s)).join("; "))}` : "";
-    const mine = t.steps.flatMap((s, j) => (s.stops ?? []).filter((st) => st.mine).map((st) => `${j + 1}:${st.func}:${st.note}`));
-    const stops = mine.length ? `&stops=${encodeURIComponent(mine.join(";"))}` : "";
-    history.replaceState(null, "", `#ex=${t.ex.name}${p}${stops}${stop >= 0 ? `&stop=${stop + 1}` : ""}`);
+    history.replaceState(null, "", `#ex=${t.ex.name}${p}`);
   }
-  // Program `text` (calls as written, separated by ";" outside strings),
-  // the stops of `was`'s calls kept where a call is the same syscall.
-  function program(text, was) {
+  // Program `text` (calls as written, separated by ";" outside strings).
+  function program(text) {
     const calls = [];
     let cur = "", quote = false;
     for (let i = 0; i < text.length; i++) {
@@ -73,10 +66,7 @@ export async function examples(app) {
       else cur += c;
     }
     calls.push(cur);
-    return calls.map((c) => c.trim()).filter(Boolean).map((c, j) => {
-      const call = parseCall(c) ?? { call: c, args: [] };
-      return { ...call, stops: was[j]?.call === call.call ? was[j].stops : undefined };
-    });
+    return calls.map((c) => c.trim()).filter(Boolean).map((c) => parseCall(c) ?? { call: c, args: [] });
   }
   // Switch to example `ex` (its program `steps`, `changed` from the
   // example's: see change), on a fresh kernel, so that it always starts
@@ -85,7 +75,7 @@ export async function examples(app) {
     open(ex, steps);
     t.changed = changed;
     t.reset.hidden = !changed;
-    toURL(-1);
+    toURL();
     t.status.textContent = "Starting a fresh kernel…";
     app.restart().then(run);
   }
@@ -96,11 +86,10 @@ export async function examples(app) {
     t.steps = steps.map(({ as, ...s }) => (as ? { ...s, tid: `$${as}` } : { ...s }));
     t.done = [];
     t.started = [];
-    t.tour = [];
-    t.pos = -1;
+    t.links = [];
     t.changed = false;
     t.status = el("div", { className: "tstatus dim" });
-    t.tut = el("div", { className: "tour" });
+    t.text = el("div", { className: "explain" });
     t.list = el("ol", { className: "steps" });
     const k = list.indexOf(ex);
     // (Grouped by their `group`, in order: Start here, Files, ...)
@@ -115,39 +104,37 @@ export async function examples(app) {
     t.form = form();
     $("examples").replaceChildren(
       ex.question ? el("div", { className: "q", textContent: ex.question }) : null,
-      t.tut, el("div", { className: "ptitle dim" }, "Program", t.reset = el("a", { textContent: "↺ the example's", hidden: true,
+      t.text, el("div", { className: "ptitle dim" }, "Program", t.reset = el("a", { textContent: "↺ the example's", hidden: true,
         title: "the example's own program again (yours is in the URL until then)", onclick: () => go(ex) })), t.list, t.status);
     draw();
-    tutorial();
+    explain();
   }
 
-  // The kernel is up: make the calls, all of them; then the tutorial, from
-  // its first stop (or, after a change, where it was).
+  // The kernel is up: make the calls, all of them; then the explanation's
+  // links lead into the recording, the cursor at the first.
   async function run() {
     const mine = t.list;
     t.status.textContent = "Making the calls…";
     for (let j = 0; j < t.steps.length; j++) if (!(await step()) || t.list !== mine) return;
     t.status.textContent = "";
-    tour();
+    explain();
     // (The run, call by call, against the example's own: see diff.)
     const counts = t.steps.map((s, j) => ({ call: s.call, counts: syscall(j) ? m.call_counts(syscall(j).index) : null }));
     if (!t.changed) baselines.set(t.ex.name, counts);
     t.diff = t.changed ? diff(baselines.get(t.ex.name), counts) : null;
     if (t.diff) draw();
-    if (t.tour.length) stop(Math.min(Math.max(t.keep, 0), t.tour.length - 1));
+    const first = t.links.find((l) => l.at != null) ?? t.links.find((l) => l.c);
+    if (first) goTo(first);
     else if (t.done.length) pick(t.done.length - 1);
-    t.keep = -1;
     // (A program of one's own: the prompt, ready.)
-    if (!t.tour.length) t.form.querySelector("textarea").focus();
+    if (!t.links.length) t.form.querySelector("textarea").focus();
   }
-  // Change step `j` to `call` (its stops kept if it is the same syscall):
-  // the program runs again, on a fresh kernel (a kernel cannot be put back
-  // as it was: its tasks' stacks are the browser's), the tutorial where it
-  // was. (The program is in the URL, &p=: a link to it.)
+  // Change step `j` to `call`: the program runs again, on a fresh kernel (a
+  // kernel cannot be put back as it was: its tasks' stacks are the
+  // browser's). (The program is in the URL, &p=: a link to it.)
   function change(j, call) {
-    const old = t.steps[j], steps = [...t.steps];
-    steps[j] = { ...call, stops: old?.call === call.call ? old.stops : undefined };
-    t.keep = t.pos;
+    const steps = [...t.steps];
+    steps[j] = call;
     go(t.ex, steps, true);
   }
 
@@ -195,9 +182,7 @@ export async function examples(app) {
 
   // Remove step `j`: the program runs again without it.
   function remove(j) {
-    const steps = t.steps.filter((_, k) => k !== j);
-    t.keep = t.pos;
-    go(t.ex, steps, true);
+    go(t.ex, t.steps.filter((_, k) => k !== j), true);
   }
 
   // The results so far, by name: $n for call n, and the name its step
@@ -238,7 +223,7 @@ export async function examples(app) {
         done: (c) => (c == null ? remove(j) : text(c) === text(s) ? e.input.blur() : change(j, c)),
         cancel: () => ((e.input.value = text(s)), e.input.blur()) });
       e.input.title = "type to change the call (Enter: run the program again with it; Esc, or leaving it: not; emptied: remove it)";
-      return el("li", { className: [d ? "done" : "", d && d.how == null ? "blocked" : "", t.tour[t.pos]?.j === j ? "on" : ""].join(" ").trim() },
+      return el("li", { className: [d ? "done" : "", d && d.how == null ? "blocked" : ""].join(" ").trim() },
         el("div", { className: "line" }, typeof s.tid === "number" ? null : who(j), e.el,
           d ? el("span", { className: "mono ret", textContent: how(d) }) : null,
           el("a", { className: "rm", textContent: "✕", title: "remove the call (the program runs again without it)", onclick: () => remove(j) })),
@@ -248,67 +233,36 @@ export async function examples(app) {
         compared(j));
     }), el("li", { className: "add" }, t.form));
   }
-  // The tutorial: its stops, in full, the one it is at marked; ◀ ▶.
-  function tutorial() {
-    const n = t.tour.length;
-    if (!n) return t.tut.replaceChildren(el("div", { className: "dim", textContent: t.steps.length ? "No tutorial: the program's calls, recorded, are below." : "Write a program below: a call, and Enter." }), marker());
-    const items = t.tour.map((x, p) => {
-      const st = t.steps[x.j].stops[x.k];
-      return el("li", { className: [p === t.pos ? "on" : "", st.mine ? "mine" : ""].join(" ").trim(), onclick: () => stop(p) },
-        el("b", { className: "mono", textContent: st.func }), " ", st.note, el("span", { className: "dim", textContent: ` · call ${x.j + 1}` }),
-        st.mine ? el("a", { className: "rm", textContent: "✕", title: "remove this stop of yours", onclick: (e) => (e.stopPropagation(), unmark(x.j, x.k)) }) : null);
-    });
-    t.tut.replaceChildren(
-      el("div", { className: "tnav" },
-        el("button", { textContent: "◀ Back", title: "the stop before ([)", disabled: t.pos <= 0, onclick: () => stop(t.pos - 1) }),
-        el("span", { className: "dim", textContent: t.pos >= 0 ? `Stop ${t.pos + 1} of ${n}` : `${n} stops` }),
-        el("button", { className: "go", textContent: "Next ▶", title: "the next stop (])", disabled: t.pos + 1 >= n, onclick: () => stop(t.pos + 1) })),
-      el("ol", { className: "stops" }, ...items), marker());
-    items[t.pos]?.scrollIntoView({ block: "nearest" });
+  // The explanation: its paragraphs, each link a place in the recording
+  // (see the top): a call, or a function's first call in it; resolved
+  // once the calls are made (t.links), dim if the recording has no such
+  // place; `code` in backticks.
+  function explain() {
+    t.links = [];
+    const paras = (t.ex.text ?? []).map((para) => el("p", {}, ...para.split(/(\[[^\]]*\]\([^)]*\)|`[^`]*`)/).map((part) => {
+      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?\)$/);
+      if (link) {
+        const l = { j: Number(link[2]) - 1, func: link[3], any: !!link[4] };
+        l.c = syscall(l.j);
+        l.at = l.c && l.func ? m.first_call(l.func, l.c.first, l.c.last ?? m.records() - 1, l.any ? undefined : l.c.task.addr) : null;
+        const found = l.c && (!l.func || l.at != null);
+        l.a = el(found ? "a" : "span", { className: `place mono${found ? "" : " gone"}`, textContent: link[1],
+          title: !l.c ? `call ${l.j + 1} is not made` : l.func && l.at == null ? `${l.func} does not run in call ${l.j + 1}`
+            : l.func ? `${l.func}, in call ${l.j + 1}'s recording` : `call ${l.j + 1}'s recording`, onclick: found ? () => goTo(l) : null });
+        t.links.push(l);
+        return l.a;
+      }
+      return part.startsWith("`") ? el("code", { className: "mono", textContent: part.slice(1, -1) }) : part;
+    })));
+    t.text.replaceChildren(...paras, !paras.length && !t.steps.length ? el("p", { className: "dim", textContent: "Write a program below: a call, and Enter." }) : null);
   }
-  // A stop of one's own, at the cursor: "＋ a stop here", then its note and
-  // Enter (the stop, and the tour, are in the URL: a link to share).
-  function marker() {
-    const here = app.here?.();
-    if (!here) return null;
-    const j = t.done.findIndex((d, k) => syscall(k)?.index === here.syscall);
-    if (j < 0) return null;
-    const note = el("input", { className: "note", placeholder: `a note on ${here.func} (Enter)`, hidden: true, spellcheck: false });
-    const add = el("a", { className: "dim addstop", textContent: `＋ a stop at ${here.func}`, title: "add a stop of yours here, with a note",
-      onclick: () => ((note.hidden = false), note.focus()) });
-    note.onkeydown = (e) => {
-      if (e.key === "Enter" && note.value.trim()) mark_(j, here.func, note.value.trim());
-      else if (e.key === "Escape") note.hidden = true;
-      else return;
-      e.preventDefault();
-    };
-    return el("div", { className: "marker" }, add, note);
-  }
-  // Add a stop of one's own to call `j`: at `func`, `note`; the tour goes there.
-  function mark_(j, func, note) {
-    const s = t.steps[j];
-    s.stops = [...(s.stops ?? []), { func, note, mine: true }];
-    tour();
-    const p = t.tour.findIndex((x) => x.j === j && t.steps[j].stops[x.k].note === note && t.steps[j].stops[x.k].func === func);
-    if (p >= 0) stop(p);
-    else (tutorial(), toURL());
-  }
-  function unmark(j, k) {
-    t.steps[j].stops = t.steps[j].stops.filter((_, i) => i !== k);
-    tour();
-    t.pos = Math.min(t.pos, t.tour.length - 1);
-    tutorial();
-    toURL();
-  }
-  // The tour: each stop of each call, where it is in the call's recording.
-  function tour() {
-    t.tour = t.steps.flatMap((s, j) => {
-      const c = syscall(j);
-      if (!c) return [];
-      const b = c.last ?? m.records() - 1;
-      return (s.stops ?? []).map((st, k) => ({ j, k, at: m.first_call(st.func, c.first, b, st.any ? undefined : c.task.addr) }))
-        .filter((x) => x.at != null);
-    });
+  // Go to link `l`: its call selected, the cursor at its function's call
+  // (or the call's start); the link marked.
+  function goTo(l) {
+    app.select(l.c);
+    if (l.at != null) app.time.go(l.at);
+    for (const x of t.links) x.a.classList.toggle("on", x === l);
+    mark(l.j);
   }
 
   // Make the next call, recorded, and wait until the kernel is quiet (it
@@ -341,30 +295,13 @@ export async function examples(app) {
   }
   // Step `j`'s syscall summary, if the recording still has it.
   const syscall = (j) => t.done[j] && app.calls()[m.syscall_of(t.done[j].id)];
-  // Call `j` picked: its recording selected, the tutorial at its first stop.
+  // Call `j` picked: its recording selected.
   function pick(j) {
-    const k = t.tour.findIndex((x) => x.j === j);
-    if (k >= 0 && t.tour[t.pos]?.j !== j) return stop(k);
     const c = syscall(j);
     if (!c) return (t.status.textContent = t.done[j] ? "This call's recording is gone: the ring has moved on." : "");
     app.select(c);
     mark(j);
   }
-  // Go to stop `p` of the tutorial: its call selected, the cursor there.
-  function stop(p) {
-    const s = t.tour[p], c = s && syscall(s.j);
-    if (!c) return;
-    t.pos = p;
-    app.select(c);
-    app.time.go(s.at);
-    tutorial();
-    mark(s.j);
-    toURL();
-  }
-  // (The tutorial's stops, for the keys: ] the next, [ the one before.)
-  app.tour = (d) => stop(t.pos + d);
-  // (The cursor moved: the marker offers a stop at the function there.)
-  app.moved = () => t.tut.querySelector(".marker")?.replaceWith(marker() ?? el("span", { className: "marker" }));
   // (Call `j`'s line marked, the others not.)
   const mark = (j) => [...t.list.children].forEach((li, k) => li.classList.toggle("on", k === j));
 
@@ -411,10 +348,8 @@ export async function examples(app) {
   }
 
   // (The example, shown while the kernel boots; its calls made once it is up.)
-  // (The URL's tutorial stop, once there is a tutorial: see run.)
   const u = fromURL();
   if (u.ex) open(u.ex, u.steps);
   t.changed = u.changed;
-  t.keep = u.stop;
   run();
 }

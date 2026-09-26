@@ -2,6 +2,9 @@
   "title": "What happens in read()?",
   "group": "Files, in memory",
   "question": "A program reads 64 bytes of a file. Which parts of the kernel does that go through? (Here the file is in memory: no disk.)",
+  "text": [
+    "Call 2, [read(fd, [64], 64)](2): [ksys_read](2:ksys_read) The syscall: the fd turns into the open file (a struct file), and the position to read at. [vfs_read](2:vfs_read) The VFS, the same for every file system: is the file open for reading, is the range sane? Then the file system's own read. [filemap_read](2:filemap_read) The page cache: a file's data lives in memory pages. Find the page at the position, and copy from it to the program. (In ramfs, the pages are all the file is.)"
+  ],
   "steps": [
     {
       "call": "openat",
@@ -18,20 +21,6 @@
         "fd",
         "[64]",
         "64"
-      ],
-      "stops": [
-        {
-          "func": "ksys_read",
-          "note": "The syscall: the fd turns into the open file (a struct file), and the position to read at."
-        },
-        {
-          "func": "vfs_read",
-          "note": "The VFS, the same for every file system: is the file open for reading, is the range sane? Then the file system's own read."
-        },
-        {
-          "func": "filemap_read",
-          "note": "The page cache: a file's data lives in memory pages. Find the page at the position, and copy from it to the program. (In ramfs, the pages are all the file is.)"
-        }
       ]
     },
     {

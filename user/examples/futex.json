@@ -2,6 +2,14 @@
   "title": "How does a thread sleep until another says so?",
   "question": "Two threads share memory. One waits for a word to change, the other wakes it: a futex. How does the kernel make sure no wake-up is lost?",
   "group": "Threads and processes",
+  "text": [
+    "Call 1, [mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)](1): [do_mmap](1:do_mmap) Memory for a thread's stack: anonymous, zeroed pages (no MMU: at one address, the same for every thread).",
+    "Call 2, [thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0)](2): [copy_process](2:copy_process) A new task that shares /init's memory, files and signal handlers: a thread of the same process (CLONE_THREAD). [wake_up_new_task](2:wake_up_new_task) Runnable: it starts on the stack it was given (its top: mem + 65536; stacks grow down).",
+    "Call 3, [thread: getpid()](3): [__task_pid_nr_ns](3:__task_pid_nr_ns) A thread's process id is its process's: the thread group's (its own id is its tid).",
+    "Call 4, [thread: futex_time64(mem, FUTEX_WAIT_PRIVATE, 1, NULL)](4): [futex_wait_setup](4:futex_wait_setup) Wait only if the word still holds 1. It holds 0: return at once (EAGAIN). The check is made with the waiter queue's lock held, so a wake-up cannot come in between.",
+    "Call 5, [thread: futex_time64(mem, FUTEX_WAIT_PRIVATE, 0, NULL)](5): [futex_do_wait](5:futex_do_wait) The word holds 0: queue this thread on the futex's hash bucket, and sleep. The call blocks: it returns when another thread wakes it. [schedule](5:schedule) Give the CPU away (the idle task runs: nothing else to do).",
+    "Call 6, [futex_time64(mem, FUTEX_WAKE_PRIVATE, 1, NULL)](6): [futex_wake](6:futex_wake) Find the waiters queued on this word (its hash bucket, its key: this process's memory, this address). [wake_up_q](6:wake_up_q) Wake one up: the other thread's wait returns 0."
+  ],
   "steps": [
     {
       "call": "mmap2",
@@ -13,12 +21,6 @@
         "MAP_PRIVATE | MAP_ANONYMOUS",
         "-1",
         "0"
-      ],
-      "stops": [
-        {
-          "func": "do_mmap",
-          "note": "Memory for a thread's stack: anonymous, zeroed pages (no MMU: at one address, the same for every thread)."
-        }
       ]
     },
     {
@@ -30,28 +32,12 @@
         "NULL",
         "NULL",
         "0"
-      ],
-      "stops": [
-        {
-          "func": "copy_process",
-          "note": "A new task that shares /init's memory, files and signal handlers: a thread of the same process (CLONE_THREAD)."
-        },
-        {
-          "func": "wake_up_new_task",
-          "note": "Runnable: it starts on the stack it was given (its top: mem + 65536; stacks grow down)."
-        }
       ]
     },
     {
       "call": "getpid",
       "tid": "thread",
-      "args": [],
-      "stops": [
-        {
-          "func": "__task_pid_nr_ns",
-          "note": "A thread's process id is its process's: the thread group's (its own id is its tid)."
-        }
-      ]
+      "args": []
     },
     {
       "call": "futex_time64",
@@ -61,12 +47,6 @@
         "FUTEX_WAIT_PRIVATE",
         "1",
         "NULL"
-      ],
-      "stops": [
-        {
-          "func": "futex_wait_setup",
-          "note": "Wait only if the word still holds 1. It holds 0: return at once (EAGAIN). The check is made with the waiter queue's lock held, so a wake-up cannot come in between."
-        }
       ]
     },
     {
@@ -77,16 +57,6 @@
         "FUTEX_WAIT_PRIVATE",
         "0",
         "NULL"
-      ],
-      "stops": [
-        {
-          "func": "futex_do_wait",
-          "note": "The word holds 0: queue this thread on the futex's hash bucket, and sleep. The call blocks: it returns when another thread wakes it."
-        },
-        {
-          "func": "schedule",
-          "note": "Give the CPU away (the idle task runs: nothing else to do)."
-        }
       ]
     },
     {
@@ -96,16 +66,6 @@
         "FUTEX_WAKE_PRIVATE",
         "1",
         "NULL"
-      ],
-      "stops": [
-        {
-          "func": "futex_wake",
-          "note": "Find the waiters queued on this word (its hash bucket, its key: this process's memory, this address)."
-        },
-        {
-          "func": "wake_up_q",
-          "note": "Wake one up: the other thread's wait returns 0."
-        }
       ]
     }
   ]

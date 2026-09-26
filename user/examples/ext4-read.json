@@ -2,6 +2,10 @@
   "title": "Reading from a disk",
   "group": "Files on ext4",
   "question": "The same read(), of a file on ext4: where do the bytes come from the first time?",
+  "text": [
+    "Call 1, [fd = openat(AT_FDCWD, \"/mnt/note.txt\", O_RDONLY)](1): [ext4_lookup](1:ext4_lookup) The name is not in the dentry cache yet: ext4 reads the directory's block from the disk to find it.",
+    "Call 2, [read(fd, [64], 64)](2): [filemap_read](2:filemap_read) The page cache, as for a file in memory; but the page is not there yet... [ext4_mpage_readpages](2:ext4_mpage_readpages) ...so ext4 finds where the file's data is on the disk (its extents), and reads it into the page... [submit_bio](2:submit_bio:any) ...through the block layer: a request to the disk, /dev/loop0, whose blocks are a file in memory. Then the bytes are copied out."
+  ],
   "steps": [
     {
       "call": "openat",
@@ -10,12 +14,6 @@
         "AT_FDCWD",
         "\"/mnt/note.txt\"",
         "O_RDONLY"
-      ],
-      "stops": [
-        {
-          "func": "ext4_lookup",
-          "note": "The name is not in the dentry cache yet: ext4 reads the directory's block from the disk to find it."
-        }
       ]
     },
     {
@@ -24,21 +22,6 @@
         "fd",
         "[64]",
         "64"
-      ],
-      "stops": [
-        {
-          "func": "filemap_read",
-          "note": "The page cache, as for a file in memory; but the page is not there yet..."
-        },
-        {
-          "func": "ext4_mpage_readpages",
-          "note": "...so ext4 finds where the file's data is on the disk (its extents), and reads it into the page..."
-        },
-        {
-          "func": "submit_bio",
-          "note": "...through the block layer: a request to the disk, /dev/loop0, whose blocks are a file in memory. Then the bytes are copied out.",
-          "any": true
-        }
       ]
     },
     {

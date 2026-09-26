@@ -2,6 +2,9 @@
   "title": "Writing to a file on a disk",
   "group": "Files on ext4",
   "question": "The same write, on ext4: is anything written to the disk?",
+  "text": [
+    "Call 2, [write(fd, \"hello, ext4\\n\", 12)](2): [ext4_buffered_write_iter](2:ext4_buffered_write_iter) Into the page cache, as in memory: the page is marked dirty (to be written back). [ext4_da_write_begin](2:ext4_da_write_begin) Delayed allocation: no disk block is chosen for it yet, one is only reserved. Nothing is on the disk yet."
+  ],
   "steps": [
     {
       "call": "openat",
@@ -19,16 +22,6 @@
         "fd",
         "\"hello, ext4\\n\"",
         "12"
-      ],
-      "stops": [
-        {
-          "func": "ext4_buffered_write_iter",
-          "note": "Into the page cache, as in memory: the page is marked dirty (to be written back)."
-        },
-        {
-          "func": "ext4_da_write_begin",
-          "note": "Delayed allocation: no disk block is chosen for it yet, one is only reserved. Nothing is on the disk yet."
-        }
       ]
     },
     {

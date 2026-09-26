@@ -2,6 +2,10 @@
   "title": "What is a file descriptor?",
   "group": "Files, in memory",
   "question": "open() gives a program a small number for a file, close() gives it back. What are they, in the kernel?",
+  "text": [
+    "Call 1, [fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)](1): [get_unused_fd_flags](1:get_unused_fd_flags) A file descriptor is an index in the process's table of open files: take the lowest free one. 0, 1 and 2 are taken (the console), so 3. [path_openat](1:path_openat) Find the file by its path, a name at a time from the root: \"note.txt\", in / (an in-memory file system, ramfs). [do_dentry_open](1:do_dentry_open) The open file: a struct file, with where the program is in it (its position) and how it opened it (read only). [fd_install](1:fd_install) Slot 3 of the table now points to that struct file: the call returns 3.",
+    "Call 2, [close(fd)](2): [file_close_fd](2:file_close_fd) Slot 3 is emptied: the number is free again. [__fput](2:__fput) And the struct file, which nothing refers to any more, goes."
+  ],
   "steps": [
     {
       "call": "openat",
@@ -10,40 +14,12 @@
         "AT_FDCWD",
         "\"/note.txt\"",
         "O_RDONLY"
-      ],
-      "stops": [
-        {
-          "func": "get_unused_fd_flags",
-          "note": "A file descriptor is an index in the process's table of open files: take the lowest free one. 0, 1 and 2 are taken (the console), so 3."
-        },
-        {
-          "func": "path_openat",
-          "note": "Find the file by its path, a name at a time from the root: \"note.txt\", in / (an in-memory file system, ramfs)."
-        },
-        {
-          "func": "do_dentry_open",
-          "note": "The open file: a struct file, with where the program is in it (its position) and how it opened it (read only)."
-        },
-        {
-          "func": "fd_install",
-          "note": "Slot 3 of the table now points to that struct file: the call returns 3."
-        }
       ]
     },
     {
       "call": "close",
       "args": [
         "fd"
-      ],
-      "stops": [
-        {
-          "func": "file_close_fd",
-          "note": "Slot 3 is emptied: the number is free again."
-        },
-        {
-          "func": "__fput",
-          "note": "And the struct file, which nothing refers to any more, goes."
-        }
       ]
     }
   ]

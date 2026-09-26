@@ -103,12 +103,7 @@ export function app(m) {
   };
   a.calls = () => calls;
   // The cursor moved to `at` (see Machine.at).
-  // Where the cursor is, for a stop of one's own: { func, syscall }.
-  let here = null;
-  a.here = () => here;
   a.showAt = (at) => {
-    here = { func: at.inlined ?? at.func, syscall: at.syscall };
-    a.moved?.();
     L.pos = null;
     memoryAt(at.i);
     src.view.cursor = at;
@@ -156,8 +151,6 @@ export function app(m) {
     src.showFunction(step.func, undefined, step.line, step.file);
     // (The stack as it runs: see Machine.call_stack's nth.)
     stack.show(step.i, step, at?.task);
-    here = { func: step.inlined ?? step.func, syscall: at?.syscall };
-    a.moved?.();
     where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line });
     return true;
   }
@@ -216,7 +209,6 @@ export function app(m) {
     if (arrow) step(e.altKey ? "out" : e.shiftKey ? "over" : "line", arrow);
     else if (e.key === "Home") steps().length && showStep(0);
     else if (e.key === "/") time.focusFind();
-    else if (e.key === "]" || e.key === "[") a.tour?.(e.key === "]" ? 1 : -1);
     else if (e.key === "F10") step("over", 1);
     else if (e.key === "F11") step(e.shiftKey ? "out" : "line", 1);
     else if (e.key === " ") play();

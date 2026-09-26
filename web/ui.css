@@ -136,18 +136,13 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 .tstatus { padding: 4px 12px; font-size: 12px; border-bottom: 1px solid var(--line); }
 .tstatus:empty { display: none; }
 
-/* The tutorial: its stops, the one it is at */
-.tour { margin: 8px 12px; font-size: 12.5px; }
-.tour .tnav { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.tour .tnav span { flex: 1; text-align: center; font-size: 11.5px; }
-.tour ol.stops { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 2px; }
-.tour ol.stops li { cursor: pointer; padding: 2px 4px; border-radius: 3px; }
-.tour ol.stops li:hover { background: var(--sel); }
-.tour ol.stops li.on { background: var(--at); }
-.tour ol.stops li .rm { color: var(--dim); font-size: 11px; margin-left: 4px; visibility: hidden; }
-.tour ol.stops li:hover .rm { visibility: visible; }
-.tour .marker { margin: 4px 0 0 22px; font-size: 11.5px; }
-.tour .marker input.note:not([hidden]) { display: block; width: 100%; margin-top: 4px; font: 12px var(--mono); padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--fg); }
+/* The explanation: its paragraphs, its links into the recording (the one gone to marked) */
+.explain { margin: 8px 12px; font-size: 12.5px; }
+.explain p { margin: 0 0 8px; }
+.explain .place { font-size: 12px; }
+.explain a.place.on { background: var(--at); border-radius: 2px; }
+.explain .place.gone { color: var(--dim); text-decoration: line-through; }
+.explain code { font-size: 12px; }
 
 /* The program: a call a line (its editor, its result), the one at the tutorial's stop */
 .ptitle { margin: 10px 12px 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }

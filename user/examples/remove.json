@@ -2,6 +2,12 @@
   "title": "Renaming and removing",
   "question": "A name moves, a directory will not go while it has names in it, and a file goes when its last name does. What does ext4 do?",
   "group": "Files on ext4",
+  "text": [
+    "Call 1, [renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/dir/b.txt\", 0)](1): [ext4_rename](1:ext4_rename) In one directory: the entry's name changes, \"a.txt\" to \"b.txt\"; the inode stays as it is.",
+    "Call 2, [unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)](2): [ext4_empty_dir](2:ext4_empty_dir) Is it empty? No (\"b.txt\"): the call fails, ENOTEMPTY.",
+    "Call 3, [unlinkat(AT_FDCWD, \"/mnt/dir/b.txt\", 0)](3): [ext4_delete_entry](3:ext4_delete_entry) The name leaves the directory block. [ext4_free_inode](3:ext4_free_inode) It was the file's only name, and nobody has it open: its inode is freed.",
+    "Call 4, [unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)](4): [ext4_free_blocks](4:ext4_free_blocks) Now empty: the directory's block goes back to the block bitmap, and its inode is freed."
+  ],
   "steps": [
     {
       "call": "renameat2",
@@ -11,12 +17,6 @@
         "AT_FDCWD",
         "\"/mnt/dir/b.txt\"",
         "0"
-      ],
-      "stops": [
-        {
-          "func": "ext4_rename",
-          "note": "In one directory: the entry's name changes, \"a.txt\" to \"b.txt\"; the inode stays as it is."
-        }
       ]
     },
     {
@@ -25,12 +25,6 @@
         "AT_FDCWD",
         "\"/mnt/dir\"",
         "AT_REMOVEDIR"
-      ],
-      "stops": [
-        {
-          "func": "ext4_empty_dir",
-          "note": "Is it empty? No (\"b.txt\"): the call fails, ENOTEMPTY."
-        }
       ]
     },
     {
@@ -39,16 +33,6 @@
         "AT_FDCWD",
         "\"/mnt/dir/b.txt\"",
         "0"
-      ],
-      "stops": [
-        {
-          "func": "ext4_delete_entry",
-          "note": "The name leaves the directory block."
-        },
-        {
-          "func": "ext4_free_inode",
-          "note": "It was the file's only name, and nobody has it open: its inode is freed."
-        }
       ]
     },
     {
@@ -57,12 +41,6 @@
         "AT_FDCWD",
         "\"/mnt/dir\"",
         "AT_REMOVEDIR"
-      ],
-      "stops": [
-        {
-          "func": "ext4_free_blocks",
-          "note": "Now empty: the directory's block goes back to the block bitmap, and its inode is freed."
-        }
       ]
     }
   ]

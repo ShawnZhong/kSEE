@@ -36,26 +36,23 @@ URL, `#ex=read`); the selector above it, and ◀ ▶, switch examples, each on
 a fresh kernel (the page starts again), so that each starts from the same
 state. An **example** (on the left) is a question about the kernel ("What
 happens in read()?", "What is a directory?", …), a program of syscalls that
-asks it, and a
-tutorial: /init (or a thread or child of it) makes the calls as the
-example opens, each recorded, and
-the tutorial goes from stop to stop (◀ ▶, or click one): a note on a
-function one of the calls runs, the cursor there, the source, and the
-Call stack (with each call's arguments and locals, as they
-were). ◀ ▶ step, and Play plays, by line (into calls), over calls, or out of
-the call: the Call stack's selected call, or the line's; ← →, with Shift over,
-with Alt out (F10, F11, Shift+F11 as in a debugger). F4 in the source runs to
-the line the cursor is on (its next run; Shift+F4 its last), and [ ] go
-from stop to stop.
+asks it, and an explanation: /init (or a thread or child of it) makes
+the calls as the example opens, each recorded, and the explanation's
+links lead into the recording: a function one of the calls runs (the
+cursor at its call: the source, and the Call stack with each call's
+arguments and locals, as they were), or a call. ◀ ▶ step, and Play
+plays, by line (into calls), over calls, or out of the call: the Call
+stack's selected call, or the line's; ← →, with Shift over, with Alt out
+(F10, F11, Shift+F11 as in a debugger). F4 in the source runs to the
+line the cursor is on (its next run; Shift+F4 its last).
 
-The program is below the tutorial, a call a line, each written as in C
+The program is below the explanation, a call a line, each written as in C
 (`openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`): click one for its
 recording; type in it to change it, and Enter: the page starts a fresh
 kernel and makes the calls again, which comes to the very same state
 up to the change (the machine is deterministic: its clock is virtual);
-the calls are in the URL (`#ex=NAME&p=CALLS&stop=N`: the program if
-changed, its calls separated by `;`, and the tutorial's stop), a link to
-them. ✕ (or emptying its line) removes a call, ↺ brings the example's
+the calls are in the URL (`#ex=NAME&p=CALLS`: the program if
+changed, its calls separated by `;`), a link to them. ✕ (or emptying its line) removes a call, ↺ brings the example's
 own program back, and an edit left without Enter goes back to what it was. Add a call at the
 end. As you type, a list shows what fits (syscalls, the constants for the
 parameter, the results so far as `$n`), and the signature. Some examples
@@ -80,8 +77,11 @@ one to watch it. Ctrl+click (or F12) a name for its definition: a
 function, a type, a global, a struct's member. Over a function, the source
 says who called it in the recording, each caller a link to the call.
 
-An example is one JSON file in user/examples/: a title, a question, and
-steps: `{ call, name?, tid?, args, stops: [{ func, note, any? }] }` (`name`:
+An example is one JSON file in user/examples/: a title, a question, `text`
+(the explanation: paragraphs, with links into the recording as
+`[label](2:vfs_read)`, the first call of vfs_read in call 2's recording,
+`:any` for one on any task, or `[label](2)`, call 2 itself; `code` in
+backticks), and steps: `{ call, name?, tid?, args }` (`name`:
 a name for the call's result, which later arguments may use, as `fd` or
 `$2`; `tid`: the runner that makes it, a number or a result's name, `child`
 for the one a clone started; else /init), and a `group` (the selector's:

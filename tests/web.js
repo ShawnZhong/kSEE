@@ -174,7 +174,7 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
         && entry.func === "__se_sys_openat" && !stack.some((f) => f.func === "wasm_syscall" || f.func.startsWith("__do_sys_")));
 }
 
-// The examples (target/site/examples.json): their calls, and each stop in its call's recording.
+// The examples (target/site/examples.json): their calls, and each of the explanation's links found in its call's recording.
 const consts = m.constants();
 check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
       consts.O_CREAT === 64 && consts.AT_FDCWD === -100 && consts.AT_REMOVEDIR === 0x200 && consts.ENOTEMPTY === 39);
@@ -217,10 +217,13 @@ for (const ex of examples) {
   ex.steps.forEach((st, j) => {
     const q = asked[j], s = syscallOf(q), f = fin.get(q);
     if (!f) blocked.push(`${j + 1}. ${st.call}`);
-    for (const stop of st.stops ?? [])
-      if (!s || m.first_call(stop.func, s.first, s.last ?? m.records() - 1, stop.any ? undefined : s.task.addr) == null) missing.push(stop.func);
   });
-  check(`example ${ex.name}: ${ex.steps.length} calls, all finished, their stops found`,
+  // ([label](2:func:any): see examples.js.)
+  for (const [, n, func, any] of (ex.text ?? []).join(" ").matchAll(/\]\((\d+)(?::([\w.]+))?(:any)?\)/g)) {
+    const s = syscallOf(asked[Number(n) - 1]);
+    if (!s || (func && m.first_call(func, s.first, s.last ?? m.records() - 1, any ? undefined : s.task.addr) == null)) missing.push(`${n}:${func ?? ""}`);
+  }
+  check(`example ${ex.name}: ${ex.steps.length} calls, all finished, the explanation's links found`,
         !missing.length && !blocked.length || console.log("  missing:", missing, "blocked:", blocked));
 }
 

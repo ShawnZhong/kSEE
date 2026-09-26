@@ -16,8 +16,8 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
   files, in memory, then on ext4; time; threads and processes): a
   question ("What is a file descriptor?", "What happens in
   read()?", "What is a directory?", "How do two processes talk through a
-  pipe?"), a program of a few syscalls that asks it, and a short tutorial:
-  stops in the recording that explain what happens. The first, printing
+  pipe?"), a program of a few syscalls that asks it, and a short
+  explanation, with links into the recording. The first, printing
   "hello", is also a first look at kSEE itself.
 - *Kernel developers*: what a code path really does, on a real kernel they
   can read and change. They make **their own syscalls**.
@@ -41,15 +41,15 @@ SMP, no fork (threads and vfork, though): see Limits).
      the task running, and a name's value on hover (who last wrote it);
      memory as it was at the cursor; values watched (every write to one
      while it lived); what a call changed, by object.
-   An example's tutorial is its stops, places in the recording with a note
-   each: ◀ ▶ (or [ ]) go from one to the next.
+   An example's explanation is prose with links into the recording: a
+   function one of its calls ran, or a call.
 
 ```text
 ┌──────────────┬──────────────────────────────────────────────┐
 │ Example:     │ Timeline: overview · call stacks · tasks     │
 │  question    │ ◀ ▶ Play · step by line / over / out         │
-│  tutorial    ├───────────────────────────────┬──────────────┤
-│  (its stops) │ Source at the cursor          │ Call stack   │
+│  explanation ├───────────────────────────────┬──────────────┤
+│  (linked)    │ Source at the cursor          │ Call stack   │
 │  program     │ (the lines that ran)          │ (args, locals│
 │  (its calls) │                               │ task), Watch;│
 │ Console      │                               │ Changes      │

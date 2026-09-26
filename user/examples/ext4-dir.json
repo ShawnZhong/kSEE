@@ -2,6 +2,10 @@
   "title": "A directory on a disk",
   "group": "Files on ext4",
   "question": "The same mkdir, on ext4: what does a directory look like on a disk?",
+  "text": [
+    "Call 1, [mkdirat(AT_FDCWD, \"/mnt/sub\", 0755)](1): [ext4_mkdir](1:ext4_mkdir) A new directory: an inode, all in one journal transaction. [ext4_init_new_dir](1:ext4_init_new_dir) On a disk, a directory is a file of names: its first block, with its own two entries, \".\" (itself) and \"..\" (its parent). [ext4_add_entry](1:ext4_add_entry) The name \"sub\": into a block of /mnt, the parent.",
+    "Call 3, [getdents64(fd, [256], 256)](3): [ext4_readdir](3:ext4_readdir) Listing: read the directory's blocks, entry by entry."
+  ],
   "steps": [
     {
       "call": "mkdirat",
@@ -9,20 +13,6 @@
         "AT_FDCWD",
         "\"/mnt/sub\"",
         "0755"
-      ],
-      "stops": [
-        {
-          "func": "ext4_mkdir",
-          "note": "A new directory: an inode, all in one journal transaction."
-        },
-        {
-          "func": "ext4_init_new_dir",
-          "note": "On a disk, a directory is a file of names: its first block, with its own two entries, \".\" (itself) and \"..\" (its parent)."
-        },
-        {
-          "func": "ext4_add_entry",
-          "note": "The name \"sub\": into a block of /mnt, the parent."
-        }
       ]
     },
     {
@@ -40,12 +30,6 @@
         "fd",
         "[256]",
         "256"
-      ],
-      "stops": [
-        {
-          "func": "ext4_readdir",
-          "note": "Listing: read the directory's blocks, entry by entry."
-        }
       ]
     },
     {

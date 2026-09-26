@@ -2,6 +2,9 @@
   "title": "How is a file made?",
   "group": "Files, in memory",
   "question": "open() with O_CREAT makes a file that is not there. What does the kernel make? (In memory: ramfs.)",
+  "text": [
+    "Call 1, [fd = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644)](1): [lookup_open](1:lookup_open) The name is not there, and O_CREAT: make the file. [ramfs_mknod](1:ramfs_mknod) ramfs makes it: a new inode (the file itself: its mode, its size, its pages), and the name, a dentry, pointing to it."
+  ],
   "steps": [
     {
       "call": "openat",
@@ -11,16 +14,6 @@
         "\"/new.txt\"",
         "O_CREAT | O_WRONLY",
         "0644"
-      ],
-      "stops": [
-        {
-          "func": "lookup_open",
-          "note": "The name is not there, and O_CREAT: make the file."
-        },
-        {
-          "func": "ramfs_mknod",
-          "note": "ramfs makes it: a new inode (the file itself: its mode, its size, its pages), and the name, a dentry, pointing to it."
-        }
       ]
     },
     {

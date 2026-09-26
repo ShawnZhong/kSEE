@@ -2,6 +2,9 @@
   "title": "Where does the time go when a program sleeps?",
   "question": "Sleeping for 30 ms takes 30 ms, but the kernel works for a tiny part of it. What happens in between?",
   "group": "Time",
+  "text": [
+    "Call 1, [clock_nanosleep_time64(CLOCK_MONOTONIC, 0, {0, 30000000}, NULL)](1): [hrtimer_nanosleep](1:hrtimer_nanosleep) Set a high-resolution timer for 30 ms from now. [schedule](1:schedule) Nothing to do until then: give the CPU away. The idle task (swapper) runs, and waits for an interrupt. [hrtimer_wakeup](1:hrtimer_wakeup:any) 30 ms later, the timer's interrupt: wake the sleeper up (it is runnable again)."
+  ],
   "steps": [
     {
       "call": "clock_nanosleep_time64",
@@ -10,21 +13,6 @@
         "0",
         "{0, 30000000}",
         "NULL"
-      ],
-      "stops": [
-        {
-          "func": "hrtimer_nanosleep",
-          "note": "Set a high-resolution timer for 30 ms from now."
-        },
-        {
-          "func": "schedule",
-          "note": "Nothing to do until then: give the CPU away. The idle task (swapper) runs, and waits for an interrupt."
-        },
-        {
-          "func": "hrtimer_wakeup",
-          "any": true,
-          "note": "30 ms later, the timer's interrupt: wake the sleeper up (it is runnable again)."
-        }
       ]
     }
   ]

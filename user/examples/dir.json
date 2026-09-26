@@ -2,6 +2,10 @@
   "title": "What is a directory?",
   "group": "Files, in memory",
   "question": "A directory is names, each pointing to a file. What happens when one is made, and when one is listed? (In memory: ramfs.)",
+  "text": [
+    "Call 1, [mkdirat(AT_FDCWD, \"/sub\", 0755)](1): [ramfs_mkdir](1:ramfs_mkdir) A new directory: an inode like a file's, and a name for it in /.",
+    "Call 3, [getdents64(fd, [256], 256)](3): [dcache_readdir](3:dcache_readdir) Listing: an in-memory directory's names are the dentry cache itself; walk its children... [filldir64](3:filldir64) ...each copied out to the program: its name, its inode, its type."
+  ],
   "steps": [
     {
       "call": "mkdirat",
@@ -9,12 +13,6 @@
         "AT_FDCWD",
         "\"/sub\"",
         "0755"
-      ],
-      "stops": [
-        {
-          "func": "ramfs_mkdir",
-          "note": "A new directory: an inode like a file's, and a name for it in /."
-        }
       ]
     },
     {
@@ -32,16 +30,6 @@
         "fd",
         "[256]",
         "256"
-      ],
-      "stops": [
-        {
-          "func": "dcache_readdir",
-          "note": "Listing: an in-memory directory's names are the dentry cache itself; walk its children..."
-        },
-        {
-          "func": "filldir64",
-          "note": "...each copied out to the program: its name, its inode, its type."
-        }
       ]
     },
     {

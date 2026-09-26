@@ -2,6 +2,12 @@
   "title": "How does a thread wait for another to end?",
   "question": "A thread joins another: it sleeps until the other exits. How does the kernel tell it (with no thread library in between)?",
   "group": "Threads and processes",
+  "text": [
+    "Call 1, [mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)](1): [do_mmap](1:do_mmap) Memory for the new thread's stack.",
+    "Call 2, [thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM | CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID, mem + 65536, NULL, mem, 0)](2): [copy_process](2:copy_process) A new thread, told to write its tid at mem (CLONE_CHILD_SETTID), and to clear it and wake it when it exits (CLONE_CHILD_CLEARTID).",
+    "Call 3, [futex_time64(mem, FUTEX_WAIT, thread, NULL)](3): [futex_do_wait](3:futex_do_wait) Join: wait while mem holds the thread's tid. The call blocks.",
+    "Call 4, [thread: exit(0)](4): [do_exit](4:do_exit) The thread exits. [futex_wake](4:futex_wake) Its memory's last use (mm_release): it clears mem and wakes a waiter on it: the join returns 0."
+  ],
   "steps": [
     {
       "call": "mmap2",
@@ -13,12 +19,6 @@
         "MAP_PRIVATE | MAP_ANONYMOUS",
         "-1",
         "0"
-      ],
-      "stops": [
-        {
-          "func": "do_mmap",
-          "note": "Memory for the new thread's stack."
-        }
       ]
     },
     {
@@ -30,12 +30,6 @@
         "NULL",
         "mem",
         "0"
-      ],
-      "stops": [
-        {
-          "func": "copy_process",
-          "note": "A new thread, told to write its tid at mem (CLONE_CHILD_SETTID), and to clear it and wake it when it exits (CLONE_CHILD_CLEARTID)."
-        }
       ]
     },
     {
@@ -45,12 +39,6 @@
         "FUTEX_WAIT",
         "thread",
         "NULL"
-      ],
-      "stops": [
-        {
-          "func": "futex_do_wait",
-          "note": "Join: wait while mem holds the thread's tid. The call blocks."
-        }
       ]
     },
     {
@@ -58,16 +46,6 @@
       "tid": "thread",
       "args": [
         "0"
-      ],
-      "stops": [
-        {
-          "func": "do_exit",
-          "note": "The thread exits."
-        },
-        {
-          "func": "futex_wake",
-          "note": "Its memory's last use (mm_release): it clears mem and wakes a waiter on it: the join returns 0."
-        }
       ]
     }
   ]

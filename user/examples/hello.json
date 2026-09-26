@@ -2,6 +2,9 @@
   "title": "Start here: a program prints hello",
   "group": "Start here",
   "question": "A program prints \"hello\": write(1, \"hello\\n\", 6). kSEE recorded what the kernel did for it. Follow the three stops.",
+  "text": [
+    "Call 1, [write(1, \"hello\\n\", 6)](1): [ksys_write](1:ksys_write) This is the kernel's code for write(), as it ran: the lines in green ran. The timeline above shows the calls it made. [vfs_write](1:vfs_write) On the right, the Stack: the calls that led here, with their arguments. count is 6, the bytes of \"hello\\n\". [console_dev_write](1:console_dev_write) Here the bytes go to the console (bottom left). Now step with ◀ ▶, a line at a time, forwards or back."
+  ],
   "steps": [
     {
       "call": "write",
@@ -9,20 +12,6 @@
         "1",
         "\"hello\\n\"",
         "6"
-      ],
-      "stops": [
-        {
-          "func": "ksys_write",
-          "note": "This is the kernel's code for write(), as it ran: the lines in green ran. The timeline above shows the calls it made."
-        },
-        {
-          "func": "vfs_write",
-          "note": "On the right, the Stack: the calls that led here, with their arguments. count is 6, the bytes of \"hello\\n\"."
-        },
-        {
-          "func": "console_dev_write",
-          "note": "Here the bytes go to the console (bottom left). Now step with ◀ ▶, a line at a time, forwards or back."
-        }
       ]
     }
   ]
