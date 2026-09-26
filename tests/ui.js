@@ -127,10 +127,11 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   if (!r.top) throw new Error("no call on top above the stack");
   $("chart").dispatchEvent(new PointerEvent("pointermove", at));
   await sleep(400);
-  r.preview = [$("fn-title").textContent.slice(0, 40), document.querySelector(".tip .here")?.textContent];
+  r.preview = [$("fn-title").textContent.slice(0, 40), document.querySelector(".tip .here")?.textContent, $("stack").classList.contains("preview")];
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
   await sleep(300);
-  r.unpreviewed = !$("fn-title").classList.contains("preview");
+  r.unpreviewed = !$("fn-title").classList.contains("preview") && !$("stack").classList.contains("preview");
+  if (!r.preview[2] || !r.unpreviewed) throw new Error("the Stack's preview: " + JSON.stringify([r.preview, r.unpreviewed]));
   for (const type of ["pointerdown", "pointerup"])
     $("chart").dispatchEvent(new PointerEvent(type, at));
   r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];

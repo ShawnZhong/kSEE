@@ -69,18 +69,27 @@ export function app(m) {
     time.selected(f.first);
     $("where").textContent = `${f.func}${f.inlined ? ` (inlined into ${owner?.func})` : ""} ${f.file ?? ""}:${f.line ?? ""}` + (time.cursor() != null ? ` · record ${time.cursor() + 1}` : "");
   };
-  // Preview a call in the source while it is hovered (in the timeline or
-  // the Stack): `get()` says where ({ func: the function to show, file,
-  // line }); null: back to what was shown. (After a pause: no flicker
-  // while the pointer crosses the chart.)
+  // Preview a call while it is hovered (in the timeline or the Stack):
+  // `get()` says where ({ func: the function to show, file, line, i?: the
+  // record, whose stack the Stack shows then, memory as it was }); null:
+  // back to the cursor's. (Once a frame: a stack is a millisecond or so.)
   let peek = 0;
   a.preview = (get) => {
-    clearTimeout(peek);
-    peek = setTimeout(() => {
+    cancelAnimationFrame(peek);
+    peek = requestAnimationFrame(() => {
       const p = get?.();
-      if (p) src.preview(p.func, p.file, p.line);
-      else src.unpreview();
-    }, 40);
+      if (p) {
+        src.preview(p.func, p.file, p.line);
+        if (p.i != null) {
+          memoryAt(p.i);
+          stack.preview(p.i);
+        }
+      } else {
+        src.unpreview();
+        memoryAt(time.cursor() ?? null);
+        stack.unpreview();
+      }
+    });
   };
   // Select the call on the stack at the cursor whose first record is
   // `first` (or code inlined into it, from function `inlined`).

@@ -198,3 +198,4 @@ ol.steps .more { font-size: 11px; padding-left: 2px; }
 .calledit.inline .hint { display: none; }
 .calledit.inline:focus-within .hint { display: block; }
 ol.steps .ret { white-space: nowrap; }
+#stack.preview { opacity: .85; box-shadow: inset 3px 0 0 var(--accent); }

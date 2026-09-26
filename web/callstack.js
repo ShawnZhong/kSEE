@@ -96,6 +96,8 @@ export function callstack(app) {
   // line shown there ({ nth }: which of the lines record `i` runs); `task`:
   // the task there.
   function show(i, step, task) {
+    kept = null;
+    $("stack").classList.remove("preview");
     s.last = s.now;
     s.task = task ?? null;
     // (At a line step: the stack as that line runs; see Machine.call_stack.)
@@ -107,6 +109,26 @@ export function callstack(app) {
       ? "The call stack at the cursor, with arguments: pick a moment in the recording."
       : "Nothing recorded yet: the call stack comes from the recording. Make a call.";
     draw();
+  }
+
+  // Preview the stack at record `i` (as it runs there; memory as it was:
+  // see app.preview), the cursor's kept; unpreview: back to it.
+  let kept = null;
+  function preview(i) {
+    kept ??= { frames: s.frames, task: s.task, sel: s.sel };
+    s.frames = m.call_stack(i);
+    s.task = m.at(i)?.task ?? null;
+    s.sel = null;
+    // (Values unlike the cursor's marked.)
+    draw();
+    $("stack").classList.add("preview");
+  }
+  function unpreview() {
+    if (!kept) return;
+    Object.assign(s, kept);
+    kept = null;
+    draw();
+    $("stack").classList.remove("preview");
   }
 
   // The value of expression `expr` at the cursor: a name, then fields
@@ -139,5 +161,5 @@ export function callstack(app) {
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
 
-  return { show, select, owner, resolve, kids };
+  return { show, preview, unpreview, select, owner, resolve, kids };
 }

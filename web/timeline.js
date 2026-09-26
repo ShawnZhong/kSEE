@@ -255,7 +255,7 @@ export function timeline(app) {
         if (key === t.peek) tip.querySelector(".here").textContent =
           (caller ? `called at ${caller.file}:${caller.line} · ` : "") + `now at ${f.file}:${f.line}` +
           (frames[0] && frames[0] !== f ? ` · running: ${frames[0].func}${frames[0].inlined ? " (inlined)" : ""} (${frames[0].file}:${frames[0].line})` : "");
-        return { func: owner?.func ?? f.func, file: f.file, line: f.line };
+        return { func: owner?.func ?? f.func, file: f.file, line: f.line, i };
       });
     }
     if (first == null) {
