@@ -111,7 +111,7 @@ check("f_pos before the read, and after", fpos(read.first)?.value === "0" && fpo
 const buf = (i) => (m.memory_at(i), m.call_stack(inRead)[0].args.find((a) => a.name === "buf")?.value);
 check("the user's buffer, before the read and after", !/hello/.test(buf(read.first)) && /"hello from the page cache/.test(buf(read.last)));
 const who = (m.memory_at(read.last), m.last_write(fpos(read.last).addr, 8));
-check("who wrote f_pos: ksys_read", who?.func === "ksys_read");
+check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
 const readSteps = m.line_steps(read.first, read.last, read.task.addr);
 const pos = (i) => (m.memory_at(i), m.call_stack(i).find((c) => c.func === "ksys_read")?.locals?.find((l) => l.name === "pos")?.value);
 check("a local on the stack, as it was: ksys_read's pos, 0 then 26",

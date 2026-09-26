@@ -98,18 +98,14 @@ pub struct Frame {
 }
 
 /// The newest write to a value: at record `i`, on `task`, by the code at
-/// `func`'s `file:line` (`inlined` from another function, maybe); `old`
-/// what it overwrote.
+/// `at` (the line, if known); `old` what it overwrote.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Write {
     pub i: usize,
     pub old: u64,
     pub task: TaskRef,
-    pub func: Option<String>,
-    pub file: Option<String>,
-    pub line: Option<u32>,
-    pub inlined: Option<String>,
+    pub at: Option<Line>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -248,7 +244,7 @@ impl View<'_> {
             func: t.functions.get(&func).map_or(String::new(), |f| f.name.clone()),
             file: loc.map(|l| t.file(l).to_string()),
             line: loc.map(|l| l.line),
-            inlined: self.chain(inlined).first().map(|&(k, _)| self.inline_name(k)),
+            inlined: self.inlined_from(inlined),
             task: self.task(self.rec.tasks[i]),
             syscall: self.rec.syscall_at(i),
         })
@@ -256,9 +252,8 @@ impl View<'_> {
 
     fn line(&self, s: &LineStep) -> Line {
         let t = self.tables;
-        let chain = self.chain(s.inlined);
         Line { i: s.record, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
-               inlined: chain.first().map(|&(k, _)| self.inline_name(k)), depth: s.depth, inl: chain.len() as u32 }
+               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32 }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.
@@ -276,30 +271,9 @@ impl View<'_> {
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         let mut out = Vec::new();
         for c in stack::stack_at(t, records, tasks, i, nth).into_iter().rev() {
-            let f = t.functions.get(&c.func);
             let name = self.name(c.func);
             let (args, locals) = stack::args_locals(records, tasks, c.func, c.first, i);
-            let args = args.map(|args| {
-                let known = f.map_or(u32::MAX, |f| f.known);
-                t.types.params.get(&name).into_iter().flatten().zip(args).enumerate().map(|(k, ((pname, ty), v))| {
-                    let mut arg = t.types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
-                    if known >> k & 1 == 0 {
-                        // (Not passed any more: the optimizer took it away.)
-                        arg = Object { value: Some("(optimized out)".into()), children: None, expand: None, target: None, ..arg };
-                    }
-                    arg
-                }).collect()
-            });
-            let locals = match (locals, t.locals.get(&c.func)) {
-                (Some(addrs), Some(names)) => {
-                    let types = t.types.locals.get(&name);
-                    Some(addrs.into_iter().zip(names).filter_map(|(addr, var)| {
-                        let &(_, ty) = types?.iter().find(|(n, _)| n == var)?;
-                        Some(t.types.object(mem, var, addr, ty, 0))
-                    }).collect())
-                }
-                _ => None,
-            };
+            let (args, locals) = (args.map(|a| self.args(c.func, &name, a, mem)), locals.and_then(|a| self.locals(c.func, &name, a, mem)));
             // (The code inlined into it first, innermost first; then it.)
             let frame = |func, inlined, at: Option<Loc>| Frame {
                 func, first: c.first, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args: None, locals: None,
@@ -310,6 +284,31 @@ impl View<'_> {
             out.push(Frame { args, locals, ..frame(name, false, at) });
         }
         out
+    }
+
+    /// Function `func`'s (called `name`) arguments, their values `args`: the
+    /// source's parameters, as values of their types.
+    fn args(&self, func: u32, name: &str, args: Vec<u32>, mem: &dyn Memory) -> Vec<Object> {
+        let t = self.tables;
+        let known = t.functions.get(&func).map_or(u32::MAX, |f| f.known);
+        t.types.params.get(name).into_iter().flatten().zip(args).enumerate().map(|(k, ((pname, ty), v))| {
+            let arg = t.types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
+            // (Not passed any more: the optimizer took it away.)
+            if known >> k & 1 == 0 {
+                return Object { value: Some("(optimized out)".into()), children: None, expand: None, target: None, ..arg };
+            }
+            arg
+        }).collect()
+    }
+
+    /// Function `func`'s (called `name`) locals in memory, at `addrs`.
+    fn locals(&self, func: u32, name: &str, addrs: Vec<u32>, mem: &dyn Memory) -> Option<Vec<Object>> {
+        let t = self.tables;
+        let (names, types) = (t.locals.get(&func)?, t.types.locals.get(name));
+        Some(addrs.into_iter().zip(names).filter_map(|(addr, var)| {
+            let &(_, ty) = types?.iter().find(|(n, _)| n == var)?;
+            Some(t.types.object(mem, var, addr, ty, 0))
+        }).collect())
     }
 
     /// Call `c` and the code inlined into it where it is, innermost first:
@@ -332,6 +331,12 @@ impl View<'_> {
         k.and_then(|k| self.tables.inlines.get(k as usize)).map_or(&[], Vec::as_slice)
     }
 
+    /// The function code of inline chain `k` is inlined from (the innermost),
+    /// if it is inlined.
+    fn inlined_from(&self, k: Option<u32>) -> Option<String> {
+        self.chain(k).first().map(|&(f, _)| self.inline_name(f))
+    }
+
     /// Inlined function `k`'s name (Tables::names).
     pub fn inline_name(&self, k: u32) -> String {
         self.tables.names.get(k as usize).cloned().unwrap_or_default()
@@ -340,10 +345,7 @@ impl View<'_> {
     /// The newest write to `addr..addr + len` at or before record `at`.
     pub fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
         let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
-        let line = line.map(|s| self.line(&s));
-        Some(Write { i, old, task: self.task(self.rec.tasks[i]), func: line.as_ref().map(|l| l.func.clone()),
-                     file: line.as_ref().map(|l| l.file.clone()), line: line.as_ref().map(|l| l.line),
-                     inlined: line.and_then(|l| l.inlined) })
+        Some(Write { i, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)) })
     }
 
     /// The task running at the start of each of `n` buckets of the recording.
@@ -414,12 +416,12 @@ impl View<'_> {
 impl Types {
     /// The value of type `ty` at `addr`, aggregates expanded `depth` deep.
     pub fn object(&self, mem: &dyn Memory, name: &str, addr: u32, ty: u32, depth: u32) -> Object {
-        self.object_bits(mem, name, addr, ty, 0, 0, depth)
+        self.object_bits(mem, name, addr, ty, None, depth)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn object_bits(&self, mem: &dyn Memory, name: &str, addr: u32, ty: u32, bit_off: u32,
-                   bit_size: u32, depth: u32) -> Object {
+    /// The same, for a value that may be a bitfield: `bits`, its (offset in
+    /// the byte at `addr`, size).
+    fn object_bits(&self, mem: &dyn Memory, name: &str, addr: u32, ty: u32, bits: Option<(u32, u32)>, depth: u32) -> Object {
         let id = self.resolve(ty);
         let t = self.get(id);
         let mut o = Object {
@@ -432,8 +434,8 @@ impl Types {
                     o.expand = Some(id);
                 } else {
                     o.children = Some(self.members(&t.kind).iter().map(|m| {
-                        let (boff, bsize) = if m.bit_size > 0 { (m.bit_offset % 8, m.bit_size) } else { (0, 0) };
-                        self.object_bits(mem, &m.name, addr + m.bit_offset / 8, m.ty, boff, bsize, depth - 1)
+                        let bits = (m.bit_size > 0).then_some((m.bit_offset % 8, m.bit_size));
+                        self.object_bits(mem, &m.name, addr + m.bit_offset / 8, m.ty, bits, depth - 1)
                     }).collect());
                 }
             }
@@ -443,7 +445,7 @@ impl Types {
                 } else {
                     let esize = self.size_of(*elem);
                     o.children = Some((0..(*count).min(64)).map(|i| {
-                        self.object_bits(mem, &format!("[{i}]"), addr + i * esize, *elem, 0, 0, depth - 1)
+                        self.object_bits(mem, &format!("[{i}]"), addr + i * esize, *elem, None, depth - 1)
                     }).collect());
                 }
             }
@@ -463,7 +465,8 @@ impl Types {
             }
             _ => {
                 let mut v = String::new();
-                self.print_bits(mem, addr, ty, bit_off, bit_size, &mut v);
+                let (off, size) = bits.unwrap_or((0, 0));
+                self.print_bits(mem, addr, ty, off, size, &mut v);
                 o.value = Some(v);
             }
         }
