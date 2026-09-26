@@ -56,8 +56,7 @@ export function callstack(app) {
     s.frames.forEach((f, k) => {
       // (Click: select the call; the source shows where it is.)
       const on = s.sel == null ? k === 0 : f === s.sel;
-      const h = head(f.func + (f.inlined ? " (inlined)" : ""), f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f),
-        (on ? "on " : "") + (f.inlined ? "inlined" : ""));
+      const h = head(f.func, f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f), on ? "on" : "");
       // (Hover: the call, outlined in the timeline.)
       // (Hover: the call outlined in the timeline, and a preview of where it is.)
       h.onmouseenter = () => {

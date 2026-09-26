@@ -49,9 +49,9 @@ line tables say which code is inlined from where (its inline chain). A
 call's position is its last line; if that line is inlined, each function of
 the chain is a frame of its own on the stack (no arguments: there was no
 call), at the line inside it, and the real call is at the line where the
-chain starts. The stack chart can show them as calls too (the timeline's
-"inlined" toggle), and the line a record is at names the function its code
-is inlined from.
+chain starts. The stack chart shows them as calls too, and the line a
+record is at names the function its code is inlined from: the page does
+not tell inlined code from a call (only that it has no arguments).
 
 ## Syscalls
 

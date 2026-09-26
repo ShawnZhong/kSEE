@@ -21,9 +21,8 @@ const hue = (pid) => (pid * 137) % 360;
 // Calls are colored by where the function is.
 const AREAS = [["fs/", 210, "fs"], ["mm/", 135, "mm"], ["kernel/sched/", 28, "sched"], ["kernel/", 48, "kernel"],
                ["drivers/", 280, "drivers"], ["lib/", 175, "lib"], ["include/", 330, "include"], ["arch/", -1, "arch"]];
-// (Code inlined into a function: its color, lighter.)
-const color = (file, on, inlined) => {
-  const h = (AREAS.find(([p]) => file?.startsWith(p)) ?? [null, -1])[1], l = (on ? 50 : 74) + (inlined ? 12 : 0);
+const color = (file, on) => {
+  const h = (AREAS.find(([p]) => file?.startsWith(p)) ?? [null, -1])[1], l = on ? 50 : 74;
   return h < 0 ? `hsl(0 0% ${l + 5}%)` : `hsl(${h} ${on ? 65 : 55}% ${l}%)`;
 };
 
@@ -36,9 +35,7 @@ export function timeline(app) {
 // Machine.chart: inlined, code inlined into the call below it).
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
               depth: 1, row: ROW, // (depth: the deepest stack of the selection seen; row: the rows' height)
-              lit: null, sel: null, inlined: true, syscallAt: new Map() };
-  // (Inlined code shown as calls, as in the Stack, unless asked not to.)
-  try { t.inlined = localStorage.getItem("ksee.inlined") !== "0"; } catch { /* not kept */ } // the calls outlined (their first records): hovered here or in the Stack; selected
+              lit: null, sel: null, syscallAt: new Map() }; // (lit, sel: the calls outlined, their first records: hovered here or in the Stack; selected)
   const funcs = new Map(), tasks = new Map();
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const inames = new Map();
@@ -130,7 +127,7 @@ export function timeline(app) {
         const [id, first, inl] = r.c.frames[d], f = fn(id), y = base + rowY(d);
         const x1 = r.from * cw, w = (r.to - r.from) * cw;
         const on = curCol?.frames[d]?.[1] === first && cur >= t.win.a && cur <= t.win.b;
-        ctx.fillStyle = color(f?.file, on, inl);
+        ctx.fillStyle = color(f?.file, on);
         ctx.fillRect(x1, y, Math.max(1, w - 1), t.row - 1);
         if (first === t.lit || first === t.sel) {
           ctx.strokeStyle = css("--fg");
@@ -165,8 +162,7 @@ export function timeline(app) {
     for (let k = 0; k < flat.length;) {
       const task = flat[k], depth = flat[k + 1], frames = [];
       for (let d = 0; d < depth; d++) frames.push(flat.slice(k + 2 + 3 * d, k + 5 + 3 * d));
-      // (all: with the code inlined into each call, shown if asked for.)
-      out.push({ task, all: frames, frames: t.inlined ? frames : frames.filter((f) => !f[2]) });
+      out.push({ task, frames });
       k += 2 + 3 * depth;
     }
     t.cols = out;
@@ -269,12 +265,11 @@ export function timeline(app) {
     const f = fn(id), s = t.syscallAt.get(first);
     const line = (text, cls) => Object.assign(document.createElement("div"), { className: cls, textContent: text });
     const tipLines = (inl
-      ? [line(`${iname(inl - 1)} (inlined)`, ""), line(`its code, inlined into ${f?.name}: not a call of its own`, "dim")]
+      ? [line(iname(inl - 1), "")]
       : s
       ? [line(`${s.name ?? s.nr}(${s.args.slice(0, 3).join(", ")}…) = ${s.ret ?? "…"}`, ""),
          line(`a syscall by ${taskName(s.task)}`, "dim")]
-      : [line(f?.name ?? "?", ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f")),
-         ...inlinedIn(c, first).map((n) => line(`in ${n} (inlined)`, "f"))]);
+      : [line(f?.name ?? "?", ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f"))]);
     // (Where it is, called from: kept once found, see above.)
     tip.replaceChildren(...tipLines, line(t.here ?? "", "dim here"));
     tip.hidden = false;
@@ -282,9 +277,6 @@ export function timeline(app) {
     tip.style.left = `${Math.min(e.clientX + 14, innerWidth - r.width - 8)}px`;
     tip.style.top = `${e.clientY + 16 + r.height > innerHeight ? e.clientY - r.height - 8 : e.clientY + 16}px`;
   }
-  // The code inlined into call `first` in column `c`, when it is not shown:
-  // the functions, outermost first.
-  const inlinedIn = (c, first) => (t.inlined ? [] : c.all.filter((f) => f[1] === first && f[2]).map((f) => iname(f[2] - 1)));
   chart.onpointerleave = () => {
     tip.hidden = true;
     t.peek = null;
@@ -417,22 +409,13 @@ export function timeline(app) {
       setWindow(t.cursor - span / 2, t.cursor + span / 2);
     } else draw();
   }
-  // The legend, and whether to show inlined code as calls.
-  const toggle = Object.assign(document.createElement("label"), { className: "key", title: "Show code inlined into a function as calls of their own (rows get thinner)" });
-  const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: t.inlined, onchange: () => {
-    t.inlined = box.checked;
-    try { localStorage.setItem("ksee.inlined", t.inlined ? "1" : "0"); } catch { /* not kept */ }
-    t.depth = 1;
-    load();
-    drawChart();
-  } });
-  toggle.append(box, "inlined");
+  // The legend.
   $("legend").replaceChildren(...AREAS.map(([p, , name]) => {
     const k = document.createElement("span");
     k.className = "key";
     k.innerHTML = `<i style="background:${color(p, false)}"></i>${name}`;
     return k;
-  }), toggle);
+  }));
   // Where the box of the call from record `first` is, on the page: its
   // middle ({ x, y }, client coordinates), or null if it is not shown.
   function boxOf(first) {
