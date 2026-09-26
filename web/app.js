@@ -2,7 +2,7 @@
 //
 // An example's program makes calls, each recorded; explore the recording
 // at one cursor: the timeline shows it among the tasks and their calls;
-// the source and the Stack show the code and the values there (memory as
+// the source and the Call stack show the code and the values there (memory as
 // it was). ◀ ▶| and Play move it line by line.
 import { $, taskName } from "./dom.js";
 import { source } from "./source.js";
@@ -60,8 +60,8 @@ export function app(m) {
     time.select(s);
     time.go(m.seek(s.first, 1, "function"));
   };
-  // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:
-  // the Stack marks it, the source shows where it is, the timeline outlines it.
+  // Select call `f` (a Call stack frame: see Machine.call_stack) at the cursor:
+  // the Call stack marks it, the source shows where it is, the timeline outlines it.
   a.selectFrame = (f) => {
     cancelAnimationFrame(peek); // (a hover's preview, if pending, is not to win)
     stack.select(f.first, f.inlined ? f.func : null);
@@ -73,9 +73,9 @@ export function app(m) {
     time.selected(f.first);
     where({ name: f.func, file: f.file, line: f.line });
   };
-  // Preview a call while it is hovered (in the timeline or the Stack):
+  // Preview a call while it is hovered (in the timeline or the Call stack):
   // `get()` says where ({ func: the function to show, file, line, i?: the
-  // record, whose stack the Stack shows then, memory as it was }); null:
+  // record, whose stack the Call stack shows then, memory as it was }); null:
   // back to the cursor's. (Once a frame: a stack is a millisecond or so.)
   let peek = 0;
   a.preview = (get) => {
@@ -103,7 +103,12 @@ export function app(m) {
   };
   a.calls = () => calls;
   // The cursor moved to `at` (see Machine.at).
+  // Where the cursor is, for a stop of one's own: { func, syscall }.
+  let here = null;
+  a.here = () => here;
   a.showAt = (at) => {
+    here = { func: at.inlined ?? at.func, syscall: at.syscall };
+    a.moved?.();
     L.pos = null;
     memoryAt(at.i);
     src.view.cursor = at;
@@ -151,12 +156,14 @@ export function app(m) {
     src.showFunction(step.func, undefined, step.line, step.file);
     // (The stack as it runs: see Machine.call_stack's nth.)
     stack.show(step.i, step, at?.task);
+    here = { func: step.inlined ?? step.func, syscall: at?.syscall };
+    a.moved?.();
     where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line });
     return true;
   }
   // Step: by a `line` (into calls), `over` calls (the next line at this
   // level or out of it), or `out` (the next line out of it), `dir` 1
-  // forward, -1 back. The level: the Stack's selected call's, else the
+  // forward, -1 back. The level: the Call stack's selected call's, else the
   // line's (calls deep, then inlined deep: inlined code is stepped over
   // too). False if there is no such line.
   function step(kind, dir) {
@@ -202,12 +209,13 @@ export function app(m) {
   $("step-back").onclick = () => step($("step-by").value, -1);
   $("step-fwd").onclick = () => step($("step-by").value, 1);
   // (← →: a line; with Shift: over; with Alt: out. F10, F11, Shift+F11 as
-  // in a debugger; Home: the first line.)
+  // in a debugger; Home: the first line; /: find a function.)
   addEventListener("keydown", (e) => {
     if (e.target.closest?.("input, select, textarea, .monaco-editor")) return;
     const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
     if (arrow) step(e.altKey ? "out" : e.shiftKey ? "over" : "line", arrow);
     else if (e.key === "Home") steps().length && showStep(0);
+    else if (e.key === "/") time.focusFind();
     else if (e.key === "]" || e.key === "[") a.tour?.(e.key === "]" ? 1 : -1);
     else if (e.key === "F10") step("over", 1);
     else if (e.key === "F11") step(e.shiftKey ? "out" : "line", 1);

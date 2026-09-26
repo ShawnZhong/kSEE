@@ -41,12 +41,19 @@ export async function examples(app) {
       return [kv.slice(0, k), decodeURIComponent(kv.slice(k + 1))];
     }));
     const ex = list.find((x) => x.name === q.ex) ?? list[0];
-    const steps = q.p != null ? program(q.p, ex?.steps ?? []) : ex?.steps ?? [];
+    const steps = q.p != null ? program(q.p, ex?.steps ?? []) : (ex?.steps ?? []).map((s) => ({ ...s }));
+    // (&stops=: one's own stops, "call:func:note" each, ";" between: a tour of one's own.)
+    for (const st of (q.stops ?? "").split(";").filter(Boolean)) {
+      const [j, func, ...note] = st.split(":"), s = steps[Number(j) - 1];
+      if (s && func) s.stops = [...(s.stops ?? []), { func, note: note.join(":"), mine: true }];
+    }
     return { ex, steps, changed: q.p != null, stop: q.stop ? Number(q.stop) - 1 : -1 };
   }
   function toURL(stop = t.pos) {
     const p = t.changed ? `&p=${encodeURIComponent(t.steps.map((s) => text(s)).join("; "))}` : "";
-    history.replaceState(null, "", `#ex=${t.ex.name}${p}${stop >= 0 ? `&stop=${stop + 1}` : ""}`);
+    const mine = t.steps.flatMap((s, j) => (s.stops ?? []).filter((st) => st.mine).map((st) => `${j + 1}:${st.func}:${st.note}`));
+    const stops = mine.length ? `&stops=${encodeURIComponent(mine.join(";"))}` : "";
+    history.replaceState(null, "", `#ex=${t.ex.name}${p}${stops}${stop >= 0 ? `&stop=${stop + 1}` : ""}`);
   }
   // Program `text` (calls as written, separated by ";" outside strings),
   // the stops of `was`'s calls kept where a call is the same syscall.
@@ -116,13 +123,7 @@ export async function examples(app) {
     t.status.textContent = "Making the calls…";
     for (let j = 0; j < t.steps.length; j++) if (!(await step()) || t.list !== mine) return;
     t.status.textContent = "";
-    t.tour = t.steps.flatMap((s, j) => {
-      const c = syscall(j);
-      if (!c) return [];
-      const b = c.last ?? m.records() - 1;
-      return (s.stops ?? []).map((st, k) => ({ j, k, at: m.first_call(st.func, c.first, b, st.any ? undefined : c.task.addr) }))
-        .filter((x) => x.at != null);
-    });
+    tour();
     if (t.tour.length) stop(Math.min(Math.max(t.keep, 0), t.tour.length - 1));
     else if (t.done.length) pick(t.done.length - 1);
     t.keep = -1;
@@ -197,19 +198,64 @@ export async function examples(app) {
   // The tutorial: its stops, in full, the one it is at marked; ◀ ▶.
   function tutorial() {
     const n = t.tour.length;
-    if (!n) return t.tut.replaceChildren(el("div", { className: "dim", textContent: t.steps.length ? "No tutorial: the program's calls, recorded, are below." : "Write a program below: a call, and Enter." }));
+    if (!n) return t.tut.replaceChildren(el("div", { className: "dim", textContent: t.steps.length ? "No tutorial: the program's calls, recorded, are below." : "Write a program below: a call, and Enter." }), marker());
     const items = t.tour.map((x, p) => {
       const st = t.steps[x.j].stops[x.k];
-      return el("li", { className: p === t.pos ? "on" : "", onclick: () => stop(p) },
-        el("b", { className: "mono", textContent: st.func }), " ", st.note, el("span", { className: "dim", textContent: ` · call ${x.j + 1}` }));
+      return el("li", { className: [p === t.pos ? "on" : "", st.mine ? "mine" : ""].join(" ").trim(), onclick: () => stop(p) },
+        el("b", { className: "mono", textContent: st.func }), " ", st.note, el("span", { className: "dim", textContent: ` · call ${x.j + 1}` }),
+        st.mine ? el("a", { className: "rm", textContent: "✕", title: "remove this stop of yours", onclick: (e) => (e.stopPropagation(), unmark(x.j, x.k)) }) : null);
     });
     t.tut.replaceChildren(
       el("div", { className: "tnav" },
         el("button", { textContent: "◀ Back", title: "the stop before ([)", disabled: t.pos <= 0, onclick: () => stop(t.pos - 1) }),
         el("span", { className: "dim", textContent: t.pos >= 0 ? `Stop ${t.pos + 1} of ${n}` : `${n} stops` }),
         el("button", { className: "go", textContent: "Next ▶", title: "the next stop (])", disabled: t.pos + 1 >= n, onclick: () => stop(t.pos + 1) })),
-      el("ol", { className: "stops" }, ...items));
+      el("ol", { className: "stops" }, ...items), marker());
     items[t.pos]?.scrollIntoView({ block: "nearest" });
+  }
+  // A stop of one's own, at the cursor: "＋ a stop here", then its note and
+  // Enter (the stop, and the tour, are in the URL: a link to share).
+  function marker() {
+    const here = app.here?.();
+    if (!here) return null;
+    const j = t.done.findIndex((d, k) => syscall(k)?.index === here.syscall);
+    if (j < 0) return null;
+    const note = el("input", { className: "note", placeholder: `a note on ${here.func} (Enter)`, hidden: true, spellcheck: false });
+    const add = el("a", { className: "dim addstop", textContent: `＋ a stop at ${here.func}`, title: "add a stop of yours here, with a note",
+      onclick: () => ((note.hidden = false), note.focus()) });
+    note.onkeydown = (e) => {
+      if (e.key === "Enter" && note.value.trim()) mark_(j, here.func, note.value.trim());
+      else if (e.key === "Escape") note.hidden = true;
+      else return;
+      e.preventDefault();
+    };
+    return el("div", { className: "marker" }, add, note);
+  }
+  // Add a stop of one's own to call `j`: at `func`, `note`; the tour goes there.
+  function mark_(j, func, note) {
+    const s = t.steps[j];
+    s.stops = [...(s.stops ?? []), { func, note, mine: true }];
+    tour();
+    const p = t.tour.findIndex((x) => x.j === j && t.steps[j].stops[x.k].note === note && t.steps[j].stops[x.k].func === func);
+    if (p >= 0) stop(p);
+    else (tutorial(), toURL());
+  }
+  function unmark(j, k) {
+    t.steps[j].stops = t.steps[j].stops.filter((_, i) => i !== k);
+    tour();
+    t.pos = Math.min(t.pos, t.tour.length - 1);
+    tutorial();
+    toURL();
+  }
+  // The tour: each stop of each call, where it is in the call's recording.
+  function tour() {
+    t.tour = t.steps.flatMap((s, j) => {
+      const c = syscall(j);
+      if (!c) return [];
+      const b = c.last ?? m.records() - 1;
+      return (s.stops ?? []).map((st, k) => ({ j, k, at: m.first_call(st.func, c.first, b, st.any ? undefined : c.task.addr) }))
+        .filter((x) => x.at != null);
+    });
   }
 
   // Make the next call, recorded, and wait until the kernel is quiet (it
@@ -264,6 +310,8 @@ export async function examples(app) {
   }
   // (The tutorial's stops, for the keys: ] the next, [ the one before.)
   app.tour = (d) => stop(t.pos + d);
+  // (The cursor moved: the marker offers a stop at the function there.)
+  app.moved = () => t.tut.querySelector(".marker")?.replaceWith(marker() ?? el("span", { className: "marker" }));
   // (Call `j`'s line marked, the others not.)
   const mark = (j) => [...t.list.children].forEach((li, k) => li.classList.toggle("on", k === j));
 

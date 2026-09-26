@@ -216,6 +216,13 @@ pub fn callers(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: u
     out
 }
 
+/// The calls of any of `funcs` in records `from..=to`: each call's first
+/// record (its block 0), in order.
+pub fn calls_of(records: &[Record], from: usize, to: usize, funcs: &[u32]) -> Vec<usize> {
+    let to = to.min(records.len().saturating_sub(1));
+    (from..=to).filter(|&i| matches!(records[i], Record::Block { func, n: 0 } if funcs.contains(&func))).collect()
+}
+
 /// Where the call from record `first` (a block 0) ends: the last record of
 /// its task's while it is on the stack (its return), or None if it has not
 /// ended when the records do.
@@ -315,6 +322,13 @@ mod tests {
         let entry = Tables::id(crate::arch::TASK_ENTRY);
         let r = [b(entry, 0), b(1, 0), b(entry, 0), b(2, 0)];
         assert_eq!(stack_at(&r, &[7; 4], 3), [entry, 2]);
+    }
+
+    #[test]
+    fn calls_of_a_function_are_its_entries() {
+        let r = [b(1, 0), b(2, 0), b(2, 1), b(1, 1), b(2, 0)];
+        assert_eq!(calls_of(&r, 0, 4, &[2]), [1, 4]);
+        assert_eq!(calls_of(&r, 2, 4, &[2]), [4]);
     }
 
     #[test]

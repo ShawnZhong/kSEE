@@ -13,8 +13,10 @@
 // for what it was (the source previews where it is); click to put the
 // cursor there and select it (a syscall: its records, from entry to exit);
 // double-click a call to select its records, from its first to its return. Click or
-// drag the overview to move the window.
-import { $, taskName } from "./dom.js";
+// drag the overview to move the window. Find a function (the box in the
+// header, or /): Enter goes to its next call after the cursor, Shift+Enter
+// to the one before; its calls are marked on the overview.
+import { $, el, taskName } from "./dom.js";
 
 const ROW = 15, MIN_ROW = 11, STRIP = 12, OVER = 18;
 const css = (v) => getComputedStyle(document.body).getPropertyValue(v).trim();
@@ -36,7 +38,8 @@ export function timeline(app) {
 // Machine.chart: inlined, code inlined into the call below it).
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
               depth: 1, row: ROW, // (depth: the deepest stack of the selection seen; row: the rows' height)
-              lit: null, sel: null, syscallAt: new Map() }; // (lit, sel: the calls outlined, their first records: hovered here or in the Stack; selected)
+              lit: null, sel: null, syscallAt: new Map(),
+              found: { name: "", at: [] } }; // (the function found: its calls' records) // (lit, sel: the calls outlined, their first records: hovered here or in the Call stack; selected)
   const funcs = new Map(), tasks = new Map();
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const inames = new Map();
@@ -71,9 +74,12 @@ export function timeline(app) {
       ctx.fillRect(k, 3, 1, OVER - 6);
     });
     const ox = (i) => (i / Math.max(1, t.n - 1)) * w;
-    // (Each syscall's start: a mark, to find the program's calls.)
+    // (Each syscall's start: a mark, to find the program's calls; the calls
+    // of the function found: marks on top.)
     ctx.fillStyle = css("--accent");
     for (const c of t.calls) ctx.fillRect(Math.round(ox(c.first)), OVER - 4, 1, 4);
+    ctx.fillStyle = css("--miss");
+    for (const i of t.found.at) ctx.fillRect(Math.round(ox(i)), 0, 1, 4);
     if (t.win) {
       ctx.strokeStyle = css("--accent");
       ctx.lineWidth = 1.5;
@@ -90,7 +96,7 @@ export function timeline(app) {
     return s ? `${s.name ?? s.nr}()` : fn(id)?.name ?? "?";
   };
   // A flame graph: the outermost calls at the bottom, over the task strip
-  // (as in the Stack, the innermost is on top). Rows get thinner to fit the
+  // (as in the Call stack, the innermost is on top). Rows get thinner to fit the
   // box, down to where names still fit; deeper, the box scrolls (its bottom
   // in view at first). Row `d` (d calls deep) is at rowY(d); rowAt(y) is
   // the row at y.
@@ -373,6 +379,7 @@ export function timeline(app) {
     args.clear();
     inames.clear();
     t.buckets = m.timeline(Math.max(1, over.clientWidth));
+    if (t.found.name) t.found.at = [...m.calls_of(t.found.name, 0, Math.max(0, t.n - 1))];
     t.home = t.where?.() ?? null;
     t.depth = 1;
     if (t.cursor != null && t.cursor >= t.n) t.cursor = null;
@@ -398,6 +405,35 @@ export function timeline(app) {
       return { a: c.first, b: c.last ?? t.n - 1, task: c.task.addr };
     }, `${s.name ?? s.nr} by ${taskName(s.task)}`);
   }
+  // ---- Finding a function ----
+  // Find function `name`: its calls marked; `dir` 1: go to the next one
+  // after the cursor, -1: the one before (none: says so).
+  function find(name, dir) {
+    if (name !== t.found.name) t.found = { name, at: name && t.n ? [...m.calls_of(name, 0, t.n - 1)] : [] };
+    const at = t.found.at, cur = t.cursor ?? -1;
+    const i = dir > 0 ? at.find((x) => x > cur) : at.findLast((x) => x < cur);
+    drawOverview();
+    if (i == null) {
+      finder.hint.textContent = !name ? "" : !at.length ? (m.definition(name) ? `${name} is not called in the recording` : `no function ${name}`)
+        : `no call of ${name} ${dir > 0 ? "after" : "before"} the cursor (${at.length} in the recording)`;
+      return false;
+    }
+    finder.hint.textContent = `${at.indexOf(i) + 1} of ${at.length}`;
+    go(i);
+    return true;
+  }
+  // (The box, in the header, before the legend.)
+  const finder = { input: el("input", { className: "find mono", placeholder: "find a function…", spellcheck: false,
+                     title: "a function: Enter, its next call after the cursor; Shift+Enter, the one before; Esc clears" }),
+                   hint: el("span", { className: "dim findhint" }) };
+  finder.input.onkeydown = (e) => {
+    if (e.key === "Enter") find(finder.input.value.trim(), e.shiftKey ? -1 : 1);
+    else if (e.key === "Escape") ((finder.input.value = ""), find("", 1), finder.input.blur());
+    else return;
+    e.preventDefault();
+  };
+  $("legend").before(finder.input, finder.hint);
+
   // Put the cursor at record `i`, and show it.
   function go(i) {
     mark(i);
@@ -433,5 +469,6 @@ export function timeline(app) {
     }
     return null;
   }
-  return { refresh, go, mark, select, hilite, selected, boxOf, home: () => t.home, cursor: () => t.cursor, records: () => t.n };
+  return { refresh, go, mark, select, hilite, selected, boxOf, find, focusFind: () => finder.input.focus(),
+           home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }

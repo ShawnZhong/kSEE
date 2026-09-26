@@ -53,6 +53,13 @@ impl Machine {
         (ids.get(i) == Some(&id)).then_some(i)
     }
 
+    /// The calls of function `name` in records `first..=last`: each call's
+    /// first record.
+    pub fn calls_of(&self, name: &str, first: usize, last: usize) -> Vec<u32> {
+        let ids: Vec<u32> = tables().functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
+        ksee_core::stack::calls_of(&self.rec.borrow().records, first, last, &ids).into_iter().map(|i| i as u32).collect()
+    }
+
     /// Where the call from record `first` ends (its return), or None if it
     /// has not when the recording does (see ksee_core::stack::call_end).
     pub fn call_end(&self, first: usize) -> Option<usize> {
