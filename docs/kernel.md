@@ -120,8 +120,10 @@ thread-local storage. Futexes are the kernel's own
 
 ## /init, and the runners
 
-There is one program: **/init** (user/init.c, C on nolibc). It mounts the
-disk, and then makes the syscalls the page asks for, one at a time. It
+There are two programs (C on nolibc): **/init** (user/init.c), and
+**/bin/cat** (user/cat.c: its input to its output, for the pipe example's
+child to exec). /init mounts the disk, and then makes the syscalls the page
+asks for, one at a time. It
 waits for them in `sigtimedwait`, for SIGUSR1 (blocked): the page leaves a
 request with the runtime and rings /init's task (`WASM_IRQ_DOORBELL`: its
 handler sends the signal, kernel/irq.c); the runtime's `ksee.call` import
@@ -133,7 +135,9 @@ worker first, and each call's recording would begin with that.)
 
 A clone child of /init (a thread, a vfork child) is a **runner** too, and
 so is /init exec'd again (they inherit the blocked signal; the doorbell
-rings one task). So the page can make calls as several threads and
+rings one task). A runner's `execve` call is over once the new program is
+loaded (`user_start`): a runner again only if it says so (`ksee.ready`), as
+/init does and cat does not. So the page can make calls as several threads and
 processes: one blocks (a futex's wait, a pipe's read), another wakes it.
 
 ## A disk

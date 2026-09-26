@@ -9,7 +9,7 @@
 //! pushes): links to web/'s files (the page's own), and
 //!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
 //!   vmlinux.gz, src/       the kernel for the page (pack; target/vmlinux)
-//!   initramfs.cpio.gz      /init (user/init.c), and an ext4 disk image
+//!   initramfs.cpio.gz      /init (user/init.c), /bin/cat (user/cat.c), and an ext4 disk image
 //!                          (/disk.img, mkfs.ext4), from target/initramfs/
 //!
 //! (Gzipped by the build: hosts compress them less, or not at all; the
@@ -87,21 +87,24 @@ pub fn build() {
             .unwrap_or_else(|e| crate::fail(&format!("target/vmlinux: {e}")));
         gzip("target/vmlinux", &format!("{SITE}/vmlinux.gz"));
     }
-    // /init uses nolibc, with the kernel's UAPI headers.
+    // The programs (/init, /bin/cat) use nolibc, with the kernel's UAPI headers.
     run(&mut kmake(&["headers"]));
-    let inputs = ["user/init.c", "user/initramfs.list", "linux/usr/gen_init_cpio",
+    let programs = ["init", "cat"];
+    let inputs = ["user/init.c", "user/cat.c", "user/initramfs.list", "linux/usr/gen_init_cpio",
                   "linux/tools/include/nolibc/arch-wasm.h"];
     let dir = "target/initramfs";
     let cpio_out = format!("{dir}/initramfs.cpio");
     if stale(&cpio_out, &inputs) {
         eprintln!("  INIT    {SITE}/initramfs.cpio.gz");
         std::fs::create_dir_all(dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
-        run(Command::new(format!("clang{llvm}"))
-            // (Position-independent, in the kernel's memory: see binfmt_wasm.c.)
-            .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-fPIC", "-Wl,-pie",
-                   "-Wl,--experimental-pic", "-Wl,--import-memory", "-Wl,--no-entry", "-Wl,--export=_start",
-                   "-nostdinc", "-isystem", "linux/tools/include/nolibc", "-isystem", "linux/usr/include",
-                   "-o", &format!("{dir}/init.wasm"), "user/init.c"]));
+        for p in programs {
+            run(Command::new(format!("clang{llvm}"))
+                // (Position-independent, in the kernel's memory: see binfmt_wasm.c.)
+                .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-fPIC", "-Wl,-pie",
+                       "-Wl,--experimental-pic", "-Wl,--import-memory", "-Wl,--no-entry", "-Wl,--export=_start",
+                       "-nostdinc", "-isystem", "linux/tools/include/nolibc", "-isystem", "linux/usr/include",
+                       "-o", &format!("{dir}/{p}.wasm"), &format!("user/{p}.c")]));
+        }
         // The ext4 disk /init mounts (a file, through the loop device).
         let disk = format!("{dir}/disk.img");
         let _ = std::fs::remove_file(&disk);

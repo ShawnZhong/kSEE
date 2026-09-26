@@ -179,6 +179,11 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
         bulk(clone_entry, 4);
         Direct.write_u32(clone_entry, clone);
         PROGRAMS.with_borrow_mut(|u| u.users.insert(current(), User { sp, saved: top }));
+        // (A runner's call that was this execve is over: the new program
+        // runs. A runner again only if it says so: ksee.ready.)
+        let tid = tid();
+        finish(tid, "exec", 0, Vec::new());
+        k(|k| k.runners.borrow_mut().remove(&tid));
         Ok(start)
     };
     start().unwrap_or_else(|e| {
@@ -208,12 +213,10 @@ pub(crate) fn finish(tid: u32, how: &'static str, ret: i64, buffers: Vec<Option<
 fn runner_imports() -> Object {
     let ksee = Object::new();
     // ksee.ready(): the current thread is a runner, waiting for calls
-    // (rung: SIGUSR1). (A call it was making is over: it was an execve, and
-    // this is the new program.)
+    // (rung: SIGUSR1).
     js::set(&ksee, "ready", func(Closure::<dyn FnMut()>::new(|| {
         let (tid, task) = (tid(), current());
         k(|k| k.runners.borrow_mut().insert(tid, task));
-        finish(tid, "exec", 0, Vec::new());
         if tid == 1 && k(|k| k.calls.borrow().is_empty()) {
             // (The boot's over: let what it left for later run now, while
             // nothing is recorded.)

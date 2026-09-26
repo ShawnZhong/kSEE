@@ -1,6 +1,6 @@
 {
   "title": "How do two processes talk through a pipe?",
-  "question": "/init makes a pipe, starts a child, and the two talk. What does the kernel do as one process waits for the other?",
+  "question": "/init makes a pipe and starts a child that runs cat, reading from it, as a shell does for `echo hello | cat`. What does the kernel do as one process waits for the other?",
   "steps": [
     {
       "call": "pipe2",
@@ -36,33 +36,17 @@
       ]
     },
     {
-      "call": "execve",
+      "call": "dup3",
       "args": [
-        "\"/init\"",
-        "{\"init\", NULL}",
-        "NULL"
+        "3",
+        "0",
+        "0"
       ],
       "as": 2,
       "stops": [
         {
-          "func": "begin_new_exec",
-          "note": "The child runs a new program (/init again): memory of its own now."
-        },
-        {
-          "func": "complete_vfork_done",
-          "note": "So /init need not wait any more: its clone returns the child's pid."
-        }
-      ]
-    },
-    {
-      "call": "close",
-      "args": [
-        "4"
-      ],
-      "stops": [
-        {
-          "func": "file_close_fd",
-          "note": "/init keeps the reading end only."
+          "func": "do_dup2",
+          "note": "The child's stdin (fd 0) is now the pipe's reading end: the same open file as its fd 3."
         }
       ]
     },
@@ -75,25 +59,51 @@
       "stops": [
         {
           "func": "file_close_fd",
-          "note": "The child keeps the writing end only."
+          "note": "Its fd 3 is not needed any more: fd 0 has the pipe."
         }
       ]
     },
     {
-      "call": "read",
+      "call": "close",
       "args": [
-        "3",
-        "[64]",
-        "64"
+        "4"
+      ],
+      "as": 2,
+      "stops": [
+        {
+          "func": "file_close_fd",
+          "note": "The child must not keep the writing end: else it would never see the end of the input."
+        }
+      ]
+    },
+    {
+      "call": "execve",
+      "args": [
+        "\"/bin/cat\"",
+        "{\"cat\", NULL}",
+        "NULL"
+      ],
+      "as": 2,
+      "stops": [
+        {
+          "func": "begin_new_exec",
+          "note": "The child runs cat: memory of its own now, its fds kept (fd 0: the pipe). cat reads its input: the pipe is empty, so it sleeps."
+        },
+        {
+          "func": "complete_vfork_done",
+          "note": "So /init need not wait any more: its clone returns the child's pid."
+        }
+      ]
+    },
+    {
+      "call": "close",
+      "args": [
+        "3"
       ],
       "stops": [
         {
-          "func": "anon_pipe_read",
-          "note": "The pipe is empty, and a writer is left (the child's fd 4): wait for data. The call blocks."
-        },
-        {
-          "func": "schedule",
-          "note": "Give the CPU away."
+          "func": "file_close_fd",
+          "note": "/init keeps the writing end only."
         }
       ]
     },
@@ -104,7 +114,6 @@
         "\"hello\\n\"",
         "6"
       ],
-      "as": 2,
       "stops": [
         {
           "func": "anon_pipe_write",
@@ -112,39 +121,21 @@
         },
         {
           "func": "try_to_wake_up",
-          "note": "...and wake the reader: /init's read returns the 6 bytes.",
+          "note": "...and wake the reader: cat's read returns the 6 bytes, and it writes them to its output (the console).",
           "any": true
         }
       ]
     },
     {
-      "call": "exit_group",
+      "call": "close",
       "args": [
-        "7"
-      ],
-      "as": 2,
-      "stops": [
-        {
-          "func": "do_exit",
-          "note": "The child exits: its files close (the pipe has no writer now)."
-        },
-        {
-          "func": "exit_notify",
-          "note": "It tells its parent (SIGCHLD), and stays a zombie until the parent asks how it ended."
-        }
-      ]
-    },
-    {
-      "call": "read",
-      "args": [
-        "3",
-        "[64]",
-        "64"
+        "4"
       ],
       "stops": [
         {
-          "func": "anon_pipe_read",
-          "note": "Empty, and no writer left: 0, end of file."
+          "func": "pipe_release",
+          "note": "No writer left: the pipe's readers are woken: cat's read returns 0, the end of its input, and it exits (SIGCHLD to its parent; a zombie until the parent asks how it ended).",
+          "any": true
         }
       ]
     },
@@ -160,11 +151,15 @@
       "stops": [
         {
           "func": "do_wait",
-          "note": "How did the child end? (Its siginfo: exited, with status 7.)"
+          "note": "How did the child end? (Its siginfo: it exited, status 0.)"
+        },
+        {
+          "func": "wait_task_zombie",
+          "note": "The child is a zombie: its exit status is taken..."
         },
         {
           "func": "release_task",
-          "note": "Reap the zombie: the child is gone."
+          "note": "...and it is reaped: the child is gone."
         }
       ]
     }
