@@ -22,8 +22,9 @@ const FITS = {
 // the calls before (for $n); `done(call)`: a call made of what was written
 // ({ call, args, tid? }); `cancel()`: Esc with no list open; `focus()`:
 // it gets the focus; `inline`: a line of a program (its hint only while
-// it has the focus).
-export function callEditor({ m, consts, rets, text = "", placeholder = "", done, cancel, focus, inline = false }) {
+// it has the focus); `common`: the syscalls to list first, and with
+// nothing written yet.
+export function callEditor({ m, consts, rets, text = "", placeholder = "", done, cancel, focus, inline = false, common = [] }) {
   const names = m.syscall_names();
   const constNames = [...Object.keys(consts), "NULL"];
   // (A text area of one line, as tall as its text wraps to.)
@@ -65,9 +66,11 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
   function suggest(c) {
     if (c.param == null) {
       const w = c.typed;
-      if (!w) return [];
-      const starts = names.filter((n) => n.startsWith(w)), inside = names.filter((n) => !n.startsWith(w) && n.includes(w));
-      return [...starts, ...inside].slice(0, 12).map((n) => ({ text: `${n}(`, label: n, detail: signature(n), name: true }));
+      // (Nothing written: the common ones, to start from.)
+      const starts = names.filter((n) => n.startsWith(w)), inside = w ? names.filter((n) => !n.startsWith(w) && n.includes(w)) : [];
+      const all = [...new Set([...common.filter((n) => n.startsWith(w)), ...starts, ...inside])];
+      return (w ? all : all.filter((n) => common.includes(n))).slice(0, 12)
+        .map((n) => ({ text: `${n}(`, label: n, detail: signature(n)?.map((p) => p.textContent ?? p).join(""), name: true }));
     }
     if (c.word.startsWith("$")) {
       return rets().map((r, j) => ({ r, j })).filter(({ r, j }) => r !== undefined && `$${j + 1}`.startsWith(c.word))
@@ -101,7 +104,7 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
     list.replaceChildren(...(open ? items : []).map((it, k) => el("li", {
       className: k === sel ? "on" : "", onmousedown: (e) => (e.preventDefault(), take(k)) },
       el("span", { className: "mono", textContent: it.label }), " ",
-      el("span", { className: "dim", textContent: typeof it.detail === "string" ? it.detail : "" }))));
+      el("span", { className: "dim", textContent: it.detail ?? "" }))));
     const sig = c.name && signature(c.name, c.param ?? -1);
     const others = [...m.runners()].filter((r) => r !== 1);
     hint.replaceChildren(...(sig ? sig : c.name && c.param != null ? [`no syscall ${c.name}`]

@@ -82,7 +82,7 @@ const backScript = `(async () => {
 const pipeScript = `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   ${lineOf}
-  const lis = () => [...document.querySelectorAll("ol.steps > li")];
+  const lis = () => [...document.querySelectorAll("ol.steps > li:not(.add)")];
   for (let i = 0; i < 100 && (document.querySelectorAll("ol.steps > li.done").length < 10 || !document.querySelector(".tour li.on")); i++) await sleep(100);
   const r = { calls: lis().map(line), stop: document.querySelector(".tour").innerText.replace(/\\s+/g, " ") };
   const bad = (k, want) => !r.calls[k]?.includes(want);
@@ -96,7 +96,7 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   const $ = (id) => document.getElementById(id);
   const until = async (f, n = 100) => { for (let i = 0; i < n && !f(); i++) await sleep(100); };
   ${lineOf}
-  const lis = () => [...document.querySelectorAll("ol.steps > li")];
+  const lis = () => [...document.querySelectorAll("ol.steps > li:not(.add)")];
   const r = { badge: $("badge").textContent };
   // (All its calls made, the tutorial at its first stop.)
   await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".tour li.on"));
@@ -182,6 +182,10 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   // Typing a call: constants that fit the parameter first, Tab takes one; the parameter in bold.
   const inp = document.querySelector(".callform textarea");
   inp.focus();
+  await sleep(100);
+  // (Nothing written: the syscalls the examples make, to start from.)
+  r.offered = [...document.querySelectorAll(".callform ul.complete li")].map((li) => li.innerText.split(" ")[0]).slice(0, 4);
+  if (!r.offered.includes("openat")) throw new Error("nothing offered: " + JSON.stringify(r.offered));
   inp.value = 'openat(AT_FDCWD, "/x", O_CR'; inp.dispatchEvent(new Event("input"));
   r.complete = [...document.querySelectorAll(".callform ul.complete li")].map((li) => li.innerText).slice(0, 3);
   inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));

@@ -96,9 +96,10 @@ export async function examples(app) {
     $("ex-head").replaceChildren(
       el("button", { textContent: "◀", title: "the example before", disabled: k <= 0, onclick: () => go(list[k - 1]) }), pick,
       el("button", { textContent: "▶", title: "the next example", disabled: k < 0 || k + 1 >= list.length, onclick: () => go(list[k + 1]) }));
+    t.form = form();
     $("examples").replaceChildren(
       ex.question ? el("div", { className: "q", textContent: ex.question }) : null,
-      t.tut, el("div", { className: "ptitle dim", textContent: "The program" }), t.list, form(), t.status);
+      t.tut, el("div", { className: "ptitle dim", textContent: "The program" }), t.list, t.status);
     draw();
     tutorial();
   }
@@ -150,11 +151,11 @@ export async function examples(app) {
     return tid === 1 || tid == null ? null : el("span", { className: "mono tid", textContent: `tid ${tid}`,
       title: t.steps[j].as ? `the runner call ${t.steps[j].as} started (a thread or a child of /init)` : "the runner with this thread id" });
   };
-  // The program: a call a line, each its own editor.
+  // The program: a call a line, each its own editor; then a line to add one.
   function draw() {
     t.list.replaceChildren(...t.steps.map((s, j) => {
       const d = t.done[j];
-      const e = callEditor({ m, consts, rets: () => rets().slice(0, j), text: text(s), inline: true,
+      const e = callEditor({ m, consts, rets: () => rets().slice(0, j), text: text(s), inline: true, common,
         focus: () => pick(j),
         done: (c) => (text(c) === text(s) ? e.input.blur() : change(j, c)),
         cancel: () => ((e.input.value = text(s)), e.input.blur()) });
@@ -165,7 +166,7 @@ export async function examples(app) {
         t.started[j] ? el("div", { className: "dim more", textContent: `→ tid ${t.started[j]}, a runner` }) : null,
         d && text(s, rets()) !== text(s) ? el("div", { className: "mono dim more", textContent: `as made: ${text(s, rets())}` }) : null,
         d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null);
-    }));
+    }), el("li", { className: "add" }, t.form));
   }
   // The tutorial: its stops, in full, the one it is at marked; ◀ ▶.
   function tutorial() {
@@ -260,9 +261,11 @@ export async function examples(app) {
     return /^[\x20-\x7e\n\t]*$/.test(s) ? JSON.stringify(s) : [...b.subarray(0, 32)].map((x) => x.toString(16).padStart(2, "0")).join(" ");
   }
 
+  // The syscalls the examples make: to list first.
+  const common = [...new Set(list.flatMap((x) => x.steps.map((s) => s.call)))];
   // Add a call, written as in C, and Enter to make it (see calledit.js).
   function form() {
-    const e = callEditor({ m, consts, rets, placeholder: 'add a call: openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)', done: async (c) => {
+    const e = callEditor({ m, consts, rets, common, placeholder: "add a call…", done: async (c) => {
       t.steps.push(c);
       t.changed = true;
       toURL();

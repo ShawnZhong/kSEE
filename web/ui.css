@@ -126,7 +126,7 @@ ol.steps .tid { font-size: 11px; color: var(--kw); border: 1px solid var(--line)
 ol.steps .more { font-size: 11px; padding-left: 2px; }
 
 /* A call's editor (calledit.js): completions, the signature */
-.callform { margin: 8px 12px; }
+.callform { margin: 0; }
 .calledit { position: relative; display: flex; flex-direction: column; gap: 4px; }
 .calledit textarea { font: 12px/1.45 var(--mono); padding: 2px 6px; width: 100%; background: var(--panel); color: var(--fg); border: 1px solid var(--line);
                      border-radius: 3px; resize: none; overflow: hidden; display: block; }
