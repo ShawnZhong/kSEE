@@ -5,13 +5,15 @@
 // (ext4)"; "other" the stores to memory nothing names), in the order of
 // their first write,
 // each with its writes: the member, from what to what, by which line,
-// each a link to that moment. Click an object to watch it (watch.js).
+// each a link to that moment (the view follows the pointer over one:
+// app.peek). Click an object to watch it (watch.js).
 import { $, el } from "./dom.js";
 import { place } from "./objects.js";
 
 export function changes(app, watch) {
   const { m } = app;
   let key = null, list = [];
+  $("changes").onpointerleave = () => app.peek(null);
 
   // Draw for the selection (again only if it changed); the write in effect
   // at the cursor marked.
@@ -29,7 +31,7 @@ export function changes(app, watch) {
       if (!c.addr) return el("div", { className: "changed dim note", textContent: `and ${c.n} stores to memory no call here got by argument or local (the heap through locals, bulk copies)` });
       const now = c.writes.findLastIndex((x) => x.i <= cur);
       const items = c.writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
-        el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, onclick: () => app.time.go(x.i) }),
+        el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, onclick: () => app.time.go(x.i), onpointerenter: () => app.peek(x.i) }),
         el("span", { className: "dim", textContent: ` ${place(x.at)}` })));
       return el("div", { className: "changed" },
         el("div", { className: "whead" },

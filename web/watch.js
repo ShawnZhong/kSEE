@@ -2,8 +2,9 @@
 // kept as the cursor moves: the object (at its address, of its type), its
 // value then, and its history (Machine.writes): every write to it in its
 // lifetime (a local's: its frame's), the member it wrote, from what to
-// what, by which line, each a link to that moment, the one in effect at the
-// cursor marked; ◀ ▶ go to its write before or after the cursor.
+// what, by which line, each a link to that moment (the view follows the
+// pointer over one: app.peek), the one in effect at the cursor marked; ◀ ▶
+// go to its write before or after the cursor.
 import { $, el } from "./dom.js";
 import { objects, place } from "./objects.js";
 
@@ -14,6 +15,7 @@ export function watch(app) {
   // writes) }].
   const st = { open: new Set(), last: new Map(), now: new Map() }, list = [];
   const tree = objects(app, st, draw, add);
+  $("watch").onpointerleave = () => app.peek(null);
 
   // Watch `o` (again: it moves to the top).
   function add(o, life) {
@@ -46,7 +48,7 @@ export function watch(app) {
         tree.rows([o], `w${w.o.addr}:${w.o.id}`, 0, body, w.life, w.o.name.slice(0, -o.name.length));
       }
       const items = w.all.map((x, j) => el("li", { className: j === now ? "on" : "" },
-        el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, onclick: () => app.time.go(x.i) }),
+        el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, onclick: () => app.time.go(x.i), onpointerenter: () => app.peek(x.i) }),
         el("span", { className: "dim", textContent: ` ${place(x.at)} · ${x.task.comm ?? "?"}(${x.task.pid ?? "?"})` })));
       const ol = el("ol", {}, ...items);
       requestAnimationFrame(() => ol.querySelector("li.on")?.scrollIntoView({ block: "nearest" }));

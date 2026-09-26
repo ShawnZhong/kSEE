@@ -1,7 +1,8 @@
 // The Records: the raw trace around the cursor (Machine.raw: a line a
 // record, as the recording has them: blocks, arguments, locals, stores,
 // returns; a task switch as a line), the cursor's record marked; click one
-// to go there. Scroll past either end for more: the window grows. What
+// to go there; the view follows the pointer over them (app.peek), as over
+// the timeline. Scroll past either end for more: the window grows. What
 // every other view is built from.
 import { $, el } from "./dom.js";
 
@@ -12,9 +13,10 @@ export function records(app) {
   // The records shown: `from..=to`, of recording `key`.
   const w = { from: 0, to: -1, key: null };
   const body = $("records");
+  body.onpointerleave = () => app.peek(null);
 
   const row = (i, text, cur) => el("tr", { className: (i === cur ? "on " : "") + (text.startsWith("──") ? "task" : text.split(" ")[0]),
-                                            dataset: { i }, onclick: () => app.time.go(i) },
+                                            dataset: { i }, onclick: () => app.time.go(i), onpointerenter: () => app.peek(i) },
     el("td", { className: "dim", textContent: i }), el("td", { textContent: text }));
   const note = () => ($("records-note").textContent = `records ${w.from}–${w.to} of ${m.records()}; scroll past an end for more`);
 
