@@ -105,17 +105,32 @@ pub struct Frame {
     pub locals: Option<Vec<Object>>,
 }
 
-/// A write to a value, in its history: at record `i`, from `before` to
-/// `after` (its bytes, up to 8, as a number: decimal, or hex if large), on
-/// `task`, by the code at `at`.
+/// A write to an object, in its history: at record `i`, to its `member`
+/// (a path: "f_path.dentry"; "" the object itself), from `before` to
+/// `after` (the member's value, printed), on `task`, by the code at `at`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Change {
     pub i: usize,
+    pub member: String,
     pub before: String,
     pub after: String,
     pub task: TaskRef,
     pub at: Option<Line>,
+}
+
+/// An object written in a span of records: `what` it is ("struct file
+/// 0x1234", "ksys_read's iocb", "current task_struct"), of type `ty` (id
+/// `id`) at `addr`; `n` writes to it, the newest `writes` of them.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Changed {
+    pub what: String,
+    pub ty: String,
+    pub id: u32,
+    pub addr: u32,
+    pub n: usize,
+    pub writes: Vec<Change>,
 }
 
 /// The newest write to a value: at record `i`, on `task`, by the code at
@@ -226,6 +241,8 @@ pub struct Object {
     pub name: String,
     pub ty: String,
     pub addr: u32,
+    /// Its type's id (for Machine.object_by_id, Machine.writes).
+    pub id: u32,
     /// Its size in bytes.
     pub size: u32,
     pub value: Option<String>,
@@ -460,14 +477,95 @@ impl View<'_> {
         Some(Write { i, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)) })
     }
 
-    /// A value's history: the newest `limit` stores to `addr..addr + len`
-    /// in records `span` (its object's lifetime), oldest first (see
-    /// Recording::writes).
-    pub fn writes(&self, addr: u32, len: u32, span: core::ops::RangeInclusive<usize>, limit: usize) -> Vec<Change> {
-        let num = |v: u64| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
-        self.rec.writes(self.tables, self.now, addr, len, span, limit).into_iter().map(|(i, before, after, line)| Change {
-            i, before: num(before), after: num(after), task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)),
-        }).collect()
+    /// An object's history: the newest `limit` stores to the value of type
+    /// `ty` at `addr` in records `span` (its lifetime), oldest first, each
+    /// with the member it wrote (the one its first byte is in: see
+    /// Types::leaf), as it was before and after.
+    pub fn writes(&self, addr: u32, ty: u32, span: core::ops::RangeInclusive<usize>, limit: usize) -> Vec<Change> {
+        let all = self.rec.writes(addr, self.tables.types.size_of(ty).max(1), span);
+        all[all.len().saturating_sub(limit)..].iter().map(|&i| self.change(addr, ty, i)).collect()
+    }
+
+    /// Store `i` as a change to the object of type `ty` at `addr`.
+    fn change(&self, addr: u32, ty: u32, i: usize) -> Change {
+        let types = &self.tables.types;
+        let Record::Store { addr: a, .. } = self.rec.records[i] else { unreachable!() };
+        let (member, leaf, off, bits) = types.leaf(ty, a.max(addr) - addr);
+        let (b0, bn) = bits.unwrap_or((0, 0));
+        let value = |at: usize| {
+            let mut v = String::new();
+            types.print(&self.rec.memory_at(self.now, at), addr + off, leaf, b0, bn, &mut v);
+            v
+        };
+        Change {
+            i, member, before: value(i.saturating_sub(1)), after: value(i),
+            task: self.task(self.rec.tasks[i]), at: self.rec.line_at(self.tables, i).map(|s| self.line(&s)),
+        }
+    }
+
+    /// What records `first..=last` (a call's) changed: the objects written,
+    /// in the order of their first write, each with its writes (the newest
+    /// `limit`). An object is known by what the code there held: a call's
+    /// pointer argument to a struct, a local, the task running (the rest
+    /// of the stores, to memory nothing names, are counted in the last
+    /// entry, "other").
+    pub fn changes(&self, first: usize, last: usize, limit: usize) -> Vec<Changed> {
+        let (t, types) = (self.tables, &self.tables.types);
+        // (The objects: what, type, address, size. The task first.)
+        let mut regions: Vec<(String, u32, u32, u32)> = Vec::new();
+        let mut seen = alloc::collections::BTreeSet::new();
+        let mut add = |what: String, ty: u32, addr: u32| {
+            let ty = types.resolve(ty);
+            if addr != 0 && seen.insert((addr, ty)) {
+                regions.push((what, ty, addr, types.size_of(ty)));
+            }
+        };
+        if let (Some(&task), Some(ty)) = (self.rec.tasks.get(first), types.find("task_struct")) {
+            add("current task_struct".into(), ty, task);
+        }
+        let records = &self.rec.records;
+        for i in first..=last.min(records.len().saturating_sub(1)) {
+            match records[i] {
+                Record::Block { func, n: 0 } => {
+                    let Some((f, &Record::Args { args, .. })) = t.functions.get(&func).zip(records.get(i + 1)) else { continue };
+                    for ((pname, ty), &v) in types.params.get(&f.name).into_iter().flatten().zip(&args) {
+                        if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
+                            && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
+                            add(format!("{} {v:#x} ({}'s {pname})", types.name(types.resolve(to)), f.name), to, v);
+                        }
+                    }
+                }
+                Record::Locals { func, addrs, n } => {
+                    let Some((f, names)) = t.functions.get(&func).zip(t.locals.get(&func)) else { continue };
+                    for (&addr, var) in addrs[..n as usize].iter().zip(names) {
+                        if let Some(&(_, ty)) = types.locals.get(&f.name).and_then(|l| l.iter().find(|(n, _)| n == var)) {
+                            add(format!("{}'s {var}", f.name), ty, addr);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        // (Each store to the smallest object holding its first byte.)
+        let mut hits: Vec<Vec<usize>> = alloc::vec![Vec::new(); regions.len()];
+        let mut other = 0;
+        for &i in self.rec.stores_between(first, last) {
+            let Record::Store { addr, .. } = records[i] else { continue };
+            match regions.iter().enumerate().filter(|(_, r)| r.2 <= addr && addr < r.2.saturating_add(r.3))
+                    .min_by_key(|(_, r)| r.3) {
+                Some((k, _)) => hits[k].push(i),
+                None => other += 1,
+            }
+        }
+        let mut out: Vec<Changed> = regions.iter().zip(hits).filter(|(_, h)| !h.is_empty()).map(|((what, ty, addr, _), h)| Changed {
+            what: what.clone(), ty: types.name(*ty), id: *ty, addr: *addr, n: h.len(),
+            writes: h[h.len().saturating_sub(limit)..].iter().map(|&i| self.change(*addr, *ty, i)).collect(),
+        }).collect();
+        out.sort_by_key(|c| c.writes[0].i);
+        if other > 0 {
+            out.push(Changed { what: "other".into(), ty: String::new(), id: 0, addr: 0, n: other, writes: Vec::new() });
+        }
+        out
     }
 
     /// The task running at the start of each of `n` buckets of the recording.
@@ -574,7 +672,7 @@ impl Types {
         let id = self.resolve(ty);
         let t = self.get(id);
         let mut o = Object {
-            name: name.to_string(), ty: self.name(ty), addr, size: self.size_of(ty),
+            name: name.to_string(), ty: self.name(ty), addr, id: ty, size: self.size_of(ty),
             value: None, children: None, expand: None, target: None,
         };
         match &t.kind {
@@ -647,6 +745,42 @@ mod tests {
         fn read(&self, addr: u32, buf: &mut [u8]) {
             buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
         }
+    }
+
+    #[test]
+    fn an_object_has_a_history() {
+        // struct s { int a; int b; } at 4: record 1 stores b (2, was 1),
+        // record 3 a byte of a (5); in the span from record 2, the second only.
+        let t = Tables::parse("", "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\n");
+        let r = [Record::Block { func: 9, n: 1 }, Record::Store { addr: 8, size: 4, old: 1 },
+                 Record::Block { func: 9, n: 1 }, Record::Store { addr: 5, size: 1, old: 0 }];
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4]);
+        let mut m = alloc::vec![0u8; 16];
+        (m[8], m[5]) = (2, 5);
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        let got: Vec<_> = v.writes(4, 2, 0..=3, 8).into_iter().map(|c| (c.i, c.member, c.before, c.after)).collect();
+        assert_eq!(got, [(1, "b".into(), "1".into(), "2".into()), (3, "a".into(), "0".into(), "1280".into())]);
+        assert_eq!(v.writes(4, 2, 2..=3, 8).len(), 1);
+    }
+
+    #[test]
+    fn a_call_changes_objects() {
+        // f (1, "f") takes struct s *p (at 4) and has a local int x (at 12):
+        // it stores p->b, then x; and one byte nobody names.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\tx\n",
+                              "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
+                               P\tf\tp:3\nQ\tf\tx:1\n");
+        let r = [Record::Block { func: 1, n: 0 }, Record::Args { args: [4, 0, 0, 0, 0, 0], n: 1 },
+                 Record::Locals { func: 1, addrs: [12, 0, 0, 0, 0, 0, 0, 0], n: 1 },
+                 Record::Store { addr: 8, size: 4, old: 1 }, Record::Store { addr: 12, size: 4, old: 0 },
+                 Record::Store { addr: 100, size: 1, old: 0 }];
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 6]);
+        let mut m = alloc::vec![0u8; 16];
+        (m[8], m[12]) = (2, 7);
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        let got: Vec<_> = v.changes(0, 5, 8).into_iter().map(|c| (c.what, c.n, c.writes.first().map(|w| (w.member.clone(), w.after.clone())))).collect();
+        assert_eq!(got, [("struct s 0x4 (f's p)".into(), 1, Some(("b".into(), "2".into()))),
+                         ("f's x".into(), 1, Some(("".into(), "7".into()))), ("other".into(), 1, None)]);
     }
 
     #[test]

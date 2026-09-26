@@ -36,6 +36,11 @@ impl History {
         h
     }
 
+    /// The stores in records `from..=to`, oldest first.
+    pub fn between(&self, from: usize, to: usize) -> &[usize] {
+        &self.stores[self.stores.partition_point(|&i| i < from)..self.stores.partition_point(|&i| i <= to)]
+    }
+
     /// How many stores the trace has after record `at`.
     pub fn after(&self, at: usize) -> usize {
         self.stores.len() - self.stores.partition_point(|&i| i <= at)

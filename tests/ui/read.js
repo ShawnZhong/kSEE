@@ -20,13 +20,16 @@
     if (!next || next.disabled) break;
     next.click();
   }
-  // A value's history: click one in the Call stack (one in memory: a local's, a task's field), its writes listed,
-  // a local's in its frame's lifetime.
+  // Watch a value: click one in the Call stack (one in memory: a local's, a task's field); the Watch shows it,
+  // its writes listed (a local's in its frame's lifetime), ▶ goes to the next.
   const v = document.querySelector("#stack td.fval.mem");
   v?.click();
-  r.history = [v?.textContent, document.querySelectorAll("#stack tr.history li").length, document.querySelector("#stack tr.history")?.innerText.slice(0, 80)];
-  if (!/its writes (while \w+'s frame lives|in the recording)/.test(r.history[2] ?? "")) throw new Error("no history: " + JSON.stringify(r.history));
-  v?.click();
+  r.history = [v?.textContent, document.querySelectorAll("#watch li").length, $("watch").innerText.slice(0, 120)];
+  if (!/writes (while \w+'s frame lives|in the recording)/.test(r.history[2] ?? "")) throw new Error("no watch: " + JSON.stringify(r.history));
+  document.querySelector("#watch .whead button:not([disabled])")?.click();
+  await sleep(200);
+  document.querySelector("#watch .rm")?.click();
+  if ($("watch").children.length) throw new Error("the watch stays");
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = $("where").textContent.slice(0, 50);
   // Run to a line (the source's F4): the line where the cursor is, its next run; and ] for the next stop.
@@ -45,15 +48,19 @@
   // Stepping: into a call, over the next, out of it (the Call stack's calls, deep).
   const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
   const press = (kind) => { $("step-by").value = kind; $("step-fwd").click(); };
-  const d0 = depthNow();
+  const frames = () => [...document.querySelectorAll("#stack tr.frame")].map((f) => f.innerText.trim().split("\n")[0].slice(0, 28));
+  const d0 = depthNow(), trail = [[$("where").textContent, frames()]];
   for (let k = 0; k < 200 && depthNow() <= d0; k++) press("line");
   const d1 = depthNow();
+  trail.push([$("where").textContent, frames()]);
   press("over");
   const d2 = depthNow();
+  trail.push([$("where").textContent, frames()]);
   press("out");
   const d3 = depthNow();
+  trail.push([$("where").textContent, frames()]);
   r.stepped = [d0, d1, d2, d3];
-  if (!(d1 > d0 && d2 <= d1 && d3 <= d2 && d3 < d1)) throw new Error("stepping: " + JSON.stringify(r.stepped));
+  if (!(d1 > d0 && d2 <= d1 && d3 <= d2 && d3 < d1)) throw new Error("stepping: " + JSON.stringify(r.stepped) + " " + JSON.stringify(trail));
   r.chart = $("chart-title").textContent;
   // (The read's own box: its syscall entry's.)
   const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === 1 && x.last != null);
@@ -136,7 +143,7 @@
   r.reset = [lis().length, line(lis()[3])];
   if (r.removed !== n - 1 || r.reset[0] !== n || r.reset[1].includes("/mnt/other")) throw new Error("remove, reset: " + JSON.stringify(r));
   // Code navigation: the lens over the shown function (who called it), F12 to a function, and to a field.
-  ksee.src.showFunction("ext4_mkdir");
+  ksee.src.showFunction("vfs_mkdir");
   await sleep(1200);
   r.lens = [...document.querySelectorAll(".codelens-decoration")].map((e) => e.innerText.replace(/\s+/g, " ")).slice(0, 2);
   const ed = ksee.src.editor, find = (needle, off) => {
@@ -152,12 +159,31 @@
     ed.trigger("test", "editor.action.revealDefinition", null);
     await sleep(1000);
   };
-  await goto("ext4_append(handle", 1);
+  await goto("may_create_dentry(idmap", 1);
   r.def = $("fn-title").textContent;
   await goto("dir->i_sb", 5);
   r.field = [$("fn-title").textContent, ed.getModel().getLineContent(ed.getPosition().lineNumber).trim()];
-  if (!r.lens[0]?.includes("called") || !r.def.includes("ext4_append") || !r.field[0].includes("fs.h") || !r.field[1].includes("i_sb"))
+  if (!/called \d+×/.test(r.lens[0] ?? "") || !r.def.includes("may_create_dentry") || !r.field[0].includes("fs.h") || !r.field[1].includes("i_sb"))
     throw new Error("navigation: " + JSON.stringify(r));
+  // Find a function in the recording: Enter, its next call after the cursor; Shift+Enter, the one before.
+  const fbox = document.querySelector("input.find"), fkey = (k, shift = false) => fbox.dispatchEvent(new KeyboardEvent("keydown", { key: k, shiftKey: shift }));
+  // (Its one call may be before the cursor: then Shift+Enter finds it.)
+  fbox.value = "vfs_mkdir"; fkey("Enter"); await sleep(300);
+  r.found = [document.querySelector(".findhint").textContent];
+  if (r.found[0].startsWith("no call")) { fkey("Enter", true); await sleep(300); r.found.push(document.querySelector(".findhint").textContent); }
+  r.found.push($("where").textContent.includes("vfs_mkdir"));
+  fbox.value = "nope_fn"; fkey("Enter");
+  r.noFn = document.querySelector(".findhint").textContent;
+  if (!r.found.at(-2).match(/^\d+ of \d+$/) || !r.found.at(-1) || r.noFn !== "no function nope_fn") throw new Error("find: " + JSON.stringify(r));
+  // A stop of one's own, at the cursor, with a note: in the tour, and in the URL.
+  document.querySelector(".tour .addstop").click();
+  const noteBox = document.querySelector(".tour input.note");
+  noteBox.value = "my own note"; noteBox.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+  await sleep(500);
+  r.myStop = [document.querySelector(".tour li.on.mine")?.textContent.replace(/\s+/g, " ").trim(), decodeURIComponent(location.hash)];
+  if (!r.myStop[0]?.includes("my own note") || !r.myStop[1].includes("&stops=") || !r.myStop[1].includes(":my own note")) throw new Error("own stop: " + JSON.stringify(r));
+  document.querySelector(".tour li.mine .rm").click();
+  if (document.querySelector(".tour li.mine") || location.hash.includes("stops=")) throw new Error("own stop not removed: " + location.hash);
   // The console, folded to its last line; the current task, open to its key fields.
   r.console = [$("pane-console").classList.contains("folded"), $("console").textContent];
   r.current = [...document.querySelectorAll("#stack tr.task, #stack tr.task ~ tr")].slice(0, 3).map((tr) => tr.innerText.replace(/\s+/g, " ").trim());

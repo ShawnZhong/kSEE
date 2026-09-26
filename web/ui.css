@@ -87,14 +87,24 @@ table.objs td.fval { color: var(--accent); width: 40%; }
 table.objs td.ftype { color: var(--dim); }
 table.objs tr.changed td { background: var(--chg); }
 table.objs td.fval.mem { cursor: pointer; }
-table.objs tr.history td { white-space: normal; font-size: 11px; background: var(--bg); }
-table.objs tr.history ol { margin: 2px 0; padding-left: 18px; }
-table.objs tr.history li.on { background: var(--at); }
 .tw { color: var(--dim); display: inline-block; width: 1.2em; }
 table.stack tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); background: var(--panel); }
 table.stack tr.frame.on td { background: var(--sel); }
 table.stack tr.frame a.mono { font-weight: 600; }
 table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
+
+/* The Watch: a value each, its tree, its writes */
+#watch { flex: 0 1 auto; max-height: 45%; }
+#watch:empty { display: none; }
+.watched { border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.watched .whead { display: flex; align-items: center; gap: 4px; padding: 4px 8px 2px; }
+.watched .whead .grow { flex: 1; }
+.watched .whead button { padding: 0 6px; font-size: 11px; }
+.watched .whead .rm { color: var(--dim); font-size: 11px; }
+.watched .note { padding: 1px 8px; font-size: 11px; }
+.watched ol { margin: 2px 0; padding-left: 26px; font: 11px/1.5 var(--mono); max-height: 9em; overflow-y: auto; }
+.watched li a { white-space: nowrap; }
+.watched li.on { background: var(--at); }
 
 /* The sidebar: the examples' selector, in its title */
 #ex-head { gap: 4px; align-items: center; padding: 4px 8px; }
@@ -133,6 +143,11 @@ ol.steps .ret { color: var(--accent); margin-left: auto; white-space: nowrap; }
 ol.steps > li.blocked .ret { color: var(--pp); font-style: italic; }
 ol.steps .tid { font-size: 11px; color: var(--kw); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; white-space: nowrap; }
 ol.steps .more { font-size: 11px; padding-left: 2px; }
+ol.steps .cmplist { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 2px 0 2px 8px; }
+ol.steps .cmplist .mono { font-size: 11px; white-space: nowrap; }
+ol.steps .cmplist .mono.\+ { color: var(--run); cursor: pointer; }
+ol.steps .cmplist .mono.\+:hover { text-decoration: underline; }
+ol.steps .cmplist .mono.− { color: var(--miss); }
 
 /* A call's editor (calledit.js): completions, the signature */
 .callform { margin: 0; }

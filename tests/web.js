@@ -116,12 +116,15 @@ const buf = (i) => (m.memory_at(i), m.call_stack(inRead)[0].args.find((a) => a.n
 check("the user's buffer, before the read and after", !/hello/.test(buf(read.first)) && /"hello from the page cache/.test(buf(read.last)));
 const who = (m.memory_at(read.last), m.last_write(fpos(read.last).addr, 8));
 check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
-// A value's history: f_pos's writes, the read's among them (0 to 26, by ksys_read).
+// An object's history: f_pos's writes, the read's among them (0 to 26, by ksys_read);
+// the struct file's writes name their member.
 {
-  const h = m.writes(fpos(read.last).addr, 8), w = h.find((x) => x.i >= read.first && x.i <= read.last);
-  check("... and within the read alone, its write only", m.writes(fpos(read.last).addr, 8, read.first, read.last).length === 1);
+  const p = fpos(read.last), h = m.writes(p.addr, p.id), w = h.find((x) => x.i >= read.first && x.i <= read.last);
+  check("... and within the read alone, its write only", m.writes(p.addr, p.id, read.first, read.last).length === 1);
   check(`f_pos's history: ${h.length} writes, the read's ${w?.before} → ${w?.after} by ${w?.at?.func}`,
         w?.before === "0" && w?.after === "26" && w?.at?.func === "ksys_read" && h.every((x, k) => k === 0 || h[k - 1].i < x.i));
+  const f = m.writes(Number(file.value), file.target, read.first, read.last);
+  check(`the struct file's writes in the read: ${f.map((x) => x.member).join(", ")}`, f.some((x) => x.member === "f_pos"));
 }
 m.memory_at(null);
 const readSteps = m.line_steps(read.first, read.last, read.task.addr);

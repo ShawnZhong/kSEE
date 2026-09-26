@@ -53,6 +53,21 @@ impl Machine {
         (ids.get(i) == Some(&id)).then_some(i)
     }
 
+    /// How often each function was called in syscall `n` (on its task):
+    /// { name: calls }; for comparing runs (see examples.js).
+    pub fn call_counts(&self, n: usize) -> JsValue {
+        let rec = self.rec.borrow();
+        let o = js_sys::Object::new();
+        if let Some(s) = rec.syscalls.get(n) {
+            let t = tables();
+            for (func, count) in ksee_core::stack::call_counts(&rec.records, &rec.tasks, s.first, s.last.unwrap_or(usize::MAX), Some(s.task)) {
+                let name = t.functions.get(&func).map_or_else(|| format!("{func:#x}"), |f| f.name.clone());
+                let _ = js_sys::Reflect::set(&o, &name.into(), &JsValue::from_f64(count as f64));
+            }
+        }
+        o.into()
+    }
+
     /// The calls of function `name` in records `first..=last`: each call's
     /// first record.
     pub fn calls_of(&self, name: &str, first: usize, last: usize) -> Vec<u32> {
@@ -168,11 +183,17 @@ impl Machine {
         self.view(|v| to_js(&v.last_write(addr, len, at)))
     }
 
-    /// A value's history: the newest writes to `addr..addr + len` in
-    /// records `from..=to` (its object's lifetime: a local's frame; else
-    /// the whole recording), oldest first (view::Change).
-    pub fn writes(&self, addr: u32, len: u32, from: Option<usize>, to: Option<usize>) -> JsValue {
-        self.view(|v| to_js(&v.writes(addr, len, from.unwrap_or(0)..=to.unwrap_or(usize::MAX), 64)))
+    /// What records `first..=last` changed: the objects written, each with
+    /// its writes (view::Changed).
+    pub fn changes(&self, first: usize, last: usize) -> JsValue {
+        self.view(|v| to_js(&v.changes(first, last, 32)))
+    }
+
+    /// An object's history: the newest writes to the value of type `ty`
+    /// at `addr` in records `from..=to` (its lifetime: a local's frame;
+    /// else the whole recording), oldest first (view::Change).
+    pub fn writes(&self, addr: u32, ty: u32, from: Option<usize>, to: Option<usize>) -> JsValue {
+        self.view(|v| to_js(&v.writes(addr, ty, from.unwrap_or(0)..=to.unwrap_or(usize::MAX), 256)))
     }
 
     /// The task running at the start of each of `n` buckets of the

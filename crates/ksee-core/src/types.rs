@@ -299,6 +299,40 @@ impl Types {
         matches!(self.get(self.resolve(elem)).kind, Kind::Base(Base::Char)) && self.size_of(elem) == 1
     }
 
+    /// The scalar (or string) at byte `off` of a value of type `ty`: its
+    /// path in the value ("f_path.dentry", "[2]"; "" for the value itself),
+    /// its type, its offset in the value, and its bits if a bitfield
+    /// (offset in its first byte, size).
+    pub fn leaf(&self, ty: u32, off: u32) -> (String, u32, u32, Option<(u32, u32)>) {
+        let (mut path, mut ty, mut at, mut bits) = (String::new(), ty, 0, None);
+        loop {
+            match &self.get(self.resolve(ty)).kind {
+                k @ (Kind::Struct(_) | Kind::Union(_)) => {
+                    let Some(m) = self.members(k).into_iter()
+                        .find(|m| m.bit_offset / 8 <= off - at && off - at < m.bit_offset / 8 + self.size_of(m.ty).max(1)) else { break };
+                    if !path.is_empty() {
+                        path.push('.');
+                    }
+                    path += &m.name;
+                    at += m.bit_offset / 8;
+                    ty = m.ty;
+                    bits = (m.bit_size > 0).then_some((m.bit_offset % 8, m.bit_size));
+                }
+                &Kind::Array { elem, count } if !self.is_string(elem) => {
+                    let k = (off - at) / self.size_of(elem).max(1);
+                    if k >= count {
+                        break;
+                    }
+                    path += &alloc::format!("[{k}]");
+                    at += k * self.size_of(elem);
+                    ty = elem;
+                }
+                _ => break,
+            }
+        }
+        (path, ty, at, bits)
+    }
+
     /// Size in bytes of type `ty` (arrays: count * element).
     pub fn size_of(&self, ty: u32) -> u32 {
         let t = self.get(self.resolve(ty));
@@ -381,6 +415,14 @@ mod tests {
         let names: Vec<_> = t.members(&t.get(2).kind).into_iter().map(|m| (m.name, m.bit_offset)).collect();
         assert_eq!(names, [("a".into(), 0), ("b".into(), 32), ("c".into(), 32), ("d".into(), 64)]);
         assert_eq!(t.field("page", "d"), Some((8, 4)));
+    }
+
+    #[test]
+    fn a_byte_is_in_a_member() {
+        let t = Types::parse(TYPES);
+        assert_eq!(t.leaf(4, 6), ("comm".into(), 3, 4, None));
+        assert_eq!(t.leaf(4, 17), ("flags".into(), 7, 16, Some((0, 3))));
+        assert_eq!(t.leaf(1, 2), ("".into(), 1, 0, None));
     }
 
     #[test]

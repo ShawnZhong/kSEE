@@ -203,37 +203,23 @@ impl Recording {
 
     /// The line the task running at record `i` was at (after a return into
     /// the middle of a block, the caller's line).
-    fn line_at(&self, t: &Tables, i: usize) -> Option<LineStep> {
+    pub fn line_at(&self, t: &Tables, i: usize) -> Option<LineStep> {
         stack::lines(t, &self.records, &self.tasks, i.saturating_sub(4000), i, self.tasks.get(i).copied()).pop()
     }
 
-    /// A value's history: every store to `addr..addr + len` (up to 8 bytes,
-    /// read as little-endian) in records `span` (the object's lifetime: a
-    /// local's frame, say; an address is another object's before and
-    /// after), oldest first, the newest `limit` of them: (its record, the
-    /// value before, the value after, the line that made it). `now` is
-    /// memory as the recording ends.
-    pub fn writes(&self, t: &Tables, now: &dyn Memory, addr: u32, len: u32, span: core::ops::RangeInclusive<usize>,
-                  limit: usize) -> Vec<(usize, u64, u64, Option<LineStep>)> {
-        let len = len.clamp(1, 8);
+    /// The stores to `addr..addr + len` in records `span` (an object's
+    /// lifetime: a local's frame, say; its address is another object's
+    /// before and after), oldest first: an object's history (see
+    /// View::writes).
+    pub fn writes(&self, addr: u32, len: u32, span: core::ops::RangeInclusive<usize>) -> Vec<usize> {
         let mut all = self.stores().writes(&self.records, addr, len);
         all.retain(|i| span.contains(i));
-        let value = |b: &[u8]| b.iter().rev().fold(0u64, |v, &x| v << 8 | x as u64);
-        all[all.len().saturating_sub(limit)..].iter().map(|&i| {
-            let mut after = [0u8; 8];
-            self.memory_at(now, i).read(addr, &mut after[..len as usize]);
-            // (Before: after, with the store's old bytes back where it wrote.)
-            let mut before = after;
-            if let Record::Store { addr: a, size, old } = self.records[i] {
-                for k in 0..size {
-                    let b = a.wrapping_add(k);
-                    if b >= addr && b < addr + len {
-                        before[(b - addr) as usize] = (old >> (8 * k)) as u8;
-                    }
-                }
-            }
-            (i, value(&before[..len as usize]), value(&after[..len as usize]), self.line_at(t, i))
-        }).collect()
+        all
+    }
+
+    /// The stores in records `from..=to`, oldest first.
+    pub fn stores_between(&self, from: usize, to: usize) -> &[usize] {
+        self.stores().between(from, to.min(self.len().saturating_sub(1)))
     }
 }
 
@@ -243,26 +229,6 @@ mod tests {
 
     fn b(func: u32, n: u32) -> Record {
         Record::Block { func, n }
-    }
-
-    #[test]
-    fn a_value_has_a_history() {
-        // A u32 at 4, 1 at first: record 1 stores 2 there, record 3 a byte of it (5 at 5).
-        struct Mem(alloc::vec::Vec<u8>);
-        impl Memory for Mem {
-            fn read(&self, addr: u32, buf: &mut [u8]) {
-                buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
-            }
-        }
-        let r = [b(9, 1), Record::Store { addr: 4, size: 4, old: 1 }, b(9, 1), Record::Store { addr: 5, size: 1, old: 0 }];
-        let rec = Recording::new(&Tables::default(), r.to_vec(), (0..4).collect());
-        let mut m = alloc::vec![0u8; 16];
-        m[4] = 2;
-        m[5] = 5;
-        let got: alloc::vec::Vec<_> = rec.writes(&Tables::default(), &Mem(m.clone()), 4, 4, 0..=3, 8).into_iter().map(|(i, b, a, _)| (i, b, a)).collect();
-        assert_eq!(got, [(1, 1, 2), (3, 2, 0x502)]);
-        // (Its lifetime from record 2 on: the second write only.)
-        assert_eq!(rec.writes(&Tables::default(), &Mem(m), 4, 4, 2..=3, 8).len(), 1);
     }
 
     #[test]
