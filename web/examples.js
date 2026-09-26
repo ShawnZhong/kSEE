@@ -93,7 +93,7 @@ export async function examples(app) {
     const pick = el("select", { className: "pick", title: "the examples (each on a fresh kernel)", onchange: () => go(list[pick.selectedIndex]) },
       ...list.map((x) => el("option", { textContent: x.title, selected: x === ex })));
     // (The examples' navigation: in the panel's title.)
-    $("ex-head").replaceChildren(
+    $("ex-head").replaceChildren(el("b", { textContent: "kSEE" }),
       el("button", { textContent: "◀", title: "the example before", disabled: k <= 0, onclick: () => go(list[k - 1]) }), pick,
       el("button", { textContent: "▶", title: "the next example", disabled: k < 0 || k + 1 >= list.length, onclick: () => go(list[k + 1]) }));
     t.form = form();
@@ -125,7 +125,7 @@ export async function examples(app) {
   // Change step `j` to `call` (its stops kept if it is the same syscall):
   // the program runs again, on a fresh kernel (a kernel cannot be put back
   // as it was: its tasks' stacks are the browser's), the tutorial where it
-  // was. (The program is in the URL, #back=: a link to it.)
+  // was. (The program is in the URL, &p=: a link to it.)
   function change(j, call) {
     const old = t.steps[j], steps = [...t.steps];
     // (Its runner kept, unless another is written.)
@@ -181,7 +181,7 @@ export async function examples(app) {
       el("div", { className: "tnav" },
         el("button", { textContent: "◀", title: "the stop before", disabled: t.pos <= 0, onclick: () => stop(t.pos - 1) }),
         el("span", { className: "dim", textContent: t.pos >= 0 ? `Stop ${t.pos + 1} of ${n}` : `${n} stops` }),
-        el("button", { className: "go", textContent: "▶", title: "the next stop", disabled: t.pos + 1 >= n, onclick: () => stop(t.pos + 1) })),
+        el("button", { className: "go", textContent: "Next stop ▶", title: "the next stop", disabled: t.pos + 1 >= n, onclick: () => stop(t.pos + 1) })),
       el("ol", { className: "stops" }, ...items));
     items[t.pos]?.scrollIntoView({ block: "nearest" });
   }

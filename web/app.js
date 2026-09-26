@@ -19,13 +19,13 @@ export function app(m) {
   // ---- The state: a recording to explore, or none yet ----
   let halted = null;
   const state = () => (halted != null ? "halted" : time.records() ? "replay" : "idle");
+  // (The status, in the transport: only what the panels do not say.)
   function badge() {
     const st = state();
-    $("badge").className = `badge ${st}`;
-    $("badge").textContent = { idle: "○ IDLE", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
+    $("status").classList.toggle("halted", st === "halted");
     $("status").textContent = {
       idle: "Nothing recorded yet: an example's calls are, as it opens.",
-      replay: "Move the cursor through the recording: the timeline, ◀ ▶|, Play.",
+      replay: "",
       halted: `the kernel halted (${halted})`,
     }[st];
   }

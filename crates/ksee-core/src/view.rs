@@ -12,7 +12,7 @@ use crate::stack::{self, LineStep};
 use crate::tables::{Loc, Tables};
 use crate::task::read_task;
 use crate::trace::Record;
-use crate::types::{Base, Kind, Types};
+use crate::types::{Kind, Types};
 use crate::Memory;
 
 #[cfg(feature = "serde")]
@@ -110,22 +110,15 @@ pub struct Write {
     pub at: Option<Line>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Block {
-    pub n: u32,
-    pub file: String,
-    pub line: u32,
-    pub count: u64,
-}
-
+/// A function: where it is, from `line` to `last` (of its blocks in its
+/// own file).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Function {
     pub name: String,
     pub file: String,
     pub line: u32,
-    pub blocks: Vec<Block>,
+    pub last: u32,
     /// Only its call and returns are recorded (tables::Function::sealed).
     pub sealed: bool,
 }
@@ -374,19 +367,15 @@ impl View<'_> {
         Some(SyscallInfo { nr, params })
     }
 
-    /// The functions called `name` (usually one), with how often each block
-    /// ran in syscall `n` (or the whole recording).
-    pub fn functions(&self, name: &str, n: Option<usize>) -> Vec<Function> {
+    /// The functions called `name` (usually one).
+    pub fn functions(&self, name: &str) -> Vec<Function> {
         let t = self.tables;
-        let counts = self.rec.block_counts(n);
         t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, f)| Function {
             name: f.name.clone(),
             file: t.file(f.loc).to_string(),
             line: f.loc.line,
+            last: t.blocks_of(id).filter(|(_, l)| l.file == f.loc.file).map(|(_, l)| l.line).fold(f.loc.line, u32::max),
             sealed: f.sealed,
-            blocks: t.blocks_of(id).map(|(n, l)| Block {
-                n, file: t.file(l).to_string(), line: l.line, count: counts.get(&(id, n)).copied().unwrap_or(0),
-            }).collect(),
         }).collect()
     }
 
@@ -468,16 +457,11 @@ impl Types {
             _ => {
                 let mut v = String::new();
                 let (off, size) = bits.unwrap_or((0, 0));
-                self.print_bits(mem, addr, ty, off, size, &mut v);
+                self.print(mem, addr, ty, off, size, &mut v);
                 o.value = Some(v);
             }
         }
         o
-    }
-
-    /// Whether `elem` is a char (so an array or pointer of it is a string).
-    fn is_string(&self, elem: u32) -> bool {
-        matches!(self.get(self.resolve(elem)).kind, Kind::Base(Base::Char)) && self.size_of(elem) == 1
     }
 }
 

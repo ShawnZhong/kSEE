@@ -221,21 +221,16 @@ impl Types {
         }
     }
 
-    /// Print the value of type `ty` at `addr`, GDB style, expanding nested
-    /// aggregates `depth` levels deep.
-    pub fn print(&self, mem: &dyn Memory, addr: u32, ty: u32, depth: u32, out: &mut String) {
-        self.value(mem, addr, ty, 0, 0, depth, 0, out);
-    }
-
     /// Whether `ty` holds flags (named so: fmode_t, gfp_t, vm_flags_t, ...).
     fn is_flags(&self, ty: u32) -> bool {
         let name = self.name(ty);
         matches!(name.as_str(), "fmode_t" | "gfp_t" | "fop_flags_t") || name.ends_with("flags_t")
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn value(&self, mem: &dyn Memory, addr: u32, ty: u32, bit_off: u32, bit_size: u32,
-             depth: u32, indent: usize, out: &mut String) {
+    /// Print the scalar (or string) value of type `ty` at `addr`, possibly
+    /// a bitfield (`bit_off`, `bit_size`); an aggregate as "{...}" (see
+    /// view::Object for their members).
+    pub fn print(&self, mem: &dyn Memory, addr: u32, ty: u32, bit_off: u32, bit_size: u32, out: &mut String) {
         let id = self.resolve(ty);
         let t = self.get(id);
         match &t.kind {
@@ -269,64 +264,22 @@ impl Types {
                 let p = mem.read_u32(addr);
                 let _ = if p == 0 { write!(out, "NULL") } else { write!(out, "{p:#x}") };
             }
-            Kind::Array { elem, count } => {
-                let e = self.get(self.resolve(*elem));
-                let esize = self.size_of(*elem);
-                if matches!(e.kind, Kind::Base(Base::Char)) && esize == 1 {
-                    let mut buf = alloc::vec![0u8; (*count).min(256) as usize];
-                    mem.read(addr, &mut buf);
-                    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-                    let _ = write!(out, "{:?}", String::from_utf8_lossy(&buf[..len]));
-                    return;
-                }
-                if depth == 0 {
-                    out.push_str("[...]");
-                    return;
-                }
-                out.push('[');
-                let shown = (*count).min(16);
-                for i in 0..shown {
-                    if i > 0 {
-                        out.push_str(", ");
-                    }
-                    self.value(mem, addr + i * esize, *elem, 0, 0, depth - 1, indent, out);
-                }
-                if *count > shown {
-                    let _ = write!(out, ", ... ({count} total)");
-                }
-                out.push(']');
+            // (A char array: its string.)
+            Kind::Array { elem, count } if self.is_string(*elem) => {
+                let mut buf = alloc::vec![0u8; (*count).min(256) as usize];
+                mem.read(addr, &mut buf);
+                let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+                let _ = write!(out, "{:?}", String::from_utf8_lossy(&buf[..len]));
             }
-            Kind::Struct(_) | Kind::Union(_) => {
-                if depth == 0 {
-                    out.push_str("{...}");
-                    return;
-                }
-                out.push_str("{\n");
-                for m in &self.members(&t.kind) {
-                    for _ in 0..indent + 1 {
-                        out.push_str("  ");
-                    }
-                    let name = if m.name.is_empty() { "<anon>" } else { &m.name };
-                    let _ = write!(out, "{name} = ");
-                    let byte = m.bit_offset / 8;
-                    let (boff, bsize) = if m.bit_size > 0 { (m.bit_offset % 8, m.bit_size) } else { (0, 0) };
-                    self.value(mem, addr + byte, m.ty, boff, bsize, depth - 1, indent + 1, out);
-                    out.push_str(",\n");
-                }
-                for _ in 0..indent {
-                    out.push_str("  ");
-                }
-                out.push('}');
-            }
+            Kind::Array { .. } | Kind::Struct(_) | Kind::Union(_) => out.push_str("{...}"),
             Kind::Func => out.push_str("<function>"),
             Kind::Void | Kind::Typedef(_) => out.push_str("<void>"),
         }
     }
 
-    /// Print a scalar (or string) value at `addr`, possibly a bitfield.
-    pub(crate) fn print_bits(&self, mem: &dyn Memory, addr: u32, ty: u32, bit_off: u32,
-                             bit_size: u32, out: &mut String) {
-        self.value(mem, addr, ty, bit_off, bit_size, 0, 0, out);
+    /// Whether `elem` is a char (so an array or pointer of it is a string).
+    pub(crate) fn is_string(&self, elem: u32) -> bool {
+        matches!(self.get(self.resolve(elem)).kind, Kind::Base(Base::Char)) && self.size_of(elem) == 1
     }
 
     /// Size in bytes of type `ty` (arrays: count * element).
@@ -429,8 +382,13 @@ mod tests {
         m[4..8].copy_from_slice(b"init");
         m[12..16].copy_from_slice(&0x40u32.to_le_bytes());
         m[16] = 0b0101; // flags: 3 bits = 5
-        let mut out = String::new();
-        t.print(&Mem(m), 0, 6, 2, &mut out);
-        assert_eq!(out, "{\n  pid = -3,\n  comm = \"init\",\n  next = 0x40,\n  flags = 5,\n}");
+        let mem = Mem(m);
+        let at = |addr, ty, off, size| {
+            let mut out = String::new();
+            t.print(&mem, addr, ty, off, size, &mut out);
+            out
+        };
+        assert_eq!((at(0, 1, 0, 0), at(4, 3, 0, 0), at(12, 5, 0, 0), at(16, 7, 0, 3), at(0, 6, 0, 0)),
+                   ("-3".into(), "\"init\"".into(), "0x40".into(), "5".into(), "{...}".into()));
     }
 }

@@ -65,8 +65,8 @@ check("sleeping switched to the idle task and back", ran(nap, "__schedule")
       && chartTasks(m.chart(nap.first, nap.last, 50)).some((a) => m.task(a).comm === "swapper/0"));
 m.snapshot();
 const wi = m.syscalls().findIndex((s) => s.first === w.first);
-const [vfs] = m.functions("vfs_write", wi);
-check("vfs_write block counts", vfs?.blocks.some((b) => b.count > 0) && vfs.blocks.some((b) => b.count === 0));
+const [vfs] = m.functions("vfs_write");
+check("vfs_write: where it is", vfs?.file === "fs/read_write.c" && vfs.last > vfs.line);
 check("fs/read_write.c coverage", m.file_coverage("fs/read_write.c", wi).some((l) => l.count > 0));
 const chart = m.chart(w.first, w.last, 200);
 check("a stack chart of write's records", chart.length > 600 && chart[0] === w.task.addr);

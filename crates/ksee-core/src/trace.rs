@@ -28,8 +28,8 @@ const RETURN: u32 = 4;
 pub const STORE: u32 = 7;
 /// A Store record's size class for a range of unknown old contents.
 pub const UNKNOWN: u32 = 7;
-pub const VALUE_TAG: u32 = VALUE;
-const VALUE: u32 = 8;
+/// The tag of a continuation pair.
+pub const VALUE: u32 = 8;
 
 /// Offset of the ring's words in the trace header (`{ u32 pos; u32 pad;
 /// u32 on; u32 pad; u32 ring[words]; }`, see plugin/ksee-trace.cpp).

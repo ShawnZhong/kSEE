@@ -116,7 +116,7 @@ export function timeline(app) {
     };
     // The task strip.
     for (const r of runs((c) => c.task)) {
-      const p = who(r.v, t.win.a);
+      const p = who(r.v);
       sctx.fillStyle = `hsl(${hue(p?.pid ?? 0)} 50% ${p?.pid === 0 ? 85 : 62}%)`;
       sctx.fillRect(r.from * cw, 0, (r.to - r.from) * cw, STRIP);
       label(sctx, taskName(p), r.from * cw, (r.to - r.from) * cw, STRIP / 2, "#1f2328");
@@ -195,7 +195,6 @@ export function timeline(app) {
     const k = Math.exp(Math.max(-0.5, Math.min(0.5, amount)));
     setWindow(at_ - (at_ - t.win.a) * k, at_ + (t.win.b - at_) * k);
   };
-  // Scroll or pinch (ctrl+wheel): zoom; sideways or Shift+scroll: pan.
   // Scrolling up and down (or a pinch): zoom; sideways, or with Shift: pan.
   chart.onwheel = (e) => {
     if (!t.win) return;
@@ -207,7 +206,7 @@ export function timeline(app) {
   // The task strip: who ran; click to put the cursor there.
   strip.onpointermove = (e) => {
     const c = t.win && t.cols[Math.floor((e.offsetX / W()) * t.cols.length)];
-    strip.title = c ? taskName(who(c.task, t.win.a)) : "";
+    strip.title = c ? taskName(who(c.task)) : "";
   };
   strip.onclick = (e) => t.win && go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
   // W/S: zoom (around the cursor, or the middle); A/D: pan.
@@ -258,7 +257,7 @@ export function timeline(app) {
     }
     if (first == null) {
       tip.hidden = true;
-      chart.title = c && d < 0 ? taskName(who(c.task, t.win.a)) : "";
+      chart.title = c && d < 0 ? taskName(who(c.task)) : "";
       return;
     }
     chart.title = "";

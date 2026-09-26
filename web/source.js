@@ -72,7 +72,7 @@ export function source(app) {
   // Whether line `n` of the shown file is in the shown function.
   function inFunction(n) {
     const fn = v.fn?.file === v.file ? v.fn : null;
-    return fn && n >= fn.line && n <= Math.max(fn.line, ...fn.blocks.filter((b) => b.file === v.file).map((b) => b.line));
+    return fn && n >= fn.line && n <= fn.last;
   }
 
   // The value of the expression at `k` in line `line` (its `text`), for a
@@ -101,7 +101,6 @@ export function source(app) {
   // The markers for the shown file.
   function decorate() {
     const file = v.file, fn = v.fn?.file === file ? v.fn : null;
-    const last = fn ? Math.max(fn.line, ...fn.blocks.filter((b) => b.file === file).map((b) => b.line)) : 0;
     const at = (x) => x && x.file === file && x.line;
     const line = (n, options) => ({ range: new monaco.Range(n, 1, n, 1), options });
     const d = [];
@@ -109,7 +108,7 @@ export function source(app) {
     for (const [n, c] of v.counts)
       d.push(line(n, { isWholeLine: true, className: "ln-hit", overviewRuler: { color: "#2da44e88", position: 4 },
                        minimap: { color: "#2da44e88", position: 1 }, lineNumberHoverMessage: { value: `ran ${c}×${where}` } }));
-    if (fn) d.push({ range: new monaco.Range(fn.line, 1, last, 1), options: { isWholeLine: true, linesDecorationsClassName: "ln-infn" } });
+    if (fn) d.push({ range: new monaco.Range(fn.line, 1, fn.last, 1), options: { isWholeLine: true, linesDecorationsClassName: "ln-infn" } });
     if (at(v.cursor)) d.push(line(v.cursor.line, { isWholeLine: true, className: "ln-cursor", glyphMarginClassName: "gl-cursor",
       overviewRuler: { color: "#0969da", position: 7 } }));
     marks.set(d);
@@ -133,10 +132,10 @@ export function source(app) {
     $("fn-title").classList.toggle("preview", !!saved);
   }
 
-  // Function `name` (its blocks' counts from syscall `syscall`), in `file`
+  // Function `name` (the lines that ran: in syscall `syscall`), in `file`
   // (a block's own, when it is inlined from a header) at line `focus`.
   function show(name, syscall, focus, file) {
-    const [f] = m.functions(name, syscall);
+    const [f] = m.functions(name);
     if (!f) return;
     v.fn = f;
     v.syscall = syscall;

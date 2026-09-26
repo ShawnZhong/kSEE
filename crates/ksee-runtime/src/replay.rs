@@ -179,10 +179,9 @@ impl Machine {
         self.view(|v| to_js(&v.place(id)))
     }
 
-    /// The functions called `name` (view::Function), with how often each
-    /// block ran in syscall `n` (or the whole recording).
-    pub fn functions(&self, name: &str, n: Option<usize>) -> JsValue {
-        self.view(|v| to_js(&v.functions(name, n)))
+    /// The functions called `name` (view::Function).
+    pub fn functions(&self, name: &str) -> JsValue {
+        self.view(|v| to_js(&v.functions(name)))
     }
 
     /// Every line of `file` where a block starts, with how often blocks

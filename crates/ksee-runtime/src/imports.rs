@@ -65,7 +65,7 @@ pub extern "C" fn time_ns() -> u64 {
 /// rest as a range of unknown old contents).
 #[unsafe(no_mangle)]
 pub extern "C" fn bulk(addr: u32, len: u32) {
-    use ksee_core::trace::{STORE, UNKNOWN, VALUE_TAG};
+    use ksee_core::trace::{STORE, UNKNOWN, VALUE};
     if len == 0 || !recording() {
         return;
     }
@@ -78,14 +78,14 @@ pub extern "C" fn bulk(addr: u32, len: u32) {
         Direct.read(addr + off, &mut old[..size as usize]);
         let v = u64::from_le_bytes(old);
         if class == 3 {
-            ring_put(&[addr + off, STORE << 28 | class, v as u32, VALUE_TAG << 28, (v >> 32) as u32, VALUE_TAG << 28 | 1]);
+            ring_put(&[addr + off, STORE << 28 | class, v as u32, VALUE << 28, (v >> 32) as u32, VALUE << 28 | 1]);
         } else {
-            ring_put(&[addr + off, STORE << 28 | class, v as u32, VALUE_TAG << 28]);
+            ring_put(&[addr + off, STORE << 28 | class, v as u32, VALUE << 28]);
         }
         off += size;
     }
     if len > logged {
-        ring_put(&[addr + logged, STORE << 28 | UNKNOWN, len - logged, VALUE_TAG << 28]);
+        ring_put(&[addr + logged, STORE << 28 | UNKNOWN, len - logged, VALUE << 28]);
     }
 }
 

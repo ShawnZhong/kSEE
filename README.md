@@ -49,7 +49,7 @@ The program is below the tutorial, a call a line, each written as in C
 recording; type in it to change it, and Enter: the page starts a fresh
 kernel and makes the calls again, which comes to the very same state
 up to the change (the machine is deterministic: its clock is virtual);
-the calls are in the URL (`#back=`), a link to them. Add a call at the
+the calls are in the URL (`#ex=NAME&p=CALLS`), a link to them. Add a call at the
 end. As you type, a list shows what fits (syscalls, the constants for the
 parameter, the results so far as `$n`), and the signature. Some examples
 have several threads or processes (a futex, a thread's join, a pipe

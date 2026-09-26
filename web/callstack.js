@@ -7,7 +7,7 @@
 // what they point to, structs into their fields, read from memory as it was
 // at the cursor (Machine.memory_at); what is open stays open while
 // stepping; values that changed since the cursor last moved are
-// highlighted. Click a call to select
+// highlighted; hover a value for who last wrote it. Click a call to select
 // it: the source shows where it is (for an outer call, the line calling
 // the next one in).
 import { $, el } from "./dom.js";
@@ -41,10 +41,20 @@ export function callstack(app) {
             open ? s.open.delete(p) : s.open.add(p);
             draw();
           } }), o.name),
-        el("td", { className: "fval", title: value }, value),
+        // (Hover a value: who last wrote it, and what it was before.)
+        el("td", { className: "fval", title: value, onmouseenter: (e) => (e.target.title = `${value}\n${wroteIt(o)}`) }, value),
         el("td", { className: "ftype", textContent: o.ty })));
       if (open) rows(kids(o) ?? [], p, depth + 1, out);
     }
+  }
+  // The newest write to `o` at the cursor (Machine.last_write): where, by
+  // whom, and the value it overwrote.
+  function wroteIt(o) {
+    if (!o.addr || !o.size) return "";
+    const w = m.last_write(o.addr, o.size);
+    if (!w) return "not written in the recording";
+    const at = w.at ? `${w.at.inlined ?? w.at.func} ${w.at.file}:${w.at.line}` : "?";
+    return `written at ${at}, by ${w.task.comm ?? "?"}(${w.task.pid ?? "?"}); was ${w.old}`;
   }
   const head = (text, where, onclick, cls = "") => el("tr", { className: "frame " + cls },
     el("td", { colSpan: 3 }, el("a", { className: "mono", textContent: text, onclick }),
@@ -57,7 +67,6 @@ export function callstack(app) {
       // (Click: select the call; the source shows where it is.)
       const on = s.sel == null ? k === 0 : f === s.sel;
       const h = head(f.func, f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f), on ? "on" : "");
-      // (Hover: the call, outlined in the timeline.)
       // (Hover: the call outlined in the timeline, and a preview of where it is.)
       h.onmouseenter = () => {
         app.time.hilite(f.first);

@@ -2,7 +2,7 @@
 // the Stack, a hover at each), stepping, play, the chart (hover, click), typing and changing calls,
 // another example; returns a report.
 (async () => {
-    const r = { badge: $("badge").textContent };
+    const r = {};
   // (All its calls made, the tutorial at its first stop.)
   await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".tour li.on"));
   const pick = document.querySelector("#ex-head select");
@@ -21,7 +21,7 @@
     next.click();
   }
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
-  r.played = [$("badge").textContent, $("where").textContent.slice(0, 50)];
+  r.played = $("where").textContent.slice(0, 50);
   // Stepping: into a call, over the next, out of it (the Stack's calls, deep).
   const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
   const press = (kind) => { $("step-by").value = kind; $("step-fwd").click(); };

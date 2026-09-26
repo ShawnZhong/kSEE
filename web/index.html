@@ -7,11 +7,9 @@
 <link rel="stylesheet" href="./ui.css">
 </head>
 <body>
-<header><b>kSEE</b>
-  <span id="badge" class="badge">loading</span><span id="status" class="dim">loading the kernel…</span></header>
 <div id="app">
 <aside class="col" id="side">
-  <h2 id="ex-head">Examples</h2>
+  <h2 id="ex-head"><b>kSEE</b></h2>
   <div class="body" id="examples"></div>
   <h2 class="sub fold" id="console-head" title="click: open or fold the console; drag, when open: its height"><span id="console-tw">▸</span> Console</h2>
   <div class="body consolebox" id="pane-console"><pre id="console"></pre></div>
@@ -31,9 +29,9 @@
       <option value="line">by line</option><option value="over">over calls</option><option value="out">out of calls</option>
     </select>
     <select id="speed" aria-label="speed" title="Play speed">
-      <option value="1000">slow</option><option value="400" selected>1 line / 0.4 s</option><option value="120">fast</option><option value="30">faster</option>
+      <option value="1000">1 line / s</option><option value="400" selected>1 line / 0.4 s</option><option value="120">8 lines / s</option><option value="30">30 lines / s</option>
     </select>
-    <span id="where" class="mono dim"></span>
+    <span id="where" class="mono dim"></span><span id="status" class="dim">loading the kernel…</span>
   </div>
 </section>
 <div class="hsplit" id="hsplit" title="drag to resize"></div>
