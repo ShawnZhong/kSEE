@@ -9,7 +9,7 @@
 //! M id name bit_offset bit_size type     a member of struct/union id
 //! V id name value                        an enumerator of enum id
 //! G name address type                    a variable with a fixed address
-//! W name file line                       where a type or a variable is declared
+//! W name file line                       where a function, type or variable is declared
 //! S nr name params                       a syscall; params: comma-separated
 //!                                        name:type:C type, "?" if unknown,
 //!                                        "!" if not built
@@ -75,8 +75,9 @@ pub struct Types {
     pub locals: BTreeMap<String, Vec<(String, u32)>>,
     /// Constants from the UAPI headers (flags, errno names): name -> value.
     pub constants: BTreeMap<String, i64>,
-    /// Where a type (struct, union, enum, typedef) or a global is declared:
-    /// name -> (file, line).
+    /// Where a function (the inline ones too, which have no probe), a type
+    /// (struct, union, enum, typedef) or a global is declared: name ->
+    /// (file, line).
     pub declared: BTreeMap<String, (String, u32)>,
 }
 

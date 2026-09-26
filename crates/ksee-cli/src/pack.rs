@@ -177,6 +177,9 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
                 dw::DW_TAG_subprogram => {
                     let name = attr_string(&cu, e, dw::DW_AT_name)?;
                     if !name.is_empty() && e.attr(dw::DW_AT_declaration).is_none() {
+                        // (Where it is: for the inline ones too, which have no probe.)
+                        let (file, line) = (decl_file(&mut cu, e)?, attr_u64(e, dw::DW_AT_decl_line).unwrap_or(0));
+                        b.locate(&name, &file, line);
                         funcs.push((name, e.offset()));
                     }
                 }
@@ -323,7 +326,8 @@ impl Builder {
         id
     }
 
-    /// Where `name` (a type, a global) is declared: a W line, once per name.
+    /// Where `name` (a function, a type, a global) is declared: a W line,
+    /// once per name.
     fn locate(&mut self, name: &str, file: &str, line: u64) {
         if !name.is_empty() && !file.is_empty() && self.located.insert(name.to_string()) {
             self.extra.push(format!("W\t{name}\t{}\t{line}", file.strip_prefix("./").unwrap_or(file)));

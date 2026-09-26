@@ -444,8 +444,9 @@ impl View<'_> {
         }).collect()
     }
 
-    /// Where `name` is defined: a function (its source), else a type or a
-    /// global (where it is declared).
+    /// Where `name` is defined: an instrumented function (its source), else
+    /// a function with no probe (inline), a type or a global (where it is
+    /// declared).
     pub fn definition(&self, name: &str) -> Option<Place> {
         if let Some(id) = self.tables.find(name) {
             return self.place(id);

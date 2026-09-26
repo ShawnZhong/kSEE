@@ -2,8 +2,8 @@
 // lines that ran (green; how often: hover the line number), the function's
 // lines, and the cursor. Hover a name for its value at the
 // cursor (an argument, a global, and fields: file->f_pos); F12 or
-// Ctrl+click on a name goes to its definition (a function, a type, a
-// global: Machine.definition).
+// Ctrl+click on a name goes to its definition (a function, inline ones
+// too, a type, a global: Machine.definition).
 import { $ } from "./dom.js";
 import { loadMonaco, readOnly } from "./editor.js";
 
