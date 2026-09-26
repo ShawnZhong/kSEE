@@ -77,8 +77,15 @@ source. Rust does the work: JS only lays it out.
 | callstack.js | the Stack: calls with arguments and locals, the task (current) |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
-| args.js | a syscall's arguments, written as in C, with the kernel's constants |
+| args.js | a program's line: `name = call(args)`, `tid: call(args)` (the arguments themselves are ksee-core's args.rs: `Machine.arg`) |
 | ksee.js | booting |
+
+A call's arguments are a small language, parsed and laid out in the core
+(crates/ksee-core/src/args.rs, `Machine.arg`, `Machine.value`): numbers,
+the kernel's constants with `| << + -`, strings, buffers to fill (`[64]`),
+results by name or `$n`, and compound literals laid out by the parameter's
+type (a struct, positional or by member; an array; argv for a `char **`).
+ksee pack evaluates the UAPI headers' constants with the same evaluator.
 
 Every view asks the Machine for the moment at the cursor: `at(i)`,
 `call_stack(i)`, `line_steps`, `chart`, `memory_at(i)` then `object` /

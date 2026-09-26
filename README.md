@@ -84,9 +84,11 @@ for the one a clone started; else /init), and a `group` (the selector's:
 processes"; the order is `EXAMPLES` in crates/ksee-cli/src/build.rs), the arguments
 written as in C: `"AT_FDCWD"`, `"O_CREAT | O_WRONLY"` (the kernel's own
 constants, from its UAPI headers), `"0644"`, `"\"a string\""`, `"[64]"`
-(a buffer for the kernel to fill), `"{0, 30000000}"` (64-bit values),
-`"{\"init\", NULL}"` (an array of strings: argv), `"$1"` (call 1's
-result), `"$1 + 65536"`; see web/args.js. /init mounts an ext4 disk on /mnt (an
+(a buffer for the kernel to fill), `"{0, 30000000}"` or
+`"{.tv_nsec = 30000000}"` (a compound literal, laid out as the parameter's
+type says: here a struct timespec), `"{\"init\", NULL}"` (an array of
+strings, for a char **: argv), `"fd"` or `"$1"` (a result),
+`"mem + 65536"`; see crates/ksee-core/src/args.rs. /init mounts an ext4 disk on /mnt (an
 image in the initramfs, through the loop device), with files for the
 examples to start from: `/mnt/note.txt`, `/mnt/dir/a.txt`; the root, an
 in-memory file system (ramfs: no tmpfs without an MMU), has `/note.txt`.
