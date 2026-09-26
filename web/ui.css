@@ -67,13 +67,21 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .tip .f { padding-left: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tip .dim { font-family: system-ui, sans-serif; font-size: 11px; margin-top: 2px; }
 
-/* The source (Monaco): its title; the lines that ran, the function, the cursor */
+/* The source (CodeMirror): its title; the lines that ran, the function, the cursor; the hover; the lens */
 .srcbar { padding: 3px 12px; border-bottom: 1px solid var(--line); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
 #src { overflow: hidden; }
-.ln-hit { background: var(--hit-bg); }
-.ln-infn { border-left: 3px solid var(--accent); margin-left: 3px; }
-.ln-cursor { background: var(--sel); box-shadow: inset 3px 0 var(--accent); }
-.gl-cursor::before { display: block; text-align: center; font-size: 11px; content: "▶"; color: var(--run); }
+.cm-editor .ln-hit { background: var(--hit-bg); }
+.cm-editor .ln-infn { box-shadow: inset 3px 0 var(--accent); }
+.cm-editor .ln-cursor { background: var(--sel) !important; }
+.cm-cursorGutter { width: 14px; }
+.gl-cursor { display: block; text-align: center; font-size: 11px; color: var(--run); }
+.gl-cursor::before { content: "▶"; }
+.cm-editor .cm-activeLine { background: transparent; }
+.cm-editor .cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground { background: var(--sel); }
+.cm-editor .cm-tooltip { border: 1px solid var(--line); background: var(--panel); border-radius: 4px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); }
+.hovertip { margin: 0; padding: 4px 8px; font-size: 12px; white-space: pre; }
+.lens { font: 11px system-ui, sans-serif; padding: 2px 0 1px 4px; display: flex; flex-wrap: wrap; gap: 0 10px; }
+.lens a { color: var(--accent); }
 
 /* The Call stack: calls (frames), their values as trees; the current task */
 .stackhead { padding: 4px 12px; font-size: 11.5px; border-bottom: 1px solid var(--line); }
@@ -139,7 +147,7 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 .tour ol.stops li .rm { color: var(--dim); font-size: 11px; margin-left: 4px; visibility: hidden; }
 .tour ol.stops li:hover .rm { visibility: visible; }
 .tour .marker { margin: 4px 0 0 22px; font-size: 11.5px; }
-.tour .marker input.note { display: block; width: 100%; margin-top: 4px; font: 12px var(--mono); padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--fg); }
+.tour .marker input.note:not([hidden]) { display: block; width: 100%; margin-top: 4px; font: 12px var(--mono); padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--fg); }
 
 /* The program: a call a line (its editor, its result), the one at the tutorial's stop */
 .ptitle { margin: 10px 12px 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }

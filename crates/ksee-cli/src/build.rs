@@ -15,7 +15,7 @@
 //! (Gzipped by the build: hosts compress them less, or not at all; the
 //! page unpacks them.)
 //!   examples.json          the examples (user/examples/*.json)
-//!   monaco/                the Monaco editor (downloaded once from npm)
+//!   codemirror.js          the source view's editor (npm's @codemirror, bundled by Deno)
 //!
 //! $LLVM is the LLVM version suffix (default -23).
 use std::path::Path;
@@ -80,7 +80,7 @@ pub fn build() {
     run(Command::new("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", &format!("{SITE}/pkg"),
         "target/wasm32-unknown-unknown/release/ksee_runtime.wasm"]));
 
-    monaco();
+    codemirror();
     if stale("target/vmlinux", &["linux/vmlinux", "crates/ksee-cli/src/pack.rs"]) {
         crate::pack::pack(Path::new("linux"), Path::new(SITE));
         std::fs::rename(format!("{SITE}/vmlinux"), "target/vmlinux")
@@ -162,22 +162,24 @@ fn examples() {
         .unwrap_or_else(|e| crate::fail(&format!("{out}: {e}")));
 }
 
-/// The Monaco editor (the page's source view): its prebuilt AMD build
-/// (package/min/vs), in monaco/, with the version it is in monaco/VERSION.
-const MONACO: &str = "0.57.0";
+/// CodeMirror (the page's source view): the packages it needs, bundled
+/// into one module, codemirror.js, by Deno (`deno bundle`: esbuild).
+const CODEMIRROR: &str = r#"export { EditorView, Decoration, WidgetType, hoverTooltip, gutter, GutterMarker, lineNumbers, keymap } from "npm:@codemirror/view@6";
+export { EditorState, StateField, StateEffect, RangeSet } from "npm:@codemirror/state@6";
+export { cpp } from "npm:@codemirror/lang-cpp@6";
+export { syntaxHighlighting, defaultHighlightStyle } from "npm:@codemirror/language@6";
+export { oneDarkHighlightStyle } from "npm:@codemirror/theme-one-dark@6";
+"#;
 
-fn monaco() {
-    let dir = format!("{SITE}/monaco");
-    if std::fs::read_to_string(format!("{dir}/VERSION")).is_ok_and(|v| v == MONACO) {
+fn codemirror() {
+    let out = format!("{SITE}/codemirror.js");
+    if !stale(&out, &["crates/ksee-cli/src/build.rs"]) {
         return;
     }
-    eprintln!("  MONACO  {dir} (npm: monaco-editor {MONACO})");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
-    let url = format!("https://registry.npmjs.org/monaco-editor/-/monaco-editor-{MONACO}.tgz");
-    run(Command::new("sh").arg("-c").arg(format!(
-        "curl -fsSL '{url}' | tar xz -C '{dir}' --strip-components=3 package/min/vs")));
-    std::fs::write(format!("{dir}/VERSION"), MONACO).unwrap_or_else(|e| crate::fail(&format!("{dir}/VERSION: {e}")));
+    eprintln!("  CM      {out} (deno bundle: npm's @codemirror)");
+    let entry = "target/codemirror-entry.js";
+    std::fs::write(entry, CODEMIRROR).unwrap_or_else(|e| crate::fail(&format!("{entry}: {e}")));
+    run(Command::new("deno").args(["bundle", "-q", "--minify", "--platform=browser", "-o", &out, entry]));
 }
 
 /// Links in the site to web/'s files (so an edit there needs no build), and

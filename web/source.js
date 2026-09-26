@@ -1,13 +1,13 @@
-// The source view: a whole kernel file in Monaco (web/editor.js), with the
-// lines that ran (green; how often: hover the line number), the function's
-// lines, and the cursor. Hover a name for its value at the
-// cursor (an argument, a global, and fields: file->f_pos); F12 or
-// Ctrl+click on a name goes to its definition (a function, inline ones
-// too, a type, a global, a field: Machine.definition); over the shown
-// function, who called it in the recording (Machine.callers), each a link
-// to the first such call.
-import { $ } from "./dom.js";
-import { loadMonaco, readOnly } from "./editor.js";
+// The source view: a whole kernel file in CodeMirror (web/editor.js), with
+// the lines that ran (green; how often: hover the line), the function's
+// lines, and the cursor. Hover a name for its value at the cursor (an
+// argument, a global, and fields: file->f_pos); F12 or Ctrl+click on a
+// name goes to its definition (a function, inline ones too, a type, a
+// global, a field: Machine.definition); over the shown function, who
+// called it in the recording (Machine.callers), each a link to the first
+// such call; F4 runs to the line (Shift+F4: back to its last run).
+import { $, el } from "./dom.js";
+import { CM, base } from "./editor.js";
 
 const KEYWORDS = new Set(("auto break case char const continue default do double else enum extern float for goto if " +
   "inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void " +
@@ -43,78 +43,73 @@ export function source(app) {
   };
   // What is shown, and the cursor's line.
   const v = { file: null, fn: null, syscall: undefined, cursor: null, counts: new Map() };
-  let monaco, ed, marks;
-  const models = new Map();
+  // A file's state (its document), kept once made.
+  const states = new Map();
 
-  const ready = loadMonaco().then((mo) => {
-    monaco = mo;
-    $("src").replaceChildren();
-    ed = monaco.editor.create($("src"), {
-      ...readOnly,
-      glyphMargin: true,
-      lineNumbersMinChars: 4,
-    });
-    marks = ed.createDecorationsCollection();
-    // Ctrl+click, or F12, on a name: its definition (Monaco's own go-to,
-    // which asks where, then asks to open it there: see definition).
-    let jump = null;
-    monaco.languages.registerDefinitionProvider("c", {
-      async provideDefinition(mdl, pos) {
-        if (mdl !== ed.getModel()) return null;
-        const word = mdl.getWordAtPosition(pos);
-        jump = word && definition(word.word, exprAt(mdl.getLineContent(pos.lineNumber), pos.column - 1)?.expr);
-        if (!jump) return null;
-        // (The target's model, for Monaco to show it.)
-        model(jump.file, (await fetchFile(jump.file)) ?? "");
-        const range = new monaco.Range(jump.line, 1, jump.line, 1);
-        return { uri: monaco.Uri.parse(`kernel:///${jump.file}`), range, originSelectionRange: new monaco.Range(pos.lineNumber, word.startColumn, pos.lineNumber, word.endColumn) };
-      },
-    });
-    monaco.editor.registerEditorOpener({
-      openCodeEditor(source, uri) {
-        if (source !== ed || uri.scheme !== "kernel" || !jump) return false;
-        if (jump.func) showFunction(jump.func);
-        else {
-          saved = null;
-          v.fn = null;
-          showFile(jump.file, jump.line).then(() => ed.setPosition({ lineNumber: jump.line, column: 1 }));
-        }
-        return true;
-      },
-    });
-    // Over the shown function: who called it, in the recording.
-    monaco.editor.registerCommand("ksee.go", (_, i) => app.time.go(i));
-    const lensChanged = new monaco.Emitter();
-    refreshLenses = () => lensChanged.fire();
-    monaco.languages.registerCodeLensProvider("c", {
-      onDidChange: lensChanged.event,
-      provideCodeLenses(model) {
-        const fn = v.fn?.file === v.file && model === ed.getModel() ? v.fn : null;
-        if (!fn) return { lenses: [], dispose() {} };
-        const cs = m.callers(fn.name, v.syscall), n = cs.reduce((a, c) => a + c.count, 0);
-        const range = new monaco.Range(fn.line, 1, fn.line, 1), where = v.syscall != null ? "in this syscall" : "in the recording";
-        const lens = (title, i) => ({ range, command: i == null ? { id: "", title } : { id: "ksee.go", title, arguments: [i] } });
-        return { dispose() {}, lenses: [
-          lens(n ? `called ${n}× ${where} from` : `not called ${where}`),
-          ...cs.slice(0, 6).map((c) => lens(`${c.func}${c.line ? `:${c.line}` : ""}${c.count > 1 ? ` (${c.count}×)` : ""}`, c.first)),
-          ...(cs.length > 6 ? [lens(`and ${cs.length - 6} more`)] : []),
-        ] };
-      },
-    });
-    // Hover: the value at the cursor.
-    monaco.languages.registerHoverProvider("c", {
-      provideHover(model, pos) {
-        if (model !== ed.getModel()) return null;
-        const h = hover(pos.lineNumber, model.getLineContent(pos.lineNumber), pos.column - 1);
-        return h && { range: new monaco.Range(pos.lineNumber, h.start + 1, pos.lineNumber, h.end + 1), contents: h.contents };
-      },
-    });
-    // Run to a line: the next time it runs, or the last time it ran.
-    ed.addAction({ id: "ksee.next-run", label: "Run to this line (the next time it runs)", contextMenuGroupId: "navigation",
-      contextMenuOrder: 2, keybindings: [monaco.KeyCode.F4], run: () => app.runTo(v.file, ed.getPosition().lineNumber, 1) });
-    ed.addAction({ id: "ksee.prev-run", label: "Run back to this line (the last time it ran)", contextMenuGroupId: "navigation",
-      contextMenuOrder: 3, keybindings: [monaco.KeyMod.Shift | monaco.KeyCode.F4], run: () => app.runTo(v.file, ed.getPosition().lineNumber, -1) });
+  // ---- The marks: a state field of line decorations, set as a whole ----
+  const setMarks = CM.StateEffect.define();
+  const marks = CM.StateField.define({
+    create: () => CM.Decoration.none,
+    update(set, tr) {
+      for (const e of tr.effects) if (e.is(setMarks)) return e.value;
+      return set.map(tr.changes);
+    },
+    provide: (f) => CM.EditorView.decorations.from(f),
   });
+  // The cursor's ▶, in a gutter of its own.
+  const cursorMark = new (class extends CM.GutterMarker { toDOM() { return el("span", { className: "gl-cursor" }); } })();
+  const cursorGutter = CM.gutter({
+    class: "cm-cursorGutter",
+    lineMarker: (view, line) => (v.cursor?.file === v.file && view.state.doc.lineAt(line.from).number === v.cursor.line ? cursorMark : null),
+    lineMarkerChange: (update) => update.transactions.some((tr) => tr.effects.some((e) => e.is(setMarks))),
+  });
+  // Who called the shown function: a block above its first line.
+  class Lens extends CM.WidgetType {
+    constructor(dom) { super(); this.dom = dom; }
+    toDOM() { return this.dom; }
+    eq(other) { return other.dom === this.dom; }
+  }
+  function lens(fn) {
+    const cs = m.callers(fn.name, v.syscall), n = cs.reduce((a, c) => a + c.count, 0);
+    const where = v.syscall != null ? "in this syscall" : "in the recording";
+    const item = (text, i) => (i == null ? el("span", { textContent: text })
+      : el("a", { textContent: text, title: "go to this call", onclick: () => app.time.go(i) }));
+    return el("div", { className: "lens dim" }, item(n ? `called ${n}× ${where} from` : `not called ${where}`),
+      ...cs.slice(0, 6).map((c) => item(`${c.func}${c.line ? `:${c.line}` : ""}${c.count > 1 ? ` (${c.count}×)` : ""}`, c.first)),
+      ...(cs.length > 6 ? [item(`and ${cs.length - 6} more`)] : []));
+  }
+
+  // ---- Hover: the value at the cursor ----
+  const tips = CM.hoverTooltip((view, pos) => {
+    const line = view.state.doc.lineAt(pos);
+    const h = hover(line.number, line.text, pos - line.from);
+    return h && { pos: line.from + h.start, end: line.from + h.end, above: true,
+                  create: () => ({ dom: el("pre", { className: "hovertip mono", textContent: h.text }) }) };
+  }, { hoverTime: 200 });
+
+  // ---- Keys and clicks: definitions, run to a line ----
+  const lineOf = (view) => view.state.doc.lineAt(view.state.selection.main.head).number;
+  const keys = CM.keymap.of([
+    { key: "F12", run: (view) => (definitionAt(view.state.selection.main.head), true) },
+    { key: "F4", run: (view) => (app.runTo(v.file, lineOf(view), 1), true) },
+    { key: "Shift-F4", run: (view) => (app.runTo(v.file, lineOf(view), -1), true) },
+  ]);
+  const clicks = CM.EditorView.domEventHandlers({
+    mousedown(e, view) {
+      if (!(e.ctrlKey || e.metaKey)) return false;
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      if (pos != null) definitionAt(pos);
+      return true;
+    },
+  });
+
+  const ed = new CM.EditorView({ parent: $("src"), state: CM.EditorState.create({ doc: "", extensions: base }) });
+  $("src").querySelector(".empty")?.remove();
+
+  function state(file, text) {
+    if (!states.has(file)) states.set(file, CM.EditorState.create({ doc: text, extensions: [base, marks, cursorGutter, tips, keys, clicks] }));
+    return states.get(file);
+  }
 
   // Whether line `n` of the shown file is in the shown function.
   function inFunction(n) {
@@ -123,7 +118,7 @@ export function source(app) {
   }
 
   // The value of the expression at `k` in line `line` (its `text`), for a
-  // hover: { start, end, text, contents (markdown) }, or null.
+  // hover: { start, end, text }, or null.
   function hover(line, text, k) {
     const e = exprAt(text, k);
     // (Arguments only in the shown function's own lines; elsewhere, globals.)
@@ -131,8 +126,7 @@ export function source(app) {
     if (!o) return null;
     const fields = o.value == null || (o.target != null && o.value !== "NULL") ? (app.stack.kids(o) ?? []).slice(0, 10) : [];
     const code = [`${e.expr} = ${o.value ?? "{…}"}  // ${o.ty}`, ...fields.map((c) => `  .${c.name} = ${c.value ?? "{…}"}`)].join("\n");
-    return { start: e.start, end: e.end, text: code,
-             contents: [{ value: "```c\n" + code + "\n```" }] };
+    return { start: e.start, end: e.end, text: code };
   }
   // The definition of `word` (`expr`: the expression it ends, for a field:
   // file->f_pos): { file, line, func? (an instrumented function: its
@@ -145,43 +139,61 @@ export function source(app) {
     const d = m.definition(owner ? `${owner}.${word}` : parent ? `.${word}` : word);
     return d && { file: d.file, line: d.line, func: !owner && m.functions(word).length ? word : null };
   }
-  let refreshLenses = () => {};
-
-  function model(file, text) {
-    if (!models.has(file)) models.set(file, monaco.editor.createModel(text, "c", monaco.Uri.parse(`kernel:///${file}`)));
-    return models.get(file);
+  // Go to the definition of the name at `pos` of the shown file (a
+  // function: its source, with the lines that ran; else the file, at the
+  // line). Whether there was one.
+  function definitionAt(pos) {
+    const doc = ed.state.doc, line = doc.lineAt(pos), w = ed.state.wordAt(pos);
+    if (!w) return false;
+    const word = doc.sliceString(w.from, w.to), jump = definition(word, exprAt(line.text, pos - line.from)?.expr);
+    if (!jump) return false;
+    if (jump.func) showFunction(jump.func);
+    else {
+      saved = null;
+      v.fn = null;
+      showFile(jump.file, jump.line);
+    }
+    return true;
   }
 
-  // The markers for the shown file.
+  // The marks for the shown file: the lines that ran, the function, the
+  // cursor, the lens.
   function decorate() {
-    const file = v.file, fn = v.fn?.file === file ? v.fn : null;
-    const at = (x) => x && x.file === file && x.line;
-    const line = (n, options) => ({ range: new monaco.Range(n, 1, n, 1), options });
-    const d = [];
+    const file = v.file, fn = v.fn?.file === file ? v.fn : null, doc = ed.state.doc;
+    const at = (n) => n >= 1 && n <= doc.lines && doc.line(n).from;
     const where = v.syscall != null ? " in this syscall" : " in the recording";
-    for (const [n, c] of v.counts)
-      d.push(line(n, { isWholeLine: true, className: "ln-hit", overviewRuler: { color: "#2da44e88", position: 4 },
-                       minimap: { color: "#2da44e88", position: 1 }, lineNumberHoverMessage: { value: `ran ${c}×${where}` } }));
-    if (fn) d.push({ range: new monaco.Range(fn.line, 1, fn.last, 1), options: { isWholeLine: true, linesDecorationsClassName: "ln-infn" } });
-    if (at(v.cursor)) d.push(line(v.cursor.line, { isWholeLine: true, className: "ln-cursor", glyphMarginClassName: "gl-cursor",
-      overviewRuler: { color: "#0969da", position: 7 } }));
-    marks.set(d);
+    const d = [];
+    for (const [n, c] of v.counts) {
+      if (at(n) !== false) d.push(CM.Decoration.line({ class: "ln-hit", attributes: { title: `ran ${c}×${where}` } }).range(at(n)));
+    }
+    if (fn) {
+      for (let n = fn.line; n <= Math.min(fn.last, doc.lines); n++) d.push(CM.Decoration.line({ class: "ln-infn" }).range(at(n)));
+      if (at(fn.line) !== false) d.push(CM.Decoration.widget({ widget: new Lens(lens(fn)), block: true, side: -1 }).range(at(fn.line)));
+    }
+    if (v.cursor?.file === file && at(v.cursor.line) !== false) d.push(CM.Decoration.line({ class: "ln-cursor" }).range(at(v.cursor.line)));
+    d.sort((x, y) => x.from - y.from || x.value.startSide - y.value.startSide);
+    ed.dispatch({ effects: setMarks.of(CM.Decoration.set(d, true)) });
+  }
+  // Scroll line `n` into view: to the top, or (`center`) the middle if it
+  // is not in view.
+  function reveal(n, center) {
+    const doc = ed.state.doc;
+    if (n < 1 || n > doc.lines) return;
+    const pos = doc.line(n).from;
+    ed.dispatch({ selection: { anchor: pos }, effects: CM.EditorView.scrollIntoView(pos, { y: center ? "center" : "start", yMargin: center ? 0 : 4 }) });
   }
 
   async function showFile(file, focus) {
     v.file = file;
     v.focus = focus;
-    const [text] = await Promise.all([fetchFile(file), ready]);
+    const text = await fetchFile(file);
     if (v.file !== file) return; // changed while loading
-    const mdl = model(file, text ?? `// ${file}: not in this site's sources.`);
-    if (ed.getModel() !== mdl) ed.setModel(mdl);
+    const st = state(file, text ?? `// ${file}: not in this site's sources.`);
+    if (ed.state !== st) ed.setState(st);
     v.counts = new Map(text === null ? [] : m.file_coverage(file, v.syscall).map((c) => [c.line, c.count]));
     decorate();
     const fn = v.fn?.file === file ? v.fn : null;
-    const to = focus ?? fn?.line ?? 1;
-    if (focus) ed.revealLineInCenterIfOutsideViewport(to);
-    else ed.revealLineNearTop(to);
-    refreshLenses();
+    reveal(focus ?? fn?.line ?? 1, !!focus);
     const ran = !fn ? "" : ` · ${fn.name}` + (fn.sealed ? ": sealed (it loops, only reading memory: its call and return are recorded, not its lines)" : "");
     $("fn-title").textContent = (saved ? "preview · " : "") + file + ran;
     $("fn-title").classList.toggle("preview", !!saved);
@@ -205,7 +217,7 @@ export function source(app) {
   // unpreview goes back to what was shown (or another showFunction keeps it).
   let saved = null;
   function preview(func, file, line) {
-    saved ??= { fn: v.fn, syscall: v.syscall, cursor: v.cursor, file: v.file, focus: v.focus, top: ed?.getScrollTop() };
+    saved ??= { fn: v.fn, syscall: v.syscall, cursor: v.cursor, file: v.file, focus: v.focus, top: ed.scrollDOM.scrollTop };
     v.cursor = { file, line };
     show(func, v.syscall, line, file);
   }
@@ -215,21 +227,29 @@ export function source(app) {
     saved = null;
     Object.assign(v, { fn: was.fn, syscall: was.syscall, cursor: was.cursor });
     if (was.file) await showFile(was.file, was.focus);
-    if (!saved && was.top != null) ed.setScrollTop(was.top);
+    if (!saved && was.top != null) ed.scrollDOM.scrollTop = was.top;
   }
 
-  // For tests: the hover at the first `needle` of the shown function (and
-  // after it), on `word`.
-  async function hoverAt(needle, word) {
-    await ready;
-    const mdl = ed.getModel();
-    // (From the shown function's first line.)
-    for (let n = v.fn?.file === v.file ? v.fn.line : 1; n <= mdl.getLineCount(); n++) {
-      const text = mdl.getLineContent(n), k = text.indexOf(needle);
-      if (k >= 0) return hover(n, text, k + needle.indexOf(word))?.text ?? null;
+  // The shown file's lines (for tests), and the first line at or after
+  // `from` with `needle` in it: { line, column (of needle) }, or null.
+  const text = () => ed.state.doc.toString();
+  function find(needle, from = 1) {
+    const doc = ed.state.doc;
+    for (let n = from; n <= doc.lines; n++) {
+      const k = doc.line(n).text.indexOf(needle);
+      if (k >= 0) return { line: n, column: k + 1 };
     }
     return null;
   }
+  // For tests: the hover at the first `needle` of the shown function (and
+  // after it), on `word`.
+  function hoverAt(needle, word) {
+    const at = find(needle, v.fn?.file === v.file ? v.fn.line : 1);
+    return at ? hover(at.line, ed.state.doc.line(at.line).text, at.column - 1 + needle.indexOf(word))?.text ?? null : null;
+  }
+  // For tests: go to the definition of the name at `line`, `column`.
+  const definitionAtLine = (line, column) => definitionAt(ed.state.doc.line(line).from + column - 1);
 
-  return { view: v, showFunction, preview, unpreview, hoverAt, get editor() { return ed; } };
+  return { view: v, showFunction, preview, unpreview, hoverAt, text, find, definitionAt: definitionAtLine,
+           lineAt: () => ed.state.doc.lineAt(ed.state.selection.main.head).number };
 }

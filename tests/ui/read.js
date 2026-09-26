@@ -153,24 +153,18 @@
   // Code navigation: the lens over the shown function (who called it), F12 to a function, and to a field.
   ksee.src.showFunction("vfs_mkdir");
   await sleep(1200);
-  r.lens = [...document.querySelectorAll(".codelens-decoration")].map((e) => e.innerText.replace(/\s+/g, " ")).slice(0, 2);
-  const ed = ksee.src.editor, find = (needle, off) => {
-    const mdl = ed.getModel();
-    for (let k = 1; k <= mdl.getLineCount(); k++) { const c = mdl.getLineContent(k).indexOf(needle); if (c >= 0) return { lineNumber: k, column: c + 1 + off }; }
-    return null;
-  };
+  r.lens = [...document.querySelectorAll(".cm-editor .lens")].map((e) => e.innerText.replace(/\s+/g, " ")).slice(0, 2);
+  // (F12 on a name: ksee.src.definitionAt(line, column), as the key does.)
   const goto = async (needle, off) => {
-    const at = find(needle, off);
+    const at = ksee.src.find(needle);
     if (!at) throw new Error(`no "${needle}" in ${$("fn-title").textContent}`);
-    ed.setPosition(at);
-    ed.focus();
-    ed.trigger("test", "editor.action.revealDefinition", null);
+    ksee.src.definitionAt(at.line, at.column + off);
     await sleep(1000);
   };
   await goto("may_create_dentry(idmap", 1);
   r.def = $("fn-title").textContent;
   await goto("dir->i_sb", 5);
-  r.field = [$("fn-title").textContent, ed.getModel().getLineContent(ed.getPosition().lineNumber).trim()];
+  r.field = [$("fn-title").textContent, ksee.src.text().split("\n")[ksee.src.lineAt() - 1].trim()];
   if (!/called \d+×/.test(r.lens[0] ?? "") || !r.def.includes("may_create_dentry") || !r.field[0].includes("fs.h") || !r.field[1].includes("i_sb"))
     throw new Error("navigation: " + JSON.stringify(r));
   // Find a function in the recording: Enter, its next call after the cursor; Shift+Enter, the one before.
