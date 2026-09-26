@@ -42,7 +42,9 @@ function one of the calls runs, the cursor there, the source, and the
 Stack (the call stack, with each call's arguments and locals, as they
 were). ◀ ▶ step, and Play plays, by line (into calls), over calls, or out of
 the call: the Stack's selected call, or the line's; ← →, with Shift over,
-with Alt out (F10, F11, Shift+F11 as in a debugger).
+with Alt out (F10, F11, Shift+F11 as in a debugger). F4 in the source runs to
+the line the cursor is on (its next run; Shift+F4 its last), and [ ] go
+from stop to stop.
 
 The program is below the tutorial, a call a line, each written as in C
 (`openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`): click one for its

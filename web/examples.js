@@ -236,6 +236,8 @@ export async function examples(app) {
     mark(s.j);
     toURL();
   }
+  // (The tutorial's stops, for the keys: ] the next, [ the one before.)
+  app.tour = (d) => stop(t.pos + d);
   // (Call `j`'s line marked, the others not.)
   const mark = (j) => [...t.list.children].forEach((li, k) => li.classList.toggle("on", k === j));
 

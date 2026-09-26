@@ -22,6 +22,19 @@
   }
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = $("where").textContent.slice(0, 50);
+  // Run to a line (the source's F4): the line where the cursor is, its next run; and ] for the next stop.
+  const here = $("where").textContent;
+  const tourAt = document.querySelector(".tour .tnav span").textContent;
+  dispatchEvent(new KeyboardEvent("keydown", { key: "[" }));
+  const before = document.querySelector(".tour .tnav span").textContent;
+  dispatchEvent(new KeyboardEvent("keydown", { key: "]" }));
+  r.nextStop = [tourAt, before, document.querySelector(".tour .tnav span").textContent];
+  if (r.nextStop[1] === r.nextStop[0] || r.nextStop[2] !== r.nextStop[0]) throw new Error("[ ] did not move the tutorial: " + JSON.stringify(r.nextStop));
+  const [, file, ln] = here.match(/ (\S+):(\d+)/) ?? [];
+  const was = ksee.time.cursor();
+  if (file) ksee.runTo(file, Number(ln), 1);
+  r.ranTo = [here, $("where").textContent, was, ksee.time.cursor()];
+  if (!file || !(r.ranTo[3] > was) || r.ranTo[1] !== here) throw new Error("run to: " + JSON.stringify(r.ranTo));
   // Stepping: into a call, over the next, out of it (the Stack's calls, deep).
   const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
   const press = (kind) => { $("step-by").value = kind; $("step-fwd").click(); };

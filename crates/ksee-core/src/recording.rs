@@ -93,6 +93,22 @@ impl Recording {
     /// that starts a new `unit`: "block", "line" (another source line, on
     /// the task running at `i`), or "function" (another function than at
     /// `i`). `i` if none.
+    /// The next (dir > 0) or previous block record from `i` whose block
+    /// runs line `line` of `file` (its own code or code inlined into it).
+    pub fn run_of(&self, t: &Tables, file: &str, line: u32, i: usize, dir: i32) -> Option<usize> {
+        let files: Vec<u32> = (0..t.files.len() as u32).filter(|&k| t.files[k as usize] == file).collect();
+        let at = |l: &crate::tables::Loc| l.line == line && files.contains(&l.file);
+        // (The blocks that run it.)
+        let blocks: alloc::collections::BTreeSet<(u32, u32)> = t.blocks.iter()
+            .filter(|(key, l)| match t.lines.get(key) {
+                Some(segs) => segs.iter().flatten().any(|s| at(&s.loc)),
+                None => at(l),
+            })
+            .map(|(&key, _)| key).collect();
+        let hit = |j: usize| matches!(self.records[j], Record::Block { func, n } if blocks.contains(&(func, n)));
+        if dir > 0 { (i + 1..self.records.len()).find(|&j| hit(j)) } else { (0..i.min(self.records.len())).rev().find(|&j| hit(j)) }
+    }
+
     pub fn seek(&self, t: &Tables, i: usize, dir: i32, unit: &str) -> usize {
         let func_at = |j: usize| match self.records.get(j) {
             Some(Record::Block { func, .. }) => Some(*func),

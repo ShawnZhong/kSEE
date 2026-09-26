@@ -118,6 +118,12 @@ check("the user's buffer, before the read and after", !/hello/.test(buf(read.fir
 const who = (m.memory_at(read.last), m.last_write(fpos(read.last).addr, 8));
 check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
 const readSteps = m.line_steps(read.first, read.last, read.task.addr);
+// Run to a line: the next time it runs, and back.
+{
+  const s5 = readSteps.find((x) => x.func === "ksys_read" && m.at(x.i)?.kind === "block");
+  const next = m.run_of(s5.file, s5.line, s5.i - 1, 1), back = m.run_of(s5.file, s5.line, s5.i + 1, -1);
+  check(`run to ${s5.file}:${s5.line}, forward and back: its run`, next === s5.i && back === s5.i);
+}
 const pos = (i) => (m.memory_at(i), m.call_stack(i).find((c) => c.func === "ksys_read")?.locals?.find((l) => l.name === "pos")?.value);
 check("a local on the stack, as it was: ksys_read's pos, 0 then 26",
       pos(inRead) === "0" && pos(readSteps.findLast((x) => x.func === "ksys_read").i) === "26");

@@ -67,6 +67,11 @@ export function source(app) {
     });
     ed.addAction({ id: "ksee.definition", label: "Go to the function's source", contextMenuGroupId: "navigation",
       contextMenuOrder: 1, keybindings: [monaco.KeyCode.F12], run: () => definition(ed.getPosition()) });
+    // Run to a line: the next time it runs, or the last time it ran.
+    ed.addAction({ id: "ksee.next-run", label: "Run to this line (the next time it runs)", contextMenuGroupId: "navigation",
+      contextMenuOrder: 2, keybindings: [monaco.KeyCode.F4], run: () => app.runTo(v.file, ed.getPosition().lineNumber, 1) });
+    ed.addAction({ id: "ksee.prev-run", label: "Run back to this line (the last time it ran)", contextMenuGroupId: "navigation",
+      contextMenuOrder: 3, keybindings: [monaco.KeyMod.Shift | monaco.KeyCode.F4], run: () => app.runTo(v.file, ed.getPosition().lineNumber, -1) });
   });
 
   // Whether line `n` of the shown file is in the shown function.

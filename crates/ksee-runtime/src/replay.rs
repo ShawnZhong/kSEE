@@ -89,6 +89,12 @@ impl Machine {
     }
 
     /// See ksee_core::recording::Recording::seek.
+    /// The next (dir > 0) or previous record from `i` that runs line `line`
+    /// of `file` (see Recording::run_of): "run to" a line.
+    pub fn run_of(&self, file: &str, line: u32, i: usize, dir: i32) -> Option<usize> {
+        self.rec.borrow().run_of(tables(), file, line, i, dir)
+    }
+
     pub fn seek(&self, i: usize, dir: i32, unit: &str) -> usize {
         self.rec.borrow().seek(tables(), i, dir, unit)
     }

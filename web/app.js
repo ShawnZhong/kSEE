@@ -204,7 +204,7 @@ export function app(m) {
   // (← →: a line; with Shift: over; with Alt: out. F10, F11, Shift+F11 as
   // in a debugger; Home: the first line.)
   addEventListener("keydown", (e) => {
-    if (e.target.closest("input, select, textarea, .monaco-editor")) return;
+    if (e.target.closest?.("input, select, textarea, .monaco-editor")) return;
     const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
     if (arrow) step(e.altKey ? "out" : e.shiftKey ? "over" : "line", arrow);
     else if (e.key === "Home") steps().length && showStep(0);
