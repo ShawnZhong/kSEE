@@ -190,13 +190,20 @@ const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/example
 // (A step's runner, `as`: the one call `as` started; else /init.)
 async function runExample(ex) {
   await m.restart();
-  const rets = [], asked = [], started = [], known = new Set(m.runners());
+  const rets = [], asked = [], started = [], seen = new Set(m.runners());
+  // (The results so far, by $n and by name, as the page has them; for a
+  // runner, a call not returned yet is the runner it started: vfork's child.)
+  const known = (runners) => Object.fromEntries(ex.steps.slice(0, asked.length).flatMap((st, i) => {
+    const v = rets[i] ?? (runners ? started[i] : null);
+    return v == null ? [] : [[`$${i + 1}`, v], ...(st.name ? [[st.name, v]] : [])];
+  }));
   for (const st of ex.steps) {
-    const args = st.args.map((x, k) => m.arg(st.call, k, x, Object.fromEntries(rets.map((r, i) => [`$${i + 1}`, r]).filter(([, r]) => r != null))));
-    const q = await ask(st.call, args, st.as ? started[st.as - 1] : 1);
+    const args = st.args.map((x, k) => m.arg(st.call, k, x, known(false)));
+    const tid = st.tid == null ? (st.as ? started[st.as - 1] : 1) : typeof st.tid === "number" ? st.tid : m.value(String(st.tid), known(true));
+    const q = await ask(st.call, args, tid);
     asked.push(q);
-    started.push(m.runners().find((t) => !known.has(t)));
-    m.runners().forEach((t) => known.add(t));
+    started.push(m.runners().find((t) => !seen.has(t)));
+    m.runners().forEach((t) => seen.add(t));
     asked.forEach((a, j) => (rets[j] = fin.get(a)?.ret));
   }
   return asked;

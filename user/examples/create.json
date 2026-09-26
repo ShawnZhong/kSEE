@@ -5,6 +5,7 @@
   "steps": [
     {
       "call": "openat",
+      "name": "fd",
       "args": [
         "AT_FDCWD",
         "\"/new.txt\"",
@@ -25,7 +26,7 @@
     {
       "call": "close",
       "args": [
-        "$1"
+        "fd"
       ]
     }
   ]

@@ -27,6 +27,7 @@
     },
     {
       "call": "openat",
+      "name": "fd",
       "args": [
         "AT_FDCWD",
         "\"/mnt\"",
@@ -36,7 +37,7 @@
     {
       "call": "getdents64",
       "args": [
-        "$2",
+        "fd",
         "[256]",
         "256"
       ],
@@ -50,7 +51,7 @@
     {
       "call": "close",
       "args": [
-        "$2"
+        "fd"
       ]
     }
   ]

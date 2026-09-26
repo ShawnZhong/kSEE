@@ -18,6 +18,7 @@
     },
     {
       "call": "clone",
+      "name": "child",
       "args": [
         "CLONE_VM | CLONE_VFORK | SIGCHLD",
         "0",
@@ -38,12 +39,12 @@
     },
     {
       "call": "dup3",
+      "tid": "child",
       "args": [
         "3",
         "0",
         "0"
       ],
-      "as": 2,
       "stops": [
         {
           "func": "do_dup2",
@@ -53,10 +54,10 @@
     },
     {
       "call": "close",
+      "tid": "child",
       "args": [
         "3"
       ],
-      "as": 2,
       "stops": [
         {
           "func": "file_close_fd",
@@ -66,10 +67,10 @@
     },
     {
       "call": "close",
+      "tid": "child",
       "args": [
         "4"
       ],
-      "as": 2,
       "stops": [
         {
           "func": "file_close_fd",
@@ -79,12 +80,12 @@
     },
     {
       "call": "execve",
+      "tid": "child",
       "args": [
         "\"/bin/cat\"",
         "{\"cat\", NULL}",
         "NULL"
       ],
-      "as": 2,
       "stops": [
         {
           "func": "begin_new_exec",
@@ -144,7 +145,7 @@
       "call": "waitid",
       "args": [
         "P_PID",
-        "$2",
+        "child",
         "[128]",
         "WEXITED",
         "NULL"

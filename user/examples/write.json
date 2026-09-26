@@ -5,6 +5,7 @@
   "steps": [
     {
       "call": "openat",
+      "name": "fd",
       "args": [
         "AT_FDCWD",
         "\"/note.txt\"",
@@ -14,7 +15,7 @@
     {
       "call": "write",
       "args": [
-        "$1",
+        "fd",
         "\"more\\n\"",
         "5"
       ],
@@ -36,7 +37,7 @@
     {
       "call": "close",
       "args": [
-        "$1"
+        "fd"
       ]
     }
   ]

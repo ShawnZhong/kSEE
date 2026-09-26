@@ -76,11 +76,12 @@ function, a type, a global, a struct's member. Over a function, the source
 says who called it in the recording, each caller a link to the call.
 
 An example is one JSON file in user/examples/: a title, a question, and
-steps: `{ call, args, as?, stops: [{ func, note, any? }] }`, and a `group`
-(the selector's: "Start here", "Files, in memory", "Files on ext4", "Time",
-"Threads and processes";
-the order is `EXAMPLES` in crates/ksee-cli/src/build.rs) (`as`: the
-runner call `as` started, a thread or child; else /init), the arguments
+steps: `{ call, name?, tid?, args, stops: [{ func, note, any? }] }` (`name`:
+a name for the call's result, which later arguments may use, as `fd` or
+`$2`; `tid`: the runner that makes it, a number or a result's name, `child`
+for the one a clone started; else /init), and a `group` (the selector's:
+"Start here", "Files, in memory", "Files on ext4", "Time", "Threads and
+processes"; the order is `EXAMPLES` in crates/ksee-cli/src/build.rs), the arguments
 written as in C: `"AT_FDCWD"`, `"O_CREAT | O_WRONLY"` (the kernel's own
 constants, from its UAPI headers), `"0644"`, `"\"a string\""`, `"[64]"`
 (a buffer for the kernel to fill), `"{0, 30000000}"` (64-bit values),

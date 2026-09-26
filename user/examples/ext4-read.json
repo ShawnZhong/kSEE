@@ -5,6 +5,7 @@
   "steps": [
     {
       "call": "openat",
+      "name": "fd",
       "args": [
         "AT_FDCWD",
         "\"/mnt/note.txt\"",
@@ -20,7 +21,7 @@
     {
       "call": "read",
       "args": [
-        "$1",
+        "fd",
         "[64]",
         "64"
       ],
@@ -43,7 +44,7 @@
     {
       "call": "close",
       "args": [
-        "$1"
+        "fd"
       ]
     }
   ]

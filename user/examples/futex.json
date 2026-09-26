@@ -5,6 +5,7 @@
   "steps": [
     {
       "call": "mmap2",
+      "name": "mem",
       "args": [
         "NULL",
         "65536",
@@ -22,9 +23,10 @@
     },
     {
       "call": "clone",
+      "name": "thread",
       "args": [
         "CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM",
-        "$1 + 65536",
+        "mem + 65536",
         "NULL",
         "NULL",
         "0"
@@ -36,14 +38,14 @@
         },
         {
           "func": "wake_up_new_task",
-          "note": "Runnable: it starts on the stack it was given (at its top: stacks grow down)."
+          "note": "Runnable: it starts on the stack it was given (its top: mem + 65536; stacks grow down)."
         }
       ]
     },
     {
       "call": "getpid",
+      "tid": "thread",
       "args": [],
-      "as": 2,
       "stops": [
         {
           "func": "__task_pid_nr_ns",
@@ -53,13 +55,13 @@
     },
     {
       "call": "futex_time64",
+      "tid": "thread",
       "args": [
-        "$1",
+        "mem",
         "FUTEX_WAIT_PRIVATE",
         "1",
         "NULL"
       ],
-      "as": 2,
       "stops": [
         {
           "func": "futex_wait_setup",
@@ -69,13 +71,13 @@
     },
     {
       "call": "futex_time64",
+      "tid": "thread",
       "args": [
-        "$1",
+        "mem",
         "FUTEX_WAIT_PRIVATE",
         "0",
         "NULL"
       ],
-      "as": 2,
       "stops": [
         {
           "func": "futex_do_wait",
@@ -90,7 +92,7 @@
     {
       "call": "futex_time64",
       "args": [
-        "$1",
+        "mem",
         "FUTEX_WAKE_PRIVATE",
         "1",
         "NULL"
