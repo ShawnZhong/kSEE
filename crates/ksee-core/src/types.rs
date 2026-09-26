@@ -16,6 +16,7 @@
 //! ```
 
 use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt::Write;
@@ -172,6 +173,13 @@ impl Types {
         self.types.get(id as usize).unwrap_or(&VOID)
     }
 
+    /// Syscall `name`'s parameters (its body's, `__do_sys_NAME`; a
+    /// `_time64` syscall's body is the plain one's: clock_nanosleep).
+    pub fn syscall_params(&self, name: &str) -> Option<&Vec<(String, u32)>> {
+        self.params.get(&format!("__do_sys_{name}"))
+            .or_else(|| self.params.get(&format!("__do_sys_{}", name.strip_suffix("_time64")?)))
+    }
+
     /// A struct, union, enum or typedef by name ("task_struct").
     pub fn find(&self, name: &str) -> Option<u32> {
         self.names.get(name).copied()
@@ -287,7 +295,7 @@ impl Types {
     }
 
     /// Whether `elem` is a char (so an array or pointer of it is a string).
-    pub(crate) fn is_string(&self, elem: u32) -> bool {
+    pub fn is_string(&self, elem: u32) -> bool {
         matches!(self.get(self.resolve(elem)).kind, Kind::Base(Base::Char)) && self.size_of(elem) == 1
     }
 

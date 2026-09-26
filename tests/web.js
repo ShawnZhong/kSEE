@@ -3,7 +3,6 @@
 // the recordings show.
 //   deno run --allow-read tests/web.js
 import { start } from "../target/site/ksee.js";
-import { arg } from "../target/site/args.js";
 
 const root = new URL("..", import.meta.url);
 const m = await start({
@@ -168,9 +167,16 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
 const consts = m.constants();
 check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
       consts.O_CREAT === 64 && consts.AT_FDCWD === -100 && consts.AT_REMOVEDIR === 0x200 && consts.ENOTEMPTY === 39);
-check("arguments as in C", arg("O_CREAT | O_WRONLY | O_TRUNC", consts) === 577 && arg("0644", consts) === 420
-      && arg("$2", consts, [5, 7]) === 7 && arg("[64]", consts).size === 64 && arg('"a\\n"', consts) === "a\n");
-check("an array of strings as in C (argv)", JSON.stringify(arg('{"init", "-x", NULL}', consts)) === '{"strings":["init","-x",null]}');
+const a = (call, k, text, known = {}) => m.arg(call, k, text, known);
+check("arguments as in C", a("openat", 2, "O_CREAT | O_WRONLY | O_TRUNC") === 577 && a("openat", 3, "0644") === 420
+      && a("read", 0, "$2", { $2: 7 }) === 7 && a("read", 0, "fd + 1", { fd: 3 }) === 4 && a("read", 1, "[64]").size === 64
+      && new TextDecoder().decode(a("openat", 1, '"a\\n"').bytes) === "a\n\0");
+check("an array of strings as in C (argv)", JSON.stringify(a("execve", 1, '{"init", "-x", NULL}')) === '{"strings":["init","-x",null]}');
+// A struct, laid out as the parameter's type says (a __kernel_timespec: two s64).
+const spec = (text) => [...new BigInt64Array(a("clock_nanosleep_time64", 2, text).bytes.buffer)].join(",");
+check("a struct as in C, positional or by name", spec("{0, 30000000}") === "0,30000000" && spec("{.tv_nsec = 30000000}") === "0,30000000");
+check("a wrong member is an error", (() => { try { a("clock_nanosleep_time64", 2, "{.tv_min = 1}"); return false; } catch (e) { return /no member/.test(e); } })());
+check("a runner by a result: value()", m.value("$2 + 0", { $2: 19 }) === 19);
 const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/examples.json", root)));
 // (Each on a fresh kernel, as the page runs them; a call may block, and
 // finish as a later one wakes it.)
@@ -179,7 +185,7 @@ async function runExample(ex) {
   await m.restart();
   const rets = [], asked = [], started = [], known = new Set(m.runners());
   for (const st of ex.steps) {
-    const args = st.args.map((a) => arg(a, consts, rets));
+    const args = st.args.map((x, k) => m.arg(st.call, k, x, Object.fromEntries(rets.map((r, i) => [`$${i + 1}`, r]).filter(([, r]) => r != null))));
     const q = await ask(st.call, args, st.as ? started[st.as - 1] : 1);
     asked.push(q);
     started.push(m.runners().find((t) => !known.has(t)));

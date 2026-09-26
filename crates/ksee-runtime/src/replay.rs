@@ -8,6 +8,13 @@ use wasm_bindgen::prelude::*;
 use crate::machine::Machine;
 use crate::state::{k, tables, Direct};
 
+/// `{ key: value }`.
+fn obj(key: &str, value: JsValue) -> JsValue {
+    let o = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&o, &key.into(), &value);
+    o.into()
+}
+
 fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
     serde_wasm_bindgen::to_value(v).unwrap_or(JsValue::NULL)
 }
@@ -163,6 +170,31 @@ impl Machine {
     /// Syscall `name` (e.g. "openat"): view::SyscallInfo, or null.
     pub fn syscall(&self, name: &str) -> JsValue {
         self.view(|v| to_js(&v.syscall(name)))
+    }
+
+    /// Argument `text` (written as in C: see ksee_core::args) of syscall
+    /// `syscall`'s parameter `k`, as Machine::call takes it: a number, a
+    /// string, { bytes }, { size } or { strings }; or an error. `known`: {
+    /// name: value }, the results so far ($1, fd).
+    pub fn arg(&self, syscall: &str, k: usize, text: &str, known: JsValue) -> Result<JsValue, JsValue> {
+        use ksee_core::args::Arg;
+        let types = &tables().types;
+        let ty = types.syscall_params(syscall).and_then(|p| p.get(k)).map_or(0, |(_, t)| *t);
+        let lookup = |n: &str| types.constants.get(n).copied().or_else(|| js_sys::Reflect::get(&known, &n.into()).ok()?.as_f64().map(|v| v as i64));
+        Ok(match types.arg(text, ty, &lookup)? {
+            Arg::Number(v) => JsValue::from_f64(v as f64),
+            Arg::Size(n) => obj("size", n.into()),
+            Arg::Bytes(b) => obj("bytes", js_sys::Uint8Array::from(&b[..]).into()),
+            Arg::Strings(v) => obj("strings", v.into_iter().map(|s| s.map_or(JsValue::NULL, JsValue::from)).collect::<js_sys::Array>().into()),
+        })
+    }
+
+    /// The value of `text`, a C constant expression (a runner's thread id,
+    /// say: "19", "child", "$2"); `known` as for arg.
+    pub fn value(&self, text: &str, known: JsValue) -> Result<f64, JsValue> {
+        let types = &tables().types;
+        let lookup = |n: &str| types.constants.get(n).copied().or_else(|| js_sys::Reflect::get(&known, &n.into()).ok()?.as_f64().map(|v| v as i64));
+        Ok(ksee_core::args::eval(text, &lookup)? as f64)
     }
 
     /// Constants from the kernel's UAPI headers (O_*, AT_*, CLOCK_*, and

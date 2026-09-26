@@ -14,11 +14,12 @@
 // fresh kernel), empty it (or ✕) to remove it; add a call at the end; ↺
 // for the example's own program again.
 //
-// A step: { call, args, stops?, as?, tid? }; its arguments written as in C
-// (see args.js): "a string", 0644, O_CREAT | O_WRONLY, [64], {0, 30000000},
-// $2. Its runner: the one call `as` started, or thread `tid`; else /init.
+// A step: { call, args, name?, tid?, stops? }; its arguments written as in
+// C (see args.js and Machine.arg): "a string", 0644, O_CREAT | O_WRONLY,
+// [64], {0, 30000000}, fd or $2 (a result: `name` names a call's). Its
+// runner: thread `tid` (a number, or a result: "child", "$2"); else /init.
 import { $, el } from "./dom.js";
-import { arg, made, parseCall, result } from "./args.js";
+import { made, parseCall, result } from "./args.js";
 import { callEditor } from "./calledit.js";
 
 export async function examples(app) {
@@ -44,7 +45,7 @@ export async function examples(app) {
     return { ex, steps, changed: q.p != null, stop: q.stop ? Number(q.stop) - 1 : -1 };
   }
   function toURL(stop = t.pos) {
-    const p = t.changed ? `&p=${encodeURIComponent(t.steps.map((s) => text(s, null, true)).join("; "))}` : "";
+    const p = t.changed ? `&p=${encodeURIComponent(t.steps.map((s) => text(s)).join("; "))}` : "";
     history.replaceState(null, "", `#ex=${t.ex.name}${p}${stop >= 0 ? `&stop=${stop + 1}` : ""}`);
   }
   // Program `text` (calls as written, separated by ";" outside strings),
@@ -61,11 +62,8 @@ export async function examples(app) {
     }
     calls.push(cur);
     return calls.map((c) => c.trim()).filter(Boolean).map((c, j) => {
-      // ("19: …": runner 19; "@2: …": the runner call 2 started.)
-      const [, at, n, rest] = c.match(/^(?:(@?)(\d+)\s*:)?\s*([\s\S]*)$/);
-      const call = parseCall(rest) ?? { call: rest, args: [] };
-      const who = n ? (at ? { as: Number(n) } : { tid: Number(n) }) : {};
-      return { ...call, ...who, stops: was[j]?.call === call.call ? was[j].stops : undefined };
+      const call = parseCall(c) ?? { call: c, args: [] };
+      return { ...call, stops: was[j]?.call === call.call ? was[j].stops : undefined };
     });
   }
   // Switch to example `ex` (its program `steps`, `changed` from the
@@ -82,7 +80,8 @@ export async function examples(app) {
 
   function open(ex, steps = ex.steps) {
     t.ex = ex;
-    t.steps = steps.map((s) => ({ ...s })); // (the form adds to them)
+    // (The form adds to them. `as: k`, an older spelling: the runner call k started, $k.)
+    t.steps = steps.map(({ as, ...s }) => (as ? { ...s, tid: `$${as}` } : { ...s }));
     t.done = [];
     t.started = [];
     t.tour = [];
@@ -127,6 +126,8 @@ export async function examples(app) {
     if (t.tour.length) stop(Math.min(Math.max(t.keep, 0), t.tour.length - 1));
     else if (t.done.length) pick(t.done.length - 1);
     t.keep = -1;
+    // (A program of one's own: the prompt, ready.)
+    if (!t.tour.length) t.form.querySelector("textarea").focus();
   }
   // Change step `j` to `call` (its stops kept if it is the same syscall):
   // the program runs again, on a fresh kernel (a kernel cannot be put back
@@ -134,8 +135,7 @@ export async function examples(app) {
   // was. (The program is in the URL, &p=: a link to it.)
   function change(j, call) {
     const old = t.steps[j], steps = [...t.steps];
-    // (Its runner kept, unless another is written.)
-    steps[j] = { ...call, ...(call.tid == null && old?.as ? { as: old.as } : {}), stops: old?.call === call.call ? old.stops : undefined };
+    steps[j] = { ...call, stops: old?.call === call.call ? old.stops : undefined };
     t.keep = t.pos;
     go(t.ex, steps, true);
   }
@@ -147,38 +147,50 @@ export async function examples(app) {
     go(t.ex, steps, true);
   }
 
-  const rets = () => t.done.map((d) => d.ret);
-  // A step's runner (a thread id).
-  const tidOf = (s) => s.tid ?? (s.as ? t.started[s.as - 1] : 1);
-  // A step's call, as written (or with `values` for $n: as made); `tid: `
-  // before it if its runner is not /init (and, `all`, `@k: ` if it is the
-  // one call k started: see program).
-  const text = (s, values, all) => `${s.tid ? `${s.tid}: ` : all && s.as ? `@${s.as}: ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
+  // The results so far, by name: $n for call n, and the name its step
+  // gives it (of the first `j` calls).
+  // (`runners`: for a runner, a call's result while it has not returned
+  // is the runner it started: a vfork's child, before the clone returns.)
+  const known = (j = t.done.length, runners = false) => {
+    const o = {};
+    t.done.slice(0, j).forEach((d, i) => {
+      const v = d?.ret ?? (runners ? t.started[i] : null);
+      if (v == null) return;
+      o[`$${i + 1}`] = v;
+      if (t.steps[i].name) o[t.steps[i].name] = v;
+    });
+    return o;
+  };
+  // A step's runner (a thread id): as written, a number or a result.
+  const tidOf = (s) => (s.tid == null ? 1 : typeof s.tid === "number" ? s.tid : m.value(String(s.tid), known(t.done.length, true)));
+  // A step's call, as written (or with `values` for the results: as made):
+  // `tid: name = call(args)`.
+  const text = (s, values) => `${s.tid != null ? `${s.tid}: ` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
   // How a call finished, or not yet.
   const how = (d) => d.how == null ? "… blocked"
     : d.how === "exec" ? "(no return: the new program runs)"
     : d.how === "exited" ? "(no return: it exited)" : `= ${result(d.ret, consts)}`;
   // Who makes step `j`'s call, if not /init.
   const who = (j) => {
-    const tid = t.done[j]?.tid ?? tidOf(t.steps[j]);
+    const tid = t.done[j]?.tid ?? (typeof t.steps[j].tid === "number" ? t.steps[j].tid : null);
     return tid === 1 || tid == null ? null : el("span", { className: "mono tid", textContent: `tid ${tid}`,
-      title: t.steps[j].as ? `the runner call ${t.steps[j].as} started (a thread or a child of /init)` : "the runner with this thread id" });
+      title: "the runner with this thread id (a thread or a child of /init)" });
   };
   // The program: a call a line, each its own editor; then a line to add one.
   function draw() {
     t.list.replaceChildren(...t.steps.map((s, j) => {
       const d = t.done[j];
-      const e = callEditor({ m, consts, rets: () => rets().slice(0, j), text: text(s), inline: true, common,
+      const e = callEditor({ m, consts, known: (r) => known(j, r), text: text(s), inline: true, common,
         focus: () => pick(j),
         done: (c) => (c == null ? remove(j) : text(c) === text(s) ? e.input.blur() : change(j, c)),
         cancel: () => ((e.input.value = text(s)), e.input.blur()) });
       e.input.title = "type to change the call (Enter: run the program again with it; Esc, or leaving it: not; emptied: remove it)";
       return el("li", { className: [d ? "done" : "", d && d.how == null ? "blocked" : "", t.tour[t.pos]?.j === j ? "on" : ""].join(" ").trim() },
-        el("div", { className: "line" }, s.tid ? null : who(j), e.el,
+        el("div", { className: "line" }, typeof s.tid === "number" ? null : who(j), e.el,
           d ? el("span", { className: "mono ret", textContent: how(d) }) : null,
           el("a", { className: "rm", textContent: "✕", title: "remove the call (the program runs again without it)", onclick: () => remove(j) })),
         t.started[j] ? el("div", { className: "dim more", textContent: `→ tid ${t.started[j]}, a runner` }) : null,
-        d && text(s, rets()) !== text(s) ? el("div", { className: "mono dim more", textContent: `as made: ${text(s, rets())}` }) : null,
+        d && text(s, known()) !== text(s) ? el("div", { className: "mono dim more", textContent: `as made: ${text(s, known())}` }) : null,
         d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null);
     }), el("li", { className: "add" }, t.form));
   }
@@ -208,7 +220,7 @@ export async function examples(app) {
     const mine = t.list;
     let q, news;
     try {
-      const args = s.args.map((a) => arg(a, consts, rets())), tid = tidOf(s);
+      const args = s.args.map((a, k) => m.arg(s.call, k, a, known())), tid = tidOf(s);
       q = { id: m.call(s.call, args, tid), tid, args };
       t.done[j] = q;
       const before = new Set(m.runners());
@@ -216,7 +228,7 @@ export async function examples(app) {
       if (t.list !== mine) return false;
       t.started[j] = [...news.runners].find((r) => !before.has(r));
     } catch (e) {
-      if (t.list === mine) t.status.textContent = `Call ${j + 1}: ${e.message}`;
+      if (t.list === mine) t.status.textContent = `Call ${j + 1}: ${e.message ?? e}`;
       return false;
     }
     // (The calls it finished: it, or ones it woke.)
@@ -280,15 +292,20 @@ export async function examples(app) {
   // The syscalls the examples make: to list first.
   const common = [...new Set(list.flatMap((x) => x.steps.map((s) => s.call)))];
   // Add a call, written as in C, and Enter to make it (see calledit.js).
+  // (As a shell's prompt: the call made, its result on its line, the
+  // prompt again, ↑ for the calls before.)
   function form() {
-    const e = callEditor({ m, consts, rets, common, placeholder: "add a call…", done: async (c) => {
-      t.steps.push(c);
-      t.changed = true;
-      toURL();
-      e.input.value = "";
-      draw();
-      if (await step()) pick(t.steps.length - 1);
-    } });
+    const e = callEditor({ m, consts, known: (r) => known(t.done.length, r), common, placeholder: "add a call…", history: () => t.steps.map((s) => text(s)),
+      done: async (c) => {
+        t.steps.push(c);
+        t.changed = true;
+        toURL();
+        e.input.value = "";
+        draw();
+        e.focus();
+        if (await step()) pick(t.steps.length - 1);
+        e.focus();
+      } });
     return el("div", { className: "callform" }, e.el);
   }
 

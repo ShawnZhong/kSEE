@@ -1,22 +1,28 @@
 // A syscall, written as in C: `openat(AT_FDCWD, "/mnt/x", O_CREAT, 0644)`,
-// or `19: read(3, [64], 64)` for runner 19 (see examples.js). As you type:
+// `fd = openat(…)`, `19: read(fd, [64], 64)` (see args.js). As you type:
 // a list of what can go at the cursor (syscall names; then, in an
-// argument, the kernel's constants, those that fit the parameter first
-// (Machine.syscall says which),
-// and $n: the calls' results so far), ↑ ↓ to choose, Tab or Enter to take
-// one; below, the syscall's signature, the parameter at the cursor in
-// bold. Enter (with no list open) makes the call (a program's line
-// emptied: removes it, `done(null)`); Esc closes the list, or gives up.
+// argument, the results so far by name, and the kernel's constants, those
+// that fit the parameter first (Machine.syscall says which)), ↑ ↓ to
+// choose, Tab or Enter to take one; below, the syscall's signature, the
+// parameter at the cursor in bold. Enter (with no list open) makes the
+// call (a program's line emptied: removes it, `done(null)`); Esc closes
+// the list, or gives up; ↑ ↓ with nothing written: the calls before
+// (`history`), as a shell's.
 import { el } from "./dom.js";
-import { arg, parseCall } from "./args.js";
+import { parseCall } from "./args.js";
 
-// { el, input, focus }: `text` to start with; `rets()`: the results of
-// the calls before (for $n); `done(call)`: a call made of what was written
-// ({ call, args, tid? }); `cancel()`: Esc with no list open; `focus()`:
-// it gets the focus; `inline`: a line of a program (its hint only while
-// it has the focus); `common`: the syscalls to list first, and with
-// nothing written yet.
-export function callEditor({ m, consts, rets, text = "", placeholder = "", done, cancel, focus, inline = false, common = [] }) {
+// { el, input, focus }: `text` to start with; `known(runners?)`: the
+// results of the calls before, by name ({ $1: 3, fd: 3 }; `runners`: for
+// a runner, see examples.js); `done(call)`: a call made
+// of what was written ({ call, args, name?, tid? }); `cancel()`: Esc with
+// no list open; `focus()`: it gets the focus; `inline`: a line of a
+// program (its hint only while it has the focus); `common`: the syscalls
+// to list first, and with nothing written yet; `history()`: calls to
+// recall with ↑.
+// A line's start: the runner and the name, if written (`19: fd = `).
+const PREFIX = /^\s*(?:[$A-Za-z_]\w*\s*:\s*)?(?:[A-Za-z_]\w*\s*=(?!=)\s*)?/;
+
+export function callEditor({ m, consts, known, text = "", placeholder = "", done, cancel, focus, inline = false, common = [], history }) {
   const names = m.syscall_names();
   const constNames = [...Object.keys(consts), "NULL"];
   // (A text area of one line, as tall as its text wraps to.)
@@ -35,7 +41,7 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
   // if the cursor is in the arguments) }.
   function context() {
     const v = input.value, before = v.slice(0, input.selectionStart ?? v.length);
-    const pre = v.match(/^\s*(?:@?\d+\s*:\s*)?/)[0].length, paren = v.indexOf("(", pre);
+    const pre = v.match(PREFIX)[0].length, paren = v.indexOf("(", pre);
     const name = v.slice(pre, paren < 0 ? v.length : paren).trim();
     const word = before.match(/[$A-Za-z_]\w*$|\$$/)?.[0] ?? "";
     const at = { name, start: before.length - word.length, word };
@@ -64,16 +70,16 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
       return (w ? all : all.filter((n) => common.includes(n))).slice(0, 12)
         .map((n) => ({ text: `${n}(`, label: n, detail: signature(n)?.map((p) => p.textContent ?? p).join(""), name: true }));
     }
-    if (c.word.startsWith("$")) {
-      return rets().map((r, j) => ({ r, j })).filter(({ r, j }) => r !== undefined && `$${j + 1}`.startsWith(c.word))
-        .map(({ r, j }) => ({ text: `$${j + 1}`, label: `$${j + 1}`, detail: `= ${r}: call ${j + 1}'s result` }));
-    }
     if (!c.word || /^\d/.test(c.word)) return [];
+    // (The results so far, by name, first; then the constants that fit.)
+    const results = Object.entries(known()).filter(([n]) => n.startsWith(c.word))
+      .map(([n, r]) => ({ text: n, label: n, detail: `= ${r}${n.startsWith("$") ? `: call ${n.slice(1)}'s result` : ""}` }));
+    if (c.word.startsWith("$")) return results;
     const p = m.syscall(c.name)?.params?.[c.param];
     const fits = p?.consts ?? [];
     const rank = (n) => (fits.some((f) => n.startsWith(f)) ? 0 : 1);
-    return constNames.filter((n) => n.startsWith(c.word)).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
-      .slice(0, 12).map((n) => ({ text: n, label: n, detail: n === "NULL" ? "0" : String(consts[n]) }));
+    return [...results, ...constNames.filter((n) => n.startsWith(c.word)).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+      .map((n) => ({ text: n, label: n, detail: n === "NULL" ? "0" : String(consts[n]) }))].slice(0, 12);
   }
 
   function signature(name, bold = -1) {
@@ -107,7 +113,7 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
   function take(k) {
     const it = items[k], c = context(), v = input.value, end = input.selectionStart ?? v.length;
     let start = c.start;
-    if (it.name) start = v.slice(0, end).match(/^\s*(?:@?\d+\s*:\s*)?/)[0].length;
+    if (it.name) start = v.slice(0, end).match(PREFIX)[0].length;
     input.value = v.slice(0, start) + it.text + v.slice(end);
     fit();
     const at = start + it.text.length;
@@ -116,27 +122,24 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
     show();
   }
 
-  // The call written: { call, args, tid? (or as?: "@k:", the runner call k
-  // started) }, or an error.
+  // The call written: { call, args, name?, tid? }, or an error.
   function written() {
-    const [, at, tid, rest] = input.value.match(/^\s*(?:(@?)(\d+)\s*:)?\s*([\s\S]*)$/);
-    if (at) {
-      const c = parseCall(rest);
-      return c ? { call: c.call, args: c.args, as: Number(tid) } : "write a call: name(arg, arg, …)";
-    }
-    const c = parseCall(rest);
-    if (!c) return "write a call: name(arg, arg, …)";
+    const c = parseCall(input.value);
+    if (!c) return "write a call: name(arg, arg, …), or fd = name(…)";
     const s = m.syscall(c.call);
     if (!s) return `no syscall ${c.call}`;
     if (c.args.length > s.params.length) return `${c.call}: ${s.params.length} arguments, not ${c.args.length}`;
-    if (tid && !m.runners().includes(Number(tid))) return `no runner ${tid}: the runners are ${[...m.runners()].join(", ")}`;
     try {
-      // (Checked now: $n as if the calls before were made.)
-      c.args.forEach((a) => arg(a, consts, rets().map((r) => r ?? 0)));
+      // (Checked now, with the results so far.)
+      if (c.tid != null) {
+        const tid = typeof c.tid === "number" ? c.tid : m.value(c.tid, known(true));
+        if (!m.runners().includes(tid)) return `no runner ${c.tid}${tid !== c.tid ? ` (${tid})` : ""}: the runners are ${[...m.runners()].join(", ")}`;
+      }
+      c.args.forEach((a, k) => m.arg(c.call, k, a, known()));
     } catch (e) {
-      return e.message;
+      return String(e.message ?? e);
     }
-    return { call: c.call, args: c.args, ...(tid && Number(tid) !== 1 ? { tid: Number(tid) } : {}) };
+    return c;
   }
 
   input.oninput = () => ((sel = 0), fit(), show());
@@ -146,10 +149,18 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
   input.onkeyup = (e) => e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End" ? show() : undefined;
   // (A program's line left: as the call is; Enter applies, nothing else.)
   input.onblur = () => ((list.hidden = true), inline && cancel?.());
+  // (↑ ↓ with nothing written, or in a recalled call: the calls before.)
+  let back = 0;
   input.onkeydown = (e) => {
     const open = !list.hidden;
     if (open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       sel = (sel + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length;
+      show();
+    } else if (!open && history && (e.key === "ArrowUp" || e.key === "ArrowDown") && (back || !input.value)) {
+      const h = history();
+      back = Math.max(0, Math.min(h.length, back + (e.key === "ArrowUp" ? 1 : -1)));
+      input.value = back ? h[h.length - back] : "";
+      fit();
       show();
     } else if (e.key === "Tab") {
       // (Tab takes the one chosen, even with the list not shown yet.)
@@ -164,6 +175,7 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
       const c = written();
       if (typeof c === "string") return (hint.textContent = c, e.preventDefault());
       list.hidden = true;
+      back = 0;
       done(c);
     } else if (e.key === "Escape") {
       if (open) list.hidden = true;

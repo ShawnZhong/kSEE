@@ -371,7 +371,7 @@ impl View<'_> {
     fn syscall_args(&self, entry: &[u32], mem: &dyn Memory) -> Option<(String, Vec<Object>)> {
         let types = &self.tables.types;
         let name = types.syscalls.get(entry.first()?)?;
-        let params = types.params.get(&format!("__do_sys_{name}"))?;
+        let params = types.syscall_params(name)?;
         let args = params.iter().zip(entry.iter().skip(1).copied()).map(|((pname, ty), v)| {
             let mut o = types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
             let names = constant_name(&types.constants, consts_of(name, pname), v as i32 as i64);
@@ -497,7 +497,7 @@ impl View<'_> {
     pub fn syscall(&self, name: &str) -> Option<SyscallInfo> {
         let types = &self.tables.types;
         let (&nr, _) = types.syscalls.iter().find(|(_, n)| n.as_str() == name)?;
-        let params = types.params.get(&format!("__do_sys_{name}")).into_iter().flatten()
+        let params = types.syscall_params(name).into_iter().flatten()
             .map(|(pname, ty)| Param { name: pname.clone(), ty: types.name(*ty), consts: consts_of(name, pname).iter().map(|s| s.to_string()).collect() }).collect();
         Some(SyscallInfo { nr, params })
     }
