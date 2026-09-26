@@ -63,11 +63,13 @@ pub struct At {
     pub syscall: Option<usize>,
 }
 
-/// A source line the kernel ran (see stack::lines), at record `i`.
+/// A source line the kernel ran (see stack::lines), at record `i`, the
+/// `nth` of the lines it runs there (see call_stack).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Line {
     pub i: usize,
+    pub nth: u32,
     pub func: String,
     pub file: String,
     pub line: u32,
@@ -252,7 +254,7 @@ impl View<'_> {
 
     fn line(&self, s: &LineStep) -> Line {
         let t = self.tables;
-        Line { i: s.record, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
+        Line { i: s.record, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
                inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32 }
     }
 

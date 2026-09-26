@@ -146,10 +146,8 @@ export function app(m) {
     const at = m.at(step.i);
     src.view.cursor = { file: step.file, line: step.line };
     src.showFunction(step.func, undefined, step.line, step.file);
-    // (Which of the lines its record runs: the stack as it runs.)
-    let nth = 0;
-    while (nth < k && st[k - nth - 1].i === step.i) nth++;
-    stack.show(step.i, { ...step, nth }, at?.task);
+    // (The stack as it runs: see Machine.call_stack's nth.)
+    stack.show(step.i, step, at?.task);
     $("where").textContent = `${at ? `${taskName(at.task)} · ` : ""}${step.inlined ?? step.func} ${step.file}:${step.line}`;
     return true;
   }

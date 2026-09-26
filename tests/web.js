@@ -73,9 +73,7 @@ check("a stack chart of write's records", chart.length > 600 && chart[0] === w.t
 const steps = m.line_steps(w.first, w.last, w.task.addr);
 check("write, line by line (inlined lines too)", steps.length > 50 && steps.some((x) => x.inlined));
 const k = steps.findIndex((x) => x.inlined);
-let nth = 0;
-while (nth < k && steps[k - nth - 1].i === steps[k].i) nth++;
-const inl = m.call_stack(steps[k].i, nth);
+const inl = m.call_stack(steps[k].i, steps[k].nth);
 check(`inlined code is a frame of its own (${steps[k].inlined} in ${steps[k].func})`,
       inl[0]?.inlined && inl[0].func === steps[k].inlined && inl[0].line === steps[k].line && inl.some((f) => f.func === steps[k].func && !f.inlined));
 let inlinedRows = 0;

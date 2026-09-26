@@ -136,21 +136,17 @@ pub fn chart(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usi
 }
 
 /// A source line the kernel ran: at `record` (the block's, or the return
-/// after which the block goes on), in `func` (`inlined` from other
-/// functions, maybe: see Tables::inlines), `depth` calls deep.
+/// after which the block goes on), the `nth` of the lines it runs there, in
+/// `func` (`inlined` from other functions, maybe: see Tables::inlines),
+/// `depth` calls deep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineStep {
     pub record: usize,
+    pub nth: u32,
     pub func: u32,
     pub depth: u32,
     pub loc: crate::tables::Loc,
     pub inlined: Option<u32>,
-}
-
-/// Whether two lines are the same (`lines` counts a line run twice in a
-/// row once).
-fn same_line(a: &Step, b: &Step) -> bool {
-    a.loc.file == b.loc.file && a.loc.line == b.loc.line && a.inlined == b.inlined
 }
 
 /// The source lines run in records `from..=to` (of task `task`, or any), in
@@ -171,11 +167,11 @@ pub fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usi
         if i < from {
             continue;
         }
-        for s in steps {
-            if out.last().is_some_and(|l| same_line(&Step { loc: l.loc, inlined: l.inlined }, &s)) {
+        for (nth, s) in steps.into_iter().enumerate() {
+            if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
                 continue;
             }
-            out.push(LineStep { record: i, func, depth, loc: s.loc, inlined: s.inlined });
+            out.push(LineStep { record: i, nth: nth as u32, func, depth, loc: s.loc, inlined: s.inlined });
         }
     }
     out
@@ -209,25 +205,19 @@ pub fn call_end(records: &[Record], tasks: &[u32], first: usize) -> Option<usize
 }
 
 /// The call stack of the task running at record `at`, outermost first,
-/// each call at its last line (as `lines` has them); the innermost, if
-/// `nth`, at the nth of the lines record `at` runs.
+/// each call at its last line; the innermost, if `nth`, at the nth of the
+/// lines record `at` runs (a LineStep's).
 pub fn stack_at(t: &Tables, records: &[Record], tasks: &[u32], at: usize, nth: Option<usize>) -> Vec<ChartCall> {
     let Some(&task) = tasks.get(at) else { return Vec::new() };
     let mut w = Walk::default();
-    // (The line before, as `lines` skips a line that repeats it.)
-    let mut last: Option<Step> = None;
     for (i, r) in records.iter().enumerate().take(at + 1) {
         if tasks[i] != task {
             continue;
         }
         let Some((_, depth, steps)) = w.apply(t, r, i) else { continue };
-        if let (true, Some(k)) = (i == at, nth) {
-            let skip = usize::from(matches!((&last, steps.first()), (Some(l), Some(s)) if same_line(l, s)));
-            if let Some(&s) = steps.get(skip + k) {
-                w.at[depth as usize] = Some(s);
-            }
+        if let (true, Some(&s)) = (i == at, nth.and_then(|k| steps.get(k))) {
+            w.at[depth as usize] = Some(s);
         }
-        last = steps.last().copied().or(last);
     }
     w.calls()
 }
