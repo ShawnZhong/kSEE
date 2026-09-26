@@ -114,6 +114,7 @@ impl Machine {
             k.deadline.set(global("wasm_timer_deadline"));
             k.clock.set(0);
             k.waiting.set(Some(0));
+            k.booting.set(true);
             k.quiet.set(false);
             k.halted.set(None);
         });

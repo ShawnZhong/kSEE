@@ -63,9 +63,12 @@ and, while the page waits for the kernel (a boot, a call), idle skips it
 to the timer's deadline at once; between the page's calls it stands still.
 So a sleep takes no real time, and the machine is deterministic: the same
 calls make the same run, record for record. The tick stops while the CPU
-idles (`NO_HZ_IDLE`): else a call that blocks would have the host skip
-from tick to tick, recording each; so idle skips at most a virtual second
-ahead, and a call not done by then is blocked (it waits for another).
+idles (`NO_HZ_IDLE`), so an idle CPU's next timer is a real one. While a
+call is under way, idle skips to it only if the call's runner sleeps on a
+timer of its own (an `hrtimer_sleeper` for it among the kernel's hrtimers:
+a sleep, a wait with a timeout, however long); else the call is blocked:
+it waits for another call, and the machine is quiet at once. (During the
+boot, it skips a virtual second's worth: what the boot leaves for later.)
 
 ## Programs, and /init
 

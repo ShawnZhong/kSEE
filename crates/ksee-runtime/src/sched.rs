@@ -216,9 +216,41 @@ fn raise(irq: u32) {
     Direct.write_u32(p, Direct.read_u32(p) | 1 << irq);
 }
 
-/// How far idle skips while the page waits: a virtual second (a call
-/// that has not returned by then is blocked: it waits for another's).
-const SKIP_NS: u64 = 1_000_000_000;
+/// How far idle skips while the page waits for the boot: what it leaves
+/// for later runs then, unrecorded.
+const BOOT_NS: u64 = 1_000_000_000;
+
+/// Whether a runner the page waits for sleeps on a timer of its own (an
+/// hrtimer_sleeper: nanosleep, a wait with a timeout): the kernel's
+/// hrtimers, each clock base's in order (7.2's linked rbtree: from the
+/// leftmost, by next), their offsets from the kernel's types.
+fn sleeping() -> bool {
+    let t = &tables().types;
+    let runners: Vec<u32> = k(|k| {
+        let runners = k.runners.borrow();
+        k.calls.borrow().keys().filter_map(|tid| runners.get(tid).copied()).collect()
+    });
+    let field = |s: &str, f: &str| t.field(s, f).map(|(off, _)| off);
+    let (Some(&(bases, _)), Some((clock, size)), Some(active), Some(leftmost), Some(next), Some(task)) = (
+        t.globals.get("hrtimer_bases"), t.field("hrtimer_cpu_base", "clock_base"), field("hrtimer_clock_base", "active"),
+        field("rb_root_linked", "rb_leftmost"), field("rb_node_linked", "next"), field("hrtimer_sleeper", "task"),
+    ) else { return false };
+    let base_size = t.find("hrtimer_clock_base").map_or(0, |b| t.size_of(b));
+    for b in 0..size.checked_div(base_size).unwrap_or(0) {
+        // (A timer's rb_node_linked is at its start: timerqueue_linked_node, first.)
+        let mut p = Direct.read_u32(bases + clock + b * base_size + active + leftmost);
+        for _ in 0..1024 {
+            if p == 0 {
+                break;
+            }
+            if runners.contains(&Direct.read_u32(p + task)) {
+                return true;
+            }
+            p = Direct.read_u32(p + next);
+        }
+    }
+    false
+}
 
 /// idle (suspending): until an interrupt may be pending.
 pub fn idle() -> Promise {
@@ -228,12 +260,16 @@ pub fn idle() -> Promise {
     if Direct.read_u32(k(|k| k.pending.get())) != 0 {
         return Promise::resolve(&JsValue::NULL);
     }
-    // The page waits: on to the timer's deadline, now.
+    // The page waits: on to the timer's deadline, now. For a call, if its
+    // runner sleeps on a timer (else it blocks: it waits for another call).
     let d = deadline();
     let skip = k(|k| match k.waiting.get() {
-        Some(since) if d != u64::MAX && d.saturating_sub(since) < SKIP_NS => {
-            k.clock.set(k.clock.get().max(d));
-            true
+        Some(since) if d != u64::MAX => {
+            let ok = if k.booting.get() { d.saturating_sub(since) < BOOT_NS } else { sleeping() };
+            if ok {
+                k.clock.set(k.clock.get().max(d));
+            }
+            ok
         }
         _ => false,
     });
@@ -247,7 +283,10 @@ pub fn idle() -> Promise {
     let mut wake = None;
     let p = Promise::new(&mut |ok, _| wake = Some(ok));
     S.with_borrow_mut(|s| s.idle = wake);
-    k(|k| k.quiet.set(true));
+    k(|k| {
+        k.quiet.set(true);
+        k.booting.set(false);
+    });
     crate::machine::settle();
     p
 }

@@ -45,8 +45,9 @@ pub struct Kernel {
     /// time (it moves only as the kernel does: see TICK_NS and sched).
     pub clock: Cell<u64>,
     /// Whether the page waits for the kernel (a boot, a call; then idle
-    /// skips to the next timer), since when (the clock).
+    /// skips to the next timer), since when (the clock); whether it boots.
     pub waiting: Cell<Option<u64>>,
+    pub booting: Cell<bool>,
     /// Whether the kernel is quiet: idle, until the page's input.
     pub quiet: Cell<bool>,
     /// What waits for it to be quiet (Machine::quiet): settled with the
