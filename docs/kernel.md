@@ -53,7 +53,7 @@ kernel these are the points where real hardware would deliver them too.
 | Line | Raised by | For |
 |---|---|---|
 | 0, timer | the host, when the deadline passes (at idle, or at a switch) | the clockevent (kernel/time.c) |
-| 1, doorbell | the page | a task to ring: it gets SIGUSR1 (the runners', below) |
+| 1, doorbell | the page | a task to ring: woken, its wait returns (the runners', below) |
 
 The clockevent is one-shot: the kernel writes its deadline to
 `wasm_timer_deadline`; the host raises the timer line once it passes. The
@@ -124,18 +124,20 @@ There are two programs (C on nolibc): **/init** (user/init.c), and
 **/bin/cat** (user/cat.c: its input to its output, for the pipe example's
 child to exec). /init mounts the disk, and then makes the syscalls the page
 asks for, one at a time. It
-waits for them in `sigtimedwait`, for SIGUSR1 (blocked): the page leaves a
-request with the runtime and rings /init's task (`WASM_IRQ_DOORBELL`: its
-handler sends the signal, kernel/irq.c); the runtime's `ksee.call` import
+waits for them in a `futex` on a word of its own (`ksee.ready` tells the
+host where): the page writes the word, leaves a request with the runtime
+and rings /init's task (`WASM_IRQ_DOORBELL`: its handler wakes the task,
+kernel/irq.c; the futex wait, woken, sees its word changed and returns);
+the runtime's `ksee.call` import
 copies the request (the number, the arguments, the buffers) into /init's
 memory (recorded), it makes the syscall, and `ksee.done` gives the result
 back. So every syscall the page shows is a real process's, with its fds
-and its memory. (A signal, not console input: input would go through a
-worker first, and each call's recording would begin with that.)
+and its memory. (A plain futex, not console input, a signal, or a device:
+those would put a worker, a signal's delivery or the VFS at the start of
+every call's recording; and no syscall of this port's own.)
 
 A clone child of /init (a thread, a vfork child) is a **runner** too, and
-so is /init exec'd again (they inherit the blocked signal; the doorbell
-rings one task). A runner's `execve` call is over once the new program is
+so is /init exec'd again (the doorbell rings one task). A runner's `execve` call is over once the new program is
 loaded (`user_start`): a runner again only if it says so (`ksee.ready`), as
 /init does and cat does not. So the page can make calls as several threads and
 processes: one blocks (a futex's wait, a pipe's read), another wakes it.

@@ -68,7 +68,8 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   7.2. One wasm instance, on the page's thread; a task is a call stack of
   it, which the host suspends and resumes at a context switch (JSPI).
   /init makes the syscalls the page asks for, and so do its threads and
-  children (runners; the doorbell: a signal).
+  children (runners; the doorbell: an interrupt, and a syscall that waits
+  for it).
 - **The recording** ([recording.md](recording.md)): an LLVM pass
   instruments every function the same way (blocks, calls with arguments,
   returns, locals, stores with old values) into one ring.

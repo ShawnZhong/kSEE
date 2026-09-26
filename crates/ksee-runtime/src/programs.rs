@@ -68,6 +68,7 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
             let tid = runners.iter().find(|(_, task)| **task == prev).map(|(&t, _)| t);
             tid.inspect(|t| {
                 runners.remove(t);
+                k.rung.borrow_mut().remove(t);
             })
         });
         if let Some(tid) = gone {
@@ -212,11 +213,14 @@ pub(crate) fn finish(tid: u32, how: &'static str, ret: i64, buffers: Vec<Option<
 /// `struct { i32 nr; i32 args[6]; i32 pad; u8 data[CALL_DATA]; }`.
 fn runner_imports() -> Object {
     let ksee = Object::new();
-    // ksee.ready(): the current thread is a runner, waiting for calls
-    // (rung: SIGUSR1).
-    js::set(&ksee, "ready", func(Closure::<dyn FnMut()>::new(|| {
+    // ksee.ready(rung): the current thread is a runner, waiting for calls
+    // in a futex on the word at `rung` (the host sets it, and rings).
+    js::set(&ksee, "ready", func(Closure::<dyn FnMut(u32)>::new(|rung: u32| {
         let (tid, task) = (tid(), current());
-        k(|k| k.runners.borrow_mut().insert(tid, task));
+        k(|k| {
+            k.runners.borrow_mut().insert(tid, task);
+            k.rung.borrow_mut().insert(tid, rung);
+        });
         if tid == 1 && k(|k| k.calls.borrow().is_empty()) {
             // (The boot's over: let what it left for later run now, while
             // nothing is recorded.)

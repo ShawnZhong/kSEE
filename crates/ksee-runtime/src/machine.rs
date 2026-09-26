@@ -145,6 +145,7 @@ impl Machine {
             k.console_out.borrow_mut().clear();
             k.doorbell.borrow_mut().clear();
             k.runners.borrow_mut().clear();
+            k.rung.borrow_mut().clear();
             k.calls.borrow_mut().clear();
             k.finished.borrow_mut().clear();
             k.made.borrow_mut().clear();
@@ -187,7 +188,7 @@ impl Machine {
         let tid = tid.unwrap_or(1);
         let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
             .ok_or_else(|| format!("no syscall {name}"))?;
-        let Some(task) = k(|k| k.runners.borrow().get(&tid).copied()) else {
+        let Some((task, rung)) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.rung.borrow().get(&tid)?))) else {
             return Err(format!("no runner {tid}").into());
         };
         if k(|k| k.calls.borrow().contains_key(&tid)) {
@@ -203,10 +204,12 @@ impl Machine {
             k.made.borrow_mut().insert(id, (tid, nr, Direct.read_u32(trace) / 2));
             // (The page waits for the kernel now: see Kernel::waiting.)
             k.waiting.set(Some(k.clock.get()));
-            // (Ring the runner: it waits for SIGUSR1.)
+            // (Ring the runner: it waits on its word.)
             k.doorbell.borrow_mut().push_back(task);
         });
         Direct.write_u32(trace + trace::ON, 1);
+        imports::bulk(rung, 4);
+        Direct.write_u32(rung, 1);
         sched::interrupt(IRQ_DOORBELL);
         Ok(id)
     }

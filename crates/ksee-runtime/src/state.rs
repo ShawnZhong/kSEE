@@ -60,9 +60,11 @@ pub struct Kernel {
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
     pub doorbell: RefCell<VecDeque<u32>>,
     /// The runners ready for the page's calls (user/init.c): thread id ->
-    /// task; the calls asked of them (see Machine::call), and the count of
+    /// task, and thread id -> the word each waits on (`rung`: set to ring
+    /// it); the calls asked of them (see Machine::call), and the count of
     /// calls asked.
     pub runners: RefCell<BTreeMap<u32, u32>>,
+    pub rung: RefCell<BTreeMap<u32, u32>>,
     pub calls: RefCell<BTreeMap<u32, Call>>,
     pub asked: Cell<u32>,
     /// Every call asked (by id): its runner, its number, and the id its
