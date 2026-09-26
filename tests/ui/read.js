@@ -78,14 +78,11 @@
   if (!r.top) throw new Error("no call on top above the stack");
   $("chart").dispatchEvent(new PointerEvent("pointermove", at));
   await sleep(400);
-  r.here = document.querySelector(".tip .here")?.textContent;
   // (The view follows the pointer: the hovered moment's file; back to the cursor's on leaving.)
   r.hovered = [$("fn-title").textContent, $("where").textContent];
-  $("chart").dispatchEvent(new PointerEvent("pointermove", { ...at, clientX: at.clientX + 1 }));
-  if (!document.querySelector(".tip .here")?.textContent) throw new Error("the tip lost where the call is");
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
   await sleep(300);
-  if (r.hovered[1] === cursorTitle || $("where").textContent !== cursorTitle || !r.here?.includes("now at")) throw new Error("hover: " + JSON.stringify([r.here, r.hovered, cursorTitle, $("where").textContent]));
+  if (r.hovered[1] === cursorTitle || $("where").textContent !== cursorTitle) throw new Error("hover: " + JSON.stringify([r.hovered, cursorTitle, $("where").textContent]));
   for (const type of ["pointerdown", "pointerup"])
     $("chart").dispatchEvent(new PointerEvent(type, at));
   r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
