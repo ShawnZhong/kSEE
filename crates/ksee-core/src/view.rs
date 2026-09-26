@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 
 use alloc::collections::BTreeMap;
 
+use crate::arch;
 use crate::recording::Recording;
 use crate::stack::{self, LineStep};
 use crate::tables::{Loc, Tables};
@@ -89,6 +90,11 @@ pub struct Frame {
     pub func: String,
     /// The call's first record (its block 0).
     pub first: usize,
+    /// How many calls deep it is (as line steps count: see Line::depth).
+    pub depth: u32,
+    /// The syscall entry (with its wrappers, see arch::SYSCALL_WRAPPERS):
+    /// the syscall's name; its arguments are the syscall's.
+    pub syscall: Option<String>,
     /// Code inlined into the call (the frame outside it), not a call.
     pub inlined: bool,
     /// Where the call is (the line it runs, or the one calling the frame
@@ -146,6 +152,38 @@ pub struct SyscallInfo {
 pub struct Param {
     pub name: String,
     pub ty: String,
+    /// The starts of the constants' names that fit it ("O_", "AT_"), if any.
+    pub consts: Vec<String>,
+}
+
+/// The constants that fit a syscall's parameter, by the starts of their
+/// names: for "syscall.param", else any syscall's parameter of that name.
+const CONSTS: &[(&str, &[&str])] = &[
+    ("mmap2.flags", &["MAP_"]), ("openat.flags", &["O_"]), ("unlinkat.flag", &["AT_"]), ("renameat2.flags", &["RENAME_"]),
+    ("waitid.which", &["P_"]), ("waitid.options", &["W"]), ("clone.clone_flags", &["CLONE_", "SIG"]),
+    ("futex_time64.op", &["FUTEX_"]), ("clock_nanosleep_time64.which_clock", &["CLOCK_"]), ("clock_nanosleep_time64.flags", &["TIMER_"]),
+    ("dfd", &["AT_"]), ("olddfd", &["AT_"]), ("newdfd", &["AT_"]), ("flags", &["O_"]), ("prot", &["PROT_"]),
+    ("which_clock", &["CLOCK_"]), ("op", &["FUTEX_"]),
+];
+
+fn consts_of(syscall: &str, param: &str) -> &'static [&'static str] {
+    let key = format!("{syscall}.{param}");
+    CONSTS.iter().find(|(k, _)| *k == key).or_else(|| CONSTS.iter().find(|(k, _)| *k == param)).map_or(&[], |(_, c)| c)
+}
+
+/// Value `v` as the constants whose names start with one of `prefixes`
+/// name it: one equal to it, or flags (one bit each) that make it up.
+fn constant_name(constants: &BTreeMap<String, i64>, prefixes: &[&str], v: i64) -> Option<String> {
+    let fits: Vec<(&String, i64)> = constants.iter().filter(|(n, _)| prefixes.iter().any(|p| n.starts_with(p))).map(|(n, &x)| (n, x)).collect();
+    if let Some((n, _)) = fits.iter().find(|(_, x)| *x == v) {
+        return Some((*n).clone());
+    }
+    if v <= 0 {
+        return None;
+    }
+    let names: Vec<&str> = (0..32).filter(|b| v >> b & 1 != 0)
+        .filter_map(|b| fits.iter().find(|(_, x)| *x == 1 << b).map(|(n, _)| n.as_str())).collect();
+    (names.len() == v.count_ones() as usize).then(|| names.join(" | "))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -265,20 +303,70 @@ impl View<'_> {
         let t = self.tables;
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         let mut out = Vec::new();
-        for c in stack::stack_at(t, records, tasks, i, nth).into_iter().rev() {
+        let entry = t.find(arch::SYSCALL);
+        for (depth, c) in self.fold(stack::stack_at(t, records, tasks, i, nth)).into_iter().rev() {
             let name = self.name(c.func);
-            let (args, locals) = stack::args_locals(records, tasks, c.func, c.first, i);
-            let (args, locals) = (args.map(|a| self.args(c.func, &name, a, mem)), locals.and_then(|a| self.locals(c.func, &name, a, mem)));
+            let (raw, locals) = stack::args_locals(records, tasks, c.func, c.first, i);
+            let locals = locals.and_then(|a| self.locals(c.func, &name, a, mem));
+            // (The syscall entry: its arguments are the syscall's.)
+            let at_entry = matches!(records.get(c.first), Some(&Record::Block { func, n: 0 }) if Some(func) == entry);
+            let (syscall, args) = match raw {
+                Some(raw) => match at_entry.then(|| self.syscall_args(&raw, mem)).flatten() {
+                    Some((n, a)) => (Some(n), Some(a)),
+                    None => (None, Some(self.args(c.func, &name, raw, mem))),
+                },
+                None => (None, None),
+            };
             // (The code inlined into it first, innermost first; then it.)
             let frame = |func, inlined, at: Option<Loc>| Frame {
-                func, first: c.first, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args: None, locals: None,
+                func, first: c.first, depth, syscall: None, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args: None, locals: None,
             };
             let nest = self.nest(&c);
             let (&(_, at), inner) = nest.split_last().expect("a call");
             out.extend(inner.iter().map(|&(k, at)| frame(self.inline_name(k.unwrap_or(0)), true, at)));
-            out.push(Frame { args, locals, ..frame(name, false, at) });
+            out.push(Frame { args, locals, syscall, ..frame(name, false, at) });
         }
         out
+    }
+
+    /// A call stack (outermost first) with the syscall wrappers folded into
+    /// the entry (arch::SYSCALL_WRAPPERS): one call, from the entry's first
+    /// record, in the innermost wrapper (its function, at its line); each
+    /// call with how deep it is.
+    pub fn fold(&self, calls: Vec<stack::ChartCall>) -> Vec<(u32, stack::ChartCall)> {
+        let entry = self.tables.find(arch::SYSCALL);
+        let mut out: Vec<(u32, stack::ChartCall)> = Vec::new();
+        let mut in_entry = false;
+        for (d, c) in calls.into_iter().enumerate() {
+            match out.last_mut() {
+                Some((_, e)) if in_entry && self.is_wrapper(c.func) => *e = stack::ChartCall { first: e.first, ..c },
+                _ => {
+                    in_entry = Some(c.func) == entry;
+                    out.push((d as u32, c));
+                }
+            }
+        }
+        out
+    }
+
+    fn is_wrapper(&self, func: u32) -> bool {
+        self.tables.functions.get(&func).is_some_and(|f| arch::SYSCALL_WRAPPERS.iter().any(|w| f.name.starts_with(w)))
+    }
+
+    /// The syscall entry's arguments (the number, then the syscall's): the
+    /// syscall's name, and its arguments as its parameters have them (with
+    /// the constants that name them).
+    fn syscall_args(&self, entry: &[u32], mem: &dyn Memory) -> Option<(String, Vec<Object>)> {
+        let types = &self.tables.types;
+        let name = types.syscalls.get(entry.first()?)?;
+        let params = types.params.get(&format!("__do_sys_{name}"))?;
+        let args = params.iter().zip(entry.iter().skip(1).copied()).map(|((pname, ty), v)| {
+            let mut o = types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
+            let names = constant_name(&types.constants, consts_of(name, pname), v as i32 as i64);
+            o.value = names.or(o.value);
+            o
+        }).collect();
+        Some((name.clone(), args))
     }
 
     /// Function `func`'s (called `name`) arguments, their values `args`: the
@@ -314,6 +402,10 @@ impl View<'_> {
         let mut at = c.step.map(|s| s.loc).or(self.tables.functions.get(&c.func).map(|f| f.loc));
         let mut out = Vec::new();
         for &(k, site) in self.chain(c.step.and_then(|s| s.inlined)) {
+            // (A syscall's body, inlined into its wrapper: the entry's own.)
+            if arch::SYSCALL_WRAPPERS.iter().any(|w| self.inline_name(k).starts_with(w)) {
+                continue;
+            }
             out.push((Some(k), at));
             at = Some(site);
         }
@@ -363,7 +455,7 @@ impl View<'_> {
         let types = &self.tables.types;
         let (&nr, _) = types.syscalls.iter().find(|(_, n)| n.as_str() == name)?;
         let params = types.params.get(&format!("__do_sys_{name}")).into_iter().flatten()
-            .map(|(pname, ty)| Param { name: pname.clone(), ty: types.name(*ty) }).collect();
+            .map(|(pname, ty)| Param { name: pname.clone(), ty: types.name(*ty), consts: consts_of(name, pname).iter().map(|s| s.to_string()).collect() }).collect();
         Some(SyscallInfo { nr, params })
     }
 

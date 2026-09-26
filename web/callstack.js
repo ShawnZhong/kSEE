@@ -66,7 +66,8 @@ export function callstack(app) {
     s.frames.forEach((f, k) => {
       // (Click: select the call; the source shows where it is.)
       const on = s.sel == null ? k === 0 : f === s.sel;
-      const h = head(f.func, f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f), on ? "on" : "");
+      // (The syscall entry: named for the syscall, its arguments the syscall's.)
+      const h = head(f.syscall ? `${f.syscall}()` : f.func, f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f), on ? "on" : "");
       // (Hover: the call outlined in the timeline, and a preview of where it is.)
       h.onmouseenter = () => {
         app.time.hilite(f.first);
@@ -173,7 +174,7 @@ export function callstack(app) {
     if (k < 0) return null;
     let inl = 0;
     while (s.frames[k + inl]?.inlined) inl++;
-    return { depth: s.frames.slice(k + 1).filter((f) => !f.inlined).length, inl };
+    return { depth: s.sel.depth, inl };
   }
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;

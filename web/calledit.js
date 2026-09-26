@@ -1,22 +1,14 @@
 // A syscall, written as in C: `openat(AT_FDCWD, "/mnt/x", O_CREAT, 0644)`,
 // or `19: read(3, [64], 64)` for runner 19 (see examples.js). As you type:
 // a list of what can go at the cursor (syscall names; then, in an
-// argument, the kernel's constants, those that fit the parameter first,
+// argument, the kernel's constants, those that fit the parameter first
+// (Machine.syscall says which),
 // and $n: the calls' results so far), ↑ ↓ to choose, Tab or Enter to take
 // one; below, the syscall's signature, the parameter at the cursor in
 // bold. Enter (with no list open) makes the call; Esc closes the list, or
 // gives up.
 import { el } from "./dom.js";
 import { arg, parseCall } from "./args.js";
-
-// The constants that fit a parameter, by their names' starts: for
-// "syscall.param", or any syscall's parameter of that name.
-const FITS = {
-  "mmap2.flags": ["MAP_"], "openat.flags": ["O_"], "unlinkat.flag": ["AT_"], "renameat2.flags": ["RENAME_"],
-  "waitid.which": ["P_"], "waitid.options": ["W"], "clone.clone_flags": ["CLONE_", "SIG"],
-  "futex_time64.op": ["FUTEX_"], "clock_nanosleep_time64.which_clock": ["CLOCK_"], "clock_nanosleep_time64.flags": ["TIMER_"],
-  dfd: ["AT_"], olddfd: ["AT_"], newdfd: ["AT_"], flags: ["O_"], prot: ["PROT_"], which_clock: ["CLOCK_"], op: ["FUTEX_"],
-};
 
 // { el, input, focus }: `text` to start with; `rets()`: the results of
 // the calls before (for $n); `done(call)`: a call made of what was written
@@ -78,7 +70,7 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
     }
     if (!c.word || /^\d/.test(c.word)) return [];
     const p = m.syscall(c.name)?.params?.[c.param];
-    const fits = FITS[`${c.name}.${p?.name}`] ?? FITS[p?.name] ?? [];
+    const fits = p?.consts ?? [];
     const rank = (n) => (fits.some((f) => n.startsWith(f)) ? 0 : 1);
     return constNames.filter((n) => n.startsWith(c.word)).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
       .slice(0, 12).map((n) => ({ text: n, label: n, detail: n === "NULL" ? "0" : String(consts[n]) }));

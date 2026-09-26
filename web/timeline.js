@@ -266,7 +266,7 @@ export function timeline(app) {
     const tipLines = (inl
       ? [line(iname(inl - 1), "")]
       : s
-      ? [line(`${s.name ?? s.nr}(${s.args.slice(0, 3).join(", ")}…) = ${s.ret ?? "…"}`, ""),
+      ? [line(`${s.name ?? s.nr}(${argsOf(first).map((a) => a.value ?? "{…}").join(", ")}) = ${s.ret ?? "…"}`, ""),
          line(`a syscall by ${taskName(s.task)}`, "dim")]
       : [line(f?.name ?? "?", ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f"))]);
     // (Where it is, called from: kept once found, see above.)
