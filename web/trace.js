@@ -1,18 +1,16 @@
 // The Trace: the selected call (a syscall, or a call clicked in the
-// timeline) as a tree of the calls it made, in order, pruned to what
-// matters (Machine.call_tree: not too deep, not too small; "+n small
-// calls" for the rest), each a link to its first record. A call opens
-// (▸) to its own records (Machine.raw: blocks, arguments, stores, returns,
-// as the recording has them), its callees in their places, and (changed)
-// to what it changed (Machine.changes: by object, each said as what it is, each write
-// a link; click an object to watch it). On top, where its records went, by
-// area (as the timeline colors them). The cursor's record is marked, and
-// the view follows the pointer over a record (app.peek).
+// timeline) as a tree of every call it made, in order (Machine.call_tree);
+// click a call to go to it and open its callees (▸ opens and closes them;
+// a chain of single calls opens by itself). "records" shows a call's own
+// records (Machine.raw: calls with their arguments, blocks, stores,
+// returns, as the recording has them) in among its callees; "changed"
+// what it changed (Machine.changes: by object, each said as what it is,
+// each write a link; click an object to watch it). The cursor's record is
+// marked, and the view follows the pointer over a record (app.peek).
 import { $, el } from "./dom.js";
 import { place } from "./objects.js";
-import { AREAS, color } from "./timeline.js";
 
-const DEPTH = 6, MIN = 20, ROWS = 400;
+const ROWS = 400;
 
 export function trace(app, watch) {
   const { m } = app;
@@ -20,9 +18,9 @@ export function trace(app, watch) {
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const body = $("trace");
   body.onpointerleave = () => app.peek(null);
-  // What is open: nodes (by first record) and their changes.
-  const open = new Set(), changed = new Set();
-  let shown = null, root = null, total = 1;
+  // What is open (by the call's first record): its callees, its records, its changes.
+  const open = new Set(), recs = new Set(), changed = new Set();
+  let shown = null, total = 1;
 
   // Draw for the selection (again only if it, or the snapshot, changed).
   function draw() {
@@ -32,27 +30,18 @@ export function trace(app, watch) {
     shown = key;
     funcs.clear();
     open.clear();
+    recs.clear();
     changed.clear();
     $("trace-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): what it did, as a tree; open a call for its records and what it changed.";
     if (!w) return body.replaceChildren();
     const task = w.task ?? m.at(w.a)?.task.addr ?? 0;
-    const calls = m.call_tree(w.a, w.b, task, DEPTH, MIN);
+    const calls = m.call_tree(w.a, w.b, task, 1e9, 1);
     const at = m.at(w.a);
-    root = { func: null, name: at?.syscall != null ? `${app.calls()[at.syscall]?.name ?? "?"}()` : at?.func ?? "?", first: w.a, last: w.b, records: w.b - w.a + 1, small: 0, calls };
+    const root = { func: null, name: at?.syscall != null ? `${app.calls()[at.syscall]?.name ?? "?"}()` : at?.func ?? "?", first: w.a, last: w.b, records: w.b - w.a + 1, calls };
     total = root.records;
-    // Where the records went, by area: the records of each call, by its function's file.
-    const by = new Map();
-    const tally = (nodes) => nodes.forEach((n) => {
-      const own = n.records - n.calls.reduce((a, x) => a + x.records, 0);
-      const area = AREAS.find(([p]) => fn(n.func)?.file?.startsWith(p))?.[2] ?? "other";
-      by.set(area, (by.get(area) ?? 0) + own);
-      tally(n.calls);
-    });
-    tally(calls);
-    const bar = el("div", { className: "areas", title: "where the records went: by the area of the function running" },
-      ...[...by].sort((a, b) => b[1] - a[1]).map(([area, n]) => el("span", { className: "area", style: `flex:${n};background:${color(AREAS.find(([, , a]) => a === area)?.[0], false)}`,
-        title: `${area}: ${Math.round((100 * n) / total)}%`, textContent: n / total > 0.12 ? area : "" })));
-    body.replaceChildren(bar, el("ul", { className: "tree" }, item(root)));
+    // (The root open, and on down a chain of single calls.)
+    for (let n = root; n; n = n.calls.length === 1 ? n.calls[0] : null) open.add(n.first);
+    body.replaceChildren(el("ul", { className: "tree" }, item(root)));
     mark();
   }
 
@@ -63,28 +52,32 @@ export function trace(app, watch) {
     const pct = Math.round((100 * n.records) / total);
     const li = el("li", { dataset: { first: n.first } });
     const redo = () => li.replaceWith(item(n));
-    const isOpen = open.has(n.first);
+    const isOpen = open.has(n.first), showRecs = recs.has(n.first);
+    const toggle = (set, text, title) => el("a", { className: "dim what", textContent: ` ${text} ${set.has(n.first) ? "▾" : "▸"}`, title,
+                                              onclick: () => (set.has(n.first) ? set.delete(n.first) : set.add(n.first), redo()) });
     li.append(el("div", { className: "call" },
-      el("a", { className: "tw", textContent: isOpen ? "▾" : "▸", onclick: () => (isOpen ? open.delete(n.first) : open.add(n.first), redo()) }),
-      el("a", { className: "mono", textContent: name, title: `${f?.file ?? ""}:${f?.line ?? ""}: go to this call`, onclick: () => app.time.go(n.first) }),
-      el("span", { className: "dim", textContent: ` ${pct >= 1 ? `${pct}%` : `${n.records} records`}` }),
-      el("a", { className: "dim what", textContent: changed.has(n.first) ? " changed ▾" : " changed ▸", title: "what it changed, by object",
-                onclick: () => (changed.has(n.first) ? changed.delete(n.first) : changed.add(n.first), redo()) })));
+      el("a", { className: "tw", textContent: n.calls.length ? (isOpen ? "▾" : "▸") : "", onclick: () => (isOpen ? open.delete(n.first) : open.add(n.first), redo()) }),
+      // (The name: go to the call, and open its callees.)
+      el("a", { className: "mono", textContent: name, title: `${f?.file ?? ""}:${f?.line ?? ""}: go to this call, and open its calls`,
+                onclick: () => (app.time.go(n.first), n.calls.length && !isOpen && (open.add(n.first), redo())) }),
+      el("span", { className: "dim", textContent: ` ${pct >= 1 ? `${pct}% of the records` : `${n.records} records`}${n.calls.length ? `, ${n.calls.length} call${n.calls.length > 1 ? "s" : ""}` : ""}` }),
+      el("span", { className: "dim", textContent: " ·" }), toggle(recs, "records", "its own records, in among its calls"),
+      el("span", { className: "dim", textContent: " ·" }), toggle(changed, "changed", "what it changed, by object")));
     if (changed.has(n.first)) li.append(changes(n));
-    if (n.calls.length || n.small || isOpen) li.append(records(n, isOpen));
+    if ((n.calls.length && isOpen) || showRecs) li.append(records(n, showRecs));
     return li;
   }
 
-  // A call's callees (each an item), the small ones counted; open, its
-  // own records too, in their places.
-  function records(n, isOpen) {
+  // A call's callees (each an item); with `showRecs`, its own records
+  // too, in their places.
+  function records(n, showRecs) {
     const ul = el("ul", { className: "recs" });
     let at = n.first, rows = 0;
     const lines = (from, to) => {
-      if (!isOpen || to < from || rows >= ROWS) return;
+      if (!showRecs || to < from || rows >= ROWS) return;
       for (const [i, text] of m.raw(from, to)) {
         if (rows++ >= ROWS) return ul.append(el("li", { className: "dim small", textContent: `… ${to - i + 1} more records` }));
-        const kind = text.startsWith("──") ? "task" : text.split(" ")[0];
+        const kind = text.startsWith("──") ? "task" : text.split(" ")[0]; // (call, block, store, return)
         ul.append(el("li", { className: `rec ${kind}`, dataset: { i }, onclick: () => app.time.go(i), onpointerenter: () => app.peek(i) },
           el("span", { className: "dim idx", textContent: i }), " ", text));
       }
@@ -95,7 +88,6 @@ export function trace(app, watch) {
       at = c.last + 1;
     }
     lines(at, n.last);
-    if (n.small) ul.append(el("li", { className: "dim small", textContent: `+${n.small} small call${n.small > 1 ? "s" : ""} not listed` }));
     return ul;
   }
 

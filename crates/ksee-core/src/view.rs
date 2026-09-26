@@ -327,34 +327,37 @@ impl View<'_> {
     }
 
     /// Records `from..=to` as text, a line each, as the recording has them
-    /// (the raw trace): "block ksys_read #3 fs/read_write.c:710", "args fd=3
-    /// buf=0x1cefed0 count=64", "locals iocb@0x1ce000", "store 0x1ce0020
-    /// [8] 0 → 26", "return ksys_read = 26"; a task switch as a line of
-    /// its own.
+    /// (the raw trace): "call ksys_read(fd=3, buf=0x1cefed0, count=64)
+    /// fs/read_write.c:710 frame=0x1ce000" (the block 0 and the Args record
+    /// after it, as one line), "block ksys_read #3 fs/read_write.c:712",
+    /// "store 0x1ce0020 [8] 0 → 26", "return ksys_read = 26"; a task switch
+    /// as a line of its own.
     pub fn raw(&self, from: usize, to: usize) -> Vec<(usize, String)> {
         let (t, rec) = (self.tables, self.rec);
         let mut out = Vec::new();
-        let mut func_before = None;
         for i in from..=to.min(records_len(rec)) {
             if i > 0 && rec.tasks.get(i) != rec.tasks.get(i - 1) {
                 let task = self.task(rec.tasks[i]);
                 out.push((i, format!("── {}({}) runs", task.comm.unwrap_or_default(), task.pid.unwrap_or(0))));
             }
+            let num = |v: u32| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
             let text = match rec.records[i] {
                 Record::Block { func, n } => {
-                    func_before = Some(func);
                     let loc = t.blocks.get(&(func, n)).map_or(String::new(), |l| format!(" {}:{}", t.file(*l), l.line));
-                    format!("block {} #{n}{loc}", self.name(func))
+                    // (A call: with its arguments, the record after.)
+                    if let (0, Some(&Record::Args { args, n, frame })) = (n, rec.records.get(i + 1)) {
+                        let params = t.functions.get(&func).and_then(|f| t.types.params.get(&f.name));
+                        let each = args[..n as usize].iter().enumerate().map(|(k, &v)| {
+                            let name = params.and_then(|p| p.get(k)).map_or(format!("{k}"), |p| p.0.clone());
+                            format!("{name}={}", num(v))
+                        });
+                        format!("call {}({}){loc} frame={frame:#x}", self.name(func), each.collect::<Vec<_>>().join(", "))
+                    } else {
+                        format!("block {} #{n}{loc}", self.name(func))
+                    }
                 }
                 Record::Return { func, value } => format!("return {} = {}", self.name(func), value as i32),
-                Record::Args { args, n, frame } => {
-                    let params = func_before.and_then(|f| t.functions.get(&f)).and_then(|f| t.types.params.get(&f.name));
-                    let each = args[..n as usize].iter().enumerate().map(|(k, &v)| {
-                        let name = params.and_then(|p| p.get(k)).map_or(format!("{k}"), |p| p.0.clone());
-                        format!("{name}={}", if v > 0xffff { format!("{v:#x}") } else { v.to_string() })
-                    });
-                    format!("args {} frame={frame:#x}", each.collect::<Vec<_>>().join(" "))
-                }
+                Record::Args { .. } => continue, // (on its call's line)
                 Record::Store { addr, size: 0, old } => format!("store {addr:#x} [{old} bytes] (old contents not kept)"),
                 Record::Store { addr, size, old } => {
                     let mut new = [0u8; 8];

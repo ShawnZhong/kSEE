@@ -101,13 +101,13 @@
   await sleep(100);
   r.trace = [$("trace-note").textContent, [...document.querySelectorAll("#trace .call a.mono")].map((a) => a.textContent).slice(0, 6)];
   if (!r.trace[1].some((x) => x === "vfs_read")) throw new Error("the trace: " + JSON.stringify(r.trace));
-  document.querySelector("#trace .call a.what").click();
+  document.querySelectorAll("#trace .call a.what")[1].click(); // (the root's changes)
   const fileChange = [...document.querySelectorAll("#trace .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
   if (!fileChange) throw new Error("the read's changes: " + $("trace").innerText.slice(0, 300));
   fileChange.querySelector(".whead a").click();
   if (!$("watch").innerText.includes("f_pos")) throw new Error("watching the file: " + $("watch").innerText.slice(0, 100));
   if (!/fd 3 note\.txt/.test($("watch").innerText)) throw new Error("the file's name: " + $("watch").innerText.slice(0, 100));
-  document.querySelector("#trace .call a.tw").click(); // (the root opened: its own records)
+  document.querySelectorAll("#trace .call a.what")[0].click(); // (the root's own records)
   ksee.time.go(read.first + 3);
   if (!document.querySelector("#trace li.rec.on") || !document.querySelector("#trace li.rec.store")) throw new Error("the records: " + $("trace").innerText.slice(0, 300));
   document.querySelector('h2.tabs a[data-tab="stack"]').click();

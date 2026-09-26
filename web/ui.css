@@ -108,11 +108,9 @@ h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transp
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"] { color: var(--fg); border-bottom-color: var(--accent); }
 
-/* The Trace: the areas bar; the tree of calls, each with its records and what it changed */
-#trace .areas { display: flex; height: 14px; margin: 6px 12px; border-radius: 3px; overflow: hidden; font-size: 10px; line-height: 14px; color: #1f2328; }
-#trace .areas .area { overflow: hidden; text-align: center; white-space: nowrap; }
+/* The Trace: the tree of calls, each with its records and what it changed */
 #trace ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }
-#trace ul.tree { padding: 0 8px 8px; }
+#trace ul.tree { padding: 6px 8px 8px; }
 #trace li { margin: 1px 0; }
 #trace .call { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #trace .call a.tw { color: var(--dim); display: inline-block; width: 1.2em; }
@@ -122,6 +120,7 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #trace li.rec .idx { display: inline-block; min-width: 4em; text-align: right; }
 #trace li.rec:hover { background: var(--sel); }
 #trace li.rec.on { background: var(--at); }
+#trace li.rec.call { color: var(--fg); font-weight: 600; }
 #trace li.rec.store { color: var(--accent); }
 #trace li.rec.return { color: var(--kw); }
 #trace li.rec.task { color: var(--run); }

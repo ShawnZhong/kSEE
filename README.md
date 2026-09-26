@@ -71,11 +71,11 @@ for who last wrote it; click it to watch it: the Watch follows it as the
 cursor moves, with every write to it while it lived (a local: while its
 frame did): the member, from what to what, by which line, each a link to
 that moment, ◀ ▶ to the write before or after the cursor. The Trace tab
-shows the selected call as a tree of the calls it made (pruned to what
-matters; "+n small calls" for the rest), with where its records went by
-area; open a call for its records as the recording has them (blocks,
-arguments, stores from what to what, returns), its callees in their
-places, and for what it changed, by object (`fd 3 note.txt: f_pos 0 →
+shows the selected call as a tree of every call it made, in order (▸
+opens a call's callees; a chain of single calls opens by itself);
+"records" shows a call's own records as the recording has them (blocks,
+arguments, stores from what to what, returns) in among its callees, and
+"changed" what it changed, by object (`fd 3 note.txt: f_pos 0 →
 26`, `inode 12 (ext4): i_size`, a local, a callee's frame), in the order
 they were first written; click an object to watch it. Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by
