@@ -41,13 +41,22 @@
     <div class="body" id="src"><div class="empty">The source at the cursor: the lines that ran are green (hover a line number: how often).</div></div>
   </div>
   <div class="vsplit" data-col="right" title="drag to resize"></div>
-  <div class="col">
-    <h2 title="the calls at the cursor, their values as they were then">Call stack</h2>
-    <div class="stackhead dim" id="stack-note"></div>
-    <div class="body" id="stack"></div>
-    <h2 class="sub" title="values to follow: each as the cursor moves, and every write to it">Watch</h2>
-    <div class="stackhead dim" id="watch-note"></div>
-    <div class="body" id="watch"></div>
+  <div class="col" id="right" data-tab="stack">
+    <h2 class="tabs">
+      <a data-tab="stack" title="the calls at the cursor, their values as they were then">Call stack</a>
+      <a data-tab="changes" title="what the selected call changed, by object">Changes</a>
+    </h2>
+    <div class="pane" data-tab="stack">
+      <div class="stackhead dim" id="stack-note"></div>
+      <div class="body" id="stack"></div>
+      <h2 class="sub" title="values to follow: each as the cursor moves, and every write to it">Watch</h2>
+      <div class="stackhead dim" id="watch-note"></div>
+      <div class="body" id="watch"></div>
+    </div>
+    <div class="pane" data-tab="changes">
+      <div class="stackhead dim" id="changes-note"></div>
+      <div class="body" id="changes"></div>
+    </div>
   </div>
 </main>
 </div>

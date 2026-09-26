@@ -88,6 +88,14 @@
   // (A syscall's box: the syscall selected, entry to exit.)
   const home = ksee.time.home();
   if (home?.a !== read.first || home?.b !== read.last) throw new Error("the read's selection: " + JSON.stringify(home) + ", not " + read.first + ".." + read.last);
+  // The Changes tab: what the read changed, by object (the struct file's f_pos among them); an object watched.
+  document.querySelector('h2.tabs a[data-tab="changes"]').click();
+  r.changes = [$("changes-note").textContent, [...document.querySelectorAll("#changes .whead a")].map((a) => a.textContent).slice(0, 6)];
+  const fileChange = [...document.querySelectorAll("#changes .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
+  if (!fileChange) throw new Error("the read's changes: " + JSON.stringify(r.changes));
+  fileChange.querySelector(".whead a").click();
+  document.querySelector('h2.tabs a[data-tab="stack"]').click();
+  if (!$("watch").innerText.includes("f_pos")) throw new Error("watching the file: " + $("watch").innerText.slice(0, 100));
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)
   const ksys = ksee.m.call_stack(ksee.m.first_call("ksys_read", read.first, read.last, read.task.addr)).find((f) => f.func === "ksys_read");

@@ -93,6 +93,21 @@ table.stack tr.frame.on td { background: var(--sel); }
 table.stack tr.frame a.mono { font-weight: 600; }
 table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
 
+/* The right column's tabs (Call stack, Changes): the pane chosen */
+#right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
+#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="changes"] .pane[data-tab="changes"] { display: flex; }
+h2.tabs { gap: 0; padding: 0 4px; }
+h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
+h2.tabs a:hover { text-decoration: none; color: var(--fg); }
+#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="changes"] a[data-tab="changes"] { color: var(--fg); border-bottom-color: var(--accent); }
+
+/* The Changes: an object each, its writes */
+.changed { border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.changed .whead { padding: 4px 8px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.changed ol, .watched ol { margin: 2px 0; padding-left: 26px; font: 11px/1.5 var(--mono); }
+.changed li a, .watched li a { white-space: nowrap; }
+.changed li.on, .watched li.on { background: var(--at); }
+
 /* The Watch: a value each, its tree, its writes */
 #watch { flex: 0 1 auto; max-height: 45%; }
 #watch:empty { display: none; }
@@ -102,9 +117,7 @@ table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-famil
 .watched .whead button { padding: 0 6px; font-size: 11px; }
 .watched .whead .rm { color: var(--dim); font-size: 11px; }
 .watched .note { padding: 1px 8px; font-size: 11px; }
-.watched ol { margin: 2px 0; padding-left: 26px; font: 11px/1.5 var(--mono); max-height: 9em; overflow-y: auto; }
-.watched li a { white-space: nowrap; }
-.watched li.on { background: var(--at); }
+.watched ol { max-height: 9em; overflow-y: auto; }
 
 /* The sidebar: the examples' selector, in its title */
 #ex-head { gap: 4px; align-items: center; padding: 4px 8px; }

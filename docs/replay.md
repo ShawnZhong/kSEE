@@ -78,12 +78,17 @@ runs until the next call: so memory now is memory as the recording ends.
 
 The same index answers "who last wrote this?": the newest store to a range
 at or before the cursor, and the line it was on (where `lines` says the
-task was then); and a value's history (`writes`): every store to it in a
-span of records, its object's lifetime (the page gives a local's frame,
-from its call to its return: the slot is another call's before and after;
-heap objects' lifetimes are not known yet, so theirs is the whole
-recording), each with the value before (the store's old bytes) and after (memory as it was
-just after it).
+task was then); an object's history (`writes`): every store to a value
+of a type at an address in a span of records, its lifetime (the page
+gives a local's frame, from its call to its return: the slot is another
+call's before and after; heap objects' lifetimes are not known yet, so
+theirs is the whole recording), each as the member it wrote (the one its
+first byte is in: `Types::leaf`), printed as its type before and after
+(memory as it was); and what a span of records changed (`changes`): its
+stores grouped by the object they hit, the objects being what the code
+there held (a call's pointer argument to a struct, a local, the task
+running: the objects the code named; what it did not, spills and the
+heap by address, is counted as "other").
 
 What it cannot show: values only in wasm locals (registers, in effect),
 and old contents of bulk writes beyond 256 bytes (known to be unknown).

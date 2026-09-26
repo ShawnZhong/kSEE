@@ -74,7 +74,10 @@ source. Rust does the work: JS only lays it out.
 | app.js | wires the panels to the Machine; the status (idle, replay, halted); the cursor; stepping (by line, over calls, out of them, both ways), run to a line, Play; the keys |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom); zoom, pan |
 | source.js | the source at the cursor (Monaco): lines that ran, the function, hover values, definitions |
-| callstack.js | the Call stack: calls with arguments and locals, the task (current) |
+| callstack.js | the Call stack: calls with arguments and locals, the task (current); the right column's tabs |
+| objects.js | values as trees (the Call stack's, the Watch's): pointers open into what they point to, structs into their fields; who last wrote a value |
+| watch.js | the Watch: values clicked, each followed as the cursor moves, with every write to it in its lifetime |
+| changes.js | the Changes: what the selected call changed, by object |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
 | args.js | a program's line: `name = call(args)`, `tid: call(args)` (the arguments themselves are ksee-core's args.rs: `Machine.arg`) |
@@ -89,9 +92,10 @@ ksee pack evaluates the UAPI headers' constants with the same evaluator.
 
 Every view asks the Machine for the moment at the cursor: `at(i)`,
 `call_stack(i)`, `line_steps`, `chart`, `memory_at(i)` then `object` /
-`global` (memory as it was), `last_write`, `writes` (a value's history:
-every store to it in its object's lifetime, a local's frame or the whole
-recording, the values before and after), `run_of` (a line's next or last
+`global` (memory as it was), `last_write`, `writes` (an object's history:
+every store to it in its lifetime, a local's frame or the whole
+recording: the member written, from what to what), `changes` (what a
+span of records changed, by object), `run_of` (a line's next or last
 run), `definition`, `callers` (who called a function in the recording, or
 in one syscall: each caller at each line, a count, the first call's
 record: the source's code lens over the function).
