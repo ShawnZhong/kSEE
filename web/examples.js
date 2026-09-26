@@ -12,7 +12,9 @@
 // cursor there. The program is below it, a call a line: click one for its
 // recording; type in it to change it (Enter: the program runs again, on a
 // fresh kernel), empty it (or ✕) to remove it; add a call at the end; ↺
-// for the example's own program again.
+// for the example's own program again. A program changed from the
+// example's is compared with the example's run, call by call: the
+// functions a call ran more, or less, than the example's did (see diff).
 //
 // A step: { call, args, name?, tid?, stops? }; its arguments written as in
 // C (see args.js and Machine.arg): "a string", 0644, O_CREAT | O_WRONLY,
@@ -30,7 +32,10 @@ export async function examples(app) {
   // ret?, text?: how once it finished), the runner each started; the
   // tutorial's stops ({ j: the call, k: its stop, at: the record }) and
   // where it is.
-  const t = { ex: null, steps: [], done: [], started: [], tour: [], pos: -1, keep: -1, list: null, tut: null, status: null };
+  const t = { ex: null, steps: [], done: [], started: [], tour: [], pos: -1, keep: -1, list: null, tut: null, status: null, diff: null };
+  // Each example's own run, once made: per call, the functions it ran and
+  // how often (Machine.call_counts): what a changed program is compared with.
+  const baselines = new Map();
 
   // The URL: #ex=NAME, the example; &p=CALLS, its program if changed (the
   // calls as written, separated by ";": see program); &stop=N, where the
@@ -124,6 +129,11 @@ export async function examples(app) {
     for (let j = 0; j < t.steps.length; j++) if (!(await step()) || t.list !== mine) return;
     t.status.textContent = "";
     tour();
+    // (The run, call by call, against the example's own: see diff.)
+    const counts = t.steps.map((s, j) => ({ call: s.call, counts: syscall(j) ? m.call_counts(syscall(j).index) : null }));
+    if (!t.changed) baselines.set(t.ex.name, counts);
+    t.diff = t.changed ? diff(baselines.get(t.ex.name), counts) : null;
+    if (t.diff) draw();
     if (t.tour.length) stop(Math.min(Math.max(t.keep, 0), t.tour.length - 1));
     else if (t.done.length) pick(t.done.length - 1);
     t.keep = -1;
@@ -139,6 +149,48 @@ export async function examples(app) {
     steps[j] = { ...call, stops: old?.call === call.call ? old.stops : undefined };
     t.keep = t.pos;
     go(t.ex, steps, true);
+  }
+
+  // Run `now` (per call: its syscall and its functions' call counts)
+  // against the example's own run `base`: per call, the functions it ran
+  // more (`more`: [name, by]) or less (`less`) than the same call in the
+  // example's, or `other`: the example's call there is another syscall (or
+  // none). Null if the example's run is not known (the page opened on a
+  // changed program).
+  function diff(base, now) {
+    if (!base) return null;
+    return now.map((c, j) => {
+      const b = base[j];
+      if (!b || b.call !== c.call) return { other: b?.call ?? null };
+      if (!b.counts || !c.counts) return {};
+      const names = new Set([...Object.keys(b.counts), ...Object.keys(c.counts)]);
+      const more = [], less = [];
+      for (const n of names) {
+        const d = (c.counts[n] ?? 0) - (b.counts[n] ?? 0);
+        if (d > 0) more.push([n, d]);
+        else if (d < 0) less.push([n, -d]);
+      }
+      const by = (x, y) => y[1] - x[1] || x[0].localeCompare(y[0]);
+      return { more: more.sort(by), less: less.sort(by) };
+    });
+  }
+  // Call `j`'s line, compared with the example's run (see diff): the same,
+  // or the functions it ran more or less, each of the run's a link to it.
+  function compared(j) {
+    const d = t.diff?.[j], c = syscall(j);
+    if (!d || !c) return null;
+    if (d.other !== undefined) return el("div", { className: "dim more cmp", textContent: d.other ? `the example's call ${j + 1} is ${d.other}(…)` : "not in the example's program" });
+    if (!d.more?.length && !d.less?.length) return el("div", { className: "dim more cmp", textContent: "ran as in the example's run" });
+    const item = (n, k, sign) => el("span", { className: `mono ${sign}`, textContent: `${sign}${n}${k > 1 ? ` ×${k}` : ""}` });
+    const link = ([n, k]) => Object.assign(item(n, k, "+"), { title: `${k} more call${k > 1 ? "s" : ""} of ${n} than in the example's run: go to the first`,
+      onclick: () => app.time.go(m.first_call(n, c.first, c.last ?? m.records() - 1, c.task.addr)) });
+    const gone = ([n, k]) => Object.assign(item(n, k, "−"), { title: `${k} fewer call${k > 1 ? "s" : ""} of ${n} than in the example's run` });
+    const shown = [...d.more.map(link), ...d.less.map(gone)];
+    const list = el("div", { className: "cmplist", hidden: true }, ...shown.slice(0, 60),
+      shown.length > 60 ? el("span", { className: "dim", textContent: `and ${shown.length - 60} more` }) : null);
+    const head = el("a", { className: "dim", textContent: `vs the example's run: ${d.more.length ? `+${d.more.length}` : ""}${d.more.length && d.less.length ? " " : ""}${d.less.length ? `−${d.less.length}` : ""} functions ▸`,
+      title: "what this call ran more (+), or less (−), than the same call in the example's run", onclick: () => ((list.hidden = !list.hidden), (head.textContent = head.textContent.slice(0, -1) + (list.hidden ? "▸" : "▾"))) });
+    return el("div", { className: "more cmp" }, head, list);
   }
 
   // Remove step `j`: the program runs again without it.
@@ -192,7 +244,8 @@ export async function examples(app) {
           el("a", { className: "rm", textContent: "✕", title: "remove the call (the program runs again without it)", onclick: () => remove(j) })),
         t.started[j] ? el("div", { className: "dim more", textContent: `→ tid ${t.started[j]}, a runner` }) : null,
         d && text(s, known()) !== text(s) ? el("div", { className: "mono dim more", textContent: `as made: ${text(s, known())}` }) : null,
-        d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null);
+        d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null,
+        compared(j));
     }), el("li", { className: "add" }, t.form));
   }
   // The tutorial: its stops, in full, the one it is at marked; ◀ ▶.
