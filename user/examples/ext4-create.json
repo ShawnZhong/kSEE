@@ -3,7 +3,11 @@
   "group": "Files on ext4",
   "question": "The same create, on ext4: what does a disk file system keep track of?",
   "text": [
-    "Call 1, [fd = openat(AT_FDCWD, \"/mnt/new.txt\", O_CREAT | O_WRONLY, 0644)](1): [ext4_create](1:ext4_create) ext4 makes the file, all in one journal transaction (so a crash leaves all of it, or none). [__ext4_new_inode](1:__ext4_new_inode) A free inode for it: found in a block group's inode bitmap, and marked used. [add_dirent_to_buf](1:add_dirent_to_buf) The name \"new.txt\": into free space in a block of the directory, next to the other names."
+    "The same create as in memory, but on ext4. A disk file system has to keep track of what it used.",
+    "1. [ext4_create](1:ext4_create) makes the file, all inside one journal transaction, so that a crash leaves all of it or none of it.",
+    "2. [__ext4_new_inode](1:__ext4_new_inode) finds a free inode in a block group's inode bitmap and marks it used.",
+    "3. [add_dirent_to_buf](1:add_dirent_to_buf) writes the name \"new.txt\" into free space in a block of the directory, next to the other names.",
+    "Try: make the file in a directory that does not exist, `\"/mnt/nowhere/new.txt\"`: the lookup fails before ext4_create ever runs. Or compare with the in-memory create: the Outline shows how much more a disk file system does."
   ],
   "steps": [
     {

@@ -3,8 +3,10 @@
   "group": "Files, in memory",
   "question": "A directory is names, each pointing to a file. What happens when one is made, and when one is listed? (In memory: ramfs.)",
   "text": [
-    "Call 1, [mkdirat(AT_FDCWD, \"/sub\", 0755)](1): [ramfs_mkdir](1:ramfs_mkdir) A new directory: an inode like a file's, and a name for it in /.",
-    "Call 3, [getdents64(fd, [256], 256)](3): [dcache_readdir](3:dcache_readdir) Listing: an in-memory directory's names are the dentry cache itself; walk its children... [filldir64](3:filldir64) ...each copied out to the program: its name, its inode, its type."
+    "A directory is names, each pointing to a file. Here one is made and the root is listed, all in memory.",
+    "1. [ramfs_mkdir](1:ramfs_mkdir) makes the new directory: an inode like a file's, and a name for it, \"sub\", in /.",
+    "2. Listing / with getdents64: in an in-memory file system the directory's names are the dentry cache itself, so [dcache_readdir](3:dcache_readdir) walks the children of /, and for each [filldir64](3:filldir64) copies an entry out to the program: its name, its inode number, its type. The program's line shows the names it got.",
+    "Try: make the directory twice: the second mkdirat fails with EEXIST. Or list the new, empty directory instead of /: open \"/sub\" and it has only \".\" and \"..\"."
   ],
   "steps": [
     {

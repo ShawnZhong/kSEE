@@ -3,7 +3,9 @@
   "group": "Files on ext4",
   "question": "The same write, on ext4: is anything written to the disk?",
   "text": [
-    "Call 2, [write(fd, \"hello, ext4\\n\", 12)](2): [ext4_buffered_write_iter](2:ext4_buffered_write_iter) Into the page cache, as in memory: the page is marked dirty (to be written back). [ext4_da_write_begin](2:ext4_da_write_begin) Delayed allocation: no disk block is chosen for it yet, one is only reserved. Nothing is on the disk yet."
+    "The same write, but on ext4. Is anything written to the disk?",
+    "[ext4_buffered_write_iter](2:ext4_buffered_write_iter) puts the bytes into the page cache, as in memory, and marks the page dirty: to be written back later. [ext4_da_write_begin](2:ext4_da_write_begin) is delayed allocation: no disk block is chosen for the data yet, one is only reserved. So nothing reaches the disk in this call; that happens in writeback, or in fsync (the next example).",
+    "Try: open with `O_SYNC` (`O_CREAT | O_WRONLY | O_SYNC`): the write itself then has to reach the disk, and the run grows by the whole writeback path. Compare the two runs."
   ],
   "steps": [
     {

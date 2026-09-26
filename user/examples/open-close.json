@@ -3,8 +3,13 @@
   "group": "Files, in memory",
   "question": "open() gives a program a small number for a file, close() gives it back. What are they, in the kernel?",
   "text": [
-    "Call 1, [fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)](1): [get_unused_fd_flags](1:get_unused_fd_flags) A file descriptor is an index in the process's table of open files: take the lowest free one. 0, 1 and 2 are taken (the console), so 3. [path_openat](1:path_openat) Find the file by its path, a name at a time from the root: \"note.txt\", in / (an in-memory file system, ramfs). [do_dentry_open](1:do_dentry_open) The open file: a struct file, with where the program is in it (its position) and how it opened it (read only). [fd_install](1:fd_install) Slot 3 of the table now points to that struct file: the call returns 3.",
-    "Call 2, [close(fd)](2): [file_close_fd](2:file_close_fd) Slot 3 is emptied: the number is free again. [__fput](2:__fput) And the struct file, which nothing refers to any more, goes."
+    "open() gives a program a small number for a file, and close() gives it back. In the kernel, that number is an index into the process's table of open files, and what it points to is a `struct file`.",
+    "1. [get_unused_fd_flags](1:get_unused_fd_flags) takes the lowest free slot of the table. 0, 1 and 2 are taken (the console), so the answer will be 3.",
+    "2. [path_openat](1:path_openat) finds the file by its path, one name at a time from the root: \"note.txt\" in /, an in-memory file system (ramfs).",
+    "3. [do_dentry_open](1:do_dentry_open) makes the open file itself, a `struct file`: which inode, where the program is in it (its position, 0), and how it was opened (read only).",
+    "4. [fd_install](1:fd_install) puts that struct file into slot 3, and the call returns 3.",
+    "Closing undoes it in the other order: [file_close_fd](2:file_close_fd) empties slot 3, so the number is free again, and [__fput](2:__fput) frees the struct file, which nothing refers to any more.",
+    "Try: open the same file twice before closing (add `openat(AT_FDCWD, \"/note.txt\", O_RDONLY)` and see what number it gets), or close(fd) twice: the second close fails with EBADF."
   ],
   "steps": [
     {

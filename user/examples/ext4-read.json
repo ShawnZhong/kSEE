@@ -3,8 +3,10 @@
   "group": "Files on ext4",
   "question": "The same read(), of a file on ext4: where do the bytes come from the first time?",
   "text": [
-    "Call 1, [fd = openat(AT_FDCWD, \"/mnt/note.txt\", O_RDONLY)](1): [ext4_lookup](1:ext4_lookup) The name is not in the dentry cache yet: ext4 reads the directory's block from the disk to find it.",
-    "Call 2, [read(fd, [64], 64)](2): [filemap_read](2:filemap_read) The page cache, as for a file in memory; but the page is not there yet... [ext4_mpage_readpages](2:ext4_mpage_readpages) ...so ext4 finds where the file's data is on the disk (its extents), and reads it into the page... [submit_bio](2:submit_bio:any) ...through the block layer: a request to the disk, /dev/loop0, whose blocks are a file in memory. Then the bytes are copied out."
+    "The same read as before, but of a file on a disk (ext4, on the loop device). Where do the bytes come from the first time?",
+    "1. Opening it: the name is not in the dentry cache yet, so [ext4_lookup](1:ext4_lookup) reads the directory's block from the disk to find it.",
+    "2. Reading: [filemap_read](2:filemap_read) looks in the page cache as for any file, but the page is not there yet. So [ext4_mpage_readpages](2:ext4_mpage_readpages) finds where the file's data is on the disk (its extents) and asks for it to be read into a page, through the block layer: [submit_bio](2:submit_bio:any) is a request to /dev/loop0, whose blocks are a file in memory here. Then the bytes are copied out, as before.",
+    "Try: add a second `read(fd, [64], 64)` after the first: the page is in the cache now, so no block layer, no ext4 read path, and the Outline is much shorter. Compare it with the first read."
   ],
   "steps": [
     {

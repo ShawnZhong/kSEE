@@ -3,8 +3,10 @@
   "group": "Files, in memory",
   "question": "Opening a file that is not there fails with ENOENT; opening a directory for writing, with EISDIR. Where in the kernel is each decided?",
   "text": [
-    "Call 1, [openat(AT_FDCWD, \"/missing\", O_RDONLY)](1): [path_openat](1:path_openat) Opening walks the path, one name at a time, from the root (/) down. [simple_lookup](1:simple_lookup) \"missing\" is not in the dentry cache (the kernel's memory of names), and an in-memory file system has no other place to look: no such file, ENOENT.",
-    "Call 2, [openat(AT_FDCWD, \"/dev\", O_WRONLY)](2): [do_open](2:do_open) The name is found, but it is a directory: it cannot be opened for writing, EISDIR."
+    "Two opens that fail: a name that is not there, and a directory opened for writing. Each error is decided in a different place.",
+    "1. [path_openat](1:path_openat) walks the path one name at a time from the root. \"missing\" is not in the dentry cache (the kernel's memory of names), and an in-memory file system has nowhere else to look: [simple_lookup](1:simple_lookup) says no such file, and the call returns ENOENT.",
+    "2. In the second call the name is found, but [do_open](2:do_open) sees a directory opened for writing: EISDIR.",
+    "Try: add `O_CREAT` and a mode to the first call, `openat(AT_FDCWD, \"/missing\", O_RDONLY | O_CREAT, 0644)`: now the missing name is made, and the same path runs into a different branch. Compare the two runs with the \"vs the example's run\" line under the call."
   ],
   "steps": [
     {

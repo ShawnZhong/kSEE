@@ -3,7 +3,10 @@
   "group": "Files, in memory",
   "question": "open() with O_CREAT makes a file that is not there. What does the kernel make? (In memory: ramfs.)",
   "text": [
-    "Call 1, [fd = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644)](1): [lookup_open](1:lookup_open) The name is not there, and O_CREAT: make the file. [ramfs_mknod](1:ramfs_mknod) ramfs makes it: a new inode (the file itself: its mode, its size, its pages), and the name, a dentry, pointing to it."
+    "open() with O_CREAT makes a file that is not there. What does the kernel make?",
+    "The path walk reaches \"new.txt\" and finds no such name; with O_CREAT, [lookup_open](1:lookup_open) asks the file system to make it. In ramfs, [ramfs_mknod](1:ramfs_mknod) makes two things: a new inode, which is the file itself (its mode, its size, its pages), and a name for it in the directory, a dentry pointing at that inode.",
+    "Then the open goes on as any open: a `struct file`, a slot in the fd table, and the call returns the fd.",
+    "Try: create the same file twice (add the first call again): the second time the name is there, so `lookup_open` takes the other branch. Add `O_EXCL` to the second one and it fails with EEXIST."
   ],
   "steps": [
     {

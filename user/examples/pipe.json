@@ -3,16 +3,15 @@
   "question": "/init makes a pipe and starts a child that runs cat, reading from it, as a shell does for `echo hello | cat`. What does the kernel do as one process waits for the other?",
   "group": "Threads and processes",
   "text": [
-    "Call 1, [pipe2([8], 0)](1): [create_pipe_files](1:create_pipe_files) A pipe: a buffer in the kernel, and two files for it: fd 3 reads, fd 4 writes.",
-    "Call 2, [child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0)](2): [copy_process](2:copy_process) A child process (vfork: no MMU, so it borrows /init's memory instead of copying it). It gets copies of /init's fds: the pipe's too. [wait_for_vfork_done](2:wait_for_vfork_done) Until the child runs a program of its own (or exits), /init waits: the call blocks.",
-    "Call 3, [child: dup3(3, 0, 0)](3): [do_dup2](3:do_dup2) The child's stdin (fd 0) is now the pipe's reading end: the same open file as its fd 3.",
-    "Call 4, [child: close(3)](4): [file_close_fd](4:file_close_fd) Its fd 3 is not needed any more: fd 0 has the pipe.",
-    "Call 5, [child: close(4)](5): [file_close_fd](5:file_close_fd) The child must not keep the writing end: else it would never see the end of the input.",
-    "Call 6, [child: execve(\"/bin/cat\", {\"cat\", NULL}, NULL)](6): [begin_new_exec](6:begin_new_exec) The child runs cat: memory of its own now, its fds kept (fd 0: the pipe). cat reads its input: the pipe is empty, so it sleeps. [complete_vfork_done](6:complete_vfork_done) So /init need not wait any more: its clone returns the child's pid.",
-    "Call 7, [close(3)](7): [file_close_fd](7:file_close_fd) /init keeps the writing end only.",
-    "Call 8, [write(4, \"hello\\n\", 6)](8): [anon_pipe_write](8:anon_pipe_write) Into the pipe's buffer... [try_to_wake_up](8:try_to_wake_up:any) ...and wake the reader: cat's read returns the 6 bytes, and it writes them to its output (the console).",
-    "Call 9, [close(4)](9): [pipe_release](9:pipe_release:any) No writer left: the pipe's readers are woken: cat's read returns 0, the end of its input, and it exits (SIGCHLD to its parent; a zombie until the parent asks how it ended).",
-    "Call 10, [waitid(P_PID, child, [128], WEXITED, NULL)](10): [do_wait](10:do_wait) How did the child end? (Its siginfo: it exited, status 0.) [wait_task_zombie](10:wait_task_zombie) The child is a zombie: its exit status is taken... [release_task](10:release_task) ...and it is reaped: the child is gone."
+    "/init makes a pipe and starts a child that runs cat reading from it, as a shell does for `echo hello | cat`. Ten calls, two processes, and the kernel in between.",
+    "1. [create_pipe_files](1:create_pipe_files): a pipe is a buffer in the kernel and two files for it. The program's line shows the fds: 3 reads, 4 writes.",
+    "2. [copy_process](2:copy_process) makes the child. With no MMU it is a vfork: the child borrows /init's memory instead of copying it, and gets copies of /init's fds, the pipe's too. So [wait_for_vfork_done](2:wait_for_vfork_done) makes /init wait until the child runs a program of its own: the clone blocks.",
+    "3. The child arranges its fds as a shell would: [do_dup2](3:do_dup2) makes fd 0, its stdin, the pipe's reading end; then it closes fd 3, which fd 0 replaces, and fd 4, the writing end, which it must not keep, or it would never see the end of its input ([file_close_fd](5:file_close_fd)).",
+    "4. [begin_new_exec](6:begin_new_exec): the child runs cat, with memory of its own now and its fds kept. cat reads fd 0: the pipe is empty, so it sleeps. And [complete_vfork_done](6:complete_vfork_done) lets /init go: its clone returns the child's pid.",
+    "5. /init closes its reading end, keeps the writing end, and writes hello: [anon_pipe_write](8:anon_pipe_write) puts the bytes into the pipe's buffer, and [try_to_wake_up](8:try_to_wake_up:any) wakes the reader. cat's read returns the 6 bytes, and it writes them to its output: see the Console.",
+    "6. /init closes the writing end: [pipe_release](9:pipe_release:any) finds no writer left and wakes the readers. cat's read returns 0, the end of its input, and it exits, sending SIGCHLD to its parent; it stays a zombie until the parent asks how it ended.",
+    "7. [do_wait](10:do_wait) is that asking: [wait_task_zombie](10:wait_task_zombie) takes the child's exit status (it exited, with 0), and [release_task](10:release_task) reaps it. The child is gone.",
+    "Try: remove the child's `close(4)` (✕ on its line): cat then never sees the end of its input, and its read after hello blocks. Or write twice before closing."
   ],
   "steps": [
     {

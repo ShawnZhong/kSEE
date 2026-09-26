@@ -3,10 +3,12 @@
   "question": "A name moves, a directory will not go while it has names in it, and a file goes when its last name does. What does ext4 do?",
   "group": "Files on ext4",
   "text": [
-    "Call 1, [renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/dir/b.txt\", 0)](1): [ext4_rename](1:ext4_rename) In one directory: the entry's name changes, \"a.txt\" to \"b.txt\"; the inode stays as it is.",
-    "Call 2, [unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)](2): [ext4_empty_dir](2:ext4_empty_dir) Is it empty? No (\"b.txt\"): the call fails, ENOTEMPTY.",
-    "Call 3, [unlinkat(AT_FDCWD, \"/mnt/dir/b.txt\", 0)](3): [ext4_delete_entry](3:ext4_delete_entry) The name leaves the directory block. [ext4_free_inode](3:ext4_free_inode) It was the file's only name, and nobody has it open: its inode is freed.",
-    "Call 4, [unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)](4): [ext4_free_blocks](4:ext4_free_blocks) Now empty: the directory's block goes back to the block bitmap, and its inode is freed."
+    "A name moves, a directory will not go while it has names in it, and a file goes when its last name does. Four calls on ext4.",
+    "1. Renaming within one directory: [ext4_rename](1:ext4_rename) changes the entry's name from \"a.txt\" to \"b.txt\"; the inode stays as it is.",
+    "2. Removing the directory: [ext4_empty_dir](2:ext4_empty_dir) asks whether it is empty. It is not (\"b.txt\" is in it), so the call fails with ENOTEMPTY.",
+    "3. Removing the file: [ext4_delete_entry](3:ext4_delete_entry) takes the name out of the directory block, and since it was the file's only name and nobody has it open, [ext4_free_inode](3:ext4_free_inode) frees the inode.",
+    "4. Now the directory is empty: [ext4_free_blocks](4:ext4_free_blocks) gives its block back to the block bitmap, and its inode is freed too.",
+    "Try: open b.txt before removing it (add `fd = openat(AT_FDCWD, \"/mnt/dir/b.txt\", O_RDONLY)` before call 3): the name goes, but the inode stays until the close. Or rename across directories, to \"/mnt/b.txt\"."
   ],
   "steps": [
     {
