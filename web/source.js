@@ -149,7 +149,6 @@ export function source(app) {
     if (!jump) return false;
     if (jump.func) showFunction(jump.func);
     else {
-      saved = null;
       v.fn = null;
       showFile(jump.file, jump.line);
     }
@@ -195,8 +194,7 @@ export function source(app) {
     const fn = v.fn?.file === file ? v.fn : null;
     reveal(focus ?? fn?.line ?? 1, !!focus);
     const ran = !fn ? "" : ` · ${fn.name}` + (fn.sealed ? ": sealed (it loops, only reading memory: its call and return are recorded, not its lines)" : "");
-    $("fn-title").textContent = (saved ? "preview · " : "") + file + ran;
-    $("fn-title").classList.toggle("preview", !!saved);
+    $("fn-title").textContent = file + ran;
   }
 
   // Function `name` (the lines that ran: in syscall `syscall`), in `file`
@@ -208,27 +206,7 @@ export function source(app) {
     v.syscall = syscall;
     showFile(file ?? f.file, focus);
   }
-  function showFunction(name, syscall, focus, file) {
-    saved = null;
-    show(name, syscall, focus, file);
-  }
-
-  // A preview (hovering a call): function `func` at `file:line`, until
-  // unpreview goes back to what was shown (or another showFunction keeps it).
-  let saved = null;
-  function preview(func, file, line) {
-    saved ??= { fn: v.fn, syscall: v.syscall, cursor: v.cursor, file: v.file, focus: v.focus, top: ed.scrollDOM.scrollTop };
-    v.cursor = { file, line };
-    show(func, v.syscall, line, file);
-  }
-  async function unpreview() {
-    if (!saved) return;
-    const was = saved;
-    saved = null;
-    Object.assign(v, { fn: was.fn, syscall: was.syscall, cursor: was.cursor });
-    if (was.file) await showFile(was.file, was.focus);
-    if (!saved && was.top != null) ed.scrollDOM.scrollTop = was.top;
-  }
+  const showFunction = show;
 
   // The shown file's lines (for tests), and the first line at or after
   // `from` with `needle` in it: { line, column (of needle) }, or null.
@@ -250,6 +228,6 @@ export function source(app) {
   // For tests: go to the definition of the name at `line`, `column`.
   const definitionAtLine = (line, column) => definitionAt(ed.state.doc.line(line).from + column - 1);
 
-  return { view: v, showFunction, preview, unpreview, hoverAt, text, find, definitionAt: definitionAtLine,
+  return { view: v, showFunction, hoverAt, text, find, definitionAt: definitionAtLine,
            lineAt: () => ed.state.doc.lineAt(ed.state.selection.main.head).number };
 }

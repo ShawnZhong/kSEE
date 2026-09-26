@@ -223,6 +223,90 @@ pub fn calls_of(records: &[Record], from: usize, to: usize, funcs: &[u32]) -> Ve
     (from..=to).filter(|&i| matches!(records[i], Record::Block { func, n: 0 } if funcs.contains(&func))).collect()
 }
 
+/// A call in a call tree: `func` from record `first` to `last` (its
+/// return, or where the records end), with the calls it made (`calls`, in
+/// order; `small`: how many more, too small to list); `records`: how many
+/// records are its, its callees' included.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct CallNode {
+    pub func: u32,
+    pub first: usize,
+    pub last: usize,
+    pub records: u32,
+    pub small: u32,
+    pub calls: Vec<CallNode>,
+}
+
+/// The calls of task `task` in records `from..=to` as a tree, in order:
+/// what a syscall did. Calls on the stack before `from` are not in it (a
+/// syscall's entry, say: its callees are the roots). Pruned: calls deeper
+/// than `depth`, or of fewer than `min` records, are counted in their
+/// caller's `small`, not listed. A call `skip` says to (a syscall's
+/// wrappers) is not a node: its calls are its caller's, at its depth.
+pub fn call_tree(records: &[Record], tasks: &[u32], from: usize, to: usize, task: u32, depth: usize, min: u32,
+                 skip: &dyn Fn(u32) -> bool) -> Vec<CallNode> {
+    let to = to.min(records.len().saturating_sub(1));
+    let mut stack = Stack::default();
+    // (The calls open, outermost first, and the finished ones at the top.)
+    let mut open: Vec<CallNode> = Vec::new();
+    let mut roots: Vec<CallNode> = Vec::new();
+    let mut close = |open: &mut Vec<CallNode>, roots: &mut Vec<CallNode>, i: usize| {
+        let mut c = open.pop().expect("an open call");
+        c.last = i;
+        c.records = (i - c.first + 1) as u32;
+        let level = open.iter().filter(|o| !skip(o.func)).count();
+        let (deep, tiny) = (level >= depth, c.records < min);
+        let into = |p: &mut Vec<CallNode>, small: &mut u32| {
+            if skip(c.func) {
+                p.append(&mut c.calls);
+                *small += c.small;
+            } else if deep || tiny {
+                *small += 1 + c.small + c.calls.len() as u32;
+            } else {
+                p.push(c);
+            }
+        };
+        match open.last_mut() {
+            Some(p) => into(&mut p.calls, &mut p.small),
+            None => {
+                let mut none = 0;
+                into(roots, &mut none);
+            }
+        }
+    };
+    for (i, r) in records.iter().enumerate().take(to + 1) {
+        if tasks[i] != task {
+            continue;
+        }
+        match *r {
+            Record::Block { func, n } => stack.block(func, n, i),
+            Record::Return { func, .. } => stack.exit(func),
+            _ => continue,
+        }
+        if i < from {
+            continue;
+        }
+        // The frames since `from`, against the calls open: the ones gone
+        // close, the new ones open.
+        let inside: Vec<(u32, usize)> = stack.frames.iter().copied().filter(|&(_, first)| first >= from).collect();
+        let mut k = 0;
+        while k < open.len() && k < inside.len() && open[k].first == inside[k].1 {
+            k += 1;
+        }
+        while open.len() > k {
+            close(&mut open, &mut roots, i);
+        }
+        for &(func, first) in &inside[k..] {
+            open.push(CallNode { func, first, last: first, records: 1, small: 0, calls: Vec::new() });
+        }
+    }
+    while !open.is_empty() {
+        close(&mut open, &mut roots, to);
+    }
+    roots
+}
+
 /// How often each function was called in records `from..=to` (of task
 /// `task`, or any): function -> calls.
 pub fn call_counts(records: &[Record], tasks: &[u32], from: usize, to: usize, task: Option<u32>) -> BTreeMap<u32, u32> {
@@ -336,6 +420,28 @@ mod tests {
         let entry = Tables::id(crate::arch::TASK_ENTRY);
         let r = [b(entry, 0), b(1, 0), b(entry, 0), b(2, 0)];
         assert_eq!(stack_at(&r, &[7; 4], 3), [entry, 2]);
+    }
+
+    #[test]
+    fn a_call_tree_nests_and_prunes() {
+        // 1 calls 2 (which calls 3, then returns) and then 4; task 8 runs between.
+        let ret = |f| Record::Return { func: f, value: 0 };
+        let r = [b(1, 0), b(2, 0), b(3, 0), b(9, 0), ret(3), ret(2), b(1, 1), b(4, 0), ret(4), ret(1)];
+        let t = [7, 7, 7, 8, 7, 7, 7, 7, 7, 7];
+        let none = |_: u32| false;
+        let tree = call_tree(&r, &t, 0, 9, 7, 8, 1, &none);
+        let shape: Vec<_> = tree.iter().map(|c| (c.func, c.calls.iter().map(|d| (d.func, d.calls.len(), d.records)).collect::<Vec<_>>())).collect();
+        assert_eq!(shape, [(1, alloc::vec![(2, 1, 5), (4, 0, 2)])]);
+        // From record 1 on: 1 is an ancestor, not in the tree; depth 1: 3 is small.
+        let tree = call_tree(&r, &t, 1, 9, 7, 1, 1, &none);
+        assert_eq!(tree.iter().map(|c| (c.func, c.small, c.calls.len())).collect::<Vec<_>>(), [(2, 1, 0), (4, 0, 0)]);
+        // Calls of fewer than 3 records are small: 4 (2 records) is, 3 (3) is not.
+        let tree = call_tree(&r, &t, 0, 9, 7, 8, 3, &none);
+        assert_eq!(tree[0].calls.iter().map(|c| (c.func, c.small, c.calls.len())).collect::<Vec<_>>(), [(2, 0, 1)]);
+        assert_eq!(tree[0].small, 1);
+        // 1 skipped (a wrapper): its calls are the roots, and 3 is at depth 1.
+        let tree = call_tree(&r, &t, 0, 9, 7, 1, 1, &|f| f == 1);
+        assert_eq!(tree.iter().map(|c| (c.func, c.calls.len(), c.small)).collect::<Vec<_>>(), [(2, 0, 1), (4, 0, 0)]);
     }
 
     #[test]

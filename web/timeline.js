@@ -10,7 +10,7 @@
 //
 // Scroll (or pinch, or W/S) to zoom; drag to pan, in time and up and down
 // through deep stacks; Shift+scroll, sideways scroll or A/D to pan in time. Hover a call
-// for what it was (the source previews where it is); click to put the
+// for what it was, and where it is; click to put the
 // cursor there and select it (a syscall: its records, from entry to exit);
 // double-click a call to select its records, from its first to its return. Click or
 // drag the overview to move the window. Find a function (the box in the
@@ -22,9 +22,9 @@ const ROW = 15, MIN_ROW = 11, STRIP = 12, OVER = 18;
 const css = (v) => getComputedStyle(document.body).getPropertyValue(v).trim();
 const hue = (pid) => (pid * 137) % 360;
 // Calls are colored by where the function is.
-const AREAS = [["fs/", 210, "fs"], ["mm/", 135, "mm"], ["kernel/sched/", 28, "sched"], ["kernel/", 48, "kernel"],
+export const AREAS = [["fs/", 210, "fs"], ["mm/", 135, "mm"], ["kernel/sched/", 28, "sched"], ["kernel/", 48, "kernel"],
                ["drivers/", 280, "drivers"], ["lib/", 175, "lib"], ["include/", 330, "include"], ["arch/", -1, "arch"]];
-const color = (file, on) => {
+export const color = (file, on) => {
   const h = (AREAS.find(([p]) => file?.startsWith(p)) ?? [null, -1])[1], l = on ? 50 : 74;
   return h < 0 ? `hsl(0 0% ${l + 5}%)` : `hsl(${h} ${on ? 65 : 55}% ${l}%)`;
 };
@@ -247,26 +247,21 @@ export function timeline(app) {
     hilite(first ?? null);
     const key = first == null ? null : `${first}:${inl}:${k}`;
     if (key !== t.peek) {
-      // A preview of where the call is there (see app.preview), and so the tip's place.
+      // Where the call is there (called from where, at which line, what
+      // runs on top): once per call and column (a stack is a millisecond).
       t.peek = key;
-      // (Where it is: kept while the pointer stays in the call, until found again.)
       const call = first == null ? null : `${first}:${inl}`;
       if (call !== t.peekCall) t.here = "";
       t.peekCall = call;
-      const i = first == null ? 0 : Math.max(first, at(e.offsetX));
-      app.preview(first == null ? null : () => {
-        const frames = m.call_stack(i), name = inl ? iname(inl - 1) : null;
+      if (first != null) {
+        const i = Math.max(first, at(e.offsetX)), frames = m.call_stack(i), name = inl ? iname(inl - 1) : null;
         const f = frames.find((x) => x.first === first && (name ? x.inlined && x.func === name : !x.inlined));
-        const owner = frames.find((x) => x.first === first && !x.inlined);
-        if (!f) return null;
-        // (Where it was called from: the call outside it, where it is.)
-        const caller = frames[frames.indexOf(f) + 1];
-        // (And what runs then, on top of it.)
-        if (key === t.peek) tip.querySelector(".here").textContent = t.here =
-          (caller ? `called at ${caller.file}:${caller.line} · ` : "") + `now at ${f.file}:${f.line}` +
-          (frames[0] && frames[0] !== f ? ` · running: ${frames[0].func}${frames[0].inlined ? " (inlined)" : ""} (${frames[0].file}:${frames[0].line})` : "");
-        return { func: owner?.func ?? f.func, file: f.file, line: f.line, i };
-      });
+        if (f) {
+          const caller = frames[frames.indexOf(f) + 1];
+          t.here = (caller ? `called at ${caller.file}:${caller.line} · ` : "") + `now at ${f.file}:${f.line}` +
+            (frames[0] && frames[0] !== f ? ` · running: ${frames[0].func}${frames[0].inlined ? " (inlined)" : ""} (${frames[0].file}:${frames[0].line})` : "");
+        }
+      }
     }
     if (first == null) {
       tip.hidden = true;
@@ -292,7 +287,6 @@ export function timeline(app) {
   chart.onpointerleave = () => {
     tip.hidden = true;
     t.peek = null;
-    app.preview(null);
     hilite(null);
   };
   // Mark call `first` as the selected one (null: none).

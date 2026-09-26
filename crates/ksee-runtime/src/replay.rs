@@ -53,6 +53,21 @@ impl Machine {
         (ids.get(i) == Some(&id)).then_some(i)
     }
 
+    /// The calls of syscall `n` as a tree (ksee_core::stack::call_tree:
+    /// its callees, in order, pruned to `depth` deep and calls of `min`
+    /// records or more), as JS values; [] if the snapshot has no syscall `n`.
+    pub fn call_tree(&self, n: usize, depth: usize, min: u32) -> JsValue {
+        let rec = self.rec.borrow();
+        match rec.syscalls.get(n) {
+            Some(s) => {
+                let t = tables();
+                let wrapper = |f: u32| t.functions.get(&f).is_some_and(|f| ksee_core::arch::SYSCALL_WRAPPERS.iter().any(|w| f.name.starts_with(w)));
+                to_js(&ksee_core::stack::call_tree(&rec.records, &rec.tasks, s.first + 1, s.last.unwrap_or(usize::MAX), s.task, depth, min, &wrapper))
+            }
+            None => js_sys::Array::new().into(),
+        }
+    }
+
     /// How often each function was called in syscall `n` (on its task):
     /// { name: calls }; for comparing runs (see examples.js).
     pub fn call_counts(&self, n: usize) -> JsValue {

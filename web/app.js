@@ -9,6 +9,7 @@ import { source } from "./source.js";
 import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
+import { outline } from "./outline.js";
 
 export function app(m) {
   const a = { m };
@@ -36,6 +37,7 @@ export function app(m) {
     m.snapshot();
     calls = m.syscalls();
     time.refresh(calls);
+    a.outlined?.();
     return calls;
   };
   a.refresh = refresh;
@@ -59,11 +61,11 @@ export function app(m) {
   a.select = (s) => {
     time.select(s);
     time.go(m.seek(s.first, 1, "function"));
+    a.outlined?.();
   };
   // Select call `f` (a Call stack frame: see Machine.call_stack) at the cursor:
   // the Call stack marks it, the source shows where it is, the timeline outlines it.
   a.selectFrame = (f) => {
-    cancelAnimationFrame(peek); // (a hover's preview, if pending, is not to win)
     stack.select(f.first, f.inlined ? f.func : null);
     src.view.cursor = { file: f.file, line: f.line };
     const at = time.cursor() != null ? m.at(time.cursor()) : null;
@@ -72,28 +74,6 @@ export function app(m) {
     src.showFunction(owner?.func ?? f.func, at?.syscall ?? undefined, f.line, f.file);
     time.selected(f.first);
     where({ name: f.func, file: f.file, line: f.line });
-  };
-  // Preview a call while it is hovered (in the timeline or the Call stack):
-  // `get()` says where ({ func: the function to show, file, line, i?: the
-  // record, whose stack the Call stack shows then, memory as it was }); null:
-  // back to the cursor's. (Once a frame: a stack is a millisecond or so.)
-  let peek = 0;
-  a.preview = (get) => {
-    cancelAnimationFrame(peek);
-    peek = requestAnimationFrame(() => {
-      const p = get?.();
-      if (p) {
-        src.preview(p.func, p.file, p.line);
-        if (p.i != null) {
-          memoryAt(p.i);
-          stack.preview(p.i);
-        }
-      } else {
-        src.unpreview();
-        memoryAt(time.cursor() ?? null);
-        stack.unpreview();
-      }
-    });
   };
   // Select the call on the stack at the cursor whose first record is
   // `first` (or code inlined into it, from function `inlined`).
@@ -106,13 +86,17 @@ export function app(m) {
   a.showAt = (at) => {
     L.pos = null;
     memoryAt(at.i);
-    src.view.cursor = at;
+    // (Not a block, a store say: the line its task was at, the block before.)
+    const here = at.kind === "block" ? at : m.at(m.seek(at.i, -1, "line")) ?? at;
+    src.view.cursor = here;
     const s = at.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
-    if (at.kind === "block") src.showFunction(at.func, s?.index, at.line, at.file);
+    if (here.kind === "block") src.showFunction(here.func, s?.index, here.line, here.file);
     stack.show(at.i, null, at.task);
-    where({ task: at.task, name: at.inlined ?? at.func, file: at.file, line: at.line, sc: s?.name });
+    where({ task: at.task, name: here.inlined ?? here.func, file: here.file, line: here.line, sc: s?.name });
     badge();
   };
+  const out = outline(a);
+  a.outlined = () => out.draw();
   examples(a);
 
   // ---- Lines: the line steps of the selection (a syscall) ----

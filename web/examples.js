@@ -254,7 +254,7 @@ export async function examples(app) {
       }
       return part.startsWith("`") ? el("code", { className: "mono", textContent: part.slice(1, -1) }) : part;
     })));
-    t.text.replaceChildren(...paras, !paras.length && !t.steps.length ? el("p", { className: "dim", textContent: "Write a program below: a call, and Enter." }) : null);
+    t.text.replaceChildren(...paras, ...(!paras.length && !t.steps.length ? [el("p", { className: "dim", textContent: "Write a program below: a call, and Enter." })] : []));
   }
   // Go to link `l`: its call selected, the cursor at its function's call
   // (or the call's start); the link marked.
