@@ -1,0 +1,50 @@
+{
+  "title": "Making a file on a disk",
+  "group": "Files on ext4",
+  "question": "The same create and write, on ext4: what does a disk file system keep track of?",
+  "steps": [
+    {
+      "call": "openat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/new.txt\"",
+        "O_CREAT | O_WRONLY",
+        "0644"
+      ],
+      "stops": [
+        {
+          "func": "ext4_create",
+          "note": "ext4 makes the file, all in one journal transaction (so a crash leaves all of it, or none)."
+        },
+        {
+          "func": "__ext4_new_inode",
+          "note": "A free inode for it: found in a block group's inode bitmap, and marked used."
+        },
+        {
+          "func": "add_dirent_to_buf",
+          "note": "The name \"new.txt\": into free space in a block of the directory, next to the other names."
+        }
+      ]
+    },
+    {
+      "call": "write",
+      "args": [
+        "$1",
+        "\"hello, ext4\\n\"",
+        "12"
+      ],
+      "stops": [
+        {
+          "func": "ext4_da_write_begin",
+          "note": "Into the page cache, as in memory; but no disk block is chosen yet (delayed allocation): one is only reserved."
+        }
+      ]
+    },
+    {
+      "call": "close",
+      "args": [
+        "$1"
+      ]
+    }
+  ]
+}

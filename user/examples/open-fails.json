@@ -1,13 +1,13 @@
 {
   "title": "Why does open() fail?",
+  "group": "Files, in memory",
   "question": "Opening a file that is not there fails with ENOENT; opening a directory for writing, with EISDIR. Where in the kernel is each decided?",
-  "group": "Files",
   "steps": [
     {
       "call": "openat",
       "args": [
         "AT_FDCWD",
-        "\"/mnt/missing\"",
+        "\"/missing\"",
         "O_RDONLY"
       ],
       "stops": [
@@ -16,12 +16,8 @@
           "note": "Opening walks the path, one name at a time, from the root (/) down."
         },
         {
-          "func": "lookup_fast",
-          "note": "Each name is looked up in the dentry cache first: the kernel's memory of the names it has seen. \"mnt\" is there."
-        },
-        {
-          "func": "ext4_lookup",
-          "note": "\"missing\" is not in the cache: ask ext4, which reads the directory. No such name: remember that (a negative dentry), and fail: ENOENT."
+          "func": "simple_lookup",
+          "note": "\"missing\" is not in the dentry cache (the kernel's memory of names), and an in-memory file system has no other place to look: no such file, ENOENT."
         }
       ]
     },
@@ -29,7 +25,7 @@
       "call": "openat",
       "args": [
         "AT_FDCWD",
-        "\"/mnt/dir\"",
+        "\"/dev\"",
         "O_WRONLY"
       ],
       "stops": [

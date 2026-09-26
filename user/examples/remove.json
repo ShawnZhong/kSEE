@@ -1,7 +1,7 @@
 {
   "title": "Renaming and removing",
   "question": "A name moves, a directory will not go while it has names in it, and a file goes when its last name does. What does ext4 do?",
-  "group": "Files",
+  "group": "Files on ext4",
   "steps": [
     {
       "call": "renameat2",

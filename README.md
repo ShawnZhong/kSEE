@@ -76,7 +76,8 @@ says who called it in the recording, each caller a link to the call.
 
 An example is one JSON file in user/examples/: a title, a question, and
 steps: `{ call, args, as?, stops: [{ func, note, any? }] }`, and a `group`
-(the selector's: "Start here", "Files", "Time", "Threads and processes";
+(the selector's: "Start here", "Files, in memory", "Files on ext4", "Time",
+"Threads and processes";
 the order is `EXAMPLES` in crates/ksee-cli/src/build.rs) (`as`: the
 runner call `as` started, a thread or child; else /init), the arguments
 written as in C: `"AT_FDCWD"`, `"O_CREAT | O_WRONLY"` (the kernel's own
@@ -85,7 +86,8 @@ constants, from its UAPI headers), `"0644"`, `"\"a string\""`, `"[64]"`
 `"{\"init\", NULL}"` (an array of strings: argv), `"$1"` (call 1's
 result), `"$1 + 65536"`; see web/args.js. /init mounts an ext4 disk on /mnt (an
 image in the initramfs, through the loop device), with files for the
-examples to start from: `/mnt/note.txt`, `/mnt/dir/a.txt`.
+examples to start from: `/mnt/note.txt`, `/mnt/dir/a.txt`; the root, an
+in-memory file system (ramfs: no tmpfs without an MMU), has `/note.txt`.
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs
 the page itself (tests/ui/: the read example, a changed program from the

@@ -1,0 +1,50 @@
+{
+  "title": "Reading from a disk",
+  "group": "Files on ext4",
+  "question": "The same read(), of a file on ext4: where do the bytes come from the first time?",
+  "steps": [
+    {
+      "call": "openat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/note.txt\"",
+        "O_RDONLY"
+      ],
+      "stops": [
+        {
+          "func": "ext4_lookup",
+          "note": "The name is not in the dentry cache yet: ext4 reads the directory's block from the disk to find it."
+        }
+      ]
+    },
+    {
+      "call": "read",
+      "args": [
+        "$1",
+        "[64]",
+        "64"
+      ],
+      "stops": [
+        {
+          "func": "filemap_read",
+          "note": "The page cache, as for a file in memory; but the page is not there yet..."
+        },
+        {
+          "func": "ext4_mpage_readpages",
+          "note": "...so ext4 finds where the file's data is on the disk (its extents), and reads it into the page..."
+        },
+        {
+          "func": "submit_bio",
+          "note": "...through the block layer: a request to the disk, /dev/loop0, whose blocks are a file in memory. Then the bytes are copied out.",
+          "any": true
+        }
+      ]
+    },
+    {
+      "call": "close",
+      "args": [
+        "$1"
+      ]
+    }
+  ]
+}

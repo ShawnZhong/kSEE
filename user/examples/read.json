@@ -1,20 +1,14 @@
 {
   "title": "What happens in read()?",
-  "group": "Files",
-  "question": "A program opens a file on the disk and asks for 64 bytes of it. Which parts of the kernel does that go through?",
+  "group": "Files, in memory",
+  "question": "A program reads 64 bytes of a file. Which parts of the kernel does that go through? (Here the file is in memory: no disk.)",
   "steps": [
     {
       "call": "openat",
       "args": [
         "AT_FDCWD",
-        "\"/mnt/note.txt\"",
+        "\"/note.txt\"",
         "O_RDONLY"
-      ],
-      "stops": [
-        {
-          "func": "do_sys_openat2",
-          "note": "Open the file: find it by its path, and give the program a number for it, a file descriptor: the lowest free one, 3."
-        }
       ]
     },
     {
@@ -27,15 +21,15 @@
       "stops": [
         {
           "func": "ksys_read",
-          "note": "The syscall itself: the fd turns into the open file (a struct file), and the position to read at."
+          "note": "The syscall: the fd turns into the open file (a struct file), and the position to read at."
         },
         {
           "func": "vfs_read",
-          "note": "The VFS, the same for every filesystem: is the file open for reading, is the range sane? Then it calls ext4's read."
+          "note": "The VFS, the same for every file system: is the file open for reading, is the range sane? Then the file system's own read."
         },
         {
           "func": "filemap_read",
-          "note": "The page cache: a file's data lives in memory pages. Find the page for the position (read from the disk the first time), and copy from it to the program."
+          "note": "The page cache: a file's data lives in memory pages. Find the page at the position, and copy from it to the program. (In ramfs, the pages are all the file is.)"
         }
       ]
     },
@@ -43,12 +37,6 @@
       "call": "close",
       "args": [
         "$1"
-      ],
-      "stops": [
-        {
-          "func": "__fput",
-          "note": "The last reference to the open file goes: fd 3 is free again."
-        }
       ]
     }
   ]

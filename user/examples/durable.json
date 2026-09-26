@@ -1,6 +1,6 @@
 {
   "title": "How does a write reach the disk?",
-  "group": "Files",
+  "group": "Files on ext4",
   "question": "A write goes to memory first. What does fsync() do to make it durable?",
   "steps": [
     {

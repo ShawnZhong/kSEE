@@ -1,0 +1,57 @@
+{
+  "title": "A directory on a disk",
+  "group": "Files on ext4",
+  "question": "The same mkdir, on ext4: what does a directory look like on a disk?",
+  "steps": [
+    {
+      "call": "mkdirat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/sub\"",
+        "0755"
+      ],
+      "stops": [
+        {
+          "func": "ext4_mkdir",
+          "note": "A new directory: an inode, all in one journal transaction."
+        },
+        {
+          "func": "ext4_init_new_dir",
+          "note": "On a disk, a directory is a file of names: its first block, with its own two entries, \".\" (itself) and \"..\" (its parent)."
+        },
+        {
+          "func": "ext4_add_entry",
+          "note": "The name \"sub\": into a block of /mnt, the parent."
+        }
+      ]
+    },
+    {
+      "call": "openat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt\"",
+        "O_RDONLY | O_DIRECTORY"
+      ]
+    },
+    {
+      "call": "getdents64",
+      "args": [
+        "$2",
+        "[256]",
+        "256"
+      ],
+      "stops": [
+        {
+          "func": "ext4_readdir",
+          "note": "Listing: read the directory's blocks, entry by entry."
+        }
+      ]
+    },
+    {
+      "call": "close",
+      "args": [
+        "$2"
+      ]
+    }
+  ]
+}

@@ -1,27 +1,19 @@
 {
   "title": "What is a directory?",
-  "question": "A directory is a file of names, each pointing to an inode. What happens when one is made, and when one is listed?",
-  "group": "Files",
+  "group": "Files, in memory",
+  "question": "A directory is names, each pointing to a file. What happens when one is made, and when one is listed? (In memory: ramfs.)",
   "steps": [
     {
       "call": "mkdirat",
       "args": [
         "AT_FDCWD",
-        "\"/mnt/sub\"",
+        "\"/sub\"",
         "0755"
       ],
       "stops": [
         {
-          "func": "ext4_mkdir",
-          "note": "A new directory: an inode, like a file's, all in one journal transaction."
-        },
-        {
-          "func": "ext4_init_new_dir",
-          "note": "Its first block, with its own two entries: \".\" (itself) and \"..\" (its parent)."
-        },
-        {
-          "func": "ext4_add_entry",
-          "note": "The name \"sub\": into a block of /mnt, the parent."
+          "func": "ramfs_mkdir",
+          "note": "A new directory: an inode like a file's, and a name for it in /."
         }
       ]
     },
@@ -29,7 +21,7 @@
       "call": "openat",
       "args": [
         "AT_FDCWD",
-        "\"/mnt\"",
+        "\"/\"",
         "O_RDONLY | O_DIRECTORY"
       ]
     },
@@ -42,12 +34,12 @@
       ],
       "stops": [
         {
-          "func": "ext4_readdir",
-          "note": "Listing: read the directory's blocks, entry by entry."
+          "func": "dcache_readdir",
+          "note": "Listing: an in-memory directory's names are the dentry cache itself; walk its children..."
         },
         {
           "func": "filldir64",
-          "note": "Each entry, copied out to the program: its name, its inode, its type."
+          "note": "...each copied out to the program: its name, its inode, its type."
         }
       ]
     },

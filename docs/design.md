@@ -12,8 +12,9 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
 **Who it is for**
 
 - *Learners*: how an OS really works, on real Linux instead of a teaching
-  kernel. They start from **examples**, grouped by topic (start here,
-  files, time, threads and processes): a question ("What happens in
+  kernel. They start from **examples**, grouped by topic (start here;
+  files, in memory, then on ext4; time; threads and processes): a
+  question ("What is a file descriptor?", "What happens in
   read()?", "What is a directory?", "How do two processes talk through a
   pipe?"), a program of a few syscalls that asks it, and a short tutorial:
   stops in the recording that explain what happens. The first, printing

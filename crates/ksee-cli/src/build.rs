@@ -105,6 +105,8 @@ pub fn build() {
                        "-nostdinc", "-isystem", "linux/tools/include/nolibc", "-isystem", "linux/usr/include",
                        "-o", &format!("{dir}/{p}.wasm"), &format!("user/{p}.c")]));
         }
+        // A file in the (in-memory) root, for the examples: /note.txt.
+        std::fs::write(format!("{dir}/note.txt"), "hello from memory\n").unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
         // The ext4 disk /init mounts (a file, through the loop device), with
         // files for the examples to start from: note.txt, dir/a.txt.
         let disk = format!("{dir}/disk.img");
@@ -139,7 +141,8 @@ fn gzip(from: &str, to: &str) {
 }
 
 /// The examples' order on the page, from the simplest (others after them).
-const EXAMPLES: &[&str] = &["hello", "read", "open-fails", "create", "dir", "durable", "remove", "sleep",
+const EXAMPLES: &[&str] = &["hello", "open-close", "read", "open-fails", "create", "dir",
+                               "ext4-read", "ext4-create", "ext4-dir", "durable", "remove", "sleep",
                                "futex", "join", "pipe", "yours"];
 
 /// examples.json: the examples (user/examples/*.json: each a list
