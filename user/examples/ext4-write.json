@@ -1,0 +1,40 @@
+{
+  "title": "Writing to a file on a disk",
+  "group": "Files on ext4",
+  "question": "The same write, on ext4: is anything written to the disk?",
+  "steps": [
+    {
+      "call": "openat",
+      "args": [
+        "AT_FDCWD",
+        "\"/mnt/new.txt\"",
+        "O_CREAT | O_WRONLY",
+        "0644"
+      ]
+    },
+    {
+      "call": "write",
+      "args": [
+        "$1",
+        "\"hello, ext4\\n\"",
+        "12"
+      ],
+      "stops": [
+        {
+          "func": "ext4_buffered_write_iter",
+          "note": "Into the page cache, as in memory: the page is marked dirty (to be written back)."
+        },
+        {
+          "func": "ext4_da_write_begin",
+          "note": "Delayed allocation: no disk block is chosen for it yet, one is only reserved. Nothing is on the disk yet."
+        }
+      ]
+    },
+    {
+      "call": "close",
+      "args": [
+        "$1"
+      ]
+    }
+  ]
+}

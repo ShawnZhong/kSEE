@@ -1,7 +1,7 @@
 {
   "title": "How does a write reach the disk?",
   "group": "Files on ext4",
-  "question": "A write goes to memory first. What does fsync() do to make it durable?",
+  "question": "A write is in memory until it is written back. fsync() makes it durable now: what does that take?",
   "steps": [
     {
       "call": "openat",
@@ -18,12 +18,6 @@
         "$1",
         "\"hello, ext4\\n\"",
         "12"
-      ],
-      "stops": [
-        {
-          "func": "ext4_buffered_write_iter",
-          "note": "Into the page cache: the page is dirty, and no block is chosen for it yet (delayed allocation). Nothing is on the disk."
-        }
       ]
     },
     {
@@ -38,7 +32,7 @@
         },
         {
           "func": "ext4_mb_new_blocks",
-          "note": "Write the dirty page back: the multiblock allocator picks it a block, from the block bitmap."
+          "note": "Write the dirty page back: now a block is chosen for it, by the multiblock allocator, from the block bitmap."
         },
         {
           "func": "jbd2_journal_commit_transaction",

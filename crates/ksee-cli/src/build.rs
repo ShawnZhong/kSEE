@@ -141,8 +141,8 @@ fn gzip(from: &str, to: &str) {
 }
 
 /// The examples' order on the page, from the simplest (others after them).
-const EXAMPLES: &[&str] = &["hello", "open-close", "read", "open-fails", "create", "dir",
-                               "ext4-read", "ext4-create", "ext4-dir", "durable", "remove", "sleep",
+const EXAMPLES: &[&str] = &["hello", "open-close", "read", "open-fails", "create", "write", "dir",
+                               "ext4-read", "ext4-create", "ext4-write", "durable", "ext4-dir", "remove", "sleep",
                                "futex", "join", "pipe", "yours"];
 
 /// examples.json: the examples (user/examples/*.json: each a list

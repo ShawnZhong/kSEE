@@ -1,0 +1,43 @@
+{
+  "title": "What does write() do?",
+  "group": "Files, in memory",
+  "question": "A program adds a line to a file. Where do the bytes go? (In memory: ramfs.)",
+  "steps": [
+    {
+      "call": "openat",
+      "args": [
+        "AT_FDCWD",
+        "\"/note.txt\"",
+        "O_WRONLY | O_APPEND"
+      ]
+    },
+    {
+      "call": "write",
+      "args": [
+        "$1",
+        "\"more\\n\"",
+        "5"
+      ],
+      "stops": [
+        {
+          "func": "ksys_write",
+          "note": "The syscall: the fd turns into the open file; with O_APPEND, the position is the file's end."
+        },
+        {
+          "func": "generic_perform_write",
+          "note": "The bytes go into the file's pages in the page cache: in ramfs, that is where the file is."
+        },
+        {
+          "func": "simple_write_end",
+          "note": "The file is 5 bytes longer: its inode's size grows."
+        }
+      ]
+    },
+    {
+      "call": "close",
+      "args": [
+        "$1"
+      ]
+    }
+  ]
+}

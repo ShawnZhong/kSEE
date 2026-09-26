@@ -1,7 +1,7 @@
 {
   "title": "Making a file on a disk",
   "group": "Files on ext4",
-  "question": "The same create and write, on ext4: what does a disk file system keep track of?",
+  "question": "The same create, on ext4: what does a disk file system keep track of?",
   "steps": [
     {
       "call": "openat",
@@ -23,20 +23,6 @@
         {
           "func": "add_dirent_to_buf",
           "note": "The name \"new.txt\": into free space in a block of the directory, next to the other names."
-        }
-      ]
-    },
-    {
-      "call": "write",
-      "args": [
-        "$1",
-        "\"hello, ext4\\n\"",
-        "12"
-      ],
-      "stops": [
-        {
-          "func": "ext4_da_write_begin",
-          "note": "Into the page cache, as in memory; but no disk block is chosen yet (delayed allocation): one is only reserved."
         }
       ]
     },

@@ -1,7 +1,7 @@
 {
   "title": "How is a file made?",
   "group": "Files, in memory",
-  "question": "A program creates a file and writes to it. What does the kernel do? (In memory: ramfs.)",
+  "question": "open() with O_CREAT makes a file that is not there. What does the kernel make? (In memory: ramfs.)",
   "steps": [
     {
       "call": "openat",
@@ -18,21 +18,7 @@
         },
         {
           "func": "ramfs_mknod",
-          "note": "ramfs makes it: a new inode (the file itself: its size, its mode, its pages), and the name, a dentry, pointing to it."
-        }
-      ]
-    },
-    {
-      "call": "write",
-      "args": [
-        "$1",
-        "\"hello\\n\"",
-        "6"
-      ],
-      "stops": [
-        {
-          "func": "generic_perform_write",
-          "note": "The bytes go into the file's page cache pages: in ramfs, that is where the file is."
+          "note": "ramfs makes it: a new inode (the file itself: its mode, its size, its pages), and the name, a dentry, pointing to it."
         }
       ]
     },
