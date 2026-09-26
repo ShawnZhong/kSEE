@@ -2,7 +2,8 @@
 // with its arguments and its locals in memory as a tree (like a debugger's
 // variables), rebuilt from the trace (Machine.call_stack: a call's
 // arguments are in its record, its locals' addresses in another); at the
-// bottom, the task running then (current). Pointers open into
+// bottom, the task running then (current: its key fields, open, and all
+// of them on asking). Pointers open into
 // what they point to, structs into their fields, read from memory as it was
 // at the cursor (Machine.memory_at); what is open stays open while
 // stepping; values that changed since the cursor last moved are
@@ -14,7 +15,10 @@ import { $, el } from "./dom.js";
 export function callstack(app) {
   const { m } = app;
   // Open paths, and the values shown before (to highlight changes).
-  const s = { open: new Set(), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
+  // (The current task open to begin with.)
+  const s = { open: new Set(["task"]), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
+  // The current task's fields shown first.
+  const KEY = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 
   // The children of value `o` (an Object, see ksee_core::view), if it has any.
   function kids(o) {
@@ -73,11 +77,17 @@ export function callstack(app) {
     });
     // At the bottom: the task running then (its task_struct, as it was).
     if (s.task && s.frames.length) {
-      body.push(head(`current: ${s.task.comm ?? "?"}(${s.task.pid ?? "?"})`, "the task running", () => {
-        s.open.has("task") ? s.open.delete("task") : s.open.add("task");
+      const toggle = (p) => () => {
+        s.open.has(p) ? s.open.delete(p) : s.open.add(p);
         draw();
-      }, "task"));
-      if (s.open.has("task")) rows(m.object("task_struct", s.task.addr, 1)?.children ?? [], "task", 1, body);
+      };
+      body.push(head(`current task: ${s.task.comm ?? "?"}(${s.task.pid ?? "?"})`, "current: the task running", toggle("task"), "task"));
+      if (s.open.has("task")) {
+        const all = m.object("task_struct", s.task.addr, 1)?.children ?? [], full = s.open.has("task/all");
+        rows(full ? all : KEY.map((k) => all.find((o) => o.name === k)).filter(Boolean), "task", 1, body);
+        body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3 },
+          el("a", { textContent: full ? "▾ the key fields only" : `▸ all ${all.length} fields`, onclick: toggle("task/all") }))));
+      }
     }
     $("stack").replaceChildren(el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
   }

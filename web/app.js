@@ -202,23 +202,34 @@ export function app(m) {
   });
 
   // ---- Resizing: the columns, and the timeline's height ----
-  const sizes = { left: 340, right: 380, chart: 190 };
+  const sizes = { left: 340, right: 380, chart: 190, console: 140, consoleOpen: false };
   try { Object.assign(sizes, JSON.parse(localStorage.getItem("ksee.sizes") ?? "{}")); } catch { /* none kept */ }
   const layout = () => {
-    $("main").style.gridTemplateColumns = `${sizes.left}px 5px minmax(300px, 1fr) 5px ${sizes.right}px`;
+    $("app").style.gridTemplateColumns = `${sizes.left}px 5px minmax(0, 1fr)`;
+    $("main").style.gridTemplateColumns = `minmax(300px, 1fr) 5px ${sizes.right}px`;
     $("chartbox").style.height = `${sizes.chart}px`;
+    $("pane-console").hidden = !sizes.consoleOpen;
+    $("pane-console").style.flexBasis = `${sizes.console}px`;
+    $("console-tw").textContent = sizes.consoleOpen ? "▾" : "▸";
+    $("console-last").hidden = sizes.consoleOpen;
     try { localStorage.setItem("ksee.sizes", JSON.stringify(sizes)); } catch { /* not kept */ }
   };
-  const drag = (handle, move) => (handle.onpointerdown = (e) => {
+  // (`click`: a press that did not move.)
+  const drag = (handle, move, click) => (handle.onpointerdown = (e) => {
     e.preventDefault();
     const start = { x: e.clientX, y: e.clientY, ...sizes };
+    let moved = false;
     const onMove = (ev) => {
+      moved ||= Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 3;
+      if (!moved) return;
       move(start, ev.clientX - start.x, ev.clientY - start.y);
       layout();
     };
     addEventListener("pointermove", onMove);
     addEventListener("pointerup", () => {
       removeEventListener("pointermove", onMove);
+      if (!moved) click?.();
+      layout();
       dispatchEvent(new Event("resize")); // (the canvases redraw)
     }, { once: true });
   });
@@ -229,6 +240,9 @@ export function app(m) {
     });
   }
   drag($("hsplit"), (s, _, dy) => (sizes.chart = Math.max(60, s.chart + dy)));
+  // (The console: folded to its last line, or open, as tall as dragged.)
+  drag($("console-head"), (s, _, dy) => sizes.consoleOpen && (sizes.console = Math.max(40, s.console - dy)),
+       () => (sizes.consoleOpen = !sizes.consoleOpen));
   layout();
 
   // ---- The loop: the console ----
@@ -248,6 +262,7 @@ export function app(m) {
     if (out) {
       $("console").textContent += out.replaceAll("\r", "");
       $("pane-console").scrollTop = $("pane-console").scrollHeight;
+      $("console-last").textContent = $("console").textContent.trimEnd().split("\n").at(-1);
     }
     const code = m.halted();
     if (code !== undefined && halted == null) {

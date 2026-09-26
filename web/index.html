@@ -9,6 +9,15 @@
 <body>
 <header><b>kSEE</b>
   <span id="badge" class="badge">loading</span><span id="status" class="dim">loading the kernel…</span></header>
+<div id="app">
+<aside class="col" id="side">
+  <h2>Examples</h2>
+  <div class="body" id="examples"></div>
+  <h2 class="sub fold" id="console-head" title="click: open or fold the console; drag, when open: its height"><span id="console-tw">▸</span> Console <span id="console-last" class="dim mono"></span></h2>
+  <div class="body consolebox" id="pane-console" hidden><pre id="console"></pre></div>
+</aside>
+<div class="vsplit" data-col="left" title="drag to resize"></div>
+<div id="work">
 <section id="history">
   <canvas id="overview" aria-label="the whole recording: which task ran when; the window below"></canvas>
   <div class="flamehead"><span id="chart-title" class="dim"></span><span id="legend"></span></div>
@@ -28,13 +37,6 @@
 <div class="hsplit" id="hsplit" title="drag to resize"></div>
 <main id="main">
   <div class="col">
-    <h2>Examples</h2>
-    <div class="body" id="examples"></div>
-    <h2 class="sub">Console</h2>
-    <div class="body consolebox" id="pane-console"><pre id="console"></pre></div>
-  </div>
-  <div class="vsplit" data-col="left" title="drag to resize"></div>
-  <div class="col">
     <div id="note" hidden></div>
     <div class="srcbar mono" id="fn-title">Source</div>
     <div class="body" id="src"><div class="empty">The source at the cursor: lines where blocks ran are green (with counts), untaken ones red.</div></div>
@@ -46,6 +48,8 @@
     <div class="body" id="stack"></div>
   </div>
 </main>
+</div>
+</div>
 <script type="module">
 import { start } from "./ksee.js";
 import { app } from "./app.js";

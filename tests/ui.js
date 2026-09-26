@@ -164,6 +164,33 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   await until(() => document.querySelector("ol.steps > li.done"));
   r.switched = [location.hash, window.stayed, document.querySelector("ol.steps > li.done")?.innerText.split("\\n")[0]];
   if (location.hash !== "#ex=dirs" || !window.stayed || !r.switched[2]?.startsWith("mkdirat")) throw new Error("not switched: " + JSON.stringify(r.switched));
+  // Typing a call: constants that fit the parameter first, Tab takes one; the parameter in bold.
+  const inp = document.querySelector(".callform input");
+  inp.focus();
+  inp.value = 'openat(AT_FDCWD, "/x", O_CR'; inp.dispatchEvent(new Event("input"));
+  r.complete = [...document.querySelectorAll(".callform ul.complete li")].map((li) => li.innerText).slice(0, 3);
+  inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+  r.completed = [inp.value, document.querySelector(".callform .hint b")?.textContent];
+  if (!r.completed[0].endsWith("O_CREAT") || r.completed[1] !== "int flags") throw new Error("completion: " + JSON.stringify(r));
+  inp.value = ""; inp.dispatchEvent(new Event("input")); inp.blur();
+  // Changing a call where it is: one not made yet changes; a made one goes back (a fresh kernel), the rest kept.
+  const edit = (k, text) => {
+    document.querySelectorAll("ol.steps > li")[k].querySelector("a.who").click();
+    const e = document.querySelector("ol.steps > li.editing input");
+    e.value = text;
+    e.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+  };
+  const n = document.querySelectorAll("ol.steps > li").length;
+  edit(3, 'mkdirat(AT_FDCWD, "/mnt/other", 0700)');
+  r.edited = document.querySelectorAll("ol.steps > li")[3].innerText.split("\\n")[0];
+  edit(0, 'mkdirat(AT_FDCWD, "/mnt/first", 0700)');
+  await until(() => location.hash.startsWith("#back=") && document.querySelector("ol.steps > li.done")?.innerText.includes("/mnt/first"));
+  r.branched = [document.querySelectorAll("ol.steps > li").length, document.querySelector("ol.steps > li.done")?.innerText.split("\\n")[0]];
+  if (!r.edited.includes("/mnt/other") || r.branched[0] !== n || !r.branched[1]?.includes("= 0")) throw new Error("editing: " + JSON.stringify(r));
+  // The console, folded to its last line; the current task, open to its key fields.
+  r.console = [$("pane-console").hidden, $("console-last").textContent];
+  r.current = [...document.querySelectorAll("#stack tr.task, #stack tr.task ~ tr")].slice(0, 3).map((tr) => tr.innerText.replace(/\\s+/g, " ").trim());
+  if (!r.console[0] || !r.console[1] || !r.current[0]?.startsWith("current task: init(1)") || !r.current[1]?.startsWith("pid")) throw new Error("console, current: " + JSON.stringify(r));
   return r;
 })()`);
 if (script) {
