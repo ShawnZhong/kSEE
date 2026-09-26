@@ -10,7 +10,8 @@
 //
 // Scroll (or pinch, or W/S) to zoom; drag to pan, in time and up and down
 // through deep stacks; Shift+scroll, sideways scroll or A/D to pan in time. Hover a call
-// for what it was, and where it is; click to put the
+// for what it was, and where it is, and the source and the Call stack
+// show that moment while the pointer is there; click to put the
 // cursor there and select it (a syscall: its records, from entry to exit);
 // double-click a call to select its records, from its first to its return. Click or
 // drag the overview to move the window. Find a function (the box in the
@@ -245,6 +246,8 @@ export function timeline(app) {
     const { k, c, d } = hit(e);
     const [id, first, inl] = c?.frames[d] ?? [];
     hilite(first ?? null);
+    // (The view follows the pointer: the moment under it, in the call under it.)
+    app.peek(first == null ? at(e.offsetX) : Math.max(first, at(e.offsetX)));
     const key = first == null ? null : `${first}:${inl}:${k}`;
     if (key !== t.peek) {
       // Where the call is there (called from where, at which line, what
@@ -288,6 +291,7 @@ export function timeline(app) {
     tip.hidden = true;
     t.peek = null;
     hilite(null);
+    app.peek(null);
   };
   // Mark call `first` as the selected one (null: none).
   function selected(first) {

@@ -82,9 +82,9 @@ export function app(m) {
     if (f) a.selectFrame(f);
   };
   a.calls = () => calls;
-  // The cursor moved to `at` (see Machine.at).
-  a.showAt = (at) => {
-    L.pos = null;
+  // Show the moment `at` (see Machine.at): the source there, the Call
+  // stack, memory as it was, where it is.
+  function view(at) {
     memoryAt(at.i);
     // (Not a block, a store say: the line its task was at, the block before.)
     const here = at.kind === "block" ? at : m.at(m.seek(at.i, -1, "line")) ?? at;
@@ -93,7 +93,26 @@ export function app(m) {
     if (here.kind === "block") src.showFunction(here.func, s?.index, here.line, here.file);
     stack.show(at.i, null, at.task);
     where({ task: at.task, name: here.inlined ?? here.func, file: here.file, line: here.line, sc: s?.name });
+  }
+  // The cursor moved to `at`.
+  a.showAt = (at) => {
+    L.pos = null;
+    view(at);
     badge();
+  };
+  // The view follows the pointer over the timeline: record `i` shown as if
+  // the cursor were there (once a frame, and only as the moment changes);
+  // null: back to the cursor's. A click fixes the cursor (time.go).
+  let peek = { raf: 0, i: null };
+  a.peek = (i) => {
+    cancelAnimationFrame(peek.raf);
+    peek.raf = requestAnimationFrame(() => {
+      const to = i ?? time.cursor();
+      if (to === peek.i) return;
+      peek.i = i;
+      const at = to != null ? m.at(to) : null;
+      if (at) view(at);
+    });
   };
   const out = outline(a);
   a.outlined = () => out.draw();

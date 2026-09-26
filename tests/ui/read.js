@@ -64,6 +64,7 @@
   const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === 1 && x.last != null);
   ksee.select(read); // (its box in the window: the tutorial may have ended in another call)
   const box = ksee.time.boxOf(read.first), at = { clientX: box?.x, clientY: box?.y };
+  const cursorTitle = $("where").textContent; // (the cursor's: the view comes back to it)
   $("chart").dispatchEvent(new PointerEvent("pointermove", at));
   r.tip = document.querySelector(".tip:not([hidden])")?.innerText.replace(/\s+/g, " ").slice(0, 60);
   // (Above the stack, at the top of the chart: the call on top then.)
@@ -73,13 +74,13 @@
   $("chart").dispatchEvent(new PointerEvent("pointermove", at));
   await sleep(400);
   r.here = document.querySelector(".tip .here")?.textContent;
-  // (Moving on in the same call: the tip keeps where it is; the source does not follow a hover.)
-  const title = $("fn-title").textContent;
+  // (The view follows the pointer: the hovered moment's file; back to the cursor's on leaving.)
+  r.hovered = [$("fn-title").textContent, $("where").textContent];
   $("chart").dispatchEvent(new PointerEvent("pointermove", { ...at, clientX: at.clientX + 1 }));
   if (!document.querySelector(".tip .here")?.textContent) throw new Error("the tip lost where the call is");
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
   await sleep(300);
-  if ($("fn-title").textContent !== title || !r.here?.includes("now at")) throw new Error("hover: " + JSON.stringify([r.here, title, $("fn-title").textContent]));
+  if (r.hovered[1] === cursorTitle || $("where").textContent !== cursorTitle || !r.here?.includes("now at")) throw new Error("hover: " + JSON.stringify([r.here, r.hovered, cursorTitle, $("where").textContent]));
   for (const type of ["pointerdown", "pointerup"])
     $("chart").dispatchEvent(new PointerEvent(type, at));
   r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
@@ -100,6 +101,10 @@
   document.querySelector('h2.tabs a[data-tab="records"]').click();
   r.records = [$("records-note").textContent, document.querySelector("#records tr.on")?.innerText];
   if (!document.querySelector("#records tr.on") || !document.querySelector("#records tr.store")) throw new Error("the records: " + JSON.stringify(r.records));
+  // (Scrolled to the top: more before.)
+  const first = document.querySelector("#records tr").dataset.i;
+  $("records").scrollTop = 0; $("records").dispatchEvent(new Event("scroll"));
+  if (Number(first) > 0 && document.querySelector("#records tr").dataset.i === first) throw new Error("the records did not grow");
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)

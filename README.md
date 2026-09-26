@@ -62,8 +62,8 @@ between two processes): a call can be made by a thread or child of /init
 it.
 
 The timeline shows the recording: the call stacks over time, and which
-task ran (scroll to zoom, drag to pan; hover a call for what it was and a
-preview of where, click it to go there; click a syscall, or double-click
+task ran (scroll to zoom, drag to pan; hover a call for what it was: the
+source and the Call stack show that moment while the pointer is there; click it to fix the cursor there; click a syscall, or double-click
 any call, to select it: its records from its start to its end, with
 whatever else ran in between). Hover
 a name in the source for its value at the cursor, and a value in the Call stack
