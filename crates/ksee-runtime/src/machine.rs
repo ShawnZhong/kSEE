@@ -117,7 +117,7 @@ impl Machine {
             k.quiet.set(false);
             k.halted.set(None);
         });
-        imports::instantiated(&kernel);
+        crate::programs::instantiated(&kernel);
         sched::boot(&kernel)?;
         // (Quiet, with /init ready.)
         while !k(|k| k.runners.borrow().contains_key(&1)) {
@@ -185,52 +185,26 @@ impl Machine {
         let tid = tid.unwrap_or(1);
         let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
             .ok_or_else(|| format!("no syscall {name}"))?;
-        let Some(runner) = k(|k| k.runners.borrow().get(&tid).copied()) else {
+        let Some(task) = k(|k| k.runners.borrow().get(&tid).copied()) else {
             return Err(format!("no runner {tid}").into());
         };
         if k(|k| k.calls.borrow().contains_key(&tid)) {
             return Err(format!("{tid} is still making its call").into());
         }
         let id = k(|k| k.asked.get() + 1);
-        let mut c = Call { id, nr, data: vec![0; CALL_DATA], ..Default::default() };
-        let mut used = 0usize;
-        for (i, a) in args.iter().take(6).enumerate() {
-            let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
-                Some([s.as_bytes(), &[0]].concat())
-            } else if !js::get(a, "bytes").is_undefined() {
-                Some(Uint8Array::new(&js::get(a, "bytes")).to_vec())
-            } else if let Some(n) = js::get(a, "size").as_f64() {
-                Some(vec![0; n as usize])
-            } else {
-                None
-            };
-            c.args[i] = match buffer {
-                Some(b) => {
-                    if used + b.len() > CALL_DATA {
-                        return Err("the call's buffers are too big".into());
-                    }
-                    c.data[used..used + b.len()].copy_from_slice(&b);
-                    c.buffers |= 1 << i;
-                    c.lens[i] = b.len() as u32;
-                    let at = used;
-                    used += (b.len() + 7) & !7; // (8-byte aligned)
-                    at as u32
-                }
-                None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { size }")? as i64 as u32,
-            };
-        }
-        // (The page waits for the kernel now: see Kernel::waiting.)
+        let c = pack(id, nr, &args)?;
+        let trace = k(|k| k.trace.get());
         k(|k| {
             k.asked.set(id);
             k.calls.borrow_mut().insert(tid, c);
+            // (Records' ids count the pairs of words ever written: see trace::ring.)
+            k.made.borrow_mut().insert(id, (tid, nr, Direct.read_u32(trace) / 2));
+            // (The page waits for the kernel now: see Kernel::waiting.)
             k.waiting.set(Some(k.clock.get()));
             // (Ring the runner: it waits for SIGUSR1.)
-            k.doorbell.borrow_mut().push_back(runner.task);
+            k.doorbell.borrow_mut().push_back(task);
         });
-        let trace = k(|k| k.trace.get());
         Direct.write_u32(trace + trace::ON, 1);
-        // (Records' ids count the pairs of words ever written: see trace::ring.)
-        k(|k| k.made.borrow_mut().insert(id, (tid, nr, Direct.read_u32(trace) / 2)));
         sched::interrupt(IRQ_DOORBELL);
         Ok(id)
     }
@@ -253,6 +227,37 @@ impl Machine {
     pub fn runners(&self) -> Vec<u32> {
         k(|k| k.runners.borrow().keys().copied().collect())
     }
+}
+
+/// Call `id`, syscall `nr` with `args` (see Machine::call): each a number,
+/// or a buffer (a string, { bytes }, { size }) packed into its data.
+fn pack(id: u32, nr: u32, args: &[JsValue]) -> Result<Call, JsValue> {
+    let mut c = Call { id, nr, data: vec![0; CALL_DATA], ..Default::default() };
+    let mut used = 0usize;
+    for (i, a) in args.iter().take(6).enumerate() {
+        let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
+            Some([s.as_bytes(), &[0]].concat())
+        } else if !js::get(a, "bytes").is_undefined() {
+            Some(Uint8Array::new(&js::get(a, "bytes")).to_vec())
+        } else {
+            js::get(a, "size").as_f64().map(|n| vec![0; n as usize])
+        };
+        c.args[i] = match buffer {
+            Some(b) => {
+                if used + b.len() > CALL_DATA {
+                    return Err("the call's buffers are too big".into());
+                }
+                c.data[used..used + b.len()].copy_from_slice(&b);
+                c.buffers |= 1 << i;
+                c.lens[i] = b.len() as u32;
+                let at = used;
+                used += (b.len() + 7) & !7; // (8-byte aligned)
+                at as u32
+            }
+            None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { size }")? as i64 as u32,
+        };
+    }
+    Ok(c)
 }
 
 /// The kernel is quiet: settle what waits for it (see Machine::quiet).

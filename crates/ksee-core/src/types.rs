@@ -242,7 +242,7 @@ impl Types {
             Kind::Base(b) => {
                 let size = self.get(ty).size.max(t.size).min(8);
                 let v = self.read_int(mem, addr, size, bit_off, bit_size);
-                let signed = |v: u64, bits: u32| ((v << (64 - bits)) as i64 >> (64 - bits)) as i64;
+                let signed = |v: u64, bits: u32| (v << (64 - bits)) as i64 >> (64 - bits);
                 let bits = if bit_size > 0 { bit_size } else { size * 8 };
                 let _ = match b {
                     Base::Signed if bits > 0 => write!(out, "{}", signed(v, bits)),

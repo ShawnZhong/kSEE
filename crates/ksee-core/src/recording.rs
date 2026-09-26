@@ -157,11 +157,10 @@ impl Recording {
         };
         let mut counts = BTreeMap::new();
         for (i, r) in self.records.iter().enumerate().skip(first).take(last.saturating_sub(first).saturating_add(1)) {
-            if let Record::Block { func, n } = *r {
-                if task.is_none_or(|t| self.tasks[i] == t) {
+            if let Record::Block { func, n } = *r
+                && task.is_none_or(|t| self.tasks[i] == t) {
                     *counts.entry((func, n)).or_default() += 1;
                 }
-            }
         }
         counts
     }

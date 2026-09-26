@@ -11,11 +11,14 @@
 //! * [`sched`]: the kernel's tasks, on one thread.
 //! * [`imports`]: the kernel's imports. The frequent ones are this
 //!   module's exports (direct wasm calls); the rest reach Web APIs.
+//! * [`programs`]: user programs (in kernel memory), their tasks' stack
+//!   pointers, and the runners that make the page's calls.
 //! * [`state`]: the machine's state in the runtime.
 
 mod imports;
 mod js;
 pub mod machine;
+mod programs;
 mod replay;
 mod sched;
 mod state;

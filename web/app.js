@@ -1,10 +1,10 @@
 // The kSEE page: wires the panels to a booted Machine (crates/ksee-runtime).
 //
-// Make calls, each recorded (an example's, or your own); then
-// explore the recording at one cursor: the timeline shows it among the
-// tasks and their calls; the source and the Stack show the code and the
-// values there (memory as it was). ◀ ▶| and Play move it line by line.
-import { $, el, taskName } from "./dom.js";
+// An example's program makes calls, each recorded; explore the recording
+// at one cursor: the timeline shows it among the tasks and their calls;
+// the source and the Stack show the code and the values there (memory as
+// it was). ◀ ▶| and Play move it line by line.
+import { $, taskName } from "./dom.js";
 import { source } from "./source.js";
 import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
@@ -24,7 +24,7 @@ export function app(m) {
     $("badge").className = `badge ${st}`;
     $("badge").textContent = { idle: "○ IDLE", replay: "↺ REPLAY", halted: "■ HALTED" }[st];
     $("status").textContent = {
-      idle: "Open an example and make its calls: the kernel's work for them is recorded, to explore here.",
+      idle: "Nothing recorded yet: an example's calls are, as it opens.",
       replay: `a recording of ${time.records()} records: move the cursor through it`,
       halted: `the kernel halted (${halted})`,
     }[st];
@@ -59,7 +59,7 @@ export function app(m) {
   // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:
   // the Stack marks it, the source shows where it is, the timeline outlines it.
   a.selectFrame = (f) => {
-    clearTimeout(peek);
+    cancelAnimationFrame(peek); // (a hover's preview, if pending, is not to win)
     stack.select(f.first, f.inlined ? f.func : null);
     src.view.cursor = { file: f.file, line: f.line };
     const at = time.cursor() != null ? m.at(time.cursor()) : null;
@@ -110,11 +110,7 @@ export function app(m) {
       (s ? ` · in ${s.name}` : "");
     badge();
   };
-  let ex = null;
-  examples(a).then((e) => (a.examples = ex = e));
-
-  // An example's stop at record `i`: the cursor there.
-  a.goStop = (i) => time.go(i);
+  examples(a);
 
   // ---- Lines: the line steps of the selection (a syscall) ----
   // (Machine.line_steps: every source line it ran, within blocks too.)
@@ -242,7 +238,7 @@ export function app(m) {
        () => (sizes.consoleOpen = !sizes.consoleOpen));
   layout();
 
-  // ---- The loop: the console ----
+  // ---- Starting again, and watching the kernel (its console, a halt) ----
   // Start the kernel again (a fresh one: the page stays); done once /init
   // is ready for calls.
   a.restart = async () => {
@@ -272,6 +268,5 @@ export function app(m) {
   refresh();
   stack.show(undefined);
   tick();
-  a.state = state;
   return a;
 }

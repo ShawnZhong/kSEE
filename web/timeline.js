@@ -445,5 +445,5 @@ export function timeline(app) {
     }
     return null;
   }
-  return { refresh, go, mark, select, selectWindow, hilite, selected, boxOf, home: () => t.home, cursor: () => t.cursor, records: () => t.n };
+  return { refresh, go, mark, select, hilite, selected, boxOf, home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }

@@ -58,20 +58,15 @@ pub struct Kernel {
     pub console_out: RefCell<Vec<u8>>,
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
     pub doorbell: RefCell<VecDeque<u32>>,
-    /// The runners ready for the page's calls, by thread id; the calls
-    /// asked of them (see Machine::call), and the count of calls asked.
-    pub runners: RefCell<BTreeMap<u32, Runner>>,
+    /// The runners ready for the page's calls (user/init.c): thread id ->
+    /// task; the calls asked of them (see Machine::call), and the count of
+    /// calls asked.
+    pub runners: RefCell<BTreeMap<u32, u32>>,
     pub calls: RefCell<BTreeMap<u32, Call>>,
     pub asked: Cell<u32>,
     /// Every call asked (by id): its runner, its number, and the id its
     /// recording's records start from (see Machine::syscall_of).
     pub made: RefCell<BTreeMap<u32, (u32, u32, u32)>>,
-}
-
-/// A runner (user/init.c): its task.
-#[derive(Clone, Copy)]
-pub struct Runner {
-    pub task: u32,
 }
 
 /// A call finished: returned (its result, and its buffers as it left them),
@@ -131,6 +126,11 @@ impl Memory for Direct {
         }
         unsafe { core::ptr::copy_nonoverlapping(addr as *const u8, buf.as_mut_ptr(), buf.len()) }
     }
+}
+
+/// The task running now (the kernel's __current_task).
+pub fn current() -> u32 {
+    Direct.read_u32(k(|k| k.current.get()))
 }
 
 /// Whether the trace records (its `on` word; probes check it).

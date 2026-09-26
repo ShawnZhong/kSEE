@@ -177,5 +177,5 @@ export function source(app) {
     return null;
   }
 
-  return { view: v, showFunction, showFile, preview, unpreview, hoverAt, ready };
+  return { view: v, showFunction, preview, unpreview, hoverAt };
 }

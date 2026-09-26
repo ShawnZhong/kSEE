@@ -200,13 +200,12 @@ export async function examples(app) {
     if (!c) return;
     t.pos = p;
     app.select(c);
-    app.goStop(s.at);
+    app.time.go(s.at);
     tutorial();
     mark(s.j);
   }
   // (Call `j`'s line marked, the others not.)
   const mark = (j) => [...t.list.children].forEach((li, k) => li.classList.toggle("on", k === j));
-  const next = () => stop(t.pos + 1);
 
   // What a call left in the buffers it was to fill.
   function outputs(call, args, buffers) {
@@ -245,5 +244,4 @@ export async function examples(app) {
   const u = fromURL();
   if (u.ex) open(u.ex, u.steps);
   run();
-  return { open, next, stop, list, run };
 }

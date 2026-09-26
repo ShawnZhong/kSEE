@@ -52,11 +52,10 @@ impl History {
         let mut first: Option<(usize, u8)> = None;
         for (&start, list) in self.by_addr.range(b.saturating_sub(7)..=b) {
             // (Oldest first: the first after `at` that covers b.)
-            if let Some(&(i, _, old)) = list.iter().find(|&&(i, size, _)| i > at && b - start < size) {
-                if first.is_none_or(|(fi, _)| i < fi) {
+            if let Some(&(i, _, old)) = list.iter().find(|&&(i, size, _)| i > at && b - start < size)
+                && first.is_none_or(|(fi, _)| i < fi) {
                     first = Some((i, (old >> (8 * (b - start))) as u8));
                 }
-            }
         }
         first.map(|(_, v)| v)
     }

@@ -21,8 +21,9 @@ web/ksee.js      init the runtime; Machine.start
 machine.rs       boot (a new kernel instance on wiped memory), restart,
                  console, snapshots, syscalls by the runners (recorded)
 sched.rs         the tasks: switch_task, idle (suspending), spawn_task
-imports.rs       the kernel's imports; programs, their tasks' stack
-                 pointers; the runners' imports
+imports.rs       the kernel's imports (the frequent ones: direct exports)
+programs.rs      user programs (in kernel memory), their tasks' stack
+                 pointers; the runners, which make the page's calls
 replay.rs        views of the recording (ksee_core::view, as JS values)
 state.rs         the machine's state in the runtime
 ```

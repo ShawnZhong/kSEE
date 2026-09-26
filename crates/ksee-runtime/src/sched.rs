@@ -167,7 +167,7 @@ pub fn switch_task(prev: u32, next: u32, dead: u32) -> Promise {
         raise(IRQ_TIMER);
     }
     let sp = sp_get();
-    crate::imports::switch_user(prev, next, dead != 0);
+    crate::programs::switch_user(prev, next, dead != 0);
     let back = if dead != 0 {
         S.with_borrow_mut(|s| s.tasks.remove(&prev));
         never()
