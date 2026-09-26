@@ -1,7 +1,9 @@
 // The source view: a whole kernel file in CodeMirror (web/editor.js), with
 // the lines that ran (green; how often: hover the line), the function's
 // lines, and the cursor. Hover a name for its value at the cursor (an
-// argument, a global, and fields: file->f_pos); F12 or Ctrl+click on a
+// argument, a global, and fields: file->f_pos), or, for a type, a field
+// or a global with no value here, its declaration's first lines; F12 or
+// Ctrl+click on a
 // name goes to its definition (a function, inline ones too, a type, a
 // global, a field: Machine.definition); over the shown function, who
 // called it in the recording (Machine.callers), each a link to the first
@@ -79,13 +81,25 @@ export function source(app) {
       ...(cs.length > 6 ? [item(`and ${cs.length - 6} more`)] : []));
   }
 
-  // ---- Hover: the value at the cursor ----
-  const tips = CM.hoverTooltip((view, pos) => {
+  // ---- Hover: the value at the cursor; else a declaration, its first lines ----
+  const tips = CM.hoverTooltip(async (view, pos) => {
     const line = view.state.doc.lineAt(pos);
-    const h = hover(line.number, line.text, pos - line.from);
+    const h = hover(line.number, line.text, pos - line.from) ?? await declaration(line.text, pos - line.from);
     return h && { pos: line.from + h.start, end: line.from + h.end, above: true,
                   create: () => ({ dom: el("pre", { className: "hovertip mono", textContent: h.text }) }) };
   }, { hoverTime: 200 });
+  // The declaration of the name at `k` of `text` (a type, a field, a global,
+  // an inline function: not a value the recording has): where, and its
+  // first lines, for a hover; null if none.
+  async function declaration(text, k) {
+    const e = exprAt(text, k), w = e && text.slice(e.start, e.end);
+    const d = w && !m.functions(w).length && definition(w, e.expr);
+    if (!d) return null;
+    const src = await fetchFile(d.file);
+    if (!src) return null;
+    const lines = src.split("\n").slice(d.line - 1, d.line + 7);
+    return { start: e.start, end: e.end, text: [`${d.file}:${d.line}`, ...lines].join("\n") };
+  }
 
   // ---- Keys and clicks: definitions, run to a line ----
   const lineOf = (view) => view.state.doc.lineAt(view.state.selection.main.head).number;
@@ -221,9 +235,11 @@ export function source(app) {
   }
   // For tests: the hover at the first `needle` of the shown function (and
   // after it), on `word`.
-  function hoverAt(needle, word) {
+  async function hoverAt(needle, word) {
     const at = find(needle, v.fn?.file === v.file ? v.fn.line : 1);
-    return at ? hover(at.line, ed.state.doc.line(at.line).text, at.column - 1 + needle.indexOf(word))?.text ?? null : null;
+    if (!at) return null;
+    const text = ed.state.doc.line(at.line).text, k = at.column - 1 + needle.indexOf(word);
+    return (hover(at.line, text, k) ?? await declaration(text, k))?.text ?? null;
   }
   // For tests: go to the definition of the name at `line`, `column`.
   const definitionAtLine = (line, column) => definitionAt(ed.state.doc.line(line).from + column - 1);

@@ -18,8 +18,13 @@
     r.notes.push([a.textContent, $("where").textContent.slice(0, 60)]);
     if (k === 1) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
     if (k === 1) r.args = [...document.querySelectorAll("#stack tr")].slice(1, 4).map((f) => f.innerText.replace(/\s+/g, " ").trim());
-    if (a.textContent === "vfs_read") r.hover = await ksee.src.hoverAt("file->f_mode & FMODE_READ", "f_mode");
+    if (a.textContent === "vfs_read") {
+      r.hover = await ksee.src.hoverAt("file->f_mode & FMODE_READ", "f_mode");
+      // (A type name: its declaration's first lines.)
+      r.decl = await ksee.src.hoverAt("struct kiocb kiocb", "kiocb");
+    }
   }
+  if (!r.decl?.startsWith("include/linux/fs.h:") || !r.decl.includes("struct kiocb {")) throw new Error("no declaration on hover: " + JSON.stringify(r.decl));
   if (r.notes.length < 3 || !r.notes.some(([n, w]) => n === "vfs_read" && w.includes("vfs_read")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
   // Watch a value: click one in the Call stack (one in memory: a local's, a task's field); the Watch shows it,
   // its writes listed (a local's in its frame's lifetime), ▶ goes to the next.
