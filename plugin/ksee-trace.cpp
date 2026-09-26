@@ -96,6 +96,7 @@ namespace {
 constexpr unsigned RingWords = 1u << 21;
 constexpr unsigned CallArgs = 6;
 constexpr unsigned Locals = 8;
+constexpr unsigned Values = CallArgs > Locals ? CallArgs : Locals; // a record's at most
 enum Kind { KindBlock = 1, KindLocals = 2, KindReturn = 4, KindStore = 7, KindValue = 8 };
 
 uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
@@ -150,10 +151,11 @@ bool runsProbes(const CallBase &CB) {
 class KseeTrace : public PassInfoMixin<KseeTrace> {
   Module *M = nullptr;
   Type *i32 = nullptr, *i64 = nullptr;
-  Function *putBlock = nullptr, *putReturn = nullptr;
-  Function *putCall[CallArgs + 1] = {}; // an entry block, with k arguments
-  Function *putStore[4] = {};           // 1, 2, 4, 8 bytes
-  Function *putLocals[Locals + 1] = {}; // k locals' addresses
+  // The writers: a record's head pair [a, tag] and k values after it; a
+  // store of 1, 2, 4 or 8 bytes at an address (the old value, read while
+  // recording only).
+  Function *put[Values + 1] = {};
+  Function *putStore[4] = {};
   FunctionCallee bulk;
   std::string probes;
   std::map<std::string, unsigned> files; // this object's, numbered
@@ -174,29 +176,35 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     return f;
   }
 
+  // Record [a, tag] and `values`.
+  void record(IRBuilder<> &B, Value *a, uint32_t tag, ArrayRef<Value *> values = {}) {
+    SmallVector<Value *, 2 + Values> args{a, B.getInt32(tag)};
+    args.append(values.begin(), values.end());
+    B.CreateCall(put[values.size()], args);
+  }
+
   // The writers: declared, or (in the object that defines start_kernel)
   // defined, with the ring and the export that finds it.
   void createRuntime() {
     LLVMContext &C = M->getContext();
     Type *vd = Type::getVoidTy(C);
-    auto names = [&](auto f) {
-      f(putBlock, "__ksee_put_block", 2);
-      f(putReturn, "__ksee_put_return", 2);
-      for (unsigned k = 0; k <= CallArgs; k++)
-        f(putCall[k], "__ksee_put_call" + std::to_string(k), 1 + k);
-      for (unsigned k = 0; k < 4; k++)
-        f(putStore[k], "__ksee_put_store" + std::to_string(1 << k), 1);
-      for (unsigned k = 1; k <= Locals; k++)
-        f(putLocals[k], "__ksee_put_locals" + std::to_string(k), 1 + k);
-    };
-    bulk = import("__ksee_bulk", "bulk", FunctionType::get(vd, {i32, i32}, false));
     GlobalValue *home = M->getNamedValue("start_kernel");
-    if (!home || home->isDeclaration()) {
-      names([&](Function *&F, const std::string &name, unsigned n) {
-        F = cast<Function>(M->getOrInsertFunction(name, FunctionType::get(vd, SmallVector<Type *>(n, i32), false)).getCallee());
-      });
+    bool define = home && !home->isDeclaration();
+    auto function = [&](const std::string &name, unsigned n) {
+      auto *T = FunctionType::get(vd, SmallVector<Type *>(n, i32), false);
+      if (!define)
+        return cast<Function>(M->getOrInsertFunction(name, T).getCallee());
+      Function *F = hidden(Function::Create(T, GlobalValue::ExternalLinkage, name, M));
+      F->addFnAttr(Attribute::NoInline);
+      return F;
+    };
+    for (unsigned k = 0; k <= Values; k++)
+      put[k] = function("__ksee_put" + std::to_string(k), 2 + k);
+    for (unsigned k = 0; k < 4; k++)
+      putStore[k] = function("__ksee_put_store" + std::to_string(1 << k), 1);
+    bulk = import("__ksee_bulk", "bulk", FunctionType::get(vd, {i32, i32}, false));
+    if (!define)
       return;
-    }
 
     auto *traceTy = StructType::get(C, {i32, i32, i32, i32, ArrayType::get(i32, RingWords)});
     auto *trace = hidden(new GlobalVariable(*M, traceTy, false, GlobalValue::ExternalLinkage,
@@ -209,11 +217,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     IB.CreateRet(IB.CreatePtrToInt(trace, i32));
     auto field = [&](IRBuilder<> &B, unsigned k) { return B.CreateStructGEP(traceTy, trace, k); };
 
-    // A writer: `words` of a record from its arguments, while on.
-    auto writer = [&](Function *&F, const std::string &name, unsigned n, auto words) {
-      F = hidden(Function::Create(FunctionType::get(vd, SmallVector<Type *>(n, i32), false),
-                                  GlobalValue::ExternalLinkage, name, M));
-      F->addFnAttr(Attribute::NoInline);
+    // Writer F's body: while on, the words `words` makes, into the ring.
+    auto body = [&](Function *F, auto words) {
       IRBuilder<> B(BasicBlock::Create(C, "", F));
       BasicBlock *write = BasicBlock::Create(C, "write", F), *done = BasicBlock::Create(C, "done", F);
       B.CreateCondBr(B.CreateICmpNE(B.CreateLoad(i32, field(B, 2)), B.getInt32(0)), write, done);
@@ -225,7 +230,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         w.push_back(v);
         w.push_back(B.getInt32(KindValue << 28 | index));
       };
-      words(B, F, w, value);
+      words(B, w, value);
       Value *p = B.CreateLoad(i32, field(B, 0));
       for (auto [i, v] : enumerate(w)) {
         Value *idx = B.CreateAnd(B.CreateAdd(p, B.getInt32(i)), B.getInt32(RingWords - 1));
@@ -237,32 +242,16 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       B.SetInsertPoint(done);
       B.CreateRetVoid();
     };
-    names([&](Function *&F, const std::string &name, unsigned n) {
-      writer(F, name, n, [&](IRBuilder<> &B, Function *F, auto &w, auto value) {
-        if (StringRef(name).starts_with("__ksee_put_call") || name == "__ksee_put_block") {
-          bool call = name != "__ksee_put_block";
-          w.push_back(F->getArg(0));
-          w.push_back(call ? B.getInt32(KindBlock << 28) : B.CreateOr(F->getArg(1), B.getInt32(KindBlock << 28)));
-          for (unsigned i = 1; call && i < n; i++)
-            value(F->getArg(i));
-          return;
-        }
-        if (StringRef(name).starts_with("__ksee_put_locals")) {
-          w.push_back(F->getArg(0));
-          w.push_back(B.getInt32(KindLocals << 28 | (n - 1)));
-          for (unsigned i = 1; i < n; i++)
-            value(F->getArg(i));
-          return;
-        }
-        if (name == "__ksee_put_return") {
-          w.push_back(F->getArg(0));
-          w.push_back(B.getInt32(KindReturn << 28));
-          value(F->getArg(1));
-          return;
-        }
-        // A store of 1 << k bytes: the old value.
-        unsigned k = Log2_32(std::stoi(name.substr(strlen("__ksee_put_store"))));
-        Value *addr = F->getArg(0);
+    for (Function *F : put)
+      body(F, [&](IRBuilder<> &B, auto &w, auto value) {
+        w.push_back(F->getArg(0));
+        w.push_back(F->getArg(1));
+        for (unsigned i = 2; i < F->arg_size(); i++)
+          value(F->getArg(i));
+      });
+    for (unsigned k = 0; k < 4; k++)
+      body(putStore[k], [&](IRBuilder<> &B, auto &w, auto value) {
+        Value *addr = putStore[k]->getArg(0);
         Value *old = B.CreateZExt(B.CreateAlignedLoad(IntegerType::get(C, 8 << k),
                                                       B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1)), i64);
         w.push_back(addr);
@@ -271,7 +260,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         if (k == 3)
           value(B.CreateTrunc(B.CreateLShr(old, 32), i32));
       });
-    });
     probes += "R\t" + std::to_string(RingWords) + "\n";
   }
 
@@ -416,14 +404,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       if (seal && n > 0)
         break;
       IRBuilder<> B(&*BB->getFirstInsertionPt());
-      if (n == 0) {
-        SmallVector<Value *, 1 + CallArgs> args{B.getInt32(id)};
-        for (Value *p : params)
-          args.push_back(p ? toI32(B, p) : B.getInt32(0));
-        B.CreateCall(putCall[args.size() - 1], args);
-      } else {
-        B.CreateCall(putBlock, {B.getInt32(id), B.getInt32(n)});
-      }
+      // (The entry block's is the call: its arguments follow.)
+      SmallVector<Value *, CallArgs> args;
+      for (Value *p : n == 0 ? params : SmallVector<Value *, CallArgs>{})
+        args.push_back(p ? toI32(B, p) : B.getInt32(0));
+      record(B, B.getInt32(id), KindBlock << 28 | n, args);
       std::string loc = "?";
       for (Instruction &I : *BB)
         if (DILocation *L = I.getDebugLoc().get(); L && L->getLine()) {
@@ -443,7 +428,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
           at = C;
         IRBuilder<> B(at);
         Value *ret = R->getReturnValue();
-        B.CreateCall(putReturn, {B.getInt32(id), ret ? toI32(B, ret) : B.getInt32(0)});
+        record(B, B.getInt32(id), KindReturn << 28, {ret ? toI32(B, ret) : B.getInt32(0)});
       }
 
     for (Instruction *I : writes)
@@ -458,13 +443,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       IRBuilder<> B(last->getNextNode());
       while (isa<AllocaInst>(&*B.GetInsertPoint()))
         B.SetInsertPoint(B.GetInsertPoint()->getNextNode());
-      SmallVector<Value *, 1 + Locals> args{B.getInt32(id)};
+      SmallVector<Value *, Locals> addrs;
       std::string names;
       for (auto &[A, name] : locals) {
-        args.push_back(B.CreatePtrToInt(A, i32));
+        addrs.push_back(B.CreatePtrToInt(A, i32));
         names += (names.empty() ? "" : ",") + name;
       }
-      B.CreateCall(putLocals[locals.size()], args);
+      record(B, B.getInt32(id), KindLocals << 28 | locals.size(), addrs);
       probes += ("V\t" + Twine(id) + "\t" + names + "\n").str();
     }
 

@@ -36,8 +36,8 @@ export function timeline(app) {
 // Machine.chart: inlined, code inlined into the call below it).
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
               depth: 1, row: ROW, // (depth: the deepest stack of the selection seen; row: the rows' height)
-              lit: null, sel: null, inlined: true, syscallAt: new Map() };
-  try { t.inlined = localStorage.getItem("ksee.inlined") !== "0"; } catch { /* not kept */ } // the calls outlined (their first records): hovered here or in the Stack; selected
+              lit: null, sel: null, inlined: false, syscallAt: new Map() };
+  try { t.inlined = localStorage.getItem("ksee.inlined") === "1"; } catch { /* not kept */ } // the calls outlined (their first records): hovered here or in the Stack; selected
   const funcs = new Map(), tasks = new Map();
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const inames = new Map();
