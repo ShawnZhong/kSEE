@@ -246,26 +246,9 @@ export function timeline(app) {
     const { k, c, d } = hit(e);
     const [id, first, inl] = c?.frames[d] ?? [];
     hilite(first ?? null);
-    // (The view follows the pointer: the moment under it, in the call under it.)
+    // (The view follows the pointer: the moment under it, in the call under
+    // it: the source and the Call stack say where the call is.)
     app.peek(first == null ? at(e.offsetX) : Math.max(first, at(e.offsetX)));
-    const key = first == null ? null : `${first}:${inl}:${k}`;
-    if (key !== t.peek) {
-      // Where the call is there (called from where, at which line, what
-      // runs on top): once per call and column (a stack is a millisecond).
-      t.peek = key;
-      const call = first == null ? null : `${first}:${inl}`;
-      if (call !== t.peekCall) t.here = "";
-      t.peekCall = call;
-      if (first != null) {
-        const i = Math.max(first, at(e.offsetX)), frames = m.call_stack(i), name = inl ? iname(inl - 1) : null;
-        const f = frames.find((x) => x.first === first && (name ? x.inlined && x.func === name : !x.inlined));
-        if (f) {
-          const caller = frames[frames.indexOf(f) + 1];
-          t.here = (caller ? `called at ${caller.file}:${caller.line} · ` : "") + `now at ${f.file}:${f.line}` +
-            (frames[0] && frames[0] !== f ? ` · running: ${frames[0].func}${frames[0].inlined ? " (inlined)" : ""} (${frames[0].file}:${frames[0].line})` : "");
-        }
-      }
-    }
     if (first == null) {
       tip.hidden = true;
       chart.title = c && d < 0 ? taskName(who(c.task)) : "";
@@ -280,8 +263,7 @@ export function timeline(app) {
       ? [line(`${s.name ?? s.nr}(${argsOf(first).map((a) => a.value ?? "{…}").join(", ")}) = ${s.ret ?? "…"}`, ""),
          line(`a syscall by ${taskName(s.task)}`, "dim")]
       : [line(f?.name ?? "?", ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f"))]);
-    // (Where it is, called from: kept once found, see above.)
-    tip.replaceChildren(...tipLines, line(t.here ?? "", "dim here"));
+    tip.replaceChildren(...tipLines);
     tip.hidden = false;
     const r = tip.getBoundingClientRect();
     tip.style.left = `${Math.min(e.clientX + 14, innerWidth - r.width - 8)}px`;
@@ -289,7 +271,6 @@ export function timeline(app) {
   }
   chart.onpointerleave = () => {
     tip.hidden = true;
-    t.peek = null;
     hilite(null);
     app.peek(null);
   };
