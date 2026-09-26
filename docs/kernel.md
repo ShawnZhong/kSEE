@@ -46,9 +46,9 @@ The host never interrupts running wasm code: its JavaScript runs only
 while the kernel is suspended. It raises an interrupt by setting a bit in
 `wasm_irq_pending`; the kernel takes pending interrupts when it re-enables
 interrupts. The idle loop calls `idle()`, which suspends until an
-interrupt may be pending: the timer's deadline passed (a `setTimeout`), or
-input from the page. For a `PREEMPT_NONE` kernel these are the points
-where real hardware would deliver them too.
+interrupt may be pending: the page's input, or (the clock being virtual,
+below) the timer's deadline, skipped to at once. For a `PREEMPT_NONE`
+kernel these are the points where real hardware would deliver them too.
 
 | Line | Raised by | For |
 |---|---|---|

@@ -36,7 +36,8 @@ URL, `#ex=read`); the selector above it, and ◀ ▶, switch examples, each on
 a fresh kernel (the page starts again), so that each starts from the same
 state. An **example** (on the left) is a question about the kernel ("What happens in read()?", "The
 life of a file on ext4", …), a program of syscalls that asks it, and a
-tutorial: /init makes the calls as the example opens, each recorded, and
+tutorial: /init (or a thread or child of it) makes the calls as the
+example opens, each recorded, and
 the tutorial goes from stop to stop (◀ ▶, or click one): a note on a
 function one of the calls runs, the cursor there, the source, and the
 Stack (the call stack, with each call's arguments and locals, as they
@@ -51,7 +52,9 @@ The program is below the tutorial, a call a line, each written as in C
 recording; type in it to change it, and Enter: the page starts a fresh
 kernel and makes the calls again, which comes to the very same state
 up to the change (the machine is deterministic: its clock is virtual);
-the calls are in the URL (`#ex=NAME&p=CALLS`), a link to them. Add a call at the
+the calls are in the URL (`#ex=NAME&p=CALLS&stop=N`: the program if
+changed, its calls separated by `;`, and the tutorial's stop), a link to
+them. Add a call at the
 end. As you type, a list shows what fits (syscalls, the constants for the
 parameter, the results so far as `$n`), and the signature. Some examples
 have several threads or processes (a futex, a thread's join, a pipe
@@ -69,13 +72,15 @@ for who last wrote it; Ctrl+click (or F12) a name for its definition: a
 function, a type, a global.
 
 An example is one JSON file in user/examples/: a title, a question, and
-steps: `{ call, args, stops: [{ func, note, any? }] }`, the arguments
+steps: `{ call, args, as?, stops: [{ func, note, any? }] }` (`as`: the
+runner call `as` started, a thread or child; else /init), the arguments
 written as in C: `"AT_FDCWD"`, `"O_CREAT | O_WRONLY"` (the kernel's own
 constants, from its UAPI headers), `"0644"`, `"\"a string\""`, `"[64]"`
 (a buffer for the kernel to fill), `"{0, 30000000}"` (64-bit values),
-`"$1"` (call 1's result); see web/args.js. /init mounts an ext4 disk on /mnt (an
+`"{\"init\", NULL}"` (an array of strings: argv), `"$1"` (call 1's
+result), `"$1 + 65536"`; see web/args.js. /init mounts an ext4 disk on /mnt (an
 image in the initramfs, through the loop device).
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs
-the page itself through two examples, and saves a screenshot,
-`target/ui.png`. The build is `ksee build` (crates/ksee-cli/src/build.rs).
+the page itself (tests/ui/: the read example, a changed program from the
+URL, the pipe example), and saves screenshots in `target/`. The build is `ksee build` (crates/ksee-cli/src/build.rs).

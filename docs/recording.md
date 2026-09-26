@@ -28,13 +28,18 @@ Every function gets:
 - once its **locals in memory** exist (address-taken ones: arrays,
   structs, anything whose address is passed on), a locals record with their
   addresses;
-- before each **store** (except to its own stack slots, other than those
-  locals), a store record with the **old value**. Bulk writes (memcpy,
-  memset, wider stores) call the `ksee.bulk(addr, len)` import, which logs
-  their old contents the same way.
+- before each **store** (its stack slots' too: a slot is reused by later
+  calls, and a frame's locals must be undone to be seen as they were), a
+  store record with the **old value**. Bulk writes (memcpy, memset, wider
+  stores) call the `ksee.bulk(addr, len)` import, which logs their old
+  contents the same way.
 
-That is enough to rebuild everything else ([replay.md](replay.md)). There
-are no tracepoints, no syscall hooks, nothing per subsystem.
+A function that loops but writes no memory and calls nothing (a checksum,
+a search: `crc32c`, `_find_next_bit`, `memcmp`; about 130 of them) is
+**sealed**: only its call and its returns are recorded, not each block of
+each turn (the source view says so). That is enough to rebuild everything
+else ([replay.md](replay.md)). There are no tracepoints, no syscall hooks,
+nothing per subsystem.
 
 ## The ring
 
@@ -51,7 +56,6 @@ overwritten the start of a record) and skip to the next head:
 | `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments |
 | `[fn, 2<<28 \| k]` | fn's k locals in memory; their addresses follow |
 | `[fn, 4<<28]` | a return from fn; the value follows |
-| `[task, 6<<28]` | a task entering a program: pid and comm follow (the runtime's) |
 | `[addr, 7<<28 \| k]` | a store of 1<<k bytes at addr; the old value follows (k = 7: a range of unknown old contents; its length follows) |
 | `[value, 8<<28 \| i]` | continuation i |
 
@@ -61,7 +65,7 @@ records. One writer at a time: the kernel is uniprocessor, and the runtime
 writes its own records only while the kernel runs (one thread).
 
 Probes record **only while `on` is set**: the runtime turns it on for each
-call the page asks /init to make (Machine.call), and off when the kernel
+call the page asks a runner to make (Machine.call), and off when the kernel
 idles for the page's input again: until the next call, memory stays as the
 recording leaves it. Otherwise each probe costs a load and a branch.
 
@@ -70,8 +74,8 @@ recording leaves it. Otherwise each probe costs a load and a branch.
 The instrumented kernel describes its probes in a custom section,
 `ksee.probes` (lines of text, one part per compilation unit):
 
-- `F fn name FILE:line known`: a function, and which of its parameters call
-  records carry;
+- `F fn name FILE:line known sealed`: a function, which of its parameters
+  call records carry, and whether it is sealed (see above);
 - `B fn n FILE:line:column`: where block n starts;
 - `L fn n …`: the source lines block n runs, in order, in stretches between
   the calls it makes; a line of inlined code carries its inline chain:
@@ -82,7 +86,11 @@ The instrumented kernel describes its probes in a custom section,
 
 `ksee pack` (crates/ksee-cli) reads the kernel's DWARF and adds
 `ksee.types`: the types (deduplicated across units, as pahole does for
-BTF), globals, each function's parameters and locals with their types, and
-the syscalls' names, and constants from the UAPI headers (`O_*`, `AT_*`,
-`CLOCK_*`, errno's `E*`: for the page's calls, written as in C). The page's kernel is a copy of vmlinux with that
+BTF), globals, each function's parameters and locals with their types, the
+syscalls' names, constants from the UAPI headers (`O_*`, `AT_*`,
+`CLOCK_*`, `CLONE_*`, `FUTEX_*`, errno's `E*`, …: for the page's calls,
+written as in C), and `W name file line` lines: where a function (an
+inline one too), a type or a global is declared, from DWARF's
+decl_file/decl_line (the page's Ctrl+click and F12 go there:
+`Machine.definition`). The page's kernel is a copy of vmlinux with that
 section and without DWARF, plus the sources the probes name.

@@ -45,9 +45,12 @@ the kernel **quiet** (idle, until the page's input: the recording stops
 there), with the calls finished meanwhile: returned (`ksee.done`), ended
 by an execve (the new program's `ksee.ready`) or by their task's exit.
 A call may not have finished then: it blocks (a futex's wait, a pipe's
-read), and finishes as a later call wakes it. A boot is done when /init
-is ready and the kernel quiet (`Machine.start` and `restart` resolve
-then).
+read), and finishes as a later call wakes it. (While a call is under way,
+idle skips the clock to the next timer only if the call's runner sleeps on
+a timer of its own: sched.rs reads the kernel's timers for one; see
+[kernel.md](kernel.md).) `Machine.syscall_of(id)` finds a call's syscall
+in the recording. A boot is done when /init is ready and the kernel quiet
+(`Machine.start` and `restart` resolve then).
 
 **Deterministic.** Nothing of the host's gets in but the page's calls: the
 kernel's clock is virtual (see [kernel.md](kernel.md)), the page's input
@@ -58,7 +61,7 @@ back to the very same state.
 
 **Imports**: the frequent ones (`console_write`, `time_ns`, `spawn_task`,
 `ksee.bulk`, ...) are the runtime's own wasm exports, so the kernel calls
-them directly; the rest (promises, /init's module and memory) are closures
+them directly; the rest (promises, programs' modules) are closures
 reaching Web APIs.
 
 ## The page
@@ -68,18 +71,19 @@ source. Rust does the work: JS only lays it out.
 
 | Module | Does |
 |---|---|
-| app.js | wires the panels to the Machine; the state (idle, replay, halted); the cursor; line steps and Play |
+| app.js | wires the panels to the Machine; the status (idle, replay, halted); the cursor; stepping (by line, over calls, out of them, both ways), run to a line, Play; the keys |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom); zoom, pan |
 | source.js | the source at the cursor (Monaco): lines that ran, the function, hover values, definitions |
 | callstack.js | the Stack: calls with arguments and locals, the task (current) |
-| examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops) |
+| examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
 | args.js | a syscall's arguments, written as in C, with the kernel's constants |
 | ksee.js | booting |
 
 Every view asks the Machine for the moment at the cursor: `at(i)`,
 `call_stack(i)`, `line_steps`, `chart`, `memory_at(i)` then `object` /
-`global` (memory as it was), `last_write`.
+`global` (memory as it was), `last_write`, `run_of` (a line's next or last
+run), `definition`.
 
 ## Tests
 
@@ -88,8 +92,11 @@ Every view asks the Machine for the moment at the cursor: `at(i)`,
   /init make syscalls, recorded (and every example's), and checks what the
   recordings show: stacks with arguments, lines, memory as it was, who
   wrote a value, tasks, the examples' stops.
-- tests/ui.js: the page in headless Chromium over CDP: the first example
-  (it runs by itself), then the read example: walks its stops, hovers, plays; fails on any exception. Saves
-  target/ui.png.
+- tests/ui.js: the page in headless Chromium over CDP, a script from
+  tests/ui/ run in it (after lib.js): read.js, the read example (its
+  stops, stepping, run to a line, the chart, typing and changing calls,
+  another example); back.js, a changed program from the URL; pipe.js, two
+  processes, calls that block. Fails on any exception; saves a screenshot
+  in target/.
 
 `./ksee.sh test --ui` runs all three (`$CHROME`: a headless Chromium).

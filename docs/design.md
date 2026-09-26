@@ -13,8 +13,9 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
 
 - *Learners*: how an OS really works, on real Linux instead of a teaching
   kernel. They start from **examples**: a question ("What happens in
-  read()?", "Directories on ext4"), a few syscalls that ask it, made one
-  at a time, and stops in their recordings that explain what happens.
+  read()?", "Directories on ext4", "How do two processes talk through a
+  pipe?"), a program of syscalls that asks it, and a tutorial: stops in
+  the recording that explain what happens.
 - *Kernel developers*: what a code path really does, on a real kernel they
   can read and change. They make **their own syscalls**.
 
@@ -27,38 +28,43 @@ SMP, no fork (threads and vfork, though): see Limits).
 1. **Make syscalls**, each recorded: an example's program (the page makes
    them as it opens), changed or added to (calls written as in C). A
    syscall takes milliseconds.
-2. **Explore the recording**, at one cursor:
-   - *time*: a timeline of the call stack (who ran, what they called);
-     drag, step line by line, Play;
+2. **Explore the recording**, at one cursor, as in a debugger that goes
+   both ways:
+   - *time*: a timeline of the call stacks (who ran, what they called);
+     step by line, over calls or out of them, forwards or back; run to a
+     line (its next run, or its last); Play;
    - *code*: the source line at the cursor, the lines that ran;
    - *values*: the call stack with each call's arguments and locals,
-     the task running, and a name's value on hover; memory as it was at the cursor.
+     the task running, and a name's value on hover (who last wrote it);
+     memory as it was at the cursor.
    An example's tutorial is its stops, places in the recording with a note
-   each: ◀ ▶ go from one to the next.
+   each: ◀ ▶ (or [ ]) go from one to the next.
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│ Timeline: overview · call stacks over time · tasks · cursor │
-├──────────────┬──────────────────────────────┬───────────────┤
-│ Examples     │ The stop's note              │ Stack: calls, │
-│              │ Source at the cursor         │ arguments,    │
-│              │ (lines that ran)             │ locals,       │
-│              │                              │ current task  │
-└──────────────┴──────────────────────────────┴───────────────┘
+┌──────────────┬──────────────────────────────────────────────┐
+│ Example:     │ Timeline: overview · call stacks · tasks     │
+│  question    │ ◀ ▶ Play · step by line / over / out         │
+│  tutorial    ├───────────────────────────────┬──────────────┤
+│  (its stops) │ Source at the cursor          │ Stack: calls,│
+│  program     │ (the lines that ran)          │ arguments,   │
+│  (its calls) │                               │ locals,      │
+│ Console      │                               │ current task │
+└──────────────┴───────────────────────────────┴──────────────┘
 ```
 
 ## How it works
 
 ```text
 linux/ (arch/wasm) ──clang + plugin──▶ vmlinux (wasm) ──────┐
-user/ (init, examples, tests: C on nolibc) ─▶ initramfs ────┼─▶ site ─▶ browser
+user/ (/init: C on nolibc; the examples) ─▶ initramfs ────┼─▶ site ─▶ browser
 crates/ksee-runtime (Rust → wasm) ──────────────────────────┘
 ```
 
 - **The kernel** ([kernel.md](kernel.md)): a minimal `arch/wasm` for Linux
   7.2. One wasm instance, on the page's thread; a task is a call stack of
   it, which the host suspends and resumes at a context switch (JSPI).
-  /init makes the syscalls the page asks for (the doorbell: a signal).
+  /init makes the syscalls the page asks for, and so do its threads and
+  children (runners; the doorbell: a signal).
 - **The recording** ([recording.md](recording.md)): an LLVM pass
   instruments every function the same way (blocks, calls with arguments,
   returns, locals, stores with old values) into one ring.
@@ -91,4 +97,5 @@ The choices that shape it:
 - Arguments are 32 bits (wider ones lose their high half); locals are only
   those in memory; values in wasm locals are not recorded.
 - A recording is a ring: the oldest records go when it is full.
-- No console input.
+- No console input; no user signal handlers (a caught signal kills the
+  task).
