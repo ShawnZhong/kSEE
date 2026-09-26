@@ -24,10 +24,12 @@
   <div class="flamescroll" id="chartbox"><canvas id="chart" aria-label="the call stacks over time"></canvas></div>
   <canvas id="strip" aria-label="which task ran"></canvas>
   <div class="transport">
-    <button id="to-start" title="To the start">⏮</button>
-    <button id="back-line" title="Back a line (←)">◀</button>
-    <button id="play" class="go" title="Play: line by line (space)">▶ Play</button>
-    <button id="fwd-line" title="Forward a line (→)">▶|</button>
+    <button id="step-back" title="Back a step (←; Shift: over calls, Alt: out of the call)">◀</button>
+    <button id="play" class="go" title="Play (space)">▶ Play</button>
+    <button id="step-fwd" title="A step (→; Shift: over calls, Alt: out of the call; F10, F11, Shift+F11)">▶</button>
+    <select id="step-by" aria-label="step by" title="What ◀ ▶ and Play step by: every line (into calls), over calls, or out of the call (the Stack's selected one, or the line's)">
+      <option value="line">by line</option><option value="over">over calls</option><option value="out">out of calls</option>
+    </select>
     <select id="speed" aria-label="speed" title="Play speed">
       <option value="1000">slow</option><option value="400" selected>1 line / 0.4 s</option><option value="120">fast</option><option value="30">faster</option>
     </select>

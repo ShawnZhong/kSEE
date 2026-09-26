@@ -115,6 +115,18 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   }
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = [$("badge").textContent, $("where").textContent.slice(0, 50)];
+  // Stepping: into a call, over the next, out of it (the Stack's calls, deep).
+  const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
+  const press = (kind) => { $("step-by").value = kind; $("step-fwd").click(); };
+  const d0 = depthNow();
+  for (let k = 0; k < 200 && depthNow() <= d0; k++) press("line");
+  const d1 = depthNow();
+  press("over");
+  const d2 = depthNow();
+  press("out");
+  const d3 = depthNow();
+  r.stepped = [d0, d1, d2, d3];
+  if (!(d1 > d0 && d2 <= d1 && d3 <= d2 && d3 < d1)) throw new Error("stepping: " + JSON.stringify(r.stepped));
   r.chart = $("chart-title").textContent;
   // (The read's own box: its syscall entry's.)
   const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === 1 && x.last != null);

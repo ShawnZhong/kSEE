@@ -40,7 +40,9 @@ tutorial: /init makes the calls as the example opens, each recorded, and
 the tutorial goes from stop to stop (◀ ▶, or click one): a note on a
 function one of the calls runs, the cursor there, the source, and the
 Stack (the call stack, with each call's arguments and locals, as they
-were). ◀ / ▶| step line by line, or Play.
+were). ◀ ▶ step, and Play plays, by line (into calls), over calls, or out of
+the call: the Stack's selected call, or the line's; ← →, with Shift over,
+with Alt out (F10, F11, Shift+F11 as in a debugger).
 
 The program is below the tutorial, a call a line, each written as in C
 (`openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`): click one for its

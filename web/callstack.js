@@ -158,8 +158,17 @@ export function callstack(app) {
     draw();
     return f ?? null;
   }
+  // The selected call's level, as line steps have it (calls deep, inlined
+  // deep: see Machine.line_steps), or null if none is selected.
+  function level() {
+    const k = s.sel ? s.frames.indexOf(s.sel) : -1;
+    if (k < 0) return null;
+    let inl = 0;
+    while (s.frames[k + inl]?.inlined) inl++;
+    return { depth: s.frames.slice(k + 1).filter((f) => !f.inlined).length, inl };
+  }
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
 
-  return { show, preview, unpreview, select, owner, resolve, kids };
+  return { show, preview, unpreview, select, level, owner, resolve, kids };
 }

@@ -73,6 +73,10 @@ pub struct Line {
     pub line: u32,
     /// The function the line is inlined from, if.
     pub inlined: Option<String>,
+    /// How deep it runs: calls deep, and inlined (how many functions its
+    /// code is inlined from): a stepper's level.
+    pub depth: u32,
+    pub inl: u32,
 }
 
 /// A call on a stack, with its arguments (32 bits each: wider ones lose
@@ -252,8 +256,9 @@ impl View<'_> {
 
     fn line(&self, s: &LineStep) -> Line {
         let t = self.tables;
+        let chain = self.chain(s.inlined);
         Line { i: s.record, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
-               inlined: self.chain(s.inlined).first().map(|&(k, _)| self.inline_name(k)) }
+               inlined: chain.first().map(|&(k, _)| self.inline_name(k)), depth: s.depth, inl: chain.len() as u32 }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.

@@ -150,12 +150,24 @@ export function app(m) {
     let nth = 0;
     while (nth < k && st[k - nth - 1].i === step.i) nth++;
     stack.show(step.i, { ...step, nth }, at?.task);
-    $("where").textContent = `line ${k + 1} of ${st.length} · ${step.inlined ? `${step.inlined} in ` : ""}${step.func} ${step.file}:${step.line}` +
-      (at ? ` · ${taskName(at.task)}` : "");
+    $("where").textContent = `${at ? `${taskName(at.task)} · ` : ""}${step.inlined ? `${step.inlined} in ` : ""}${step.func} ${step.file}:${step.line}`;
     return true;
   }
-  const forward = () => steps().length > 0 && showStep(position() + 1);
-  const back = () => steps().length > 0 && showStep(Math.max(0, position() - 1));
+  // Step: by a `line` (into calls), `over` calls (the next line at this
+  // level or out of it), or `out` (the next line out of it), `dir` 1
+  // forward, -1 back. The level: the Stack's selected call's, else the
+  // line's (calls deep, then inlined deep: inlined code is stepped over
+  // too). False if there is no such line.
+  function step(kind, dir) {
+    const st = steps();
+    if (!st.length) return false;
+    const k = position(), { depth: d, inl: i } = stack.level() ?? st[k];
+    // (A line's level against this one: -1 shallower, 0 the same, 1 deeper.)
+    const cmp = (s) => Math.sign(s.depth - d || s.inl - i);
+    const stop = { line: () => true, over: (s) => cmp(s) <= 0, out: (s) => cmp(s) < 0 }[kind];
+    for (let j = k + dir; j >= 0 && j < st.length; j += dir) if (stop(st[j])) return showStep(j);
+    return false;
+  }
   let playing = null;
   function stopPlay() {
     clearTimeout(playing);
@@ -166,21 +178,26 @@ export function app(m) {
     if (playing) return stopPlay();
     if (!steps().length) return;
     $("play").textContent = "❚❚ Pause";
+    const by = $("step-by").value;
     const tickPlay = () => {
       if (!playing) return;
-      if (!forward()) return stopPlay();
+      if (!step(by, 1)) return stopPlay();
       playing = setTimeout(tickPlay, Number($("speed").value));
     };
     playing = setTimeout(tickPlay, 0);
   }
   $("play").onclick = play;
-  $("fwd-line").onclick = forward;
-  $("back-line").onclick = back;
-  $("to-start").onclick = () => steps().length && showStep(0);
+  $("step-back").onclick = () => step($("step-by").value, -1);
+  $("step-fwd").onclick = () => step($("step-by").value, 1);
+  // (← →: a line; with Shift: over; with Alt: out. F10, F11, Shift+F11 as
+  // in a debugger; Home: the first line.)
   addEventListener("keydown", (e) => {
     if (e.target.closest("input, select, textarea, .monaco-editor")) return;
-    if (e.key === "ArrowRight") forward();
-    else if (e.key === "ArrowLeft") back();
+    const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (arrow) step(e.altKey ? "out" : e.shiftKey ? "over" : "line", arrow);
+    else if (e.key === "Home") steps().length && showStep(0);
+    else if (e.key === "F10") step("over", 1);
+    else if (e.key === "F11") step(e.shiftKey ? "out" : "line", 1);
     else if (e.key === " ") play();
     else return;
     e.preventDefault();
