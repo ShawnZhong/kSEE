@@ -70,10 +70,12 @@ a name in the source for its value at the cursor, and a value in the Stack
 for who last wrote it; click it to watch it: the Watch follows it as the
 cursor moves, with every write to it while it lived (a local: while its
 frame did): the member, from what to what, by which line, each a link to
-that moment, ◀ ▶ to the write before or after the cursor. "changed" under
-a call in the Stack is what it changed, by object (`fd 3 note.txt:
-f_pos 0 → 26`, `inode 12 (ext4): i_size`, a local, a callee's frame), in
-the order they were first written; click an object to watch it. The
+that moment, ◀ ▶ to the write before or after the cursor. The Changes tab
+is what the selected call changed, by object (`fd 3 note.txt: f_pos 0 →
+26`, `inode 12 (ext4): i_size`), in the order they were first written,
+each write by which function; the kernel's objects and real changes only,
+"all" for the registers, frames, locals and unchanged writes too; click
+an object to watch it. The
 Calls tab shows the calls the selected call made, in the order they were
 made, inlined code among them (in italics, as the timeline and the Stack
 show it); ▸ opens a call's own calls; each is a link, and the call the

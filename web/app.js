@@ -10,6 +10,7 @@ import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
 import { trace } from "./trace.js";
+import { changes } from "./changes.js";
 
 export function app(m) {
   const a = { m };
@@ -106,6 +107,8 @@ export function app(m) {
   a.showAt = (at) => {
     L.pos = null;
     view(at);
+    a.trace?.mark();
+    a.changes?.mark();
     badge();
   };
   // The view follows the pointer over the timeline: record `i` shown as if
@@ -123,7 +126,8 @@ export function app(m) {
     });
   };
   a.trace = trace(a);
-  a.outlined = () => a.trace.draw();
+  a.changes = changes(a, stack.watch);
+  a.outlined = () => (a.trace.draw(), a.changes.draw());
   examples(a);
 
   // ---- Lines: the line steps of the selection (a syscall) ----
@@ -172,6 +176,8 @@ export function app(m) {
   // Show line `step` (see Machine.line_steps): the cursor at its record.
   function showLine(step) {
     time.mark(step.i);
+    a.trace?.mark();
+    a.changes?.mark();
     memoryAt(step.i);
     const at = m.at(step.i);
     src.view.cursor = { file: step.file, line: step.line };

@@ -8,10 +8,9 @@
 // at the cursor (Machine.memory_at: see objects.js); what is open stays
 // open while stepping; click a value to watch it (watch.js). Click a call to select
 // it: the source shows where it is (for an outer call, the line calling
-// the next one in); "changed" under a call: what it changed, by object
-// (Machine.changes over its records; click an object to watch it).
+// the next one in).
 import { $, el } from "./dom.js";
-import { objects, place } from "./objects.js";
+import { objects } from "./objects.js";
 import { watch } from "./watch.js";
 
 export function callstack(app) {
@@ -26,11 +25,9 @@ export function callstack(app) {
   const { rows, kids } = objects(app, s, draw, w.add);
   // (The tabs: the pane chosen.)
   for (const a of document.querySelectorAll("h2.tabs a")) a.onclick = () => ($("right").dataset.tab = a.dataset.tab);
-  const head = (text, where, onclick, cls = "", ...more) => el("tr", { className: "frame " + cls },
+  const head = (text, where, onclick, cls = "") => el("tr", { className: "frame " + cls },
     el("td", { colSpan: 3 }, el("a", { className: "mono", textContent: text, onclick }),
-      el("span", { className: "dim", textContent: where ? `  ${where}` : "" }), ...more));
-  // The calls whose changes are shown (by their first record).
-  const showChanges = new Set();
+      el("span", { className: "dim", textContent: where ? `  ${where}` : "" })));
 
   function draw() {
     s.now = new Map();
@@ -39,15 +36,11 @@ export function callstack(app) {
       // (Click: select the call; the source shows where it is.)
       const on = s.sel == null ? k === 0 : f === s.sel;
       // (The syscall entry: named for the syscall, its arguments the syscall's.)
-      const key = `${f.first}`, changing = showChanges.has(key);
-      const h = head(f.syscall ? `${f.syscall}()` : f.func, f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f), on ? "on" : "",
-        f.inlined ? null : el("a", { className: "dim what", textContent: changing ? " changed ▾" : " changed ▸", title: "what this call changed, by object",
-          onclick: (e) => (e.stopPropagation(), changing ? showChanges.delete(key) : showChanges.add(key), draw()) }));
+      const h = head(f.syscall ? `${f.syscall}()` : f.func, f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f), on ? "on" : "");
       // (Hover: the call outlined in the timeline.)
       h.onmouseenter = () => app.time.hilite(f.first);
       h.onmouseleave = () => app.time.hilite(null);
       body.push(h);
-      if (changing) body.push(el("tr", { className: "sub changes" }, el("td", { colSpan: 3 }, changes(f))));
       if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body);
       if (f.locals?.length) {
         body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3, textContent: "locals" })));
@@ -69,30 +62,6 @@ export function callstack(app) {
       }
     }
     $("stack").replaceChildren(el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
-  }
-
-  // What call `f` changed, by object (Machine.changes over its records, to
-  // where it returns, or the recording's end).
-  function changes(f) {
-    const cur = app.time.cursor() ?? Infinity, last = m.call_end(f.first) ?? m.records() - 1;
-    const list = m.changes(f.first, last), objs = list.filter((c) => c.addr);
-    return el("div", { className: "changelist" },
-      el("div", { className: "dim note", textContent: objs.length ? `${list.reduce((a, c) => a + c.n, 0)} writes to ${objs.length} objects` : "no writes" }),
-      ...list.map((c) => {
-        if (!c.addr) return el("div", { className: "dim note", textContent: `and ${c.n} stores to memory no call here got by argument or local` });
-        const now = c.writes.findLastIndex((x) => x.i <= cur);
-        return el("div", { className: "changed" },
-          el("div", { className: "whead" },
-            // (Watched as what it is: "f's x", or "*(struct file *)0x1234"; a
-            // local or a frame for as long as its call lives.)
-            el("a", { className: "mono", textContent: c.what, title: "watch it",
-                      onclick: () => w.add({ name: /^(struct|union) /.test(c.what) ? `*(${c.ty} *)0x${c.addr.toString(16)}` : c.what, ty: c.ty, id: c.id, addr: c.addr },
-                                           c.call == null ? null : { from: c.call, to: m.call_end(c.call) ?? undefined, what: `while ${c.what.split("'s ")[0]}'s frame lives` }) }),
-            el("span", { className: "dim", textContent: ` ${c.n} write${c.n === 1 ? "" : "s"}${c.n > c.writes.length ? `, the last ${c.writes.length}` : ""}` })),
-          el("ol", {}, ...c.writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
-            el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, onclick: () => app.time.go(x.i), onpointerenter: () => app.peek(x.i) }),
-            el("span", { className: "dim", textContent: ` ${place(x.at)}` })))));
-      }));
   }
 
   // The stack at record `i` (null: the last; undefined: none), `step` the

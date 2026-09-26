@@ -187,15 +187,22 @@ export function source(app) {
     d.sort((x, y) => x.from - y.from || x.value.startSide - y.value.startSide);
     ed.dispatch({ effects: setMarks.of(CM.Decoration.set(d, true)) });
   }
-  // Scroll line `n` into view: to the top, or (`center`) the middle if it
-  // is not in view.
-  function reveal(n, center) {
+  // Show line `n`: as a debugger does, a jump (`jump`: another file or
+  // function, a link) puts it a third of the way down, with the lines
+  // before it for context; stepping leaves the view alone while the line
+  // stays in the middle band of it, and brings it back to that third when
+  // it leaves.
+  function reveal(n, jump) {
     const doc = ed.state.doc;
     if (n < 1 || n > doc.lines) return;
     const pos = doc.line(n).from;
-    ed.dispatch({ selection: { anchor: pos }, effects: CM.EditorView.scrollIntoView(pos, { y: center ? "center" : "start", yMargin: center ? 0 : 4 }) });
+    ed.dispatch({ selection: { anchor: pos } });
+    const box = ed.scrollDOM, top = ed.lineBlockAt(pos).top - box.scrollTop, h = box.clientHeight;
+    if (!jump && top > h * 0.1 && top < h * 0.8) return;
+    ed.dispatch({ effects: CM.EditorView.scrollIntoView(pos, { y: "start", yMargin: Math.max(0, h / 3) }) });
   }
 
+  let was = { file: null, fn: null }; // (what the view showed last: a jump, or a step)
   async function showFile(file, focus) {
     v.file = file;
     v.focus = focus;
@@ -206,7 +213,10 @@ export function source(app) {
     v.counts = new Map(text === null ? [] : m.file_coverage(file, v.syscall).map((c) => [c.line, c.count]));
     decorate();
     const fn = v.fn?.file === file ? v.fn : null;
-    reveal(focus ?? fn?.line ?? 1, !!focus);
+    // (A jump: another file, or another function; else a step in the same one.)
+    const jump = file !== was.file || fn?.name !== was.fn;
+    was = { file, fn: fn?.name };
+    reveal(focus ?? fn?.line ?? 1, jump);
     const ran = !fn ? "" : ` · ${fn.name}` + (fn.sealed ? ": sealed (it loops, only reading memory: its call and return are recorded, not its lines)" : "");
     $("fn-title").textContent = file + ran;
   }

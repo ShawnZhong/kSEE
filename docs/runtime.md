@@ -75,7 +75,8 @@ Rust does the work: JS only lays it out.
 | app.js | wires the panels to the Machine; the status (idle, replay, halted); the cursor; stepping (by line, over calls, out of them, both ways), run to a line, Play; the keys |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom); zoom, pan |
 | source.js | the source at the cursor (CodeMirror): lines that ran, the function, hover values, definitions |
-| callstack.js | the Stack: calls with arguments and locals, what each changed (by object), the task (current); the right column's tabs |
+| callstack.js | the Stack: calls with arguments and locals, the task (current); the right column's tabs |
+| changes.js | the Changes: what the selected call changed, by object, each write by which function; the kernel's objects and real changes, or all |
 | objects.js | values as trees (the Stack's, the Watch's): pointers open into what they point to, structs into their fields; who last wrote a value |
 | watch.js | the Watch: values clicked, each followed as the cursor moves, with every write to it in its lifetime |
 | trace.js | the Calls: the calls the selected call made, in order, inlined code among them; ▸ opens a call's own calls |

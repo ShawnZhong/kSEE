@@ -109,15 +109,17 @@
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   if (document.querySelector("#trace li.on > a.mono")?.textContent !== "vfs_read") throw new Error("the cursor's call not marked: " + document.querySelector("#trace li.on")?.textContent);
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
-  // "changed" under a call in the Stack: the read's entry changed the struct file's f_pos; an object watched.
-  const entry = [...document.querySelectorAll("#stack tr.frame")].find((tr) => tr.textContent.startsWith("read()"));
-  entry.querySelector("a.what").click();
-  const fileChange = [...document.querySelectorAll("#stack .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
-  if (!fileChange) throw new Error("the read's changes: " + $("stack").innerText.slice(0, 400));
+  // The Changes tab: what the read changed, by object (the struct file's f_pos among them, no registers or frames); an object watched.
+  document.querySelector('h2.tabs a[data-tab="changes"]').click();
+  await sleep(100);
+  const fileChange = [...document.querySelectorAll("#changes .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
+  if (!fileChange || $("changes").innerText.includes("pt_regs") || $("changes").innerText.includes("'s frame")) throw new Error("the read's changes: " + $("changes").innerText.slice(0, 400));
   fileChange.querySelector(".whead a").click();
   if (!$("watch").innerText.includes("f_pos")) throw new Error("watching the file: " + $("watch").innerText.slice(0, 100));
   if (!/fd 3 note\.txt/.test($("watch").innerText)) throw new Error("the file's name: " + $("watch").innerText.slice(0, 100));
-  entry.querySelector("a.what").click();
+  document.querySelector("#changes .head a").click(); // (all: the registers and frames too)
+  if (!$("changes").innerText.includes("pt_regs")) throw new Error("all changes: " + $("changes").innerText.slice(0, 200));
+  document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)
   const ksys = ksee.m.call_stack(ksee.m.first_call("ksys_read", read.first, read.last, read.task.addr)).find((f) => f.func === "ksys_read");

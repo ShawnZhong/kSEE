@@ -102,11 +102,11 @@ table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-famil
 
 /* The right column's tabs (Stack, Trace): the pane chosen */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
-#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="trace"] .pane[data-tab="trace"] { display: flex; }
+#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="trace"] .pane[data-tab="trace"], #right[data-tab="changes"] .pane[data-tab="changes"] { display: flex; }
 h2.tabs { gap: 0; padding: 0 4px; }
 h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
-#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"] { color: var(--fg); border-bottom-color: var(--accent); }
+#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="changes"] a[data-tab="changes"] { color: var(--fg); border-bottom-color: var(--accent); }
 
 /* The Trace: the tree of calls, the one the cursor is in marked */
 #trace .head { padding: 6px 12px 2px; font-size: 11.5px; }
@@ -119,9 +119,8 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #trace ul.tree > li > ul, #trace li > ul { padding-left: 16px; }
 .changed .whead { padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .changed .note, .changelist .note { padding: 1px 8px; font-size: 11px; }
-table.stack tr.changes td { padding: 0 0 4px 16px; white-space: normal; }
-table.stack tr.changes .changelist { border-left: 2px solid var(--line); }
-table.stack tr.frame a.what { font-size: 11px; font-weight: 400; margin-left: 6px; }
+#changes .head { padding: 6px 12px 2px; font-size: 11.5px; }
+#changes .changed { border-bottom: 1px solid var(--line); padding: 2px 4px 4px; }
 .changed ol, .watched ol { margin: 2px 0; padding-left: 26px; font: 11px/1.5 var(--mono); }
 .changed li a, .watched li a { white-space: nowrap; }
 .changed li.on, .watched li.on { background: var(--at); }
