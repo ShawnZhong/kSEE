@@ -1,5 +1,6 @@
 // The timeline of the recording. On top, an overview of all of it: which
-// task ran when, the window shown below, the cursor. Below, the window as a
+// task ran when, where each syscall starts, the window shown below, the
+// cursor. Below, the window as a
 // stack chart (a flame graph, Machine.chart): each task's call stack over
 // time, outermost at the bottom, each call a bar colored by where its
 // function is (a syscall's entry named for the syscall); under it, a strip
@@ -70,6 +71,9 @@ export function timeline(app) {
       ctx.fillRect(k, 3, 1, OVER - 6);
     });
     const ox = (i) => (i / Math.max(1, t.n - 1)) * w;
+    // (Each syscall's start: a mark, to find the program's calls.)
+    ctx.fillStyle = css("--accent");
+    for (const c of t.calls) ctx.fillRect(Math.round(ox(c.first)), OVER - 4, 1, 4);
     if (t.win) {
       ctx.strokeStyle = css("--accent");
       ctx.lineWidth = 1.5;
