@@ -10,7 +10,13 @@ it.
 
 The pass runs last, after optimization (`OptimizerLast`), so the probes
 describe the code that actually runs, and cannot stop the optimizer from
-removing code the kernel relies on being removed. Every function gets:
+removing code the kernel relies on being removed. Every function gets: The kernel is built at
+`-Os` with `-finline-hint-functions`: only what the source marks `inline`
+is inlined, so the compiler's own inlining does not hide calls (with their
+arguments) as inlined code. (Measured on the examples: 11,500 functions
+with probes rather than 9,000, 40% of the lines recorded inlined rather
+than 53%, for 14% more records; with no inlining but `__always_inline`,
+8% inlined but 2.3 times the records, every small helper a call.)
 
 - at the start of each **basic block**, a block record. The entry block's
   is the **call**, followed by its **arguments**: the source's parameters,

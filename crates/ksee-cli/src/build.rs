@@ -58,10 +58,12 @@ pub fn build() {
     // when it changes.
     let id = format!("{:016x}", fnv64(&std::fs::read("plugin/ksee-trace.so").unwrap_or_default()));
     let plugin = Path::new("plugin/ksee-trace.so").canonicalize().unwrap();
+    // (Inlining only what the source asks for, `inline`: the compiler's
+    // own choices would hide calls, with their arguments, as inlined code.)
     let kmake = |args: &[&str]| {
         let mut c = Command::new("make");
         c.args(["-s", "-C", "linux", "ARCH=wasm", &format!("LLVM={llvm}"),
-                &format!("KCFLAGS=-g -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
+                &format!("KCFLAGS=-g -finline-hint-functions -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
             .args(args);
         c
     };

@@ -77,7 +77,6 @@ int main(void)
 	if (getpid() == 1) {
 		mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
 		disk();
-		say("init: ready for the page's calls\n");
 	}
 	serve();
 }

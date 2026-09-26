@@ -44,7 +44,7 @@ async function call(name, args, tid = 1) {
 }
 const ran = (s, func) => s?.last != null && m.first_call(func, s.first, s.last, s.task.addr) != null;
 
-check("init ready", await until(() => out.includes("ready for the page's calls")));
+check("init ready: a runner", m.runners().includes(1));
 check("nothing recorded at first", (m.snapshot(), m.records() === 0));
 
 // Calls, traced.
@@ -175,7 +175,7 @@ await call("mkdirat", [-100, "/tmp", 0o755]);
 check("/tmp is there before", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === -17);
 const before = out.length;
 await m.restart();
-check("restarted: init ready again", await until(() => out.slice(before).includes("ready for the page's calls")));
+check("restarted: init ready again", m.runners().includes(1) && (await call("getpid", [])).ret === 1);
 check("... on a fresh kernel: /tmp is not there", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === 0);
 
 // Deterministic: the same calls on a fresh kernel make the same recording,
