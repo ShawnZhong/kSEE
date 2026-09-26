@@ -164,13 +164,18 @@ impl Recording {
         })
     }
 
+    /// The records of syscall `n` (first, last, its task), or of the whole
+    /// recording (None); None if the recording has no syscall `n`.
+    pub fn span(&self, n: Option<usize>) -> Option<(usize, usize, Option<u32>)> {
+        match n {
+            Some(n) => self.syscalls.get(n).map(|s| (s.first, s.last.unwrap_or(usize::MAX), Some(s.task))),
+            None => Some((0, usize::MAX, None)),
+        }
+    }
+
     /// How often each block ran in syscall `n` (or the whole recording).
     pub fn block_counts(&self, n: Option<usize>) -> BTreeMap<(u32, u32), u64> {
-        let (first, last, task) = match n.and_then(|n| self.syscalls.get(n)) {
-            Some(s) => (s.first, s.last.unwrap_or(usize::MAX), Some(s.task)),
-            None if n.is_some() => return BTreeMap::new(),
-            None => (0, usize::MAX, None),
-        };
+        let Some((first, last, task)) = self.span(n) else { return BTreeMap::new() };
         let mut counts = BTreeMap::new();
         for (i, r) in self.records.iter().enumerate().skip(first).take(last.saturating_sub(first).saturating_add(1)) {
             if let Record::Block { func, n } = *r

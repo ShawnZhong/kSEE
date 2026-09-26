@@ -185,8 +185,14 @@ impl Machine {
         self.view(|v| to_js(&v.place(id)))
     }
 
-    /// Where `name` is defined (view::Place): a function, a type or a
-    /// global; or null.
+    /// Who called function `name` in syscall `n`, or the whole recording
+    /// (view::Caller): by how often.
+    pub fn callers(&self, name: &str, n: Option<usize>) -> JsValue {
+        self.view(|v| to_js(&v.callers(name, n)))
+    }
+
+    /// Where `name` is defined (view::Place): a function, a type, a global
+    /// or a member ("file.f_pos"); or null.
     pub fn definition(&self, name: &str) -> JsValue {
         self.view(|v| to_js(&v.definition(name)))
     }

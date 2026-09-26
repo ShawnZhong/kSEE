@@ -326,8 +326,8 @@ impl Builder {
         id
     }
 
-    /// Where `name` (a function, a type, a global) is declared: a W line,
-    /// once per name.
+    /// Where `name` (a function, a type, a global, or a member as
+    /// "struct.member") is declared: a W line, once per name.
     fn locate(&mut self, name: &str, file: &str, line: u64) {
         if !name.is_empty() && !file.is_empty() && self.located.insert(name.to_string()) {
             self.extra.push(format!("W\t{name}\t{}\t{line}", file.strip_prefix("./").unwrap_or(file)));
@@ -481,7 +481,8 @@ impl Builder {
                             Some(AttributeValue::UnitRef(t)) => Some(t),
                             _ => None,
                         };
-                        rows.push((false, name, bit_offset, bit_size, ty, 0));
+                        let at = (decl_file(cu, c)?, attr_u64(c, dw::DW_AT_decl_line).unwrap_or(0));
+                        rows.push((false, name, bit_offset, bit_size, ty, 0, at));
                     }
                     dw::DW_TAG_enumerator if tag == dw::DW_TAG_enumeration_type => {
                         let v = match c.attr_value(dw::DW_AT_const_value) {
@@ -490,13 +491,15 @@ impl Builder {
                             Some(v) => v.sdata_value().unwrap_or(0),
                             None => 0,
                         };
-                        rows.push((true, name, 0, 0, None, v));
+                        rows.push((true, name, 0, 0, None, v, (String::new(), 0)));
                     }
                     _ => {}
                 }
             }
         }
-        for (is_enum, name, bit_offset, bit_size, ty, value) in rows {
+        // (The aggregate's name, for its members' declarations: "file.f_pos".)
+        let owner = self.rows[id as usize].split('\t').nth(3).unwrap_or("").to_string();
+        for (is_enum, name, bit_offset, bit_size, ty, value, (file, line)) in rows {
             if is_enum {
                 self.extra.push(format!("V\t{id}\t{name}\t{value}"));
             } else {
@@ -505,6 +508,9 @@ impl Builder {
                     None => 0,
                 };
                 self.extra.push(format!("M\t{id}\t{name}\t{bit_offset}\t{bit_size}\t{t}"));
+                if !owner.is_empty() && !name.is_empty() {
+                    self.locate(&format!("{owner}.{name}"), &file, line);
+                }
             }
         }
         Ok(())

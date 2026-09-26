@@ -129,6 +129,18 @@ pub struct Function {
     pub sealed: bool,
 }
 
+/// The calls of a function from one place, in a recording.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Caller {
+    pub func: String,
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    pub count: u32,
+    /// The first such call's record.
+    pub first: usize,
+}
+
 /// Where a function is.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
@@ -444,14 +456,34 @@ impl View<'_> {
         }).collect()
     }
 
+    /// Who called function `name` in syscall `n` (or the whole recording):
+    /// each caller at each line, by how often.
+    pub fn callers(&self, name: &str, n: Option<usize>) -> Vec<Caller> {
+        let t = self.tables;
+        let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
+        let Some((first, last, task)) = self.rec.span(n) else { return Vec::new() };
+        let entry = t.find(arch::SYSCALL);
+        stack::callers(t, &self.rec.records, &self.rec.tasks, first, last, task, &ids).into_iter().map(|c| Caller {
+            // (The syscall entry, or its wrappers: named for the syscall, as the Stack has it.)
+            func: match self.rec.syscall_at(c.first).and_then(|n| t.types.syscalls.get(&self.rec.syscalls[n].nr)) {
+                Some(s) if Some(c.func) == entry || self.is_wrapper(c.func) => format!("{s}()"),
+                _ => self.name(c.func),
+            },
+            file: c.step.map(|s| t.file(s.loc).to_string()), line: c.step.map(|s| s.loc.line),
+            count: c.count, first: c.first,
+        }).collect()
+    }
+
     /// Where `name` is defined: an instrumented function (its source), else
-    /// a function with no probe (inline), a type or a global (where it is
-    /// declared).
+    /// a function with no probe (inline), a type, a global, or a member as
+    /// "struct.member" (".member": of any struct) (where it is declared).
     pub fn definition(&self, name: &str) -> Option<Place> {
         if let Some(id) = self.tables.find(name) {
             return self.place(id);
         }
-        let (file, line) = self.tables.types.declared.get(name)?;
+        let declared = &self.tables.types.declared;
+        // (".member": a member of any struct, when whose is not known.)
+        let (file, line) = declared.get(name).or_else(|| declared.iter().find(|(k, _)| k.ends_with(name) && name.starts_with('.')).map(|(_, v)| v))?;
         Some(Place { name: name.to_string(), file: file.clone(), line: *line })
     }
 

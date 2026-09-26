@@ -3,7 +3,9 @@
 // lines, and the cursor. Hover a name for its value at the
 // cursor (an argument, a global, and fields: file->f_pos); F12 or
 // Ctrl+click on a name goes to its definition (a function, inline ones
-// too, a type, a global: Machine.definition).
+// too, a type, a global, a field: Machine.definition); over the shown
+// function, who called it in the recording (Machine.callers), each a link
+// to the first such call.
 import { $ } from "./dom.js";
 import { loadMonaco, readOnly } from "./editor.js";
 
@@ -53,10 +55,51 @@ export function source(app) {
       lineNumbersMinChars: 4,
     });
     marks = ed.createDecorationsCollection();
-    // Ctrl+click on a name: its definition.
-    ed.onMouseDown((e) => {
-      if (e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT && (e.event.ctrlKey || e.event.metaKey))
-        definition(e.target.position);
+    // Ctrl+click, or F12, on a name: its definition (Monaco's own go-to,
+    // which asks where, then asks to open it there: see definition).
+    let jump = null;
+    monaco.languages.registerDefinitionProvider("c", {
+      async provideDefinition(mdl, pos) {
+        if (mdl !== ed.getModel()) return null;
+        const word = mdl.getWordAtPosition(pos);
+        jump = word && definition(word.word, exprAt(mdl.getLineContent(pos.lineNumber), pos.column - 1)?.expr);
+        if (!jump) return null;
+        // (The target's model, for Monaco to show it.)
+        model(jump.file, (await fetchFile(jump.file)) ?? "");
+        const range = new monaco.Range(jump.line, 1, jump.line, 1);
+        return { uri: monaco.Uri.parse(`kernel:///${jump.file}`), range, originSelectionRange: new monaco.Range(pos.lineNumber, word.startColumn, pos.lineNumber, word.endColumn) };
+      },
+    });
+    monaco.editor.registerEditorOpener({
+      openCodeEditor(source, uri) {
+        if (source !== ed || uri.scheme !== "kernel" || !jump) return false;
+        if (jump.func) showFunction(jump.func);
+        else {
+          saved = null;
+          v.fn = null;
+          showFile(jump.file, jump.line).then(() => ed.setPosition({ lineNumber: jump.line, column: 1 }));
+        }
+        return true;
+      },
+    });
+    // Over the shown function: who called it, in the recording.
+    monaco.editor.registerCommand("ksee.go", (_, i) => app.time.go(i));
+    const lensChanged = new monaco.Emitter();
+    refreshLenses = () => lensChanged.fire();
+    monaco.languages.registerCodeLensProvider("c", {
+      onDidChange: lensChanged.event,
+      provideCodeLenses(model) {
+        const fn = v.fn?.file === v.file && model === ed.getModel() ? v.fn : null;
+        if (!fn) return { lenses: [], dispose() {} };
+        const cs = m.callers(fn.name, v.syscall), n = cs.reduce((a, c) => a + c.count, 0);
+        const range = new monaco.Range(fn.line, 1, fn.line, 1), where = v.syscall != null ? "in this syscall" : "in the recording";
+        const lens = (title, i) => ({ range, command: i == null ? { id: "", title } : { id: "ksee.go", title, arguments: [i] } });
+        return { dispose() {}, lenses: [
+          lens(n ? `called ${n}× ${where} from` : `not called ${where}`),
+          ...cs.slice(0, 6).map((c) => lens(`${c.func}${c.line ? `:${c.line}` : ""}${c.count > 1 ? ` (${c.count}×)` : ""}`, c.first)),
+          ...(cs.length > 6 ? [lens(`and ${cs.length - 6} more`)] : []),
+        ] };
+      },
     });
     // Hover: the value at the cursor.
     monaco.languages.registerHoverProvider("c", {
@@ -66,8 +109,6 @@ export function source(app) {
         return h && { range: new monaco.Range(pos.lineNumber, h.start + 1, pos.lineNumber, h.end + 1), contents: h.contents };
       },
     });
-    ed.addAction({ id: "ksee.definition", label: "Go to the definition", contextMenuGroupId: "navigation",
-      contextMenuOrder: 1, keybindings: [monaco.KeyCode.F12], run: () => definition(ed.getPosition()) });
     // Run to a line: the next time it runs, or the last time it ran.
     ed.addAction({ id: "ksee.next-run", label: "Run to this line (the next time it runs)", contextMenuGroupId: "navigation",
       contextMenuOrder: 2, keybindings: [monaco.KeyCode.F4], run: () => app.runTo(v.file, ed.getPosition().lineNumber, 1) });
@@ -93,16 +134,18 @@ export function source(app) {
     return { start: e.start, end: e.end, text: code,
              contents: [{ value: "```c\n" + code + "\n```" }] };
   }
-  // The name at `pos`: its definition (a function: its source, with the
-  // lines that ran; a type or a global: where it is declared).
-  function definition(pos) {
-    const word = ed.getModel().getWordAtPosition(pos)?.word, d = word && m.definition(word);
-    if (!d) return;
-    if (m.functions(word).length) return showFunction(word);
-    saved = null;
-    v.fn = null;
-    showFile(d.file, d.line);
+  // The definition of `word` (`expr`: the expression it ends, for a field:
+  // file->f_pos): { file, line, func? (an instrumented function: its
+  // source, with the lines that ran) }, or null.
+  function definition(word, expr) {
+    const parent = expr?.match(/^(.*\S)\s*(?:->|\.)\s*\w+$/)?.[1];
+    // (A field: of the struct the expression before it is, by name.)
+    const owner = parent && app.stack.resolve(parent)?.ty.match(/^(?:const )?(?:struct|union) (\w+)/)?.[1];
+    // (A field of a value the stack does not have: of any struct with it.)
+    const d = m.definition(owner ? `${owner}.${word}` : parent ? `.${word}` : word);
+    return d && { file: d.file, line: d.line, func: !owner && m.functions(word).length ? word : null };
   }
+  let refreshLenses = () => {};
 
   function model(file, text) {
     if (!models.has(file)) models.set(file, monaco.editor.createModel(text, "c", monaco.Uri.parse(`kernel:///${file}`)));
@@ -138,6 +181,7 @@ export function source(app) {
     const to = focus ?? fn?.line ?? 1;
     if (focus) ed.revealLineInCenterIfOutsideViewport(to);
     else ed.revealLineNearTop(to);
+    refreshLenses();
     const ran = !fn ? "" : ` · ${fn.name}` + (fn.sealed ? ": sealed (it loops, only reading memory: its call and return are recorded, not its lines)" : "");
     $("fn-title").textContent = (saved ? "preview · " : "") + file + ran;
     $("fn-title").classList.toggle("preview", !!saved);
@@ -187,5 +231,5 @@ export function source(app) {
     return null;
   }
 
-  return { view: v, showFunction, preview, unpreview, hoverAt };
+  return { view: v, showFunction, preview, unpreview, hoverAt, get editor() { return ed; } };
 }
