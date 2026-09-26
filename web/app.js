@@ -201,6 +201,13 @@ export function app(m) {
     e.preventDefault();
   });
 
+  // ---- The console: all of it, or (folded) its last line ----
+  let consoleText = "";
+  function showConsole() {
+    $("console").textContent = sizes.consoleOpen ? consoleText : consoleText.trimEnd().split("\n").at(-1) ?? "";
+    $("pane-console").scrollTop = $("pane-console").scrollHeight;
+  }
+
   // ---- Resizing: the columns, and the timeline's height ----
   const sizes = { left: 340, right: 380, chart: 190, console: 140, consoleOpen: false };
   try { Object.assign(sizes, JSON.parse(localStorage.getItem("ksee.sizes") ?? "{}")); } catch { /* none kept */ }
@@ -208,10 +215,11 @@ export function app(m) {
     $("app").style.gridTemplateColumns = `${sizes.left}px 5px minmax(0, 1fr)`;
     $("main").style.gridTemplateColumns = `minmax(300px, 1fr) 5px ${sizes.right}px`;
     $("chartbox").style.height = `${sizes.chart}px`;
-    $("pane-console").hidden = !sizes.consoleOpen;
+    // (Folded: its last line only.)
+    $("pane-console").classList.toggle("folded", !sizes.consoleOpen);
     $("pane-console").style.flexBasis = `${sizes.console}px`;
     $("console-tw").textContent = sizes.consoleOpen ? "▾" : "▸";
-    $("console-last").hidden = sizes.consoleOpen;
+    showConsole();
     try { localStorage.setItem("ksee.sizes", JSON.stringify(sizes)); } catch { /* not kept */ }
   };
   // (`click`: a press that did not move.)
@@ -251,7 +259,8 @@ export function app(m) {
   a.restart = async () => {
     halted = null;
     stopPlay();
-    $("console").textContent = "";
+    consoleText = "";
+    showConsole();
     await m.restart();
     refresh();
     stack.show(undefined);
@@ -260,9 +269,8 @@ export function app(m) {
   function tick() {
     const out = m.console();
     if (out) {
-      $("console").textContent += out.replaceAll("\r", "");
-      $("pane-console").scrollTop = $("pane-console").scrollHeight;
-      $("console-last").textContent = $("console").textContent.trimEnd().split("\n").at(-1);
+      consoleText += out.replaceAll("\r", "");
+      showConsole();
     }
     const code = m.halted();
     if (code !== undefined && halted == null) {

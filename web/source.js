@@ -1,7 +1,7 @@
 // The source view: a whole kernel file in Monaco (web/editor.js), with the
-// lines where blocks ran (how often: hover the line number; untaken ones
-// marked), the
-// function's lines, and the cursor. Hover a name for its value at the
+// lines that ran (green; how often: hover the line number), the lines of
+// the functions that ran that did not (faint red), the function's lines,
+// and the cursor. Hover a name for its value at the
 // cursor (an argument, a global, and fields: file->f_pos); F12 or
 // Ctrl+click on a function to open its source.
 import { $ } from "./dom.js";
@@ -111,7 +111,7 @@ export function source(app) {
       d.push(line(n, c > 0
         ? { isWholeLine: true, className: "ln-hit", overviewRuler: { color: "#2da44e88", position: 4 }, minimap: { color: "#2da44e88", position: 1 },
             lineNumberHoverMessage: { value: `ran ${c}×${where}` } }
-        : { linesDecorationsClassName: "ln-miss", lineNumberHoverMessage: { value: `a block starts here; it did not run${where}` } }));
+        : { isWholeLine: true, className: "ln-miss", lineNumberHoverMessage: { value: `did not run${where}` } }));
     if (fn) d.push({ range: new monaco.Range(fn.line, 1, last, 1), options: { isWholeLine: true, linesDecorationsClassName: "ln-infn" } });
     if (at(v.cursor)) d.push(line(v.cursor.line, { isWholeLine: true, className: "ln-cursor", glyphMarginClassName: "gl-cursor",
       overviewRuler: { color: "#0969da", position: 7 } }));
@@ -131,8 +131,10 @@ export function source(app) {
     const to = focus ?? fn?.line ?? 1;
     if (focus) ed.revealLineInCenterIfOutsideViewport(to);
     else ed.revealLineNearTop(to);
+    // (The function's lines that ran, of those with code.)
+    const own = !fn ? [] : [...v.counts].filter(([n]) => n >= fn.line && n <= Math.max(fn.line, ...fn.blocks.filter((b) => b.file === file).map((b) => b.line)));
     const ran = !fn ? "" : fn.sealed ? ` · ${fn.name}: sealed (it loops, only reading memory: its call and return are recorded, not its lines)`
-      : ` · ${fn.name}: ${fn.blocks.filter((b) => b.count > 0).length} of ${fn.blocks.length} blocks ran`;
+      : ` · ${fn.name}: ${own.filter(([, c]) => c > 0).length} of ${own.length} lines ran`;
     $("fn-title").textContent = (saved ? "preview · " : "") + file + ran;
     $("fn-title").classList.toggle("preview", !!saved);
   }

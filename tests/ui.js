@@ -188,9 +188,9 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   r.branched = [document.querySelectorAll("ol.steps > li").length, document.querySelector("ol.steps > li.done")?.innerText.split("\\n")[0]];
   if (!r.edited.includes("/mnt/other") || r.branched[0] !== n || !r.branched[1]?.includes("= 0")) throw new Error("editing: " + JSON.stringify(r));
   // The console, folded to its last line; the current task, open to its key fields.
-  r.console = [$("pane-console").hidden, $("console-last").textContent];
+  r.console = [$("pane-console").classList.contains("folded"), $("console").textContent];
   r.current = [...document.querySelectorAll("#stack tr.task, #stack tr.task ~ tr")].slice(0, 3).map((tr) => tr.innerText.replace(/\\s+/g, " ").trim());
-  if (!r.console[0] || !r.console[1] || !r.current[0]?.startsWith("current task: init(1)") || !r.current[1]?.startsWith("pid")) throw new Error("console, current: " + JSON.stringify(r));
+  if (!r.console[0] || !r.console[1] || r.console[1].includes("\\n") || !r.current[0]?.startsWith("current task: init(1)") || !r.current[1]?.startsWith("pid")) throw new Error("console, current: " + JSON.stringify(r));
   return r;
 })()`);
 if (script) {

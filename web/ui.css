@@ -150,7 +150,7 @@ table.stack tr.task td { background: var(--panel); }
 #src { overflow: hidden; }
 .prog { border-top: 1px solid var(--line); }
 .ln-hit { background: var(--hit-bg); }
-.ln-miss { border-left: 3px solid var(--miss); margin-left: 3px; }
+.ln-miss { background: color-mix(in srgb, var(--miss) 7%, transparent); }
 .ln-infn { border-left: 3px solid var(--accent); margin-left: 3px; }
 .ln-cursor { background: var(--sel); box-shadow: inset 3px 0 var(--accent); }
 .gl-cursor::before, .gl-stophere::before { display: block; text-align: center; font-size: 12px; }
@@ -188,8 +188,9 @@ ol.steps > li.editing { list-style-position: outside; }
 /* The console, under the examples */
 h2.sub { border-top: 1px solid var(--line); }
 .consolebox { flex: 0 0 140px; }
+.consolebox.folded { flex-basis: auto !important; max-height: 1.9em; overflow: hidden; }
+.consolebox.folded #console { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 h2.fold { cursor: pointer; user-select: none; white-space: nowrap; overflow: hidden; }
-#console-last { font-weight: 400; font-size: 11px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 /* The examples' selector */
 .thead .nav { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; }
