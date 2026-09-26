@@ -50,6 +50,10 @@ export function app(m) {
 
   // ---- Selecting, and moving the cursor ----
 
+  // The place shown, in the transport: `task` · `name` `file`:`line` · in `sc`.
+  const where = ({ task, name, file, line, sc }) => ($("where").textContent =
+    [task && taskName(task), `${name} ${file ?? ""}:${line ?? ""}`, sc && `in ${sc}`].filter(Boolean).join(" · "));
+
   // Select syscall `s`: its records; the cursor where its own code starts
   // (its handler's first line, past the syscall entry).
   a.select = (s) => {
@@ -67,7 +71,7 @@ export function app(m) {
     const owner = f.inlined ? stack.owner(f) : f;
     src.showFunction(owner?.func ?? f.func, at?.syscall ?? undefined, f.line, f.file);
     time.selected(f.first);
-    $("where").textContent = `${f.func} ${f.file ?? ""}:${f.line ?? ""}`;
+    where({ name: f.func, file: f.file, line: f.line });
   };
   // Preview a call while it is hovered (in the timeline or the Stack):
   // `get()` says where ({ func: the function to show, file, line, i?: the
@@ -106,8 +110,7 @@ export function app(m) {
     const s = at.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
     if (at.kind === "block") src.showFunction(at.func, s?.index, at.line, at.file);
     stack.show(at.i, null, at.task);
-    $("where").textContent = `${taskName(at.task)} · ${at.inlined ?? at.func} ${at.file ?? ""}:${at.line ?? ""}` +
-      (s ? ` · in ${s.name}` : "");
+    where({ task: at.task, name: at.inlined ?? at.func, file: at.file, line: at.line, sc: s?.name });
     badge();
   };
   examples(a);
@@ -148,7 +151,7 @@ export function app(m) {
     src.showFunction(step.func, undefined, step.line, step.file);
     // (The stack as it runs: see Machine.call_stack's nth.)
     stack.show(step.i, step, at?.task);
-    $("where").textContent = `${at ? `${taskName(at.task)} · ` : ""}${step.inlined ?? step.func} ${step.file}:${step.line}`;
+    where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line });
     return true;
   }
   // Step: by a `line` (into calls), `over` calls (the next line at this
@@ -166,6 +169,17 @@ export function app(m) {
     for (let j = k + dir; j >= 0 && j < st.length; j += dir) if (stop(st[j])) return showStep(j);
     return false;
   }
+  // Run to line `line` of `file`: the next (dir 1) or the last (-1) time it
+  // runs, from the cursor; its syscall selected (line steps go on from it).
+  a.runTo = (file, line, dir) => {
+    const i = m.run_of(file, line, time.cursor() ?? 0, dir);
+    if (i == null) return ($("where").textContent = `${file}:${line} does not run ${dir > 0 ? "again" : "before"} in the recording`);
+    const at = m.at(i), s = at?.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
+    if (s) time.select(s);
+    time.mark(i);
+    const st = steps(), k = st.findIndex((x) => x.i === i && x.line === line && x.file === file);
+    return k >= 0 ? showStep(k) : time.go(i);
+  };
   let playing = null;
   function stopPlay() {
     clearTimeout(playing);
@@ -194,6 +208,7 @@ export function app(m) {
     const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
     if (arrow) step(e.altKey ? "out" : e.shiftKey ? "over" : "line", arrow);
     else if (e.key === "Home") steps().length && showStep(0);
+    else if (e.key === "]" || e.key === "[") a.tour?.(e.key === "]" ? 1 : -1);
     else if (e.key === "F10") step("over", 1);
     else if (e.key === "F11") step(e.shiftKey ? "out" : "line", 1);
     else if (e.key === " ") play();
