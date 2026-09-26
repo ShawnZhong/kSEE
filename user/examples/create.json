@@ -12,6 +12,9 @@
     "fd = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644); close(fd); fd2 = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644); close(fd2)",
     "fd = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644); close(fd); openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_EXCL | O_WRONLY, 0644)"
   ],
+  "watch": [
+    "1:ramfs_mknod:dir"
+  ],
   "steps": [
     {
       "call": "openat",

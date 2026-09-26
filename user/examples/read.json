@@ -13,6 +13,9 @@
     "fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, [64], 64); read(fd, [64], 64); close(fd)",
     "fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, [4], 4); read(fd, [4], 4); close(fd)"
   ],
+  "watch": [
+    "2:vfs_read:file"
+  ],
   "steps": [
     {
       "call": "openat",

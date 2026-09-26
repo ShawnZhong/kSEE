@@ -15,6 +15,9 @@
     "fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); fd2 = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); close(fd); close(fd2)",
     "fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); close(fd); close(fd)"
   ],
+  "watch": [
+    "1:do_dentry_open:f"
+  ],
   "steps": [
     {
       "call": "openat",

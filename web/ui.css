@@ -102,11 +102,11 @@ table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-famil
 
 /* The right column's tabs (Stack, Trace): the pane chosen */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
-#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="trace"] .pane[data-tab="trace"], #right[data-tab="changes"] .pane[data-tab="changes"] { display: flex; }
+#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="trace"] .pane[data-tab="trace"], #right[data-tab="changes"] .pane[data-tab="changes"], #right[data-tab="watch"] .pane[data-tab="watch"] { display: flex; }
 h2.tabs { gap: 0; padding: 0 4px; }
 h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
-#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="changes"] a[data-tab="changes"] { color: var(--fg); border-bottom-color: var(--accent); }
+#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="changes"] a[data-tab="changes"], #right[data-tab="watch"] a[data-tab="watch"] { color: var(--fg); border-bottom-color: var(--accent); }
 
 /* The Trace: the tree of calls, the one the cursor is in marked */
 #trace .head { padding: 6px 12px 2px; font-size: 11.5px; }
@@ -126,15 +126,13 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 .changed li.on, .watched li.on { background: var(--at); }
 
 /* The Watch: a value each, its tree, its writes */
-#watch { flex: 0 1 auto; max-height: 45%; }
-#watch:empty { display: none; }
 .watched { border-bottom: 1px solid var(--line); padding-bottom: 4px; }
 .watched .whead { display: flex; align-items: center; gap: 4px; padding: 4px 8px 2px; }
 .watched .whead .grow { flex: 1; }
 .watched .whead button { padding: 0 6px; font-size: 11px; }
 .watched .whead .rm { color: var(--dim); font-size: 11px; }
 .watched .note { padding: 1px 8px; font-size: 11px; }
-.watched ol { max-height: 9em; overflow-y: auto; }
+.watched ol { max-height: 14em; overflow-y: auto; }
 
 /* The sidebar: the examples' selector, in its title */
 #ex-head { gap: 4px; align-items: center; padding: 4px 8px; }

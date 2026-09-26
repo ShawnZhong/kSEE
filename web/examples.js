@@ -16,7 +16,9 @@
 // below, a call a line: click one for its recording; type in it to change
 // it (Enter: the program runs again, on a fresh kernel), empty it (or ✕)
 // to remove it; add a call at the end; ↺ for the example's own program
-// again.
+// again. `watch`: what to watch as it opens ("2:vfs_read:file": the
+// argument `file` of vfs_read, in call 2's recording: the object it points
+// to).
 //
 // A step: { call, args, name?, tid? }; its arguments written as in
 // C (see args.js and Machine.arg): "a string", 0644, O_CREAT | O_WRONLY,
@@ -115,6 +117,15 @@ export async function examples(app) {
     for (let j = 0; j < t.steps.length; j++) if (!(await step()) || t.list !== mine) return;
     t.status.textContent = "";
     explain();
+    // (What the example says to watch: "2:vfs_read:file", the argument of a
+    // call in a call's recording; the Watch has it, the Stack stays in front.)
+    for (const spec of t.ex.watch ?? []) {
+      const [n, func, name] = spec.split(":"), c = syscall(Number(n) - 1);
+      const at = c && m.first_call(func, c.first, c.last ?? m.records() - 1, c.task.addr);
+      const o = at != null && m.call_stack(at).find((f) => f.func === func && !f.inlined)?.args?.find((a) => a.name === name);
+      if (o && o.target != null && o.value !== "NULL") app.stack.watch({ ...o, name: `*${name}`, id: o.target, addr: Number(o.value.split(" ")[0]) }, null, true);
+      else if (o) app.stack.watch(o, null, true);
+    }
     const first = t.links.find((l) => l.at != null) ?? t.links.find((l) => l.c);
     if (first) goTo(first);
     else if (t.done.length) pick(t.done.length - 1);

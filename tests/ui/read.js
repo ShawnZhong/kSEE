@@ -31,11 +31,13 @@
   const v = document.querySelector("#stack td.fval.mem");
   v?.click();
   r.history = [v?.textContent, document.querySelectorAll("#watch li").length, $("watch").innerText.slice(0, 120)];
-  if (!/writes (while \w+'s frame lives|in the recording)/.test(r.history[2] ?? "")) throw new Error("no watch: " + JSON.stringify(r.history));
+  if (!/writes (while \w+'s frame lives|in the recording)/.test(r.history[2] ?? "") || $("right").dataset.tab !== "watch") throw new Error("no watch: " + JSON.stringify(r.history));
+  document.querySelector('h2.tabs a[data-tab="stack"]').click();
   document.querySelector("#watch .whead button:not([disabled])")?.click();
   await sleep(200);
   document.querySelector("#watch .rm")?.click();
-  if ($("watch").children.length) throw new Error("the watch stays");
+  // (The example's own watch stays: the read's struct file, watched as it opened.)
+  if (!$("watch").innerText.includes("fd 3 note.txt")) throw new Error("the example's watch: " + $("watch").innerText.slice(0, 120));
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = $("where").textContent.slice(0, 50);
   // Run to a line (the source's F4): the line where the cursor is, its next run

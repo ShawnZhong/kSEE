@@ -10,6 +10,9 @@
   "tries": [
     "fd = openat(AT_FDCWD, \"/mnt/new.txt\", O_CREAT | O_WRONLY | O_SYNC, 0644); write(fd, \"hello, ext4\\n\", 12); close(fd)"
   ],
+  "watch": [
+    "2:vfs_write:file"
+  ],
   "steps": [
     {
       "call": "openat",

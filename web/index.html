@@ -46,11 +46,13 @@
       <a data-tab="stack" title="the calls at the cursor, their values as they were then">Stack</a>
       <a data-tab="trace" title="the selected call as a tree of the calls it made, in order">Calls</a>
       <a data-tab="changes" title="what the selected call changed, by object">Changes</a>
+      <a data-tab="watch" title="values followed: each as the cursor moves, and every write to it">Watch</a>
     </h2>
     <div class="pane" data-tab="stack">
       <div class="stackhead dim" id="stack-note"></div>
       <div class="body" id="stack"></div>
-      <h2 class="sub" title="values to follow: each as the cursor moves, and every write to it">Watch</h2>
+    </div>
+    <div class="pane" data-tab="watch">
       <div class="stackhead dim" id="watch-note"></div>
       <div class="body" id="watch"></div>
     </div>

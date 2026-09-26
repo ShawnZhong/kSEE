@@ -17,12 +17,13 @@ export function watch(app) {
   const tree = objects(app, st, draw, add);
   $("watch").onpointerleave = () => app.peek(null);
 
-  // Watch `o` (again: it moves to the top).
-  function add(o, life) {
+  // Watch `o` (again: it moves to the top); `quiet`: without showing the tab.
+  function add(o, life, quiet = false) {
     const k = list.findIndex((w) => w.o.addr === o.addr && w.o.id === o.id && w.life?.from === life?.from);
     if (k >= 0) list.splice(k, 1);
     list.unshift({ o, life, all: m.writes(o.addr, o.id, life?.from, life?.to) });
     draw();
+    if (!quiet) $("right").dataset.tab = "watch";
   }
 
   function draw() {
@@ -58,7 +59,7 @@ export function watch(app) {
         el("div", { className: "dim note", textContent: `${w.all.length}${w.all.length >= 256 ? "+" : ""} writes ${w.life?.what ?? "in the recording"}` }),
         items.length ? ol : null);
     }));
-    $("watch-note").textContent = list.length ? "" : "Click a value in the Stack to watch it: its value as the cursor moves, every write to it.";
+    $("watch-note").textContent = list.length ? "" : "Click a value in the Stack, or an object in the Changes, to watch it: its value as the cursor moves, every write to it.";
   }
 
   // A new recording: the watched values' records are gone.

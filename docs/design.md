@@ -49,10 +49,10 @@ SMP, no fork (threads and vfork, though): see Limits).
 │ Example:     │ Timeline: overview · call stacks · tasks     │
 │  question    │ ◀ ▶ Play · step by line / over / out         │
 │  explanation ├───────────────────────────────┬──────────────┤
-│  (linked)    │ Source at the cursor          │ Stack   │
-│  program     │ (the lines that ran)          │ (args, locals│
-│  (its calls) │                               │ task), Watch;│
-│ Console      │                               │ Changes      │
+│  (linked)    │ Source at the cursor          │ Stack (args, │
+│  program     │ (the lines that ran)          │ locals, task)│
+│  (its calls) │                               │ Calls        │
+│ Console      │                               │ Changes Watch│
 └──────────────┴───────────────────────────────┴──────────────┘
 ```
 
