@@ -75,10 +75,10 @@ Rust does the work: JS only lays it out.
 | app.js | wires the panels to the Machine; the status (idle, replay, halted); the cursor; stepping (by line, over calls, out of them, both ways), run to a line, Play; the keys |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom); zoom, pan |
 | source.js | the source at the cursor (CodeMirror): lines that ran, the function, hover values, definitions |
-| callstack.js | the Call stack: calls with arguments and locals, the task (current); the right column's tabs |
+| callstack.js | the Call stack: calls with arguments and locals, what each changed (by object), the task (current); the right column's tabs |
 | objects.js | values as trees (the Call stack's, the Watch's): pointers open into what they point to, structs into their fields; who last wrote a value |
 | watch.js | the Watch: values clicked, each followed as the cursor moves, with every write to it in its lifetime |
-| trace.js | the Trace: the selected call as a tree of calls; a call's records, and what it changed, by object |
+| trace.js | the Trace: the selected call as a tree of the calls it made, the main ones (or all), foldable |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
 | args.js | a program's line: `name = call(args)`, `tid: call(args)` (the arguments themselves are ksee-core's args.rs: `Machine.arg`) |

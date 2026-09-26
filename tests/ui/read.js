@@ -95,22 +95,27 @@
   // (A syscall's box: the syscall selected, entry to exit.)
   const home = ksee.time.home();
   if (home?.a !== read.first || home?.b !== read.last) throw new Error("the read's selection: " + JSON.stringify(home) + ", not " + read.first + ".." + read.last);
-  // The Trace tab: the read as a tree of calls; the root's changes (the struct file's f_pos among them), an
-  // object watched; a call opened: its records, the cursor's marked.
+  // The Trace tab: the read as a tree of calls, the main ones, then all; the call the cursor is in marked.
   document.querySelector('h2.tabs a[data-tab="trace"]').click();
   await sleep(100);
-  r.trace = [$("trace-note").textContent, [...document.querySelectorAll("#trace .call a.mono")].map((a) => a.textContent).slice(0, 6)];
-  if (!r.trace[1].some((x) => x === "vfs_read")) throw new Error("the trace: " + JSON.stringify(r.trace));
-  document.querySelectorAll("#trace .call a.what")[1].click(); // (the root's changes)
-  const fileChange = [...document.querySelectorAll("#trace .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
-  if (!fileChange) throw new Error("the read's changes: " + $("trace").innerText.slice(0, 300));
+  r.trace = [$("trace-note").textContent, [...document.querySelectorAll("#trace li a.mono")].map((a) => a.textContent).slice(0, 6), $("trace").querySelector(".head")?.textContent];
+  if (!r.trace[1].some((x) => x === "vfs_read") || !/\d+ calls · all/.test(r.trace[2] ?? "")) throw new Error("the trace: " + JSON.stringify(r.trace));
+  const main = document.querySelectorAll("#trace li a.mono").length;
+  document.querySelector("#trace .head a").click();
+  if (document.querySelectorAll("#trace li a.mono").length <= main || document.querySelector("#trace li.small a.dim")) throw new Error("show all: " + $("trace").innerText.slice(0, 200));
+  document.querySelector("#trace .head a").click();
+  ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
+  if (document.querySelector("#trace li.on > a.mono")?.textContent !== "vfs_read") throw new Error("the cursor's call not marked: " + document.querySelector("#trace li.on")?.textContent);
+  document.querySelector('h2.tabs a[data-tab="stack"]').click();
+  // "changed" under a call in the Call stack: the read's entry changed the struct file's f_pos; an object watched.
+  const entry = [...document.querySelectorAll("#stack tr.frame")].find((tr) => tr.textContent.startsWith("read()"));
+  entry.querySelector("a.what").click();
+  const fileChange = [...document.querySelectorAll("#stack .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
+  if (!fileChange) throw new Error("the read's changes: " + $("stack").innerText.slice(0, 400));
   fileChange.querySelector(".whead a").click();
   if (!$("watch").innerText.includes("f_pos")) throw new Error("watching the file: " + $("watch").innerText.slice(0, 100));
   if (!/fd 3 note\.txt/.test($("watch").innerText)) throw new Error("the file's name: " + $("watch").innerText.slice(0, 100));
-  document.querySelectorAll("#trace .call a.what")[0].click(); // (the root's own records)
-  ksee.time.go(read.first + 3);
-  if (!document.querySelector("#trace li.rec.on") || !document.querySelector("#trace li.rec.store")) throw new Error("the records: " + $("trace").innerText.slice(0, 300));
-  document.querySelector('h2.tabs a[data-tab="stack"]').click();
+  entry.querySelector("a.what").click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)
   const ksys = ksee.m.call_stack(ksee.m.first_call("ksys_read", read.first, read.last, read.task.addr)).find((f) => f.func === "ksys_read");

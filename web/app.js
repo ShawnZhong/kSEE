@@ -114,7 +114,7 @@ export function app(m) {
       if (at) view(at);
     });
   };
-  a.trace = trace(a, stack.watch);
+  a.trace = trace(a);
   a.outlined = () => a.trace.draw();
   examples(a);
 

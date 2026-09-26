@@ -108,25 +108,20 @@ h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transp
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"] { color: var(--fg); border-bottom-color: var(--accent); }
 
-/* The Trace: the tree of calls, each with its records and what it changed */
+/* The Trace: the tree of calls, the one the cursor is in marked */
+#trace .head { padding: 6px 12px 2px; font-size: 11.5px; }
 #trace ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }
-#trace ul.tree { padding: 6px 8px 8px; }
-#trace li { margin: 1px 0; }
-#trace .call { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#trace .call a.tw { color: var(--dim); display: inline-block; width: 1.2em; }
-#trace .call a.what { font-size: 11px; }
-#trace li.small { font-size: 11px; }
-#trace li.rec { font: 11px/1.5 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; padding-left: 1.2em; }
-#trace li.rec .idx { display: inline-block; min-width: 4em; text-align: right; }
-#trace li.rec:hover { background: var(--sel); }
-#trace li.rec.on { background: var(--at); }
-#trace li.rec.call { color: var(--fg); font-weight: 600; }
-#trace li.rec.store { color: var(--accent); }
-#trace li.rec.return { color: var(--kw); }
-#trace li.rec.task { color: var(--run); }
-#trace .changes { margin: 2px 0 4px 1.2em; border-left: 2px solid var(--line); }
+#trace ul.tree { padding: 0 12px 8px; }
+#trace li { margin: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#trace li.on > a.mono { background: var(--at); border-radius: 2px; }
+#trace a.tw { color: var(--dim); display: inline-block; width: 1.1em; }
+#trace ul.tree > li > ul, #trace li > ul { padding-left: 16px; }
+#trace li.small, #trace li.small a.mono { font-size: 11px; }
 .changed .whead { padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.changed .note, #trace .changes .note { padding: 1px 8px; font-size: 11px; }
+.changed .note, .changelist .note { padding: 1px 8px; font-size: 11px; }
+table.stack tr.changes td { padding: 0 0 4px 16px; white-space: normal; }
+table.stack tr.changes .changelist { border-left: 2px solid var(--line); }
+table.stack tr.frame a.what { font-size: 11px; font-weight: 400; margin-left: 6px; }
 .changed ol, .watched ol { margin: 2px 0; padding-left: 26px; font: 11px/1.5 var(--mono); }
 .changed li a, .watched li a { white-space: nowrap; }
 .changed li.on, .watched li.on { background: var(--at); }
