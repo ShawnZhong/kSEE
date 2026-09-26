@@ -32,7 +32,7 @@ never returned from its last calls, and a new one may get its address.
 A frame's arguments and its frame base are the Args record after its
 block 0; its locals are at their offsets from the base (`Types::locals`).
 One walk (`Walk`)
-serves the Call stack at a record (`stack_at`), the stack chart (`chart`: every
+serves the Stack at a record (`stack_at`), the stack chart (`chart`: every
 task's stack at the columns' first records) and line steps (`lines`): each
 call with the line it is at.
 
@@ -43,7 +43,7 @@ plugin's `L` lines give a block's lines in stretches split at its calls;
 `lines` walks the records per task: at a block, its first stretch; after a
 return into it, the next. So stepping goes line by line, into and out of
 calls, including lines inlined from other functions. Each line step says
-which of its record's lines it is (`nth`: the Call stack there) and how deep it
+which of its record's lines it is (`nth`: the Stack there) and how deep it
 runs (calls deep, and inlined deep): the level stepping over or out of a
 call compares. `run_of` finds the next (or last) record whose block runs a
 given line: "run to a line".
@@ -63,7 +63,7 @@ not tell inlined code from a call (only that it has no arguments).
 ## Syscalls
 
 A syscall is a call of `wasm_syscall` (its arguments: the number and the
-syscall's own) up to its return (the result), on one task. On the Call stack,
+syscall's own) up to its return (the result), on one task. On the Stack,
 the syscall's entry (`wasm_syscall` and the `SYSCALL_DEFINE` wrappers) is
 one frame, named for the syscall, its arguments shown as the kernel's
 constants (`AT_FDCWD`, `O_CREAT | O_WRONLY`).

@@ -25,7 +25,7 @@
     <button id="step-back" title="Back a step (←; Shift: over calls, Alt: out of the call)">◀</button>
     <button id="play" class="go" title="Play (space)">▶ Play</button>
     <button id="step-fwd" title="A step (→; Shift: over calls, Alt: out of the call; F10, F11, Shift+F11)">▶</button>
-    <select id="step-by" aria-label="step by" title="What ◀ ▶ and Play step by: every line (into calls), over calls, or out of the call (the Call stack's selected one, or the line's)">
+    <select id="step-by" aria-label="step by" title="What ◀ ▶ and Play step by: every line (into calls), over calls, or out of the call (the Stack's selected one, or the line's)">
       <option value="line">by line</option><option value="over">over calls</option><option value="out">out of calls</option>
     </select>
     <select id="speed" aria-label="speed" title="Play speed">
@@ -43,7 +43,7 @@
   <div class="vsplit" data-col="right" title="drag to resize"></div>
   <div class="col" id="right" data-tab="stack">
     <h2 class="tabs">
-      <a data-tab="stack" title="the calls at the cursor, their values as they were then">Call stack</a>
+      <a data-tab="stack" title="the calls at the cursor, their values as they were then">Stack</a>
       <a data-tab="trace" title="the selected call as a tree of the calls it made, in order">Calls</a>
     </h2>
     <div class="pane" data-tab="stack">

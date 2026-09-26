@@ -26,7 +26,7 @@ select { font: inherit; background: var(--panel); color: var(--fg); border: 1px 
 .mono { font-family: var(--mono); font-size: 12px; }
 .empty { color: var(--dim); padding: 8px 12px; font-size: 12px; }
 
-/* The layout: the sidebar; the timeline over the source and the Call stack; the splits */
+/* The layout: the sidebar; the timeline over the source and the Stack; the splits */
 #app { display: grid; grid-template-columns: 340px 5px minmax(0, 1fr); flex: 1; min-height: 0; }
 #side { border-right: 1px solid var(--line); background: var(--panel); }
 #work { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -83,7 +83,7 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .lens { font: 11px system-ui, sans-serif; padding: 2px 0 1px 4px; display: flex; flex-wrap: wrap; gap: 0 10px; }
 .lens a { color: var(--accent); }
 
-/* The Call stack: calls (frames), their values as trees; the current task */
+/* The Stack: calls (frames), their values as trees; the current task */
 .stackhead { padding: 4px 12px; font-size: 11.5px; border-bottom: 1px solid var(--line); }
 .stackhead:empty { display: none; }
 table.objs { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12px; table-layout: fixed; }
@@ -100,7 +100,7 @@ table.stack tr.frame.on td { background: var(--sel); }
 table.stack tr.frame a.mono { font-weight: 600; }
 table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
 
-/* The right column's tabs (Call stack, Trace): the pane chosen */
+/* The right column's tabs (Stack, Trace): the pane chosen */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
 #right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="trace"] .pane[data-tab="trace"] { display: flex; }
 h2.tabs { gap: 0; padding: 0 4px; }
@@ -110,6 +110,7 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 
 /* The Trace: the tree of calls, the one the cursor is in marked */
 #trace .head { padding: 6px 12px 2px; font-size: 11.5px; }
+#trace .head a.on { color: var(--fg); font-weight: 600; }
 #trace ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }
 #trace ul.tree { padding: 0 12px 8px; }
 #trace li { margin: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

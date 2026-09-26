@@ -1,4 +1,4 @@
-// Values as trees (the Call stack's and the Watch's): a row a value, its
+// Values as trees (the Stack's and the Watch's): a row a value, its
 // name, value and type; pointers open into what they point to, structs
 // into their fields, read from memory as it was at the cursor
 // (Machine.memory_at). Values that changed since the cursor last moved are

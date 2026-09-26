@@ -75,7 +75,7 @@ export function source(app) {
     const cs = m.callers(fn.name, v.syscall), n = cs.reduce((a, c) => a + c.count, 0);
     const where = v.syscall != null ? "in this syscall" : "in the recording";
     const item = (text, i) => (i == null ? el("span", { textContent: text })
-      : el("a", { textContent: text, title: "go to this call", onclick: () => app.time.go(i) }));
+      : el("a", { textContent: text, title: "go to this call", onclick: () => app.goCall(i) }));
     return el("div", { className: "lens dim" }, item(n ? `called ${n}× ${where} from` : `not called ${where}`),
       ...cs.slice(0, 6).map((c) => item(`${c.func}${c.line ? `:${c.line}` : ""}${c.count > 1 ? ` (${c.count}×)` : ""}`, c.first)),
       ...(cs.length > 6 ? [item(`and ${cs.length - 6} more`)] : []));

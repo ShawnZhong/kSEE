@@ -1,4 +1,4 @@
-// The Call stack: the call stack at the cursor, innermost first, each call
+// The Stack: the call stack at the cursor, innermost first, each call
 // with its arguments and its locals in memory as a tree (like a debugger's
 // variables), rebuilt from the trace (Machine.call_stack: a call's
 // arguments are in its record, its locals' addresses in another); at the

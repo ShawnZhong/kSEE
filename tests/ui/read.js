@@ -1,5 +1,5 @@
 // The default: the read example (#ex=read): its calls made by themselves; its explanation's links (the
-// Call stack, a hover at each), stepping, play, the chart (hover, click), typing and changing calls,
+// Stack, a hover at each), stepping, play, the chart (hover, click), typing and changing calls,
 // another example; returns a report.
 (async () => {
     const r = {};
@@ -9,7 +9,7 @@
   r.first = [pick.selectedOptions[0]?.textContent, line(lis()[0])];
   r.examples = pick.options.length;
   r.calls = lis().map(line);
-  // The explanation's links, each gone to: the function's call, the Call stack there.
+  // The explanation's links, each gone to: the function's call, the Stack there.
   r.notes = [];
   const places = [...document.querySelectorAll(".explain a.place")];
   for (const [k, a] of places.entries()) {
@@ -26,7 +26,7 @@
   }
   if (!r.decl?.startsWith("include/linux/fs.h:") || !r.decl.includes("struct kiocb {")) throw new Error("no declaration on hover: " + JSON.stringify(r.decl));
   if (r.notes.length < 3 || !r.notes.some(([n, w]) => n === "vfs_read" && w.includes("vfs_read")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
-  // Watch a value: click one in the Call stack (one in memory: a local's, a task's field); the Watch shows it,
+  // Watch a value: click one in the Stack (one in memory: a local's, a task's field); the Watch shows it,
   // its writes listed (a local's in its frame's lifetime), ▶ goes to the next.
   const v = document.querySelector("#stack td.fval.mem");
   v?.click();
@@ -51,7 +51,7 @@
   if (file) ksee.runTo(file, Number(ln), 1);
   r.ranTo = [here, $("where").textContent, was, ksee.time.cursor()];
   if (!file || !(r.ranTo[3] > was) || r.ranTo[1] !== here) throw new Error("run to: " + JSON.stringify(r.ranTo));
-  // Stepping: into a call, over the next, out of it (the Call stack's calls, deep), from the
+  // Stepping: into a call, over the next, out of it (the Stack's calls, deep), from the
   // explanation's first link (a known place: ksys_read's entry), so that the run is the same every time.
   document.querySelector(".explain a.place").click();
   await sleep(300);
@@ -99,7 +99,11 @@
   document.querySelector('h2.tabs a[data-tab="trace"]').click();
   await sleep(100);
   r.trace = [$("trace-note").textContent, [...document.querySelectorAll("#trace li a.mono")].map((a) => a.textContent).slice(0, 6), $("trace").querySelector(".head")?.textContent];
-  if (!r.trace[1].some((x) => x === "vfs_read") || !/^\d+ calls$/.test(r.trace[2] ?? "")) throw new Error("the calls: " + JSON.stringify(r.trace));
+  if (!r.trace[1].some((x) => x === "vfs_read") || !/^\d+ calls · to depth 1 2 3 all$/.test(r.trace[2] ?? "")) throw new Error("the calls: " + JSON.stringify(r.trace));
+  // (To depth 1: the root's calls only.)
+  document.querySelector("#trace .head a").click();
+  if (document.querySelectorAll("#trace li ul li").length) throw new Error("depth 1 shows deeper calls");
+  document.querySelectorAll("#trace .head a")[3].click();
   const all = document.querySelectorAll("#trace li a.mono").length, vfs = [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "vfs_read");
   vfs.querySelector(":scope > a.tw").click();
   if (document.querySelectorAll("#trace li a.mono").length >= all) throw new Error("folding: " + $("trace").innerText.slice(0, 200));
@@ -107,7 +111,7 @@
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   if (document.querySelector("#trace li.on > a.mono")?.textContent !== "vfs_read") throw new Error("the cursor's call not marked: " + document.querySelector("#trace li.on")?.textContent);
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
-  // "changed" under a call in the Call stack: the read's entry changed the struct file's f_pos; an object watched.
+  // "changed" under a call in the Stack: the read's entry changed the struct file's f_pos; an object watched.
   const entry = [...document.querySelectorAll("#stack tr.frame")].find((tr) => tr.textContent.startsWith("read()"));
   entry.querySelector("a.what").click();
   const fileChange = [...document.querySelectorAll("#stack .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));

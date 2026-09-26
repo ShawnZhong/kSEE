@@ -39,7 +39,7 @@ happens in read()?", "What is a directory?", …), a program of syscalls that
 asks it, and an explanation: /init (or a thread or child of it) makes
 the calls as the example opens, each recorded, and the explanation's
 links lead into the recording: a function one of the calls runs (the
-cursor at its call: the source, and the Call stack with each call's
+cursor at its call: the source, and the Stack with each call's
 arguments and locals, as they were), or a call. ◀ ▶ step, and Play
 plays, by line (into calls), over calls, or out of the call: the Call
 stack's selected call, or the line's; ← →, with Shift over, with Alt out
@@ -63,15 +63,15 @@ it.
 
 The timeline shows the recording: the call stacks over time, and which
 task ran (scroll to zoom, drag to pan; hover a call for what it was: the
-source and the Call stack show that moment while the pointer is there; click it to fix the cursor there; click a syscall, or double-click
+source and the Stack show that moment while the pointer is there; click it to fix the cursor there; click a syscall, or double-click
 any call, to select it: its records from its start to its end, with
 whatever else ran in between). Hover
-a name in the source for its value at the cursor, and a value in the Call stack
+a name in the source for its value at the cursor, and a value in the Stack
 for who last wrote it; click it to watch it: the Watch follows it as the
 cursor moves, with every write to it while it lived (a local: while its
 frame did): the member, from what to what, by which line, each a link to
 that moment, ◀ ▶ to the write before or after the cursor. "changed" under
-a call in the Call stack is what it changed, by object (`fd 3 note.txt:
+a call in the Stack is what it changed, by object (`fd 3 note.txt:
 f_pos 0 → 26`, `inode 12 (ext4): i_size`, a local, a callee's frame), in
 the order they were first written; click an object to watch it. The
 Calls tab shows the selected call as a tree of every call it made, in the

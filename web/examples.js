@@ -213,7 +213,7 @@ export async function examples(app) {
   // (or the call's start); the link marked.
   function goTo(l) {
     app.select(l.c);
-    if (l.at != null) app.time.go(l.at);
+    if (l.at != null) app.goCall(l.at);
     for (const x of t.links) x.a.classList.toggle("on", x === l);
     mark(l.j);
   }

@@ -2,7 +2,7 @@
 //
 // An example's program makes calls, each recorded; explore the recording
 // at one cursor: the timeline shows it among the tasks and their calls;
-// the source and the Call stack show the code and the values there (memory as
+// the source and the Stack show the code and the values there (memory as
 // it was). ◀ ▶| and Play move it line by line.
 import { $, taskName } from "./dom.js";
 import { source } from "./source.js";
@@ -63,8 +63,8 @@ export function app(m) {
     time.go(m.seek(s.first, 1, "function"));
     a.outlined?.();
   };
-  // Select call `f` (a Call stack frame: see Machine.call_stack) at the cursor:
-  // the Call stack marks it, the source shows where it is, the timeline outlines it.
+  // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:
+  // the Stack marks it, the source shows where it is, the timeline outlines it.
   a.selectFrame = (f) => {
     stack.select(f.first, f.inlined ? f.func : null);
     src.view.cursor = { file: f.file, line: f.line };
@@ -147,6 +147,22 @@ export function app(m) {
     const st = steps(), step = st[k];
     if (!step) return false;
     L.pos = k;
+    showLine(step);
+    return true;
+  }
+  // Go to the call from record `first`: its function's own first line (a
+  // call's first record often runs inlined code first: current->files),
+  // as stepping shows it; the cursor there.
+  a.goCall = (first) => {
+    const at = m.at(first);
+    if (!at) return;
+    const line = m.line_steps(first, Math.min(first + 400, time.records() - 1), at.task.addr).find((s) => s.func === at.func && !s.inlined);
+    if (!line) return time.go(first);
+    L.pos = null;
+    showLine(line);
+  };
+  // Show line `step` (see Machine.line_steps): the cursor at its record.
+  function showLine(step) {
     time.mark(step.i);
     memoryAt(step.i);
     const at = m.at(step.i);
@@ -155,11 +171,10 @@ export function app(m) {
     // (The stack as it runs: see Machine.call_stack's nth.)
     stack.show(step.i, step, at?.task);
     where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line });
-    return true;
   }
   // Step: by a `line` (into calls), `over` calls (the next line at this
   // level or out of it), or `out` (the next line out of it), `dir` 1
-  // forward, -1 back. The level: the Call stack's selected call's, else the
+  // forward, -1 back. The level: the Stack's selected call's, else the
   // line's (calls deep, then inlined deep: inlined code is stepped over
   // too). False if there is no such line.
   function step(kind, dir) {

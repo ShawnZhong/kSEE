@@ -10,7 +10,7 @@
 //
 // Scroll (or pinch, or W/S) to zoom; drag to pan, in time and up and down
 // through deep stacks; Shift+scroll, sideways scroll or A/D to pan in time. Hover a call
-// for what it was, and where it is, and the source and the Call stack
+// for what it was, and where it is, and the source and the Stack
 // show that moment while the pointer is there; click to put the
 // cursor there and select it (a syscall: its records, from entry to exit);
 // double-click a call to select its records, from its first to its return. Click or
@@ -40,7 +40,7 @@ export function timeline(app) {
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
               depth: 1, row: ROW, // (depth: the deepest stack of the selection seen; row: the rows' height)
               lit: null, sel: null, syscallAt: new Map(),
-              found: { name: "", at: [] } }; // (the function found: its calls' records) // (lit, sel: the calls outlined, their first records: hovered here or in the Call stack; selected)
+              found: { name: "", at: [] } }; // (the function found: its calls' records) // (lit, sel: the calls outlined, their first records: hovered here or in the Stack; selected)
   const funcs = new Map(), tasks = new Map();
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const inames = new Map();
@@ -97,7 +97,7 @@ export function timeline(app) {
     return s ? `${s.name ?? s.nr}()` : fn(id)?.name ?? "?";
   };
   // A flame graph: the outermost calls at the bottom, over the task strip
-  // (as in the Call stack, the innermost is on top). Rows get thinner to fit the
+  // (as in the Stack, the innermost is on top). Rows get thinner to fit the
   // box, down to where names still fit; deeper, the box scrolls (its bottom
   // in view at first). Row `d` (d calls deep) is at rowY(d); rowAt(y) is
   // the row at y.
@@ -247,7 +247,7 @@ export function timeline(app) {
     const [id, first, inl] = c?.frames[d] ?? [];
     hilite(first ?? null);
     // (The view follows the pointer: the moment under it, in the call under
-    // it: the source and the Call stack say where the call is.)
+    // it: the source and the Stack say where the call is.)
     app.peek(first == null ? at(e.offsetX) : Math.max(first, at(e.offsetX)));
     if (first == null) {
       tip.hidden = true;
@@ -398,7 +398,7 @@ export function timeline(app) {
       return false;
     }
     finder.hint.textContent = `${at.indexOf(i) + 1} of ${at.length}`;
-    go(i);
+    app.goCall(i);
     return true;
   }
   // (The box, in the header, before the legend.)
