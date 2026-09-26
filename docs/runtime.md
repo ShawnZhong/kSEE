@@ -66,14 +66,15 @@ reaching Web APIs.
 
 ## The page
 
-web/ is plain ES modules, no framework or bundler; Monaco (vendored) for
-source. Rust does the work: JS only lays it out.
+web/ is plain ES modules, no framework; CodeMirror for the source, one
+bundle the build makes with `deno bundle` (target/site/codemirror.js).
+Rust does the work: JS only lays it out.
 
 | Module | Does |
 |---|---|
 | app.js | wires the panels to the Machine; the status (idle, replay, halted); the cursor; stepping (by line, over calls, out of them, both ways), run to a line, Play; the keys |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom); zoom, pan |
-| source.js | the source at the cursor (Monaco): lines that ran, the function, hover values, definitions |
+| source.js | the source at the cursor (CodeMirror): lines that ran, the function, hover values, definitions |
 | callstack.js | the Call stack: calls with arguments and locals, the task (current); the right column's tabs |
 | objects.js | values as trees (the Call stack's, the Watch's): pointers open into what they point to, structs into their fields; who last wrote a value |
 | watch.js | the Watch: values clicked, each followed as the cursor moves, with every write to it in its lifetime |

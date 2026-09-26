@@ -80,7 +80,7 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   directly; the page (web/) lays out what the core computes.
 - **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel, the
   runtime, /init, and the page's files (types from DWARF, the
-  sources, Monaco), with web/ (the page), into target/site/.
+  sources, CodeMirror), with web/ (the page), into target/site/.
 
 The choices that shape it:
 

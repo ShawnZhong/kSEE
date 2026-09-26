@@ -17,5 +17,8 @@ How it works, part by part:
 
 Background:
 
+- [research.md](research.md): directions surveyed and not built
+  (counterfactual execution, ext4 feasibility numbers), so they are not
+  re-done.
 - [related/](related/): other Linux-on-Wasm systems (research notes from
   before the port).
