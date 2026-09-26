@@ -307,20 +307,6 @@ pub fn call_tree(records: &[Record], tasks: &[u32], from: usize, to: usize, task
     roots
 }
 
-/// How often each function was called in records `from..=to` (of task
-/// `task`, or any): function -> calls.
-pub fn call_counts(records: &[Record], tasks: &[u32], from: usize, to: usize, task: Option<u32>) -> BTreeMap<u32, u32> {
-    let mut out = BTreeMap::new();
-    let to = to.min(records.len().saturating_sub(1));
-    for i in from..=to {
-        if let Record::Block { func, n: 0 } = records[i]
-            && task.is_none_or(|t| tasks[i] == t) {
-                *out.entry(func).or_default() += 1;
-            }
-    }
-    out
-}
-
 /// Where the call from record `first` (a block 0) ends: the last record of
 /// its task's while it is on the stack (its return), or None if it has not
 /// ended when the records do.
@@ -442,13 +428,6 @@ mod tests {
         // 1 skipped (a wrapper): its calls are the roots, and 3 is at depth 1.
         let tree = call_tree(&r, &t, 0, 9, 7, 1, 1, &|f| f == 1);
         assert_eq!(tree.iter().map(|c| (c.func, c.calls.len(), c.small)).collect::<Vec<_>>(), [(2, 0, 1), (4, 0, 0)]);
-    }
-
-    #[test]
-    fn calls_are_counted_per_function_and_task() {
-        let r = [b(1, 0), b(2, 0), b(2, 1), b(1, 1), b(2, 0)];
-        assert_eq!(call_counts(&r, &[7, 7, 7, 7, 8], 0, 4, None), BTreeMap::from([(1, 1), (2, 2)]));
-        assert_eq!(call_counts(&r, &[7, 7, 7, 7, 8], 0, 4, Some(7)), BTreeMap::from([(1, 1), (2, 1)]));
     }
 
     #[test]

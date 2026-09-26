@@ -183,11 +183,6 @@ ol.steps .ret { color: var(--accent); margin-left: auto; white-space: nowrap; }
 ol.steps > li.blocked .ret { color: var(--pp); font-style: italic; }
 ol.steps .tid { font-size: 11px; color: var(--kw); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; white-space: nowrap; }
 ol.steps .more { font-size: 11px; padding-left: 2px; }
-ol.steps .cmplist { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 2px 0 2px 8px; }
-ol.steps .cmplist .mono { font-size: 11px; white-space: nowrap; }
-ol.steps .cmplist .mono.\+ { color: var(--run); cursor: pointer; }
-ol.steps .cmplist .mono.\+:hover { text-decoration: underline; }
-ol.steps .cmplist .mono.− { color: var(--miss); }
 
 /* A call's editor (calledit.js): completions, the signature */
 .callform { margin: 0; }

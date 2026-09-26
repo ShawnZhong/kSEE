@@ -12,14 +12,11 @@
 // the call's task; `:any` on any task), the cursor there; the first such
 // link is where the cursor starts; `[label](try:1)` runs the example's
 // `tries[0]`, another program (calls separated by ";"), instead: to see
-// what changes (the run is compared with the example's). `code` in
-// backticks. The program is
+// what changes. `code` in backticks. The program is
 // below, a call a line: click one for its recording; type in it to change
 // it (Enter: the program runs again, on a fresh kernel), empty it (or ✕)
 // to remove it; add a call at the end; ↺ for the example's own program
-// again. A program changed from the
-// example's is compared with the example's run, call by call: the
-// functions a call ran more, or less, than the example's did (see diff).
+// again.
 //
 // A step: { call, args, name?, tid? }; its arguments written as in
 // C (see args.js and Machine.arg): "a string", 0644, O_CREAT | O_WRONLY,
@@ -37,10 +34,7 @@ export async function examples(app) {
   // ret?, text?: how once it finished), the runner each started; its
   // explanation's links ({ j: the call, func?, any?, at?: the record, a:
   // the element }).
-  const t = { ex: null, steps: [], done: [], started: [], links: [], list: null, text: null, status: null, diff: null };
-  // Each example's own run, once made: per call, the functions it ran and
-  // how often (Machine.call_counts): what a changed program is compared with.
-  const baselines = new Map();
+  const t = { ex: null, steps: [], done: [], started: [], links: [], list: null, text: null, status: null };
 
   // The URL: #ex=NAME, the example; &p=CALLS, its program if changed (the
   // calls as written, separated by ";": see program). { ex, steps, changed }.
@@ -121,11 +115,6 @@ export async function examples(app) {
     for (let j = 0; j < t.steps.length; j++) if (!(await step()) || t.list !== mine) return;
     t.status.textContent = "";
     explain();
-    // (The run, call by call, against the example's own: see diff.)
-    const counts = t.steps.map((s, j) => ({ call: s.call, counts: syscall(j) ? m.call_counts(syscall(j).index) : null }));
-    if (!t.changed) baselines.set(t.ex.name, counts);
-    t.diff = t.changed ? diff(baselines.get(t.ex.name), counts) : null;
-    if (t.diff) draw();
     const first = t.links.find((l) => l.at != null) ?? t.links.find((l) => l.c);
     if (first) goTo(first);
     else if (t.done.length) pick(t.done.length - 1);
@@ -139,48 +128,6 @@ export async function examples(app) {
     const steps = [...t.steps];
     steps[j] = call;
     go(t.ex, steps, true);
-  }
-
-  // Run `now` (per call: its syscall and its functions' call counts)
-  // against the example's own run `base`: per call, the functions it ran
-  // more (`more`: [name, by]) or less (`less`) than the same call in the
-  // example's, or `other`: the example's call there is another syscall (or
-  // none). Null if the example's run is not known (the page opened on a
-  // changed program).
-  function diff(base, now) {
-    if (!base) return null;
-    return now.map((c, j) => {
-      const b = base[j];
-      if (!b || b.call !== c.call) return { other: b?.call ?? null };
-      if (!b.counts || !c.counts) return {};
-      const names = new Set([...Object.keys(b.counts), ...Object.keys(c.counts)]);
-      const more = [], less = [];
-      for (const n of names) {
-        const d = (c.counts[n] ?? 0) - (b.counts[n] ?? 0);
-        if (d > 0) more.push([n, d]);
-        else if (d < 0) less.push([n, -d]);
-      }
-      const by = (x, y) => y[1] - x[1] || x[0].localeCompare(y[0]);
-      return { more: more.sort(by), less: less.sort(by) };
-    });
-  }
-  // Call `j`'s line, compared with the example's run (see diff): the same,
-  // or the functions it ran more or less, each of the run's a link to it.
-  function compared(j) {
-    const d = t.diff?.[j], c = syscall(j);
-    if (!d || !c) return null;
-    if (d.other !== undefined) return el("div", { className: "dim more cmp", textContent: d.other ? `the example's call ${j + 1} is ${d.other}(…)` : "not in the example's program" });
-    if (!d.more?.length && !d.less?.length) return el("div", { className: "dim more cmp", textContent: "ran as in the example's run" });
-    const item = (n, k, sign) => el("span", { className: `mono ${sign}`, textContent: `${sign}${n}${k > 1 ? ` ×${k}` : ""}` });
-    const link = ([n, k]) => Object.assign(item(n, k, "+"), { title: `${k} more call${k > 1 ? "s" : ""} of ${n} than in the example's run: go to the first`,
-      onclick: () => app.time.go(m.first_call(n, c.first, c.last ?? m.records() - 1, c.task.addr)) });
-    const gone = ([n, k]) => Object.assign(item(n, k, "−"), { title: `${k} fewer call${k > 1 ? "s" : ""} of ${n} than in the example's run` });
-    const shown = [...d.more.map(link), ...d.less.map(gone)];
-    const list = el("div", { className: "cmplist", hidden: true }, ...shown.slice(0, 60),
-      shown.length > 60 ? el("span", { className: "dim", textContent: `and ${shown.length - 60} more` }) : null);
-    const head = el("a", { className: "dim", textContent: `vs the example's run: ${d.more.length ? `+${d.more.length}` : ""}${d.more.length && d.less.length ? " " : ""}${d.less.length ? `−${d.less.length}` : ""} functions ▸`,
-      title: "what this call ran more (+), or less (−), than the same call in the example's run", onclick: () => ((list.hidden = !list.hidden), (head.textContent = head.textContent.slice(0, -1) + (list.hidden ? "▸" : "▾"))) });
-    return el("div", { className: "more cmp" }, head, list);
   }
 
   // Remove step `j`: the program runs again without it.
@@ -232,8 +179,7 @@ export async function examples(app) {
           el("a", { className: "rm", textContent: "✕", title: "remove the call (the program runs again without it)", onclick: () => remove(j) })),
         t.started[j] ? el("div", { className: "dim more", textContent: `→ tid ${t.started[j]}, a runner` }) : null,
         d && text(s, known()) !== text(s) ? el("div", { className: "mono dim more", textContent: `as made: ${text(s, known())}` }) : null,
-        d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null,
-        compared(j));
+        d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null);
     }), el("li", { className: "add" }, t.form));
   }
   // The explanation: its paragraphs, each link a place in the recording
@@ -245,7 +191,7 @@ export async function examples(app) {
     const paras = (t.ex.text ?? []).map((para) => el("p", {}, ...para.split(/(\[[^\]]*\]\([^)]*\)|`[^`]*`)/).map((part) => {
       // (A try: `[label](try:1)`, the example's `tries[0]`, a program to run instead: see the top.)
       const tr = part.match(/^\[([^\]]*)\]\(try:(\d+)\)$/), prog = tr && t.ex.tries?.[Number(tr[2]) - 1];
-      if (tr) return el("a", { className: "try", textContent: tr[1], title: prog ? `run this program instead, and compare:\n${prog}` : "no such try",
+      if (tr) return el("a", { className: "try", textContent: tr[1], title: prog ? `run this program instead:\n${prog}` : "no such try",
         onclick: prog ? () => go(t.ex, program(prog), true) : null });
       const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?\)$/);
       if (link) {

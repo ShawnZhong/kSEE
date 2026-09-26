@@ -5,7 +5,7 @@
   "text": [
     "The same write, but on ext4. Is anything written to the disk?",
     "[ext4_buffered_write_iter](2:ext4_buffered_write_iter) puts the bytes into the page cache, as in memory, and marks the page dirty: to be written back later. [ext4_da_write_begin](2:ext4_da_write_begin) is delayed allocation: no disk block is chosen for the data yet, one is only reserved. So nothing reaches the disk in this call; that happens in writeback, or in fsync (the next example).",
-    "Try: [open with O_SYNC](try:1): the write itself then has to reach the disk, and the run grows by the whole writeback path. The line under the write compares the two runs."
+    "Try: [open with O_SYNC](try:1): the write itself then has to reach the disk, and the run grows by the whole writeback path."
   ],
   "tries": [
     "fd = openat(AT_FDCWD, \"/mnt/new.txt\", O_CREAT | O_WRONLY | O_SYNC, 0644); write(fd, \"hello, ext4\\n\", 12); close(fd)"

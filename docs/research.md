@@ -9,9 +9,10 @@ re-done. None of this is built; kSEE's goal stays the one in
 Run the same program again with one host decision changed (a call that
 fails, a crash at a store, a preemption), then align and diff the
 recordings to explain what that decision caused. The machine is
-deterministic, so the diff is clean. The page's "compared with the
-example's run" (examples.js) is the smallest form of this: the functions a
-changed call ran more or less than the example's did.
+deterministic, so the diff is clean. A first form of it, a per-call
+diff of function counts against the example's run, was in the page for a
+day (bf8b16c) and dropped as noise; the alignment of two runs is the part
+worth doing properly.
 
 Feasibility, from ext4/jbd2 fixes between June 2023 and v7.3-rc4: 284 bug
 fixes; 22 need an MMU, DAX or the like; 50 are error-path fixes (45 need

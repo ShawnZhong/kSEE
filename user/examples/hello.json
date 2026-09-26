@@ -7,7 +7,7 @@
     "1. The call starts in [ksys_write](1:ksys_write): the file descriptor 1 turns into the open file it stands for, a `struct file`, and the position to write at.",
     "2. Then the VFS, [vfs_write](1:vfs_write), the layer that is the same for every kind of file: is the file open for writing, is the buffer readable? Look at the Call stack: `count` is 6, the bytes of \"hello\\n\".",
     "3. Finally the file's own write: fd 1 is the console, so [console_dev_write](1:console_dev_write) hands the bytes to the host, which shows them in the Console at the bottom left.",
-    "Now step with ◀ ▶ (or ← →), a line at a time, forwards or back; Play runs; hover a name in the source for its value. Then try a change: [a longer line](try:1), [fd 2 instead of 1](try:2), or [fd 5, which is not open](try:3): the program runs again on a fresh kernel, each call says how it went, and the run is compared with this one."
+    "Now step with ◀ ▶ (or ← →), a line at a time, forwards or back; Play runs; hover a name in the source for its value. Then try a change: [a longer line](try:1), [fd 2 instead of 1](try:2), or [fd 5, which is not open](try:3): the program runs again on a fresh kernel, each call says how it went."
   ],
   "tries": [
     "write(1, \"hello world\\n\", 12)",
