@@ -9,5 +9,7 @@ shape everything; then the doc for the part you touch ([docs/](docs/README.md)).
 - Rust does the work, in ksee-core (unit-tested on made-up records); web/
   only lays out what `Machine` returns. Kernel names belong to the kernel,
   `ksee pack` and ksee-core's arch.rs, not to web/.
+- linux/ (submodule, branch wasm) may change, in small commits: in arch/wasm
+  where possible, outside it only what the port needs.
 - `./ksee.sh test` before you finish (`--ui` with `$CHROME` runs the page too).
 - The docs and README describe the current state: change them with the code.

@@ -7,7 +7,7 @@ five files, 78 lines (build scripts, the initramfs's alignment, and nolibc's
 `arch-wasm.h` for /init).
 
 The configuration: wasm32, `CONFIG_MMU=n`, one CPU, `PREEMPT_NONE`, an
-initramfs, a console (with input), a timer; the block layer, the loop
+initramfs, a console (output), a timer; the block layer, the loop
 device and ext4.
 
 ## Tasks: stacks the host suspends
@@ -126,8 +126,8 @@ handler sends the signal, kernel/irq.c); the runtime's `ksee.call` import
 copies the request (the number, the arguments, the buffers) into /init's
 memory (recorded), it makes the syscall, and `ksee.done` gives the result
 back. So every syscall the page shows is a real process's, with its fds
-and its memory. (A signal, not console input: a tty hands input to a
-kworker first, and each call's recording began with that.)
+and its memory. (A signal, not console input: input would go through a
+worker first, and each call's recording would begin with that.)
 
 A clone child of /init (a thread, a vfork child) is a **runner** too, and
 so is /init exec'd again (they inherit the blocked signal; the doorbell
@@ -144,9 +144,13 @@ kernel's; the disk's blocks are that file's pages in memory.
 
 ## Console
 
-kernel/console.c: one console, printk's from `setup_arch` on, whose tty is
-`/dev/console`: output only, to the host, synchronously (`console_write`). (A console of its own rather than hvc: hvc's thread,
-kicked after every write, added a task and noise to every recording.)
+kernel/console.c: one console, printk's from `setup_arch` on: output only,
+to the host, synchronously (`console_write`). `/dev/console`, /init's
+stdin, stdout and stderr, is a plain character device on it: a write goes
+straight to the host, a read is at its end. There is no tty layer
+(`CONFIG_TTY=n`): a tty's line discipline and locks would be in every
+write's recording for nothing, and hvc's thread, kicked after every write,
+added a task to every recording.
 
 ## Memory
 

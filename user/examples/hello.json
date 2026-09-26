@@ -16,15 +16,11 @@
         },
         {
           "func": "vfs_write",
-          "note": "The VFS: is the file open for writing? Then the file's own write: a tty's."
+          "note": "The VFS: is the file open for writing? Then the file's own write: the console device's."
         },
         {
-          "func": "n_tty_write",
-          "note": "The tty's line discipline: turn \"\\n\" into \"\\r\\n\", and pass the bytes to the driver."
-        },
-        {
-          "func": "wasm_tty_write",
-          "note": "The console driver (arch/wasm/kernel/console.c): hand the bytes to the host, which shows them."
+          "func": "console_dev_write",
+          "note": "The console driver (arch/wasm/kernel/console.c): copy the bytes from the program, and hand them to the host, which shows them."
         }
       ]
     }
