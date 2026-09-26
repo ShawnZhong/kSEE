@@ -95,15 +95,15 @@
   // (A syscall's box: the syscall selected, entry to exit.)
   const home = ksee.time.home();
   if (home?.a !== read.first || home?.b !== read.last) throw new Error("the read's selection: " + JSON.stringify(home) + ", not " + read.first + ".." + read.last);
-  // The Trace tab: the read as a tree of calls, the main ones, then all; the call the cursor is in marked.
+  // The Calls tab: the read as a tree of every call, in order, foldable; the call the cursor is in marked.
   document.querySelector('h2.tabs a[data-tab="trace"]').click();
   await sleep(100);
   r.trace = [$("trace-note").textContent, [...document.querySelectorAll("#trace li a.mono")].map((a) => a.textContent).slice(0, 6), $("trace").querySelector(".head")?.textContent];
-  if (!r.trace[1].some((x) => x === "vfs_read") || !/\d+ calls · all/.test(r.trace[2] ?? "")) throw new Error("the trace: " + JSON.stringify(r.trace));
-  const main = document.querySelectorAll("#trace li a.mono").length;
-  document.querySelector("#trace .head a").click();
-  if (document.querySelectorAll("#trace li a.mono").length <= main || document.querySelector("#trace li.small a.dim")) throw new Error("show all: " + $("trace").innerText.slice(0, 200));
-  document.querySelector("#trace .head a").click();
+  if (!r.trace[1].some((x) => x === "vfs_read") || !/^\d+ calls$/.test(r.trace[2] ?? "")) throw new Error("the calls: " + JSON.stringify(r.trace));
+  const all = document.querySelectorAll("#trace li a.mono").length, vfs = [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "vfs_read");
+  vfs.querySelector(":scope > a.tw").click();
+  if (document.querySelectorAll("#trace li a.mono").length >= all) throw new Error("folding: " + $("trace").innerText.slice(0, 200));
+  [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "vfs_read").querySelector(":scope > a.tw").click();
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   if (document.querySelector("#trace li.on > a.mono")?.textContent !== "vfs_read") throw new Error("the cursor's call not marked: " + document.querySelector("#trace li.on")?.textContent);
   document.querySelector('h2.tabs a[data-tab="stack"]').click();

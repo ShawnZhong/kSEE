@@ -116,7 +116,6 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #trace li.on > a.mono { background: var(--at); border-radius: 2px; }
 #trace a.tw { color: var(--dim); display: inline-block; width: 1.1em; }
 #trace ul.tree > li > ul, #trace li > ul { padding-left: 16px; }
-#trace li.small, #trace li.small a.mono { font-size: 11px; }
 .changed .whead { padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .changed .note, .changelist .note { padding: 1px 8px; font-size: 11px; }
 table.stack tr.changes td { padding: 0 0 4px 16px; white-space: normal; }

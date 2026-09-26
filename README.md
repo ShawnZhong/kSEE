@@ -74,10 +74,9 @@ that moment, ◀ ▶ to the write before or after the cursor. "changed" under
 a call in the Call stack is what it changed, by object (`fd 3 note.txt:
 f_pos 0 → 26`, `inode 12 (ext4): i_size`, a local, a callee's frame), in
 the order they were first written; click an object to watch it. The
-Trace tab shows the selected call as a tree of the calls it made, in
-order: the main ones, with the small ones as "+n small calls" to open
-("all" shows every one; ▾ folds a call's calls away), each a link, the
-call the cursor is in marked. Objects are said as
+Calls tab shows the selected call as a tree of every call it made, in the
+order they were made (▾ folds a call's calls away), each a link, the call
+the cursor is in marked. Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by
 its number and filesystem, a task by its comm and pid. Ctrl+click (or F12) a name for its definition: a
 function, a type, a global, a struct's member. Over a function, the source
