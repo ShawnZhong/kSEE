@@ -20,11 +20,19 @@ const FITS = {
 
 // { el, input, focus }: `text` to start with; `rets()`: the results of
 // the calls before (for $n); `done(call)`: a call made of what was written
-// ({ call, args, tid? }); `cancel()`: Esc with no list open.
-export function callEditor({ m, consts, rets, text = "", placeholder = "", done, cancel }) {
+// ({ call, args, tid? }); `cancel()`: Esc with no list open; `focus()`:
+// it gets the focus; `inline`: a line of a program (its hint only while
+// it has the focus).
+export function callEditor({ m, consts, rets, text = "", placeholder = "", done, cancel, focus, inline = false }) {
   const names = m.syscall_names();
   const constNames = [...Object.keys(consts), "NULL"];
-  const input = el("input", { className: "mono", value: text, placeholder, spellcheck: false, autocomplete: "off" });
+  // (A text area of one line, as tall as its text wraps to.)
+  const input = el("textarea", { className: "mono", value: text, placeholder, spellcheck: false, autocomplete: "off", rows: 1 });
+  const fit = () => {
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight}px`;
+  };
+  requestAnimationFrame(fit);
   const list = el("ul", { className: "complete", hidden: true });
   const hint = el("div", { className: "mono dim hint" });
   let items = [], sel = 0;
@@ -104,6 +112,7 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
     let start = c.start;
     if (it.name) start = v.slice(0, end).match(/^\s*(?:\d+\s*:\s*)?/)[0].length;
     input.value = v.slice(0, start) + it.text + v.slice(end);
+    fit();
     const at = start + it.text.length;
     input.setSelectionRange(at, at);
     sel = 0;
@@ -128,8 +137,8 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
     return { call: c.call, args: c.args, ...(tid && Number(tid) !== 1 ? { tid: Number(tid) } : {}) };
   }
 
-  input.oninput = () => ((sel = 0), show());
-  input.onfocus = show;
+  input.oninput = () => ((sel = 0), fit(), show());
+  input.onfocus = () => (show(), focus?.());
   input.onblur = () => (list.hidden = true);
   input.onkeydown = (e) => {
     const open = !list.hidden;
@@ -156,5 +165,5 @@ export function callEditor({ m, consts, rets, text = "", placeholder = "", done,
     }
     e.preventDefault();
   };
-  return { el: el("div", { className: "calledit" }, input, list, hint), input, focus: () => input.focus() };
+  return { el: el("div", { className: inline ? "calledit inline" : "calledit" }, input, list, hint), input, focus: () => input.focus() };
 }

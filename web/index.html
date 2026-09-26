@@ -11,7 +11,7 @@
   <span id="badge" class="badge">loading</span><span id="status" class="dim">loading the kernel…</span></header>
 <div id="app">
 <aside class="col" id="side">
-  <h2>Examples</h2>
+  <h2 id="ex-head">Examples</h2>
   <div class="body" id="examples"></div>
   <h2 class="sub fold" id="console-head" title="click: open or fold the console; drag, when open: its height"><span id="console-tw">▸</span> Console</h2>
   <div class="body consolebox" id="pane-console"><pre id="console"></pre></div>
@@ -37,13 +37,12 @@
 <div class="hsplit" id="hsplit" title="drag to resize"></div>
 <main id="main">
   <div class="col">
-    <div id="note" hidden></div>
     <div class="srcbar mono" id="fn-title">Source</div>
     <div class="body" id="src"><div class="empty">The source at the cursor: the lines that ran are green (hover a line number: how often).</div></div>
   </div>
   <div class="vsplit" data-col="right" title="drag to resize"></div>
   <div class="col">
-    <h2>Stack <span class="right dim" id="mem-note" title="Values are read from memory as it was at the cursor">memory now</span></h2>
+    <h2 title="the calls at the cursor, their values as they were then">Stack</h2>
     <div class="stackhead dim" id="stack-note"></div>
     <div class="body" id="stack"></div>
   </div>

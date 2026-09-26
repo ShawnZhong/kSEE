@@ -126,8 +126,8 @@ check("a bad user pointer: EFAULT", (await call("write", [1, 0x1000, 4])).ret ==
   const mk = (await call("mkdirat", [-100, "/mnt/named", 0o755])).s, i = m.first_call("filename_create", mk.first, mk.last);
   const arg = m.call_stack(i).find((f) => f.func === "filename_create")?.args?.find((a) => a.ty === "struct filename *");
   m.memory_at(i); // (as it was: the name is freed after the syscall)
-  // (7.2's struct filename: the name pointer is in an anonymous struct, with the name in iname.)
-  const name = arg && m.object_by_id("name", arg.target, Number(arg.value.split(" ")[0]), 2)?.children?.[0]?.children?.find((c) => c.name === "name");
+  // (7.2's struct filename: the name pointer is in an anonymous struct, whose members are its own.)
+  const name = arg && m.object_by_id("name", arg.target, Number(arg.value.split(" ")[0]), 1)?.children?.find((c) => c.name === "name");
   m.memory_at(null);
   check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/named"'));
   await call("unlinkat", [-100, "/mnt/named", 0x200]);

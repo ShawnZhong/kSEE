@@ -416,11 +416,11 @@ impl Types {
             value: None, children: None, expand: None, target: None,
         };
         match &t.kind {
-            Kind::Struct(members) | Kind::Union(members) => {
+            Kind::Struct(_) | Kind::Union(_) => {
                 if depth == 0 {
                     o.expand = Some(id);
                 } else {
-                    o.children = Some(members.iter().map(|m| {
+                    o.children = Some(self.members(&t.kind).iter().map(|m| {
                         let (boff, bsize) = if m.bit_size > 0 { (m.bit_offset % 8, m.bit_size) } else { (0, 0) };
                         self.object_bits(mem, &m.name, addr + m.bit_offset / 8, m.ty, boff, bsize, depth - 1)
                     }).collect());

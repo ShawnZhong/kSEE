@@ -48,8 +48,6 @@ a:hover { text-decoration: underline; }
 .row.control { opacity: .55; }
 .row .call { font-family: var(--mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row .meta { color: var(--dim); font-size: 11.5px; }
-.run { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; }
-.run .where { grid-column: 1 / -1; color: var(--dim); font-size: 11px; font-family: var(--mono); }
 .count { font-family: var(--mono); font-size: 11px; color: var(--dim); }
 
 /* Source */
@@ -101,22 +99,12 @@ table.stack tr.frame a.mono { font-weight: 600; }
 table.stack tr.frame.inlined a.mono { font-weight: 400; font-style: italic; }
 .srcbar { padding: 3px 12px; border-bottom: 1px solid var(--line); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
 /* Tours */
-.row.example { padding: 8px 12px; }
-.row.example .tt, .thead .tt { font-weight: 600; }
-.thead { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
-.thead .q { color: var(--dim); }
-.tbar { display: flex; gap: 6px; padding-top: 2px; }
-ol.stops { margin: 0; padding: 6px 12px 6px 30px; border-bottom: 1px solid var(--line); font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
-ol.stops li.on { background: var(--at); border-radius: 3px; }
-ol.stops li.done { color: var(--dim); }
+#examples > .q { color: var(--dim); padding: 8px 12px 0; }
 .tstatus { padding: 4px 12px; font-size: 12px; border-bottom: 1px solid var(--line); }
 .tstatus:empty { display: none; }
 table.prog tr { cursor: pointer; }
 table.prog td.bp { color: var(--accent); }
 table.prog tr:hover td.code { background: var(--sel); }
-#note { padding: 8px 12px; background: var(--at); border-bottom: 1px solid var(--line); font-size: 12.5px; }
-#note b { font-family: var(--mono); }
-#mem-note.past { color: var(--accent); font-weight: 600; }
 a.who { color: var(--dim); font-size: 11px; }
 a.who:hover { color: var(--accent); }
 @media (max-width: 1000px) { body { height: auto; } #app, main { grid-template-columns: 1fr; } .col { min-height: 50vh; } }
@@ -157,32 +145,26 @@ table.stack tr.task td { background: var(--panel); }
 .gl-stophere::before { content: "●"; color: var(--accent); }
 table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
 .badge.idle { color: var(--dim); }
-ol.stops li { cursor: pointer; }
-#note button { margin-left: 8px; }
 #chart:focus { outline: none; }
 
 /* Step lists: the calls, the next one, their results; adding one */
 ol.steps { margin: 8px 12px; padding-left: 22px; }
 ol.steps > li { margin: 4px 0; }
-ol.steps > li > a { cursor: pointer; }
-ol.steps > li.next > a { font-weight: 600; }
-ol.steps > li:not(.done):not(.next) > a { color: var(--dim); }
 ol.steps .ret { color: var(--accent); }
 ol.steps > li.blocked .ret { color: var(--pp); font-style: italic; }
-ol.steps .tid { font-size: 11px; color: var(--kw); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; margin-right: 4px; }
-ol.steps ol.stops { margin: 4px 0 8px; }
+ol.steps .tid { font-size: 11px; color: var(--kw); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; white-space: nowrap; }
 .callform { margin: 8px 12px; }
 .calledit { position: relative; display: flex; flex-direction: column; gap: 4px; }
-.calledit input { font-size: 12px; padding: 2px 6px; width: 100%; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; }
-.calledit input:focus { outline: none; border-color: var(--accent); }
-.calledit .hint, li.editing > .hint { font-size: 11px; min-height: 1.4em; white-space: pre-wrap; }
+.calledit textarea { font: 12px/1.45 var(--mono); padding: 2px 6px; width: 100%; background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+                     border-radius: 3px; resize: none; overflow: hidden; display: block; }
+.calledit textarea:focus { outline: none; border-color: var(--accent); }
+.calledit .hint { font-size: 11px; min-height: 1.4em; white-space: pre-wrap; }
 .calledit .hint b { color: var(--fg); }
 ul.complete { position: absolute; top: 24px; left: 0; right: 0; z-index: 5; margin: 0; padding: 2px 0; list-style: none;
               background: var(--panel); border: 1px solid var(--line); border-radius: 3px; box-shadow: 0 4px 12px rgb(0 0 0 / .15);
               max-height: 240px; overflow-y: auto; font-size: 12px; }
 ul.complete li { padding: 1px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 ul.complete li.on { background: var(--sel); }
-ol.steps > li.editing { list-style-position: outside; }
 
 /* The console, under the examples */
 h2.sub { border-top: 1px solid var(--line); }
@@ -192,6 +174,27 @@ h2.sub { border-top: 1px solid var(--line); }
 h2.fold { cursor: pointer; user-select: none; white-space: nowrap; overflow: hidden; }
 
 /* The examples' selector */
-.thead .nav { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; }
-.thead .nav select { flex: 1; min-width: 0; font: inherit; font-weight: 600; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
-.thead .nav button { padding: 1px 8px; }
+#ex-head select { flex: 1; min-width: 0; font: inherit; font-weight: 600; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+#ex-head button { padding: 1px 8px; }
+
+/* The tutorial: its stop, its note; the program below, a call a line. */
+.tour { margin: 8px 12px; font-size: 12.5px; }
+.tour .tnav { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.tour .tnav span { flex: 1; text-align: center; font-size: 11.5px; }
+.tour ol.stops { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 2px; }
+.tour ol.stops li { cursor: pointer; padding: 2px 4px; border-radius: 3px; }
+.tour ol.stops li:hover { background: var(--sel); }
+.tour ol.stops li.on { background: var(--at); }
+#ex-head { gap: 4px; align-items: center; padding: 4px 8px; }
+.ptitle { margin: 10px 12px 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+ol.steps > li.on { background: var(--sel); border-radius: 3px; }
+ol.steps .line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; }
+ol.steps .line .calledit { flex: 1 1 12em; min-width: 0; }
+ol.steps .line .ret { margin-left: auto; }
+ol.steps .more { font-size: 11px; padding-left: 2px; }
+.calledit.inline textarea { border-color: transparent; background: transparent; padding: 1px 2px; }
+.calledit.inline textarea:hover { border-color: var(--line); }
+.calledit.inline textarea:focus { border-color: var(--accent); background: var(--panel); }
+.calledit.inline .hint { display: none; }
+.calledit.inline:focus-within .hint { display: block; }
+ol.steps .ret { white-space: nowrap; }

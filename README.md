@@ -35,29 +35,32 @@ The page boots the kernel and opens the first example (or the one in the
 URL, `#ex=read`); the selector above it, and ◀ ▶, switch examples, each on
 a fresh kernel (the page starts again), so that each starts from the same
 state. An **example** (on the left) is a question about the kernel ("What happens in read()?", "The
-life of a file on ext4", …) and a few syscalls that ask it: /init makes
-them for the page, one at a time (▶ Next call), each recorded, and the
-page goes to the call's first stop: its note, the source, and the Stack
-(the call stack, with each call's arguments and locals, as they were).
-Next stop, ◀ / ▶| line by line, or Play. Add your own call below the list:
-write it as in C, `openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`,
-and Enter (Tab completes a syscall's name; the hint shows its signature).
-Some examples have several threads or processes (a futex, a thread's join,
-a pipe between two processes): a call can be made by a thread or child of
-/init (`19: read(3, [64], 64)`), and a call can block, until a later call
-wakes it.
-✎ on a call made goes back to before it, to make another instead: the page
-starts a fresh kernel and makes the calls before it again, which comes to
-the very same state (the machine is deterministic: its clock is virtual);
-the calls are in the URL (`#back=`), a link to them.
+life of a file on ext4", …), a program of syscalls that asks it, and a
+tutorial: /init makes the calls as the example opens, each recorded, and
+the tutorial goes from stop to stop (◀ ▶, or click one): a note on a
+function one of the calls runs, the cursor there, the source, and the
+Stack (the call stack, with each call's arguments and locals, as they
+were). ◀ / ▶| step line by line, or Play.
+
+The program is below the tutorial, a call a line, each written as in C
+(`openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`): click one for its
+recording; type in it to change it, and Enter: the page starts a fresh
+kernel and makes the calls again, which comes to the very same state
+up to the change (the machine is deterministic: its clock is virtual);
+the calls are in the URL (`#back=`), a link to them. Add a call at the
+end. As you type, a list shows what fits (syscalls, the constants for the
+parameter, the results so far as `$n`), and the signature. Some examples
+have several threads or processes (a futex, a thread's join, a pipe
+between two processes): a call can be made by a thread or child of /init
+(`19: read(3, [64], 64)`), and a call can block, until a later call wakes
+it.
 
 The timeline shows the recording: the call stacks over time, and which
 task ran (scroll to zoom, drag to pan; hover a call for what it was and a
 preview of where, click it to go there; click a syscall, or double-click
 any call, to select it: its records from its start to its end, with
 whatever else ran in between). Hover
-a name in the source for its value at the cursor;
-✎ on a value says which code last wrote it.
+a name in the source for its value at the cursor.
 
 An example is one JSON file in user/examples/: a title, a question, and
 steps: `{ call, args, stops: [{ func, note, any? }] }`, the arguments

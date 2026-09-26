@@ -179,11 +179,28 @@ impl Types {
         id
     }
 
-    /// Byte offset and size of `field` in struct `s` (a direct member).
+    /// Byte offset and size of `field` in struct `s` (a member, or one of
+    /// an anonymous struct's or union's in it: see members).
     pub fn field(&self, s: &str, field: &str) -> Option<(u32, u32)> {
-        let (Kind::Struct(m) | Kind::Union(m)) = &self.get(self.resolve(self.find(s)?)).kind else { return None };
-        let m = m.iter().find(|m| m.name == field)?;
+        let m = self.members(&self.get(self.resolve(self.find(s)?)).kind).into_iter().find(|m| m.name == field)?;
         Some((m.bit_offset / 8, self.get(m.ty).size.max(self.get(self.resolve(m.ty)).size)))
+    }
+
+    /// A struct's or union's members, as C names them: an anonymous
+    /// struct's or union's own members in its place (their offsets from
+    /// the outer one's start).
+    pub fn members(&self, kind: &Kind) -> Vec<Member> {
+        let (Kind::Struct(members) | Kind::Union(members)) = kind else { return Vec::new() };
+        let mut out = Vec::with_capacity(members.len());
+        for m in members {
+            let inner = &self.get(self.resolve(m.ty)).kind;
+            if m.name.is_empty() && matches!(inner, Kind::Struct(_) | Kind::Union(_)) {
+                out.extend(self.members(inner).into_iter().map(|i| Member { bit_offset: m.bit_offset + i.bit_offset, ..i }));
+            } else {
+                out.push(m.clone());
+            }
+        }
+        out
     }
 
     /// The type's C name: "struct task_struct *", "unsigned int[16]".
@@ -279,13 +296,13 @@ impl Types {
                 }
                 out.push(']');
             }
-            Kind::Struct(members) | Kind::Union(members) => {
+            Kind::Struct(_) | Kind::Union(_) => {
                 if depth == 0 {
                     out.push_str("{...}");
                     return;
                 }
                 out.push_str("{\n");
-                for m in members {
+                for m in &self.members(&t.kind) {
                     for _ in 0..indent + 1 {
                         out.push_str("  ");
                     }
@@ -384,6 +401,17 @@ mod tests {
                          T\t5\tptr\t\t4\t4\n\
                          T\t6\ttypedef\ttask_t\t20\t4\n\
                          T\t7\tbase\tunsigned int\t4\tu\n";
+
+    #[test]
+    fn anonymous_members_are_the_outer_ones() {
+        // struct page { int a; union { int b; struct { int c; int d; }; }; } at bit 32, and c, d at 0, 32 in it.
+        let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t2\tstruct\tpage\t12\nM\t2\ta\t0\t0\t1\nM\t2\t\t32\t0\t3\n\
+                              T\t3\tunion\t\t8\nM\t3\tb\t0\t0\t1\nM\t3\t\t0\t0\t4\n\
+                              T\t4\tstruct\t\t8\nM\t4\tc\t0\t0\t1\nM\t4\td\t32\t0\t1\n");
+        let names: Vec<_> = t.members(&t.get(2).kind).into_iter().map(|m| (m.name, m.bit_offset)).collect();
+        assert_eq!(names, [("a".into(), 0), ("b".into(), 32), ("c".into(), 32), ("d".into(), 64)]);
+        assert_eq!(t.field("page", "d"), Some((8, 4)));
+    }
 
     #[test]
     fn finds_fields() {

@@ -45,18 +45,8 @@ export function app(m) {
   function memoryAt(i) {
     if (i === memAt) return;
     memAt = i;
-    const undone = m.memory_at(i ?? undefined);
-    $("mem-note").textContent = i == null ? "memory now" : `memory at the cursor (${undone} writes undone)`;
-    $("mem-note").className = "right " + (i != null ? "past" : "dim");
+    m.memory_at(i ?? undefined);
   }
-  // ✎ for a value (an Object): which code last wrote it; click: go there.
-  a.writer = (o) => el("a", { className: "who", textContent: " ✎", title: "who last wrote this?", onclick: (e) => {
-    e.stopPropagation();
-    const w = m.last_write(o.addr, o.size || 4);
-    if (!w) return ($("where").textContent = `✎ ${o.name}: not written in the recording`);
-    time.go(w.i);
-    $("where").textContent = `✎ ${o.name} was last written here: by ${w.inlined ? `${w.inlined} in ` : ""}${w.func} (${w.file}:${w.line}), on ${taskName(w.task)}; before, it held ${w.old}`;
-  } });
 
   // ---- Selecting, and moving the cursor ----
 
@@ -107,7 +97,6 @@ export function app(m) {
     const s = at.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
     if (at.kind === "block") src.showFunction(at.func, s?.index, at.line, at.file);
     stack.show(at.i, null, at.task);
-    note(null);
     $("where").textContent = `record ${at.i + 1} of ${time.records()} · ${taskName(at.task)} · ${at.inlined ? `${at.inlined} in ` : ""}${at.func} ${at.file ?? ""}:${at.line ?? ""}` +
       (s ? ` · in ${s.name}` : "");
     badge();
@@ -115,17 +104,8 @@ export function app(m) {
   let ex = null;
   examples(a).then((e) => (a.examples = ex = e));
 
-  // An example's stop `stop` (the `k`th of `n`) at record `i`: the cursor there, and its note.
-  a.goStop = (i, stop, k, n) => {
-    time.go(i);
-    note(stop, k, n);
-  };
-  function note(stop, k, n) {
-    $("note").hidden = !stop;
-    if (stop) $("note").replaceChildren(el("span", { className: "dim", textContent: `Stop ${k + 1} of ${n} · ` }),
-      el("b", { textContent: stop.func }), `: ${stop.note} `,
-      k + 1 < n ? el("button", { className: "go", textContent: "Next stop ▸", onclick: () => ex?.next() }) : "");
-  }
+  // An example's stop at record `i`: the cursor there.
+  a.goStop = (i) => time.go(i);
 
   // ---- Lines: the line steps of the selection (a syscall) ----
   // (Machine.line_steps: every source line it ran, within blocks too.)

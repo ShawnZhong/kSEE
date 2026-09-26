@@ -7,7 +7,7 @@
 // what they point to, structs into their fields, read from memory as it was
 // at the cursor (Machine.memory_at); what is open stays open while
 // stepping; values that changed since the cursor last moved are
-// highlighted; ✎: which code last wrote a value. Click a call to select
+// highlighted. Click a call to select
 // it: the source shows where it is (for an outer call, the line calling
 // the next one in).
 import { $, el } from "./dom.js";
@@ -41,7 +41,7 @@ export function callstack(app) {
             open ? s.open.delete(p) : s.open.add(p);
             draw();
           } }), o.name),
-        el("td", { className: "fval", title: value }, value, o.value != null && o.addr ? app.writer(o) : null),
+        el("td", { className: "fval", title: value }, value),
         el("td", { className: "ftype", textContent: o.ty })));
       if (open) rows(kids(o) ?? [], p, depth + 1, out);
     }

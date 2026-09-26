@@ -62,33 +62,30 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url });
 await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
-// By default: the read example (#ex=read): its first call is made by itself;
-// make the rest, go through the read's stops (the note, the Stack, a hover
+// By default: the read example (#ex=read): its calls are made by
+// themselves; go through its tutorial's stops (the note, the Stack, a hover
 // at each), play a little, hover and click the chart, add a call; report.
+// (A program's line: its call, in its editor, then its result.)
+const lineOf = `const line = (li) => (li.querySelector("textarea")?.value ?? "") + " " + li.querySelector(".line").innerText.replace(/\\s+/g, " ").trim();`;
 const backScript = `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  ${lineOf}
   for (let i = 0; i < 100 && document.querySelectorAll("ol.steps > li.done").length < 2; i++) await sleep(100);
-  const done = [...document.querySelectorAll("ol.steps > li.done")].map((li) => li.innerText.split("\\n")[0]);
+  const done = [...document.querySelectorAll("ol.steps > li.done")].map(line);
   if (done.length !== 2 || !done[1].includes("= 8")) throw new Error("not back: " + JSON.stringify(done));
   return { done, status: document.querySelector(".tstatus").textContent };
 })()`;
-// --pipe: the pipe example (two processes), all its calls: some block
-// (shown so) and finish as a later one wakes them; the child's are its.
+// --pipe: the pipe example (two processes), all its calls made: the ones
+// that blocked finished as later ones woke them; the child's are its.
 const pipeScript = `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  ${lineOf}
   const lis = () => [...document.querySelectorAll("ol.steps > li")];
-  for (let i = 0; i < 100 && !document.querySelector("ol.steps > li.done"); i++) await sleep(100);
-  const r = { blocked: [] };
-  // (Up to each call that blocks, then all.)
-  for (const k of [1, 5, 9]) {
-    document.querySelectorAll("ol.steps > li > a.mono")[k].click();
-    for (let i = 0; i < 100 && document.querySelectorAll("ol.steps > li.done").length <= k; i++) await sleep(100);
-    r.blocked.push(...[...document.querySelectorAll("ol.steps > li.blocked")].map((li) => li.innerText.split("\\n")[0]));
-  }
-  r.calls = lis().map((li) => li.innerText.split("\\n")[0]);
+  for (let i = 0; i < 100 && (document.querySelectorAll("ol.steps > li.done").length < 10 || !document.querySelector(".tour li.on")); i++) await sleep(100);
+  const r = { calls: lis().map(line), stop: document.querySelector(".tour").innerText.replace(/\\s+/g, " ") };
   const bad = (k, want) => !r.calls[k]?.includes(want);
-  if (r.blocked.length < 2 || document.querySelector("ol.steps > li.blocked") || bad(1, "= ") || bad(2, "tid ") || bad(2, "execve:")
-      || bad(5, "= 6") || bad(8, "= 0") || bad(9, "= 0"))
+  if (document.querySelector("ol.steps > li.blocked") || bad(1, "= 19") || bad(2, "tid ") || bad(2, "new program")
+      || bad(5, "= 6") || bad(8, "= 0") || bad(9, "= 0") || !r.stop.includes("Stop 1 of"))
     throw new Error("the pipe: " + JSON.stringify(r));
   return r;
 })()`;
@@ -96,28 +93,28 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (id) => document.getElementById(id);
   const until = async (f, n = 100) => { for (let i = 0; i < n && !f(); i++) await sleep(100); };
+  ${lineOf}
+  const lis = () => [...document.querySelectorAll("ol.steps > li")];
   const r = { badge: $("badge").textContent };
-  await until(() => document.querySelector("ol.steps > li.done"));
-  const pick = document.querySelector(".thead select");
-  r.first = [pick.selectedOptions[0]?.textContent, document.querySelector("ol.steps > li.done")?.innerText.split("\\n")[0]];
+  // (All its calls made, the tutorial at its first stop.)
+  await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".tour li.on"));
+  const pick = document.querySelector("#ex-head select");
+  r.first = [pick.selectedOptions[0]?.textContent, line(lis()[0])];
   r.examples = pick.options.length;
-  // (Its calls, up to the read: the 6th.)
-  document.querySelectorAll("ol.steps > li > a:first-child")[5].click();
-  await until(() => document.querySelectorAll("ol.steps > li.done").length >= 6 && $("note").querySelector("b")?.textContent === "ksys_read");
-  r.calls = [...document.querySelectorAll("ol.steps > li.done")].map((li) => li.innerText.split("\\n").slice(0, 2).join(" · ")).slice(4, 6);
+  r.calls = lis().map(line).slice(4, 6);
   r.notes = [];
   for (let k = 0; k < 5; k++) {
     await sleep(300);
-    r.notes.push($("note").querySelector("b")?.textContent);
+    r.notes.push(document.querySelector(".tour li.on b")?.textContent);
     if (k === 0) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
     if (k === 0) r.args = [...document.querySelectorAll("#stack tr")].slice(1, 4).map((f) => f.innerText.replace(/\\s+/g, " ").trim());
     if (r.notes.at(-1) === "vfs_read") r.hover = await ksee.src.hoverAt("file->f_mode & FMODE_READ", "f_mode");
-    const next = [...$("note").querySelectorAll("button")].find((b) => b.textContent.startsWith("Next"));
-    if (!next) break;
+    const next = document.querySelector(".tour button.go");
+    if (!next || next.disabled) break;
     next.click();
   }
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
-  r.played = [$("badge").textContent, $("mem-note").textContent, $("where").textContent.slice(0, 50)];
+  r.played = [$("badge").textContent, $("where").textContent.slice(0, 50)];
   r.chart = $("chart-title").textContent;
   // (The read's own box: its syscall entry's.)
   const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === 1 && x.last != null);
@@ -149,23 +146,23 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   if (kh?.a !== ksys.first || kh?.b !== ksee.m.call_end(ksys.first)) throw new Error("ksys_read's selection: " + JSON.stringify(kh) + ", not from " + ksys.first);
   r.dblclicked = $("chart-title").textContent;
   // Your own call: type it, Tab completes the name, Enter makes it.
-  const input = document.querySelector(".callform input"), key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
+  const input = document.querySelector(".callform textarea"), key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
   input.value = "mkdira"; key("Tab");
   input.value += "AT_FDCWD, "; input.dispatchEvent(new Event("input"));
   r.typed = [input.value, document.querySelector(".callform .hint").textContent];
   input.value = 'openat(AT_FDCWD, "/mnt/mine", O_CREAT | O_WRONLY, 0644)'; key("Enter");
   await until(() => document.querySelectorAll("ol.steps > li.done").length >= 8);
-  r.mine = [...document.querySelectorAll("ol.steps > li.done")].at(-1)?.innerText.split("\\n")[0];
+  r.mine = line(lis().at(-1));
   // Another example, from the selector: on a fresh kernel, the page staying.
   window.stayed = true;
-  const sel = document.querySelector(".thead select");
+  const sel = document.querySelector("#ex-head select");
   sel.selectedIndex = [...sel.options].findIndex((o) => o.textContent.includes("Directories"));
   sel.dispatchEvent(new Event("change"));
-  await until(() => document.querySelector("ol.steps > li.done"));
-  r.switched = [location.hash, window.stayed, document.querySelector("ol.steps > li.done")?.innerText.split("\\n")[0]];
+  await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".tour li.on"));
+  r.switched = [location.hash, window.stayed, line(lis()[0])];
   if (location.hash !== "#ex=dirs" || !window.stayed || !r.switched[2]?.startsWith("mkdirat")) throw new Error("not switched: " + JSON.stringify(r.switched));
   // Typing a call: constants that fit the parameter first, Tab takes one; the parameter in bold.
-  const inp = document.querySelector(".callform input");
+  const inp = document.querySelector(".callform textarea");
   inp.focus();
   inp.value = 'openat(AT_FDCWD, "/x", O_CR'; inp.dispatchEvent(new Event("input"));
   r.complete = [...document.querySelectorAll(".callform ul.complete li")].map((li) => li.innerText).slice(0, 3);
@@ -173,20 +170,14 @@ const script = Deno.args.includes("--back") ? backScript : Deno.args.includes("-
   r.completed = [inp.value, document.querySelector(".callform .hint b")?.textContent];
   if (!r.completed[0].endsWith("O_CREAT") || r.completed[1] !== "int flags") throw new Error("completion: " + JSON.stringify(r));
   inp.value = ""; inp.dispatchEvent(new Event("input")); inp.blur();
-  // Changing a call where it is: one not made yet changes; a made one goes back (a fresh kernel), the rest kept.
-  const edit = (k, text) => {
-    document.querySelectorAll("ol.steps > li")[k].querySelector("a.who").click();
-    const e = document.querySelector("ol.steps > li.editing input");
-    e.value = text;
-    e.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-  };
-  const n = document.querySelectorAll("ol.steps > li").length;
-  edit(3, 'mkdirat(AT_FDCWD, "/mnt/other", 0700)');
-  r.edited = document.querySelectorAll("ol.steps > li")[3].innerText.split("\\n")[0];
-  edit(0, 'mkdirat(AT_FDCWD, "/mnt/first", 0700)');
-  await until(() => location.hash.startsWith("#back=") && document.querySelector("ol.steps > li.done")?.innerText.includes("/mnt/first"));
-  r.branched = [document.querySelectorAll("ol.steps > li").length, document.querySelector("ol.steps > li.done")?.innerText.split("\\n")[0]];
-  if (!r.edited.includes("/mnt/other") || r.branched[0] !== n || !r.branched[1]?.includes("= 0")) throw new Error("editing: " + JSON.stringify(r));
+  // Changing a call, where it is (typing in it): the program runs again, on a fresh kernel, with it.
+  const n = lis().length, e3 = lis()[3].querySelector("textarea");
+  e3.focus();
+  e3.value = 'mkdirat(AT_FDCWD, "/mnt/other", 0700)';
+  e3.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+  await until(() => location.hash.startsWith("#back=") && document.querySelectorAll("ol.steps > li.done").length === n && line(lis()[3]).includes("= 0"));
+  r.edited = [lis().length, line(lis()[3])];
+  if (r.edited[0] !== n || !r.edited[1].includes("/mnt/other")) throw new Error("editing: " + JSON.stringify(r));
   // The console, folded to its last line; the current task, open to its key fields.
   r.console = [$("pane-console").classList.contains("folded"), $("console").textContent];
   r.current = [...document.querySelectorAll("#stack tr.task, #stack tr.task ~ tr")].slice(0, 3).map((tr) => tr.innerText.replace(/\\s+/g, " ").trim());

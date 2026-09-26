@@ -24,18 +24,17 @@ SMP, no fork (threads and vfork, though): see Limits).
 
 ## The experience
 
-1. **Make syscalls**, each recorded: an example's (the page makes the
-   first's), or your own (a call written as in C). A syscall takes
-   milliseconds.
+1. **Make syscalls**, each recorded: an example's program (the page makes
+   them as it opens), changed or added to (calls written as in C). A
+   syscall takes milliseconds.
 2. **Explore the recording**, at one cursor:
    - *time*: a timeline of the call stack (who ran, what they called);
      drag, step line by line, Play;
    - *code*: the source line at the cursor, the lines that ran;
    - *values*: the call stack with each call's arguments and locals,
-     the task running, and a name's value on hover; memory as it was at the cursor;
-     ✎: which code last wrote a value.
-   An example's stops are places in the recording, with a note each: Next goes
-   to the next one.
+     the task running, and a name's value on hover; memory as it was at the cursor.
+   An example's tutorial is its stops, places in the recording with a note
+   each: ◀ ▶ go from one to the next.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
