@@ -2,7 +2,8 @@
 // lines that ran (green; how often: hover the line number), the function's
 // lines, and the cursor. Hover a name for its value at the
 // cursor (an argument, a global, and fields: file->f_pos); F12 or
-// Ctrl+click on a function to open its source.
+// Ctrl+click on a name goes to its definition (a function, a type, a
+// global: Machine.definition).
 import { $ } from "./dom.js";
 import { loadMonaco, readOnly } from "./editor.js";
 
@@ -52,7 +53,7 @@ export function source(app) {
       lineNumbersMinChars: 4,
     });
     marks = ed.createDecorationsCollection();
-    // Ctrl+click on a function: its source.
+    // Ctrl+click on a name: its definition.
     ed.onMouseDown((e) => {
       if (e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT && (e.event.ctrlKey || e.event.metaKey))
         definition(e.target.position);
@@ -65,7 +66,7 @@ export function source(app) {
         return h && { range: new monaco.Range(pos.lineNumber, h.start + 1, pos.lineNumber, h.end + 1), contents: h.contents };
       },
     });
-    ed.addAction({ id: "ksee.definition", label: "Go to the function's source", contextMenuGroupId: "navigation",
+    ed.addAction({ id: "ksee.definition", label: "Go to the definition", contextMenuGroupId: "navigation",
       contextMenuOrder: 1, keybindings: [monaco.KeyCode.F12], run: () => definition(ed.getPosition()) });
     // Run to a line: the next time it runs, or the last time it ran.
     ed.addAction({ id: "ksee.next-run", label: "Run to this line (the next time it runs)", contextMenuGroupId: "navigation",
@@ -92,10 +93,15 @@ export function source(app) {
     return { start: e.start, end: e.end, text: code,
              contents: [{ value: "```c\n" + code + "\n```" }] };
   }
-  // A function named at `pos`: its source.
+  // The name at `pos`: its definition (a function: its source, with the
+  // lines that ran; a type or a global: where it is declared).
   function definition(pos) {
-    const word = ed.getModel().getWordAtPosition(pos)?.word;
-    if (word && m.functions(word).length) showFunction(word);
+    const word = ed.getModel().getWordAtPosition(pos)?.word, d = word && m.definition(word);
+    if (!d) return;
+    if (m.functions(word).length) return showFunction(word);
+    saved = null;
+    v.fn = null;
+    showFile(d.file, d.line);
   }
 
   function model(file, text) {

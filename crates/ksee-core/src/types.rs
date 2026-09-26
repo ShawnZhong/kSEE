@@ -9,6 +9,7 @@
 //! M id name bit_offset bit_size type     a member of struct/union id
 //! V id name value                        an enumerator of enum id
 //! G name address type                    a variable with a fixed address
+//! W name file line                       where a type or a variable is declared
 //! S nr name params                       a syscall; params: comma-separated
 //!                                        name:type:C type, "?" if unknown,
 //!                                        "!" if not built
@@ -74,6 +75,9 @@ pub struct Types {
     pub locals: BTreeMap<String, Vec<(String, u32)>>,
     /// Constants from the UAPI headers (flags, errno names): name -> value.
     pub constants: BTreeMap<String, i64>,
+    /// Where a type (struct, union, enum, typedef) or a global is declared:
+    /// name -> (file, line).
+    pub declared: BTreeMap<String, (String, u32)>,
 }
 
 impl Types {
@@ -87,6 +91,7 @@ impl Types {
         let mut params = BTreeMap::new();
         let mut locals = BTreeMap::new();
         let mut constants = BTreeMap::new();
+        let mut declared = BTreeMap::new();
         for line in text.lines() {
             let c: Vec<&str> = line.split('\t').collect();
             let num = |i: usize| c.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -118,6 +123,9 @@ impl Types {
                         (n.to_string(), t.parse().unwrap_or(0))
                     }).collect();
                     if kind == "P" { &mut params } else { &mut locals }.insert(c[1].to_string(), list);
+                }
+                Some(&"W") if c.len() == 4 => {
+                    declared.entry(c[1].to_string()).or_insert((c[2].to_string(), num(3)));
                 }
                 Some(&"G") if c.len() == 4 => {
                     globals.insert(c[1].to_string(), (num(2), num(3)));
@@ -155,7 +163,7 @@ impl Types {
                 names.entry(t.name.clone()).or_insert(id as u32);
             }
         }
-        Types { types, names, globals, syscalls, params, locals, constants }
+        Types { types, names, globals, syscalls, params, locals, constants, declared }
     }
 
     pub fn get(&self, id: u32) -> &Type {

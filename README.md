@@ -65,7 +65,8 @@ preview of where, click it to go there; click a syscall, or double-click
 any call, to select it: its records from its start to its end, with
 whatever else ran in between). Hover
 a name in the source for its value at the cursor, and a value in the Stack
-for who last wrote it.
+for who last wrote it; Ctrl+click (or F12) a name for its definition: a
+function, a type, a global.
 
 An example is one JSON file in user/examples/: a title, a question, and
 steps: `{ call, args, stops: [{ func, note, any? }] }`, the arguments

@@ -185,6 +185,12 @@ impl Machine {
         self.view(|v| to_js(&v.place(id)))
     }
 
+    /// Where `name` is defined (view::Place): a function, a type or a
+    /// global; or null.
+    pub fn definition(&self, name: &str) -> JsValue {
+        self.view(|v| to_js(&v.definition(name)))
+    }
+
     /// The functions called `name` (view::Function).
     pub fn functions(&self, name: &str) -> JsValue {
         self.view(|v| to_js(&v.functions(name)))

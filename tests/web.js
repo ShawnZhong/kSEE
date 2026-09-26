@@ -143,6 +143,8 @@ check("a bad user pointer: EFAULT", (await call("write", [1, 0x1000, 4])).ret ==
   check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/named"'));
   await call("unlinkat", [-100, "/mnt/named", 0x200]);
 }
+check("definitions: a function, a type, a global", m.definition("vfs_write")?.file === "fs/read_write.c"
+      && m.definition("task_struct")?.file === "include/linux/sched.h" && m.definition("runqueues")?.line > 0 && m.definition("no_such") == null);
 check("a syscall's parameters, typed, with the constants that fit", JSON.stringify(m.syscall("openat")?.params) ===
       JSON.stringify([{ name: "dfd", ty: "int", consts: ["AT_"] }, { name: "filename", ty: "char *", consts: [] },
                       { name: "flags", ty: "int", consts: ["O_"] }, { name: "mode", ty: "umode_t", consts: [] }]));

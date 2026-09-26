@@ -444,6 +444,16 @@ impl View<'_> {
         }).collect()
     }
 
+    /// Where `name` is defined: a function (its source), else a type or a
+    /// global (where it is declared).
+    pub fn definition(&self, name: &str) -> Option<Place> {
+        if let Some(id) = self.tables.find(name) {
+            return self.place(id);
+        }
+        let (file, line) = self.tables.types.declared.get(name)?;
+        Some(Place { name: name.to_string(), file: file.clone(), line: *line })
+    }
+
     /// Function `id`: where it is.
     pub fn place(&self, id: u32) -> Option<Place> {
         let f = self.tables.functions.get(&id)?;

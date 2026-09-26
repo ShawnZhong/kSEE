@@ -184,7 +184,8 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
                     if let (Some(addr), Some(AttributeValue::UnitRef(ty))) =
                         (address(&dwarf, &unit, e)?, e.attr_value(dw::DW_AT_type))
                     {
-                        vars.push((attr_string(&cu, e, dw::DW_AT_name)?, addr, ty));
+                        let at = (decl_file(&mut cu, e)?, attr_u64(e, dw::DW_AT_decl_line).unwrap_or(0));
+                        vars.push((attr_string(&cu, e, dw::DW_AT_name)?, addr, ty, at));
                     }
                 }
                 _ => {}
@@ -216,10 +217,11 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
                 b.extra.push(format!("Q\t{name}\t{}", vars.join(",")));
             }
         }
-        for (name, addr, ty) in vars {
+        for (name, addr, ty, (file, line)) in vars {
             if !name.is_empty() && b.globals.insert(name.clone()) {
                 let t = b.canon(&mut cu, ty)?;
                 b.extra.push(format!("G\t{name}\t{addr}\t{t}"));
+                b.locate(&name, &file, line);
             }
         }
     }
@@ -288,7 +290,7 @@ struct Cu<'a, 'b> {
 struct Builder {
     /// Rows of the type table, by id (0 is void).
     rows: Vec<String>,
-    extra: Vec<String>, // M and V lines
+    extra: Vec<String>, // M, V, W (where a type or global is declared) lines
     ids: HashMap<String, u32>,
     /// (tag, name) -> the id of the first complete definition, or a
     /// placeholder for it reserved by a declaration.
@@ -297,6 +299,8 @@ struct Builder {
     globals: std::collections::HashSet<String>,
     /// Functions given a P line.
     functions: std::collections::HashSet<String>,
+    /// Names given a W line (the first declaration of a name wins).
+    located: std::collections::HashSet<String>,
 
 }
 
@@ -317,6 +321,13 @@ impl Builder {
         self.rows[id as usize] = row(id);
         self.ids.insert(key, id);
         id
+    }
+
+    /// Where `name` (a type, a global) is declared: a W line, once per name.
+    fn locate(&mut self, name: &str, file: &str, line: u64) {
+        if !name.is_empty() && !file.is_empty() && self.located.insert(name.to_string()) {
+            self.extra.push(format!("W\t{name}\t{}\t{line}", file.strip_prefix("./").unwrap_or(file)));
+        }
     }
 
     fn text(&self) -> String {
@@ -370,6 +381,8 @@ impl Builder {
             dw::DW_TAG_typedef => {
                 let t = target(self, cu)?;
                 let size = self.size(t);
+                let (file, line) = (decl_file(cu, &e)?, attr_u64(&e, dw::DW_AT_decl_line).unwrap_or(0));
+                self.locate(&name, &file, line);
                 self.intern(format!("typedef {name} {t}"), |id| format!("T\t{id}\ttypedef\t{name}\t{size}\t{t}"))
             }
             dw::DW_TAG_subroutine_type => self.intern("func".into(), |id| format!("T\t{id}\tfunc\t\t0")),
@@ -433,6 +446,7 @@ impl Builder {
                             }
                     }
                     self.ids.insert(key, id);
+                    self.locate(&name, &file, line);
                     self.rows[id as usize] = format!("T\t{id}\t{kind}\t{name}\t{size}");
                     cu.memo.insert(off, id);
                     self.members(cu, off, id, tag)?;
