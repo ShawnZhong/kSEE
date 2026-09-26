@@ -39,7 +39,7 @@ SMP, no fork (threads and vfork, though): see Limits).
    - *code*: the source line at the cursor, the lines that ran;
    - *values*: the call stack with each call's arguments and locals,
      the task running, and a name's value on hover (who last wrote it; a
-     value's history: every write to it);
+     value's history: every write to it while it lived);
      memory as it was at the cursor.
    An example's tutorial is its stops, places in the recording with a note
    each: ◀ ▶ (or [ ]) go from one to the next.
@@ -49,9 +49,9 @@ SMP, no fork (threads and vfork, though): see Limits).
 │ Example:     │ Timeline: overview · call stacks · tasks     │
 │  question    │ ◀ ▶ Play · step by line / over / out         │
 │  tutorial    ├───────────────────────────────┬──────────────┤
-│  (its stops) │ Source at the cursor          │ Stack: calls,│
-│  program     │ (the lines that ran)          │ arguments,   │
-│  (its calls) │                               │ locals,      │
+│  (its stops) │ Source at the cursor          │ Call stack:  │
+│  program     │ (the lines that ran)          │ calls, args, │
+│  (its calls) │                               │ locals, the  │
 │ Console      │                               │ current task │
 └──────────────┴───────────────────────────────┴──────────────┘
 ```

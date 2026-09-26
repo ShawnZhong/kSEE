@@ -1,4 +1,4 @@
-// The Stack tab: the call stack at the cursor, innermost first, each call
+// The Call stack: the call stack at the cursor, innermost first, each call
 // with its arguments and its locals in memory as a tree (like a debugger's
 // variables), rebuilt from the trace (Machine.call_stack: a call's
 // arguments are in its record, its locals' addresses in another); at the
@@ -30,7 +30,10 @@ export function callstack(app) {
   }
   const openable = (o) => o.children || o.expand != null || (o.target != null && o.value !== "NULL");
 
-  function rows(list, path, depth, out) {
+  // (`life`: the values' object's lifetime, for their history: { from, to,
+  // what }; a local's frame, from its call to its return. Else the whole
+  // recording.)
+  function rows(list, path, depth, out, life = null) {
     for (const o of list) {
       const p = `${path}.${o.name}`, can = openable(o), open = can && s.open.has(p);
       const value = o.value ?? "{…}";
@@ -49,14 +52,16 @@ export function callstack(app) {
                        onclick: () => ((s.history = s.history === p ? null : p), draw()) }, value)
           : el("td", { className: "fval", title: value }, value),
         el("td", { className: "ftype", textContent: o.ty })));
-      if (s.history === p) out.push(history(o, depth));
-      if (open) rows(kids(o) ?? [], p, depth + 1, out);
+      if (s.history === p) out.push(history(o, depth, life));
+      // (A pointer's target is another object: its own lifetime.)
+      if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? null : life);
     }
   }
-  // Value `o`'s history (Machine.writes): its writes, the newest 8, each a
-  // link to that moment; the one in effect at the cursor marked.
-  function history(o, depth) {
-    const all = m.writes(o.addr, Math.min(o.size, 8));
+  // Value `o`'s history (Machine.writes): its writes in its object's
+  // lifetime, the newest 8, each a link to that moment; the one in effect
+  // at the cursor marked.
+  function history(o, depth, life) {
+    const all = m.writes(o.addr, Math.min(o.size, 8), life?.from, life?.to);
     const cur = app.time.cursor() ?? Infinity, now = all.findLastIndex((w) => w.i <= cur);
     const items = all.slice(-8).map((w) => {
       const at = w.at ? `${w.at.inlined ?? w.at.func} ${w.at.file}:${w.at.line}` : "?";
@@ -65,7 +70,8 @@ export function callstack(app) {
         el("span", { className: "dim", textContent: ` ${at} · ${w.task.comm ?? "?"}(${w.task.pid ?? "?"})` }));
     });
     return el("tr", { className: "history" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
-      items.length ? el("ol", {}, ...items) : el("span", { className: "dim", textContent: "not written in the recording" }),
+      el("div", { className: "dim", textContent: `its writes ${life?.what ?? "in the recording"}` }),
+      items.length ? el("ol", {}, ...items) : el("span", { className: "dim", textContent: "none" }),
       all.length > 8 ? el("div", { className: "dim", textContent: `(${all.length - 8} earlier)` }) : null));
   }
   // The newest write to `o` at the cursor (Machine.last_write): where, by
@@ -102,7 +108,7 @@ export function callstack(app) {
       if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body);
       if (f.locals?.length) {
         body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3, textContent: "locals" })));
-        rows(f.locals, `${n - k}/${f.func}/locals`, 1, body);
+        rows(f.locals, `${n - k}/${f.func}/locals`, 1, body, { from: f.first, to: m.call_end(f.first) ?? undefined, what: `while ${f.func}'s frame lives` });
       }
     });
     // At the bottom: the task running then (its task_struct, as it was).

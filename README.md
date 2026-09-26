@@ -41,9 +41,9 @@ tutorial: /init (or a thread or child of it) makes the calls as the
 example opens, each recorded, and
 the tutorial goes from stop to stop (◀ ▶, or click one): a note on a
 function one of the calls runs, the cursor there, the source, and the
-Stack (the call stack, with each call's arguments and locals, as they
+Call stack (with each call's arguments and locals, as they
 were). ◀ ▶ step, and Play plays, by line (into calls), over calls, or out of
-the call: the Stack's selected call, or the line's; ← →, with Shift over,
+the call: the Call stack's selected call, or the line's; ← →, with Shift over,
 with Alt out (F10, F11, Shift+F11 as in a debugger). F4 in the source runs to
 the line the cursor is on (its next run; Shift+F4 its last), and [ ] go
 from stop to stop.
@@ -69,9 +69,9 @@ task ran (scroll to zoom, drag to pan; hover a call for what it was and a
 preview of where, click it to go there; click a syscall, or double-click
 any call, to select it: its records from its start to its end, with
 whatever else ran in between). Hover
-a name in the source for its value at the cursor, and a value in the Stack
-for who last wrote it (click it for its history: every write to it, from
-what to what, by which line, each a link to that moment); Ctrl+click (or F12) a name for its definition: a
+a name in the source for its value at the cursor, and a value in the Call stack
+for who last wrote it (click it for its history: every write to it while it
+lived (a local: while its frame did), from what to what, by which line, each a link to that moment); Ctrl+click (or F12) a name for its definition: a
 function, a type, a global, a struct's member. Over a function, the source
 says who called it in the recording, each caller a link to the call.
 

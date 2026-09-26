@@ -208,12 +208,16 @@ impl Recording {
     }
 
     /// A value's history: every store to `addr..addr + len` (up to 8 bytes,
-    /// read as little-endian) in the recording, oldest first, the newest
-    /// `limit` of them: (its record, the value before, the value after, the
-    /// line that made it). `now` is memory as the recording ends.
-    pub fn writes(&self, t: &Tables, now: &dyn Memory, addr: u32, len: u32, limit: usize) -> Vec<(usize, u64, u64, Option<LineStep>)> {
+    /// read as little-endian) in records `span` (the object's lifetime: a
+    /// local's frame, say; an address is another object's before and
+    /// after), oldest first, the newest `limit` of them: (its record, the
+    /// value before, the value after, the line that made it). `now` is
+    /// memory as the recording ends.
+    pub fn writes(&self, t: &Tables, now: &dyn Memory, addr: u32, len: u32, span: core::ops::RangeInclusive<usize>,
+                  limit: usize) -> Vec<(usize, u64, u64, Option<LineStep>)> {
         let len = len.clamp(1, 8);
-        let all = self.stores().writes(&self.records, addr, len);
+        let mut all = self.stores().writes(&self.records, addr, len);
+        all.retain(|i| span.contains(i));
         let value = |b: &[u8]| b.iter().rev().fold(0u64, |v, &x| v << 8 | x as u64);
         all[all.len().saturating_sub(limit)..].iter().map(|&i| {
             let mut after = [0u8; 8];
@@ -255,8 +259,10 @@ mod tests {
         let mut m = alloc::vec![0u8; 16];
         m[4] = 2;
         m[5] = 5;
-        let got: alloc::vec::Vec<_> = rec.writes(&Tables::default(), &Mem(m), 4, 4, 8).into_iter().map(|(i, b, a, _)| (i, b, a)).collect();
+        let got: alloc::vec::Vec<_> = rec.writes(&Tables::default(), &Mem(m.clone()), 4, 4, 0..=3, 8).into_iter().map(|(i, b, a, _)| (i, b, a)).collect();
         assert_eq!(got, [(1, 1, 2), (3, 2, 0x502)]);
+        // (Its lifetime from record 2 on: the second write only.)
+        assert_eq!(rec.writes(&Tables::default(), &Mem(m), 4, 4, 2..=3, 8).len(), 1);
     }
 
     #[test]

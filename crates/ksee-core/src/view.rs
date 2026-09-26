@@ -461,10 +461,11 @@ impl View<'_> {
     }
 
     /// A value's history: the newest `limit` stores to `addr..addr + len`
-    /// in the recording, oldest first (see Recording::writes).
-    pub fn writes(&self, addr: u32, len: u32, limit: usize) -> Vec<Change> {
+    /// in records `span` (its object's lifetime), oldest first (see
+    /// Recording::writes).
+    pub fn writes(&self, addr: u32, len: u32, span: core::ops::RangeInclusive<usize>, limit: usize) -> Vec<Change> {
         let num = |v: u64| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
-        self.rec.writes(self.tables, self.now, addr, len, limit).into_iter().map(|(i, before, after, line)| Change {
+        self.rec.writes(self.tables, self.now, addr, len, span, limit).into_iter().map(|(i, before, after, line)| Change {
             i, before: num(before), after: num(after), task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)),
         }).collect()
     }

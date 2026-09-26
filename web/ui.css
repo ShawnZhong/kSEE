@@ -26,7 +26,7 @@ select { font: inherit; background: var(--panel); color: var(--fg); border: 1px 
 .mono { font-family: var(--mono); font-size: 12px; }
 .empty { color: var(--dim); padding: 8px 12px; font-size: 12px; }
 
-/* The layout: the sidebar; the timeline over the source and the Stack; the splits */
+/* The layout: the sidebar; the timeline over the source and the Call stack; the splits */
 #app { display: grid; grid-template-columns: 340px 5px minmax(0, 1fr); flex: 1; min-height: 0; }
 #side { border-right: 1px solid var(--line); background: var(--panel); }
 #work { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -72,7 +72,7 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .ln-cursor { background: var(--sel); box-shadow: inset 3px 0 var(--accent); }
 .gl-cursor::before { display: block; text-align: center; font-size: 11px; content: "▶"; color: var(--run); }
 
-/* The Stack: calls (frames), their values as trees; the current task */
+/* The Call stack: calls (frames), their values as trees; the current task */
 .stackhead { padding: 4px 12px; font-size: 11.5px; border-bottom: 1px solid var(--line); }
 .stackhead:empty { display: none; }
 #stack.preview { opacity: .85; box-shadow: inset 3px 0 0 var(--accent); }

@@ -119,6 +119,7 @@ check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
 // A value's history: f_pos's writes, the read's among them (0 to 26, by ksys_read).
 {
   const h = m.writes(fpos(read.last).addr, 8), w = h.find((x) => x.i >= read.first && x.i <= read.last);
+  check("... and within the read alone, its write only", m.writes(fpos(read.last).addr, 8, read.first, read.last).length === 1);
   check(`f_pos's history: ${h.length} writes, the read's ${w?.before} → ${w?.after} by ${w?.at?.func}`,
         w?.before === "0" && w?.after === "26" && w?.at?.func === "ksys_read" && h.every((x, k) => k === 0 || h[k - 1].i < x.i));
 }

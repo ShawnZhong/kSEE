@@ -1,5 +1,5 @@
 // The default: the read example (#ex=read): its calls made by themselves; its tutorial's stops (the note,
-// the Stack, a hover at each), stepping, play, the chart (hover, click), typing and changing calls,
+// the Call stack, a hover at each), stepping, play, the chart (hover, click), typing and changing calls,
 // another example; returns a report.
 (async () => {
     const r = {};
@@ -20,11 +20,12 @@
     if (!next || next.disabled) break;
     next.click();
   }
-  // A value's history: click one in the Stack (one in memory: a local's, a task's field), its writes listed.
+  // A value's history: click one in the Call stack (one in memory: a local's, a task's field), its writes listed,
+  // a local's in its frame's lifetime.
   const v = document.querySelector("#stack td.fval.mem");
   v?.click();
   r.history = [v?.textContent, document.querySelectorAll("#stack tr.history li").length, document.querySelector("#stack tr.history")?.innerText.slice(0, 80)];
-  if (!document.querySelector("#stack tr.history")) throw new Error("no history: " + JSON.stringify(r.history));
+  if (!/its writes (while \w+'s frame lives|in the recording)/.test(r.history[2] ?? "")) throw new Error("no history: " + JSON.stringify(r.history));
   v?.click();
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = $("where").textContent.slice(0, 50);
@@ -41,7 +42,7 @@
   if (file) ksee.runTo(file, Number(ln), 1);
   r.ranTo = [here, $("where").textContent, was, ksee.time.cursor()];
   if (!file || !(r.ranTo[3] > was) || r.ranTo[1] !== here) throw new Error("run to: " + JSON.stringify(r.ranTo));
-  // Stepping: into a call, over the next, out of it (the Stack's calls, deep).
+  // Stepping: into a call, over the next, out of it (the Call stack's calls, deep).
   const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
   const press = (kind) => { $("step-by").value = kind; $("step-fwd").click(); };
   const d0 = depthNow();
@@ -73,7 +74,7 @@
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
   await sleep(300);
   r.unpreviewed = !$("fn-title").classList.contains("preview") && !$("stack").classList.contains("preview");
-  if (!r.preview[2] || !r.unpreviewed) throw new Error("the Stack's preview: " + JSON.stringify([r.preview, r.unpreviewed]));
+  if (!r.preview[2] || !r.unpreviewed) throw new Error("the Call stack's preview: " + JSON.stringify([r.preview, r.unpreviewed]));
   for (const type of ["pointerdown", "pointerup"])
     $("chart").dispatchEvent(new PointerEvent(type, at));
   r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
