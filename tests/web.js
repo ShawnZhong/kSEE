@@ -66,6 +66,10 @@ check("sleeping switched to the idle task and back", ran(nap, "__schedule")
 // (A long sleep finishes too: time goes on while the call does, its runner waking.)
 const long = await call("clock_nanosleep_time64", [1, 0, { bytes: new Uint8Array(new BigInt64Array([2n, 0n]).buffer) }, 0]);
 check("a 2 s sleep returns (the clock skipped ahead)", long.how === "returned" && long.ret === 0);
+// (And a timed wait: select's timeout.)
+const tv = { bytes: new Uint8Array(new BigInt64Array([1n, 0n]).buffer) };
+const sel = await call("pselect6_time64", [0, 0, 0, 0, tv, 0]);
+check("a 1 s select() times out", sel.how === "returned" && sel.ret === 0);
 m.snapshot();
 const wi = m.syscalls().findIndex((s) => s.first === w.first);
 const [vfs] = m.functions("vfs_write");

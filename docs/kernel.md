@@ -65,8 +65,10 @@ So a sleep takes no real time, and the machine is deterministic: the same
 calls make the same run, record for record. The tick stops while the CPU
 idles (`NO_HZ_IDLE`), so an idle CPU's next timer is a real one. While a
 call is under way, idle skips to it only if the call's runner sleeps on a
-timer of its own (an `hrtimer_sleeper` for it among the kernel's hrtimers:
-a sleep, a wait with a timeout, however long); else the call is blocked:
+timer of its own (the task a queued timer is to wake: an `hrtimer_sleeper`
+among the hrtimers, a `process_timer` on the timer wheel; a sleep, a wait
+with a timeout, however long; the runtime's sched.rs reads them by the
+kernel's types, no kernel change); else the call is blocked:
 it waits for another call, and the machine is quiet at once. (During the
 boot, it skips a virtual second's worth: what the boot leaves for later.)
 
