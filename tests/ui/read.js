@@ -31,7 +31,7 @@
   const v = document.querySelector("#stack td.fval.mem");
   v?.click();
   r.history = [v?.textContent, document.querySelectorAll("#watch li").length, $("watch").innerText.slice(0, 120)];
-  if (!/writes (while \w+'s frame lives|in the recording)/.test(r.history[2] ?? "") || $("right").dataset.tab !== "watch") throw new Error("no watch: " + JSON.stringify(r.history));
+  if (!/changes? (while \w+'s frame lives|in the recording)/.test(r.history[2] ?? "") || $("right").dataset.tab !== "watch") throw new Error("no watch: " + JSON.stringify(r.history));
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   document.querySelector("#watch .whead button:not([disabled])")?.click();
   await sleep(200);

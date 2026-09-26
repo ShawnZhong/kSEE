@@ -21,7 +21,8 @@ export function watch(app) {
   function add(o, life, quiet = false) {
     const k = list.findIndex((w) => w.o.addr === o.addr && w.o.id === o.id && w.life?.from === life?.from);
     if (k >= 0) list.splice(k, 1);
-    list.unshift({ o, life, all: m.writes(o.addr, o.id, life?.from, life?.to) });
+    // (Its writes that changed something: a store of the same value again is not a change.)
+    list.unshift({ o, life, all: m.writes(o.addr, o.id, life?.from, life?.to).filter((x) => x.before !== x.after) });
     draw();
     if (!quiet) $("right").dataset.tab = "watch";
   }
@@ -56,7 +57,7 @@ export function watch(app) {
       return el("div", { className: "watched" }, head,
         alive ? el("table", { className: "objs" }, el("tbody", {}, ...body))
           : el("div", { className: "dim note", textContent: `not alive at the cursor (${w.life.what})` }),
-        el("div", { className: "dim note", textContent: `${w.all.length}${w.all.length >= 256 ? "+" : ""} writes ${w.life?.what ?? "in the recording"}` }),
+        el("div", { className: "dim note", textContent: `${w.all.length}${w.all.length >= 200 ? "+" : ""} change${w.all.length === 1 ? "" : "s"} ${w.life?.what ?? "in the recording"}` }),
         items.length ? ol : null);
     }));
     $("watch-note").textContent = list.length ? "" : "Click a value in the Stack, or an object in the Changes, to watch it: its value as the cursor moves, every write to it.";
