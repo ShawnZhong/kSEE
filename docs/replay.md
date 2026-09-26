@@ -87,8 +87,12 @@ first byte is in: `Types::leaf`), printed as its type before and after
 (memory as it was); and what a span of records changed (`changes`): its
 stores grouped by the object they hit, the objects being what the code
 there held (a call's pointer argument to a struct, a local, the task
-running: the objects the code named; what it did not, spills and the
-heap by address, is counted as "other").
+running: the objects the code named; what it did not, the heap reached
+through locals and bulk copies, is counted as "other"). An object is said
+as the kernel's own fields name it (`describe`): a task by comm and pid,
+a file by the fd pointing at it in the task's table and its dentry's
+name, an inode by number and filesystem, a dentry, a path, a kiocb by
+the file's, a super_block by its type and id.
 
 What it cannot show: values only in wasm locals (registers, in effect),
 and old contents of bulk writes beyond 256 bytes (known to be unknown).

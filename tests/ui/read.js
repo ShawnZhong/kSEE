@@ -72,14 +72,14 @@
   if (!r.top) throw new Error("no call on top above the stack");
   $("chart").dispatchEvent(new PointerEvent("pointermove", at));
   await sleep(400);
-  r.preview = [$("fn-title").textContent.slice(0, 40), document.querySelector(".tip .here")?.textContent, $("stack").classList.contains("preview")];
-  // (Moving on in the same call: the tip keeps where it is.)
+  r.here = document.querySelector(".tip .here")?.textContent;
+  // (Moving on in the same call: the tip keeps where it is; the source does not follow a hover.)
+  const title = $("fn-title").textContent;
   $("chart").dispatchEvent(new PointerEvent("pointermove", { ...at, clientX: at.clientX + 1 }));
   if (!document.querySelector(".tip .here")?.textContent) throw new Error("the tip lost where the call is");
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
   await sleep(300);
-  r.unpreviewed = !$("fn-title").classList.contains("preview") && !$("stack").classList.contains("preview");
-  if (!r.preview[2] || !r.unpreviewed) throw new Error("the Call stack's preview: " + JSON.stringify([r.preview, r.unpreviewed]));
+  if ($("fn-title").textContent !== title || !r.here?.includes("now at")) throw new Error("hover: " + JSON.stringify([r.here, title, $("fn-title").textContent]));
   for (const type of ["pointerdown", "pointerup"])
     $("chart").dispatchEvent(new PointerEvent(type, at));
   r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
@@ -94,6 +94,13 @@
   fileChange.querySelector(".whead a").click();
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   if (!$("watch").innerText.includes("f_pos")) throw new Error("watching the file: " + $("watch").innerText.slice(0, 100));
+  // (The file said as what it is: its fd and name.)
+  if (!/fd 3 note\.txt/.test($("watch").innerText)) throw new Error("the file's name: " + $("watch").innerText.slice(0, 100));
+  // The Records tab: the raw trace around the cursor, the cursor's record marked.
+  document.querySelector('h2.tabs a[data-tab="records"]').click();
+  r.records = [$("records-note").textContent, document.querySelector("#records tr.on")?.innerText];
+  if (!document.querySelector("#records tr.on") || !document.querySelector("#records tr.store")) throw new Error("the records: " + JSON.stringify(r.records));
+  document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)
   const ksys = ksee.m.call_stack(ksee.m.first_call("ksys_read", read.first, read.last, read.task.addr)).find((f) => f.func === "ksys_read");

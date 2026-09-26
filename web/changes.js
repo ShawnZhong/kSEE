@@ -1,7 +1,9 @@
 // The Changes: what the selected call (the timeline's selection: a syscall,
 // or a call clicked in the chart) changed, by object (Machine.changes: a
-// struct a call got a pointer to, a local, the task running; "other" the
-// stores to memory nothing names), in the order of their first write,
+// struct a call got a pointer to, a local, the task running, each said as
+// what it is where the kernel's fields say: "fd 3 /note.txt", "inode 12
+// (ext4)"; "other" the stores to memory nothing names), in the order of
+// their first write,
 // each with its writes: the member, from what to what, by which line,
 // each a link to that moment. Click an object to watch it (watch.js).
 import { $, el } from "./dom.js";
@@ -24,7 +26,7 @@ export function changes(app, watch) {
       : list.length ? `${$("chart-title").textContent}: ${list.reduce((n, c) => n + c.n, 0)} writes to ${list.filter((c) => c.addr).length} objects`
       : "no writes in the selection";
     $("changes").replaceChildren(...list.map((c) => {
-      if (!c.addr) return el("div", { className: "changed dim note", textContent: `and ${c.n} stores to memory nothing here names (spills, callees' frames, the heap by address)` });
+      if (!c.addr) return el("div", { className: "changed dim note", textContent: `and ${c.n} stores to memory no call here got by argument or local (the heap through locals, bulk copies)` });
       const now = c.writes.findLastIndex((x) => x.i <= cur);
       const items = c.writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
         el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, onclick: () => app.time.go(x.i) }),

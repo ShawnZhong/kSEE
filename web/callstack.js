@@ -13,6 +13,7 @@ import { $, el } from "./dom.js";
 import { objects } from "./objects.js";
 import { watch } from "./watch.js";
 import { changes } from "./changes.js";
+import { records } from "./records.js";
 
 export function callstack(app) {
   const { m } = app;
@@ -22,10 +23,13 @@ export function callstack(app) {
   // The current task's fields shown first.
   const KEY = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 
-  const w = watch(app), ch = changes(app, w.add);
+  const w = watch(app), ch = changes(app, w.add), raw = records(app);
   const { rows, kids } = objects(app, s, draw, w.add);
   // (The tabs: the pane chosen.)
-  for (const a of document.querySelectorAll("h2.tabs a")) a.onclick = () => ($("right").dataset.tab = a.dataset.tab);
+  for (const a of document.querySelectorAll("h2.tabs a")) a.onclick = () => {
+    $("right").dataset.tab = a.dataset.tab;
+    if (a.dataset.tab === "records") raw.draw();
+  };
   const head = (text, where, onclick, cls = "") => el("tr", { className: "frame " + cls },
     el("td", { colSpan: 3 }, el("a", { className: "mono", textContent: text, onclick }),
       el("span", { className: "dim", textContent: where ? `  ${where}` : "" })));
@@ -38,15 +42,9 @@ export function callstack(app) {
       const on = s.sel == null ? k === 0 : f === s.sel;
       // (The syscall entry: named for the syscall, its arguments the syscall's.)
       const h = head(f.syscall ? `${f.syscall}()` : f.func, f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f), on ? "on" : "");
-      // (Hover: the call outlined in the timeline, and a preview of where it is.)
-      h.onmouseenter = () => {
-        app.time.hilite(f.first);
-        app.preview(() => ({ func: f.inlined ? owner(f)?.func ?? f.func : f.func, file: f.file, line: f.line }));
-      };
-      h.onmouseleave = () => {
-        app.time.hilite(null);
-        app.preview(null);
-      };
+      // (Hover: the call outlined in the timeline.)
+      h.onmouseenter = () => app.time.hilite(f.first);
+      h.onmouseleave = () => app.time.hilite(null);
       body.push(h);
       if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body);
       if (f.locals?.length) {
@@ -75,14 +73,13 @@ export function callstack(app) {
   // line shown there ({ nth }: which of the lines record `i` runs); `task`:
   // the task there.
   function show(i, step, task) {
-    kept = null;
-    $("stack").classList.remove("preview");
     s.last = s.now;
     s.task = task ?? null;
     // (No recording: nothing to watch; else the watched values at the cursor.)
     if (i === undefined) w.reset();
     else w.draw();
     ch.draw();
+    if ($("right").dataset.tab === "records") raw.draw();
     // (At a line step: the stack as that line runs; see Machine.call_stack.)
     const frames = i === undefined ? [] : m.call_stack(i ?? undefined, step?.nth);
     s.frames = frames;
@@ -92,26 +89,6 @@ export function callstack(app) {
       ? "The call stack at the cursor, with arguments: pick a moment in the recording."
       : "Nothing recorded yet: the call stack comes from the recording. Make a call.";
     draw();
-  }
-
-  // Preview the stack at record `i` (as it runs there; memory as it was:
-  // see app.preview), the cursor's kept; unpreview: back to it.
-  let kept = null;
-  function preview(i) {
-    kept ??= { frames: s.frames, task: s.task, sel: s.sel };
-    s.frames = m.call_stack(i);
-    s.task = m.at(i)?.task ?? null;
-    s.sel = null;
-    // (Values unlike the cursor's marked.)
-    draw();
-    $("stack").classList.add("preview");
-  }
-  function unpreview() {
-    if (!kept) return;
-    Object.assign(s, kept);
-    kept = null;
-    draw();
-    $("stack").classList.remove("preview");
   }
 
   // The value of expression `expr` at the cursor: a name, then fields
@@ -153,5 +130,5 @@ export function callstack(app) {
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
 
-  return { show, preview, unpreview, select, level, owner, resolve, kids };
+  return { show, select, level, owner, resolve, kids };
 }

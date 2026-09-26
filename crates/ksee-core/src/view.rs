@@ -325,6 +325,55 @@ impl View<'_> {
         })
     }
 
+    /// Records `from..=to` as text, a line each, as the recording has them
+    /// (the raw trace): "block ksys_read #3 fs/read_write.c:710", "args fd=3
+    /// buf=0x1cefed0 count=64", "locals iocb@0x1ce000", "store 0x1ce0020
+    /// [8] 0 → 26", "return ksys_read = 26"; a task switch as a line of
+    /// its own.
+    pub fn raw(&self, from: usize, to: usize) -> Vec<(usize, String)> {
+        let (t, rec) = (self.tables, self.rec);
+        let mut out = Vec::new();
+        let mut func_before = None;
+        for i in from..=to.min(records_len(rec)) {
+            if i > 0 && rec.tasks.get(i) != rec.tasks.get(i - 1) {
+                let task = self.task(rec.tasks[i]);
+                out.push((i, format!("── {}({}) runs", task.comm.unwrap_or_default(), task.pid.unwrap_or(0))));
+            }
+            let text = match rec.records[i] {
+                Record::Block { func, n } => {
+                    func_before = Some(func);
+                    let loc = t.blocks.get(&(func, n)).map_or(String::new(), |l| format!(" {}:{}", t.file(*l), l.line));
+                    format!("block {} #{n}{loc}", self.name(func))
+                }
+                Record::Return { func, value } => format!("return {} = {}", self.name(func), value as i32),
+                Record::Args { args, n } => {
+                    let params = func_before.and_then(|f| t.functions.get(&f)).and_then(|f| t.types.params.get(&f.name));
+                    let each = args[..n as usize].iter().enumerate().map(|(k, &v)| {
+                        let name = params.and_then(|p| p.get(k)).map_or(format!("{k}"), |p| p.0.clone());
+                        format!("{name}={}", if v > 0xffff { format!("{v:#x}") } else { v.to_string() })
+                    });
+                    format!("args {}", each.collect::<Vec<_>>().join(" "))
+                }
+                Record::Locals { func, addrs, n } => {
+                    let names = t.locals.get(&func);
+                    let each = addrs[..n as usize].iter().enumerate()
+                        .map(|(k, &a)| format!("{}@{a:#x}", names.and_then(|l| l.get(k)).map_or("?", String::as_str)));
+                    format!("locals {}", each.collect::<Vec<_>>().join(" "))
+                }
+                Record::Store { addr, size: 0, old } => format!("store {addr:#x} [{old} bytes] (old contents not kept)"),
+                Record::Store { addr, size, old } => {
+                    let mut new = [0u8; 8];
+                    rec.memory_at(self.now, i).read(addr, &mut new[..size.min(8) as usize]);
+                    let new = new.iter().rev().fold(0u64, |v, &x| v << 8 | x as u64);
+                    let num = |v: u64| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
+                    format!("store {addr:#x} [{size}] {} → {}", num(old), num(new))
+                }
+            };
+            out.push((i, text));
+        }
+        out
+    }
+
     fn line(&self, s: &LineStep) -> Line {
         let t = self.tables;
         Line { i: s.record, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
@@ -486,6 +535,47 @@ impl View<'_> {
         all[all.len().saturating_sub(limit)..].iter().map(|&i| self.change(addr, ty, i)).collect()
     }
 
+    /// What the object of type `ty` at `addr` is, said as the kernel would,
+    /// from its own fields in `mem`: a task "init(1)", a file "fd 3
+    /// /note.txt" (its fd in `task`'s table), an inode "inode 12 (ext4)", a
+    /// dentry, a path or a kiocb by their name, a super_block by its type
+    /// and id. None for other types.
+    pub fn describe(&self, mem: &dyn Memory, ty: u32, addr: u32, task: u32) -> Option<String> {
+        let types = &self.tables.types;
+        let ty = types.resolve(ty);
+        let name = types.name(ty);
+        let kind = name.strip_prefix("struct ")?;
+        // (Field `f` of the `s` at `p`: its address; `ptr`: the pointer there.)
+        let at = |p: u32, s: &str, f: &str| Some(p.checked_add(types.field(s, f)?.0)?);
+        let ptr = |p: u32, s: &str, f: &str| Some(mem.read_u32(at(p, s, f)?)).filter(|&q| q != 0);
+        let dentry = |d: u32| c_string(mem, ptr(at(d, "dentry", "d_name")?, "qstr", "name")?).map(|s| s.trim_matches('"').to_string());
+        let fs_name = |sb: u32| c_string(mem, ptr(ptr(sb, "super_block", "s_type")?, "file_system_type", "name")?);
+        match kind {
+            "task_struct" => {
+                let t = read_task(self.tables, mem, addr)?;
+                Some(format!("{}({})", t.comm, t.pid))
+            }
+            "dentry" => Some(format!("dentry {}", dentry(addr)?)),
+            "path" => Some(format!("path {}", dentry(ptr(addr, "path", "dentry")?)?)),
+            "inode" => Some(format!("inode {}{}", mem.read_u32(at(addr, "inode", "i_ino")?),
+                                    ptr(addr, "inode", "i_sb").and_then(fs_name).map_or(String::new(), |n| format!(" ({})", n.trim_matches('"'))))),
+            "super_block" => Some(format!("super_block {} {}", fs_name(addr)?.trim_matches('"'), c_string(mem, at(addr, "super_block", "s_id")?)?)),
+            "file" | "kiocb" => {
+                let file = if kind == "kiocb" { ptr(addr, "kiocb", "ki_filp")? } else { addr };
+                let name = dentry(ptr(at(file, "file", "f_path")?, "path", "dentry")?)?;
+                // (Its fd: the one in the task's table pointing at it.)
+                let fd = (|| {
+                    let fdt = ptr(ptr(task, "task_struct", "files")?, "files_struct", "fdt")?;
+                    let (fds, max) = (ptr(fdt, "fdtable", "fd")?, mem.read_u32(at(fdt, "fdtable", "max_fds")?).min(256));
+                    (0..max).find(|k| mem.read_u32(fds + 4 * k) == file)
+                })();
+                let what = match fd { Some(k) => format!("fd {k} {name}"), None => format!("file {name}") };
+                Some(if kind == "kiocb" { format!("kiocb on {what}") } else { what })
+            }
+            _ => None,
+        }
+    }
+
     /// Store `i` as a change to the object of type `ty` at `addr`.
     fn change(&self, addr: u32, ty: u32, i: usize) -> Change {
         let types = &self.tables.types;
@@ -511,16 +601,20 @@ impl View<'_> {
     /// entry, "other").
     pub fn changes(&self, first: usize, last: usize, limit: usize) -> Vec<Changed> {
         let (t, types) = (self.tables, &self.tables.types);
-        // (The objects: what, type, address, size. The task first.)
+        // (The objects: what, type, address, size. The task first. Each
+        // said as what it is, as memory at the span's end says: see describe.)
+        let task = self.rec.tasks.get(first).copied().unwrap_or(0);
+        let end = self.rec.memory_at(self.now, last.min(records_len(self.rec)));
         let mut regions: Vec<(String, u32, u32, u32)> = Vec::new();
         let mut seen = alloc::collections::BTreeSet::new();
         let mut add = |what: String, ty: u32, addr: u32| {
             let ty = types.resolve(ty);
             if addr != 0 && seen.insert((addr, ty)) {
+                let what = self.describe(&end, ty, addr, task).unwrap_or(what);
                 regions.push((what, ty, addr, types.size_of(ty)));
             }
         };
-        if let (Some(&task), Some(ty)) = (self.rec.tasks.get(first), types.find("task_struct")) {
+        if let Some(ty) = types.find("task_struct") {
             add("current task_struct".into(), ty, task);
         }
         let records = &self.rec.records;
@@ -532,6 +626,7 @@ impl View<'_> {
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
                             add(format!("{} {v:#x} ({}'s {pname})", types.name(types.resolve(to)), f.name), to, v);
+                            let _ = f;
                         }
                     }
                 }
@@ -721,6 +816,10 @@ impl Types {
     }
 }
 
+fn records_len(rec: &Recording) -> usize {
+    rec.records.len().saturating_sub(1)
+}
+
 /// The C string at `p`, quoted (up to 64 characters, then "…"), if what is
 /// there looks like one: printable, with at least one character. (A
 /// __user one too: a program's memory is kernel memory.)
@@ -761,6 +860,26 @@ mod tests {
         let got: Vec<_> = v.writes(4, 2, 0..=3, 8).into_iter().map(|c| (c.i, c.member, c.before, c.after)).collect();
         assert_eq!(got, [(1, "b".into(), "1".into(), "2".into()), (3, "a".into(), "0".into(), "1280".into())]);
         assert_eq!(v.writes(4, 2, 2..=3, 8).len(), 1);
+    }
+
+    #[test]
+    fn objects_are_said_as_what_they_are() {
+        // struct task { int pid; char comm[8] } at 32: init(1). struct qstr { char *name } at 16, its
+        // name at 24 ("a.txt"); struct dentry { struct qstr d_name } at 16.
+        let t = Tables::parse("", "T\t1\tbase\tint\t4\ts\nT\t2\tbase\tchar\t1\tc\nT\t3\tarray\t\t8\t2\t8\n\
+                               T\t4\tstruct\ttask_struct\t12\nM\t4\tpid\t0\t0\t1\nM\t4\tcomm\t32\t0\t3\n\
+                               T\t5\tptr\t\t4\t2\nT\t6\tstruct\tqstr\t4\nM\t6\tname\t0\t0\t5\n\
+                               T\t7\tstruct\tdentry\t4\nM\t7\td_name\t0\t0\t6\n");
+        let mut m = alloc::vec![0u8; 128];
+        m[32] = 1;
+        m[36..40].copy_from_slice(b"init");
+        m[16..20].copy_from_slice(&24u32.to_le_bytes());
+        m[24..29].copy_from_slice(b"a.txt");
+        let rec = Recording::new(&t, Vec::new(), Vec::new());
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        assert_eq!(v.describe(v.now, 4, 32, 0).as_deref(), Some("init(1)"));
+        assert_eq!(v.describe(v.now, 7, 16, 0).as_deref(), Some("dentry a.txt"));
+        assert_eq!(v.describe(v.now, 1, 0, 0), None);
     }
 
     #[test]

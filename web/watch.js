@@ -33,8 +33,10 @@ export function watch(app) {
       const now = w.all.findLastIndex((x) => x.i <= cur);
       const go = (x, text, what) => el("button", { textContent: text, disabled: !x, title: x ? `its ${what} write: ${place(x.at)}` : `no ${what} write`,
                                                   onclick: () => app.time.go(x.i) });
+      // (Said as what it is, when the kernel's fields say: "fd 3 /note.txt".)
+      const said = alive ? m.describe(w.o.id, w.o.addr) : null;
       const head = el("div", { className: "whead" },
-        el("b", { className: "mono", textContent: w.o.name }), el("span", { className: "dim mono", textContent: ` ${w.o.ty}` }),
+        el("b", { className: "mono", textContent: w.o.name }), el("span", { className: "dim mono", textContent: ` ${said ? `${said} · ` : ""}${w.o.ty}` }),
         el("span", { className: "grow" }), go(before, "◀", "last"), go(after, "▶", "next"),
         el("a", { className: "rm", textContent: "✕", title: "stop watching", onclick: () => (list.splice(k, 1), draw()) }));
       // (Its value at the cursor, as a tree; outside its lifetime, none.)

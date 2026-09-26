@@ -71,9 +71,14 @@ for who last wrote it; click it to watch it: the Watch follows it as the
 cursor moves, with every write to it while it lived (a local: while its
 frame did): the member, from what to what, by which line, each a link to
 that moment, ◀ ▶ to the write before or after the cursor. The Changes tab
-lists what the selected call changed, by object (a struct file's f_pos,
-an inode's i_size, a local), in the order they were first written; click
-one to watch it. Ctrl+click (or F12) a name for its definition: a
+lists what the selected call changed, by object (`fd 3 note.txt: f_pos 0
+→ 26`, `inode 12 (ext4): i_size`, a local), in the order they were first
+written; click one to watch it. Objects are said as the kernel's own
+fields name them: a file by its fd and name, an inode by its number and
+filesystem, a task by its comm and pid. The Records tab is the raw
+trace around the cursor, a line a record (a block, its arguments, its
+locals, a store from what to what, a return), what every view is built
+from; click one to go there. Ctrl+click (or F12) a name for its definition: a
 function, a type, a global, a struct's member. Over a function, the source
 says who called it in the recording, each caller a link to the call.
 

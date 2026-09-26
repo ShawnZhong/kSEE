@@ -103,11 +103,23 @@ table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-famil
 
 /* The right column's tabs (Call stack, Changes): the pane chosen */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
-#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="changes"] .pane[data-tab="changes"] { display: flex; }
+#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="changes"] .pane[data-tab="changes"], #right[data-tab="records"] .pane[data-tab="records"] { display: flex; }
 h2.tabs { gap: 0; padding: 0 4px; }
 h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
-#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="changes"] a[data-tab="changes"] { color: var(--fg); border-bottom-color: var(--accent); }
+#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="changes"] a[data-tab="changes"], #right[data-tab="records"] a[data-tab="records"] { color: var(--fg); border-bottom-color: var(--accent); }
+
+/* The Records: the raw trace, a line a record */
+table.raw { border-collapse: collapse; width: 100%; font-size: 11px; }
+table.raw td { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+table.raw td:first-child { width: 5em; text-align: right; }
+table.raw tr { cursor: pointer; }
+table.raw tr:hover { background: var(--sel); }
+table.raw tr.on { background: var(--at); }
+table.raw tr.block td:last-child { color: var(--fg); font-weight: 600; }
+table.raw tr.store td:last-child { color: var(--accent); }
+table.raw tr.return td:last-child { color: var(--kw); }
+table.raw tr.task td:last-child { color: var(--run); }
 
 /* The Changes: an object each, its writes */
 .changed { border-bottom: 1px solid var(--line); padding-bottom: 4px; }
