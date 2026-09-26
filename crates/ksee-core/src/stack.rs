@@ -351,22 +351,13 @@ pub fn stack_at(t: &Tables, records: &[Record], tasks: &[u32], at: usize, nth: O
     w.calls()
 }
 
-/// Call `first`'s arguments (the Args record after its entry block) and its
-/// locals' addresses (its Locals record, soon after, on its task, if it got
-/// that far by record `at`), if the trace has them.
-pub fn args_locals(records: &[Record], tasks: &[u32], func: u32, first: usize, at: usize) -> (Option<Vec<u32>>, Option<Vec<u32>>) {
-    let args = match records.get(first + 1) {
-        Some(&Record::Args { args, n }) if matches!(records[first], Record::Block { n: 0, .. }) => Some(args[..n as usize].to_vec()),
+/// Call `first`'s arguments and its frame base (the Args record after its
+/// entry block), if the trace has them.
+pub fn args_frame(records: &[Record], first: usize) -> Option<(Vec<u32>, u32)> {
+    match records.get(first + 1) {
+        Some(&Record::Args { args, n, frame }) if matches!(records[first], Record::Block { n: 0, .. }) => Some((args[..n as usize].to_vec(), frame)),
         _ => None,
-    };
-    let task = tasks.get(first).copied();
-    let locals = (first..records.len().min(at + 1).min(first + 256))
-        .filter(|&i| tasks.get(i).copied() == task)
-        .find_map(|i| match records[i] {
-            Record::Locals { func: f, addrs, n } if f == func => Some(addrs[..n as usize].to_vec()),
-            _ => None,
-        });
-    (args, locals)
+    }
 }
 
 #[cfg(test)]

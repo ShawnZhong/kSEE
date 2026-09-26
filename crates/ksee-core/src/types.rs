@@ -72,8 +72,9 @@ pub struct Types {
     pub syscalls: BTreeMap<u32, String>,
     /// Functions' parameters: name -> [(parameter, type)].
     pub params: BTreeMap<String, Vec<(String, u32)>>,
-    /// Functions' local variables: name -> [(variable, type)].
-    pub locals: BTreeMap<String, Vec<(String, u32)>>,
+    /// Functions' local variables in memory: name -> [(variable, type,
+    /// offset from the frame base)].
+    pub locals: BTreeMap<String, Vec<(String, u32, u32)>>,
     /// Constants from the UAPI headers (flags, errno names): name -> value.
     pub constants: BTreeMap<String, i64>,
     /// Where a function (the inline ones too, which have no probe), a type
@@ -119,12 +120,21 @@ impl Types {
                         constants.insert(c[1].to_string(), v);
                     }
                 }
-                Some(&kind @ ("P" | "Q")) if c.len() == 3 => {
+                Some(&"P") if c.len() == 3 => {
                     let list = c[2].split(',').filter(|p| !p.is_empty()).map(|p| {
                         let (n, t) = p.rsplit_once(':').unwrap_or((p, "0"));
                         (n.to_string(), t.parse().unwrap_or(0))
                     }).collect();
-                    if kind == "P" { &mut params } else { &mut locals }.insert(c[1].to_string(), list);
+                    params.insert(c[1].to_string(), list);
+                }
+                // (Q: name:type:offset for each local in memory.)
+                Some(&"Q") if c.len() == 3 => {
+                    let list = c[2].split(',').filter_map(|p| {
+                        let mut f = p.split(':');
+                        let (n, t, o) = (f.next()?, f.next()?, f.next()?);
+                        Some((n.to_string(), t.parse().ok()?, o.parse().ok()?))
+                    }).collect();
+                    locals.insert(c[1].to_string(), list);
                 }
                 Some(&"W") if c.len() == 4 => {
                     declared.entry(c[1].to_string()).or_insert((c[2].to_string(), num(3)));

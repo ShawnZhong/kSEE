@@ -29,8 +29,9 @@ record pops its function's frame. A block of a function not on the stack
 task starts (`wasm_task_entry`) with an empty stack: a task that exited
 never returned from its last calls, and a new one may get its address.
 
-A frame's arguments are the Args record after its block 0; its locals'
-addresses are its Locals record, if it got that far. One walk (`Walk`)
+A frame's arguments and its frame base are the Args record after its
+block 0; its locals are at their offsets from the base (`Types::locals`).
+One walk (`Walk`)
 serves the Call stack at a record (`stack_at`), the stack chart (`chart`: every
 task's stack at the columns' first records) and line steps (`lines`): each
 call with the line it is at.

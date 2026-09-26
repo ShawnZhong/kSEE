@@ -60,7 +60,7 @@ mod tests {
     #[test]
     fn splits_per_task() {
         // Task 7 makes syscall 64 (write): its entry (1) calls 2; task 8 runs meanwhile.
-        let r = [Record::Block { func: 1, n: 0 }, Record::Args { args: [64, 1, 2, 3, 0, 0], n: 4 },
+        let r = [Record::Block { func: 1, n: 0 }, Record::Args { args: [64, 1, 2, 3, 0, 0], n: 4, frame: 0 },
                  Record::Block { func: 2, n: 0 }, Record::Block { func: 3, n: 0 },
                  Record::Return { func: 1, value: 3 }];
         let tasks = [7, 7, 7, 8, 7];

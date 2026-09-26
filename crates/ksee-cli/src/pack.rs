@@ -125,6 +125,7 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
         let mut offsets = Vec::new();
         let mut vars = Vec::new();
         let mut funcs = Vec::new();
+        let mut abstract_funcs = Vec::new();
         while let Some(e) = entries.next_dfs()? {
             match e.tag() {
                 dw::DW_TAG_structure_type | dw::DW_TAG_union_type | dw::DW_TAG_enumeration_type
@@ -135,7 +136,21 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
                         // (Where it is: for the inline ones too, which have no probe.)
                         let (file, line) = (decl_file(&mut cu, e)?, attr_u64(e, dw::DW_AT_decl_line).unwrap_or(0));
                         b.locate(&name, &file, line);
-                        funcs.push((name, e.offset()));
+                        // (A function inlined somewhere is abstract here, with
+                        // no locations: its out-of-line copy, if any, has
+                        // them, and comes first.)
+                        if e.attr(dw::DW_AT_inline).is_none() {
+                            funcs.push((name, e.offset()));
+                        } else {
+                            abstract_funcs.push((name, e.offset()));
+                        }
+                    } else if name.is_empty() && e.attr(dw::DW_AT_low_pc).is_some()
+                        && let Some(AttributeValue::UnitRef(origin)) = e.attr_value(dw::DW_AT_abstract_origin) {
+                        let origin = unit.entry(origin)?;
+                        let name = attr_string(&cu, &origin, dw::DW_AT_name)?;
+                        if !name.is_empty() {
+                            funcs.push((name, e.offset()));
+                        }
                     }
                 }
                 dw::DW_TAG_variable => {
@@ -152,7 +167,7 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
         for off in offsets {
             b.canon(&mut cu, off)?;
         }
-        for (name, off) in funcs {
+        for (name, off) in funcs.into_iter().chain(abstract_funcs) {
             if !b.functions.insert(name.clone()) {
                 continue;
             }
@@ -166,9 +181,9 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
             }
             b.extra.push(format!("P\t{name}\t{}", sig.join(",")));
             let mut vars = Vec::new();
-            for (vname, ty) in locals(&unit, off, &cu)? {
-                if let Some(t) = ty {
-                    vars.push(format!("{vname}:{}", b.canon(&mut cu, t)?));
+            for (vname, ty, at) in locals(&dwarf, &unit, off, &cu)? {
+                if let (Some(t), Some(at)) = (ty, at) {
+                    vars.push(format!("{vname}:{}:{at}", b.canon(&mut cu, t)?));
                 }
             }
             if !vars.is_empty() {
@@ -190,31 +205,108 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
 }
 
 /// The local variables of the subprogram at `off`, in its lexical blocks
-/// too: (name, type).
-fn locals(unit: &gimli::Unit<R>, off: UnitOffset, cu: &Cu) -> Result<Vec<(String, Option<UnitOffset>)>, gimli::Error> {
-    fn walk(node: gimli::EntriesTreeNode<R>, cu: &Cu, out: &mut Vec<(String, Option<UnitOffset>)>) -> Result<(), gimli::Error> {
+/// too: (name, type, its offset from the frame base if it is in memory:
+/// a location `DW_OP_WASM_location 0 <the frame base's local>,
+/// DW_OP_plus_uconst off`, in any range of its list).
+fn locals(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, off: UnitOffset, cu: &Cu)
+          -> Result<Vec<(String, Option<UnitOffset>, Option<u32>)>, gimli::Error> {
+    type Out = Vec<(String, Option<UnitOffset>, Option<u32>)>;
+    // (The frame base: DW_AT_frame_base is DW_OP_WASM_location 0 <local>.)
+    let mut tree = unit.entries_tree(Some(off))?;
+    let root = tree.root()?;
+    let fb = match root.entry().attr_value(dw::DW_AT_frame_base) {
+        Some(AttributeValue::Exprloc(e)) => match e.operations(unit.encoding()).next()? {
+            Some(gimli::Operation::WasmLocal { index }) => Some(index),
+            _ => None,
+        },
+        _ => None,
+    };
+    // (`DW_OP_fbreg N`; or `DW_OP_WASM_location 0 fb` with DW_OP_plus_uconsts
+    // (added up), possibly in pieces, one per member: the object's start
+    // is each located piece's address less its offset in the object, the
+    // same for all of them.)
+    let frame_offset = |ops: gimli::Expression<R>| -> Result<Option<u32>, gimli::Error> {
+        use gimli::Operation as Op;
+        let mut ops = ops.operations(unit.encoding());
+        let (mut pos, mut cur, mut base): (u32, Option<u32>, Option<u32>) = (0, None, None);
+        loop {
+            match ops.next()? {
+                Some(Op::FrameOffset { offset }) if pos == 0 && cur.is_none() => return Ok(u32::try_from(offset).ok()),
+                Some(Op::WasmLocal { index }) if Some(index) == fb => cur = Some(0),
+                Some(Op::PlusConstant { value }) => cur = cur.map(|c| c + value as u32),
+                Some(Op::Piece { size_in_bits, .. }) => {
+                    if let Some(c) = cur {
+                        let Some(b) = c.checked_sub(pos) else { return Ok(None) };
+                        if base.is_some_and(|x| x != b) {
+                            return Ok(None);
+                        }
+                        base = Some(b);
+                    }
+                    pos += size_in_bits as u32 / 8;
+                    cur = None;
+                }
+                None => return Ok(if pos == 0 { cur } else { base }),
+                // (A value in a wasm local, a constant, ...: not memory.)
+                _ => cur = None,
+            }
+        }
+    };
+    fn walk(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, node: gimli::EntriesTreeNode<R>, cu: &Cu, out: &mut Out,
+            frame_offset: &dyn Fn(gimli::Expression<R>) -> Result<Option<u32>, gimli::Error>) -> Result<(), gimli::Error> {
         let mut children = node.children();
         while let Some(child) = children.next()? {
             let c = child.entry();
             match c.tag() {
                 dw::DW_TAG_variable => {
-                    let ty = match c.attr_value(dw::DW_AT_type) {
-                        Some(AttributeValue::UnitRef(t)) => Some(t),
-                        _ => None,
-                    };
-                    out.push((attr_string(cu, c, dw::DW_AT_name)?, ty));
+                    let (name, ty) = name_type(unit, cu, c)?;
+                    let mut at = None;
+                    match c.attr_value(dw::DW_AT_location) {
+                        Some(AttributeValue::Exprloc(e)) => at = frame_offset(e)?,
+                        Some(v) => {
+                            if let Some(mut list) = dwarf.attr_locations(unit, v)? {
+                                while let Some(entry) = list.next()? {
+                                    if let Some(o) = frame_offset(entry.data)? {
+                                        at = Some(o);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        None => {}
+                    }
+                    out.push((name, ty, at));
                 }
-                dw::DW_TAG_lexical_block => walk(child, cu, out)?,
+                // (An inlined call's locals in memory are in this frame too.)
+                dw::DW_TAG_lexical_block | dw::DW_TAG_inlined_subroutine => walk(dwarf, unit, child, cu, out, frame_offset)?,
                 _ => {}
             }
         }
         Ok(())
     }
     let mut out = Vec::new();
-    let mut tree = unit.entries_tree(Some(off))?;
-    walk(tree.root()?, cu, &mut out)?;
-    out.retain(|(n, _)| !n.is_empty());
+    walk(dwarf, unit, root, cu, &mut out, &frame_offset)?;
+    out.retain(|(n, _, _)| !n.is_empty());
+    out.dedup();
     Ok(out)
+}
+
+/// A variable's or parameter's name and type: its own, or, in an
+/// out-of-line copy of a function inlined elsewhere, its abstract origin's.
+fn name_type(unit: &gimli::Unit<R>, cu: &Cu, e: &gimli::DebuggingInformationEntry<R>)
+             -> Result<(String, Option<UnitOffset>), gimli::Error> {
+    let origin = match e.attr_value(dw::DW_AT_abstract_origin) {
+        Some(AttributeValue::UnitRef(o)) => Some(unit.entry(o)?),
+        _ => None,
+    };
+    let name = match attr_string(cu, e, dw::DW_AT_name)? {
+        n if n.is_empty() && origin.is_some() => attr_string(cu, origin.as_ref().unwrap(), dw::DW_AT_name)?,
+        n => n,
+    };
+    let ty = match e.attr_value(dw::DW_AT_type).or_else(|| origin.as_ref().and_then(|o| o.attr_value(dw::DW_AT_type))) {
+        Some(AttributeValue::UnitRef(t)) => Some(t),
+        _ => None,
+    };
+    Ok((name, ty))
 }
 
 /// The formal parameters of the subprogram at `off`: (name, type).
@@ -225,12 +317,7 @@ fn params(unit: &gimli::Unit<R>, off: UnitOffset, cu: &Cu) -> Result<Vec<(String
     while let Some(child) = children.next()? {
         let c = child.entry();
         if c.tag() == dw::DW_TAG_formal_parameter {
-            let pname = attr_string(cu, c, dw::DW_AT_name)?;
-            let ty = match c.attr_value(dw::DW_AT_type) {
-                Some(AttributeValue::UnitRef(t)) => Some(t),
-                _ => None,
-            };
-            params.push((pname, ty));
+            params.push(name_type(unit, cu, c)?);
         }
     }
     Ok(params)

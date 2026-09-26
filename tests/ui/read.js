@@ -38,9 +38,15 @@
   if ($("watch").children.length) throw new Error("the watch stays");
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = $("where").textContent.slice(0, 50);
-  // Run to a line (the source's F4): the line where the cursor is, its next run.
-  const here = $("where").textContent;
-  const [, file, ln] = here.match(/ (\S+):(\d+)/) ?? [];
+  // Run to a line (the source's F4): the line where the cursor is, its next run
+  // (stepping on from where Play stopped until a line that does run again).
+  let here, file, ln;
+  for (let k = 0; k < 40; k++) {
+    here = $("where").textContent;
+    [, file, ln] = here.match(/ (\S+):(\d+)/) ?? [];
+    if (file && ksee.m.run_of(file, Number(ln), ksee.time.cursor(), 1) != null) break;
+    $("step-fwd").click();
+  }
   const was = ksee.time.cursor();
   if (file) ksee.runTo(file, Number(ln), 1);
   r.ranTo = [here, $("where").textContent, was, ksee.time.cursor()];

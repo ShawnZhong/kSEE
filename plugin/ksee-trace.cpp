@@ -5,9 +5,9 @@
 // cannot keep the optimizer from removing code the kernel relies on being
 // removed), every function gets:
 //   - at the start of each basic block, a block record (the entry block's
-//     is the call, with its arguments);
+//     is the call, with its arguments and its frame base: its locals are at
+//     their DWARF offsets from it);
 //   - before each return, a return record, with the value;
-//   - once its locals in memory exist, a locals record: their addresses;
 //   - before each store it makes (its stack slots' too: a slot is reused by
 //     later calls, and a frame's locals must be undone to be seen as they
 //     were), a store record, with the old value (the host undoes stores to
@@ -35,10 +35,9 @@
 //   [fn, 1 << 28 | n]     block n of fn; block 0 (a call) is followed by its
 //                         arguments: the source's parameters, up to six,
 //                         truncated to 32 bits (0 for any the optimizer took
-//                         away: see F lines)
-//   [fn, 2 << 28 | k]     fn's k locals in memory (address-taken: arrays,
-//                         structs, ...), once they exist: their addresses
-//                         follow (their names: V lines)
+//                         away: see F lines), then its frame base (the
+//                         stack pointer after its prologue: its locals in
+//                         memory are at their DWARF offsets from it)
 //   [fn, 4 << 28]         a return from fn, followed by the value
 //   [addr, 7 << 28 | k]   a store of 1 << k bytes at addr (k < 4), followed
 //                         by the old value (low, then for 8 bytes high); k =
@@ -60,7 +59,6 @@
 //                  (known: a bit mask of the source's parameters that call
 //                  records carry; the others were optimized away. sealed:
 //                  1 if only its call and returns are recorded: see below)
-//                V \t fn \t names   the locals of fn's locals records
 //                B \t fn \t n \t FILE:line:column
 //                L \t fn \t n \t lines: the source lines the block runs, in
 //                  order (each once per stretch between calls), separated
@@ -95,9 +93,8 @@ namespace {
 
 constexpr unsigned RingWords = 1u << 21;
 constexpr unsigned CallArgs = 6;
-constexpr unsigned Locals = 8;
-constexpr unsigned Values = CallArgs > Locals ? CallArgs : Locals; // a record's at most
-enum Kind { KindBlock = 1, KindLocals = 2, KindReturn = 4, KindStore = 7, KindValue = 8 };
+constexpr unsigned Values = CallArgs + 1; // a record's at most: a call's arguments and its frame base
+enum Kind { KindBlock = 1, KindReturn = 4, KindStore = 7, KindValue = 8 };
 
 uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
   for (unsigned char c : s)
@@ -316,8 +313,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     return B.getInt32(0);
   }
 
-  // Log the store (or atomic, or memset/memcpy) `I` is about to make, if it
-  // is not to its function's own stack (but for its `locals`).
   // Whether `F` is sealed (see the top): it loops (a block reaches one that
   // dominates it), writes no memory, and calls nothing but intrinsics.
   static bool sealed(Function &F, ArrayRef<Instruction *> writes) {
@@ -371,20 +366,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     unsigned known = 0;
     // The function's own writes to memory (before any probe is added).
     SmallVector<Instruction *> writes;
-    // Its locals in memory: the named stack slots (dbg declares) left after
-    // optimization (whose address is taken).
-    SmallVector<std::pair<AllocaInst *, std::string>> locals;
-    SmallPtrSet<AllocaInst *, Locals> slots;
     for (Instruction &I : instructions(F)) {
       if (isa<StoreInst, AtomicRMWInst, AtomicCmpXchgInst, MemIntrinsic>(I))
         writes.push_back(&I);
       for (DbgVariableRecord &R : filterDbgVars(I.getDbgRecordRange())) {
         DILocalVariable *V = R.getVariable();
-        // (A declare's location is the slot; an assign's address is.)
-        Value *slot = R.isDbgDeclare() ? R.getVariableLocationOp(0) : R.isDbgAssign() ? R.getAddress() : nullptr;
-        if (slot && V && !V->getArg() && SP && V->getScope()->getSubprogram() == SP && locals.size() < Locals)
-          if (auto *A = dyn_cast<AllocaInst>(slot); A && A->isStaticAlloca() && slots.insert(A).second)
-            locals.push_back({A, V->getName().str()});
         unsigned k = V ? V->getArg() : 0;
         if (!SP || !k || k > CallArgs || V->getScope()->getSubprogram() != SP || R.getNumVariableLocationOps() != 1)
           continue;
@@ -405,9 +391,14 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         break;
       IRBuilder<> B(&*BB->getFirstInsertionPt());
       // (The entry block's is the call: its arguments follow.)
-      SmallVector<Value *, CallArgs> args;
+      SmallVector<Value *, CallArgs + 1> args;
       for (Value *p : n == 0 ? params : SmallVector<Value *, CallArgs>{})
         args.push_back(p ? toI32(B, p) : B.getInt32(0));
+      // (Then the frame base, where its locals are: see the Q lines.)
+      if (n == 0) {
+        Function *fa = Intrinsic::getOrInsertDeclaration(M, Intrinsic::frameaddress, {PointerType::getUnqual(M->getContext())});
+        args.push_back(B.CreatePtrToInt(B.CreateCall(fa, {B.getInt32(0)}), i32));
+      }
       record(B, B.getInt32(id), KindBlock << 28 | n, args);
       std::string loc = "?";
       for (Instruction &I : *BB)
@@ -433,25 +424,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
 
     for (Instruction *I : writes)
       logStore(I);
-
-    // The locals record, once they all exist (after the last of them).
-    if (!locals.empty()) {
-      Instruction *last = locals[0].first;
-      for (auto &[A, _] : locals)
-        if (last->comesBefore(A))
-          last = A;
-      IRBuilder<> B(last->getNextNode());
-      while (isa<AllocaInst>(&*B.GetInsertPoint()))
-        B.SetInsertPoint(B.GetInsertPoint()->getNextNode());
-      SmallVector<Value *, Locals> addrs;
-      std::string names;
-      for (auto &[A, name] : locals) {
-        addrs.push_back(B.CreatePtrToInt(A, i32));
-        names += (names.empty() ? "" : ",") + name;
-      }
-      record(B, B.getInt32(id), KindLocals << 28 | locals.size(), addrs);
-      probes += ("V\t" + Twine(id) + "\t" + names + "\n").str();
-    }
 
     std::string where = SP ? fileRef(sourcePath(SP)) + ":" + std::to_string(SP->getLine()) : "?";
     probes += ("F\t" + Twine(id) + "\t" + F.getName() + "\t" + where + "\t" + Twine(known) + "\t" + Twine(seal) + "\n").str();

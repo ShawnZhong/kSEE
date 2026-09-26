@@ -10,19 +10,16 @@ pub enum Record {
     Block { func: u32, n: u32 },
     /// A return from `func`, with `value` (truncated to 32 bits).
     Return { func: u32, value: u32 },
-    /// The addresses of `func`'s locals in memory (the first `n`; their
-    /// names: Tables::locals).
-    Locals { func: u32, addrs: [u32; 8], n: u8 },
     /// The arguments of the call whose entry block (Block n 0) is just
-    /// before: the first `n` of `args`.
-    Args { args: [u32; 6], n: u8 },
+    /// before: the first `n` of `args`; and its frame base (its locals in
+    /// memory are at their offsets from it: Types::locals).
+    Args { args: [u32; 6], n: u8, frame: u32 },
     /// A store of `size` bytes at `addr`, which held `old` (size 0: a range
     /// of `old` bytes whose old contents are not logged).
     Store { addr: u32, size: u32, old: u64 },
 }
 
 const BLOCK: u32 = 1;
-const LOCALS: u32 = 2;
 const RETURN: u32 = 4;
 /// The tag of a Store record's head (the plugin's, and the runtime's).
 pub const STORE: u32 = 7;
@@ -108,23 +105,18 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
             match kind {
                 BLOCK => {
                     let n = tag & 0x0fff_ffff;
-                    // An entry block: the call's arguments follow (as many as it has).
+                    // An entry block: the call's arguments follow (as many as
+                    // it has), then its frame base.
                     if n == 0 {
-                        let mut args = [0u32; 6];
-                        let k = self.values(&mut args, 6);
+                        let mut v = [0u32; 7];
+                        let k = self.values(&mut v, 7);
                         if k > 0 {
-                            self.pending = Some(Record::Args { args, n: k as u8 });
+                            let mut args = [0u32; 6];
+                            args[..k - 1].copy_from_slice(&v[..k - 1]);
+                            self.pending = Some(Record::Args { args, n: (k - 1) as u8, frame: v[k - 1] });
                         }
                     }
                     return Some(Record::Block { func, n });
-                }
-                LOCALS => {
-                    let mut addrs = [0u32; 8];
-                    let want = ((tag & 0xf) as usize).min(8);
-                    if self.values(&mut addrs, want) < want {
-                        continue;
-                    }
-                    return Some(Record::Locals { func, addrs, n: want as u8 });
                 }
                 RETURN => {
                     if self.values(&mut v, 1) < 1 {
@@ -173,12 +165,13 @@ fn decode(words: &[u32]) -> Vec<Record> {
 
     #[test]
     fn decodes_and_resyncs() {
-        let mut w = alloc::vec![5, BLOCK << 28, 1, VALUE << 28, 2, VALUE << 28 | 1];
+        // (A call: block 0, arguments 1 and 2, the frame base 0x900.)
+        let mut w = alloc::vec![5, BLOCK << 28, 1, VALUE << 28, 2, VALUE << 28 | 1, 0x900, VALUE << 28 | 2];
         w.extend(block(5, 3));
         w.extend(ret(5, 42));
         // Drop the head of the first record, as a wrapped ring would.
         assert_eq!(decode(&w[2..]), [Record::Block { func: 5, n: 3 }, Record::Return { func: 5, value: 42 }]);
-        assert_eq!(decode(&w)[..2], [Record::Block { func: 5, n: 0 }, Record::Args { args: [1, 2, 0, 0, 0, 0], n: 2 }]);
+        assert_eq!(decode(&w)[..2], [Record::Block { func: 5, n: 0 }, Record::Args { args: [1, 2, 0, 0, 0, 0], n: 2, frame: 0x900 }]);
     }
 
     struct Ring(Vec<u8>);
@@ -190,9 +183,9 @@ fn decode(words: &[u32]) -> Vec<Record> {
 
     #[test]
     fn calls_carry_arguments_and_stores_old_values() {
-        let w = [9, BLOCK << 28, 7, VALUE << 28, 8, VALUE << 28 | 1, 0x100, STORE << 28 | 2, 5, VALUE << 28,
+        let w = [9, BLOCK << 28, 7, VALUE << 28, 8, VALUE << 28 | 1, 0x80, VALUE << 28 | 2, 0x100, STORE << 28 | 2, 5, VALUE << 28,
                  0x200, STORE << 28 | UNKNOWN, 64, VALUE << 28, 9, BLOCK << 28 | 1];
-        assert_eq!(decode(&w), [Record::Block { func: 9, n: 0 }, Record::Args { args: [7, 8, 0, 0, 0, 0], n: 2 },
+        assert_eq!(decode(&w), [Record::Block { func: 9, n: 0 }, Record::Args { args: [7, 8, 0, 0, 0, 0], n: 2, frame: 0x80 },
                                 Record::Store { addr: 0x100, size: 4, old: 5 }, Record::Store { addr: 0x200, size: 0, old: 64 },
                                 Record::Block { func: 9, n: 1 }]);
     }

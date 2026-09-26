@@ -312,7 +312,6 @@ impl View<'_> {
             Record::Return { func, .. } => ("return", func, t.functions.get(&func).map(|f| f.loc)),
             Record::Args { .. } => ("args", 0, None),
             Record::Store { .. } => ("store", 0, None),
-            Record::Locals { .. } => ("locals", 0, None),
         };
         Some(At {
             i, kind,
@@ -346,19 +345,13 @@ impl View<'_> {
                     format!("block {} #{n}{loc}", self.name(func))
                 }
                 Record::Return { func, value } => format!("return {} = {}", self.name(func), value as i32),
-                Record::Args { args, n } => {
+                Record::Args { args, n, frame } => {
                     let params = func_before.and_then(|f| t.functions.get(&f)).and_then(|f| t.types.params.get(&f.name));
                     let each = args[..n as usize].iter().enumerate().map(|(k, &v)| {
                         let name = params.and_then(|p| p.get(k)).map_or(format!("{k}"), |p| p.0.clone());
                         format!("{name}={}", if v > 0xffff { format!("{v:#x}") } else { v.to_string() })
                     });
-                    format!("args {}", each.collect::<Vec<_>>().join(" "))
-                }
-                Record::Locals { func, addrs, n } => {
-                    let names = t.locals.get(&func);
-                    let each = addrs[..n as usize].iter().enumerate()
-                        .map(|(k, &a)| format!("{}@{a:#x}", names.and_then(|l| l.get(k)).map_or("?", String::as_str)));
-                    format!("locals {}", each.collect::<Vec<_>>().join(" "))
+                    format!("args {} frame={frame:#x}", each.collect::<Vec<_>>().join(" "))
                 }
                 Record::Store { addr, size: 0, old } => format!("store {addr:#x} [{old} bytes] (old contents not kept)"),
                 Record::Store { addr, size, old } => {
@@ -397,8 +390,11 @@ impl View<'_> {
         let entry = t.find(arch::SYSCALL);
         for (depth, c) in self.fold(stack::stack_at(t, records, tasks, i, nth)).into_iter().rev() {
             let name = self.name(c.func);
-            let (raw, locals) = stack::args_locals(records, tasks, c.func, c.first, i);
-            let locals = locals.and_then(|a| self.locals(c.func, &name, a, mem));
+            let (raw, frame) = match stack::args_frame(records, c.first) {
+                Some((a, f)) => (Some(a), Some(f)),
+                None => (None, None),
+            };
+            let locals = frame.map(|f| self.locals(&name, f, mem));
             // (The syscall entry: its arguments are the syscall's.)
             let at_entry = matches!(records.get(c.first), Some(&Record::Block { func, n: 0 }) if Some(func) == entry);
             let (syscall, args) = match raw {
@@ -475,14 +471,11 @@ impl View<'_> {
         }).collect()
     }
 
-    /// Function `func`'s (called `name`) locals in memory, at `addrs`.
-    fn locals(&self, func: u32, name: &str, addrs: Vec<u32>, mem: &dyn Memory) -> Option<Vec<Object>> {
-        let t = self.tables;
-        let (names, types) = (t.locals.get(&func)?, t.types.locals.get(name));
-        Some(addrs.into_iter().zip(names).filter_map(|(addr, var)| {
-            let &(_, ty) = types?.iter().find(|(n, _)| n == var)?;
-            Some(t.types.object(mem, var, addr, ty, 0))
-        }).collect())
+    /// Function `name`'s locals in memory, at their offsets from `frame`.
+    fn locals(&self, name: &str, frame: u32, mem: &dyn Memory) -> Vec<Object> {
+        let types = &self.tables.types;
+        types.locals.get(name).into_iter().flatten()
+            .map(|(var, ty, off)| types.object(mem, var, frame.wrapping_add(*off), *ty, 0)).collect()
     }
 
     /// Call `c` and the code inlined into it where it is, innermost first:
@@ -579,7 +572,17 @@ impl View<'_> {
     /// Store `i` as a change to the object of type `ty` at `addr`.
     fn change(&self, addr: u32, ty: u32, i: usize) -> Change {
         let types = &self.tables.types;
-        let Record::Store { addr: a, .. } = self.rec.records[i] else { unreachable!() };
+        let Record::Store { addr: a, size, old } = self.rec.records[i] else { unreachable!() };
+        let task = self.task(self.rec.tasks[i]);
+        let at = self.rec.line_at(self.tables, i).map(|s| self.line(&s));
+        // (No type, a frame's bytes: the store as it is, at its offset.)
+        if ty == 0 {
+            let num = |v: u64| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
+            let mut new = [0u8; 8];
+            self.rec.memory_at(self.now, i).read(a, &mut new[..size.min(8) as usize]);
+            let new = new.iter().rev().fold(0u64, |v, &x| v << 8 | x as u64);
+            return Change { i, member: format!("+{}", a.wrapping_sub(addr)), before: num(old), after: num(new), task, at };
+        }
         let (member, leaf, off, bits) = types.leaf(ty, a.max(addr) - addr);
         let (b0, bn) = bits.unwrap_or((0, 0));
         let value = |at: usize| {
@@ -587,18 +590,16 @@ impl View<'_> {
             types.print(&self.rec.memory_at(self.now, at), addr + off, leaf, b0, bn, &mut v);
             v
         };
-        Change {
-            i, member, before: value(i.saturating_sub(1)), after: value(i),
-            task: self.task(self.rec.tasks[i]), at: self.rec.line_at(self.tables, i).map(|s| self.line(&s)),
-        }
+        Change { i, member, before: value(i.saturating_sub(1)), after: value(i), task, at }
     }
 
     /// What records `first..=last` (a call's) changed: the objects written,
     /// in the order of their first write, each with its writes (the newest
     /// `limit`). An object is known by what the code there held: a call's
-    /// pointer argument to a struct, a local, the task running (the rest
-    /// of the stores, to memory nothing names, are counted in the last
-    /// entry, "other").
+    /// pointer argument to a struct, a local, the task running, a callee's
+    /// frame (from its frame base up to its caller's: the stack it used
+    /// beyond its named locals; no type) (the rest of the stores, to memory
+    /// nothing names, are counted in the last entry, "other").
     pub fn changes(&self, first: usize, last: usize, limit: usize) -> Vec<Changed> {
         let (t, types) = (self.tables, &self.tables.types);
         // (The objects: what, type, address, size. The task first. Each
@@ -607,35 +608,42 @@ impl View<'_> {
         let end = self.rec.memory_at(self.now, last.min(records_len(self.rec)));
         let mut regions: Vec<(String, u32, u32, u32)> = Vec::new();
         let mut seen = alloc::collections::BTreeSet::new();
-        let mut add = |what: String, ty: u32, addr: u32| {
+        let mut add = |what: String, ty: u32, addr: u32, size: Option<u32>| {
             let ty = types.resolve(ty);
             if addr != 0 && seen.insert((addr, ty)) {
                 let what = self.describe(&end, ty, addr, task).unwrap_or(what);
-                regions.push((what, ty, addr, types.size_of(ty)));
+                regions.push((what, ty, addr, size.unwrap_or_else(|| types.size_of(ty))));
             }
         };
         if let Some(ty) = types.find("task_struct") {
-            add("current task_struct".into(), ty, task);
+            add("current task_struct".into(), ty, task, None);
         }
         let records = &self.rec.records;
+        // (The calls open on each task: (function, frame base).)
+        let mut open: alloc::collections::BTreeMap<u32, Vec<(u32, u32)>> = alloc::collections::BTreeMap::new();
         for i in first..=last.min(records.len().saturating_sub(1)) {
             match records[i] {
+                Record::Return { func, .. } => {
+                    if let Some(stack) = open.get_mut(&self.rec.tasks[i]) && stack.last().is_some_and(|c| c.0 == func) {
+                        stack.pop();
+                    }
+                }
                 Record::Block { func, n: 0 } => {
-                    let Some((f, &Record::Args { args, .. })) = t.functions.get(&func).zip(records.get(i + 1)) else { continue };
+                    let Some((f, &Record::Args { args, frame, .. })) = t.functions.get(&func).zip(records.get(i + 1)) else { continue };
+                    // (Its frame: up to its caller's, if the caller is known.)
+                    let stack = open.entry(self.rec.tasks[i]).or_default();
+                    if let Some(&(_, caller)) = stack.last() && caller > frame {
+                        add(format!("{}'s frame", f.name), 0, frame, Some(caller - frame));
+                    }
+                    stack.push((func, frame));
                     for ((pname, ty), &v) in types.params.get(&f.name).into_iter().flatten().zip(&args) {
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
-                            add(format!("{} {v:#x} ({}'s {pname})", types.name(types.resolve(to)), f.name), to, v);
-                            let _ = f;
+                            add(format!("{} {v:#x} ({}'s {pname})", types.name(types.resolve(to)), f.name), to, v, None);
                         }
                     }
-                }
-                Record::Locals { func, addrs, n } => {
-                    let Some((f, names)) = t.functions.get(&func).zip(t.locals.get(&func)) else { continue };
-                    for (&addr, var) in addrs[..n as usize].iter().zip(names) {
-                        if let Some(&(_, ty)) = types.locals.get(&f.name).and_then(|l| l.iter().find(|(n, _)| n == var)) {
-                            add(format!("{}'s {var}", f.name), ty, addr);
-                        }
+                    for (var, ty, off) in types.locals.get(&f.name).into_iter().flatten() {
+                        add(format!("{}'s {var}", f.name), *ty, frame.wrapping_add(*off), None);
                     }
                 }
                 _ => {}
@@ -884,22 +892,26 @@ mod tests {
 
     #[test]
     fn a_call_changes_objects() {
-        // f (1, "f") takes struct s *p (at 4) and has a local int x (at 12):
-        // it stores p->b, then x; and one byte nobody names.
-        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\tx\n",
+        // f (1, "f") takes struct s *p (at 4) and has a local int x (at
+        // frame 32 + 4): it stores p->b, then x; calls g (2), whose frame is
+        // at 16, which stores a byte of its own frame; and one byte nobody
+        // names.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
-                               P\tf\tp:3\nQ\tf\tx:1\n");
-        let r = [Record::Block { func: 1, n: 0 }, Record::Args { args: [4, 0, 0, 0, 0, 0], n: 1 },
-                 Record::Locals { func: 1, addrs: [12, 0, 0, 0, 0, 0, 0, 0], n: 1 },
-                 Record::Store { addr: 8, size: 4, old: 1 }, Record::Store { addr: 12, size: 4, old: 0 },
+                               P\tf\tp:3\nQ\tf\tx:1:4\n");
+        let r = [Record::Block { func: 1, n: 0 }, Record::Args { args: [4, 0, 0, 0, 0, 0], n: 1, frame: 32 },
+                 Record::Store { addr: 8, size: 4, old: 1 }, Record::Store { addr: 36, size: 4, old: 0 },
+                 Record::Block { func: 2, n: 0 }, Record::Args { args: [0; 6], n: 0, frame: 16 },
+                 Record::Store { addr: 20, size: 1, old: 0 }, Record::Return { func: 2, value: 0 },
                  Record::Store { addr: 100, size: 1, old: 0 }];
-        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 6]);
-        let mut m = alloc::vec![0u8; 16];
-        (m[8], m[12]) = (2, 7);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 9]);
+        let mut m = alloc::vec![0u8; 128];
+        (m[8], m[36], m[20]) = (2, 7, 9);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let got: Vec<_> = v.changes(0, 5, 8).into_iter().map(|c| (c.what, c.n, c.writes.first().map(|w| (w.member.clone(), w.after.clone())))).collect();
+        let got: Vec<_> = v.changes(0, 8, 8).into_iter().map(|c| (c.what, c.n, c.writes.first().map(|w| (w.member.clone(), w.after.clone())))).collect();
         assert_eq!(got, [("struct s 0x4 (f's p)".into(), 1, Some(("b".into(), "2".into()))),
-                         ("f's x".into(), 1, Some(("".into(), "7".into()))), ("other".into(), 1, None)]);
+                         ("f's x".into(), 1, Some(("".into(), "7".into()))),
+                         ("g's frame".into(), 1, Some(("+4".into(), "9".into()))), ("other".into(), 1, None)]);
     }
 
     #[test]

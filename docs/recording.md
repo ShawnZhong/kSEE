@@ -23,11 +23,12 @@ Every function gets:
 - at the start of each **basic block**, a block record. The entry block's
   is the **call**, followed by its **arguments**: the source's parameters,
   mapped through the debug records (so an argument the optimizer removed
-  is known to be missing, not misread);
+  is known to be missing, not misread), and its **frame base** (the stack
+  pointer after its prologue, `__builtin_frame_address(0)`): its locals in
+  memory are at their offsets from it, which DWARF knows (`ksee pack`
+  writes them, see below), so a stack address is a frame's, and a local's
+  lifetime is its call's;
 - before each **return**, a return record with the value;
-- once its **locals in memory** exist (address-taken ones: arrays,
-  structs, anything whose address is passed on), a locals record with their
-  addresses;
 - before each **store** (its stack slots' too: a slot is reused by later
   calls, and a frame's locals must be undone to be seen as they were), a
   store record with the **old value**. Bulk writes (memcpy, memset, wider
@@ -53,8 +54,7 @@ overwritten the start of a record) and skip to the next head:
 
 | Pair | Record |
 |---|---|
-| `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments |
-| `[fn, 2<<28 \| k]` | fn's k locals in memory; their addresses follow |
+| `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments, then its frame base |
 | `[fn, 4<<28]` | a return from fn; the value follows |
 | `[addr, 7<<28 \| k]` | a store of 1<<k bytes at addr; the old value follows (k = 7: a range of unknown old contents; its length follows) |
 | `[value, 8<<28 \| i]` | continuation i |
@@ -81,12 +81,16 @@ The instrumented kernel describes its probes in a custom section,
   the calls it makes; a line of inlined code carries its inline chain:
   each function it is inlined from, innermost first, with the line where
   that function is inlined into the next one out;
-- `V fn names`: the names of fn's locals records;
 - `U`, `P k path`: a unit's files; `R words`: the ring's size.
 
 `ksee pack` (crates/ksee-cli) reads the kernel's DWARF and adds
 `ksee.types`: the types (deduplicated across units, as pahole does for
-BTF), globals, each function's parameters and locals with their types, the
+BTF), globals, each function's parameters with their types and its locals
+in memory with their types and offsets from the frame base (`Q name
+var:type:offset,…`, from the variables' DWARF locations: `DW_OP_fbreg`, or
+`DW_OP_WASM_location 0 <the frame base's local>` plus a constant, in
+pieces for a struct's members; the locals of calls inlined into it too;
+a function inlined elsewhere has them on its out-of-line copy), the
 syscalls' names, constants from the UAPI headers (`O_*`, `AT_*`,
 `CLOCK_*`, `CLONE_*`, `FUTEX_*`, errno's `E*`, …: for the page's calls,
 written as in C), and `W name file line` lines: where a function (an

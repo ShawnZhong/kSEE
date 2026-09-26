@@ -235,7 +235,7 @@ mod tests {
     fn tasks_switch_where_switch_to_returns() {
         let t = Tables::parse("F\t1\t__switch_to\t0:1\t3\n", "");
         let switch = t.find("__switch_to").unwrap();
-        let r = [b(9, 1), b(switch, 0), Record::Args { args: [0x100, 0x200, 0, 0, 0, 0], n: 2 },
+        let r = [b(9, 1), b(switch, 0), Record::Args { args: [0x100, 0x200, 0, 0, 0, 0], n: 2, frame: 0 },
                  Record::Return { func: switch, value: 0 }, b(9, 1)];
         let rec = Recording::new(&t, r.to_vec(), (0..5).collect());
         assert_eq!(rec.tasks, [0x100, 0x100, 0x100, 0x200, 0x200]);

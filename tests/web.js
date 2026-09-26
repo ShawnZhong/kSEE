@@ -126,6 +126,10 @@ check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
         w?.before === "0" && w?.after === "26" && w?.at?.func === "ksys_read" && h.every((x, k) => k === 0 || h[k - 1].i < x.i));
   const f = m.writes(Number(file.value), file.target, read.first, read.last);
   check(`the struct file's writes in the read: ${f.map((x) => x.member).join(", ")}`, f.some((x) => x.member === "f_pos"));
+  // What the read changed, by object: the file, a local of a call in it (at its frame base's offset), a callee's frame.
+  const ch = m.changes(read.first, read.last);
+  check(`the read's changes: ${ch.length} objects, ${ch.map((c) => c.what).slice(0, 5).join("; ")}…`,
+        ch.some((c) => c.what.startsWith("fd 3")) && ch.some((c) => /'s (kiocb|iter)$/.test(c.what)) && ch.some((c) => c.what.endsWith("'s frame")));
 }
 m.memory_at(null);
 const readSteps = m.line_steps(read.first, read.last, read.task.addr);

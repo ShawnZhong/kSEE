@@ -60,9 +60,6 @@ pub struct Tables {
     /// function (in [`Tables::names`]) and where it is inlined (a line of
     /// the next one out; the last: of the block's function).
     pub inlines: Vec<Vec<(u32, Loc)>>,
-    /// Function -> the names of its locals in memory (as its Locals records
-    /// have their addresses).
-    pub locals: BTreeMap<u32, Vec<String>>,
     /// Source file paths.
     pub files: Vec<String>,
     /// The kernel's types.
@@ -129,11 +126,6 @@ impl Tables {
                     let loc = unit.loc(location, false);
                     let sealed = rest.first() == Some(&"1");
                     t.functions.insert(id, Function { name: name.to_string(), loc, known: known.parse().unwrap_or(0), sealed });
-                }
-                ["V", id, names] => {
-                    if let Ok(id) = id.parse() {
-                        t.locals.insert(id, names.split(',').map(String::from).collect());
-                    }
                 }
                 ["B", id, n, where_] => {
                     if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {
