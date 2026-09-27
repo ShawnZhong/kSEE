@@ -13,9 +13,6 @@
     "fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY); write(fd, \"more\\n\", 5); close(fd)",
     "fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND); write(fd, [4000], 4000); close(fd)"
   ],
-  "watch": [
-    "2:vfs_write:file"
-  ],
   "steps": [
     {
       "call": "openat",

@@ -1,16 +1,23 @@
-// Values as trees (the Stack's and the Objects'): a row a value, its
-// name, value and type; pointers open into what they point to, structs
-// into their fields, read from memory as it was at the cursor
-// (Machine.memory_at). Values that changed since the cursor last moved are
-// highlighted; hover one in memory for who last wrote it, click it to
-// pin it in the Objects (see objects.js).
+// Values as trees (the Stack's): a row a value, its name, value and type;
+// pointers open into what they point to, structs into their fields, read
+// from memory as it was at the cursor (Machine.memory_at). Values that
+// changed since the cursor last moved are highlighted; hover one in memory
+// for who last wrote it; click it for its writes (Machine.writes), a row
+// under it: each the member, from what to what, in which function, a link
+// to that moment, the one in effect at the cursor marked; a local's writes
+// while its frame lives, another object's within the selected call ("all"
+// for the whole recording); click the value again to close.
 import { el } from "./dom.js";
 
-// `st`: a tree's state: { open (paths open), last, now (values shown
-// before and now, by path) }; `redraw()`: draw it again (a value opened or
-// closed); `watch(o, life)`: a value clicked.
-export function tree(app, st, redraw, watch) {
+// `st`: a tree's state: { open (paths open), history (paths whose writes
+// are shown), wide (of those, the ones over the whole recording), last,
+// now (values shown before and now, by path) }; `redraw()`: draw it again
+// (a value opened or closed).
+export function tree(app, st, redraw) {
   const { m } = app;
+  st.history ??= new Set();
+  st.wide ??= new Set();
+  const toggle = (set, p) => (set.has(p) ? set.delete(p) : set.add(p), redraw());
   // The children of value `o` (an Object, see ksee_core::view), if it has any.
   function kids(o) {
     if (o.children) return o.children;
@@ -38,17 +45,38 @@ export function tree(app, st, redraw, watch) {
             redraw();
           } }), o.name),
         // (Hover a value: who last wrote it, and what it was before; click:
-        // watch it. Only a value in memory: not an argument, which is in its
-        // call's record, at 0.)
+        // its writes. Only a value in memory: not an argument, which is in
+        // its call's record, at 0.)
         o.addr && o.size
-          ? el("td", { className: "fval mem", title: value, onmouseenter: (ev) => (ev.target.title = `${value}\n${wroteIt(o)}\n(click: watch it)`),
-                       onclick: () => watch({ ...o, name: e }, life) }, value)
+          ? el("td", { className: "fval mem", title: value, onmouseenter: (ev) => (ev.target.title = `${value}\n${wroteIt(o)}\n(click: its writes)`),
+                       onclick: () => toggle(st.history, p) }, value)
           : el("td", { className: "fval", title: value }, value),
         el("td", { className: "ftype", textContent: o.ty })));
+      if (st.history.has(p)) out.push(history(o, p, life, depth));
       // (A pointer's target is another object: its own lifetime.)
       if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? null : life, o.target != null ? `${e}->` : `${e}.`);
     }
   }
+  // Value `o`'s writes (Machine.writes), a row: a local's while its frame
+  // lives (`life`), another object's within the selected call, or, wide,
+  // in the whole recording; the write in effect at the cursor marked.
+  function history(o, p, life, depth) {
+    const cur = app.time.cursor() ?? Infinity, wide = st.wide.has(p);
+    const home = app.time.home();
+    const span = wide ? null : life ?? (home ? { from: home.a, to: home.b, what: "in this call" } : null);
+    const writes = m.writes(o.addr, o.id, span?.from, span?.to);
+    const now = writes.findLastIndex((x) => x.i <= cur);
+    const items = writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
+      el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: "go to this write", onclick: () => app.time.go(x.i), onpointerenter: () => app.peek(x.i) }),
+      el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` })));
+    const scope = span ? span.what : "in the recording";
+    return el("tr", { className: "history" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
+      el("div", { className: "dim" }, `${writes.length}${writes.length >= 256 ? "+" : ""} write${writes.length === 1 ? "" : "s"} ${scope}`,
+        span ? el("a", { textContent: " · all", title: "in the whole recording", onclick: () => toggle(st.wide, p) })
+          : life || home ? el("a", { textContent: " · fewer", title: span ? "" : "within the frame, or the call", onclick: () => toggle(st.wide, p) }) : null),
+      items.length ? el("ol", {}, ...items) : null));
+  }
+
   // The newest write to `o` at the cursor (Machine.last_write): where, by
   // whom, and the value it overwrote.
   function wroteIt(o) {

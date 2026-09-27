@@ -13,9 +13,6 @@
     "fd = openat(AT_FDCWD, \"/mnt/log.txt\", O_CREAT | O_WRONLY, 0644); write(fd, \"hello, ext4\\n\", 12); close(fd)",
     "fd = openat(AT_FDCWD, \"/mnt/log.txt\", O_CREAT | O_WRONLY, 0644); write(fd, \"hello, ext4\\n\", 12); fsync(fd); fsync(fd); close(fd)"
   ],
-  "watch": [
-    "3:ext4_sync_file:file"
-  ],
   "steps": [
     {
       "call": "openat",

@@ -29,18 +29,15 @@
   }
   if (!r.decl?.startsWith("include/linux/fs.h:") || !r.decl.includes("struct kiocb {")) throw new Error("no declaration on hover: " + JSON.stringify(r.decl));
   if (r.notes.length < 3 || !r.notes.some(([n, w, top]) => n === "vfs_read" && top === "vfs_read" && w.includes("ksys_read")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
-  // Pin a value: click one in the Stack (one in memory: a local's, a task's field); the Objects show it pinned,
-  // its writes listed (a local's in its frame's lifetime), ▶ goes to the next; 📌 unpins.
+  // A value's writes: click one in the Stack (one in memory: a local's, a task's field); a row under it lists
+  // them (a local's while its frame lives); click again to close.
   const v = document.querySelector("#stack td.fval.mem");
   v?.click();
-  r.history = [v?.textContent, document.querySelectorAll("#objects .pinned li").length, $("objects").innerText.slice(0, 160)];
-  if (!/changes? (while \w+'s frame lives|in the recording)/.test(r.history[2] ?? "") || $("right").dataset.tab !== "objects" || !document.querySelector("#objects .pinned")) throw new Error("no pin: " + JSON.stringify(r.history));
-  document.querySelector("#objects .pinned .whead button:not([disabled])")?.click();
-  await sleep(200);
-  document.querySelector("#objects .pinned .whead a.pin").click();
-  // (The example's own pin stays: the read's struct file, pinned as it opened.)
-  if (!$("objects").innerText.includes("fd 3 note.txt") || document.querySelectorAll("#objects .pinned").length !== 1) throw new Error("the example's pin: " + $("objects").innerText.slice(0, 160));
-  document.querySelector('h2.tabs a[data-tab="stack"]').click();
+  r.history = [v?.textContent, document.querySelectorAll("#stack tr.history li").length, document.querySelector("#stack tr.history")?.innerText.slice(0, 120)];
+  if (!/writes? (while \w+'s frame lives|in this call|in the recording)/.test(r.history[2] ?? "")) throw new Error("no writes: " + JSON.stringify(r.history));
+  document.querySelector("#stack tr.history li a")?.click();
+  v?.click();
+  if (document.querySelector("#stack tr.history")) throw new Error("the writes row stays");
   // Run to a line (the source's F4): the line where the cursor is, its next run
   // (stepping on until a line that does run again).
   let here, file, ln;
@@ -124,21 +121,14 @@
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   if (document.querySelector("#trace li.on > a.mono")?.textContent !== "vfs_read") throw new Error("the cursor's call not marked: " + document.querySelector("#trace li.on")?.textContent);
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
-  // The Objects tab: what the read changed, by object (the struct file's f_pos among them: pinned, as the example says;
-  // the kiocb, the inode; no registers or frames); ▸ opens a value; "all" shows the rest.
-  document.querySelector('h2.tabs a[data-tab="objects"]').click();
-  await sleep(100);
-  const fileObj = [...document.querySelectorAll("#objects .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
-  if (!fileObj || !fileObj.classList.contains("pinned") || $("objects").innerText.includes("pt_regs") || $("objects").innerText.includes("'s frame")) throw new Error("the read's objects: " + $("objects").innerText.slice(0, 400));
-  fileObj.querySelector(".whead a.tw").click();
-  if (!document.querySelector("#objects .pinned table.objs")) throw new Error("the file's value: " + $("objects").innerText.slice(0, 200));
-  document.querySelector("#objects .head a").click(); // (all: the registers and frames too)
-  if (!$("objects").innerText.includes("pt_regs")) throw new Error("all objects: " + $("objects").innerText.slice(0, 200));
-  document.querySelector("#objects .head a").click();
-  // The Records tab: the raw trace around the cursor, the cursor's marked.
-  document.querySelector('h2.tabs a[data-tab="records"]').click();
-  await sleep(100);
-  if (!document.querySelector("#records .row.on") || !document.querySelector("#records .row.store")) throw new Error("the records: " + $("records").innerText.slice(0, 200));
+  // What a call changed: "changed ▸" under ksys_read on the Stack: the struct file (its f_pos) among the objects.
+  const ksysRow = [...document.querySelectorAll("#stack tr.frame")].find((tr) => tr.innerText.trim().startsWith("ksys_read"));
+  let row = ksysRow?.nextElementSibling;
+  while (row && !row.querySelector("a[title^='what this call changed']")) row = row.nextElementSibling;
+  row?.querySelector("a").click();
+  if (!$("stack").innerText.includes("f_pos: 0 → ")) throw new Error("the read's changes: " + $("stack").innerText.slice(0, 400));
+  row = [...document.querySelectorAll("#stack tr.sub a")].find((a) => a.textContent === "changed ▾");
+  row?.click();
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)

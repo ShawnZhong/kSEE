@@ -71,15 +71,14 @@ source and the Stack show that moment while the pointer is there; click it to fi
 any call, to select it: its records from its start to its end, with
 whatever else ran in between). Hover
 a name in the source for its value at the cursor, and a value in the Stack
-for who last wrote it. The Objects tab is what the selected call changed,
-by object (`fd 3 note.txt: f_pos 0 → 26`, `inode 12 (ext4): i_size`), in
-the order they were first written, each write by which function, each a
-link, ◀ ▶ to the write before or after the cursor, ▸ its value at the
-cursor as a tree; the kernel's objects and real changes only, "all" for
-the registers, frames, locals and unchanged writes too. Pin an object (📌,
-or click a value in the Stack) to keep it as the selection changes, with
-its writes over the whole recording (a local's: while its frame lived);
-an example's `watch` pins one as it opens. The
+for who last wrote it; click it for its writes, a row under it: the
+member, from what to what, in which function, each a link to that moment,
+the one in effect at the cursor marked (a local's while its frame lives,
+another object's within the selected call; "all" for the whole recording);
+click the value again to close. Under a call's locals, "changed ▸" lists
+what the call changed, by object (`fd 3 note.txt: f_pos 0 → 26`, `inode
+12 (ext4): i_size`), in the order they were first written, each write a
+link. The
 Calls tab shows the calls the selected call made, in the order they were
 made, inlined code among them (in italics, as the timeline and the Stack
 show it); ▸ opens a call's own calls; each is a link, and the call the
@@ -95,7 +94,7 @@ An example is one JSON file in user/examples/: a title, a question, `text`
 (the explanation: paragraphs, with links into the recording as
 `[label](2:vfs_read)`, the first call of vfs_read in call 2's recording,
 `:any` for one on any task, or `[label](2)`, call 2 itself, and a tab to
-show, `:calls`, `:objects`, `:stack` or `:records`; `code` in
+show, `:calls`, `:stack` or `:records`; `code` in
 backticks; `[label](try:1)` runs the example's `tries[0]`, another program
 written as calls separated by `;`, to see what changes), and steps: `{ call, name?, tid?, args }` (`name`:
 a name for the call's result, which later arguments may use, as `fd` or

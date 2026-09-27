@@ -104,7 +104,6 @@ export function app(m) {
     L.pos = null;
     view(at);
     a.trace?.mark();
-    stack.objects.mark();
     a.records?.mark();
     badge();
   };
@@ -125,7 +124,7 @@ export function app(m) {
   };
   a.trace = trace(a);
   a.records = records(a);
-  a.outlined = () => (a.trace.draw(), stack.objects.draw(), a.records.draw());
+  a.outlined = () => (a.trace.draw(), a.records.draw());
   // (The Records follow the cursor, drawn when the tab is looked at.)
   document.querySelector('h2.tabs a[data-tab="records"]').addEventListener("click", () => a.records.draw());
   examples(a);
@@ -179,7 +178,6 @@ export function app(m) {
   function showLine(step) {
     time.mark(step.at);
     a.trace?.mark();
-    stack.objects.mark();
     a.records?.mark();
     memoryAt(step.at);
     const at = m.at(step.i);

@@ -10,16 +10,14 @@
 // lead into the recording: `[label](2)` is call 2 (its recording
 // selected), `[label](2:vfs_read)` the first call of vfs_read in it (on
 // the call's task; `:any` on any task), the cursor there, and `:calls`
-// (or `:objects`, `:stack`, `:records`) shows that tab; the first such
+// (or `:stack`, `:records`) shows that tab; the first such
 // link is where the cursor starts; `[label](try:1)` runs the example's
 // `tries[0]`, another program (calls separated by ";"), instead: to see
 // what changes. `code` in backticks. The program is
 // below, a call a line: click one for its recording; type in it to change
 // it (Enter: the program runs again, on a fresh kernel), empty it (or ✕)
 // to remove it; add a call at the end; ↺ for the example's own program
-// again. `watch`: what to pin in the Objects as it opens ("2:vfs_read:file":
-// the argument `file` of vfs_read, in call 2's recording: the object it
-// points to).
+// again.
 //
 // A step: { call, args, name?, tid? }; its arguments written as in
 // C (see args.js and Machine.arg): "a string", 0644, O_CREAT | O_WRONLY,
@@ -118,15 +116,6 @@ export async function examples(app) {
     for (let j = 0; j < t.steps.length; j++) if (!(await step()) || t.list !== mine) return;
     t.status.textContent = "";
     explain();
-    // (What the example says to pin: "2:vfs_read:file", the argument of a
-    // call in a call's recording; the Objects have it, the Stack stays in front.)
-    for (const spec of t.ex.watch ?? []) {
-      const [n, func, name] = spec.split(":"), c = syscall(Number(n) - 1);
-      const at = c && m.first_call(func, c.first, c.last ?? m.records() - 1, c.task.addr);
-      const o = at != null && m.call_stack(at).find((f) => f.func === func && !f.inlined)?.args?.find((a) => a.name === name);
-      if (o && o.target != null && o.value !== "NULL") app.stack.watch({ ...o, name: `*${name}`, id: o.target, addr: Number(o.value.split(" ")[0]) }, null, true);
-      else if (o) app.stack.watch(o, null, true);
-    }
     const first = t.links.find((l) => l.at != null) ?? t.links.find((l) => l.c);
     if (first) goTo(first);
     else if (t.done.length) pick(t.done.length - 1);
@@ -205,7 +194,7 @@ export async function examples(app) {
       const tr = part.match(/^\[([^\]]*)\]\(try:(\d+)\)$/), prog = tr && t.ex.tries?.[Number(tr[2]) - 1];
       if (tr) return el("a", { className: "try", textContent: tr[1], title: prog ? `run this program instead:\n${prog}` : "no such try",
         onclick: prog ? () => go(t.ex, program(prog), true) : null });
-      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|calls|objects|records))?\)$/);
+      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|calls|records))?\)$/);
       if (link) {
         const l = { j: Number(link[2]) - 1, func: link[3], any: !!link[4], tab: { calls: "trace" }[link[5]] ?? link[5] };
         l.c = syscall(l.j);

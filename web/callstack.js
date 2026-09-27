@@ -5,24 +5,25 @@
 // bottom, the task running then (current: its key fields, open, and all
 // of them on asking). Pointers open into
 // what they point to, structs into their fields, read from memory as it was
-// at the cursor (Machine.memory_at: see objects.js); what is open stays
-// open while stepping; click a value to pin it in the Objects (objects.js). Click a call to select
-// it: the source shows where it is (for an outer call, the line calling
-// the next one in).
+// at the cursor (Machine.memory_at: see tree.js); what is open stays
+// open while stepping; click a value for its writes (tree.js). Under a
+// call's locals, "changed ▸": what the call changed, by object
+// (Machine.changes over its records: each object said as the kernel names
+// it, "fd 3 note.txt", with its writes, each a link). Click a call to
+// select it: the source shows where it is (for an outer call, the line
+// calling the next one in).
 import { $, el } from "./dom.js";
-import { tree } from "./tree.js";
-import { objects } from "./objects.js";
+import { tree, place } from "./tree.js";
 
 export function callstack(app) {
   const { m } = app;
   // Open paths, and the values shown before (to highlight changes).
   // (The current task open to begin with.)
-  const s = { open: new Set(["task"]), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
+  const s = { open: new Set(["task"]), changed: new Set(), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
   // The current task's fields shown first.
   const KEY = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 
-  const w = objects(app);
-  const { rows, kids } = tree(app, s, draw, w.add);
+  const { rows, kids } = tree(app, s, draw);
   // (The tabs: the pane chosen.)
   for (const a of document.querySelectorAll("h2.tabs a")) a.onclick = () => ($("right").dataset.tab = a.dataset.tab);
   const head = (text, where, onclick, cls = "") => el("tr", { className: "frame " + cls },
@@ -45,6 +46,13 @@ export function callstack(app) {
       if (f.locals?.length) {
         body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3, textContent: "locals" })));
         rows(f.locals, `${n - k}/${f.func}/locals`, 1, body, { from: f.first, to: m.call_end(f.first) ?? undefined, what: `while ${f.func}'s frame lives` });
+      }
+      // (What the call changed, by object: on asking.)
+      if (!f.inlined) {
+        const key = `${n - k}/${f.func}`, open = s.changed.has(key);
+        body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3 },
+          el("a", { textContent: open ? "changed ▾" : "changed ▸", title: "what this call changed, by object", onclick: () => (open ? s.changed.delete(key) : s.changed.add(key), draw()) }))));
+        if (open) changes(f, body);
       }
     });
     // At the bottom: the task running then (its task_struct, as it was).
@@ -77,6 +85,27 @@ export function callstack(app) {
     pane.scrollTop = Math.max(0, above - pin);
   }
 
+  // What call `f` changed (Machine.changes over its records, to its end,
+  // or the recording's): a row an object, its writes under it.
+  function changes(f, body) {
+    const cur = app.time.cursor() ?? Infinity, last = m.call_end(f.first) ?? m.records() - 1;
+    const list = m.changes(f.first, last);
+    if (!list.length) return body.push(el("tr", { className: "history" }, el("td", { colSpan: 3, className: "dim", textContent: "nothing changed" })));
+    for (const c of list) {
+      if (!c.addr) {
+        body.push(el("tr", { className: "history" }, el("td", { colSpan: 3, className: "dim", textContent: `and ${c.n} stores to memory no call here got by argument or local` })));
+        continue;
+      }
+      const now = c.writes.findLastIndex((x) => x.i <= cur);
+      body.push(el("tr", { className: "history" }, el("td", { colSpan: 3, style: "padding-left:24px" },
+        el("b", { className: "mono", textContent: c.what }), el("span", { className: "dim mono", textContent: ` ${c.ty}` }),
+        el("span", { className: "dim", textContent: ` · ${c.n} write${c.n === 1 ? "" : "s"}${c.n > c.writes.length ? `, the last ${c.writes.length}` : ""}` }),
+        el("ol", {}, ...c.writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
+          el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: `go to this write: ${place(x.at)}`, onclick: () => app.time.go(x.i), onpointerenter: () => app.peek(x.i) }),
+          el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` })))))));
+    }
+  }
+
   // The stack at record `i` (null: the last; undefined: none), `step` the
   // line shown there ({ nth }: which of the lines record `i` runs); `task`:
   // the task there.
@@ -84,9 +113,6 @@ export function callstack(app) {
   function show(i, step, task) {
     s.last = s.now;
     s.task = task ?? null;
-    // (No recording: nothing to watch; else the watched values at the cursor.)
-    if (i === undefined) w.reset();
-    else w.draw();
     app.trace?.mark();
     // (At a line step: the stack as that line runs; see Machine.call_stack.)
     const frames = i === undefined ? [] : m.call_stack(i ?? undefined, step?.nth);
@@ -143,5 +169,5 @@ export function callstack(app) {
   // null at the ends.
   const neighbour = (dir) => s.frames[(s.sel ? s.frames.indexOf(s.sel) : 0) + dir] ?? null;
 
-  return { show, select, level, owner, neighbour, frames: () => s.frames, resolve, kids, watch: w.add, objects: w };
+  return { show, select, level, owner, neighbour, frames: () => s.frames, resolve, kids };
 }
