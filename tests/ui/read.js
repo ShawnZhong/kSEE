@@ -128,11 +128,11 @@
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   if (document.querySelector("#trace li.on > a.mono")?.textContent !== "vfs_read") throw new Error("the cursor's call not marked: " + document.querySelector("#trace li.on")?.textContent);
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
-  // The Changes tab: what the read changed, by object: the struct file (its f_pos) among them, the write at the cursor marked.
-  document.querySelector('h2.tabs a[data-tab="changes"]').click();
+  // The Stores tab: the read's stores, a row each in order: the file's f_pos among them, the store at the cursor marked.
+  document.querySelector('h2.tabs a[data-tab="stores"]').click();
   await sleep(100);
-  r.changes = [$("changes").querySelector(".head")?.textContent, $("changes").innerText.slice(0, 200)];
-  if (!/^\d+ objects?, \d+ writes?/.test(r.changes[0] ?? "") || !$("changes").innerText.includes("f_pos: 0 → ") || !document.querySelector("#changes li.on")) throw new Error("the read's changes: " + JSON.stringify(r.changes));
+  r.stores = [$("stores").querySelector(".head")?.textContent, $("stores").innerText.slice(0, 200)];
+  if (!/^\d+ stores?/.test(r.stores[0] ?? "") || !$("stores").innerText.includes("file->f_pos: 0 → ") || !document.querySelector("#stores li.on")) throw new Error("the read's stores: " + JSON.stringify(r.stores));
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)

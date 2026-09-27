@@ -80,7 +80,7 @@ Rust does the work: JS only lays it out.
 | callstack.js | the Stack: calls with arguments and locals, the task (current); the right column's tabs |
 | tree.js | values as trees (the Stack's): pointers open into what they point to, structs into their fields; who last wrote a value; a value's writes, a row under it |
 | records.js | the Trace tab: the raw trace, a line a record (what the views are built from) |
-| changes.js | the Changes: what the selected call changed, by object, each write a link; the write at the cursor marked |
+| stores.js | the Stores: every store the selected call made, a row each in order, each a link; the store at the cursor marked |
 | trace.js | the Calls: the calls the selected call made, in order, inlined code among them (a chain of single inlined calls on one row); ▸ opens a call's own calls |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
@@ -101,11 +101,11 @@ it returned from), `call_stack(i, nth)`,
 `memory_at(i)` then `object` /
 `global` (memory as it was), `last_write`, `writes` (an object's history:
 every store to it in its lifetime, a local's frame or the whole
-recording: the member written, from what to what), `changes` (what a
-span of records changed, by object: the structs the calls' arguments
-point to, the task, locals and frames, the kernel's globals by address,
-the machine's own variables apart, each object said as its fields name
-it: "fd 3 note.txt"), `raw` (records as text), `run_of` (a line's next or
+recording: the member written, from what to what), `stores` (a span
+of records' stores, in order, each named as the code names what it hit:
+the structs the calls' arguments point to, the task, locals and frames,
+the kernel's globals by address, the machine's own variables apart:
+"vfs_read's file"; else by its address), `raw` (records as text), `run_of` (a line's next or
 last run), `definition`.
 
 ## Tests

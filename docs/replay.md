@@ -98,15 +98,11 @@ gives a local's frame, from its call to its return: the slot is another
 call's before and after; heap objects' lifetimes are not known yet, so
 theirs is the whole recording), each as the member it wrote (the one its
 first byte is in: `Types::leaf`), printed as its type before and after
-(memory as it was); and what a span of records changed (`changes`): its
-stores grouped by the object they hit, the objects being what the code
-there held (a call's pointer argument to a struct, a local, the task
-running: the objects the code named; what it did not, the heap reached
-through locals and bulk copies, is counted as "other"). An object is said
-as the kernel's own fields name it (`describe`): a task by comm and pid,
-a file by the fd pointing at it in the task's table and its dentry's
-name, an inode by number and filesystem, a dentry, a path, a kiocb by
-the file's, a super_block by its type and id.
+(memory as it was); and the stores of a span of records (`stores`), in
+order, each named as the code names what it hit (a call's pointer
+argument to a struct, a local, the task running, a global: "vfs_read's
+file->f_pos"; what the code did not name, the heap reached through
+locals and bulk copies, by its address).
 
 What it cannot show: values only in wasm locals (registers, in effect),
 and old contents of bulk writes beyond 256 bytes (their record says

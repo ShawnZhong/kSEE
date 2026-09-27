@@ -53,7 +53,7 @@ SMP, no fork (threads and vfork, though): see Limits).
 │  (linked)    │ Source at the cursor          │ Stack (args, │
 │  program     │ (the lines that ran)          │ locals, task)│
 │  (its calls) │                               │ Calls        │
-│ Console      │                               │ Changes      │
+│ Console      │                               │ Stores       │
 │              │                               │ Trace        │
 └──────────────┴───────────────────────────────┴──────────────┘
 ```

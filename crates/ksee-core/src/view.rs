@@ -121,26 +121,21 @@ pub struct Change {
     pub at: Option<Line>,
 }
 
-/// An object written in a span of records: `what` it is ("struct file
-/// 0x1234", "ksys_read's iocb", "current task_struct"), of type `ty` (id
-/// `id`) at `addr`; `n` writes to it, the newest `writes` of them; `call`:
-/// the call (its first record) it lives as long as, for a local or a frame.
+/// A store in a span of records, as the code names what it hit: `what`
+/// ("vfs_read's file", "f's x", "nr_inodes", "current"; the address when
+/// nothing names it), its `kind` ("task", "object": a struct a call's
+/// argument points to, "global", "machine": one of the machine's
+/// variables (arch::MACHINE), "regs": the syscall entry's registers,
+/// "frame": the stack a call used, "local", or "other": memory nothing
+/// names), the object's type `ty` ("" for none), and the `write` itself
+/// (the member, from what to what, where).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Changed {
+pub struct Stored {
     pub what: String,
-    /// "task" (the one running), "object" (a struct a call's argument
-    /// points to), "global" (a variable of the kernel's), "machine" (one of
-    /// the machine's, arch::MACHINE), "regs" (the syscall entry's
-    /// registers), "frame" (the stack a call used), "local", or "other"
-    /// (memory nothing names).
     pub kind: &'static str,
     pub ty: String,
-    pub id: u32,
-    pub addr: u32,
-    pub n: usize,
-    pub writes: Vec<Change>,
-    pub call: Option<usize>,
+    pub write: Change,
 }
 
 /// The newest write to a value: at record `i`, on `task`, by the code at
@@ -529,47 +524,6 @@ impl View<'_> {
         all[all.len().saturating_sub(limit)..].iter().map(|&i| self.change(addr, ty, i)).collect()
     }
 
-    /// What the object of type `ty` at `addr` is, said as the kernel would,
-    /// from its own fields in `mem`: a task "init(1)", a file "fd 3
-    /// /note.txt" (its fd in `task`'s table), an inode "inode 12 (ext4)", a
-    /// dentry, a path or a kiocb by their name, a super_block by its type
-    /// and id. None for other types.
-    pub fn describe(&self, mem: &dyn Memory, ty: u32, addr: u32, task: u32) -> Option<String> {
-        let types = &self.tables.types;
-        let ty = types.resolve(ty);
-        let name = types.name(ty);
-        let kind = name.strip_prefix("struct ")?;
-        // (Field `f` of the `s` at `p`: its address; `ptr`: the pointer there.)
-        let at = |p: u32, s: &str, f: &str| Some(p.checked_add(types.field(s, f)?.0)?);
-        let ptr = |p: u32, s: &str, f: &str| Some(mem.read_u32(at(p, s, f)?)).filter(|&q| q != 0);
-        let dentry = |d: u32| c_string(mem, ptr(at(d, "dentry", "d_name")?, "qstr", "name")?).map(|s| s.trim_matches('"').to_string());
-        let fs_name = |sb: u32| c_string(mem, ptr(ptr(sb, "super_block", "s_type")?, "file_system_type", "name")?);
-        match kind {
-            "task_struct" => {
-                let t = read_task(self.tables, mem, addr)?;
-                Some(format!("{}({})", t.comm, t.pid))
-            }
-            "dentry" => Some(format!("dentry {}", dentry(addr)?)),
-            "path" => Some(format!("path {}", dentry(ptr(addr, "path", "dentry")?)?)),
-            "inode" => Some(format!("inode {}{}", mem.read_u32(at(addr, "inode", "i_ino")?),
-                                    ptr(addr, "inode", "i_sb").and_then(fs_name).map_or(String::new(), |n| format!(" ({})", n.trim_matches('"'))))),
-            "super_block" => Some(format!("super_block {} {}", fs_name(addr)?.trim_matches('"'), c_string(mem, at(addr, "super_block", "s_id")?)?)),
-            "file" | "kiocb" => {
-                let file = if kind == "kiocb" { ptr(addr, "kiocb", "ki_filp")? } else { addr };
-                let name = dentry(ptr(at(file, "file", "f_path")?, "path", "dentry")?)?;
-                // (Its fd: the one in the task's table pointing at it.)
-                let fd = (|| {
-                    let fdt = ptr(ptr(task, "task_struct", "files")?, "files_struct", "fdt")?;
-                    let (fds, max) = (ptr(fdt, "fdtable", "fd")?, mem.read_u32(at(fdt, "fdtable", "max_fds")?).min(256));
-                    (0..max).find(|k| mem.read_u32(fds + 4 * k) == file)
-                })();
-                let what = match fd { Some(k) => format!("fd {k} {name}"), None => format!("file {name}") };
-                Some(if kind == "kiocb" { format!("kiocb on {what}") } else { what })
-            }
-            _ => None,
-        }
-    }
-
     /// Store `i` as a change to the object of type `ty` at `addr`.
     fn change(&self, addr: u32, ty: u32, i: usize) -> Change {
         let types = &self.tables.types;
@@ -582,7 +536,8 @@ impl View<'_> {
             let mut new = [0u8; 8];
             self.rec.memory_at(self.now, i).read(a, &mut new[..size.min(8) as usize]);
             let new = new.iter().rev().fold(0u64, |v, &x| v << 8 | x as u64);
-            return Change { i, member: format!("+{}", a.wrapping_sub(addr)), before: num(old), after: num(new), task, at };
+            let member = if a == addr { String::new() } else { format!("+{}", a.wrapping_sub(addr)) };
+            return Change { i, member, before: num(old), after: num(new), task, at };
         }
         let (member, leaf, off, bits) = types.leaf(ty, a.max(addr) - addr);
         let (b0, bn) = bits.unwrap_or((0, 0));
@@ -594,31 +549,26 @@ impl View<'_> {
         Change { i, member, before: value(i.saturating_sub(1)), after: value(i), task, at }
     }
 
-    /// What records `first..=last` (a call's) changed: the objects written,
-    /// in the order of their first write, each with its writes (the newest
-    /// `limit`). An object is known by what the code there held: a call's
-    /// pointer argument to a struct, a local, the task running, a callee's
-    /// frame (from its frame base up to its caller's: the stack it used
-    /// beyond its named locals; no type), or a global of the kernel's (the
-    /// rest of the stores, to memory nothing names, are counted in the last
-    /// entry, "other").
-    pub fn changes(&self, first: usize, last: usize, limit: usize) -> Vec<Changed> {
+    /// The stores in records `first..=last` (a call's), in order, each as
+    /// the code names what it hit (see Stored): a call's pointer argument
+    /// to a struct, a local, the task running, a callee's frame (from its
+    /// frame base up to its caller's: the stack it used beyond its named
+    /// locals; no type), a global of the kernel's; else by its address.
+    pub fn stores(&self, first: usize, last: usize) -> Vec<Stored> {
         let (t, types) = (self.tables, &self.tables.types);
-        // (The objects: what, type, address, size. The task first. Each
-        // said as what it is, as memory at the span's end says: see describe.)
+        // (The objects: what (as the code names it: "vfs_read's file"),
+        // type, address, size. The task first.)
         let task = self.rec.tasks.get(first).copied().unwrap_or(0);
-        let end = self.rec.memory_at(self.now, last.min(records_len(self.rec)));
         let mut regions: Vec<(String, &'static str, u32, u32, u32, Option<usize>)> = Vec::new();
         let mut seen = alloc::collections::BTreeSet::new();
         let mut add = |what: String, kind: &'static str, ty: u32, addr: u32, size: Option<u32>, call: Option<usize>| {
             let ty = types.resolve(ty);
             if addr != 0 && seen.insert((addr, ty)) {
-                let what = self.describe(&end, ty, addr, task).unwrap_or(what);
                 regions.push((what, kind, ty, addr, size.unwrap_or_else(|| types.size_of(ty)), call));
             }
         };
         if let Some(ty) = types.find("task_struct") {
-            add("current task_struct".into(), "task", ty, task, None, None);
+            add("current".into(), "task", ty, task, None, None);
         }
         let records = &self.rec.records;
         // (The calls open on each task: (function, frame base).)
@@ -642,7 +592,7 @@ impl View<'_> {
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
                             let kind = if types.name(types.resolve(to)) == "struct pt_regs" { "regs" } else { "object" };
-                            add(format!("{} {v:#x} ({}'s {pname})", types.name(types.resolve(to)), f.name), kind, to, v, None, None);
+                            add(format!("{}'s {pname}", f.name), kind, to, v, None, None);
                         }
                     }
                     for (var, ty, off) in types.locals.get(&f.name).into_iter().flatten() {
@@ -661,30 +611,18 @@ impl View<'_> {
             globals[..k].iter().rev().take(8).find(|g| addr < g.0.saturating_add(g.1)).copied()
         };
         // (Each store to the smallest object holding its first byte.)
-        let mut hits: Vec<Vec<usize>> = alloc::vec![Vec::new(); regions.len()];
-        let mut other = 0;
+        let mut out = Vec::new();
         for &i in self.rec.stores_between(first, last) {
             let Record::Store { addr, .. } = records[i] else { continue };
-            match regions.iter().enumerate().filter(|(_, r)| r.3 <= addr && addr < r.3.saturating_add(r.4))
-                    .min_by_key(|(_, r)| r.4) {
-                Some((k, _)) => hits[k].push(i),
-                None => match global_at(addr) {
-                    Some((gaddr, size, name, ty)) => {
-                        let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
-                        regions.push((name.into(), if machine { "machine" } else { "global" }, types.resolve(ty), gaddr, size, None));
-                        hits.push(alloc::vec![i]);
-                    }
-                    None => other += 1,
-                },
-            }
-        }
-        let mut out: Vec<Changed> = regions.iter().zip(hits).filter(|(_, h)| !h.is_empty()).map(|((what, kind, ty, addr, _, call), h)| Changed {
-            what: what.clone(), kind, ty: types.name(*ty), id: *ty, addr: *addr, n: h.len(),
-            writes: h[h.len().saturating_sub(limit)..].iter().map(|&i| self.change(*addr, *ty, i)).collect(), call: *call,
-        }).collect();
-        out.sort_by_key(|c| c.writes[0].i);
-        if other > 0 {
-            out.push(Changed { what: "other".into(), kind: "other", ty: String::new(), id: 0, addr: 0, n: other, writes: Vec::new(), call: None });
+            let hit = regions.iter().filter(|r| r.3 <= addr && addr < r.3.saturating_add(r.4)).min_by_key(|r| r.4).cloned()
+                .or_else(|| global_at(addr).map(|(gaddr, size, name, ty)| {
+                    let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
+                    (name.into(), if machine { "machine" } else { "global" }, types.resolve(ty), gaddr, size, None)
+                }));
+            out.push(match hit {
+                Some((what, kind, ty, base, _, _)) => Stored { what, kind, ty: types.name(ty), write: self.change(base, ty, i) },
+                None => Stored { what: format!("{addr:#x}"), kind: "other", ty: String::new(), write: self.change(addr, 0, i) },
+            });
         }
         out
     }
@@ -878,27 +816,7 @@ mod tests {
     }
 
     #[test]
-    fn objects_are_said_as_what_they_are() {
-        // struct task { int pid; char comm[8] } at 32: init(1). struct qstr { char *name } at 16, its
-        // name at 24 ("a.txt"); struct dentry { struct qstr d_name } at 16.
-        let t = Tables::parse("", "T\t1\tbase\tint\t4\ts\nT\t2\tbase\tchar\t1\tc\nT\t3\tarray\t\t8\t2\t8\n\
-                               T\t4\tstruct\ttask_struct\t12\nM\t4\tpid\t0\t0\t1\nM\t4\tcomm\t32\t0\t3\n\
-                               T\t5\tptr\t\t4\t2\nT\t6\tstruct\tqstr\t4\nM\t6\tname\t0\t0\t5\n\
-                               T\t7\tstruct\tdentry\t4\nM\t7\td_name\t0\t0\t6\n");
-        let mut m = alloc::vec![0u8; 128];
-        m[32] = 1;
-        m[36..40].copy_from_slice(b"init");
-        m[16..20].copy_from_slice(&24u32.to_le_bytes());
-        m[24..29].copy_from_slice(b"a.txt");
-        let rec = Recording::new(&t, Vec::new(), Vec::new());
-        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        assert_eq!(v.describe(v.now, 4, 32, 0).as_deref(), Some("init(1)"));
-        assert_eq!(v.describe(v.now, 7, 16, 0).as_deref(), Some("dentry a.txt"));
-        assert_eq!(v.describe(v.now, 1, 0, 0), None);
-    }
-
-    #[test]
-    fn a_call_changes_objects() {
+    fn a_calls_stores_are_named_as_the_code_names_them() {
         // f (1, "f") takes struct s *p (at 4) and has a local int x (at
         // frame 32 + 4): it stores p->b, then x; calls g (2), whose frame is
         // at 16, which stores a byte of its own frame; and one byte nobody
@@ -913,12 +831,11 @@ mod tests {
                  Record::Store { addr: 100, size: 1, old: 0, line: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 9]);
         let mut m = alloc::vec![0u8; 128];
-        (m[8], m[36], m[20]) = (2, 7, 9);
+        (m[8], m[36], m[20], m[100]) = (2, 7, 9, 5);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let got: Vec<_> = v.changes(0, 8, 8).into_iter().map(|c| (c.what, c.n, c.writes.first().map(|w| (w.member.clone(), w.after.clone())))).collect();
-        assert_eq!(got, [("struct s 0x4 (f's p)".into(), 1, Some(("b".into(), "2".into()))),
-                         ("f's x".into(), 1, Some(("".into(), "7".into()))),
-                         ("g's frame".into(), 1, Some(("+4".into(), "9".into()))), ("other".into(), 1, None)]);
+        let got: Vec<_> = v.stores(0, 8).into_iter().map(|s| (s.what, s.kind, s.write.member, s.write.after)).collect();
+        assert_eq!(got, [("f's p".into(), "object", "b".into(), "2".into()), ("f's x".into(), "local", "".into(), "7".into()),
+                         ("g's frame".into(), "frame", "+4".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into())]);
     }
 
     #[test]

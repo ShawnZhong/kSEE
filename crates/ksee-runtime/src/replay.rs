@@ -210,10 +210,10 @@ impl Machine {
         self.view(|v| to_js(&v.raw(from, to)))
     }
 
-    /// What records `first..=last` changed: the objects written, each with
-    /// its writes (view::Changed).
-    pub fn changes(&self, first: usize, last: usize) -> JsValue {
-        self.view(|v| to_js(&v.changes(first, last, 32)))
+    /// The stores in records `first..=last` (a call's), in order, each as
+    /// the code names what it hit (view::Stored).
+    pub fn stores(&self, first: usize, last: usize) -> JsValue {
+        self.view(|v| to_js(&v.stores(first, last)))
     }
 
     /// An object's history: the newest writes to the value of type `ty`

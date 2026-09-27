@@ -11,7 +11,7 @@ import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
 import { trace } from "./trace.js";
 import { records } from "./records.js";
-import { changes } from "./changes.js";
+import { stores } from "./stores.js";
 
 
 export function app(m) {
@@ -113,7 +113,7 @@ export function app(m) {
     chosen = null;
     view(at);
     a.trace?.mark();
-    a.changes?.mark();
+    a.stores?.mark();
     a.records?.mark();
     badge();
   };
@@ -134,8 +134,8 @@ export function app(m) {
   };
   a.trace = trace(a);
   a.records = records(a);
-  a.changes = changes(a);
-  a.outlined = () => (a.trace.draw(), a.changes.draw(), a.records.draw());
+  a.stores = stores(a);
+  a.outlined = () => (a.trace.draw(), a.stores.draw(), a.records.draw());
   // (The Records follow the cursor, drawn when the tab is looked at.)
   document.querySelector('h2.tabs a[data-tab="records"]').addEventListener("click", () => a.records.draw());
   examples(a);
@@ -190,7 +190,7 @@ export function app(m) {
     chosen = null;
     time.mark(step.at);
     a.trace?.mark();
-    a.changes?.mark();
+    a.stores?.mark();
     a.records?.mark();
     memoryAt(step.at);
     const at = m.at(step.i);

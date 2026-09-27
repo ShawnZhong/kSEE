@@ -75,11 +75,11 @@ for who last wrote it; click it for its writes, a row under it: the
 member, from what to what, in which function, each a link to that moment,
 the one in effect at the cursor marked (a local's while its frame lives,
 another object's within the selected call; "all" for the whole recording);
-click the value again to close. The Changes tab lists what the selected
-call changed, by object (`fd 3 note.txt: f_pos 0 → 26`, `inode 12
-(ext4): i_size`, the kernel's globals, its own locals and frames said
-so), in the order they were first written, each write a link, the one
-in effect at the cursor marked and the later ones dim. The
+click the value again to close. The Stores tab lists every store the
+selected call made, a row each, in order (`vfs_read's file->f_pos: 0 →
+26`, `nr_inodes: 11 → 12`, its own locals and frames said so, memory
+nothing names by its address), each a link, the one in effect at the
+cursor marked and the later ones dim. The
 Calls tab shows the calls the selected call made, in the order they were
 made, inlined code among them (in italics, as the timeline and the Stack
 show it); ▸ opens a call's own calls; each is a link, and the call the
