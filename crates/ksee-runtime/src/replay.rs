@@ -39,6 +39,22 @@ impl Machine {
         self.rec.borrow().len()
     }
 
+    /// How many steps the snapshot holds: its blocks, the timeline's unit
+    /// of time (a store takes none).
+    pub fn steps(&self) -> usize {
+        self.rec.borrow().steps()
+    }
+
+    /// Record `i`'s step (see Recording::step_of).
+    pub fn step_of(&self, i: usize) -> usize {
+        self.rec.borrow().step_of(i)
+    }
+
+    /// The record step `k` begins at (see Recording::record_of).
+    pub fn record_of(&self, k: usize) -> usize {
+        self.rec.borrow().record_of(k)
+    }
+
     /// Record `i`'s id: it names the record in later snapshots too, where
     /// its index has moved on.
     pub fn record_id(&self, i: usize) -> Option<u32> {
@@ -134,8 +150,9 @@ impl Machine {
         self.view(|v| to_js(&v.lines(first, last, task)))
     }
 
-    /// A stack chart of records `first..=last` in `n` columns (see
-    /// ksee_core::stack::chart), flattened: per column, the task, the
+    /// A stack chart of records `first..=last` in `n` columns of equal
+    /// steps (see ksee_core::stack::chart, Recording::columns), flattened:
+    /// per column, the task, the
     /// depth, then per call, outermost first, (function, first record,
     /// inlined): inlined 0 for a call; for code inlined into the call
     /// before, 1 + the inlined function (see inline_name), and the
@@ -143,8 +160,12 @@ impl Machine {
     pub fn chart(&self, first: usize, last: usize, n: usize) -> Vec<u32> {
         let rec = self.rec.borrow();
         let mut out = Vec::new();
+        if rec.is_empty() || n == 0 || first > last {
+            return out;
+        }
+        let columns = rec.columns(first, last.min(rec.len() - 1), n);
         self.view(|v| {
-            for (task, calls) in ksee_core::stack::chart(v.tables, &rec.records, &rec.tasks, first, last, n) {
+            for (task, calls) in ksee_core::stack::chart(v.tables, &rec.records, &rec.tasks, &columns) {
                 // (Each call, then the code inlined into it: outermost first.)
                 let rows: Vec<[u32; 3]> = calls.iter().flat_map(|c| {
                     v.nest(c).into_iter().rev().map(|(k, _)| [c.func, c.first as u32, k.map_or(0, |k| k + 1)])

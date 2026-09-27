@@ -33,7 +33,9 @@ A frame's arguments and its frame base are the Args record after its
 block 0; its locals are at their offsets from the base (`Types::locals`).
 One walk (`Walk`)
 serves the Stack at a record (`stack_at`), the stack chart (`chart`: every
-task's stack at the columns' first records) and line steps (`lines`): each
+task's stack at the columns' first records; the columns are equal in
+steps, the recording's unit of time: a block run, so a store takes none
+and a memset is not longer than a line) and line steps (`lines`): each
 call with the line it is at.
 
 ## Lines within blocks

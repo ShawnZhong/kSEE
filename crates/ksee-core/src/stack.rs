@@ -110,24 +110,20 @@ pub struct ChartCall {
     pub step: Option<Step>,
 }
 
-/// A stack chart of records `from..=to` in `n` columns: for each column,
-/// the task running at its first record and that task's call stack then,
-/// outermost first.
-pub fn chart(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, n: usize) -> Vec<(u32, Vec<ChartCall>)> {
-    let mut out = Vec::with_capacity(n);
-    if records.is_empty() || n == 0 || from > to {
-        return out;
-    }
-    let to = to.min(records.len() - 1);
-    let span = to - from + 1;
+/// A stack chart: for each column (its first record, in `columns`, in
+/// order: see Recording::columns), the task running there and that task's
+/// call stack then, outermost first.
+pub fn chart(t: &Tables, records: &[Record], tasks: &[u32], columns: &[usize]) -> Vec<(u32, Vec<ChartCall>)> {
+    let mut out = Vec::with_capacity(columns.len());
+    let Some(&to) = columns.last() else { return out };
     let mut walks: BTreeMap<u32, Walk> = BTreeMap::new();
     let mut col = 0;
-    for (i, r) in records.iter().enumerate().take(to + 1) {
+    for (i, r) in records.iter().enumerate().take(to.min(records.len().saturating_sub(1)) + 1) {
         let task = tasks[i];
         let w = walks.entry(task).or_default();
         w.apply(t, r, i);
         // (A column's first record, or several columns' when zoomed in.)
-        while col < n && i >= from + col * span / n {
+        while col < columns.len() && i >= columns[col] {
             out.push((task, w.calls()));
             col += 1;
         }

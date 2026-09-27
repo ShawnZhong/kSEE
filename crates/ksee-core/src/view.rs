@@ -685,9 +685,9 @@ impl View<'_> {
 
     /// The task running at the start of each of `n` buckets of the recording.
     pub fn timeline(&self, n: usize) -> Vec<TaskRef> {
-        let total = self.rec.len().max(1);
+        let steps = self.rec.steps().max(1);
         (0..n).filter_map(|b| {
-            let i = b * total / n;
+            let i = self.rec.record_of(b * steps / n);
             Some(self.task(*self.rec.tasks.get(i)?))
         }).collect()
     }

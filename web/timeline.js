@@ -59,8 +59,13 @@ export function timeline(app) {
     return ctx;
   }
   const W = () => chart.clientWidth;
-  const x = (i) => ((i - t.win.a) / (t.win.b - t.win.a + 1)) * W();
-  const at = (px) => Math.max(0, Math.min(t.n - 1, Math.round(t.win.a + (px / W()) * (t.win.b - t.win.a + 1))));
+  // (The axis is steps, blocks run (Machine.steps; step_of, record_of
+  // convert): a store takes no room, so a memset is no longer than a line,
+  // and the stores between calls are not there. The window is kept in
+  // both: records a, b (a selection is records), steps sa, sb.)
+  const span = () => t.win.sb - t.win.sa + 1;
+  const x = (i) => ((m.step_of(i) - t.win.sa) / span()) * W();
+  const at = (px) => Math.max(t.win.a, Math.min(t.win.b, m.record_of(Math.round(t.win.sa + (px / W()) * span()))));
 
   // ---- Drawing ----
   function drawOverview() {
@@ -74,7 +79,7 @@ export function timeline(app) {
       ctx.fillStyle = b.pid == null ? css("--line") : `hsl(${hue(b.pid)} 50% ${b.pid === 0 ? 85 : 62}%)`;
       ctx.fillRect(k, 3, 1, OVER - 6);
     });
-    const ox = (i) => (i / Math.max(1, t.n - 1)) * w;
+    const ox = (i) => (m.step_of(i) / Math.max(1, m.steps() - 1)) * w;
     // (Each syscall's start: a mark, to find the program's calls; the calls
     // of the function found: marks on top.)
     ctx.fillStyle = css("--accent");
@@ -169,7 +174,7 @@ export function timeline(app) {
   }
   function load() {
     if (!t.win) return (t.cols = []);
-    const cols = Math.max(1, Math.min(W(), t.win.b - t.win.a + 1));
+    const cols = Math.max(1, Math.min(W(), span()));
     const flat = m.chart(t.win.a, t.win.b, cols), out = [];
     for (let k = 0; k < flat.length;) {
       const task = flat[k], depth = flat[k + 1], frames = [];
@@ -184,28 +189,32 @@ export function timeline(app) {
     drawChart();
   }
 
-  // ---- The window ----
-  function setWindow(a, b) {
-    const span = Math.max(20, Math.round(b - a));
-    a = Math.round(Math.max(0, Math.min(a, t.n - 1 - span)));
-    t.win = { a, b: Math.min(t.n - 1, a + span) };
+  // ---- The window ---- (set in steps)
+  function setWindow(sa, sb) {
+    const n = Math.max(20, Math.round(sb - sa)), last = Math.max(0, m.steps() - 1);
+    sa = Math.round(Math.max(0, Math.min(sa, last - n)));
+    sb = Math.min(last, sa + n);
+    t.win = { sa, sb, a: m.record_of(sa), b: m.record_of(sb) };
     load();
     draw();
   }
-  // (A selection with a little room either side, to see where it starts and ends.)
+  // (A selection (records) with a little room either side, in steps, to
+  // see where it starts and ends.)
   const pad = (w) => {
-    const p = Math.max(4, Math.round((w.b - w.a) * 0.02));
-    return [w.a - p, w.b + p];
+    const [sa, sb] = [m.step_of(w.a), m.step_of(w.b)];
+    const p = Math.max(4, Math.round((sb - sa) * 0.02));
+    return [sa - p, sb + p];
   };
 
   // ---- Input ----
   const pan = (px) => {
-    const d = (px / W()) * (t.win.b - t.win.a);
-    setWindow(t.win.a + d, t.win.b + d);
+    const d = (px / W()) * (t.win.sb - t.win.sa);
+    setWindow(t.win.sa + d, t.win.sb + d);
   };
-  const zoom = (at_, amount) => {
+  // (Zoom about step `s`.)
+  const zoom = (s, amount) => {
     const k = Math.exp(Math.max(-0.5, Math.min(0.5, amount)));
-    setWindow(at_ - (at_ - t.win.a) * k, at_ + (t.win.b - at_) * k);
+    setWindow(s - (s - t.win.sa) * k, s + (t.win.sb - s) * k);
   };
   // Scrolling up and down (or a pinch): zoom; sideways, or with Shift: pan.
   chart.onwheel = (e) => {
@@ -213,7 +222,7 @@ export function timeline(app) {
     e.preventDefault();
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return pan(e.deltaX);
     if (e.shiftKey) return pan(e.deltaY);
-    zoom(at(e.offsetX), e.deltaY * (e.ctrlKey ? 0.01 : 0.002));
+    zoom(m.step_of(at(e.offsetX)), e.deltaY * (e.ctrlKey ? 0.01 : 0.002));
   };
   // The task strip: who ran; click to put the cursor there.
   strip.onpointermove = (e) => {
@@ -225,7 +234,7 @@ export function timeline(app) {
   chart.tabIndex = 0;
   chart.onkeydown = (e) => {
     if (!t.win) return;
-    const mid = t.cursor != null && t.cursor >= t.win.a && t.cursor <= t.win.b ? t.cursor : (t.win.a + t.win.b) / 2;
+    const mid = t.cursor != null && t.cursor >= t.win.a && t.cursor <= t.win.b ? m.step_of(t.cursor) : (t.win.sa + t.win.sb) / 2;
     const act = { w: () => zoom(mid, -0.25), s: () => zoom(mid, 0.25), a: () => pan(-W() / 8), d: () => pan(W() / 8) }[e.key.toLowerCase()];
     if (!act) return;
     e.preventDefault();
@@ -290,7 +299,7 @@ export function timeline(app) {
   let drag = null;
   chart.onpointerdown = (e) => {
     tip.hidden = true;
-    if (t.win) drag = { x: e.clientX, y: e.clientY, top: $("chartbox").scrollTop, a: t.win.a, b: t.win.b, moved: false };
+    if (t.win) drag = { x: e.clientX, y: e.clientY, top: $("chartbox").scrollTop, a: t.win.sa, b: t.win.sb, moved: false };
   };
   // Drag: pan, in time (sideways) and through the stacks (up and down).
   chart.onpointermove = (e) => {
@@ -337,8 +346,8 @@ export function timeline(app) {
   let overDrag = false;
   const overMove = (e) => {
     if (!t.win) return;
-    const i = Math.round((e.offsetX / over.clientWidth) * (t.n - 1)), span = t.win.b - t.win.a;
-    setWindow(i - span / 2, i + span / 2);
+    const s = Math.round((e.offsetX / over.clientWidth) * (m.steps() - 1)), n = t.win.sb - t.win.sa;
+    setWindow(s - n / 2, s + n / 2);
   };
   over.onpointerdown = (e) => {
     overDrag = true;
@@ -366,7 +375,7 @@ export function timeline(app) {
     if (t.cursor != null && t.cursor >= t.n) t.cursor = null;
     if (!t.n) t.win = null;
     else if (t.home) setWindow(...pad(t.home));
-    else setWindow(0, t.n - 1);
+    else setWindow(0, m.steps() - 1);
     draw();
   }
   // Select records `where()` gives ({ a, b, task }: asked again after each
@@ -431,9 +440,9 @@ export function timeline(app) {
     const was = t.cursor;
     t.cursor = Math.max(0, Math.min(t.n - 1, i));
     if (t.win && (t.cursor < t.win.a || t.cursor > t.win.b)) {
-      const span = t.win.b - t.win.a, forward = was == null || t.cursor > was;
-      const a = forward ? t.cursor - span / 3 : t.cursor - (2 * span) / 3;
-      setWindow(a, a + span);
+      const n = t.win.sb - t.win.sa, forward = was == null || t.cursor > was, s = m.step_of(t.cursor);
+      const a = forward ? s - n / 3 : s - (2 * n) / 3;
+      setWindow(a, a + n);
     } else draw();
   }
   // The legend.

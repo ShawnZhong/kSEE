@@ -1,4 +1,4 @@
-// The Records: the whole raw trace, a line a record, as the recording has
+// The Trace tab: the whole raw trace, a line a record, as the recording has
 // them (a call with its arguments, a block, a store, a return, a task
 // switch): what every other view is built from, for checking them and
 // for seeing what the compiler recorded. A virtual list: the rows in view
@@ -27,7 +27,7 @@ export function records(app) {
       n = k;
       list.style.height = `${n * ROW}px`;
       built = [-1, -1];
-      $("records-note").textContent = n ? `${n} records` : "The raw trace: no recording yet.";
+      $("records-note").textContent = n ? `the trace: ${n} records` : "The raw trace: no recording yet.";
     }
     if ($("right").dataset.tab !== "records") return;
     fill();
