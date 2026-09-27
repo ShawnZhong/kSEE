@@ -62,17 +62,19 @@ export function callstack(app) {
     $("stack").replaceChildren(el("div", { className: "spacer" }), el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
     focus();
   }
-  // A selected call other than the innermost sits a third of the way down
-  // the pane, whatever is above it (the calls it made come and go as the
-  // pointer moves along its bar in the timeline: they grow into the room
-  // above, or scroll out of view; the selected row does not move).
+  // Above a selected call, room for the calls that can still appear there
+  // (the deepest stack over its bar in the timeline, less those shown),
+  // each about a frame's height now: as the pointer moves along the bar
+  // and its callees come and go, the selected row stays put. A row that
+  // would be low in the pane is scrolled to a third of the way down.
   function focus() {
     const pane = $("stack"), on = pane.querySelector("tr.frame.on"), table = pane.querySelector("table"), spacer = pane.querySelector(".spacer");
-    const k = on ? [...pane.querySelectorAll("tr.frame")].indexOf(on) : 0;
-    if (!on || k === 0) return (spacer.style.height = "0px");
-    const pin = pane.clientHeight / 3, above = on.getBoundingClientRect().top - table.getBoundingClientRect().top;
-    spacer.style.height = `${Math.max(0, pin - above)}px`;
-    pane.scrollTop = Math.max(0, above - pin);
+    const rows = [...pane.querySelectorAll("tr.frame")], k = on ? rows.indexOf(on) : 0;
+    if (!on || !s.sel) return (spacer.style.height = "0px");
+    const need = Math.max(0, app.time.deepest(s.sel.first) - k), each = table.offsetHeight / Math.max(1, rows.length);
+    spacer.style.height = `${Math.round(need * each)}px`;
+    const top = on.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+    if (top > pane.clientHeight * 0.66) pane.scrollTop = top - pane.clientHeight / 3;
   }
 
   // The stack at record `i` (null: the last; undefined: none), `step` the
