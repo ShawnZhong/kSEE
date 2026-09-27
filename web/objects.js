@@ -7,7 +7,8 @@
 // and, opened, its value at the cursor as a tree. Pin one (📌, or click a
 // value in the Stack, or an example's `watch`) to keep it as the selection
 // changes, with its writes over the whole recording (a local's: while its
-// call lives). The kernel's objects and real changes only; "all" shows the
+// call lives). The kernel's objects (and its globals: nr_inodes, jiffies)
+// and real changes only; "all" shows the machine's own variables, the
 // registers, frames, locals and unchanged writes too.
 import { $, el } from "./dom.js";
 import { tree, place } from "./tree.js";
@@ -23,9 +24,10 @@ export function objects(app) {
   const values = tree(app, st, draw, add);
   let shown = null, changed = [], all = false;
 
-  // Plumbing, not a change of the kernel's state: the entry's registers,
-  // the frames the calls used (their spills), locals (Changed.kind).
-  const plumbing = (c) => c.kind === "regs" || c.kind === "frame" || c.kind === "local";
+  // Plumbing, not a change of the kernel's state: the machine's own
+  // variables (the interrupt flag), the entry's registers, the frames the
+  // calls used (their spills), locals (Changed.kind).
+  const plumbing = (c) => ["machine", "regs", "frame", "local"].includes(c.kind);
   const key = (o) => `${o.addr}:${o.id}`;
   const real = (writes) => writes.filter((x) => x.before !== x.after);
 
@@ -61,7 +63,7 @@ export function objects(app) {
     const hidden = changed.filter((c) => c.addr).length - kept.length - pinned.filter((p) => changed.some((c) => key(c) === key(p.o))).length;
     const head = el("div", { className: "dim head" },
       `${kept.length + pinned.length} object${kept.length + pinned.length === 1 ? "" : "s"}${pinned.length ? `, ${pinned.length} pinned` : ""}`,
-      ...(hidden > 0 || all ? [" · ", el("a", { textContent: all ? "the kernel's objects" : `all (${hidden} more: registers, frames, locals, unchanged writes)`,
+      ...(hidden > 0 || all ? [" · ", el("a", { textContent: all ? "the kernel's objects" : `all (${hidden} more: the machine's variables, registers, frames, locals, unchanged writes)`,
         onclick: () => ((all = !all), render()) })] : []));
     const items = [
       ...pinned.map((p, k) => entry({ o: p.o, what: m.describe(p.o.id, p.o.addr) ?? p.o.name, life: p.life, pin: () => unpin(k), pinned: true,

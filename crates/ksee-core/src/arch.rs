@@ -9,6 +9,10 @@ pub const SYSCALL: &str = "wasm_syscall";
 /// ops), inlined all over the kernel: the machine, not calls. Their code
 /// counts as the line it is inlined at.
 pub const PRIMITIVES: [&str; 2] = ["arch/wasm/include/asm/", "include/asm-generic/"];
+/// The machine's own variables (arch/wasm: the interrupt flag, the task
+/// running, the timer), written by every lock and switch: the machine's
+/// state, not the kernel's.
+pub const MACHINE: &str = "arch/wasm/";
 /// Where a task starts (arch/wasm/kernel/process.c), with an empty stack.
 pub const TASK_ENTRY: &str = "wasm_task_entry";
 /// The context switch: switch(prev, next) returns on next's stack.

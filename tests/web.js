@@ -74,6 +74,11 @@ m.snapshot();
 const wi = m.syscalls().findIndex((s) => s.first === w.first);
 const [vfs] = m.functions("vfs_write");
 check("vfs_write: where it is", vfs?.file === "fs/read_write.c" && vfs.last > vfs.line);
+{
+  const mk = m.syscalls().find((s) => s.name === "mkdirat"), cs = mk ? m.changes(mk.first, mk.last) : [];
+  check(`what mkdirat changed names the kernel's globals: ${cs.filter((c) => c.kind === "global").map((c) => c.what).join(", ")}; the machine's apart`,
+        cs.some((c) => c.kind === "global" && c.what === "nr_inodes") && cs.some((c) => c.kind === "machine" && c.what === "wasm_irq_flags"));
+}
 check("fs/read_write.c coverage", m.file_coverage("fs/read_write.c", wi).some((l) => l.count > 0));
 const chart = m.chart(w.first, w.last, 200);
 check("a stack chart of write's records", chart.length > 600 && chart[0] === w.task.addr);

@@ -128,8 +128,10 @@ pub struct Change {
 pub struct Changed {
     pub what: String,
     /// "task" (the one running), "object" (a struct a call's argument
-    /// points to), "regs" (the syscall entry's registers), "frame" (the
-    /// stack a call used), "local", or "other" (memory nothing names).
+    /// points to), "global" (a variable of the kernel's), "machine" (one of
+    /// the machine's, arch::MACHINE), "regs" (the syscall entry's
+    /// registers), "frame" (the stack a call used), "local", or "other"
+    /// (memory nothing names).
     pub kind: &'static str,
     pub ty: String,
     pub id: u32,
@@ -602,8 +604,9 @@ impl View<'_> {
     /// `limit`). An object is known by what the code there held: a call's
     /// pointer argument to a struct, a local, the task running, a callee's
     /// frame (from its frame base up to its caller's: the stack it used
-    /// beyond its named locals; no type) (the rest of the stores, to memory
-    /// nothing names, are counted in the last entry, "other").
+    /// beyond its named locals; no type), or a global of the kernel's (the
+    /// rest of the stores, to memory nothing names, are counted in the last
+    /// entry, "other").
     pub fn changes(&self, first: usize, last: usize, limit: usize) -> Vec<Changed> {
         let (t, types) = (self.tables, &self.tables.types);
         // (The objects: what, type, address, size. The task first. Each
@@ -654,6 +657,14 @@ impl View<'_> {
                 _ => {}
             }
         }
+        // (The kernel's globals, by address, for the stores nothing else holds.)
+        let mut globals: Vec<(u32, u32, &str, u32)> = types.globals.iter()
+            .map(|(name, &(addr, ty))| (addr, types.size_of(ty), name.as_str(), ty)).filter(|g| g.1 > 0).collect();
+        globals.sort_unstable();
+        let global_at = |addr: u32| {
+            let k = globals.partition_point(|g| g.0 <= addr);
+            globals[..k].iter().rev().take(8).find(|g| addr < g.0.saturating_add(g.1)).copied()
+        };
         // (Each store to the smallest object holding its first byte.)
         let mut hits: Vec<Vec<usize>> = alloc::vec![Vec::new(); regions.len()];
         let mut other = 0;
@@ -662,7 +673,14 @@ impl View<'_> {
             match regions.iter().enumerate().filter(|(_, r)| r.3 <= addr && addr < r.3.saturating_add(r.4))
                     .min_by_key(|(_, r)| r.4) {
                 Some((k, _)) => hits[k].push(i),
-                None => other += 1,
+                None => match global_at(addr) {
+                    Some((gaddr, size, name, ty)) => {
+                        let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
+                        regions.push((name.into(), if machine { "machine" } else { "global" }, types.resolve(ty), gaddr, size, None));
+                        hits.push(alloc::vec![i]);
+                    }
+                    None => other += 1,
+                },
             }
         }
         let mut out: Vec<Changed> = regions.iter().zip(hits).filter(|(_, h)| !h.is_empty()).map(|((what, kind, ty, addr, _, call), h)| Changed {
