@@ -94,7 +94,6 @@ export function app(m) {
     const s = at.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
     stack.show(at.i, null, at.task);
     const f = frame && stack.select(frame.first, frame.inlined);
-    if (f) document.querySelector("#stack tr.frame.on")?.scrollIntoView({ block: "nearest" });
     const here = f ? { func: f.func, file: f.file, line: f.line, inlined: null, owner: (f.inlined ? stack.owner(f) : f)?.func } : at;
     src.view.cursor = here;
     if (here.file) src.showFunction(here.owner ?? here.func, s?.index, here.line, here.file);
@@ -245,7 +244,7 @@ export function app(m) {
     if (arrow) step(e.altKey ? "out" : e.shiftKey ? "over" : "line", arrow);
     else if (updown) {
       const f = stack.neighbour(updown);
-      if (f) (a.selectFrame(f), document.querySelector("#stack tr.frame.on")?.scrollIntoView({ block: "nearest" }));
+      if (f) a.selectFrame(f);
     }
     else if (e.key === "Home") steps().length && showStep(0);
     else if (e.key === "/") time.focusFind();

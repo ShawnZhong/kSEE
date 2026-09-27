@@ -61,7 +61,20 @@ export function callstack(app) {
           el("a", { textContent: full ? "▾ the key fields only" : `▸ all ${all.length} fields`, onclick: toggle("task/all") }))));
       }
     }
-    $("stack").replaceChildren(el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
+    $("stack").replaceChildren(el("div", { className: "spacer" }), el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
+    focus();
+  }
+  // A selected call other than the innermost sits a third of the way down
+  // the pane, whatever is above it (the calls it made come and go as the
+  // pointer moves along its bar in the timeline: they grow into the room
+  // above, or scroll out of view; the selected row does not move).
+  function focus() {
+    const pane = $("stack"), on = pane.querySelector("tr.frame.on"), table = pane.querySelector("table"), spacer = pane.querySelector(".spacer");
+    const k = on ? [...pane.querySelectorAll("tr.frame")].indexOf(on) : 0;
+    if (!on || k === 0) return (spacer.style.height = "0px");
+    const pin = pane.clientHeight / 3, above = on.getBoundingClientRect().top - table.getBoundingClientRect().top;
+    spacer.style.height = `${Math.max(0, pin - above)}px`;
+    pane.scrollTop = Math.max(0, above - pin);
   }
 
   // The stack at record `i` (null: the last; undefined: none), `step` the
