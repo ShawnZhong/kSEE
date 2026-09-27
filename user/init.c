@@ -7,34 +7,25 @@
 // is /init exec'd again. Plain C on nolibc (linux/tools/include/nolibc),
 // the kernel's small C library.
 #include <fcntl.h>
-#include <string.h>
 #include <linux/futex.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <unistd.h>
 #include <linux/loop.h>
 
-// Ready for calls (the host sets *rung when one is asked for); the call
-// asked for (the runtime fills it in; buffer arguments point into data),
-// and its result.
-__attribute__((import_module("ksee"), import_name("ready")))
-void ksee_ready(volatile int *rung);
-__attribute__((import_module("ksee"), import_name("call")))
-int ksee_call(void *req);
-__attribute__((import_module("ksee"), import_name("done")))
-void ksee_done(long long ret, void *req);
-
+// Ready for calls: the host puts a call in *req (its number and
+// arguments; buffer arguments point into data) and sets *rung; the runner
+// makes it, and puts the result in req->ret, done.
 struct request {
 	int nr;
 	int args[6];
-	int pad;
+	int done;
+	long long ret;
 	char data[4096];
 };
 
-static void say(const char *s)
-{
-	write(1, s, strlen(s));
-}
+__attribute__((import_module("ksee"), import_name("ready")))
+void ksee_ready(volatile int *rung, struct request *req);
 
 // (No background work after the mount: the image is initialized in full,
 // and ext4lazyinit need not prefetch its block bitmaps.)
@@ -47,28 +38,28 @@ static void disk(void)
 	loop = open("/dev/loop0", O_RDWR);
 	if (config.fd < 0 || loop < 0 || ioctl(loop, LOOP_CONFIGURE, &config) ||
 	    mount("/dev/loop0", "/mnt", "ext4", 0, "no_prefetch_block_bitmaps"))
-		say("init: no ext4 disk on /mnt\n");
+		write(1, "init: no ext4 disk on /mnt\n", 27);
 	// (The loop device holds the file; the page's fds start at 3.)
 	close(config.fd);
 	close(loop);
 }
 
-// Make the page's calls, one at a time, as each is rung: the host sets
-// `rung` and wakes the task; the wait sees the word changed, and returns.
+// Make the page's calls, one at a time, as each is rung: the host puts
+// the call in `req`, sets `rung` and wakes the task; the wait sees the
+// word changed, and returns.
 static void __attribute__((noreturn)) serve(void)
 {
 	struct request req;
 	volatile int rung = 0;
 
-	ksee_ready(&rung);
+	ksee_ready(&rung, &req);
 	for (;;) {
 		while (!rung)
 			__nolibc_syscall4(__NR_futex_time64, &rung, FUTEX_WAIT_PRIVATE, 0, NULL);
 		rung = 0;
-		if (ksee_call(&req) < 0)
-			continue;
-		ksee_done(__nolibc_syscall6(req.nr, req.args[0], req.args[1], req.args[2],
-					    req.args[3], req.args[4], req.args[5]), &req);
+		req.ret = __nolibc_syscall6(req.nr, req.args[0], req.args[1], req.args[2],
+					    req.args[3], req.args[4], req.args[5]);
+		req.done = 1;
 	}
 }
 

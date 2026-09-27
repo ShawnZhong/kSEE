@@ -145,7 +145,7 @@ impl Machine {
             k.console_out.borrow_mut().clear();
             k.doorbell.borrow_mut().clear();
             k.runners.borrow_mut().clear();
-            k.rung.borrow_mut().clear();
+            k.ports.borrow_mut().clear();
             k.calls.borrow_mut().clear();
             k.finished.borrow_mut().clear();
             k.made.borrow_mut().clear();
@@ -188,14 +188,15 @@ impl Machine {
         let tid = tid.unwrap_or(1);
         let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
             .ok_or_else(|| format!("no syscall {name}"))?;
-        let Some((task, rung)) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.rung.borrow().get(&tid)?))) else {
+        let Some((task, (rung, req))) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.ports.borrow().get(&tid)?))) else {
             return Err(format!("no runner {tid}").into());
         };
         if k(|k| k.calls.borrow().contains_key(&tid)) {
             return Err(format!("{tid} is still making its call").into());
         }
         let id = k(|k| k.asked.get() + 1);
-        let c = pack(id, nr, &args)?;
+        let (c, data) = pack(id, &args, req + REQ_DATA_AT)?;
+        let head_args = c.args;
         let trace = k(|k| k.trace.get());
         k(|k| {
             k.asked.set(id);
@@ -208,6 +209,19 @@ impl Machine {
             k.doorbell.borrow_mut().push_back(task);
         });
         Direct.write_u32(trace + trace::ON, 1);
+        // (The call into the runner's request, in its memory, which is
+        // kernel memory: recorded; then its word, to ring it.)
+        let mut head = [0u8; REQ_HEAD as usize];
+        head[0..4].copy_from_slice(&nr.to_le_bytes());
+        for (i, a) in head_args.iter().enumerate() {
+            head[4 + 4 * i..8 + 4 * i].copy_from_slice(&a.to_le_bytes());
+        }
+        imports::bulk(req, REQ_DATA_AT + data.len() as u32);
+        unsafe {
+            core::ptr::copy_nonoverlapping(head.as_ptr(), req as *mut u8, head.len());
+            core::ptr::write_bytes((req + REQ_HEAD) as *mut u8, 0, (REQ_DATA_AT - REQ_HEAD) as usize);
+            core::ptr::copy_nonoverlapping(data.as_ptr(), (req + REQ_DATA_AT) as *mut u8, data.len());
+        }
         imports::bulk(rung, 4);
         Direct.write_u32(rung, 1);
         sched::interrupt(IRQ_DOORBELL);
@@ -234,21 +248,22 @@ impl Machine {
     }
 }
 
-/// Call `id`, syscall `nr` with `args` (see Machine::call): each a number,
-/// or a buffer (a string, { bytes }, { size }, { strings }) packed into its
-/// data.
-fn pack(id: u32, nr: u32, args: &[JsValue]) -> Result<Call, JsValue> {
-    let mut c = Call { id, nr, ..Default::default() };
-    // (Bytes `b` into the data, 8-byte aligned: their offset there. The
-    // data is as long as what is in it: what the runner gets, recorded.)
-    let put = |c: &mut Call, b: &[u8]| -> Result<u32, JsValue> {
-        if c.data.len() + b.len() > CALL_DATA {
+/// Call `id` with `args` (see Machine::call): each a number, or a buffer
+/// (a string, { bytes }, { size }, { strings }) packed into the data (its
+/// bytes, to go at `base` in the runner's request: a buffer argument is
+/// its address there).
+fn pack(id: u32, args: &[JsValue], base: u32) -> Result<(Call, Vec<u8>), JsValue> {
+    let mut c = Call { id, ..Default::default() };
+    let mut data = Vec::new();
+    // (Bytes `b` into the data, 8-byte aligned: their address.)
+    let mut put = |b: &[u8]| -> Result<u32, JsValue> {
+        if data.len() + b.len() > REQ_DATA {
             return Err("the call's buffers are too big".into());
         }
-        let at = c.data.len();
-        c.data.extend_from_slice(b);
-        c.data.resize((c.data.len() + 7) & !7, 0);
-        Ok(at as u32)
+        let at = base + data.len() as u32;
+        data.extend_from_slice(b);
+        data.resize((data.len() + 7) & !7, 0);
+        Ok(at)
     };
     for (i, a) in args.iter().take(6).enumerate() {
         // { strings: [s, …, null] }: an array of char * (null: NULL), as argv.
@@ -256,14 +271,12 @@ fn pack(id: u32, nr: u32, args: &[JsValue]) -> Result<Call, JsValue> {
             let mut words = Vec::new();
             for s in list.iter() {
                 words.push(match s.as_string() {
-                    Some(s) => Some(put(&mut c, &[s.as_bytes(), &[0]].concat())?),
-                    None => None,
+                    Some(s) => put(&[s.as_bytes(), &[0]].concat())?,
+                    None => 0,
                 });
             }
-            let array: Vec<u8> = words.iter().flat_map(|w| w.unwrap_or(0).to_le_bytes()).collect();
-            let at = put(&mut c, &array)?;
-            c.relocs.extend(words.iter().enumerate().filter(|(_, w)| w.is_some()).map(|(k, _)| at + 4 * k as u32));
-            c.args[i] = at;
+            let array: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            c.args[i] = put(&array)?;
             c.buffers |= 1 << i;
             c.lens[i] = array.len() as u32;
             continue;
@@ -279,12 +292,12 @@ fn pack(id: u32, nr: u32, args: &[JsValue]) -> Result<Call, JsValue> {
             Some(b) => {
                 c.buffers |= 1 << i;
                 c.lens[i] = b.len() as u32;
-                put(&mut c, &b)?
+                put(&b)?
             }
             None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { size }")? as i64 as u32,
         };
     }
-    Ok(c)
+    Ok((c, data))
 }
 
 /// The kernel is quiet: settle what waits for it (see Machine::quiet).

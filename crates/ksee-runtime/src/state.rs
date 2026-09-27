@@ -60,11 +60,11 @@ pub struct Kernel {
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
     pub doorbell: RefCell<VecDeque<u32>>,
     /// The runners ready for the page's calls (user/init.c): thread id ->
-    /// task, and thread id -> the word each waits on (`rung`: set to ring
-    /// it); the calls asked of them (see Machine::call), and the count of
-    /// calls asked.
+    /// task, and thread id -> (the word each waits on: set to ring it; its
+    /// request: where a call is put, and its result found); the calls
+    /// asked of them (see Machine::call), and the count of calls asked.
     pub runners: RefCell<BTreeMap<u32, u32>>,
-    pub rung: RefCell<BTreeMap<u32, u32>>,
+    pub ports: RefCell<BTreeMap<u32, (u32, u32)>>,
     pub calls: RefCell<BTreeMap<u32, Call>>,
     pub asked: Cell<u32>,
     /// Every call asked (by id): its runner, its number, and the id its
@@ -92,27 +92,26 @@ pub fn k<T>(f: impl FnOnce(&Kernel) -> T) -> T {
     K.with(f)
 }
 
-/// A syscall for a runner to make (user/init.c): asked, then taken (the
-/// runner makes it), then finished.
+/// A syscall a runner is making (user/init.c): asked (written into its
+/// request), then finished.
 #[derive(Default)]
 pub struct Call {
     pub id: u32,
-    pub taken: bool,
-    pub nr: u32,
-    /// Each an integer, or (bit i of `buffers`) the offset of a buffer in
-    /// `data` (its length: `lens`).
+    /// Each an integer, or (bit i of `buffers`) the address of a buffer
+    /// in the request's data (its length: `lens`).
     pub args: [u32; 6],
     pub buffers: u32,
     pub lens: [u32; 6],
-    /// The buffers, packed (up to CALL_DATA bytes).
-    pub data: Vec<u8>,
-    /// The words of `data` that are pointers into it (an array of strings'
-    /// elements): offsets there, made addresses where the runner has it.
-    pub relocs: Vec<u32>,
 }
 
-/// The size of a call's buffers, all together.
-pub const CALL_DATA: usize = 4096;
+/// A runner's request (user/init.c): `struct { i32 nr; i32 args[6]; i32
+/// done; i64 ret; u8 data[REQ_DATA]; }`: its head (the call), where its
+/// result is, and its data (the call's buffers, all together).
+pub const REQ_HEAD: u32 = 32;
+pub const REQ_RET: u32 = 32;
+pub const REQ_DONE: u32 = 28;
+pub const REQ_DATA_AT: u32 = 40;
+pub const REQ_DATA: usize = 4096;
 
 /// The kernel's memory is this module's memory.
 pub struct Direct;

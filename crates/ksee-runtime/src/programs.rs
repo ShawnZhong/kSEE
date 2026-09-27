@@ -68,7 +68,7 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
             let tid = runners.iter().find(|(_, task)| **task == prev).map(|(&t, _)| t);
             tid.inspect(|t| {
                 runners.remove(t);
-                k.rung.borrow_mut().remove(t);
+                k.ports.borrow_mut().remove(t);
             })
         });
         if let Some(tid) = gone {
@@ -207,70 +207,48 @@ pub(crate) fn finish(tid: u32, how: &'static str, ret: i64, buffers: Vec<Option<
     });
 }
 
-/// The imports of a runner (user/init.c), module ksee: ready, the call
-/// asked of it, and its result. A request's place in the
-/// runner's memory (kernel memory):
-/// `struct { i32 nr; i32 args[6]; i32 pad; u8 data[CALL_DATA]; }`.
+/// The calls returned: a runner that has made its call put the result in
+/// its request (done). Finished, with the buffers as the call left them.
+pub(crate) fn returned() {
+    let back: Vec<(u32, u32, i64, Vec<Option<Vec<u8>>>)> = k(|k| {
+        let ports = k.ports.borrow();
+        k.calls.borrow().iter().filter_map(|(&tid, c)| {
+            let &(_, req) = ports.get(&tid)?;
+            if Direct.read_u32(req + REQ_DONE) == 0 {
+                return None;
+            }
+            let mut ret = [0u8; 8];
+            Direct.read(req + REQ_RET, &mut ret);
+            let buffers = (0..6).map(|i| (c.buffers >> i & 1 != 0).then(|| {
+                let mut b = vec![0; c.lens[i] as usize];
+                Direct.read(c.args[i], &mut b);
+                b
+            })).collect();
+            Some((tid, c.id, i64::from_le_bytes(ret), buffers))
+        }).collect()
+    });
+    for (tid, _, ret, buffers) in back {
+        finish(tid, "returned", ret, buffers);
+    }
+}
+
+/// The import of a runner (user/init.c), module ksee: ready(rung, req):
+/// the current thread is a runner, waiting for calls in a futex on the
+/// word at `rung` (the host sets it, and rings), each put in its request
+/// at `req` (state::REQ_*), where it puts the result.
 fn runner_imports() -> Object {
     let ksee = Object::new();
-    // ksee.ready(rung): the current thread is a runner, waiting for calls
-    // in a futex on the word at `rung` (the host sets it, and rings).
-    js::set(&ksee, "ready", func(Closure::<dyn FnMut(u32)>::new(|rung: u32| {
+    js::set(&ksee, "ready", func(Closure::<dyn FnMut(u32, u32)>::new(|rung: u32, req: u32| {
         let (tid, task) = (tid(), current());
         k(|k| {
             k.runners.borrow_mut().insert(tid, task);
-            k.rung.borrow_mut().insert(tid, rung);
+            k.ports.borrow_mut().insert(tid, (rung, req));
         });
         if tid == 1 && k(|k| k.calls.borrow().is_empty()) {
             // (The boot's over: let what it left for later run now, while
             // nothing is recorded.)
             k(|k| k.waiting.set(Some(k.clock.get())));
         }
-    })));
-    // ksee.call(req): the request into `req` (buffers: pointers into its
-    // data); its number, or -1 if there is none.
-    js::set(&ksee, "call", func(Closure::<dyn FnMut(u32) -> i32>::new(|req: u32| {
-        let tid = tid();
-        k(|k| {
-            let mut calls = k.calls.borrow_mut();
-            let Some(c) = calls.get_mut(&tid).filter(|c| !c.taken) else { return -1 };
-            c.taken = true;
-            let mut head = [0u8; 32];
-            head[0..4].copy_from_slice(&c.nr.to_le_bytes());
-            for (i, &a) in c.args.iter().enumerate() {
-                let v = if c.buffers >> i & 1 != 0 { a + req + 32 } else { a };
-                head[4 + 4 * i..8 + 4 * i].copy_from_slice(&v.to_le_bytes());
-            }
-            // (Into the runner's memory, which is kernel memory: recorded;
-            // only as much as the request is.)
-            bulk(req, 32 + c.data.len() as u32);
-            let mut data = c.data.clone();
-            for &r in &c.relocs {
-                let w = r as usize;
-                let v = u32::from_le_bytes(data[w..w + 4].try_into().unwrap()) + req + 32;
-                data[w..w + 4].copy_from_slice(&v.to_le_bytes());
-            }
-            unsafe {
-                core::ptr::copy_nonoverlapping(head.as_ptr(), req as *mut u8, 32);
-                core::ptr::copy_nonoverlapping(data.as_ptr(), (req + 32) as *mut u8, data.len());
-            }
-            c.nr as i32
-        })
-    })));
-    // ksee.done(ret, req): the result, and the buffers as the call left them.
-    js::set(&ksee, "done", func(Closure::<dyn FnMut(i64, u32)>::new(|ret: i64, req: u32| {
-        let tid = tid();
-        let mut bytes = vec![0; CALL_DATA];
-        Direct.read(req + 32, &mut bytes);
-        let buffers = k(|k| {
-            let calls = k.calls.borrow();
-            let Some(c) = calls.get(&tid) else { return Vec::new() };
-            (0..6).map(|i| {
-                let at = c.args[i] as usize;
-                (c.buffers >> i & 1 != 0).then(|| bytes.get(at..at + c.lens[i] as usize).map(<[u8]>::to_vec)).flatten()
-            }).collect()
-        });
-        finish(tid, "returned", ret, buffers);
     })));
     ksee
 }
