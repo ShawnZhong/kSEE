@@ -176,7 +176,7 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
   const op = m.syscalls().find((s) => s.name === "openat"), stack = m.call_stack(m.first_call("do_sys_openat2", op.first, op.last)), entry = stack.at(-1);
   check(`the entry frame: ${entry?.syscall}(${entry?.args?.map((a) => `${a.name} = ${a.value}`).join(", ")}) in ${entry?.func}`,
         entry?.syscall === "openat" && entry.args?.[0]?.value === "AT_FDCWD" && entry.args[2]?.value === "O_WRONLY | O_CREAT | O_TRUNC"
-        && entry.func === "__se_sys_openat" && !stack.some((f) => f.func === "wasm_syscall" || f.func.startsWith("__do_sys_")));
+        && entry.func === "__wasm_sys_openat" && !stack.some((f) => f.func === "wasm_syscall" || f.func.startsWith("__do_sys_")));
 }
 
 // The examples (target/site/examples.json): their calls, and each of the explanation's links found in its call's recording.

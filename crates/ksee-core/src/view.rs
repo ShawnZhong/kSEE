@@ -92,7 +92,7 @@ pub struct Frame {
     pub first: usize,
     /// How many calls deep it is (as line steps count: see Line::depth).
     pub depth: u32,
-    /// The syscall entry (with its wrappers, see arch::SYSCALL_WRAPPERS):
+    /// The syscall entry (with its wrapper, see arch::SYSCALL_WRAPPER):
     /// the syscall's name; its arguments are the syscall's.
     pub syscall: Option<String>,
     /// Code inlined into the call (the frame outside it), not a call.
@@ -421,17 +421,17 @@ impl View<'_> {
         out
     }
 
-    /// A call stack (outermost first) with the syscall wrappers folded into
-    /// the entry (arch::SYSCALL_WRAPPERS): one call, from the entry's first
-    /// record, in the innermost wrapper (its function, at its line); each
-    /// call with how deep it is.
+    /// A call stack (outermost first) with the syscall's wrapper folded into
+    /// the entry (Tables::is_wrapper): one call, from the entry's first
+    /// record, in the wrapper (its function, at its line); each call with
+    /// how deep it is.
     pub fn fold(&self, calls: Vec<stack::ChartCall>) -> Vec<(u32, stack::ChartCall)> {
         let entry = self.tables.find(arch::SYSCALL);
         let mut out: Vec<(u32, stack::ChartCall)> = Vec::new();
         let mut in_entry = false;
         for (d, c) in calls.into_iter().enumerate() {
             match out.last_mut() {
-                Some((_, e)) if in_entry && self.is_wrapper(c.func) => *e = stack::ChartCall { first: e.first, ..c },
+                Some((_, e)) if in_entry && self.tables.is_wrapper(c.func) => *e = stack::ChartCall { first: e.first, ..c },
                 _ => {
                     in_entry = Some(c.func) == entry;
                     out.push((d as u32, c));
@@ -439,10 +439,6 @@ impl View<'_> {
             }
         }
         out
-    }
-
-    fn is_wrapper(&self, func: u32) -> bool {
-        self.tables.functions.get(&func).is_some_and(|f| arch::SYSCALL_WRAPPERS.iter().any(|w| f.name.starts_with(w)))
     }
 
     /// The syscall entry's arguments (the number, then the syscall's): the
@@ -491,8 +487,8 @@ impl View<'_> {
         let mut at = c.step.map(|s| s.loc).or(self.tables.functions.get(&c.func).map(|f| f.loc));
         let mut out = Vec::new();
         for &(k, site) in self.chain(c.step.and_then(|s| s.inlined)) {
-            // (A syscall's body, inlined into its wrapper: the entry's own.)
-            if arch::SYSCALL_WRAPPERS.iter().any(|w| self.inline_name(k).starts_with(w)) {
+            // (SYSCALL_DEFINE's shims, inlined at the wrapper's own line: the entry's own.)
+            if self.tables.at_wrapper_line(site) {
                 continue;
             }
             out.push((Some(k), at));
@@ -695,7 +691,7 @@ impl View<'_> {
         stack::callers(t, &self.rec.records, &self.rec.tasks, first, last, task, &ids).into_iter().map(|c| Caller {
             // (The syscall entry, or its wrappers: named for the syscall, as the Stack has it.)
             func: match self.rec.syscall_at(c.first).and_then(|n| t.types.syscalls.get(&self.rec.syscalls[n].nr)) {
-                Some(s) if Some(c.func) == entry || self.is_wrapper(c.func) => format!("{s}()"),
+                Some(s) if Some(c.func) == entry || self.tables.is_wrapper(c.func) => format!("{s}()"),
                 _ => self.name(c.func),
             },
             file: c.step.map(|s| t.file(s.loc).to_string()), line: c.step.map(|s| s.loc.line),

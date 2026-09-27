@@ -59,11 +59,7 @@ impl Machine {
     /// values.
     pub fn call_tree(&self, first: usize, last: usize, task: u32) -> JsValue {
         let rec = self.rec.borrow();
-        let t = tables();
-        let is_wrapper = |name: &str| ksee_core::arch::SYSCALL_WRAPPERS.iter().any(|w| name.starts_with(w));
-        let wrapper = |f: u32| t.functions.get(&f).is_some_and(|f| is_wrapper(&f.name));
-        let inlined_wrapper = |k: u32| t.names.get(k as usize).is_some_and(|n| is_wrapper(n));
-        to_js(&ksee_core::stack::call_tree(t, &rec.records, &rec.tasks, first + 1, last, task, &wrapper, &inlined_wrapper))
+        to_js(&ksee_core::stack::call_tree(tables(), &rec.records, &rec.tasks, first + 1, last, task))
     }
 
     /// The calls of function `name` in records `first..=last`: each call's
