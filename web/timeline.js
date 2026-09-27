@@ -161,6 +161,8 @@ export function timeline(app) {
       sctx.fillRect(x(cur) - 1, 0, 2, STRIP);
     }
     $("chart-title").textContent = t.title || "the recording";
+    $("chart-verbs").replaceChildren(...(t.home ? [" · ", el("a", { textContent: "zoom", title: "the window at the selection (z)", onclick: zoomHome })] : []),
+      ...(t.win && (t.win.sa > 0 || t.win.sb < m.steps() - 1) ? [" · ", el("a", { textContent: "whole", title: "the whole recording (x; double-click empty chart)", onclick: whole })] : []));
   }
   function label(ctx, text, x1, w, y, fill) {
     if (w < 24) return;
@@ -235,7 +237,7 @@ export function timeline(app) {
   chart.onkeydown = (e) => {
     if (!t.win) return;
     const mid = t.cursor != null && t.cursor >= t.win.a && t.cursor <= t.win.b ? m.step_of(t.cursor) : (t.win.sa + t.win.sb) / 2;
-    const act = { w: () => zoom(mid, -0.25), s: () => zoom(mid, 0.25), a: () => pan(-W() / 8), d: () => pan(W() / 8) }[e.key.toLowerCase()];
+    const act = { w: () => zoom(mid, -0.25), s: () => zoom(mid, 0.25), a: () => pan(-W() / 8), d: () => pan(W() / 8), z: zoomHome, x: whole }[e.key.toLowerCase()];
     if (!act) return;
     e.preventDefault();
     act();
@@ -329,8 +331,10 @@ export function timeline(app) {
   };
   chart.ondblclick = (e) => {
     // Select the call there: its records, from its first to its return.
+    // (Empty chart: the whole recording again.)
     const { c, d } = hit(e), [id, first, inl] = c?.frames[d] ?? [];
-    if (first == null || inl || t.syscallAt.has(first)) return;
+    if (first == null) return whole();
+    if (inl || t.syscallAt.has(first)) return;
     selectCall(first, fn(id)?.name ?? "a call");
     go(m.seek(first, 1, "line"));
   };
@@ -373,20 +377,27 @@ export function timeline(app) {
     t.home = t.where?.() ?? null;
     t.depth = 1;
     if (t.cursor != null && t.cursor >= t.n) t.cursor = null;
+    // (A new recording: the whole of it; one grown: the window as it was.)
     if (!t.n) t.win = null;
-    else if (t.home) setWindow(...pad(t.home));
+    else if (t.win && t.win.sb <= m.steps() - 1) setWindow(t.win.sa, t.win.sb);
     else setWindow(0, m.steps() - 1);
     draw();
   }
   // Select records `where()` gives ({ a, b, task }: asked again after each
   // snapshot, as records move), called `title`: the window at them.
+  // The window stays as it is (the whole recording by default: zooming is
+  // asked for, `z` or "zoom"), unless the selection is not in it.
   function selectWindow(where, title) {
     t.depth = 1;
     t.where = where;
     t.title = title;
     t.home = where();
-    if (t.home) setWindow(...pad(t.home));
+    if (t.home && t.win && (t.home.a < t.win.a || t.home.b > t.win.b)) whole();
+    else draw();
   }
+  // The window at the selection, and at the whole recording.
+  const zoomHome = () => t.home && setWindow(...pad(t.home));
+  const whole = () => t.n && setWindow(0, m.steps() - 1);
   // Select syscall `s` (found again in later snapshots by its task and
   // its first record's id: indexes move as the ring goes on).
   function select(s) {
