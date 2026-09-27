@@ -9,23 +9,26 @@
   r.first = [pick.selectedOptions[0]?.textContent, line(lis()[0])];
   r.examples = pick.options.length;
   r.calls = lis().map(line);
-  // The explanation's links, each gone to: the function's call, the Stack there.
+  // The explanation's links, each gone to: the function's call site (the caller's line; the call on top of the Stack).
   r.notes = [];
   const places = [...document.querySelectorAll(".explain a.place")];
   for (const [k, a] of places.entries()) {
     a.click();
     await sleep(300);
-    r.notes.push([a.textContent, $("where").textContent.slice(0, 60)]);
+    r.notes.push([a.textContent, $("where").textContent.slice(0, 60), document.querySelector("#stack tr.frame")?.innerText.trim().split(/\s/)[0]]);
     if (k === 1) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
     if (k === 1) r.args = [...document.querySelectorAll("#stack tr")].slice(1, 4).map((f) => f.innerText.replace(/\s+/g, " ").trim());
     if (a.textContent === "vfs_read") {
+      // (The link lands at the call site, in ksys_read; ↑ enters vfs_read.)
+      dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
+      await sleep(300);
       r.hover = await ksee.src.hoverAt("file->f_mode & FMODE_READ", "f_mode");
       // (A type name: its declaration's first lines.)
       r.decl = await ksee.src.hoverAt("struct kiocb kiocb", "kiocb");
     }
   }
   if (!r.decl?.startsWith("include/linux/fs.h:") || !r.decl.includes("struct kiocb {")) throw new Error("no declaration on hover: " + JSON.stringify(r.decl));
-  if (r.notes.length < 3 || !r.notes.some(([n, w]) => n === "vfs_read" && w.includes("vfs_read")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
+  if (r.notes.length < 3 || !r.notes.some(([n, w, top]) => n === "vfs_read" && top === "vfs_read" && w.includes("ksys_read")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
   // Pin a value: click one in the Stack (one in memory: a local's, a task's field); the Objects show it pinned,
   // its writes listed (a local's in its frame's lifetime), ▶ goes to the next; 📌 unpins.
   const v = document.querySelector("#stack td.fval.mem");
@@ -69,6 +72,12 @@
   const d2 = depthNow();
   trail.push([$("where").textContent, frames()]);
   press("out");
+  // (↓: the row below, the caller, selected on the Stack; ↑: back up.)
+  dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+  const onRow = () => [...document.querySelectorAll("#stack tr.frame")].findIndex((f) => f.classList.contains("on"));
+  if (onRow() !== 1) throw new Error("↓ did not select the caller: row " + onRow());
+  dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
+  if (onRow() !== 0) throw new Error("↑ did not select the callee: row " + onRow());
   const d3 = depthNow();
   trail.push([$("where").textContent, frames()]);
   r.stepped = [d0, d1, d2, d3];
