@@ -145,7 +145,7 @@ impl Machine {
             k.console_out.borrow_mut().clear();
             k.doorbell.borrow_mut().clear();
             k.runners.borrow_mut().clear();
-            k.ports.borrow_mut().clear();
+            k.requests.borrow_mut().clear();
             k.calls.borrow_mut().clear();
             k.finished.borrow_mut().clear();
             k.made.borrow_mut().clear();
@@ -188,7 +188,7 @@ impl Machine {
         let tid = tid.unwrap_or(1);
         let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
             .ok_or_else(|| format!("no syscall {name}"))?;
-        let Some((task, (rung, req))) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.ports.borrow().get(&tid)?))) else {
+        let Some((task, req)) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.requests.borrow().get(&tid)?))) else {
             return Err(format!("no runner {tid}").into());
         };
         if k(|k| k.calls.borrow().contains_key(&tid)) {
@@ -204,11 +204,11 @@ impl Machine {
             k.made.borrow_mut().insert(id, (tid, nr, 0));
             // (The page waits for the kernel now: see Kernel::waiting.)
             k.waiting.set(Some(k.clock.get()));
-            // (Ring the runner: it waits on its word.)
+            // (Ring the runner: it waits on the request's number.)
             k.doorbell.borrow_mut().push_back(task);
         });
         // (The call into the runner's request, in its memory, which is
-        // kernel memory: recorded; then its word, to ring it.)
+        // kernel memory: recorded; its number last, the word waited on.)
         let mut head = [0u8; REQ_DATA_AT as usize];
         head[0..4].copy_from_slice(&nr.to_le_bytes());
         for (i, a) in head_args.iter().enumerate() {
@@ -219,11 +219,10 @@ impl Machine {
         }
         imports::log(req, REQ_DATA_AT + data.len() as u32);
         unsafe {
-            core::ptr::copy_nonoverlapping(head.as_ptr(), req as *mut u8, head.len());
+            core::ptr::copy_nonoverlapping(head[4..].as_ptr(), (req + 4) as *mut u8, head.len() - 4);
             core::ptr::copy_nonoverlapping(data.as_ptr(), (req + REQ_DATA_AT) as *mut u8, data.len());
         }
-        imports::log(rung, 4);
-        Direct.write_u32(rung, 1);
+        Direct.write_u32(req, nr);
 
         sched::interrupt(IRQ_DOORBELL);
         Ok(id)

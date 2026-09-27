@@ -124,18 +124,18 @@ There are two programs (C on nolibc): **/init** (user/init.c), and
 **/bin/cat** (user/cat.c: its input to its output, for the pipe example's
 child to exec). /init mounts the disk, and then makes the syscalls the page
 asks for, one at a time. It
-waits for them in a `futex` on a word of its own; its one import,
-`ksee.ready(&rung, &req)`, tells the host where that word and its request
-(`struct request`: the number, the arguments, a result, and room for the
-buffers) are, in its own memory, which is kernel memory. The page writes
-the call into the request (recorded, as any write to kernel memory),
-sets the word and rings /init's task (`WASM_IRQ_DOORBELL`: its handler
-wakes the task, kernel/irq.c; the futex wait, woken, sees its word
-changed and returns); /init makes the syscall between `ksee.begin` and
+waits for them in a `futex` on the first word of its request (`struct
+request`: the number, -1 while none is asked; the arguments; room for
+the buffers), in its own memory, which is kernel memory; `ksee.ready(&req)`
+tells the host where it is. The page writes the call into the request
+(recorded, as any write to kernel memory), the number last, and rings
+/init's task (`WASM_IRQ_DOORBELL`: its handler wakes the task,
+kernel/irq.c; the futex wait, woken, sees the number changed and
+returns); /init makes the syscall between `ksee.begin` and
 `ksee.end(ret)`, which bracket the recording and carry the result, and
 waits again. So every syscall the page shows is a real process's, with
-its fds and its memory, and the protocol is a struct in shared memory, a
-futex, and a bracket. (A plain futex, not console input, a signal, or a device:
+its fds and its memory, and the protocol is a struct in shared memory
+and a bracket. (A plain futex, not console input, a signal, or a device:
 those would put a worker, a signal's delivery or the VFS at the start of
 every call's recording; and no syscall of this port's own.)
 

@@ -13,19 +13,19 @@
 #include <unistd.h>
 #include <linux/loop.h>
 
-// Ready for calls: the host puts a call in *req (its number and
-// arguments; buffer arguments point into data) and sets *rung; the runner
-// makes it between begin and end (recorded from the one to the other),
-// and end gets the result.
+// Ready for calls: the host puts a call in *req (its number, -1 while
+// none is asked; its arguments, buffer arguments pointing into data); the
+// runner makes it between begin and end (recorded from the one to the
+// other), and end gets the result.
 struct request {
-	int nr;
+	volatile int nr;
 	int args[6];
 	int pad;
 	char data[4096];
 };
 
 __attribute__((import_module("ksee"), import_name("ready")))
-void ksee_ready(volatile int *rung, struct request *req);
+void ksee_ready(struct request *req);
 __attribute__((import_module("ksee"), import_name("begin")))
 void ksee_begin(void);
 __attribute__((import_module("ksee"), import_name("end")))
@@ -48,22 +48,23 @@ static void disk(void)
 	close(loop);
 }
 
-// Make the page's calls, one at a time, as each is rung: the host puts
-// the call in `req`, sets `rung` and wakes the task; the wait sees the
-// word changed, and returns.
+// Make the page's calls, one at a time, as each is asked: the host puts
+// the call in `req` (its number: the word the wait is on) and wakes the
+// task; the wait sees the word changed, and returns.
 static void __attribute__((noreturn)) serve(void)
 {
 	struct request req;
-	volatile int rung = 0;
 
-	ksee_ready(&rung, &req);
+	req.nr = -1;
+	ksee_ready(&req);
 	for (;;) {
-		while (!rung)
-			__nolibc_syscall4(__NR_futex_time64, &rung, FUTEX_WAIT_PRIVATE, 0, NULL);
-		rung = 0;
+		while (req.nr < 0)
+			__nolibc_syscall4(__NR_futex_time64, &req.nr, FUTEX_WAIT_PRIVATE, -1, NULL);
 		ksee_begin();
-		ksee_end(__nolibc_syscall6(req.nr, req.args[0], req.args[1], req.args[2],
-					   req.args[3], req.args[4], req.args[5]));
+		long long ret = __nolibc_syscall6(req.nr, req.args[0], req.args[1], req.args[2],
+						  req.args[3], req.args[4], req.args[5]);
+		req.nr = -1;
+		ksee_end(ret);
 	}
 }
 

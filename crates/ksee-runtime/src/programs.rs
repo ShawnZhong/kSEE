@@ -68,7 +68,7 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
             let tid = runners.iter().find(|(_, task)| **task == prev).map(|(&t, _)| t);
             tid.inspect(|t| {
                 runners.remove(t);
-                k.ports.borrow_mut().remove(t);
+                k.requests.borrow_mut().remove(t);
             })
         });
         if let Some(tid) = gone {
@@ -220,18 +220,18 @@ fn on_off() {
     Direct.write_u32(k(|k| k.trace.get()) + ksee_core::trace::ON, if on { 1 } else { 2 });
 }
 
-/// The imports of a runner (user/init.c), module ksee. ready(rung, req):
-/// the current thread is a runner, waiting for calls in a futex on the
-/// word at `rung` (the host sets it, and rings), each put in its request
-/// at `req` (state::REQ_*). begin(), end(ret): around the call it makes:
-/// recorded from the one to the other; the result.
+/// The imports of a runner (user/init.c), module ksee. ready(req): the
+/// current thread is a runner, waiting for calls in a futex on the number
+/// in its request at `req` (state::REQ_*: the host puts a call there, and
+/// rings). begin(), end(ret): around the call it makes: recorded from the
+/// one to the other; the result.
 fn runner_imports() -> Object {
     let ksee = Object::new();
-    js::set(&ksee, "ready", func(Closure::<dyn FnMut(u32, u32)>::new(|rung: u32, req: u32| {
+    js::set(&ksee, "ready", func(Closure::<dyn FnMut(u32)>::new(|req: u32| {
         let (tid, task) = (tid(), current());
         k(|k| {
             k.runners.borrow_mut().insert(tid, task);
-            k.ports.borrow_mut().insert(tid, (rung, req));
+            k.requests.borrow_mut().insert(tid, req);
         });
         if tid == 1 && k(|k| k.calls.borrow().is_empty()) {
             // (The boot's over: let what it left for later run now, while
