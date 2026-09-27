@@ -100,9 +100,10 @@ theirs is the whole recording), each as the member it wrote (the one its
 first byte is in: `Types::leaf`), printed as its type before and after
 (memory as it was); and the stores of a span of records (`stores`), in
 order, each named as the code names what it hit (a call's pointer
-argument to a struct, a local, the task running, a global: "vfs_read's
-file->f_pos"; what the code did not name, the heap reached through
-locals and bulk copies, by its address).
+argument to a struct, a local and what a pointer local points to as the
+call ends, the task running and what its pointer members point to, a
+global: "vfs_read's file->f_pos", "current->files->next_fd"; what the
+code did not name, by its address).
 
 What it cannot show: values only in wasm locals (registers, in effect),
 and old contents of bulk writes beyond 256 bytes (their record says

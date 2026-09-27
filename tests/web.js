@@ -176,6 +176,13 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
 // The syscall entry: the frame says which syscall, its arguments typed as the syscall's, as constants; the wrapper is a frame of its own.
 {
   const op = m.syscalls().find((s) => s.name === "openat"), stack = m.call_stack(m.first_call("do_sys_openat2", op.first, op.last)), entry = stack.at(-1);
+  // (Memory reached through a pointer local, or the task's pointer members, is named too: files->next_fd, through current->files.)
+  const ops = m.stores(op.first, op.last);
+  check(`a store through the task's files is named: ${[...new Set(ops.filter((s) => s.write.member === "next_fd").map((s) => s.what))].join(", ")}`,
+        ops.some((s) => s.write.member === "next_fd" && s.kind === "object"));
+  // (A call begins at its function's signature line: the callee's frame there, before its first statement.)
+  const dso = m.at(m.first_call("do_sys_openat2", op.first, op.last)), dsoDef = m.definition("do_sys_openat2");
+  check(`a call begins at its signature: do_sys_openat2 at ${dso?.file}:${dso?.line}, defined at ${dsoDef?.line}`, dso?.line === dsoDef?.line && dso?.file === dsoDef?.file);
   check(`the entry frame: ${entry?.func}, the syscall ${entry?.syscall}(${entry?.args?.map((a) => `${a.name} = ${a.value}`).join(", ")})`,
         entry?.func === "wasm_syscall" && entry.syscall === "openat" && entry.args?.[0]?.value === "AT_FDCWD" && entry.args[2]?.value === "O_WRONLY | O_CREAT | O_TRUNC"
         && stack.some((f) => f.func === "__wasm_sys_openat" && !f.inlined));

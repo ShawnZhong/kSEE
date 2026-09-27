@@ -569,6 +569,18 @@ impl View<'_> {
         };
         if let Some(ty) = types.find("task_struct") {
             add("current".into(), "task", ty, task, None, None);
+            // (And what its pointer members point to, as the span ends:
+            // current->files, ->fs, ->mm: "files->next_fd" through a local
+            // the optimizer kept in a register is reached this way.)
+            let end = self.rec.memory_at(self.now, last.min(records_len(self.rec)));
+            if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
+                for mb in members.iter().filter(|mb| mb.bit_size == 0) {
+                    if let Kind::Pointer(to) = types.get(types.resolve(mb.ty)).kind
+                        && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
+                        add(format!("current->{}", mb.name), "object", to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None);
+                    }
+                }
+            }
         }
         let records = &self.rec.records;
         // (The calls open on each task: (function, frame base).)
@@ -597,6 +609,15 @@ impl View<'_> {
                     }
                     for (var, ty, off) in types.locals.get(&f.name).into_iter().flatten() {
                         add(format!("{}'s {var}", f.name), "local", *ty, frame.wrapping_add(*off), None, Some(i));
+                        // (A local pointing at a struct: that too ("files->next_fd"
+                        // through `struct files_struct *files = current->files`),
+                        // where it points as the call ends.)
+                        if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
+                            && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
+                            let end = stack::call_end(records, &self.rec.tasks, i).unwrap_or(last).min(records_len(self.rec));
+                            let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(*off));
+                            add(format!("{}'s {var}", f.name), "object", to, v, None, None);
+                        }
                     }
                 }
                 _ => {}
