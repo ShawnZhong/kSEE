@@ -73,6 +73,7 @@ export function callstack(app) {
     if (!on || !s.sel) return (spacer.style.height = "0px");
     const need = Math.max(0, app.time.deepest(s.sel.first) - k), each = table.offsetHeight / Math.max(1, rows.length);
     spacer.style.height = `${Math.round(need * each)}px`;
+    spacer.textContent = need ? "what it calls shows here" : "";
     const top = on.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
     if (top > pane.clientHeight * 0.66) pane.scrollTop = top - pane.clientHeight / 3;
   }

@@ -111,6 +111,8 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="stores"] a[data-tab="stores"], #right[data-tab="records"] a[data-tab="records"] { color: var(--fg); border-bottom-color: var(--accent); }
 
 /* The Trace: the tree of calls, the one the cursor is in marked */
+/* The Stack: room above a selected call for what it calls (callstack.js focus) */
+#stack .spacer { display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; color: var(--dim); font-size: 11px; font-style: italic; box-sizing: border-box; }
 #trace .head { padding: 6px 12px 2px; font-size: 11.5px; }
 /* The Stores: every store the selected call made, a row each, in order; the write in effect at the cursor marked, later ones dim */
 #stores .head { padding: 6px 12px 2px; font-size: 11.5px; }
