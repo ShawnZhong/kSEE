@@ -24,8 +24,8 @@ export function objects(app) {
   let shown = null, changed = [], all = false;
 
   // Plumbing, not a change of the kernel's state: the entry's registers,
-  // the frames the calls used (their spills), locals.
-  const plumbing = (c) => /^struct pt_regs\b/.test(c.what) || /'s frame$/.test(c.what) || c.call != null;
+  // the frames the calls used (their spills), locals (Changed.kind).
+  const plumbing = (c) => c.kind === "regs" || c.kind === "frame" || c.kind === "local";
   const key = (o) => `${o.addr}:${o.id}`;
   const real = (writes) => writes.filter((x) => x.before !== x.after);
 

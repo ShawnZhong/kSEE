@@ -246,9 +246,10 @@ export function timeline(app) {
     const { k, c, d } = hit(e);
     const [id, first, inl] = c?.frames[d] ?? [];
     hilite(first ?? null);
-    // (The view follows the pointer: the moment under it, in the call under
-    // it: the source and the Stack say where the call is.)
-    app.peek(first == null ? at(e.offsetX) : Math.max(first, at(e.offsetX)));
+    // (The view follows the pointer: the moment under it, as the call under
+    // it saw it: the source shows where that call was, the Stack has it on
+    // top. Along one bar, the view stays in that function.)
+    app.peek(first == null ? at(e.offsetX) : Math.max(first, at(e.offsetX)), first == null ? null : { first, inlined: inl ? iname(inl - 1) : null });
     if (first == null) {
       tip.hidden = true;
       chart.title = c && d < 0 ? taskName(who(c.task)) : "";

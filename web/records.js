@@ -43,8 +43,8 @@ export function records(app) {
     built = [from, to];
     const cur = app.time.cursor();
     rows.style.top = `${from * ROW}px`;
-    rows.replaceChildren(...m.raw(from, to).map(([i, text]) => el("div", {
-      className: `row ${text.startsWith("──") ? "task" : text.split(" ")[0]}${i === cur ? " on" : ""}`, dataset: { i },
+    rows.replaceChildren(...m.raw(from, to).map(([i, kind, text]) => el("div", {
+      className: `row ${kind}${i === cur ? " on" : ""}`, dataset: { i },
       onclick: () => app.time.go(i), onpointerenter: () => app.peek(i) },
       el("span", { className: "dim", textContent: i }), el("span", { textContent: text }))));
     marked = cur;

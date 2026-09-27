@@ -222,6 +222,13 @@ impl Tables {
                 (s.loc, s.inlined) = (loc, inlined);
             }
         }
+        // (A block whose first instruction is a primitive's: its first line's.)
+        let primitive_file = |t: &Tables, loc: Loc| arch::PRIMITIVES.iter().any(|p| t.file(loc).starts_with(p));
+        let firsts: Vec<((u32, u32), Loc)> = self.blocks.iter().filter(|&(_, &l)| primitive_file(self, l))
+            .filter_map(|(&k, _)| self.lines.get(&k).and_then(|segs| segs.first()).and_then(|seg| seg.first()).map(|s| (k, s.loc))).collect();
+        for (k, loc) in firsts {
+            self.blocks.insert(k, loc);
+        }
     }
 
     /// The lines block `n` of `func` runs, in stretches between its calls
@@ -294,12 +301,15 @@ mod tests {
         // spin_lock at its line 9, inlined into f at line 2), then line 4 of
         // f: the get_current step is spin_lock's line 9.
         let probes = "U\nP\t0\tf.c\nP\t1\tinclude/linux/spinlock.h\nP\t2\tarch/wasm/include/asm/current.h\n\
-                      F\t1\tf\t0:1\t0\nB\t1\t0\t0:1:1\nL\t1\t0\t2:3@get_current^1:9@spin_lock^0:2;0:4\n";
+                      F\t1\tf\t0:1\t0\nB\t1\t0\t2:3:1\nL\t1\t0\t2:3@get_current^1:9@spin_lock^0:2;0:4\n";
         let t = Tables::parse(probes, "W\tget_current\tarch/wasm/include/asm/current.h\t12\nW\tspin_lock\tinclude/linux/spinlock.h\t7\n");
         let steps = &t.lines[&(1, 0)][0];
         let chain = |s: &Step| s.inlined.map(|k| t.inlines[k as usize].iter().map(|&(n, _)| t.names[n as usize].clone()).collect::<Vec<_>>());
         assert_eq!((t.file(steps[0].loc), steps[0].loc.line, chain(&steps[0])), ("include/linux/spinlock.h", 9, Some(alloc::vec!["spin_lock".into()])));
         assert_eq!((steps[1].loc.line, steps[1].inlined), (4, None));
+        // The block's own location was get_current's: now its first line's.
+        let b = t.blocks[&(1, 0)];
+        assert_eq!((t.file(b), b.line), ("include/linux/spinlock.h", 9));
     }
 
     #[test]

@@ -92,16 +92,18 @@ export function app(m) {
     if (caller) a.selectCall(caller.first, null);
   };
   a.calls = () => calls;
-  // Show the moment `at` (see Machine.at): the source there, the Call
-  // stack, memory as it was, where it is.
-  function view(at) {
+  // Show the moment `at` (see Machine.at): the source there, the Stack,
+  // memory as it was, where it is. `frame` ({ first, inlined }, a call on
+  // the stack then): as that call saw it: the source at the line it was
+  // at (the one calling what is above it), the Stack from it down.
+  function view(at, frame = null) {
     memoryAt(at.i);
-    // (Not a block, a store say: the line its task was at, the block before.)
-    const here = at.kind === "block" ? at : m.at(m.seek(at.i, -1, "line")) ?? at;
-    src.view.cursor = here;
     const s = at.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
-    if (here.kind === "block") src.showFunction(here.func, s?.index, here.line, here.file);
-    stack.show(at.i, null, at.task);
+    // (The Stack, from `frame` down if given: its top is where to show.)
+    const top = stack.show(at.i, null, at.task, frame)[0];
+    const here = frame && top ? { func: top.func, file: top.file, line: top.line, inlined: null, owner: (top.inlined ? stack.owner(top) : top)?.func } : at;
+    src.view.cursor = here;
+    if (here.file) src.showFunction(here.owner ?? here.func, s?.index, here.line, here.file);
     where({ task: at.task, name: here.inlined ?? here.func, file: here.file, line: here.line, sc: s?.name });
   }
   // The cursor moved to `at`.
@@ -114,17 +116,18 @@ export function app(m) {
     badge();
   };
   // The view follows the pointer over the timeline: record `i` shown as if
-  // the cursor were there (once a frame, and only as the moment changes);
-  // null: back to the cursor's. A click fixes the cursor (time.go).
-  let peek = { raf: 0, i: null };
-  a.peek = (i) => {
+  // the cursor were there, as call `frame` saw it if over one (once a
+  // frame, and only as the moment or the call changes); null: back to the
+  // cursor's. A click fixes the cursor (time.go).
+  let peek = { raf: 0, key: null };
+  a.peek = (i, frame = null) => {
     cancelAnimationFrame(peek.raf);
     peek.raf = requestAnimationFrame(() => {
-      const to = i ?? time.cursor();
-      if (to === peek.i) return;
-      peek.i = i;
+      const to = i ?? time.cursor(), key = to == null ? null : `${to}:${frame?.first ?? ""}:${frame?.inlined ?? ""}`;
+      if (key === peek.key) return;
+      peek.key = i == null ? null : key;
       const at = to != null ? m.at(to) : null;
-      if (at) view(at);
+      if (at) view(at, frame);
     });
   };
   a.trace = trace(a);
@@ -170,9 +173,7 @@ export function app(m) {
   // call's first record often runs inlined code first: current->files),
   // as stepping shows it; the cursor there.
   a.goCall = (first) => {
-    const at = m.at(first);
-    if (!at) return;
-    const line = m.line_steps(first, Math.min(first + 400, time.records() - 1), at.task.addr).find((s) => s.func === at.func && !s.inlined);
+    const line = m.call_line(first);
     if (!line) return time.go(first);
     L.pos = null;
     showLine(line);

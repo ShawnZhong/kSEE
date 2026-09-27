@@ -165,9 +165,15 @@ impl Machine {
     /// (view::Frame), a call where its last line is (at `i`: the `nth` line
     /// that record runs, see line_steps); its locals as memory was then
     /// (memory_at).
-    pub fn call_stack(&self, i: Option<usize>, nth: Option<usize>) -> JsValue {
+    pub fn call_stack(&self, i: Option<usize>, nth: Option<usize>, top: Option<usize>, top_inlined: Option<String>) -> JsValue {
         let Some(i) = i.or(self.records().checked_sub(1)) else { return js_sys::Array::new().into() };
-        self.with_memory(|mem| self.view(|v| to_js(&v.call_stack(i, nth, mem))))
+        self.with_memory(|mem| self.view(|v| to_js(&v.call_stack(i, nth, mem, top.map(|f| (f, top_inlined.as_deref()))))))
+    }
+
+    /// The call from record `first`: the first line of its function's own
+    /// that it runs (view::Line), or null (see View::call_line).
+    pub fn call_line(&self, first: usize) -> JsValue {
+        self.view(|v| to_js(&v.call_line(first)))
     }
 
     /// The newest write to `addr..addr + len` at or before the moment

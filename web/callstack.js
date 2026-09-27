@@ -67,7 +67,10 @@ export function callstack(app) {
   // The stack at record `i` (null: the last; undefined: none), `step` the
   // line shown there ({ nth }: which of the lines record `i` runs); `task`:
   // the task there.
-  function show(i, step, task) {
+  // `top`: a call on the stack ({ first, inlined }, see select): the stack
+  // from it down, as that call saw the moment (what it called is above
+  // it). The frames shown.
+  function show(i, step, task, top = null) {
     s.last = s.now;
     s.task = task ?? null;
     // (No recording: nothing to watch; else the watched values at the cursor.)
@@ -75,7 +78,7 @@ export function callstack(app) {
     else w.draw();
     app.trace?.mark();
     // (At a line step: the stack as that line runs; see Machine.call_stack.)
-    const frames = i === undefined ? [] : m.call_stack(i ?? undefined, step?.nth);
+    const frames = i === undefined ? [] : m.call_stack(i ?? undefined, step?.nth, top?.first, top?.inlined ?? undefined);
     s.frames = frames;
     s.sel = null;
     // (The stack comes from the recording: nothing recorded, no stack.)
@@ -83,6 +86,7 @@ export function callstack(app) {
       ? "The call stack at the cursor, with arguments: pick a moment in the recording."
       : "Nothing recorded yet: the call stack comes from the recording. Make a call.";
     draw();
+    return frames;
   }
 
   // The value of expression `expr` at the cursor: a name, then fields

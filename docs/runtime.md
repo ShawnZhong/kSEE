@@ -92,8 +92,12 @@ results by name or `$n`, and compound literals laid out by the parameter's
 type (a struct, positional or by member; an array; argv for a `char **`).
 ksee pack evaluates the UAPI headers' constants with the same evaluator.
 
-Every view asks the Machine for the moment at the cursor: `at(i)`,
-`call_stack(i)`, `line_steps`, `chart`, `memory_at(i)` then `object` /
+Every view asks the Machine for the moment at the cursor: `at(i)` (every
+record located: a store at the line its task was on, a return at the line
+it returned from), `call_stack(i, nth, top)` (from call `top` down: the
+moment as that call saw it, what the timeline shows on hover),
+`call_line` (a call's own first line), `line_steps`, `chart`,
+`memory_at(i)` then `object` /
 `global` (memory as it was), `last_write`, `writes` (an object's history:
 every store to it in its lifetime, a local's frame or the whole
 recording: the member written, from what to what), `changes` (what a
