@@ -23,6 +23,9 @@
       dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
       await sleep(300);
       r.hover = await ksee.src.hoverAt("file->f_mode & FMODE_READ", "f_mode");
+      // (The cursor's line, in vfs_read, carries its values at its end.)
+      r.values = document.querySelector(".cm-editor .values")?.textContent;
+      if (!/\w+ = /.test(r.values ?? "")) throw new Error("no values on the cursor's line: " + JSON.stringify([r.values, document.querySelector(".cm-editor .ln-cursor")?.textContent]));
       // (A type name: its declaration's first lines.)
       r.decl = await ksee.src.hoverAt("struct kiocb kiocb", "kiocb");
     }
@@ -117,6 +120,9 @@
   document.querySelector('h2.tabs a[data-tab="trace"]').click();
   await sleep(100);
   r.trace = [$("trace-note").textContent, [...document.querySelectorAll("#trace li a.mono")].map((a) => a.textContent).slice(0, 6), $("trace").querySelector(".head")?.textContent];
+  // (Each call with what it returned: ksys_read = 26.)
+  r.rets = [...document.querySelectorAll("#trace li")].filter((li) => li.querySelector(":scope > a.mono")?.textContent === "ksys_read").map((li) => li.querySelector(":scope > .ret")?.textContent);
+  if (!r.rets.some((t) => /^ = \d+$/.test(t ?? ""))) throw new Error("no return values on the calls: " + JSON.stringify(r.rets));
   // (The spine opens by itself: ksys_read, then its calls, vfs_read among them, inlined code too; ▸ folds.)
   const inner = [...document.querySelectorAll("#trace li ul li > a.mono")].map((a) => a.textContent);
   if (!/^\d+ calls/.test(r.trace[2] ?? "") || !inner.includes("vfs_read") || !document.querySelector("#trace a.inl")) throw new Error("the calls: " + JSON.stringify([r.trace, inner]));

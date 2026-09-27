@@ -115,6 +115,33 @@ export function source(app) {
   }
 
   // The value of the expression at `k` in line `line` (its `text`), for a
+  // The values of the expressions on line `line` (`text`), those the
+  // Stack has (see hover), each once: "fd = 3  count = 64", or null.
+  function values(line, text) {
+    const out = [], seen = new Set();
+    for (let k = 0; k < text.length; k++) {
+      const e = exprAt(text, k);
+      if (!e) continue;
+      k = e.end - 1;
+      if (seen.has(e.expr)) continue;
+      seen.add(e.expr);
+      const o = app.stack.resolve(e.expr, inFunction(line) ? v.fn.name : null);
+      if (o && o.value != null && o.value !== "(optimized out)") out.push(`${e.expr} = ${o.value}`);
+    }
+    return out.length ? out.join("   ") : null;
+  }
+  class Values extends CM.WidgetType {
+    constructor(text) {
+      super();
+      this.text = text;
+    }
+    eq(other) {
+      return other.text === this.text;
+    }
+    toDOM() {
+      return el("span", { className: "values", textContent: `   ${this.text}` });
+    }
+  }
   // hover: { start, end, text }, or null.
   function hover(line, text, k) {
     const e = exprAt(text, k);
@@ -165,7 +192,12 @@ export function source(app) {
     if (fn) {
       for (let n = fn.line; n <= Math.min(fn.last, doc.lines); n++) d.push(CM.Decoration.line({ class: "ln-infn" }).range(at(n)));
     }
-    if (v.cursor?.file === file && at(v.cursor.line) !== false) d.push(CM.Decoration.line({ class: "ln-cursor" }).range(at(v.cursor.line)));
+    if (v.cursor?.file === file && at(v.cursor.line) !== false) {
+      d.push(CM.Decoration.line({ class: "ln-cursor" }).range(at(v.cursor.line)));
+      // (The line's values, at its end: as a debugger shows them.)
+      const line = doc.line(v.cursor.line), text = values(v.cursor.line, line.text);
+      if (text) d.push(CM.Decoration.widget({ widget: new Values(text), side: 1 }).range(line.to));
+    }
     d.sort((x, y) => x.from - y.from || x.value.startSide - y.value.startSide);
     ed.dispatch({ effects: setMarks.of(CM.Decoration.set(d, true)) });
   }

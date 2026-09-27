@@ -10,6 +10,7 @@
 // function is one row with it (set_bit → arch_set_bit → …: the kernel's
 // layers of helpers). What a syscall did, readable.
 import { $, el } from "./dom.js";
+import { result } from "./args.js";
 
 export function trace(app) {
   const { m } = app;
@@ -21,6 +22,7 @@ export function trace(app) {
   // of single calls opens by itself: the spine of a syscall shows at once.)
   const opened = new Set();
   let shown = null, tree = [], total = 1, count = 0;
+  const consts = m.constants();
 
   // Draw for the selection (again only if it, or the snapshot, changed).
   function draw() {
@@ -62,11 +64,11 @@ export function trace(app) {
   // and, inlined code with one inlined call and nothing else, that call
   // on the same row (→), down the chain.
   function item(n) {
-    const names = [name(n)];
+    const names = [...name(n)];
     let last = n;
     while (last.inlined && last.calls.length === 1 && last.calls[0].inlined) {
       last = last.calls[0];
-      names.push(" → ", name(last));
+      names.push(" → ", ...name(last));
     }
     const open = opened.has(last.first);
     return el("li", { dataset: { first: n.first, last: n.last } },
@@ -74,15 +76,17 @@ export function trace(app) {
                 onclick: () => (open ? opened.delete(last.first) : opened.add(last.first), render()) }),
       ...names, last.calls.length && open ? el("ul", {}, ...last.calls.map(item)) : null);
   }
+  // (The name, a link; and what it returned: "= 26", "= -2 (ENOENT)".)
   function name(n) {
     const f = n.inlined ? null : fn(n.func), pct = Math.round((100 * n.records) / total);
-    return el("a", { className: n.inlined ? "mono inl" : "mono", textContent: n.inlined ? iname(n.func) : f?.name ?? "?", onclick: () => app.goCall(n.first),
+    const a = el("a", { className: n.inlined ? "mono inl" : "mono", textContent: n.inlined ? iname(n.func) : f?.name ?? "?", onclick: () => app.goCall(n.first),
       title: `${n.inlined ? "inlined code (no call): " : `${f?.file ?? ""}:${f?.line ?? ""}: `}${n.records} record${n.records === 1 ? "" : "s"}${pct >= 1 ? ` (${pct}% of the selection)` : ""}, ${n.calls.length} call${n.calls.length === 1 ? "" : "s"}; go there` });
+    return n.ret == null ? [a] : [a, el("span", { className: "ret mono", textContent: ` = ${result(n.ret, consts)}` })];
   }
 
   // The cursor moved: the innermost call shown that it is in, marked.
-  function mark() {
-    const cur = app.time.cursor();
+  function mark(i) {
+    const cur = i ?? app.time.cursor();
     body.querySelector("li.on")?.classList.remove("on");
     if (cur == null) return;
     let best = null;

@@ -216,6 +216,9 @@ pub struct CallNode {
     pub first: usize,
     pub last: usize,
     pub records: u32,
+    /// What the call returned (its Return record's value), if it did
+    /// within the span (not for inlined code, which does not return).
+    pub ret: Option<i32>,
     pub calls: Vec<CallNode>,
 }
 
@@ -234,6 +237,9 @@ pub fn call_tree(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to:
         let (_, mut c) = open.pop().expect("an open call");
         c.last = i;
         c.records = (i - c.first + 1) as u32;
+        if let Some(&Record::Return { func, value }) = records.get(i) && !c.inlined && func == c.func {
+            c.ret = Some(value as i32);
+        }
         match open.last_mut() {
             Some((_, p)) => p.calls.push(c),
             None => roots.push(c),
@@ -267,7 +273,7 @@ pub fn call_tree(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to:
         }
         for &(inlined, id) in &want[k..] {
             let func = if inlined { id as u32 } else { w.stack.frames.iter().find(|f| f.1 == id).map_or(0, |f| f.0) };
-            open.push(((inlined, id), CallNode { func, inlined, first: i, last: i, records: 1, calls: Vec::new() }));
+            open.push(((inlined, id), CallNode { func, inlined, first: i, last: i, records: 1, ret: None, calls: Vec::new() }));
         }
     }
     while !open.is_empty() {
@@ -391,6 +397,8 @@ mod tests {
         let tree = call_tree(&t, &r, &tk, 0, 9, 7);
         let shape: Vec<_> = tree.iter().map(|c| (c.func, c.calls.iter().map(|d| (d.func, d.calls.len(), d.records)).collect::<Vec<_>>())).collect();
         assert_eq!(shape, [(1, alloc::vec![(2, 1, 5), (4, 0, 2)])]);
+        // (What each returned: 2 and 4 did, 0; 1 too, at the span's end.)
+        assert_eq!((tree[0].ret, tree[0].calls[0].ret, tree[0].calls[1].ret), (Some(0), Some(0), Some(0)));
         // From record 1 on: 1 is an ancestor, not in the tree.
         let tree = call_tree(&t, &r, &tk, 1, 9, 7);
         assert_eq!(tree.iter().map(|c| (c.func, c.calls.len())).collect::<Vec<_>>(), [(2, 1), (4, 0)]);

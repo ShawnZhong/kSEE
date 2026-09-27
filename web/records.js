@@ -30,7 +30,7 @@ export function records(app) {
     }
     if ($("right").dataset.tab !== "records") return;
     fill();
-    mark(true);
+    mark(undefined, true);
   }
 
   // Build the rows for the records in view (and a margin), if not built.
@@ -50,8 +50,8 @@ export function records(app) {
   }
 
   // The cursor moved: its row marked; scrolled into view if out of it.
-  function mark(force = false) {
-    const cur = app.time.cursor();
+  function mark(i, force = false) {
+    const cur = i ?? app.time.cursor();
     if ($("right").dataset.tab !== "records" || !n) return;
     if (cur != null && (cur * ROW < body.scrollTop || (cur + 1) * ROW > body.scrollTop + body.clientHeight)) {
       body.scrollTop = cur * ROW - body.clientHeight / 2;

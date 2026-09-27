@@ -130,6 +130,10 @@ export function app(m) {
       peek.key = i == null ? null : key;
       const at = to != null ? m.at(to) : null;
       if (at) view(at, i == null ? chosen : frame);
+      // (The Calls, Stores and Trace tabs follow too; back to the cursor's with null.)
+      a.trace?.mark(to);
+      a.stores?.mark(to);
+      a.records?.mark(to);
     });
   };
   a.trace = trace(a);

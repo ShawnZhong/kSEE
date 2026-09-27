@@ -39,8 +39,8 @@ export function stores(app) {
 
   // The cursor moved: the store in effect (the last at or before the
   // cursor) marked, the ones after dim.
-  function mark() {
-    const cur = app.time.cursor() ?? -1;
+  function mark(i) {
+    const cur = i ?? app.time.cursor() ?? -1;
     let on = null;
     for (const li of body.querySelectorAll("li")) {
       const i = Number(li.dataset.i);
