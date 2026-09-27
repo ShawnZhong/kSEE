@@ -71,7 +71,11 @@ task ran; the whole recording at first (scroll to zoom, drag to pan;
 on empty chart: all of it again; hover a call for what it was: the
 source and the Stack show that moment while the pointer is there; click it to fix the cursor there; click a syscall, or double-click
 any call, to select it: its records from its start to its end, with
-whatever else ran in between). Hover
+whatever else ran in between). The
+cursor's line carries its values at its end, and each line what it last
+stored so far in the selected call (`file->f_pos: 0 → 26 ×2`: click it
+for that moment); a step that lands after a call says what it returned.
+Hover
 a name in the source for its value at the cursor, and a value in the Stack
 for who last wrote it; click it for its writes, a row under it: the
 member, from what to what, in which function, each a link to that moment,

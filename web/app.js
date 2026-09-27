@@ -10,6 +10,7 @@ import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
 import { trace } from "./trace.js";
+import { result } from "./args.js";
 import { records } from "./records.js";
 import { stores } from "./stores.js";
 
@@ -56,8 +57,9 @@ export function app(m) {
   // ---- Selecting, and moving the cursor ----
 
   // The place shown, in the transport: `task` · `name` `file`:`line` · in `sc`.
-  const where = ({ task, name, file, line, sc }) => ($("where").textContent =
-    [task && taskName(task), `${name} ${file ?? ""}:${line ?? ""}`, sc && `in ${sc}`].filter(Boolean).join(" · "));
+  // (`ret`: a step that lands after a return says what returned: "vfs_read returned 26".)
+  const where = ({ task, name, file, line, sc, ret }) => ($("where").textContent =
+    [task && taskName(task), `${name} ${file ?? ""}:${line ?? ""}`, ret, sc && `in ${sc}`].filter(Boolean).join(" · "));
 
   // Select syscall `s`: its records; the cursor where its own code starts
   // (its handler's first line, past the syscall entry).
@@ -74,6 +76,8 @@ export function app(m) {
   // resets it to the innermost; the pointer over the timeline shows other
   // positions without touching it, and leaving comes back to both.
   let chosen = null;
+  let constants = null;
+  const consts = () => (constants ??= m.constants());
   a.selectFrame = (f) => {
     chosen = { first: f.first, inlined: f.inlined ? f.func : null };
     stack.select(f.first, f.inlined ? f.func : null);
@@ -202,7 +206,9 @@ export function app(m) {
     src.showFunction(step.func, undefined, step.line, step.file);
     // (The stack as it runs: see Machine.call_stack's nth.)
     stack.show(step.i, step, at?.task);
-    where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line });
+    // (A line after a return: what returned, as a debugger's finish says it.)
+    const ret = at?.kind === "return" && at.value != null ? `${at.func} returned ${result(at.value, consts())}` : null;
+    where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line, ret });
   }
   // Step, `dir` 1 forward, -1 back: to the next line of the selected
   // `call` (the Stack's selected one, else the innermost; what it called

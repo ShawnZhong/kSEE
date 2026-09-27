@@ -8,6 +8,7 @@
 // global, a field: Machine.definition); F4 runs to the line (Shift+F4:
 // back to its last run).
 import { $, el } from "./dom.js";
+import { storeText } from "./stores.js";
 import { CM, base } from "./editor.js";
 
 const KEYWORDS = new Set(("auto break case char const continue default do double else enum extern float for goto if " +
@@ -130,6 +131,48 @@ export function source(app) {
     }
     return out.length ? out.join("   ") : null;
   }
+  // What a line stored, at its end, within the selected call up to the
+  // cursor: its last store (Machine.stores by line, cached per selection),
+  // and how many it made; a link to that store.
+  function stored(file) {
+    const w = app.time.home(), cur = app.time.cursor();
+    if (!w || cur == null) return new Map();
+    const key = `${w.a}:${w.b}:${w.task}:${m.record_id(m.records() - 1)}`;
+    if (v.stores?.key !== key) {
+      const byLine = new Map();
+      for (const s of m.stores(w.a, w.b)) {
+        if (!s.write.at) continue;
+        const k = `${s.write.at.file}:${s.write.at.line}`;
+        (byLine.get(k) ?? byLine.set(k, []).get(k)).push(s);
+      }
+      v.stores = { key, byLine };
+    }
+    const out = new Map();
+    for (const [k, list] of v.stores.byLine) {
+      const cut = k.lastIndexOf(":");
+      if (k.slice(0, cut) !== file) continue;
+      const done = list.filter((s) => s.write.i <= cur);
+      if (done.length) out.set(Number(k.slice(cut + 1)), { s: done.at(-1), n: done.length });
+    }
+    return out;
+  }
+  class Stored extends CM.WidgetType {
+    constructor(s, n) {
+      super();
+      this.s = s;
+      this.n = n;
+    }
+    eq(other) {
+      return other.s.write.i === this.s.write.i && other.n === this.n;
+    }
+    ignoreEvent() {
+      return true;
+    }
+    toDOM() {
+      return el("a", { className: "stored", textContent: `   ${storeText(this.s)}${this.n > 1 ? ` ×${this.n}` : ""}`,
+                       title: "what this line stored, last; click: go to that store", onclick: () => app.time.go(this.s.write.i) });
+    }
+  }
   class Values extends CM.WidgetType {
     constructor(text) {
       super();
@@ -197,6 +240,10 @@ export function source(app) {
       // (The line's values, at its end: as a debugger shows them.)
       const line = doc.line(v.cursor.line), text = values(v.cursor.line, line.text);
       if (text) d.push(CM.Decoration.widget({ widget: new Values(text), side: 1 }).range(line.to));
+    }
+    // (What each line stored so far, at its end.)
+    for (const [n, { s, n: count }] of stored(file)) {
+      if (at(n) !== false) d.push(CM.Decoration.widget({ widget: new Stored(s, count), side: 2 }).range(doc.line(n).to));
     }
     d.sort((x, y) => x.from - y.from || x.value.startSide - y.value.startSide);
     ed.dispatch({ effects: setMarks.of(CM.Decoration.set(d, true)) });

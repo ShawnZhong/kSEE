@@ -53,7 +53,9 @@
   const was = ksee.time.cursor();
   if (file) ksee.runTo(file, Number(ln), 1);
   r.ranTo = [here, $("where").textContent, was, ksee.time.cursor()];
-  if (!file || !(r.ranTo[3] > was) || r.ranTo[1] !== here) throw new Error("run to: " + JSON.stringify(r.ranTo));
+  // (The same line, its next run; the where line may say what returned at one of them and not the other.)
+  const sameLine = (x) => x.replace(/ · \w+ returned [^·]*/, "").trim();
+  if (!file || !(r.ranTo[3] > was) || sameLine(r.ranTo[1]) !== sameLine(here)) throw new Error("run to: " + JSON.stringify(r.ranTo));
   // Stepping: → with "into calls" on by any line until a call is entered, → within that call, ↓ then → out of it
   // (the Stack's calls, deep), from the explanation's first link (a known place: ksys_read's call
   // site), so that the run is the same every time.
@@ -74,6 +76,10 @@
   trail.push([$("where").textContent, frames()]);
   $("step-down").click(); // (the button is the key)
   press("ArrowRight");
+  // (Back in ksys_read after vfs_read returned: the where line says what it returned; lines that stored say what, at their end.)
+  r.returned = $("where").textContent;
+  r.stored = [...document.querySelectorAll(".cm-editor a.stored")].map((a) => a.textContent.trim()).slice(0, 3);
+  if (!/vfs_read returned \d+/.test(r.returned) || !r.stored.length) throw new Error("after the return: " + JSON.stringify([r.returned, r.stored]));
   // (↓: the row below, the caller, selected on the Stack; ↑: back up.)
   dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
   const onRow = () => [...document.querySelectorAll("#stack tr.frame")].findIndex((f) => f.classList.contains("on"));

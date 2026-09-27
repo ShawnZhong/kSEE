@@ -62,6 +62,8 @@ pub struct At {
     pub task: TaskRef,
     /// The syscall in progress on the task (its index), if any.
     pub syscall: Option<usize>,
+    /// A return's value (truncated to 32 bits).
+    pub value: Option<i32>,
 }
 
 /// A source line the kernel ran (see stack::lines), at record `i`, the
@@ -330,6 +332,7 @@ impl View<'_> {
             inlined: self.inlined_from(inlined),
             task: self.task(self.rec.tasks[i]),
             syscall: self.rec.syscall_at(i),
+            value: match records[i] { Record::Return { value, .. } => Some(value as i32), _ => None },
         })
     }
 

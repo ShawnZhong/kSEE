@@ -9,6 +9,8 @@ import { $, el } from "./dom.js";
 import { place } from "./tree.js";
 
 const TAG = { local: "local", frame: "frame", regs: "registers", machine: "the machine's" };
+// A store said: "vfs_read's file->f_pos: 0 → 26".
+export const storeText = ({ what, kind, write: x }) => `${what}${x.member ? (kind === "object" || kind === "regs" ? "->" : ".") + x.member : ""}: ${x.before} → ${x.after}`;
 
 export function stores(app) {
   const { m } = app;
@@ -31,8 +33,7 @@ export function stores(app) {
       el("div", { className: "dim head" }, `${rows.length} store${rows.length === 1 ? "" : "s"} · `,
         el("a", { textContent: "here", title: "the store in effect at the cursor", onclick: () => body.querySelector("li.on")?.scrollIntoView({ block: "center" }) })),
       el("ol", {}, ...rows.map(({ what, kind, ty, write: x }) => el("li", { dataset: { i: x.i } },
-        el("a", { className: "mono", textContent: `${what}${x.member ? (kind === "object" || kind === "regs" ? "->" : ".") + x.member : ""}: ${x.before} → ${x.after}`,
-                  title: `go to this store${ty ? ` (${ty})` : ""}`, onclick: () => app.time.go(x.i) }),
+        el("a", { className: "mono", textContent: storeText({ what, kind, write: x }), title: `go to this store${ty ? ` (${ty})` : ""}`, onclick: () => app.time.go(x.i) }),
         el("span", { className: "dim", textContent: ` ${place(x.at)}${TAG[kind] ? ` · ${TAG[kind]}` : ""}` })))));
     mark();
   }

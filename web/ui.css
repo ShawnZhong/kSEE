@@ -74,6 +74,8 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .cm-editor .ln-infn { box-shadow: inset 3px 0 var(--accent); }
 .cm-editor .ln-cursor { background: var(--sel) !important; }
 .cm-editor .values { color: var(--dim); font-style: italic; }
+.cm-editor a.stored { color: var(--dim); font-style: italic; cursor: pointer; }
+.cm-editor a.stored:hover { color: var(--accent); }
 #trace .ret { color: var(--dim); }
 .cm-cursorGutter { width: 14px; }
 .gl-cursor { display: block; text-align: center; font-size: 11px; color: var(--run); }
