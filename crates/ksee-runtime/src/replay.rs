@@ -109,7 +109,7 @@ impl Machine {
     /// first of its number its runner made since it was asked, if the
     /// snapshot has it.
     pub fn syscall_of(&self, id: u32) -> Option<usize> {
-        let (tid, nr, from) = *k(|k| k.made.borrow().get(&id).copied()).as_ref()?;
+        let (tid, nr, from) = k(|k| k.calls.borrow().get(&id).map(|c| (c.tid, c.nr, c.from)))?;
         let rec = self.rec.borrow();
         rec.syscalls.iter().position(|s| {
             s.nr == nr && rec.ids[s.first] >= from

@@ -61,15 +61,20 @@ pub struct Kernel {
     pub doorbell: RefCell<VecDeque<u32>>,
     /// The runners ready for the page's calls (user/init.c): thread id ->
     /// task, and thread id -> its request (where a call is put: its first
-    /// word, the number, is what the runner waits on); the calls asked of
-    /// them (see Machine::call), and the count of calls asked.
+    /// word, the number, is what the runner waits on).
     pub runners: RefCell<BTreeMap<u32, u32>>,
     pub requests: RefCell<BTreeMap<u32, u32>>,
+    /// The calls asked (by id: see Machine::call), and how many (the last
+    /// id).
     pub calls: RefCell<BTreeMap<u32, Call>>,
     pub asked: Cell<u32>,
-    /// Every call asked (by id): its runner, its number, and the id its
-    /// recording's records start from (see Machine::syscall_of).
-    pub made: RefCell<BTreeMap<u32, (u32, u32, u32)>>,
+}
+
+impl Kernel {
+    /// The call runner `tid` is making (asked, not done), if any: its id.
+    pub fn in_flight(&self, tid: u32) -> Option<u32> {
+        self.calls.borrow().values().find(|c| c.tid == tid && !c.done).map(|c| c.id)
+    }
 }
 
 /// A call finished: returned (its result, and its buffers as it left them),
@@ -92,12 +97,17 @@ pub fn k<T>(f: impl FnOnce(&Kernel) -> T) -> T {
     K.with(f)
 }
 
-/// A syscall a runner is making (user/init.c): asked (written into its
-/// request), begun (recorded from there), then finished.
+/// A syscall a runner makes (user/init.c): asked (written into its
+/// request), begun (recorded from `from`, the id of the record there),
+/// then done (see Finished).
 #[derive(Default)]
 pub struct Call {
     pub id: u32,
+    pub tid: u32,
+    pub nr: u32,
+    pub from: u32,
     pub begun: bool,
+    pub done: bool,
     /// Each an integer, or (bit i of `buffers`) the address of a buffer
     /// in the request's data (its length: `lens`).
     pub args: [u32; 6],

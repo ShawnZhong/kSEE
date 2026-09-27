@@ -199,9 +199,10 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
 /// page waits no more once none is left.
 pub(crate) fn finish(tid: u32, how: &'static str, ret: i64, buffers: Vec<Option<Vec<u8>>>) {
     let done = k(|k| {
-        let Some(c) = k.calls.borrow_mut().remove(&tid) else { return false };
-        k.finished.borrow_mut().push(Finished { id: c.id, tid, how, ret, buffers });
-        if k.calls.borrow().is_empty() {
+        let Some(id) = k.in_flight(tid) else { return false };
+        k.calls.borrow_mut().get_mut(&id).unwrap().done = true;
+        k.finished.borrow_mut().push(Finished { id, tid, how, ret, buffers });
+        if k.calls.borrow().values().all(|c| c.done) {
             k.waiting.set(None);
         }
         true
@@ -216,7 +217,7 @@ pub(crate) fn finish(tid: u32, how: &'static str, ret: i64, buffers: Vec<Option<
 /// meanwhile with it), else 2 (stores only: memory stays exact between
 /// recordings; the runner's way back to its wait, idle, are not shown).
 fn on_off() {
-    let on = k(|k| k.calls.borrow().values().any(|c| c.begun));
+    let on = k(|k| k.calls.borrow().values().any(|c| c.begun && !c.done));
     Direct.write_u32(k(|k| k.trace.get()) + ksee_core::trace::ON, if on { 1 } else { 2 });
 }
 
@@ -233,7 +234,7 @@ fn runner_imports() -> Object {
             k.runners.borrow_mut().insert(tid, task);
             k.requests.borrow_mut().insert(tid, req);
         });
-        if tid == 1 && k(|k| k.calls.borrow().is_empty()) {
+        if tid == 1 && k(|k| k.calls.borrow().values().all(|c| c.done)) {
             // (The boot's over: let what it left for later run now, while
             // nothing is recorded.)
             k(|k| k.waiting.set(Some(k.clock.get())));
@@ -242,13 +243,16 @@ fn runner_imports() -> Object {
     js::set(&ksee, "begin", func(Closure::<dyn FnMut()>::new(|| {
         let tid = tid();
         let begun = k(|k| {
+            let Some(id) = k.in_flight(tid) else { return false };
             let mut calls = k.calls.borrow_mut();
-            let Some(c) = calls.get_mut(&tid).filter(|c| !c.begun) else { return false };
+            let c = calls.get_mut(&id).unwrap();
+            if c.begun {
+                return false;
+            }
             c.begun = true;
             // (Its recording starts here: the records' id, which counts the
             // pairs of words ever written: see trace::ring.)
-            let from = Direct.read_u32(k.trace.get()) / 2;
-            k.made.borrow_mut().entry(c.id).and_modify(|m| m.2 = from);
+            c.from = Direct.read_u32(k.trace.get()) / 2;
             true
         });
         if begun {
@@ -261,7 +265,10 @@ fn runner_imports() -> Object {
         let tid = tid();
         let buffers = k(|k| {
             let calls = k.calls.borrow();
-            let Some(c) = calls.get(&tid).filter(|c| c.begun) else { return None };
+            let c = calls.get(&k.in_flight(tid)?)?;
+            if !c.begun {
+                return None;
+            }
             Some((0..6).map(|i| (c.buffers >> i & 1 != 0).then(|| {
                 let mut b = vec![0; c.lens[i] as usize];
                 Direct.read(c.args[i], &mut b);

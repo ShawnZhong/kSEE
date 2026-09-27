@@ -231,7 +231,7 @@ fn sleeping() -> bool {
     let t = &tables().types;
     let runners: Vec<u32> = k(|k| {
         let runners = k.runners.borrow();
-        k.calls.borrow().keys().filter_map(|tid| runners.get(tid).copied()).collect()
+        k.calls.borrow().values().filter(|c| !c.done).filter_map(|c| runners.get(&c.tid).copied()).collect()
     });
     let off = |s: &str, f: &str| t.field(s, f).map(|(off, _)| off);
     let size = |s: &str| t.find(s).map_or(0, |id| t.size_of(id));

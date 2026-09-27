@@ -148,7 +148,6 @@ impl Machine {
             k.requests.borrow_mut().clear();
             k.calls.borrow_mut().clear();
             k.finished.borrow_mut().clear();
-            k.made.borrow_mut().clear();
         });
         *self.rec.borrow_mut() = Default::default();
         *self.past.borrow_mut() = None;
@@ -191,17 +190,17 @@ impl Machine {
         let Some((task, req)) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.requests.borrow().get(&tid)?))) else {
             return Err(format!("no runner {tid}").into());
         };
-        if k(|k| k.calls.borrow().contains_key(&tid)) {
+        if k(|k| k.in_flight(tid).is_some()) {
             return Err(format!("{tid} is still making its call").into());
         }
         let id = k(|k| k.asked.get() + 1);
-        let (c, data) = pack(id, &args, req + REQ_DATA_AT)?;
+        let (mut c, data) = pack(id, &args, req + REQ_DATA_AT)?;
+        (c.tid, c.nr) = (tid, nr);
         let head_args = c.args;
         let trace = k(|k| k.trace.get());
         k(|k| {
             k.asked.set(id);
-            k.calls.borrow_mut().insert(tid, c);
-            k.made.borrow_mut().insert(id, (tid, nr, 0));
+            k.calls.borrow_mut().insert(id, c);
             // (The page waits for the kernel now: see Kernel::waiting.)
             k.waiting.set(Some(k.clock.get()));
             // (Ring the runner: it waits on the request's number.)
