@@ -227,8 +227,17 @@ export function app(m) {
     const st = steps(), k = st.findIndex((x) => x.i === i && x.line === line && x.file === file);
     return k >= 0 ? showStep(k) : time.go(i);
   };
-  $("step-back").onclick = () => step("call", -1);
-  $("step-fwd").onclick = () => step("call", 1);
+  // (The four buttons are the four keys: ◀ ▶ in time, Shift-click for any
+  // line; ▲ ▼ in depth.)
+  $("step-back").onclick = (e) => step(e.shiftKey ? "line" : "call", -1);
+  $("step-fwd").onclick = (e) => step(e.shiftKey ? "line" : "call", 1);
+  const climb = (dir) => {
+    const f = stack.neighbour(dir);
+    if (f) a.selectFrame(f);
+    else if (dir < 0) enter();
+  };
+  $("step-up").onclick = () => climb(-1);
+  $("step-down").onclick = () => climb(1);
   // Two axes, a pair of keys each: ← → in time, the next line of the
   // selected call (with Shift: any line, at any depth); ↑ ↓ in depth, the
   // row above or below on the Stack (the callee, the caller: the innermost
@@ -238,11 +247,7 @@ export function app(m) {
     if (e.target.closest?.("input, select, textarea, .cm-editor")) return;
     const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key], updown = { ArrowUp: -1, ArrowDown: 1 }[e.key];
     if (arrow) step(e.shiftKey ? "line" : "call", arrow);
-    else if (updown) {
-      const f = stack.neighbour(updown);
-      if (f) a.selectFrame(f);
-      else if (updown < 0) enter();
-    }
+    else if (updown) climb(updown);
     else if (e.key === "Home") steps().length && showStep(0);
     else if (e.key === "/") time.focusFind();
     else return;

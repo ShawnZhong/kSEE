@@ -70,7 +70,7 @@
   press("ArrowRight");
   const d2 = depthNow();
   trail.push([$("where").textContent, frames()]);
-  press("ArrowDown");
+  $("step-down").click(); // (the button is the key)
   press("ArrowRight");
   // (↓: the row below, the caller, selected on the Stack; ↑: back up.)
   dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
