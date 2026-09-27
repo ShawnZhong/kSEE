@@ -40,7 +40,7 @@ never resumed), let what it had under way end, and boot again.
 raises interrupts (a bit, and a wake-up of idle), and asks a runner (/init,
 or a thread or child of it: see [kernel.md](kernel.md)) for a syscall
 (`Machine.call(name, args, tid)`: it writes the call into the runner's
-request and rings the runner, which waits in a futex on its word; the
+request and rings the runner, which waits in a futex on its number; the
 runner records the syscall it then makes, `ksee.begin` to `ksee.end`); it
 reads the console's output. `Machine.quiet()` is a promise of
 the kernel **quiet** (idle, until the page's input), with the calls
@@ -96,8 +96,7 @@ ksee pack evaluates the UAPI headers' constants with the same evaluator.
 
 Every view asks the Machine for the moment at the cursor: `at(i)` (every
 record located: a store at the line its task was on, a return at the line
-it returned from), `call_stack(i, nth, top)` (from call `top` down: the
-moment as that call saw it, what the timeline shows on hover),
+it returned from), `call_stack(i, nth)`,
 `call_line` (a call's own first line), `line_steps`, `chart`,
 `memory_at(i)` then `object` /
 `global` (memory as it was), `last_write`, `writes` (an object's history:

@@ -86,14 +86,16 @@ export function app(m) {
   a.calls = () => calls;
   // Show the moment `at` (see Machine.at): the source there, the Stack,
   // memory as it was, where it is. `frame` ({ first, inlined }, a call on
-  // the stack then): as that call saw it: the source at the line it was
-  // at (the one calling what is above it), the Stack from it down.
+  // the stack then): that call selected on the Stack, the source at the
+  // line it was at (the one calling what is above it), as a click on it
+  // shows.
   function view(at, frame = null) {
     memoryAt(at.i);
     const s = at.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
-    // (The Stack, from `frame` down if given: its top is where to show.)
-    const top = stack.show(at.i, null, at.task, frame)[0];
-    const here = frame && top ? { func: top.func, file: top.file, line: top.line, inlined: null, owner: (top.inlined ? stack.owner(top) : top)?.func } : at;
+    stack.show(at.i, null, at.task);
+    const f = frame && stack.select(frame.first, frame.inlined);
+    if (f) document.querySelector("#stack tr.frame.on")?.scrollIntoView({ block: "nearest" });
+    const here = f ? { func: f.func, file: f.file, line: f.line, inlined: null, owner: (f.inlined ? stack.owner(f) : f)?.func } : at;
     src.view.cursor = here;
     if (here.file) src.showFunction(here.owner ?? here.func, s?.index, here.line, here.file);
     where({ task: at.task, name: here.inlined ?? here.func, file: here.file, line: here.line, sc: s?.name });

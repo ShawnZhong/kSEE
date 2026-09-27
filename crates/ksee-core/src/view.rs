@@ -395,19 +395,7 @@ impl View<'_> {
     /// the `nth` line that record runs (see lines), or its last. Code
     /// inlined there is a frame of its own for each function it is inlined
     /// from (`inlined`, with no arguments: there was no call).
-    /// `top`: a call on the stack (its first record; `inlined`: code inlined
-    /// into it, from that function): the stack from it down, as that call
-    /// saw the moment (what it called is above it).
-    pub fn call_stack(&self, i: usize, nth: Option<usize>, mem: &dyn Memory, top: Option<(usize, Option<&str>)>) -> Vec<Frame> {
-        let mut out = self.call_stack_all(i, nth, mem);
-        if let Some((first, inlined)) = top
-            && let Some(k) = out.iter().position(|f| f.first == first && match inlined { Some(name) => f.inlined && f.func == name, None => !f.inlined }) {
-            out.drain(..k);
-        }
-        out
-    }
-
-    fn call_stack_all(&self, i: usize, nth: Option<usize>, mem: &dyn Memory) -> Vec<Frame> {
+    pub fn call_stack(&self, i: usize, nth: Option<usize>, mem: &dyn Memory) -> Vec<Frame> {
         let t = self.tables;
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         let mut out = Vec::new();
@@ -935,7 +923,7 @@ mod tests {
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1]);
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
-        let lines: Vec<_> = v.call_stack(1, None, &Mem(Vec::new()), None).iter().map(|f| (f.func.clone(), f.line)).collect();
+        let lines: Vec<_> = v.call_stack(1, None, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
         assert_eq!(lines, [("g".into(), Some(10)), ("f".into(), Some(2))]);
     }
 
@@ -948,10 +936,10 @@ mod tests {
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1]);
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
-        let frames: Vec<_> = v.call_stack(1, None, &Mem(Vec::new()), None).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
+        let frames: Vec<_> = v.call_stack(1, None, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
         assert_eq!(frames, [("g".into(), Some(10), false), ("h".into(), Some(20), true), ("f".into(), Some(2), false)]);
         // At record 0, its first line (nth 0): f at line 1, nothing inlined.
-        let first: Vec<_> = v.call_stack(0, Some(0), &Mem(Vec::new()), None).iter().map(|f| (f.func.clone(), f.line)).collect();
+        let first: Vec<_> = v.call_stack(0, Some(0), &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
         assert_eq!(first, [("f".into(), Some(1))]);
     }
 
