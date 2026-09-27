@@ -187,19 +187,31 @@ export function app(m) {
     stack.show(step.i, step, at?.task);
     where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line });
   }
-  // Step: by a `line` (into calls), `over` calls (the next line at this
-  // level or out of it), or `out` (the next line out of it), `dir` 1
-  // forward, -1 back. The level: the Stack's selected call's, else the
-  // line's (calls deep, then inlined deep: inlined code is stepped over
-  // too). False if there is no such line.
+  // Step, `dir` 1 forward, -1 back: to the next line of the selected
+  // `call` (the Stack's selected one, else the innermost; what it called
+  // is skipped, and its return goes on in its caller), or to the next
+  // `line` run at any depth. Levels: calls deep, then inlined deep
+  // (inlined code is stepped over too). False if there is no such line.
   function step(kind, dir) {
     const st = steps();
     if (!st.length) return false;
     const k = position(), { depth: d, inl: i } = stack.level() ?? st[k];
     // (A line's level against this one: -1 shallower, 0 the same, 1 deeper.)
     const cmp = (s) => Math.sign(s.depth - d || s.inl - i);
-    const stop = { line: () => true, over: (s) => cmp(s) <= 0, out: (s) => cmp(s) < 0 }[kind];
+    const stop = kind === "line" ? () => true : (s) => cmp(s) <= 0;
     for (let j = k + dir; j >= 0 && j < st.length; j += dir) if (stop(st[j])) return showStep(j);
+    return false;
+  }
+  // ↑ with nothing above the selected call: into the next call it makes,
+  // at that call's first line (it is the innermost then, so selected).
+  function enter() {
+    const st = steps();
+    if (!st.length) return false;
+    const k = position(), { depth: d, inl: i } = stack.level() ?? st[k];
+    for (let j = k + 1; j < st.length; j++) {
+      if (st[j].depth < d || (st[j].depth === d && st[j].inl < i)) return false; // (it returned first)
+      if (st[j].depth > d || st[j].inl > i) return showStep(j);
+    }
     return false;
   }
   // Run to line `line` of `file`: the next (dir 1) or the last (-1) time it
@@ -213,44 +225,24 @@ export function app(m) {
     const st = steps(), k = st.findIndex((x) => x.i === i && x.line === line && x.file === file);
     return k >= 0 ? showStep(k) : time.go(i);
   };
-  let playing = null;
-  function stopPlay() {
-    clearTimeout(playing);
-    playing = null;
-    $("play").textContent = "▶ Play";
-  }
-  function play() {
-    if (playing) return stopPlay();
-    if (!steps().length) return;
-    $("play").textContent = "❚❚ Pause";
-    const by = $("step-by").value;
-    const tickPlay = () => {
-      if (!playing) return;
-      if (!step(by, 1)) return stopPlay();
-      playing = setTimeout(tickPlay, Number($("speed").value));
-    };
-    playing = setTimeout(tickPlay, 0);
-  }
-  $("play").onclick = play;
-  $("step-back").onclick = () => step($("step-by").value, -1);
-  $("step-fwd").onclick = () => step($("step-by").value, 1);
-  // (← →: a line; with Shift: over; with Alt: out. F10, F11, Shift+F11 as
-  // in a debugger; ↑ ↓: the row above or below on the Stack (the callee,
-  // the caller: the innermost is on top; steps go on at that call's
-  // level); Home: the first line; /: find a function.)
+  $("step-back").onclick = () => step("call", -1);
+  $("step-fwd").onclick = () => step("call", 1);
+  // Two axes, a pair of keys each: ← → in time, the next line of the
+  // selected call (with Shift: any line, at any depth); ↑ ↓ in depth, the
+  // row above or below on the Stack (the callee, the caller: the innermost
+  // is on top), ↑ with nothing above into the next call made. Home: the
+  // first line; /: find a function.
   addEventListener("keydown", (e) => {
     if (e.target.closest?.("input, select, textarea, .cm-editor")) return;
     const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key], updown = { ArrowUp: -1, ArrowDown: 1 }[e.key];
-    if (arrow) step(e.altKey ? "out" : e.shiftKey ? "over" : "line", arrow);
+    if (arrow) step(e.shiftKey ? "line" : "call", arrow);
     else if (updown) {
       const f = stack.neighbour(updown);
       if (f) a.selectFrame(f);
+      else if (updown < 0) enter();
     }
     else if (e.key === "Home") steps().length && showStep(0);
     else if (e.key === "/") time.focusFind();
-    else if (e.key === "F10") step("over", 1);
-    else if (e.key === "F11") step(e.shiftKey ? "out" : "line", 1);
-    else if (e.key === " ") play();
     else return;
     e.preventDefault();
   });
@@ -312,7 +304,6 @@ export function app(m) {
   // is ready for calls.
   a.restart = async () => {
     halted = null;
-    stopPlay();
     consoleText = "";
     showConsole();
     await m.restart();
@@ -329,7 +320,6 @@ export function app(m) {
     const code = m.halted();
     if (code !== undefined && halted == null) {
       halted = code;
-      stopPlay();
     }
     badge();
     setTimeout(tick, 50);

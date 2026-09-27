@@ -1,5 +1,5 @@
 // The default: the read example (#ex=read): its calls made by themselves; its explanation's links (the
-// Stack, a hover at each), stepping, play, the chart (hover, click), typing and changing calls,
+// Stack, a hover at each), stepping, the chart (hover, click), typing and changing calls,
 // another example; returns a report.
 (async () => {
     const r = {};
@@ -41,11 +41,8 @@
   // (The example's own pin stays: the read's struct file, pinned as it opened.)
   if (!$("objects").innerText.includes("fd 3 note.txt") || document.querySelectorAll("#objects .pinned").length !== 1) throw new Error("the example's pin: " + $("objects").innerText.slice(0, 160));
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
-  $("speed").value = "30"; $("play").click(); await sleep(1500);
-  if ($("play").textContent.includes("Pause")) $("play").click(); // (it may have reached the end)
-  r.played = $("where").textContent.slice(0, 50);
   // Run to a line (the source's F4): the line where the cursor is, its next run
-  // (stepping on from where Play stopped until a line that does run again).
+  // (stepping on until a line that does run again).
   let here, file, ln;
   for (let k = 0; k < 40; k++) {
     here = $("where").textContent;
@@ -57,21 +54,24 @@
   if (file) ksee.runTo(file, Number(ln), 1);
   r.ranTo = [here, $("where").textContent, was, ksee.time.cursor()];
   if (!file || !(r.ranTo[3] > was) || r.ranTo[1] !== here) throw new Error("run to: " + JSON.stringify(r.ranTo));
-  // Stepping: into a call, over the next, out of it (the Stack's calls, deep), from the
-  // explanation's first link (a known place: ksys_read's entry), so that the run is the same every time.
+  // Stepping: Shift+→ by any line until a call is entered, → within that call, ↓ then → out of it
+  // (the Stack's calls, deep), from the explanation's first link (a known place: ksys_read's call
+  // site), so that the run is the same every time.
   document.querySelector(".explain a.place").click();
   await sleep(300);
   const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
-  const press = (kind) => { $("step-by").value = kind; $("step-fwd").click(); };
+  const press = (key, shift = false) => dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey: shift }));
   const frames = () => [...document.querySelectorAll("#stack tr.frame")].map((f) => f.innerText.trim().split("\n")[0].slice(0, 28));
+  press("ArrowUp"); // (into ksys_read: the innermost, selected)
   const d0 = depthNow(), trail = [[$("where").textContent, frames()]];
-  for (let k = 0; k < 200 && depthNow() <= d0; k++) press("line");
+  for (let k = 0; k < 200 && depthNow() <= d0; k++) press("ArrowRight", true);
   const d1 = depthNow();
   trail.push([$("where").textContent, frames()]);
-  press("over");
+  press("ArrowRight");
   const d2 = depthNow();
   trail.push([$("where").textContent, frames()]);
-  press("out");
+  press("ArrowDown");
+  press("ArrowRight");
   // (↓: the row below, the caller, selected on the Stack; ↑: back up.)
   dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
   const onRow = () => [...document.querySelectorAll("#stack tr.frame")].findIndex((f) => f.classList.contains("on"));

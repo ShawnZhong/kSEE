@@ -22,15 +22,8 @@
   <div class="flamescroll" id="chartbox"><canvas id="chart" aria-label="the call stacks over time"></canvas></div>
   <canvas id="strip" aria-label="which task ran"></canvas>
   <div class="transport">
-    <button id="step-back" title="Back a step (←; Shift: over calls, Alt: out of the call)">◀</button>
-    <button id="play" class="go" title="Play (space)">▶ Play</button>
-    <button id="step-fwd" title="A step (→; Shift: over calls, Alt: out of the call; F10, F11, Shift+F11)">▶</button>
-    <select id="step-by" aria-label="step by" title="What ◀ ▶ and Play step by: every line (into calls), over calls, or out of the call (the Stack's selected one, or the line's)">
-      <option value="line">by line</option><option value="over">over calls</option><option value="out">out of calls</option>
-    </select>
-    <select id="speed" aria-label="speed" title="Play speed">
-      <option value="1000">1 line / s</option><option value="400" selected>1 line / 0.4 s</option><option value="120">8 lines / s</option><option value="30">30 lines / s</option>
-    </select>
+    <button id="step-back" title="The selected call's line before (←; Shift+←: the line before at any depth)">◀</button>
+    <button id="step-fwd" title="The selected call's next line (→; Shift+→: the next line at any depth). ↑ ↓: the call above or below on the Stack; ↑ with none above: into the next call">▶</button>
     <span id="where" class="mono dim"></span><span id="status" class="dim">loading the kernel…</span>
   </div>
 </section>
@@ -46,7 +39,7 @@
       <a data-tab="stack" title="the calls at the cursor, their values as they were then">Stack</a>
       <a data-tab="trace" title="the selected call as a tree of the calls it made, in order">Calls</a>
       <a data-tab="objects" title="the objects the selected call changed, each with its writes and its value at the cursor; pin one to keep it">Objects</a>
-      <a data-tab="records" title="the raw trace around the cursor: what the views are built from">Records</a>
+      <a data-tab="records" title="the raw trace around the cursor: what the views are built from">Trace</a>
     </h2>
     <div class="pane" data-tab="stack">
       <div class="stackhead dim" id="stack-note"></div>
