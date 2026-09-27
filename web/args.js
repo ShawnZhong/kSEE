@@ -42,6 +42,7 @@ export const made = (text, values) => String(text).split(/("(?:[^"\\]|\\.)*")/).
 
 // A result: a number, or an error's name (from the kernel's errno names).
 export function result(r, consts) {
+  if (r > 0xffff) return `0x${r.toString(16)}`; // (a pointer, a flag word)
   if (r >= 0) return String(r);
   const name = Object.keys(consts).find((c) => /^E[A-Z0-9]+$/.test(c) && consts[c] === -r);
   return `${r} (${name ?? "an error"})`;

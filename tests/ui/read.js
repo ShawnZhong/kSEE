@@ -76,10 +76,9 @@
   trail.push([$("where").textContent, frames()]);
   $("step-down").click(); // (the button is the key)
   press("ArrowRight");
-  // (Back in ksys_read after vfs_read returned: the where line says what it returned; lines that stored say what, at their end.)
+  // (Back in the caller after the call returned: the where line says what it returned.)
   r.returned = $("where").textContent;
-  r.stored = [...document.querySelectorAll(".cm-editor a.stored")].map((a) => a.textContent.trim()).slice(0, 3);
-  if (!/vfs_read returned \d+/.test(r.returned) || !r.stored.length) throw new Error("after the return: " + JSON.stringify([r.returned, r.stored]));
+  if (!/\w+ returned /.test(r.returned)) throw new Error("after the return: " + JSON.stringify(r.returned));
   // (↓: the row below, the caller, selected on the Stack; ↑: back up.)
   dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
   const onRow = () => [...document.querySelectorAll("#stack tr.frame")].findIndex((f) => f.classList.contains("on"));
@@ -145,6 +144,12 @@
   await sleep(100);
   r.stores = [$("stores").querySelector(".head")?.textContent, $("stores").innerText.slice(0, 200)];
   if (!/^\d+ stores?/.test(r.stores[0] ?? "") || !$("stores").innerText.includes("file->f_pos: 0 → ") || !document.querySelector("#stores li.on")) throw new Error("the read's stores: " + JSON.stringify(r.stores));
+  // (At a store: its line in the source says what it stored, at its end.)
+  const lastStore = ksee.m.stores(read.first, read.last).at(-1);
+  ksee.time.go(lastStore.write.i);
+  await sleep(300);
+  r.stored = [...document.querySelectorAll(".cm-editor a.stored")].map((a) => a.textContent.trim()).slice(0, 3);
+  if (!r.stored.length) throw new Error("no stored notes in the source at " + $("where").textContent);
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)

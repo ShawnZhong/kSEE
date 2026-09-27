@@ -10,7 +10,7 @@
 // lead into the recording: `[label](2)` is call 2 (its recording
 // selected), `[label](2:vfs_read)` the first call of vfs_read in it (on
 // the call's task; `:any` on any task), the cursor there, and `:calls`
-// (or `:stack`, `:records`) shows that tab; the first such
+// (or `:stores`, `:stack`, `:records`) shows that tab; the first such
 // link is where the cursor starts; `[label](try:1)` runs the example's
 // `tries[0]`, another program (calls separated by ";"), instead: to see
 // what changes. `code` in backticks. The program is
@@ -194,7 +194,7 @@ export async function examples(app) {
       const tr = part.match(/^\[([^\]]*)\]\(try:(\d+)\)$/), prog = tr && t.ex.tries?.[Number(tr[2]) - 1];
       if (tr) return el("a", { className: "try", textContent: tr[1], title: prog ? `run this program instead:\n${prog}` : "no such try",
         onclick: prog ? () => go(t.ex, program(prog), true) : null });
-      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|calls|records))?\)$/);
+      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|calls|stores|records))?\)$/);
       if (link) {
         const l = { j: Number(link[2]) - 1, func: link[3], any: !!link[4], tab: { calls: "trace" }[link[5]] ?? link[5] };
         l.c = syscall(l.j);
