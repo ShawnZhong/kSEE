@@ -6,10 +6,7 @@
 // of them on asking). Pointers open into
 // what they point to, structs into their fields, read from memory as it was
 // at the cursor (Machine.memory_at: see tree.js); what is open stays
-// open while stepping; click a value for its writes (tree.js). Under a
-// call's locals, "changed ▸": what the call changed, by object
-// (Machine.changes over its records: each object said as the kernel names
-// it, "fd 3 note.txt", with its writes, each a link). Click a call to
+// open while stepping; click a value for its writes (tree.js). Click a call to
 // select it: the source shows where it is (for an outer call, the line
 // calling the next one in).
 import { $, el } from "./dom.js";
@@ -19,7 +16,7 @@ export function callstack(app) {
   const { m } = app;
   // Open paths, and the values shown before (to highlight changes).
   // (The current task open to begin with.)
-  const s = { open: new Set(["task"]), changed: new Set(), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
+  const s = { open: new Set(["task"]), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
   // The current task's fields shown first.
   const KEY = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 
@@ -46,13 +43,6 @@ export function callstack(app) {
       if (f.locals?.length) {
         body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3, textContent: "locals" })));
         rows(f.locals, `${n - k}/${f.func}/locals`, 1, body, { from: f.first, to: m.call_end(f.first) ?? undefined, what: `while ${f.func}'s frame lives` });
-      }
-      // (What the call changed, by object: on asking.)
-      if (!f.inlined) {
-        const key = `${n - k}/${f.func}`, open = s.changed.has(key);
-        body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3 },
-          el("a", { textContent: open ? "changed ▾" : "changed ▸", title: "what this call changed, by object", onclick: () => (open ? s.changed.delete(key) : s.changed.add(key), draw()) }))));
-        if (open) changes(f, body);
       }
     });
     // At the bottom: the task running then (its task_struct, as it was).
@@ -83,27 +73,6 @@ export function callstack(app) {
     const pin = pane.clientHeight / 3, above = on.getBoundingClientRect().top - table.getBoundingClientRect().top;
     spacer.style.height = `${Math.max(0, pin - above)}px`;
     pane.scrollTop = Math.max(0, above - pin);
-  }
-
-  // What call `f` changed (Machine.changes over its records, to its end,
-  // or the recording's): a row an object, its writes under it.
-  function changes(f, body) {
-    const cur = app.time.cursor() ?? Infinity, last = m.call_end(f.first) ?? m.records() - 1;
-    const list = m.changes(f.first, last);
-    if (!list.length) return body.push(el("tr", { className: "history" }, el("td", { colSpan: 3, className: "dim", textContent: "nothing changed" })));
-    for (const c of list) {
-      if (!c.addr) {
-        body.push(el("tr", { className: "history" }, el("td", { colSpan: 3, className: "dim", textContent: `and ${c.n} stores to memory no call here got by argument or local` })));
-        continue;
-      }
-      const now = c.writes.findLastIndex((x) => x.i <= cur);
-      body.push(el("tr", { className: "history" }, el("td", { colSpan: 3, style: "padding-left:24px" },
-        el("b", { className: "mono", textContent: c.what }), el("span", { className: "dim mono", textContent: ` ${c.ty}` }),
-        el("span", { className: "dim", textContent: ` · ${c.n} write${c.n === 1 ? "" : "s"}${c.n > c.writes.length ? `, the last ${c.writes.length}` : ""}` }),
-        el("ol", {}, ...c.writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
-          el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: `go to this write: ${place(x.at)}`, onclick: () => app.time.go(x.i) }),
-          el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` })))))));
-    }
   }
 
   // The stack at record `i` (null: the last; undefined: none), `step` the

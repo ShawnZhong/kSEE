@@ -128,14 +128,11 @@
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   if (document.querySelector("#trace li.on > a.mono")?.textContent !== "vfs_read") throw new Error("the cursor's call not marked: " + document.querySelector("#trace li.on")?.textContent);
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
-  // What a call changed: "changed ▸" under ksys_read on the Stack: the struct file (its f_pos) among the objects.
-  const ksysRow = [...document.querySelectorAll("#stack tr.frame")].find((tr) => tr.innerText.trim().startsWith("ksys_read"));
-  let row = ksysRow?.nextElementSibling;
-  while (row && !row.querySelector("a[title^='what this call changed']")) row = row.nextElementSibling;
-  row?.querySelector("a").click();
-  if (!$("stack").innerText.includes("f_pos: 0 → ")) throw new Error("the read's changes: " + $("stack").innerText.slice(0, 400));
-  row = [...document.querySelectorAll("#stack tr.sub a")].find((a) => a.textContent === "changed ▾");
-  row?.click();
+  // The Changes tab: what the read changed, by object: the struct file (its f_pos) among them, the write at the cursor marked.
+  document.querySelector('h2.tabs a[data-tab="changes"]').click();
+  await sleep(100);
+  r.changes = [$("changes").querySelector(".head")?.textContent, $("changes").innerText.slice(0, 200)];
+  if (!/^\d+ objects?, \d+ writes?/.test(r.changes[0] ?? "") || !$("changes").innerText.includes("f_pos: 0 → ") || !document.querySelector("#changes li.on")) throw new Error("the read's changes: " + JSON.stringify(r.changes));
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)

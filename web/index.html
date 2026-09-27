@@ -41,6 +41,7 @@
     <h2 class="tabs">
       <a data-tab="stack" title="the calls at the cursor, their values as they were then">Stack</a>
       <a data-tab="trace" title="the selected call as a tree of the calls it made, in order">Calls</a>
+      <a data-tab="changes" title="what the selected call changed, by object, each write a link">Changes</a>
       <a data-tab="records" title="the raw trace around the cursor: what the views are built from">Trace</a>
     </h2>
     <div class="pane" data-tab="stack">
@@ -54,6 +55,10 @@
     <div class="pane" data-tab="trace">
       <div class="stackhead dim" id="trace-note"></div>
       <div class="body" id="trace"></div>
+    </div>
+    <div class="pane" data-tab="changes">
+      <div class="stackhead dim" id="changes-note"></div>
+      <div class="body" id="changes"></div>
     </div>
   </div>
 </main>
