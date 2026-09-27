@@ -78,8 +78,9 @@ syscall's own) up to its return (the result), on one task. Its frame on
 the Stack says which syscall, its arguments typed as the syscall's
 parameters and shown as the kernel's constants (`AT_FDCWD`, `O_CREAT |
 O_WRONLY`). The frames inside it (`__wasm_sys_openat`, the
-`SYSCALL_DEFINE` shims inlined into it) show as they are: nothing is
-folded.
+`SYSCALL_DEFINE` shims inlined into it) show as they are, nothing folded;
+the wrapper's parameters are the syscall's, as its `SYSCALL_DEFINE` line
+has them (arch::SYSCALL_WRAPPER; its own DWARF parameter is `regs`).
 
 ## Memory as it was
 

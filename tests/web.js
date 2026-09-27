@@ -173,7 +173,7 @@ check("a field's declaration: file.f_pos, or .f_pos of any struct", m.definition
 check("a syscall's parameters, typed, with the constants that fit", JSON.stringify(m.syscall("openat")?.params) ===
       JSON.stringify([{ name: "dfd", ty: "int", consts: ["AT_"] }, { name: "filename", ty: "char *", consts: [] },
                       { name: "flags", ty: "int", consts: ["O_"] }, { name: "mode", ty: "umode_t", consts: [] }]));
-// The syscall entry: the frame says which syscall, its arguments typed as the syscall's, as constants; the wrapper is a frame of its own.
+// The syscall entry: the frame says which syscall, its arguments typed as the syscall's, as constants; the wrapper is a frame of its own, with the same parameters (its SYSCALL_DEFINE line's).
 {
   const op = m.syscalls().find((s) => s.name === "openat"), stack = m.call_stack(m.first_call("do_sys_openat2", op.first, op.last)), entry = stack.at(-1);
   // (Memory reached through a pointer local, or the task's pointer members, is named too: files->next_fd, through current->files.)
@@ -185,7 +185,7 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
   check(`a call begins at its signature: do_sys_openat2 at ${dso?.file}:${dso?.line}, defined at ${dsoDef?.line}`, dso?.line === dsoDef?.line && dso?.file === dsoDef?.file);
   check(`the entry frame: ${entry?.func}, the syscall ${entry?.syscall}(${entry?.args?.map((a) => `${a.name} = ${a.value}`).join(", ")})`,
         entry?.func === "wasm_syscall" && entry.syscall === "openat" && entry.args?.[0]?.value === "AT_FDCWD" && entry.args[2]?.value === "O_WRONLY | O_CREAT | O_TRUNC"
-        && stack.some((f) => f.func === "__wasm_sys_openat" && !f.inlined));
+        && stack.some((f) => f.func === "__wasm_sys_openat" && !f.inlined && f.args?.[0]?.name === "dfd" && f.args[0].value === "AT_FDCWD"));
 }
 
 // The examples (target/site/examples.json): their calls, and each of the explanation's links found in its call's recording.

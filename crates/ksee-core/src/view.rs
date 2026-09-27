@@ -404,7 +404,11 @@ impl View<'_> {
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         let mut out = Vec::new();
         let entry = t.find(arch::SYSCALL);
-        for (depth, c) in stack::stack_at(t, records, tasks, i, nth).into_iter().enumerate().rev() {
+        let calls = stack::stack_at(t, records, tasks, i, nth);
+        // (The entry's arguments, the syscall's: a wrapper's parameters are
+        // those, as its SYSCALL_DEFINE line has them; its own DWARF one is regs.)
+        let entry_raw = calls.iter().find(|c| Some(c.func) == entry).and_then(|c| stack::args_frame(records, c.first)).map(|(a, _)| a);
+        for (depth, c) in calls.into_iter().enumerate().rev() {
             let depth = depth as u32;
             let name = self.name(c.func);
             let (raw, frame) = match stack::args_frame(records, c.first) {
@@ -414,9 +418,11 @@ impl View<'_> {
             let locals = frame.map(|f| self.locals(&name, f, mem));
             // (The syscall entry: its arguments are the syscall's.)
             let at_entry = matches!(records.get(c.first), Some(&Record::Block { func, n: 0 }) if Some(func) == entry);
+            let wrapper = name.starts_with(arch::SYSCALL_WRAPPER);
             let (syscall, args) = match raw {
                 Some(raw) => match at_entry.then(|| self.syscall_args(&raw, mem)).flatten() {
                     Some((n, a)) => (Some(n), Some(a)),
+                    None if wrapper => (None, Some(entry_raw.as_ref().and_then(|e| self.syscall_args(e, mem)).map_or_else(|| self.args(c.func, &name, raw, mem), |(_, a)| a))),
                     None => (None, Some(self.args(c.func, &name, raw, mem))),
                 },
                 None => (None, None),

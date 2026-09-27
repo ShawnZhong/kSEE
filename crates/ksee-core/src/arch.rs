@@ -4,6 +4,11 @@
 /// A syscall (arch/wasm/kernel/syscall.c): its call's arguments are the
 /// number and the syscall's; its return's value is the result.
 pub const SYSCALL: &str = "wasm_syscall";
+/// A syscall's table entry (arch/wasm/include/asm/syscall_wrapper.h:
+/// `__wasm_sys_read`), the one function SYSCALL_DEFINE makes for it: its
+/// source's parameters (the SYSCALL_DEFINE line's) are the syscall's
+/// arguments, on the entry's record.
+pub const SYSCALL_WRAPPER: &str = "__wasm_sys_";
 /// The machine's own primitives (arch/wasm/include/asm and the generic
 /// half of the arch layer: `current`, the interrupt flag, atomics, bit
 /// ops), inlined all over the kernel: the machine, not calls. Their code
