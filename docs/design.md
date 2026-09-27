@@ -53,7 +53,7 @@ SMP, no fork (threads and vfork, though): see Limits).
 │  (linked)    │ Source at the cursor          │ Stack (args, │
 │  program     │ (the lines that ran)          │ locals, task)│
 │  (its calls) │                               │ Calls        │
-│ Console      │                               │ Objects      │
+│ Console      │                               │ Objects·Trace│
 └──────────────┴───────────────────────────────┴──────────────┘
 ```
 
@@ -69,11 +69,13 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   7.2. One wasm instance, on the page's thread; a task is a call stack of
   it, which the host suspends and resumes at a context switch (JSPI).
   /init makes the syscalls the page asks for, and so do its threads and
-  children (runners; the doorbell: an interrupt, and a syscall that waits
-  for it).
+  children (runners: each waits, in a futex, on the request the page
+  writes into its memory; the doorbell interrupt wakes it).
 - **The recording** ([recording.md](recording.md)): an LLVM pass
-  instruments every function the same way (blocks, calls with arguments,
-  returns, locals, stores with old values) into one ring.
+  instruments every function the same way (blocks, calls with their
+  arguments and frame base, returns, stores with old values) into one
+  ring, in full while a runner makes the syscall it was asked, stores
+  only in between (so memory as it was stays exact).
 - **Rebuilding the past** ([replay.md](replay.md)): from the records alone,
   crates/ksee-core rebuilds which task ran, call stacks, lines within
   blocks, syscalls, and memory as it was at any record.

@@ -63,7 +63,8 @@ between two processes): a call can be made by a thread or child of /init
 (`19: read(3, [64], 64)`), and a call can block, until a later call wakes
 it.
 
-The timeline shows the recording: the call stacks over time, and which
+The timeline shows the recording: the call stacks over time (its unit is
+a step, a basic block run: a store takes no room), and which
 task ran (scroll to zoom, drag to pan; hover a call for what it was: the
 source and the Stack show that moment while the pointer is there; click it to fix the cursor there; click a syscall, or double-click
 any call, to select it: its records from its start to its end, with
@@ -83,9 +84,11 @@ made, inlined code among them (in italics, as the timeline and the Stack
 show it); ▸ opens a call's own calls; each is a link, and the call the
 cursor is in is marked. Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by
-its number and filesystem, a task by its comm and pid. Ctrl+click (or F12) a name for its definition: a
-function, a type, a global, a struct's member. Over a function, the source
-says who called it in the recording, each caller a link to the call.
+its number and filesystem, a task by its comm and pid. The Trace tab is
+the raw trace, a line a record (a call with its arguments, a block, a
+store from what to what, a return): what every other view is built from.
+Ctrl+click (or F12) a name for its definition: a function, a type, a
+global, a struct's member.
 
 An example is one JSON file in user/examples/: a title, a question, `text`
 (the explanation: paragraphs, with links into the recording as
