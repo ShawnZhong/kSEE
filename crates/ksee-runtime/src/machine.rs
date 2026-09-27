@@ -181,9 +181,9 @@ impl Machine {
     /// Uint8Array), { size } (a buffer of that many zero bytes, for the
     /// call to fill), or { strings } (an array of char *, null for NULL:
     /// argv). The call's id: it finishes when it returns; or, when
-    /// it blocks, later, as another call wakes it (see quiet). Recorded:
-    /// from here until the kernel is quiet again (see sched::idle); so
-    /// memory now is memory as the recording ends.
+    /// it blocks, later, as another call wakes it (see quiet). Recorded
+    /// from the runner's begin to its end (user/init.c): the syscall,
+    /// entry to return, and whatever the kernel does meanwhile.
     pub fn call(&self, name: &str, args: Vec<JsValue>, tid: Option<u32>) -> Result<u32, JsValue> {
         let tid = tid.unwrap_or(1);
         let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
@@ -201,29 +201,30 @@ impl Machine {
         k(|k| {
             k.asked.set(id);
             k.calls.borrow_mut().insert(tid, c);
-            // (Records' ids count the pairs of words ever written: see trace::ring.)
-            k.made.borrow_mut().insert(id, (tid, nr, Direct.read_u32(trace) / 2));
+            k.made.borrow_mut().insert(id, (tid, nr, 0));
             // (The page waits for the kernel now: see Kernel::waiting.)
             k.waiting.set(Some(k.clock.get()));
             // (Ring the runner: it waits on its word.)
             k.doorbell.borrow_mut().push_back(task);
         });
-        Direct.write_u32(trace + trace::ON, 1);
         // (The call into the runner's request, in its memory, which is
         // kernel memory: recorded; then its word, to ring it.)
-        let mut head = [0u8; REQ_HEAD as usize];
+        let mut head = [0u8; REQ_DATA_AT as usize];
         head[0..4].copy_from_slice(&nr.to_le_bytes());
         for (i, a) in head_args.iter().enumerate() {
             head[4 + 4 * i..8 + 4 * i].copy_from_slice(&a.to_le_bytes());
         }
-        imports::bulk(req, REQ_DATA_AT + data.len() as u32);
+        if Direct.read_u32(trace + trace::ON) == 0 {
+            Direct.write_u32(trace + trace::ON, 2);
+        }
+        imports::log(req, REQ_DATA_AT + data.len() as u32);
         unsafe {
             core::ptr::copy_nonoverlapping(head.as_ptr(), req as *mut u8, head.len());
-            core::ptr::write_bytes((req + REQ_HEAD) as *mut u8, 0, (REQ_DATA_AT - REQ_HEAD) as usize);
             core::ptr::copy_nonoverlapping(data.as_ptr(), (req + REQ_DATA_AT) as *mut u8, data.len());
         }
-        imports::bulk(rung, 4);
+        imports::log(rung, 4);
         Direct.write_u32(rung, 1);
+
         sched::interrupt(IRQ_DOORBELL);
         Ok(id)
     }

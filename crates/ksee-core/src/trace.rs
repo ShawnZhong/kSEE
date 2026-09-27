@@ -17,9 +17,14 @@ pub enum Record {
     /// A store of `size` bytes at `addr`, which held `old` (size 0: a range
     /// of `old` bytes whose old contents are not logged).
     Store { addr: u32, size: u32, old: u64 },
+    /// The task running (its task_struct): the runtime's, where a recording
+    /// begins (no switch says so).
+    Task { task: u32 },
 }
 
 const BLOCK: u32 = 1;
+/// The tag of a Task record (the runtime's).
+pub const TASK: u32 = 3;
 const RETURN: u32 = 4;
 /// The tag of a Store record's head (the plugin's, and the runtime's).
 pub const STORE: u32 = 7;
@@ -118,6 +123,7 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                     }
                     return Some(Record::Block { func, n });
                 }
+                TASK => return Some(Record::Task { task: func }),
                 RETURN => {
                     if self.values(&mut v, 1) < 1 {
                         continue; // truncated

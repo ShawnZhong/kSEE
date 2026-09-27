@@ -93,10 +93,11 @@ pub fn k<T>(f: impl FnOnce(&Kernel) -> T) -> T {
 }
 
 /// A syscall a runner is making (user/init.c): asked (written into its
-/// request), then finished.
+/// request), begun (recorded from there), then finished.
 #[derive(Default)]
 pub struct Call {
     pub id: u32,
+    pub begun: bool,
     /// Each an integer, or (bit i of `buffers`) the address of a buffer
     /// in the request's data (its length: `lens`).
     pub args: [u32; 6],
@@ -105,12 +106,9 @@ pub struct Call {
 }
 
 /// A runner's request (user/init.c): `struct { i32 nr; i32 args[6]; i32
-/// done; i64 ret; u8 data[REQ_DATA]; }`: its head (the call), where its
-/// result is, and its data (the call's buffers, all together).
-pub const REQ_HEAD: u32 = 32;
-pub const REQ_RET: u32 = 32;
-pub const REQ_DONE: u32 = 28;
-pub const REQ_DATA_AT: u32 = 40;
+/// pad; u8 data[REQ_DATA]; }`: its head (the call), and its data (the
+/// call's buffers, all together).
+pub const REQ_DATA_AT: u32 = 32;
 pub const REQ_DATA: usize = 4096;
 
 /// The kernel's memory is this module's memory.
@@ -140,6 +138,7 @@ pub fn current() -> u32 {
 }
 
 /// Whether the trace records (its `on` word; probes check it).
+/// Whether the probes record now (at either level: see programs::on_off).
 pub fn recording() -> bool {
     let trace = k(|k| k.trace.get());
     trace != 0 && Direct.read_u32(trace + ksee_core::trace::ON) != 0

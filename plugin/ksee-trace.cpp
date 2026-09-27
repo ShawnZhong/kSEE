@@ -25,8 +25,9 @@
 // u32 ring[RING_WORDS]; }; the exported ksee_trace() returns its address.
 // pos counts words ever written (the ring keeps the most recent), stored
 // with release order after each record, so a reader that loads it sees
-// whole records. Probes record only while on is nonzero (the host turns
-// it on and off). One writer at a time: the kernel is uniprocessor.
+// whole records. Probes record only while on is nonzero: 1, everything;
+// 2, stores only (the host sets it: 1 within a syscall the page asked
+// for, 2 between, so that memory stays exact throughout). One writer at a time: the kernel is uniprocessor.
 //
 // A record is a head pair of words and continuation pairs; the second
 // word's top nibble tags the pair, so a reader can start at any even offset
@@ -44,7 +45,7 @@
 //                         7: a range whose old contents are not logged,
 //                         followed by its length
 //   [value, 8 << 28 | i]  continuation i of the head before
-// (The host's runtime writes store records too, for its own writes into
+// (The host's runtime writes records too: stores, for its own writes into
 // kernel memory.) fn is a hash of the function's name (for a
 // function local to its file, of "file:name").
 //
@@ -214,11 +215,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     IB.CreateRet(IB.CreatePtrToInt(trace, i32));
     auto field = [&](IRBuilder<> &B, unsigned k) { return B.CreateStructGEP(traceTy, trace, k); };
 
-    // Writer F's body: while on, the words `words` makes, into the ring.
-    auto body = [&](Function *F, auto words) {
+    // Writer F's body: while on (1: everything; 2: stores only, so memory
+    // stays exact between recordings), the words `words` makes, into the ring.
+    auto body = [&](Function *F, bool store, auto words) {
       IRBuilder<> B(BasicBlock::Create(C, "", F));
       BasicBlock *write = BasicBlock::Create(C, "write", F), *done = BasicBlock::Create(C, "done", F);
-      B.CreateCondBr(B.CreateICmpNE(B.CreateLoad(i32, field(B, 2)), B.getInt32(0)), write, done);
+      Value *on = B.CreateLoad(i32, field(B, 2));
+      B.CreateCondBr(store ? B.CreateICmpNE(on, B.getInt32(0)) : B.CreateICmpEQ(on, B.getInt32(1)), write, done);
       B.SetInsertPoint(write);
       SmallVector<Value *> w;
       // Continuation pairs: [value, KindValue << 28 | index].
@@ -240,14 +243,14 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       B.CreateRetVoid();
     };
     for (Function *F : put)
-      body(F, [&](IRBuilder<> &B, auto &w, auto value) {
+      body(F, false, [&](IRBuilder<> &B, auto &w, auto value) {
         w.push_back(F->getArg(0));
         w.push_back(F->getArg(1));
         for (unsigned i = 2; i < F->arg_size(); i++)
           value(F->getArg(i));
       });
     for (unsigned k = 0; k < 4; k++)
-      body(putStore[k], [&](IRBuilder<> &B, auto &w, auto value) {
+      body(putStore[k], true, [&](IRBuilder<> &B, auto &w, auto value) {
         Value *addr = putStore[k]->getArg(0);
         Value *old = B.CreateZExt(B.CreateAlignedLoad(IntegerType::get(C, 8 << k),
                                                       B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1)), i64);

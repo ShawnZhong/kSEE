@@ -279,8 +279,6 @@ pub fn idle() -> Promise {
     if Direct.read_u32(k(|k| k.pending.get())) != 0 {
         return Promise::resolve(&JsValue::NULL);
     }
-    // (A runner back from its call: the call is finished.)
-    crate::programs::returned();
     // The page waits: on to the timer's deadline, now. For a call, if its
     // runner sleeps on a timer (else it blocks: it waits for another call).
     let d = deadline();
@@ -298,9 +296,7 @@ pub fn idle() -> Promise {
         raise(IRQ_TIMER);
         return Promise::resolve(&JsValue::NULL);
     }
-    // Nothing to do until the page's input: quiet. A call's recording
-    // ends here (and memory stays as it leaves it, until the next call).
-    Direct.write_u32(k(|k| k.trace.get()) + ksee_core::trace::ON, 0);
+    // Nothing to do until the page's input: quiet.
     let mut wake = None;
     let p = Promise::new(&mut |ok, _| wake = Some(ok));
     S.with_borrow_mut(|s| s.idle = wake);

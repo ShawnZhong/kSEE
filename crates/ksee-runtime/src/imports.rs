@@ -59,14 +59,22 @@ pub extern "C" fn time_ns() -> u64 {
     })
 }
 
-/// ksee.bulk, for the kernel (memcpy, memset, wide stores), and for what
-/// the runtime itself writes into kernel memory: Store records with the old
-/// contents of `addr..addr + len`, in 8-byte stores, up to 256 bytes (the
-/// rest as a range of unknown old contents).
+/// ksee.bulk, for the kernel (memcpy, memset, wide stores): Store records
+/// with the old contents of `addr..addr + len`, while recording.
 #[unsafe(no_mangle)]
 pub extern "C" fn bulk(addr: u32, len: u32) {
+    if recording() {
+        log(addr, len);
+    }
+}
+
+/// What the runtime itself writes into kernel memory (a call's request,
+/// a runner's word): Store records with the old contents of `addr..addr +
+/// len`, in 8-byte stores, up to 256 bytes (the rest as a range of
+/// unknown old contents).
+pub fn log(addr: u32, len: u32) {
     use ksee_core::trace::{STORE, UNKNOWN, VALUE};
-    if len == 0 || !recording() {
+    if len == 0 {
         return;
     }
     let logged = len.min(256);
@@ -89,11 +97,16 @@ pub extern "C" fn bulk(addr: u32, len: u32) {
     }
 }
 
+/// A Task record: `task` (a task_struct) runs; where a recording begins.
+pub fn task(task: u32) {
+    ring_put(&[task, ksee_core::trace::TASK << 28]);
+}
+
 /// Append a record (pairs of words) to the kernel's trace ring (called
 /// while the kernel runs: no kernel code writes it meanwhile).
 fn ring_put(words: &[u32]) {
     let (trace, size) = (k(|k| k.trace.get()), tables().ring_words);
-    if trace == 0 || size == 0 || !recording() {
+    if trace == 0 || size == 0 {
         return;
     }
     let p = Direct.read_u32(trace);

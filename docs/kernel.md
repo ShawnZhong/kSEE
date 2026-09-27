@@ -131,11 +131,11 @@ buffers) are, in its own memory, which is kernel memory. The page writes
 the call into the request (recorded, as any write to kernel memory),
 sets the word and rings /init's task (`WASM_IRQ_DOORBELL`: its handler
 wakes the task, kernel/irq.c; the futex wait, woken, sees its word
-changed and returns); /init makes the syscall, puts the result in the
-request, and waits again; the host, when the kernel is quiet, reads the
-result and the buffers there. So every syscall the page shows is a real
-process's, with its fds and its memory, and the protocol is a struct in
-shared memory and a futex. (A plain futex, not console input, a signal, or a device:
+changed and returns); /init makes the syscall between `ksee.begin` and
+`ksee.end(ret)`, which bracket the recording and carry the result, and
+waits again. So every syscall the page shows is a real process's, with
+its fds and its memory, and the protocol is a struct in shared memory, a
+futex, and a bracket. (A plain futex, not console input, a signal, or a device:
 those would put a worker, a signal's delivery or the VFS at the start of
 every call's recording; and no syscall of this port's own.)
 

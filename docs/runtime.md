@@ -39,12 +39,13 @@ never resumed), let what it had under way end, and boot again.
 **The page and the kernel** talk through memory and promises: the page
 raises interrupts (a bit, and a wake-up of idle), and asks a runner (/init,
 or a thread or child of it: see [kernel.md](kernel.md)) for a syscall
-(`Machine.call(name, args, tid)`: it rings the runner, which waits in
-a futex on its word); it reads the console's output. `Machine.quiet()` is a promise of
-the kernel **quiet** (idle, until the page's input: the recording stops
-there), with the calls finished meanwhile: returned (the result in the
-runner's request), ended by an execve (the new program's `ksee.ready`) or
-by their task's exit.
+(`Machine.call(name, args, tid)`: it writes the call into the runner's
+request and rings the runner, which waits in a futex on its word; the
+runner records the syscall it then makes, `ksee.begin` to `ksee.end`); it
+reads the console's output. `Machine.quiet()` is a promise of
+the kernel **quiet** (idle, until the page's input), with the calls
+finished meanwhile: returned (`ksee.end`, with the result), ended by an
+execve (the new program's `ksee.ready`) or by their task's exit.
 A call may not have finished then: it blocks (a futex's wait, a pipe's
 read), and finishes as a later call wakes it. (While a call is under way,
 idle skips the clock to the next timer only if the call's runner sleeps on

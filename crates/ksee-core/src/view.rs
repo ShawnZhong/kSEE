@@ -317,7 +317,8 @@ impl View<'_> {
             }
             r => {
                 let (func, step) = top(i).unwrap_or((0, None));
-                (if matches!(r, Record::Args { .. }) { "args" } else { "store" }, func, located(func, step))
+                let kind = match r { Record::Args { .. } => "args", Record::Task { .. } => "task", _ => "store" };
+                (kind, func, located(func, step))
             }
         };
         Some(At {
@@ -363,7 +364,7 @@ impl View<'_> {
                     }
                 }
                 Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value as i32)),
-                Record::Args { .. } => continue, // (on its call's line)
+                Record::Args { .. } | Record::Task { .. } => continue, // (on its call's line; the task's line above)
                 Record::Store { addr, size: 0, old } => ("store", format!("store {addr:#x} [{old} bytes] (old contents not kept)")),
                 Record::Store { addr, size, old } => {
                     let mut new = [0u8; 8];

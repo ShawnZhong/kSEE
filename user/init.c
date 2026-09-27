@@ -15,17 +15,21 @@
 
 // Ready for calls: the host puts a call in *req (its number and
 // arguments; buffer arguments point into data) and sets *rung; the runner
-// makes it, and puts the result in req->ret, done.
+// makes it between begin and end (recorded from the one to the other),
+// and end gets the result.
 struct request {
 	int nr;
 	int args[6];
-	int done;
-	long long ret;
+	int pad;
 	char data[4096];
 };
 
 __attribute__((import_module("ksee"), import_name("ready")))
 void ksee_ready(volatile int *rung, struct request *req);
+__attribute__((import_module("ksee"), import_name("begin")))
+void ksee_begin(void);
+__attribute__((import_module("ksee"), import_name("end")))
+void ksee_end(long long ret);
 
 // (No background work after the mount: the image is initialized in full,
 // and ext4lazyinit need not prefetch its block bitmaps.)
@@ -57,9 +61,9 @@ static void __attribute__((noreturn)) serve(void)
 		while (!rung)
 			__nolibc_syscall4(__NR_futex_time64, &rung, FUTEX_WAIT_PRIVATE, 0, NULL);
 		rung = 0;
-		req.ret = __nolibc_syscall6(req.nr, req.args[0], req.args[1], req.args[2],
-					    req.args[3], req.args[4], req.args[5]);
-		req.done = 1;
+		ksee_begin();
+		ksee_end(__nolibc_syscall6(req.nr, req.args[0], req.args[1], req.args[2],
+					   req.args[3], req.args[4], req.args[5]));
 	}
 }
 

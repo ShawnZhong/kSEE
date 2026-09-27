@@ -198,44 +198,33 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
 /// Finish runner `tid`'s call, if it has one (for Machine::quiet); the
 /// page waits no more once none is left.
 pub(crate) fn finish(tid: u32, how: &'static str, ret: i64, buffers: Vec<Option<Vec<u8>>>) {
-    k(|k| {
-        let Some(c) = k.calls.borrow_mut().remove(&tid) else { return };
+    let done = k(|k| {
+        let Some(c) = k.calls.borrow_mut().remove(&tid) else { return false };
         k.finished.borrow_mut().push(Finished { id: c.id, tid, how, ret, buffers });
         if k.calls.borrow().is_empty() {
             k.waiting.set(None);
         }
+        true
     });
-}
-
-/// The calls returned: a runner that has made its call put the result in
-/// its request (done). Finished, with the buffers as the call left them.
-pub(crate) fn returned() {
-    let back: Vec<(u32, u32, i64, Vec<Option<Vec<u8>>>)> = k(|k| {
-        let ports = k.ports.borrow();
-        k.calls.borrow().iter().filter_map(|(&tid, c)| {
-            let &(_, req) = ports.get(&tid)?;
-            if Direct.read_u32(req + REQ_DONE) == 0 {
-                return None;
-            }
-            let mut ret = [0u8; 8];
-            Direct.read(req + REQ_RET, &mut ret);
-            let buffers = (0..6).map(|i| (c.buffers >> i & 1 != 0).then(|| {
-                let mut b = vec![0; c.lens[i] as usize];
-                Direct.read(c.args[i], &mut b);
-                b
-            })).collect();
-            Some((tid, c.id, i64::from_le_bytes(ret), buffers))
-        }).collect()
-    });
-    for (tid, _, ret, buffers) in back {
-        finish(tid, "returned", ret, buffers);
+    if done {
+        on_off();
     }
 }
 
-/// The import of a runner (user/init.c), module ksee: ready(rung, req):
+/// The probes' level: 1 (everything) while a runner is between its begin
+/// and its end (a call's syscall, entry to return; what the kernel does
+/// meanwhile with it), else 2 (stores only: memory stays exact between
+/// recordings; the runner's way back to its wait, idle, are not shown).
+fn on_off() {
+    let on = k(|k| k.calls.borrow().values().any(|c| c.begun));
+    Direct.write_u32(k(|k| k.trace.get()) + ksee_core::trace::ON, if on { 1 } else { 2 });
+}
+
+/// The imports of a runner (user/init.c), module ksee. ready(rung, req):
 /// the current thread is a runner, waiting for calls in a futex on the
 /// word at `rung` (the host sets it, and rings), each put in its request
-/// at `req` (state::REQ_*), where it puts the result.
+/// at `req` (state::REQ_*). begin(), end(ret): around the call it makes:
+/// recorded from the one to the other; the result.
 fn runner_imports() -> Object {
     let ksee = Object::new();
     js::set(&ksee, "ready", func(Closure::<dyn FnMut(u32, u32)>::new(|rung: u32, req: u32| {
@@ -248,6 +237,39 @@ fn runner_imports() -> Object {
             // (The boot's over: let what it left for later run now, while
             // nothing is recorded.)
             k(|k| k.waiting.set(Some(k.clock.get())));
+        }
+    })));
+    js::set(&ksee, "begin", func(Closure::<dyn FnMut()>::new(|| {
+        let tid = tid();
+        let begun = k(|k| {
+            let mut calls = k.calls.borrow_mut();
+            let Some(c) = calls.get_mut(&tid).filter(|c| !c.begun) else { return false };
+            c.begun = true;
+            // (Its recording starts here: the records' id, which counts the
+            // pairs of words ever written: see trace::ring.)
+            let from = Direct.read_u32(k.trace.get()) / 2;
+            k.made.borrow_mut().entry(c.id).and_modify(|m| m.2 = from);
+            true
+        });
+        if begun {
+            // (Who runs: no switch in the recording says so.)
+            crate::imports::task(current());
+            on_off();
+        }
+    })));
+    js::set(&ksee, "end", func(Closure::<dyn FnMut(i64)>::new(|ret: i64| {
+        let tid = tid();
+        let buffers = k(|k| {
+            let calls = k.calls.borrow();
+            let Some(c) = calls.get(&tid).filter(|c| c.begun) else { return None };
+            Some((0..6).map(|i| (c.buffers >> i & 1 != 0).then(|| {
+                let mut b = vec![0; c.lens[i] as usize];
+                Direct.read(c.args[i], &mut b);
+                b
+            })).collect())
+        });
+        if let Some(buffers) = buffers {
+            finish(tid, "returned", ret, buffers);
         }
     })));
     ksee

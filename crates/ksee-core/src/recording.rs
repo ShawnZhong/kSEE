@@ -29,8 +29,9 @@ pub struct Recording {
 impl Recording {
     pub fn new(t: &Tables, records: Vec<Record>, ids: Vec<u32>) -> Recording {
         // The task running at each record: it changes when __switch_to(prev,
-        // next) returns (in next), and when a new task starts
-        // (wasm_task_entry(p)).
+        // next) returns (in next), when a new task starts
+        // (wasm_task_entry(p)), and where the runtime says which runs (a
+        // Task record, where a recording begins).
         let (switch, start) = (t.find(arch::SWITCH), t.find(arch::TASK_ENTRY));
         let args = |i: usize| match records.get(i + 1) {
             Some(&Record::Args { args, .. }) => Some(args),
@@ -49,6 +50,10 @@ impl Recording {
                     next = None;
                 }
                 Record::Return { func, .. } if Some(func) == switch => task = next.take().unwrap_or(task),
+                Record::Task { task: t } => {
+                    task = t;
+                    next = None;
+                }
                 _ => {}
             }
             tasks.push(task);

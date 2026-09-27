@@ -55,6 +55,7 @@ overwritten the start of a record) and skip to the next head:
 | Pair | Record |
 |---|---|
 | `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments, then its frame base |
+| `[task, 3<<28]` | the runtime's: task (a task_struct) is running (where a recording begins: no switch says so) |
 | `[fn, 4<<28]` | a return from fn; the value follows |
 | `[addr, 7<<28 \| k]` | a store of 1<<k bytes at addr; the old value follows (k = 7: a range of unknown old contents; its length follows) |
 | `[value, 8<<28 \| i]` | continuation i |
@@ -64,10 +65,16 @@ is stored with release order after each record, so a reader sees whole
 records. One writer at a time: the kernel is uniprocessor, and the runtime
 writes its own records only while the kernel runs (one thread).
 
-Probes record **only while `on` is set**: the runtime turns it on for each
-call the page asks a runner to make (Machine.call), and off when the kernel
-idles for the page's input again: until the next call, memory stays as the
-recording leaves it. Otherwise each probe costs a load and a branch.
+Probes record **only while `on` is set**, at one of two levels. `1`:
+everything, while a runner is between `ksee.begin` and `ksee.end`
+(user/init.c: around the syscall the page asked for), so a recording is
+that syscall, entry to return, and whatever the kernel does meanwhile
+(other tasks it wakes, timers, the clock skipping in idle). `2`: stores
+only, between calls (from the first call on): what the kernel does then
+(the runner's way back to its wait, idle) is not shown, but every write
+is still undone when going back, so memory as it was stays exact: a
+call's locals are on the runner's kernel stack, which its wait reuses.
+Otherwise each probe costs a load and a branch.
 
 ## What the kernel says about itself
 
