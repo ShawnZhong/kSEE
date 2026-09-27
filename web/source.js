@@ -172,15 +172,15 @@ export function source(app) {
   // Show line `n`: as a debugger does, a jump (`jump`: another file or
   // function, a link) puts it a third of the way down, with the lines
   // before it for context; stepping leaves the view alone while the line
-  // stays in the middle band of it, and brings it back to that third when
-  // it leaves.
+  // is in view (only the mark moves), and puts it at that third when it
+  // leaves the view.
   function reveal(n, jump) {
     const doc = ed.state.doc;
     if (n < 1 || n > doc.lines) return;
     const pos = doc.line(n).from;
     ed.dispatch({ selection: { anchor: pos } });
-    const box = ed.scrollDOM, top = ed.lineBlockAt(pos).top - box.scrollTop, h = box.clientHeight;
-    if (!jump && top > h * 0.1 && top < h * 0.8) return;
+    const box = ed.scrollDOM, block = ed.lineBlockAt(pos), top = block.top - box.scrollTop, h = box.clientHeight;
+    if (!jump && top >= 0 && top + block.height <= h) return;
     ed.dispatch({ effects: CM.EditorView.scrollIntoView(pos, { y: "start", yMargin: Math.max(0, h / 3) }) });
   }
 
@@ -190,8 +190,13 @@ export function source(app) {
     v.focus = focus;
     const text = await fetchFile(file);
     if (v.file !== file) return; // changed while loading
-    const st = state(file, text ?? `// ${file}: not in this site's sources.`);
-    if (ed.state !== st) ed.setState(st);
+    // (Another file: its state in; the one shown keeps its own, as it is
+    // now, for when it comes back. The same file: nothing re-rendered.)
+    if (v.shown !== file) {
+      if (v.shown != null) states.set(v.shown, ed.state);
+      ed.setState(state(file, text ?? `// ${file}: not in this site's sources.`));
+      v.shown = file;
+    }
     v.counts = new Map(text === null ? [] : m.file_coverage(file, v.syscall).map((c) => [c.line, c.count]));
     decorate();
     const fn = v.fn?.file === file ? v.fn : null;
