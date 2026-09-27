@@ -96,7 +96,9 @@ name, an inode by number and filesystem, a dentry, a path, a kiocb by
 the file's, a super_block by its type and id.
 
 What it cannot show: values only in wasm locals (registers, in effect),
-and old contents of bulk writes beyond 256 bytes (known to be unknown).
+and old contents of bulk writes beyond 256 bytes (their record says
+where and how much, not what: going back shows such bytes as they are
+now).
 
 ## Going back
 

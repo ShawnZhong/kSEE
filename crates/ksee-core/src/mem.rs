@@ -12,10 +12,9 @@ use crate::Memory;
 /// of its records.
 #[derive(Debug, Default)]
 pub struct History {
-    /// Start address -> [(record, size, old)], oldest first.
+    /// Start address -> [(record, size, old)], oldest first. (A range of
+    /// unknown old contents, size 0, is not here: nothing to undo.)
     by_addr: BTreeMap<u32, Vec<(usize, u32, u64)>>,
-    /// Ranges of unknown old contents: (address, length, record).
-    unknown: Vec<(u32, u32, usize)>,
     /// The Store records, oldest first.
     stores: Vec<usize>,
 }
@@ -26,9 +25,7 @@ impl History {
         for (i, r) in records.iter().enumerate() {
             if let Record::Store { addr, size, old } = *r {
                 h.stores.push(i);
-                if size == 0 {
-                    h.unknown.push((addr, old as u32, i));
-                } else {
+                if size != 0 {
                     h.by_addr.entry(addr).or_default().push((i, size, old));
                 }
             }
@@ -44,11 +41,6 @@ impl History {
     /// How many stores the trace has after record `at`.
     pub fn after(&self, at: usize) -> usize {
         self.stores.len() - self.stores.partition_point(|&i| i <= at)
-    }
-
-    /// Whether any of `addr..addr + len` is of unknown contents after `at`.
-    pub fn unknown(&self, addr: u32, len: u32, at: usize) -> bool {
-        self.unknown.iter().any(|&(a, l, i)| i > at && a < addr.saturating_add(len) && addr < a.saturating_add(l))
     }
 
     /// Byte `b` after record `at`, if a later store changed it: the old byte
