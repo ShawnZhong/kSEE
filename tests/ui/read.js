@@ -103,6 +103,13 @@
   for (const type of ["pointerdown", "pointerup"])
     $("chart").dispatchEvent(new PointerEvent(type, at));
   r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
+  // (The click chose that call: the pointer wandering off, then leaving, comes back to it, not to the innermost.)
+  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: box.x, clientY: $("chart").getBoundingClientRect().top + 2 }));
+  await sleep(150);
+  $("chart").dispatchEvent(new PointerEvent("pointerleave"));
+  await sleep(150);
+  const back = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
+  if (back[0] !== r.clicked[0] || back[1] !== r.clicked[1]) throw new Error("leaving the timeline: " + JSON.stringify([r.clicked, back]));
   // (A syscall's box: the syscall selected, entry to exit.)
   const home = ksee.time.home();
   if (home?.a !== read.first || home?.b !== read.last) throw new Error("the read's selection: " + JSON.stringify(home) + ", not " + read.first + ".." + read.last);

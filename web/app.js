@@ -67,7 +67,14 @@ export function app(m) {
   };
   // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:
   // the Stack marks it, the source shows where it is, the timeline outlines it.
+  // The view's position has two coordinates: the cursor (a record: the
+  // timeline's x) and the call chosen on the stack there (`chosen`: its y;
+  // null: the innermost). A click on a bar, or ▲ ▼, sets the call; a step
+  // resets it to the innermost; the pointer over the timeline shows other
+  // positions without touching it, and leaving comes back to both.
+  let chosen = null;
   a.selectFrame = (f) => {
+    chosen = { first: f.first, inlined: f.inlined ? f.func : null };
     stack.select(f.first, f.inlined ? f.func : null);
     src.view.cursor = { file: f.file, line: f.line };
     const at = time.cursor() != null ? m.at(time.cursor()) : null, s = at?.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
@@ -102,6 +109,7 @@ export function app(m) {
   // The cursor moved to `at`.
   a.showAt = (at) => {
     L.pos = null;
+    chosen = null;
     view(at);
     a.trace?.mark();
     a.records?.mark();
@@ -119,7 +127,7 @@ export function app(m) {
       if (key === peek.key) return;
       peek.key = i == null ? null : key;
       const at = to != null ? m.at(to) : null;
-      if (at) view(at, frame);
+      if (at) view(at, i == null ? chosen : frame);
     });
   };
   a.trace = trace(a);
@@ -176,6 +184,7 @@ export function app(m) {
   // (The cursor, and memory, at the line's first store, `at`; the Stack at
   // its record, where its block's lines are.)
   function showLine(step) {
+    chosen = null;
     time.mark(step.at);
     a.trace?.mark();
     a.records?.mark();
