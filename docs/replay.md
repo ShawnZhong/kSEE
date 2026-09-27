@@ -68,10 +68,12 @@ line it is inlined at (Tables::fold_primitives).
 ## Syscalls
 
 A syscall is a call of `wasm_syscall` (its arguments: the number and the
-syscall's own) up to its return (the result), on one task. On the Stack,
-the syscall's entry (`wasm_syscall` and the `SYSCALL_DEFINE` wrappers) is
-one frame, named for the syscall, its arguments shown as the kernel's
-constants (`AT_FDCWD`, `O_CREAT | O_WRONLY`).
+syscall's own) up to its return (the result), on one task. Its frame on
+the Stack says which syscall, its arguments typed as the syscall's
+parameters and shown as the kernel's constants (`AT_FDCWD`, `O_CREAT |
+O_WRONLY`). The frames inside it (`__wasm_sys_openat`, the
+`SYSCALL_DEFINE` shims inlined into it) show as they are: nothing is
+folded.
 
 ## Memory as it was
 

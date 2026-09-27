@@ -92,8 +92,8 @@ pub struct Frame {
     pub first: usize,
     /// How many calls deep it is (as line steps count: see Line::depth).
     pub depth: u32,
-    /// The syscall entry (with its wrapper, see arch::SYSCALL_WRAPPER):
-    /// the syscall's name; its arguments are the syscall's.
+    /// The syscall entry (arch::SYSCALL): the syscall's name; its
+    /// arguments are the syscall's, typed as its parameters.
     pub syscall: Option<String>,
     /// Code inlined into the call (the frame outside it), not a call.
     pub inlined: bool,
@@ -409,7 +409,8 @@ impl View<'_> {
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         let mut out = Vec::new();
         let entry = t.find(arch::SYSCALL);
-        for (depth, c) in self.fold(stack::stack_at(t, records, tasks, i, nth)).into_iter().rev() {
+        for (depth, c) in stack::stack_at(t, records, tasks, i, nth).into_iter().enumerate().rev() {
+            let depth = depth as u32;
             let name = self.name(c.func);
             let (raw, frame) = match stack::args_frame(records, c.first) {
                 Some((a, f)) => (Some(a), Some(f)),
@@ -433,26 +434,6 @@ impl View<'_> {
             let (&(_, at), inner) = nest.split_last().expect("a call");
             out.extend(inner.iter().map(|&(k, at)| frame(self.inline_name(k.unwrap_or(0)), true, at)));
             out.push(Frame { args, locals, syscall, ..frame(name, false, at) });
-        }
-        out
-    }
-
-    /// A call stack (outermost first) with the syscall's wrapper folded into
-    /// the entry (Tables::is_wrapper): one call, from the entry's first
-    /// record, in the wrapper (its function, at its line); each call with
-    /// how deep it is.
-    pub fn fold(&self, calls: Vec<stack::ChartCall>) -> Vec<(u32, stack::ChartCall)> {
-        let entry = self.tables.find(arch::SYSCALL);
-        let mut out: Vec<(u32, stack::ChartCall)> = Vec::new();
-        let mut in_entry = false;
-        for (d, c) in calls.into_iter().enumerate() {
-            match out.last_mut() {
-                Some((_, e)) if in_entry && self.tables.is_wrapper(c.func) => *e = stack::ChartCall { first: e.first, ..c },
-                _ => {
-                    in_entry = Some(c.func) == entry;
-                    out.push((d as u32, c));
-                }
-            }
         }
         out
     }
@@ -503,10 +484,6 @@ impl View<'_> {
         let mut at = c.step.map(|s| s.loc).or(self.tables.functions.get(&c.func).map(|f| f.loc));
         let mut out = Vec::new();
         for &(k, site) in self.chain(c.step.and_then(|s| s.inlined)) {
-            // (SYSCALL_DEFINE's shims, inlined at the wrapper's own line: the entry's own.)
-            if self.tables.at_wrapper_line(site) {
-                continue;
-            }
             out.push((Some(k), at));
             at = Some(site);
         }

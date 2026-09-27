@@ -1,6 +1,6 @@
 //! The probe and type tables the trace plugin embeds in the kernel module.
 
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 
 use crate::arch;
 use alloc::string::{String, ToString};
@@ -62,9 +62,6 @@ pub struct Tables {
     /// function (in [`Tables::names`]) and where it is inlined (a line of
     /// the next one out; the last: of the block's function).
     pub inlines: Vec<Vec<(u32, Loc)>>,
-    /// Where the syscall wrappers are defined (file, line): code inlined
-    /// there is SYSCALL_DEFINE's shims, the entry's own (see is_wrapper).
-    pub wrapper_lines: BTreeSet<(u32, u32)>,
     /// Source file paths.
     pub files: Vec<String>,
     /// The kernel's types.
@@ -130,9 +127,6 @@ impl Tables {
                     let Ok(id) = id.parse() else { continue };
                     let loc = unit.loc(location, false);
                     let sealed = rest.first() == Some(&"1");
-                    if name.starts_with(arch::SYSCALL_WRAPPER) {
-                        t.wrapper_lines.insert((loc.file, loc.line));
-                    }
                     t.functions.insert(id, Function { name: name.to_string(), loc, known: known.parse().unwrap_or(0), sealed });
                 }
                 ["B", id, n, where_] => {
@@ -252,18 +246,6 @@ impl Tables {
     pub fn field(&self, s: &str, f: &str) -> Option<Field> {
         let (offset, size) = self.types.field(s, f)?;
         Some(Field { offset, size })
-    }
-
-    /// Whether `func` is a syscall's table entry (arch::SYSCALL_WRAPPER):
-    /// the syscall's entry frame, with what is inlined at its line.
-    pub fn is_wrapper(&self, func: u32) -> bool {
-        self.functions.get(&func).is_some_and(|f| f.name.starts_with(arch::SYSCALL_WRAPPER))
-    }
-
-    /// Whether code inlined at `site` is a wrapper's shim (inlined at the
-    /// wrapper's own line: SYSCALL_DEFINE's).
-    pub fn at_wrapper_line(&self, site: Loc) -> bool {
-        self.wrapper_lines.contains(&(site.file, site.line))
     }
 
     /// The id of the (first) instrumented function called `name`.

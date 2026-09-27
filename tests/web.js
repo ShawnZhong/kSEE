@@ -165,12 +165,12 @@ check("a field's declaration: file.f_pos, or .f_pos of any struct", m.definition
 check("a syscall's parameters, typed, with the constants that fit", JSON.stringify(m.syscall("openat")?.params) ===
       JSON.stringify([{ name: "dfd", ty: "int", consts: ["AT_"] }, { name: "filename", ty: "char *", consts: [] },
                       { name: "flags", ty: "int", consts: ["O_"] }, { name: "mode", ty: "umode_t", consts: [] }]));
-// The syscall entry, one frame named for the syscall, its arguments as constants.
+// The syscall entry: the frame says which syscall, its arguments typed as the syscall's, as constants; the wrapper is a frame of its own.
 {
   const op = m.syscalls().find((s) => s.name === "openat"), stack = m.call_stack(m.first_call("do_sys_openat2", op.first, op.last)), entry = stack.at(-1);
-  check(`the entry frame: ${entry?.syscall}(${entry?.args?.map((a) => `${a.name} = ${a.value}`).join(", ")}) in ${entry?.func}`,
-        entry?.syscall === "openat" && entry.args?.[0]?.value === "AT_FDCWD" && entry.args[2]?.value === "O_WRONLY | O_CREAT | O_TRUNC"
-        && entry.func === "__wasm_sys_openat" && !stack.some((f) => f.func === "wasm_syscall" || f.func.startsWith("__do_sys_")));
+  check(`the entry frame: ${entry?.func}, the syscall ${entry?.syscall}(${entry?.args?.map((a) => `${a.name} = ${a.value}`).join(", ")})`,
+        entry?.func === "wasm_syscall" && entry.syscall === "openat" && entry.args?.[0]?.value === "AT_FDCWD" && entry.args[2]?.value === "O_WRONLY | O_CREAT | O_TRUNC"
+        && stack.some((f) => f.func === "__wasm_sys_openat" && !f.inlined));
 }
 
 // The examples (target/site/examples.json): their calls, and each of the explanation's links found in its call's recording.

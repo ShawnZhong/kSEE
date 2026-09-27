@@ -205,9 +205,7 @@ pub struct CallNode {
 /// The calls of task `task` in records `from..=to` as a tree, in order:
 /// what a syscall did, with the code inlined into each call as calls of
 /// its own (see CallNode::inlined). Calls on the stack before `from` are
-/// not in it (a syscall's entry, say: its callees are the roots). A
-/// syscall's wrapper, and the shims inlined at its line (Tables::is_wrapper,
-/// at_wrapper_line), are not nodes: their calls are their caller's.
+/// not in it (a syscall's entry, say: its callees are the roots).
 pub fn call_tree(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: u32) -> Vec<CallNode> {
     let to = to.min(records.len().saturating_sub(1));
     let mut w = Walk::default();
@@ -235,19 +233,13 @@ pub fn call_tree(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to:
         // inlined at the line it is at (outermost first), as the chart nests
         // them; against the nodes open: the ones gone close, new ones open.
         let mut want: Vec<(bool, usize)> = Vec::new();
-        for (d, &(func, first)) in w.stack.frames.iter().enumerate() {
+        for (d, &(_, first)) in w.stack.frames.iter().enumerate() {
             if first < from {
                 continue;
             }
-            if !t.is_wrapper(func) {
-                want.push((false, first));
-            }
+            want.push((false, first));
             let chain = w.at.get(d).copied().flatten().and_then(|s| s.inlined).map_or(&[][..], |k| t.inlines.get(k as usize).map_or(&[][..], Vec::as_slice));
-            for &(k, site) in chain.iter().rev() {
-                if !t.at_wrapper_line(site) {
-                    want.push((true, k as usize));
-                }
-            }
+            want.extend(chain.iter().rev().map(|&(k, _)| (true, k as usize)));
         }
         let mut k = 0;
         while k < open.len() && k < want.len() && open[k].0 == want[k] {
@@ -371,10 +363,6 @@ mod tests {
         assert_eq!(shape, [(1, alloc::vec![(2, 1, 5), (4, 0, 2)])]);
         // From record 1 on: 1 is an ancestor, not in the tree.
         let tree = call_tree(&t, &r, &tk, 1, 9, 7);
-        assert_eq!(tree.iter().map(|c| (c.func, c.calls.len())).collect::<Vec<_>>(), [(2, 1), (4, 0)]);
-        // 1 a syscall's wrapper (named so): its calls are the roots.
-        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\t__wasm_sys_read\t0:1\t0\n", "");
-        let tree = call_tree(&t, &r, &tk, 0, 9, 7);
         assert_eq!(tree.iter().map(|c| (c.func, c.calls.len())).collect::<Vec<_>>(), [(2, 1), (4, 0)]);
         // f (1) runs line 1, then h's line 20 (h inlined into f at line 2), which calls g (2):
         // h is a node of its own, inlined, and g is its call.

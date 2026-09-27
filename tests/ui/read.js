@@ -105,10 +105,10 @@
   // (The spine opens by itself: ksys_read, then its calls, vfs_read among them, inlined code too; ▸ folds.)
   const inner = [...document.querySelectorAll("#trace li ul li > a.mono")].map((a) => a.textContent);
   if (!/^\d+ calls/.test(r.trace[2] ?? "") || !inner.includes("vfs_read") || !document.querySelector("#trace a.inl")) throw new Error("the calls: " + JSON.stringify([r.trace, inner]));
-  const ksysLi = [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "ksys_read");
-  ksysLi.querySelector(":scope > a.tw").click();
-  if (document.querySelectorAll("#trace li ul li").length) throw new Error("folding ksys_read left calls shown");
-  [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "ksys_read").querySelector(":scope > a.tw").click();
+  const ksysLi = () => [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "ksys_read");
+  ksysLi().querySelector(":scope > a.tw").click();
+  if (ksysLi().querySelector("ul")) throw new Error("folding ksys_read left its calls shown");
+  ksysLi().querySelector(":scope > a.tw").click();
   [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "vfs_read").querySelector(":scope > a.tw").click();
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   if (document.querySelector("#trace li.on > a.mono")?.textContent !== "vfs_read") throw new Error("the cursor's call not marked: " + document.querySelector("#trace li.on")?.textContent);
