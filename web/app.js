@@ -70,12 +70,12 @@ export function app(m) {
   a.selectFrame = (f) => {
     stack.select(f.first, f.inlined ? f.func : null);
     src.view.cursor = { file: f.file, line: f.line };
-    const at = time.cursor() != null ? m.at(time.cursor()) : null;
+    const at = time.cursor() != null ? m.at(time.cursor()) : null, s = at?.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
     // (Inlined code: in the function it is inlined into, at its own line.)
     const owner = f.inlined ? stack.owner(f) : f;
     src.showFunction(owner?.func ?? f.func, at?.syscall ?? undefined, f.line, f.file);
     time.selected(f.first);
-    where({ name: f.func, file: f.file, line: f.line });
+    where({ task: at?.task, name: f.func, file: f.file, line: f.line, sc: s?.name });
   };
   // Select the call on the stack at the cursor whose first record is
   // `first` (or code inlined into it, from function `inlined`).
@@ -161,14 +161,16 @@ export function app(m) {
     showLine(step);
     return true;
   }
-  // Go to the call from record `first`: its function's own first line (a
-  // call's first record often runs inlined code first: current->files),
-  // as stepping shows it; the cursor there.
+  // Go to the call from record `first`: its call site, as a debugger stops
+  // before stepping in: the cursor at the call's first record, the
+  // caller's frame selected (the source shows the calling line, the Stack
+  // has the callee with its arguments on top); → or ↑ then enters it.
+  // (Inlined code, no call: the cursor at its first record.)
   a.goCall = (first) => {
-    const line = m.call_line(first);
-    if (!line) return time.go(first);
-    L.pos = null;
-    showLine(line);
+    time.go(first);
+    const frames = stack.frames(), k = frames.findIndex((f) => f.first === first && !f.inlined);
+    const caller = k >= 0 ? frames[k + 1] : null;
+    if (caller) a.selectFrame(caller);
   };
   // Show line `step` (see Machine.line_steps): the cursor at its record.
   function showLine(step) {
@@ -232,11 +234,17 @@ export function app(m) {
   $("step-back").onclick = () => step($("step-by").value, -1);
   $("step-fwd").onclick = () => step($("step-by").value, 1);
   // (← →: a line; with Shift: over; with Alt: out. F10, F11, Shift+F11 as
-  // in a debugger; Home: the first line; /: find a function.)
+  // in a debugger; ↑ ↓: the row above or below on the Stack (the callee,
+  // the caller: the innermost is on top; steps go on at that call's
+  // level); Home: the first line; /: find a function.)
   addEventListener("keydown", (e) => {
     if (e.target.closest?.("input, select, textarea, .cm-editor")) return;
-    const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key], updown = { ArrowUp: -1, ArrowDown: 1 }[e.key];
     if (arrow) step(e.altKey ? "out" : e.shiftKey ? "over" : "line", arrow);
+    else if (updown) {
+      const f = stack.neighbour(updown);
+      if (f) (a.selectFrame(f), document.querySelector("#stack tr.frame.on")?.scrollIntoView({ block: "nearest" }));
+    }
     else if (e.key === "Home") steps().length && showStep(0);
     else if (e.key === "/") time.focusFind();
     else if (e.key === "F10") step("over", 1);

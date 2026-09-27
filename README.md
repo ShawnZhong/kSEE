@@ -43,7 +43,8 @@ cursor at its call: the source, and the Stack with each call's
 arguments and locals, as they were), or a call. ◀ ▶ step, and Play
 plays, by line (into calls), over calls, or out of the call: the Call
 stack's selected call, or the line's; ← →, with Shift over, with Alt out
-(F10, F11, Shift+F11 as in a debugger). F4 in the source runs to the
+(F10, F11, Shift+F11 as in a debugger); ↑ ↓ move the selection on the
+Stack (up to the callee, down to the caller). F4 in the source runs to the
 line the cursor is on (its next run; Shift+F4 its last).
 
 The program is below the explanation, a call a line, each written as in C

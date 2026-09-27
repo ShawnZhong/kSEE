@@ -36,7 +36,7 @@ export function callstack(app) {
       // (Click: select the call; the source shows where it is.)
       const on = s.sel == null ? k === 0 : f === s.sel;
       // (The syscall entry: which syscall, its arguments the syscall's.)
-      const h = head(f.func, `${f.line ? `${f.file}:${f.line}` : f.file}${f.inlined ? " · inlined" : ""}${f.syscall ? ` · the syscall ${f.syscall}` : ""}`, () => app.selectFrame(f), on ? "on" : "");
+      const h = head(f.func, `${f.line ? `${f.file}:${f.line}` : f.file}${f.inlined ? " · inlined" : ""}${f.syscall ? ` · ${f.syscall}` : ""}`, () => app.selectFrame(f), on ? "on" : "");
       // (Hover: the call outlined in the timeline.)
       h.onmouseenter = () => app.time.hilite(f.first);
       h.onmouseleave = () => app.time.hilite(null);
@@ -127,6 +127,10 @@ export function callstack(app) {
   }
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
+  // The frame `dir` away from the selected one (the innermost if none):
+  // 1 its caller (the row below: the innermost is on top), -1 its callee;
+  // null at the ends.
+  const neighbour = (dir) => s.frames[(s.sel ? s.frames.indexOf(s.sel) : 0) + dir] ?? null;
 
-  return { show, select, level, owner, resolve, kids, watch: w.add, objects: w };
+  return { show, select, level, owner, neighbour, frames: () => s.frames, resolve, kids, watch: w.add, objects: w };
 }

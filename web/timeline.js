@@ -91,10 +91,11 @@ export function timeline(app) {
       ctx.fillRect(ox(t.cursor) - 1, 0, 2, OVER);
     }
   }
-  // A call's name (a syscall's entry, from its first record: the syscall's).
+  // A call's name; a syscall's entry (from its first record) with the
+  // syscall after it, as the Stack has it: "wasm_syscall · read".
   const nameOf = (id, first) => {
-    const s = t.syscallAt.get(first);
-    return s ? `${s.name ?? s.nr}()` : fn(id)?.name ?? "?";
+    const s = t.syscallAt.get(first), name = fn(id)?.name ?? "?";
+    return s ? `${name} · ${s.name ?? s.nr}` : name;
   };
   // A flame graph: the outermost calls at the bottom, over the task strip
   // (as in the Stack, the innermost is on top). Rows get thinner to fit the
@@ -421,14 +422,18 @@ export function timeline(app) {
     if (a) app.showAt(a);
   }
   // Put the cursor at record `i` without showing it (the caller shows the
-  // line there); the window follows it.
+  // line there); the window follows it: out past an edge, it slides so
+  // that the cursor is a third of the way in from that edge, with the
+  // records ahead in view (as a source view pages).
   function mark(i) {
     if (!t.n) return;
     t.sel = null;
+    const was = t.cursor;
     t.cursor = Math.max(0, Math.min(t.n - 1, i));
     if (t.win && (t.cursor < t.win.a || t.cursor > t.win.b)) {
-      const span = t.win.b - t.win.a;
-      setWindow(t.cursor - span / 2, t.cursor + span / 2);
+      const span = t.win.b - t.win.a, forward = was == null || t.cursor > was;
+      const a = forward ? t.cursor - span / 3 : t.cursor - (2 * span) / 3;
+      setWindow(a, a + span);
     } else draw();
   }
   // The legend.

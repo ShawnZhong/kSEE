@@ -205,7 +205,7 @@
   fbox.value = "vfs_mkdir"; fkey("Enter"); await sleep(300);
   r.found = [document.querySelector(".findhint").textContent];
   if (r.found[0].startsWith("no call")) { fkey("Enter", true); await sleep(300); r.found.push(document.querySelector(".findhint").textContent); }
-  r.found.push($("where").textContent.includes("vfs_mkdir"));
+  r.found.push(document.querySelector("#stack tr.frame")?.innerText.includes("vfs_mkdir")); // (at its call site: the call on top)
   fbox.value = "nope_fn"; fkey("Enter");
   r.noFn = document.querySelector(".findhint").textContent;
   if (!r.found.at(-2).match(/^\d+ of \d+$/) || !r.found.at(-1) || r.noFn !== "no function nope_fn") throw new Error("find: " + JSON.stringify(r));
