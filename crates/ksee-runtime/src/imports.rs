@@ -62,17 +62,18 @@ pub extern "C" fn time_ns() -> u64 {
 /// ksee.bulk, for the kernel (memcpy, memset, wide stores): Store records
 /// with the old contents of `addr..addr + len`, while recording.
 #[unsafe(no_mangle)]
-pub extern "C" fn bulk(addr: u32, len: u32) {
+pub extern "C" fn bulk(addr: u32, len: u32, line: u32) {
     if recording() {
-        log(addr, len);
+        log(addr, len, line);
     }
 }
 
 /// What the runtime itself writes into kernel memory (a call's request,
 /// a runner's word): Store records with the old contents of `addr..addr +
 /// len`, in 8-byte stores, up to 256 bytes (the rest as a range of
-/// unknown old contents).
-pub fn log(addr: u32, len: u32) {
+/// unknown old contents); `line`: the kernel's store's line (see the
+/// plugin), 0 for the runtime's own.
+pub fn log(addr: u32, len: u32, line: u32) {
     use ksee_core::trace::{STORE, UNKNOWN, VALUE};
     if len == 0 {
         return;
@@ -86,14 +87,14 @@ pub fn log(addr: u32, len: u32) {
         Direct.read(addr + off, &mut old[..size as usize]);
         let v = u64::from_le_bytes(old);
         if class == 3 {
-            ring_put(&[addr + off, STORE << 28 | class, v as u32, VALUE << 28, (v >> 32) as u32, VALUE << 28 | 1]);
+            ring_put(&[addr + off, STORE << 28 | line << 4 | class, v as u32, VALUE << 28, (v >> 32) as u32, VALUE << 28 | 1]);
         } else {
-            ring_put(&[addr + off, STORE << 28 | class, v as u32, VALUE << 28]);
+            ring_put(&[addr + off, STORE << 28 | line << 4 | class, v as u32, VALUE << 28]);
         }
         off += size;
     }
     if len > logged {
-        ring_put(&[addr + logged, STORE << 28 | UNKNOWN, len - logged, VALUE << 28]);
+        ring_put(&[addr + logged, STORE << 28 | line << 4 | UNKNOWN, len - logged, VALUE << 28]);
     }
 }
 

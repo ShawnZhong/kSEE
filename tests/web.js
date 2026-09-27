@@ -138,6 +138,8 @@ check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
 }
 m.memory_at(null);
 const readSteps = m.line_steps(read.first, read.last, read.task.addr);
+check("line steps sit at their first store: some line is at a record past its block's, none before it, and a store is on its line",
+      readSteps.some((s) => s.at > s.i) && readSteps.every((s) => s.at >= s.i) && readSteps.some((s) => s.at > s.i && m.at(s.at)?.line === s.line));
 // Run to a line: the next time it runs, and back.
 {
   const s5 = readSteps.find((x) => x.func === "ksys_read" && m.at(x.i)?.kind === "block");

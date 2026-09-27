@@ -70,6 +70,8 @@ pub struct At {
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Line {
     pub i: usize,
+    /// The record the line is at: its first store's, else `i` (LineStep::at).
+    pub at: usize,
     pub nth: u32,
     pub func: String,
     pub file: String,
@@ -315,10 +317,14 @@ impl View<'_> {
                 let prev = (0..i).rev().find(|&j| tasks[j] == tasks[i]);
                 ("return", func, located(func, prev.and_then(top).and_then(|(_, s)| s)))
             }
+            // (A store: on its line, Record::Store's, see line_at.)
+            Record::Store { .. } => match self.rec.line_at(t, i) {
+                Some(l) => ("store", l.func, (Some(l.loc), l.inlined)),
+                None => ("store", 0, (None, None)),
+            },
             r => {
                 let (func, step) = top(i).unwrap_or((0, None));
-                let kind = match r { Record::Args { .. } => "args", Record::Task { .. } => "task", _ => "store" };
-                (kind, func, located(func, step))
+                (if matches!(r, Record::Args { .. }) { "args" } else { "task" }, func, located(func, step))
             }
         };
         Some(At {
@@ -365,8 +371,8 @@ impl View<'_> {
                 }
                 Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value as i32)),
                 Record::Args { .. } | Record::Task { .. } => continue, // (on its call's line; the task's line above)
-                Record::Store { addr, size: 0, old } => ("store", format!("store {addr:#x} [{old} bytes] (old contents not kept)")),
-                Record::Store { addr, size, old } => {
+                Record::Store { addr, size: 0, old, .. } => ("store", format!("store {addr:#x} [{old} bytes] (old contents not kept)")),
+                Record::Store { addr, size, old, .. } => {
                     let mut new = [0u8; 8];
                     rec.memory_at(self.now, i).read(addr, &mut new[..size.min(8) as usize]);
                     let new = new.iter().rev().fold(0u64, |v, &x| v << 8 | x as u64);
@@ -381,7 +387,7 @@ impl View<'_> {
 
     fn line(&self, s: &LineStep) -> Line {
         let t = self.tables;
-        Line { i: s.record, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
+        Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
                inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32 }
     }
 
@@ -567,7 +573,7 @@ impl View<'_> {
     /// Store `i` as a change to the object of type `ty` at `addr`.
     fn change(&self, addr: u32, ty: u32, i: usize) -> Change {
         let types = &self.tables.types;
-        let Record::Store { addr: a, size, old } = self.rec.records[i] else { unreachable!() };
+        let Record::Store { addr: a, size, old, .. } = self.rec.records[i] else { unreachable!() };
         let task = self.task(self.rec.tasks[i]);
         let at = self.rec.line_at(self.tables, i).map(|s| self.line(&s));
         // (No type, a frame's bytes: the store as it is, at its offset.)
@@ -860,8 +866,8 @@ mod tests {
         // struct s { int a; int b; } at 4: record 1 stores b (2, was 1),
         // record 3 a byte of a (5); in the span from record 2, the second only.
         let t = Tables::parse("", "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\n");
-        let r = [Record::Block { func: 9, n: 1 }, Record::Store { addr: 8, size: 4, old: 1 },
-                 Record::Block { func: 9, n: 1 }, Record::Store { addr: 5, size: 1, old: 0 }];
+        let r = [Record::Block { func: 9, n: 1 }, Record::Store { addr: 8, size: 4, old: 1, line: 0 },
+                 Record::Block { func: 9, n: 1 }, Record::Store { addr: 5, size: 1, old: 0, line: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4]);
         let mut m = alloc::vec![0u8; 16];
         (m[8], m[5]) = (2, 5);
@@ -901,10 +907,10 @@ mod tests {
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
                                P\tf\tp:3\nQ\tf\tx:1:4\n");
         let r = [Record::Block { func: 1, n: 0 }, Record::Args { args: [4, 0, 0, 0, 0, 0], n: 1, frame: 32 },
-                 Record::Store { addr: 8, size: 4, old: 1 }, Record::Store { addr: 36, size: 4, old: 0 },
+                 Record::Store { addr: 8, size: 4, old: 1, line: 0 }, Record::Store { addr: 36, size: 4, old: 0, line: 0 },
                  Record::Block { func: 2, n: 0 }, Record::Args { args: [0; 6], n: 0, frame: 16 },
-                 Record::Store { addr: 20, size: 1, old: 0 }, Record::Return { func: 2, value: 0 },
-                 Record::Store { addr: 100, size: 1, old: 0 }];
+                 Record::Store { addr: 20, size: 1, old: 0, line: 0 }, Record::Return { func: 2, value: 0 },
+                 Record::Store { addr: 100, size: 1, old: 0, line: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 9]);
         let mut m = alloc::vec![0u8; 128];
         (m[8], m[36], m[20]) = (2, 7, 9);

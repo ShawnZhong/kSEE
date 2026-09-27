@@ -247,7 +247,10 @@ impl Recording {
     /// The line the task running at record `i` was at (after a return into
     /// the middle of a block, the caller's line).
     pub fn line_at(&self, t: &Tables, i: usize) -> Option<LineStep> {
-        stack::lines(t, &self.records, &self.tasks, i.saturating_sub(4000), i, self.tasks.get(i).copied()).pop()
+        // (The last line begun at or before `i`: a store is on the line
+        // whose first store is at or before it; see LineStep::at.)
+        stack::lines(t, &self.records, &self.tasks, i.saturating_sub(4000), i, self.tasks.get(i).copied())
+            .into_iter().filter(|s| s.at <= i).last()
     }
 
     /// The stores to `addr..addr + len` in records `span` (an object's

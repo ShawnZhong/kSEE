@@ -23,7 +23,7 @@ impl History {
     pub fn new(records: &[Record]) -> History {
         let mut h = History::default();
         for (i, r) in records.iter().enumerate() {
-            if let Record::Store { addr, size, old } = *r {
+            if let Record::Store { addr, size, old, .. } = *r {
                 h.stores.push(i);
                 if size != 0 {
                     h.by_addr.entry(addr).or_default().push((i, size, old));
@@ -76,7 +76,7 @@ impl History {
 /// Whether store `r` writes any of `addr..addr + len`.
 fn overlaps(r: Record, addr: u32, len: u32) -> bool {
     match r {
-        Record::Store { addr: a, size, old } => {
+        Record::Store { addr: a, size, old, .. } => {
             let n = if size == 0 { old as u32 } else { size };
             a < addr.saturating_add(len) && addr < a.saturating_add(n)
         }
@@ -118,7 +118,7 @@ mod tests {
     fn undoes_later_stores() {
         // A u32 at 4 was 1; record 1 stores 2 there, record 3 stores 3.
         let b = Record::Block { func: 1, n: 1 };
-        let r = [b, Record::Store { addr: 4, size: 4, old: 1 }, b, Record::Store { addr: 4, size: 4, old: 2 }, b];
+        let r = [b, Record::Store { addr: 4, size: 4, old: 1, line: 0 }, b, Record::Store { addr: 4, size: 4, old: 2, line: 0 }, b];
         let mut m = alloc::vec![0u8; 16];
         m[4] = 3;
         let live = Mem(m);

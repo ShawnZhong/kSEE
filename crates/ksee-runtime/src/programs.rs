@@ -177,7 +177,7 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
             Ok(at)
         };
         let (start, clone) = (entry("_start")?, entry("__wasm_clone_start")?);
-        bulk(clone_entry, 4);
+        bulk(clone_entry, 4, 0);
         Direct.write_u32(clone_entry, clone);
         PROGRAMS.with_borrow_mut(|u| u.users.insert(current(), User { sp, saved: top }));
         // (A runner's call that was this execve is over: the new program

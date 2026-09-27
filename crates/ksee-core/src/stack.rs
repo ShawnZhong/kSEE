@@ -134,10 +134,13 @@ pub fn chart(t: &Tables, records: &[Record], tasks: &[u32], columns: &[usize]) -
 /// A source line the kernel ran: at `record` (the block's, or the return
 /// after which the block goes on), the `nth` of the lines it runs there, in
 /// `func` (`inlined` from other functions, maybe: see Tables::inlines),
-/// `depth` calls deep.
+/// `depth` calls deep. The line is `at` the record of its first store
+/// (Record::Store's line), or, with no store or the first of its stretch,
+/// the block's: where the cursor goes, and memory as it was there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineStep {
     pub record: usize,
+    pub at: usize,
     pub nth: u32,
     pub func: u32,
     pub depth: u32,
@@ -159,15 +162,33 @@ pub fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usi
         if task.is_some_and(|x| x != tk) {
             continue;
         }
-        let Some((func, depth, steps)) = walks.entry(tk).or_default().apply(t, r, i) else { continue };
+        let w = walks.entry(tk).or_default();
+        let Some((func, depth, steps)) = w.apply(t, r, i) else { continue };
         if i < from {
             continue;
+        }
+        // (The stretch's lines are numbered on from the block's earlier
+        // ones: a store says which it is on; the first store of each line,
+        // among the records up to the task's next block or return.)
+        let (n, seg) = w.blocks[depth as usize];
+        let base: usize = t.segments(func, n).iter().take(seg.saturating_sub(1) as usize).map(Vec::len).sum();
+        let mut first_store: BTreeMap<u32, usize> = BTreeMap::new();
+        for (j, r) in records.iter().enumerate().skip(i + 1) {
+            if tasks[j] != tk {
+                continue;
+            }
+            match *r {
+                Record::Store { line, .. } => { first_store.entry(line).or_insert(j); }
+                Record::Args { .. } => {}
+                _ => break,
+            }
         }
         for (nth, s) in steps.into_iter().enumerate() {
             if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
                 continue;
             }
-            out.push(LineStep { record: i, nth: nth as u32, func, depth, loc: s.loc, inlined: s.inlined });
+            let at = if nth == 0 { i } else { first_store.get(&((base + nth) as u32)).copied().unwrap_or(i) };
+            out.push(LineStep { record: i, at, nth: nth as u32, func, depth, loc: s.loc, inlined: s.inlined });
         }
     }
     out
@@ -337,6 +358,19 @@ mod tests {
         let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 0 }, Record::Return { func: 1, value: 0 }];
         let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| (s.loc.line, s.record, s.depth)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (10, 1, 1), (3, 2, 0)]);
+    }
+
+    #[test]
+    fn lines_are_at_their_first_store() {
+        // f's block 0 runs lines 1, 2, 3, then calls g (line 10), then line 4;
+        // line 2 stores twice, line 4 once: a line is at its first store,
+        // but a stretch's first line at the block, or the return, itself.
+        let t = crate::tables::Tables::parse(
+            "U\nP\t0\tf.c\nP\t1\tg.c\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1;:2;:3;|;:4\nB\t2\t0\t1:10:1\n", "");
+        let st = |line| Record::Store { addr: 8, size: 4, old: 0, line };
+        let r = [b(1, 0), st(1), st(1), b(2, 0), Record::Return { func: 2, value: 0 }, st(3), Record::Return { func: 1, value: 0 }];
+        let got: Vec<_> = lines(&t, &r, &[7; 7], 0, 6, None).iter().map(|s| (s.loc.line, s.record, s.at)).collect();
+        assert_eq!(got, [(1, 0, 0), (2, 0, 1), (3, 0, 0), (10, 3, 3), (4, 4, 4)]);
     }
 
     #[test]

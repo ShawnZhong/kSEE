@@ -15,8 +15,9 @@ pub enum Record {
     /// memory are at their offsets from it: Types::locals).
     Args { args: [u32; 6], n: u8, frame: u32 },
     /// A store of `size` bytes at `addr`, which held `old` (size 0: a range
-    /// of `old` bytes whose old contents are not logged).
-    Store { addr: u32, size: u32, old: u64 },
+    /// of `old` bytes whose old contents are not logged), on `line`: which
+    /// of its block's lines (Tables::segments, "|" apart, from 0).
+    Store { addr: u32, size: u32, old: u64, line: u32 },
     /// The task running (its task_struct): the runtime's, where a recording
     /// begins (no switch says so).
     Task { task: u32 },
@@ -131,15 +132,15 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                     return Some(Record::Return { func, value: v[0] });
                 }
                 STORE => {
-                    let class = tag & 0xf;
+                    let (class, line) = (tag & 0xf, tag >> 4 & 0xff_ffff);
                     let want = if class == 3 { 2 } else { 1 };
                     if self.values(&mut v, want) < want {
                         continue;
                     }
                     return Some(if class == UNKNOWN {
-                        Record::Store { addr: func, size: 0, old: v[0] as u64 }
+                        Record::Store { addr: func, size: 0, old: v[0] as u64, line }
                     } else {
-                        Record::Store { addr: func, size: 1 << class, old: v[0] as u64 | (v[1] as u64) << 32 }
+                        Record::Store { addr: func, size: 1 << class, old: v[0] as u64 | (v[1] as u64) << 32, line }
                     });
                 }
                 _ => continue, // a continuation without its head
@@ -189,10 +190,11 @@ fn decode(words: &[u32]) -> Vec<Record> {
 
     #[test]
     fn calls_carry_arguments_and_stores_old_values() {
-        let w = [9, BLOCK << 28, 7, VALUE << 28, 8, VALUE << 28 | 1, 0x80, VALUE << 28 | 2, 0x100, STORE << 28 | 2, 5, VALUE << 28,
+        // (The store of 4 at 0x100 is on its block's line 3.)
+        let w = [9, BLOCK << 28, 7, VALUE << 28, 8, VALUE << 28 | 1, 0x80, VALUE << 28 | 2, 0x100, STORE << 28 | 3 << 4 | 2, 5, VALUE << 28,
                  0x200, STORE << 28 | UNKNOWN, 64, VALUE << 28, 9, BLOCK << 28 | 1];
         assert_eq!(decode(&w), [Record::Block { func: 9, n: 0 }, Record::Args { args: [7, 8, 0, 0, 0, 0], n: 2, frame: 0x80 },
-                                Record::Store { addr: 0x100, size: 4, old: 5 }, Record::Store { addr: 0x200, size: 0, old: 64 },
+                                Record::Store { addr: 0x100, size: 4, old: 5, line: 3 }, Record::Store { addr: 0x200, size: 0, old: 64, line: 0 },
                                 Record::Block { func: 9, n: 1 }]);
     }
 

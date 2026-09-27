@@ -151,7 +151,7 @@ export function app(m) {
   function position() {
     const st = steps();
     if (L.pos != null && L.pos < st.length) return L.pos;
-    const k = st.findIndex((x) => x.i >= (time.cursor() ?? 0));
+    const k = st.findIndex((x) => x.at >= (time.cursor() ?? 0));
     return (L.pos = k < 0 ? st.length - 1 : k);
   }
   // Show step `k`: the cursor at its record, its line in the source.
@@ -174,12 +174,14 @@ export function app(m) {
     if (caller) a.selectFrame(caller);
   };
   // Show line `step` (see Machine.line_steps): the cursor at its record.
+  // (The cursor, and memory, at the line's first store, `at`; the Stack at
+  // its record, where its block's lines are.)
   function showLine(step) {
-    time.mark(step.i);
+    time.mark(step.at);
     a.trace?.mark();
     stack.objects.mark();
     a.records?.mark();
-    memoryAt(step.i);
+    memoryAt(step.at);
     const at = m.at(step.i);
     src.view.cursor = { file: step.file, line: step.line };
     src.showFunction(step.func, undefined, step.line, step.file);

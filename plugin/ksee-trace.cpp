@@ -11,8 +11,10 @@
 //   - before each store it makes (its stack slots' too: a slot is reused by
 //     later calls, and a frame's locals must be undone to be seen as they
 //     were), a store record, with the old value (the host undoes stores to
-//     see memory as it was). Bulk writes (memcpy, memset, wider stores) go to the
-//     ksee.bulk(address, length) import, which logs them.
+//     see memory as it was) and the line it is on (so that stepping a line
+//     lands where its first store is). Bulk writes (memcpy, memset, wider
+//     stores) go to the ksee.bulk(address, length, line) import, which logs
+//     them.
 // A function that loops, but writes no memory the host must undo and calls
 // nothing (a checksum, a search: crc32c, find_next_bit) is sealed: only
 // its call and its returns are recorded, not each block of each turn. (Its
@@ -40,10 +42,13 @@
 //                         stack pointer after its prologue: its locals in
 //                         memory are at their DWARF offsets from it)
 //   [fn, 4 << 28]         a return from fn, followed by the value
-//   [addr, 7 << 28 | k]   a store of 1 << k bytes at addr (k < 4), followed
+//   [addr, 7 << 28 | line << 4 | k]
+//                         a store of 1 << k bytes at addr (k < 4), followed
 //                         by the old value (low, then for 8 bytes high); k =
 //                         7: a range whose old contents are not logged,
-//                         followed by its length
+//                         followed by its length. line: which of its
+//                         block's lines (the L line's items, "|" apart,
+//                         counted from 0) the store is on
 //   [value, 8 << 28 | i]  continuation i of the head before
 // (The host's runtime writes records too: stores, for its own writes into
 // kernel memory.) fn is a hash of the function's name (for a
@@ -70,6 +75,7 @@
 //                  out); "|" where the block calls a function (which runs
 //                  in between). Only for blocks with more than their first
 //                  line, or whose first line is inlined.
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugProgramInstruction.h"
@@ -83,8 +89,8 @@
 #include "llvm/Plugins/PassPlugin.h"
 #include "llvm/Support/Path.h"
 
+#include <algorithm>
 #include <map>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -155,6 +161,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   Function *put[Values + 1] = {};
   Function *putStore[4] = {};
   FunctionCallee bulk;
+  // Each write's line: the index of its line among its block's (see blockLines).
+  DenseMap<const Instruction *, unsigned> lineOf;
   std::string probes;
   std::map<std::string, unsigned> files; // this object's, numbered
 
@@ -199,8 +207,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     for (unsigned k = 0; k <= Values; k++)
       put[k] = function("__ksee_put" + std::to_string(k), 2 + k);
     for (unsigned k = 0; k < 4; k++)
-      putStore[k] = function("__ksee_put_store" + std::to_string(1 << k), 1);
-    bulk = import("__ksee_bulk", "bulk", FunctionType::get(vd, {i32, i32}, false));
+      putStore[k] = function("__ksee_put_store" + std::to_string(1 << k), 2);
+    bulk = import("__ksee_bulk", "bulk", FunctionType::get(vd, {i32, i32, i32}, false));
     if (!define)
       return;
 
@@ -255,7 +263,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         Value *old = B.CreateZExt(B.CreateAlignedLoad(IntegerType::get(C, 8 << k),
                                                       B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1)), i64);
         w.push_back(addr);
-        w.push_back(B.getInt32(KindStore << 28 | k));
+        w.push_back(B.CreateOr(B.getInt32(KindStore << 28 | k), B.CreateShl(putStore[k]->getArg(1), 4)));
         value(B.CreateTrunc(old, i32));
         if (k == 3)
           value(B.CreateTrunc(B.CreateLShr(old, 32), i32));
@@ -268,10 +276,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   }
 
   // The block's lines, as for an L line; empty if just its first line.
+  // (And each write's line, for logStore: its index among the items, "|"
+  // apart; a write with no location is on the line before it.)
   std::string blockLines(BasicBlock &BB) {
     std::vector<std::string> items;
-    std::set<std::string> seen; // (since the last call)
-    std::string file;           // the last item's
+    std::map<std::string, unsigned> seen; // (since the last call: item -> its index)
+    std::string file;                     // the last item's
+    unsigned lines = 0, cur = 0;
     for (Instruction &I : BB) {
       if (auto *CB = dyn_cast<CallBase>(&I); CB && runsProbes(*CB)) {
         if (!items.empty() && items.back() != "|")
@@ -280,21 +291,26 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         continue;
       }
       DILocation *L = I.getDebugLoc().get();
-      if (!L || !L->getLine())
-        continue;
-      std::string path = fileRef(sourcePath(L->getScope()));
-      std::string item = path + ":" + std::to_string(L->getLine());
-      // The functions it is inlined from, innermost first, each with where
-      // it is inlined (a line of the next one out).
-      for (DILocation *At = L; DILocation *Site = At->getInlinedAt(); At = Site) {
-        DISubprogram *SP = At->getScope()->getSubprogram();
-        item += "@" + (SP ? SP->getName().str() : std::string("?")) + "^" +
-                fileRef(sourcePath(Site->getScope())) + ":" + std::to_string(Site->getLine());
+      if (L && L->getLine()) {
+        std::string path = fileRef(sourcePath(L->getScope()));
+        std::string item = path + ":" + std::to_string(L->getLine());
+        // The functions it is inlined from, innermost first, each with where
+        // it is inlined (a line of the next one out).
+        for (DILocation *At = L; DILocation *Site = At->getInlinedAt(); At = Site) {
+          DISubprogram *SP = At->getScope()->getSubprogram();
+          item += "@" + (SP ? SP->getName().str() : std::string("?")) + "^" +
+                  fileRef(sourcePath(Site->getScope())) + ":" + std::to_string(Site->getLine());
+        }
+        auto [it, fresh] = seen.try_emplace(item, lines);
+        if (fresh) {
+          items.push_back(path == file ? item.substr(path.size()) : item);
+          file = path;
+          lines++;
+        }
+        cur = it->second;
       }
-      if (seen.insert(item).second) {
-        items.push_back(path == file ? item.substr(path.size()) : item);
-        file = path;
-      }
+      if (isa<StoreInst, AtomicRMWInst, AtomicCmpXchgInst, MemIntrinsic>(I))
+        lineOf[&I] = cur;
     }
     while (!items.empty() && items.back() == "|")
       items.pop_back();
@@ -349,10 +365,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     IRBuilder<> B(I);
     Value *addr = B.CreatePtrToInt(ptr, i32);
     int k = size == 1 ? 0 : size == 2 ? 1 : size == 4 ? 2 : size == 8 ? 3 : -1;
+    Value *line = B.getInt32(std::min(lineOf.lookup(I), (1u << 24) - 1));
     if (!len && k >= 0)
-      B.CreateCall(putStore[k], {addr});
+      B.CreateCall(putStore[k], {addr, line});
     else
-      B.CreateCall(bulk, {addr, len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size)});
+      B.CreateCall(bulk, {addr, len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size), line});
   }
 
   void instrument(Function &F) {

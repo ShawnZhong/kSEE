@@ -45,9 +45,12 @@ plugin's `L` lines give a block's lines in stretches split at its calls;
 `lines` walks the records per task: at a block, its first stretch; after a
 return into it, the next. So stepping goes line by line, into and out of
 calls, including lines inlined from other functions. Each line step says
-which of its record's lines it is (`nth`: the Stack there) and how deep it
-runs (calls deep, and inlined deep): the level stepping over or out of a
-call compares. `run_of` finds the next (or last) record whose block runs a
+which of its record's lines it is (`nth`: the Stack there), where it is
+`at` (the record of its first store, which says its line: the cursor
+goes there, and memory as it was; a line with no store, or a stretch's
+first, is at the block's record) and how deep it runs (calls deep, and
+inlined deep): the level stepping over or out of a call compares. A
+store's line is the last begun at or before it (`line_at`). `run_of` finds the next (or last) record whose block runs a
 given line: "run to a line".
 
 ## Inlined code

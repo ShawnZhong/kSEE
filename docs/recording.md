@@ -31,8 +31,10 @@ Every function gets:
 - before each **return**, a return record with the value;
 - before each **store** (its stack slots' too: a slot is reused by later
   calls, and a frame's locals must be undone to be seen as they were), a
-  store record with the **old value**. Bulk writes (memcpy, memset, wider
-  stores) call the `ksee.bulk(addr, len)` import, which logs their old
+  store record with the **old value** and the **line** it is on (which of
+  its block's lines: so a line step lands at its first store, and a store
+  is attributed to its line). Bulk writes (memcpy, memset, wider stores)
+  call the `ksee.bulk(addr, len, line)` import, which logs their old
   contents the same way.
 
 A function that loops but writes no memory and calls nothing (a checksum,
@@ -57,7 +59,7 @@ overwritten the start of a record) and skip to the next head:
 | `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments, then its frame base |
 | `[task, 3<<28]` | the runtime's: task (a task_struct) is running (where a recording begins: no switch says so) |
 | `[fn, 4<<28]` | a return from fn; the value follows |
-| `[addr, 7<<28 \| k]` | a store of 1<<k bytes at addr; the old value follows (k = 7: a range of unknown old contents; its length follows) |
+| `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows (k = 7: a range of unknown old contents; its length follows) |
 | `[value, 8<<28 \| i]` | continuation i |
 
 `fn` is a hash of the function's name. `pos` counts words ever written and
