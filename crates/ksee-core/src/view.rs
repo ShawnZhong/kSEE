@@ -810,8 +810,15 @@ impl Types {
                     None => format!("{p:#x}"),
                 });
                 let target = self.resolve(*to);
-                if p != 0 && matches!(self.get(target).kind, Kind::Struct(_) | Kind::Union(_)) {
-                    o.target = Some(target);
+                match self.get(target).kind {
+                    Kind::Struct(_) | Kind::Union(_) if p != 0 => o.target = Some(target),
+                    // (A pointer to a scalar: what it points to, in line: "0x7ffd8 → 0".)
+                    Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_) if p != 0 && !self.is_string(*to) => {
+                        let mut v = String::new();
+                        self.print(mem, p, *to, 0, 0, &mut v);
+                        o.value = Some(format!("{p:#x} → {v}"));
+                    }
+                    _ => {}
                 }
             }
             _ => {
@@ -953,6 +960,16 @@ mod tests {
         m[16] = 0xff;
         let value = |at| t.object(&Mem(m.clone()), "p", at, 2, 0).value.unwrap();
         assert_eq!((value(0).as_str(), value(4).as_str()), ("0x8 \"tmp\"", "0x10"));
+    }
+
+    #[test]
+    fn scalar_pointers_show_what_they_point_to() {
+        let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t2\tptr\t\t4\t1\n");
+        let mut m = alloc::vec![0u8; 16];
+        m[0..4].copy_from_slice(&8u32.to_le_bytes());
+        m[8..12].copy_from_slice(&(-3i32).to_le_bytes());
+        let o = t.object(&Mem(m), "pos", 0, 2, 0);
+        assert_eq!((o.value.as_deref(), o.target), (Some("0x8 → -3"), None));
     }
 
     #[test]
