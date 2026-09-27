@@ -6,12 +6,12 @@
 // of them on asking). Pointers open into
 // what they point to, structs into their fields, read from memory as it was
 // at the cursor (Machine.memory_at: see objects.js); what is open stays
-// open while stepping; click a value to watch it (watch.js). Click a call to select
+// open while stepping; click a value to pin it in the Objects (objects.js). Click a call to select
 // it: the source shows where it is (for an outer call, the line calling
 // the next one in).
 import { $, el } from "./dom.js";
+import { tree } from "./tree.js";
 import { objects } from "./objects.js";
-import { watch } from "./watch.js";
 
 export function callstack(app) {
   const { m } = app;
@@ -21,8 +21,8 @@ export function callstack(app) {
   // The current task's fields shown first.
   const KEY = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 
-  const w = watch(app);
-  const { rows, kids } = objects(app, s, draw, w.add);
+  const w = objects(app);
+  const { rows, kids } = tree(app, s, draw, w.add);
   // (The tabs: the pane chosen.)
   for (const a of document.querySelectorAll("h2.tabs a")) a.onclick = () => ($("right").dataset.tab = a.dataset.tab);
   const head = (text, where, onclick, cls = "") => el("tr", { className: "frame " + cls },
@@ -124,5 +124,5 @@ export function callstack(app) {
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
 
-  return { show, select, level, owner, resolve, kids, watch: w.add };
+  return { show, select, level, owner, resolve, kids, watch: w.add, objects: w };
 }

@@ -45,24 +45,24 @@
     <h2 class="tabs">
       <a data-tab="stack" title="the calls at the cursor, their values as they were then">Stack</a>
       <a data-tab="trace" title="the selected call as a tree of the calls it made, in order">Calls</a>
-      <a data-tab="changes" title="what the selected call changed, by object">Changes</a>
-      <a data-tab="watch" title="values followed: each as the cursor moves, and every write to it">Watch</a>
+      <a data-tab="objects" title="the objects the selected call changed, each with its writes and its value at the cursor; pin one to keep it">Objects</a>
+      <a data-tab="records" title="the raw trace around the cursor: what the views are built from">Records</a>
     </h2>
     <div class="pane" data-tab="stack">
       <div class="stackhead dim" id="stack-note"></div>
       <div class="body" id="stack"></div>
     </div>
-    <div class="pane" data-tab="watch">
-      <div class="stackhead dim" id="watch-note"></div>
-      <div class="body" id="watch"></div>
+    <div class="pane" data-tab="objects">
+      <div class="stackhead dim" id="objects-note"></div>
+      <div class="body" id="objects"></div>
+    </div>
+    <div class="pane" data-tab="records">
+      <div class="stackhead dim" id="records-note"></div>
+      <div class="body" id="records"></div>
     </div>
     <div class="pane" data-tab="trace">
       <div class="stackhead dim" id="trace-note"></div>
       <div class="body" id="trace"></div>
-    </div>
-    <div class="pane" data-tab="changes">
-      <div class="stackhead dim" id="changes-note"></div>
-      <div class="body" id="changes"></div>
     </div>
   </div>
 </main>

@@ -26,18 +26,18 @@
   }
   if (!r.decl?.startsWith("include/linux/fs.h:") || !r.decl.includes("struct kiocb {")) throw new Error("no declaration on hover: " + JSON.stringify(r.decl));
   if (r.notes.length < 3 || !r.notes.some(([n, w]) => n === "vfs_read" && w.includes("vfs_read")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
-  // Watch a value: click one in the Stack (one in memory: a local's, a task's field); the Watch shows it,
-  // its writes listed (a local's in its frame's lifetime), ▶ goes to the next.
+  // Pin a value: click one in the Stack (one in memory: a local's, a task's field); the Objects show it pinned,
+  // its writes listed (a local's in its frame's lifetime), ▶ goes to the next; 📌 unpins.
   const v = document.querySelector("#stack td.fval.mem");
   v?.click();
-  r.history = [v?.textContent, document.querySelectorAll("#watch li").length, $("watch").innerText.slice(0, 120)];
-  if (!/changes? (while \w+'s frame lives|in the recording)/.test(r.history[2] ?? "") || $("right").dataset.tab !== "watch") throw new Error("no watch: " + JSON.stringify(r.history));
-  document.querySelector('h2.tabs a[data-tab="stack"]').click();
-  document.querySelector("#watch .whead button:not([disabled])")?.click();
+  r.history = [v?.textContent, document.querySelectorAll("#objects .pinned li").length, $("objects").innerText.slice(0, 160)];
+  if (!/changes? (while \w+'s frame lives|in the recording)/.test(r.history[2] ?? "") || $("right").dataset.tab !== "objects" || !document.querySelector("#objects .pinned")) throw new Error("no pin: " + JSON.stringify(r.history));
+  document.querySelector("#objects .pinned .whead button:not([disabled])")?.click();
   await sleep(200);
-  document.querySelector("#watch .rm")?.click();
-  // (The example's own watch stays: the read's struct file, watched as it opened.)
-  if (!$("watch").innerText.includes("fd 3 note.txt")) throw new Error("the example's watch: " + $("watch").innerText.slice(0, 120));
+  document.querySelector("#objects .pinned .whead a.pin").click();
+  // (The example's own pin stays: the read's struct file, pinned as it opened.)
+  if (!$("objects").innerText.includes("fd 3 note.txt") || document.querySelectorAll("#objects .pinned").length !== 1) throw new Error("the example's pin: " + $("objects").innerText.slice(0, 160));
+  document.querySelector('h2.tabs a[data-tab="stack"]').click();
   $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
   r.played = $("where").textContent.slice(0, 50);
   // Run to a line (the source's F4): the line where the cursor is, its next run
@@ -101,26 +101,32 @@
   document.querySelector('h2.tabs a[data-tab="trace"]').click();
   await sleep(100);
   r.trace = [$("trace-note").textContent, [...document.querySelectorAll("#trace li a.mono")].map((a) => a.textContent).slice(0, 6), $("trace").querySelector(".head")?.textContent];
-  // (The direct calls to begin with: ksys_read; ▸ opens its calls: vfs_read among them, inlined code too.)
-  if (!/^\d+ calls$/.test(r.trace[2] ?? "") || document.querySelectorAll("#trace li ul li").length) throw new Error("the calls: " + JSON.stringify(r.trace));
+  // (The spine opens by itself: ksys_read, then its calls, vfs_read among them, inlined code too; ▸ folds.)
+  const inner = [...document.querySelectorAll("#trace li ul li > a.mono")].map((a) => a.textContent);
+  if (!/^\d+ calls/.test(r.trace[2] ?? "") || !inner.includes("vfs_read") || !document.querySelector("#trace a.inl")) throw new Error("the calls: " + JSON.stringify([r.trace, inner]));
   const ksysLi = [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "ksys_read");
   ksysLi.querySelector(":scope > a.tw").click();
-  const inner = [...document.querySelectorAll("#trace li ul li > a.mono")].map((a) => a.textContent);
-  if (!inner.includes("vfs_read") || !document.querySelector("#trace a.inl")) throw new Error("ksys_read's calls: " + JSON.stringify(inner));
+  if (document.querySelectorAll("#trace li ul li").length) throw new Error("folding ksys_read left calls shown");
+  [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "ksys_read").querySelector(":scope > a.tw").click();
   [...document.querySelectorAll("#trace li")].find((li) => li.querySelector(":scope > a.mono")?.textContent === "vfs_read").querySelector(":scope > a.tw").click();
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   if (document.querySelector("#trace li.on > a.mono")?.textContent !== "vfs_read") throw new Error("the cursor's call not marked: " + document.querySelector("#trace li.on")?.textContent);
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
-  // The Changes tab: what the read changed, by object (the struct file's f_pos among them, no registers or frames); an object watched.
-  document.querySelector('h2.tabs a[data-tab="changes"]').click();
+  // The Objects tab: what the read changed, by object (the struct file's f_pos among them: pinned, as the example says;
+  // the kiocb, the inode; no registers or frames); ▸ opens a value; "all" shows the rest.
+  document.querySelector('h2.tabs a[data-tab="objects"]').click();
   await sleep(100);
-  const fileChange = [...document.querySelectorAll("#changes .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
-  if (!fileChange || $("changes").innerText.includes("pt_regs") || $("changes").innerText.includes("'s frame")) throw new Error("the read's changes: " + $("changes").innerText.slice(0, 400));
-  fileChange.querySelector(".whead a").click();
-  if (!$("watch").innerText.includes("f_pos")) throw new Error("watching the file: " + $("watch").innerText.slice(0, 100));
-  if (!/fd 3 note\.txt/.test($("watch").innerText)) throw new Error("the file's name: " + $("watch").innerText.slice(0, 100));
-  document.querySelector("#changes .head a").click(); // (all: the registers and frames too)
-  if (!$("changes").innerText.includes("pt_regs")) throw new Error("all changes: " + $("changes").innerText.slice(0, 200));
+  const fileObj = [...document.querySelectorAll("#objects .changed")].find((d) => d.innerText.includes("f_pos: 0 → "));
+  if (!fileObj || !fileObj.classList.contains("pinned") || $("objects").innerText.includes("pt_regs") || $("objects").innerText.includes("'s frame")) throw new Error("the read's objects: " + $("objects").innerText.slice(0, 400));
+  fileObj.querySelector(".whead a.tw").click();
+  if (!document.querySelector("#objects .pinned table.objs")) throw new Error("the file's value: " + $("objects").innerText.slice(0, 200));
+  document.querySelector("#objects .head a").click(); // (all: the registers and frames too)
+  if (!$("objects").innerText.includes("pt_regs")) throw new Error("all objects: " + $("objects").innerText.slice(0, 200));
+  document.querySelector("#objects .head a").click();
+  // The Records tab: the raw trace around the cursor, the cursor's marked.
+  document.querySelector('h2.tabs a[data-tab="records"]').click();
+  await sleep(100);
+  if (!document.querySelector("#records tr.on") || !document.querySelector("#records tr.store")) throw new Error("the records: " + $("records").innerText.slice(0, 200));
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)

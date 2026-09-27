@@ -6,7 +6,7 @@
     "The same read as before, but of a file on a disk (ext4, on the loop device). Where do the bytes come from the first time?",
     "1. Opening it: the name is not in the dentry cache yet, so [ext4_lookup](1:ext4_lookup) reads the directory's block from the disk to find it.",
     "2. Reading: [filemap_read](2:filemap_read) looks in the page cache as for any file, but the page is not there yet. So [ext4_mpage_readpages](2:ext4_mpage_readpages) finds where the file's data is on the disk (its extents) and asks for it to be read into a page, through the block layer: [submit_bio](2:submit_bio:any) is a request to /dev/loop0, whose blocks are a file in memory here. Then the bytes are copied out, as before.",
-    "Try: [read twice](try:1): the page is in the cache after the first read, so the second has no block layer and no ext4 read path in it, and a much shorter Outline."
+    "Try: [read twice](try:1): the page is in the cache after the first read, so the second has no block layer and no ext4 read path in it, and a much shorter Calls list."
   ],
   "tries": [
     "fd = openat(AT_FDCWD, \"/mnt/note.txt\", O_RDONLY); read(fd, [64], 64); read(fd, [64], 64); close(fd)"

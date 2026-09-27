@@ -16,9 +16,9 @@
 // below, a call a line: click one for its recording; type in it to change
 // it (Enter: the program runs again, on a fresh kernel), empty it (or ✕)
 // to remove it; add a call at the end; ↺ for the example's own program
-// again. `watch`: what to watch as it opens ("2:vfs_read:file": the
-// argument `file` of vfs_read, in call 2's recording: the object it points
-// to).
+// again. `watch`: what to pin in the Objects as it opens ("2:vfs_read:file":
+// the argument `file` of vfs_read, in call 2's recording: the object it
+// points to).
 //
 // A step: { call, args, name?, tid? }; its arguments written as in
 // C (see args.js and Machine.arg): "a string", 0644, O_CREAT | O_WRONLY,
@@ -117,8 +117,8 @@ export async function examples(app) {
     for (let j = 0; j < t.steps.length; j++) if (!(await step()) || t.list !== mine) return;
     t.status.textContent = "";
     explain();
-    // (What the example says to watch: "2:vfs_read:file", the argument of a
-    // call in a call's recording; the Watch has it, the Stack stays in front.)
+    // (What the example says to pin: "2:vfs_read:file", the argument of a
+    // call in a call's recording; the Objects have it, the Stack stays in front.)
     for (const spec of t.ex.watch ?? []) {
       const [n, func, name] = spec.split(":"), c = syscall(Number(n) - 1);
       const at = c && m.first_call(func, c.first, c.last ?? m.records() - 1, c.task.addr);

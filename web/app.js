@@ -10,7 +10,8 @@ import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
 import { trace } from "./trace.js";
-import { changes } from "./changes.js";
+import { records } from "./records.js";
+
 
 export function app(m) {
   const a = { m };
@@ -108,7 +109,8 @@ export function app(m) {
     L.pos = null;
     view(at);
     a.trace?.mark();
-    a.changes?.mark();
+    stack.objects.mark();
+    a.records?.draw();
     badge();
   };
   // The view follows the pointer over the timeline: record `i` shown as if
@@ -126,8 +128,10 @@ export function app(m) {
     });
   };
   a.trace = trace(a);
-  a.changes = changes(a, stack.watch);
-  a.outlined = () => (a.trace.draw(), a.changes.draw());
+  a.records = records(a);
+  a.outlined = () => (a.trace.draw(), stack.objects.draw());
+  // (The Records follow the cursor, drawn when the tab is looked at.)
+  document.querySelector('h2.tabs a[data-tab="records"]').addEventListener("click", () => a.records.draw());
   examples(a);
 
   // ---- Lines: the line steps of the selection (a syscall) ----
@@ -177,7 +181,8 @@ export function app(m) {
   function showLine(step) {
     time.mark(step.i);
     a.trace?.mark();
-    a.changes?.mark();
+    stack.objects.mark();
+    a.records?.draw();
     memoryAt(step.i);
     const at = m.at(step.i);
     src.view.cursor = { file: step.file, line: step.line };

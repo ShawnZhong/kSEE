@@ -2,7 +2,9 @@
 // timeline) as a tree of every call it made, in the order they were made,
 // with the code inlined into a call as calls of its own, as the timeline
 // and the Stack show it (Machine.call_tree). Its direct calls to begin
-// with; ▸ opens a call's own calls, for the detail. Each call is a link to
+// with (and on down a chain of single calls); ▸ opens a call's own calls,
+// for the detail; the head opens all, closes all, or opens the way to the
+// call the cursor is in ("here"). Each call is a link to
 // its first record (hover: how many records it took), and the call the
 // cursor is in is marked. What a syscall did, readable.
 import { $, el } from "./dom.js";
@@ -13,7 +15,8 @@ export function trace(app) {
   const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
   const iname = (k) => inames.get(k) ?? inames.set(k, m.inline_name(k)).get(k);
   const body = $("trace");
-  // The calls opened (by their first record): their calls shown.
+  // The calls opened (by their first record): their calls shown. (A chain
+  // of single calls opens by itself: the spine of a syscall shows at once.)
   const opened = new Set();
   let shown = null, tree = [], total = 1, count = 0;
 
@@ -33,11 +36,22 @@ export function trace(app) {
     total = w.b - w.a + 1;
     const n = (nodes) => nodes.reduce((a, x) => a + 1 + n(x.calls), 0);
     count = n(tree);
+    for (let nodes = tree; nodes.length === 1 && nodes[0].calls.length; nodes = nodes[0].calls) opened.add(nodes[0].first);
     render();
   }
 
+  // Every call with calls, and the ones on the way to record `i`.
+  const withCalls = (nodes, out = []) => (nodes.forEach((n) => n.calls.length && (out.push(n.first), withCalls(n.calls, out))), out);
+  const wayTo = (nodes, i, out = []) => {
+    const n = nodes.find((n) => i >= n.first && i <= n.last);
+    return n ? (n.calls.length && out.push(n.first), wayTo(n.calls, i, out)) : out;
+  };
   function render() {
-    body.replaceChildren(el("div", { className: "dim head", textContent: `${count} call${count === 1 ? "" : "s"}` }),
+    const verb = (text, title, act) => el("a", { textContent: text, title, onclick: () => (act(), render()) });
+    body.replaceChildren(el("div", { className: "dim head" }, `${count} call${count === 1 ? "" : "s"} · `,
+      verb("open all", "every call's calls shown", () => withCalls(tree).forEach((f) => opened.add(f))), " · ",
+      verb("close all", "the direct calls only", () => opened.clear()), " · ",
+      verb("here", "the way to the call the cursor is in, and no more", () => (opened.clear(), wayTo(tree, app.time.cursor() ?? -1).forEach((f) => opened.add(f))))),
       el("ul", { className: "tree" }, ...tree.map(item)));
     mark();
   }

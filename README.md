@@ -67,15 +67,15 @@ source and the Stack show that moment while the pointer is there; click it to fi
 any call, to select it: its records from its start to its end, with
 whatever else ran in between). Hover
 a name in the source for its value at the cursor, and a value in the Stack
-for who last wrote it; click it to watch it: the Watch follows it as the
-cursor moves, with every write to it while it lived (a local: while its
-frame did): the member, from what to what, by which line, each a link to
-that moment, ◀ ▶ to the write before or after the cursor. The Changes tab
-is what the selected call changed, by object (`fd 3 note.txt: f_pos 0 →
-26`, `inode 12 (ext4): i_size`), in the order they were first written,
-each write by which function; the kernel's objects and real changes only,
-"all" for the registers, frames, locals and unchanged writes too; click
-an object to watch it. The
+for who last wrote it. The Objects tab is what the selected call changed,
+by object (`fd 3 note.txt: f_pos 0 → 26`, `inode 12 (ext4): i_size`), in
+the order they were first written, each write by which function, each a
+link, ◀ ▶ to the write before or after the cursor, ▸ its value at the
+cursor as a tree; the kernel's objects and real changes only, "all" for
+the registers, frames, locals and unchanged writes too. Pin an object (📌,
+or click a value in the Stack) to keep it as the selection changes, with
+its writes over the whole recording (a local's: while its frame lived);
+an example's `watch` pins one as it opens. The
 Calls tab shows the calls the selected call made, in the order they were
 made, inlined code among them (in italics, as the timeline and the Stack
 show it); ▸ opens a call's own calls; each is a link, and the call the
