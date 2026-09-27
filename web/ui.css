@@ -73,8 +73,9 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .cm-editor .ln-hit { background: var(--hit-bg); }
 .cm-editor .ln-infn { box-shadow: inset 3px 0 var(--accent); }
 .cm-editor .ln-cursor { background: var(--sel) !important; }
-.cm-editor .values { color: var(--dim); font-style: italic; }
-.cm-editor a.stored { color: var(--dim); font-style: italic; cursor: pointer; }
+/* (The notes at a line's end: clipped, not a horizontal scroll.) */
+.cm-editor .values, .cm-editor a.stored { color: var(--dim); font-style: italic; display: inline-block; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.cm-editor a.stored { cursor: pointer; }
 .cm-editor a.stored:hover { color: var(--accent); }
 #trace .ret { color: var(--dim); }
 .cm-cursorGutter { width: 14px; }
