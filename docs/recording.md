@@ -27,7 +27,8 @@ Every function gets:
   pointer after its prologue, `__builtin_frame_address(0)`): its locals in
   memory are at their offsets from it, which DWARF knows (`ksee pack`
   writes them, see below), so a stack address is a frame's, and a local's
-  lifetime is its call's;
+  lifetime is its call's. The entry block's first line is the function's
+  signature, so a call begins there, before its first statement;
 - before each **return**, a return record with the value;
 - before each **store** (its stack slots' too: a slot is reused by later
   calls, and a frame's locals must be undone to be seen as they were), a

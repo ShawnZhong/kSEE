@@ -65,7 +65,8 @@
 //                  (known: a bit mask of the source's parameters that call
 //                  records carry; the others were optimized away. sealed:
 //                  1 if only its call and returns are recorded: see below)
-//                B \t fn \t n \t FILE:line:column
+//                B \t fn \t n \t FILE:line:column (block 0: the function's
+//                  signature, where a call begins)
 //                L \t fn \t n \t lines: the source lines the block runs, in
 //                  order (each once per stretch between calls), separated
 //                  by ';': FILE:line (:line in the same file as the one
@@ -277,12 +278,19 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
 
   // The block's lines, as for an L line; empty if just its first line.
   // (And each write's line, for logStore: its index among the items, "|"
-  // apart; a write with no location is on the line before it.)
-  std::string blockLines(BasicBlock &BB) {
+  // apart; a write with no location is on the line before it. `sig`: the
+  // function, for its entry block: its signature's line comes first.)
+  std::string blockLines(BasicBlock &BB, DISubprogram *sig) {
     std::vector<std::string> items;
     std::map<std::string, unsigned> seen; // (since the last call: item -> its index)
     std::string file;                     // the last item's
     unsigned lines = 0, cur = 0;
+    if (sig) {
+      file = fileRef(sourcePath(sig));
+      items.push_back(file + ":" + std::to_string(sig->getLine()));
+      seen[items.back()] = 0;
+      lines = 1;
+    }
     for (Instruction &I : BB) {
       if (auto *CB = dyn_cast<CallBase>(&I); CB && runsProbes(*CB)) {
         if (!items.empty() && items.back() != "|")
@@ -420,14 +428,19 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         args.push_back(B.CreatePtrToInt(B.CreateCall(fa, {B.getInt32(0)}), i32));
       }
       record(B, B.getInt32(id), KindBlock << 28 | n, args);
+      // (The entry block starts at the function's signature: entering a
+      // call stops there, with its arguments, before its first statement.)
       std::string loc = "?";
-      for (Instruction &I : *BB)
-        if (DILocation *L = I.getDebugLoc().get(); L && L->getLine()) {
-          loc = location(L);
-          break;
-        }
+      if (n == 0 && SP)
+        loc = fileRef(sourcePath(SP)) + ":" + std::to_string(SP->getLine()) + ":1";
+      else
+        for (Instruction &I : *BB)
+          if (DILocation *L = I.getDebugLoc().get(); L && L->getLine()) {
+            loc = location(L);
+            break;
+          }
       probes += ("B\t" + Twine(id) + "\t" + Twine(n) + "\t" + loc + "\n").str();
-      if (std::string lines = blockLines(*BB); !lines.empty())
+      if (std::string lines = blockLines(*BB, n == 0 ? SP : nullptr); !lines.empty())
         probes += ("L\t" + Twine(id) + "\t" + Twine(n) + "\t" + lines + "\n").str();
     }
 
