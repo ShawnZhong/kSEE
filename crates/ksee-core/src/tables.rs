@@ -184,7 +184,44 @@ impl Tables {
         }
         t.files = files.paths;
         t.types = Types::parse(types);
+        t.fold_primitives();
         t
+    }
+
+    /// The machine's primitives (arch::PRIMITIVES) inlined into kernel code
+    /// are the machine, not calls: a step in one becomes a step at the line
+    /// it is inlined at, in the function that inlined it, so that nothing
+    /// shows a frame, a node or a line of get_current.
+    fn fold_primitives(&mut self) {
+        let prim: Vec<bool> = self.names.iter()
+            .map(|n| self.types.declared.get(n).is_some_and(|(f, _)| arch::PRIMITIVES.iter().any(|p| f.starts_with(p)))).collect();
+        if !prim.iter().any(|&p| p) {
+            return;
+        }
+        let mut chains: BTreeMap<Vec<(u32, Loc)>, u32> = self.inlines.iter().enumerate().map(|(i, c)| (c.clone(), i as u32)).collect();
+        let mut folded: BTreeMap<u32, (Loc, Option<u32>)> = BTreeMap::new();
+        for segs in self.lines.values_mut() {
+            for s in segs.iter_mut().flatten() {
+                let Some(c) = s.inlined else { continue };
+                if let Some(&(loc, inlined)) = folded.get(&c) {
+                    (s.loc, s.inlined) = (loc, inlined);
+                    continue;
+                }
+                let chain = &self.inlines[c as usize];
+                let n = chain.iter().take_while(|&&(k, _)| prim[k as usize]).count();
+                if n == 0 {
+                    continue;
+                }
+                let loc = chain[n - 1].1;
+                let rest = chain[n..].to_vec();
+                let inlined = (!rest.is_empty()).then(|| *chains.entry(rest.clone()).or_insert_with(|| {
+                    self.inlines.push(rest);
+                    self.inlines.len() as u32 - 1
+                }));
+                folded.insert(c, (loc, inlined));
+                (s.loc, s.inlined) = (loc, inlined);
+            }
+        }
     }
 
     /// The lines block `n` of `func` runs, in stretches between its calls
@@ -249,6 +286,20 @@ mod tests {
         let b = t.blocks[&(7, 0)];
         assert_eq!((t.file(b), b.line, b.column), ("/s/q.h", 2, 39));
         assert_eq!(t.field("task_struct", "pid"), Some(Field { offset: 736, size: 4 }));
+    }
+
+    #[test]
+    fn the_machines_primitives_fold_into_their_lines() {
+        // f's block 0 runs line 3 of get_current (arch/wasm's, inlined into
+        // spin_lock at its line 9, inlined into f at line 2), then line 4 of
+        // f: the get_current step is spin_lock's line 9.
+        let probes = "U\nP\t0\tf.c\nP\t1\tinclude/linux/spinlock.h\nP\t2\tarch/wasm/include/asm/current.h\n\
+                      F\t1\tf\t0:1\t0\nB\t1\t0\t0:1:1\nL\t1\t0\t2:3@get_current^1:9@spin_lock^0:2;0:4\n";
+        let t = Tables::parse(probes, "W\tget_current\tarch/wasm/include/asm/current.h\t12\nW\tspin_lock\tinclude/linux/spinlock.h\t7\n");
+        let steps = &t.lines[&(1, 0)][0];
+        let chain = |s: &Step| s.inlined.map(|k| t.inlines[k as usize].iter().map(|&(n, _)| t.names[n as usize].clone()).collect::<Vec<_>>());
+        assert_eq!((t.file(steps[0].loc), steps[0].loc.line, chain(&steps[0])), ("include/linux/spinlock.h", 9, Some(alloc::vec!["spin_lock".into()])));
+        assert_eq!((steps[1].loc.line, steps[1].inlined), (4, None));
     }
 
     #[test]

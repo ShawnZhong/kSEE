@@ -6,7 +6,9 @@
 // for the detail; the head opens all, closes all, or opens the way to the
 // call the cursor is in ("here"). Each call is a link to
 // its first record (hover: how many records it took), and the call the
-// cursor is in is marked. What a syscall did, readable.
+// cursor is in is marked. Inlined code that only inlines one more
+// function is one row with it (set_bit → arch_set_bit → …: the kernel's
+// layers of helpers). What a syscall did, readable.
 import { $, el } from "./dom.js";
 
 export function trace(app) {
@@ -56,16 +58,26 @@ export function trace(app) {
     mark();
   }
 
-  // A call: ▸ for its calls, its name (a link; inlined code in italics).
+  // A call: ▸ for its calls, its name (a link; inlined code in italics),
+  // and, inlined code with one inlined call and nothing else, that call
+  // on the same row (→), down the chain.
   function item(n) {
-    const f = n.inlined ? null : fn(n.func), name = n.inlined ? iname(n.func) : f?.name ?? "?";
-    const pct = Math.round((100 * n.records) / total), open = opened.has(n.first);
+    const names = [name(n)];
+    let last = n;
+    while (last.inlined && last.calls.length === 1 && last.calls[0].inlined) {
+      last = last.calls[0];
+      names.push(" → ", name(last));
+    }
+    const open = opened.has(last.first);
     return el("li", { dataset: { first: n.first, last: n.last } },
-      el("a", { className: "tw", textContent: n.calls.length ? (open ? "▾" : "▸") : "", title: open ? "fold its calls away" : "its calls",
-                onclick: () => (open ? opened.delete(n.first) : opened.add(n.first), render()) }),
-      el("a", { className: n.inlined ? "mono inl" : "mono", textContent: name, onclick: () => app.goCall(n.first),
-                title: `${n.inlined ? "inlined code (no call): " : `${f?.file ?? ""}:${f?.line ?? ""}: `}${n.records} record${n.records === 1 ? "" : "s"}${pct >= 1 ? ` (${pct}% of the selection)` : ""}, ${n.calls.length} call${n.calls.length === 1 ? "" : "s"}; go there` }),
-      n.calls.length && open ? el("ul", {}, ...n.calls.map(item)) : null);
+      el("a", { className: "tw", textContent: last.calls.length ? (open ? "▾" : "▸") : "", title: open ? "fold its calls away" : "its calls",
+                onclick: () => (open ? opened.delete(last.first) : opened.add(last.first), render()) }),
+      ...names, last.calls.length && open ? el("ul", {}, ...last.calls.map(item)) : null);
+  }
+  function name(n) {
+    const f = n.inlined ? null : fn(n.func), pct = Math.round((100 * n.records) / total);
+    return el("a", { className: n.inlined ? "mono inl" : "mono", textContent: n.inlined ? iname(n.func) : f?.name ?? "?", onclick: () => app.goCall(n.first),
+      title: `${n.inlined ? "inlined code (no call): " : `${f?.file ?? ""}:${f?.line ?? ""}: `}${n.records} record${n.records === 1 ? "" : "s"}${pct >= 1 ? ` (${pct}% of the selection)` : ""}, ${n.calls.length} call${n.calls.length === 1 ? "" : "s"}; go there` });
   }
 
   // The cursor moved: the innermost call shown that it is in, marked.

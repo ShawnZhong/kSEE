@@ -79,7 +79,7 @@ Rust does the work: JS only lays it out.
 | tree.js | values as trees (the Stack's, the Objects'): pointers open into what they point to, structs into their fields; who last wrote a value |
 | records.js | the Records: the raw trace around the cursor, a line a record (what the views are built from) |
 | objects.js | the Objects: what the selected call changed, by object, each write by which function, its value at the cursor; pinned ones kept, with their writes over the recording |
-| trace.js | the Calls: the calls the selected call made, in order, inlined code among them; ▸ opens a call's own calls |
+| trace.js | the Calls: the calls the selected call made, in order, inlined code among them (a chain of single inlined calls on one row); ▸ opens a call's own calls |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
 | args.js | a program's line: `name = call(args)`, `tid: call(args)` (the arguments themselves are ksee-core's args.rs: `Machine.arg`) |

@@ -36,7 +36,7 @@ export function callstack(app) {
       // (Click: select the call; the source shows where it is.)
       const on = s.sel == null ? k === 0 : f === s.sel;
       // (The syscall entry: named for the syscall, its arguments the syscall's.)
-      const h = head(f.syscall ? `${f.syscall}()` : f.func, f.line ? `${f.file}:${f.line}` : f.file, () => app.selectFrame(f), on ? "on" : "");
+      const h = head(f.syscall ? `${f.syscall}()` : f.func, `${f.line ? `${f.file}:${f.line}` : f.file}${f.inlined ? " · inlined" : ""}`, () => app.selectFrame(f), on ? "on" : "");
       // (Hover: the call outlined in the timeline.)
       h.onmouseenter = () => app.time.hilite(f.first);
       h.onmouseleave = () => app.time.hilite(null);

@@ -58,7 +58,12 @@ the chain is a frame of its own on the stack (no arguments: there was no
 call), at the line inside it, and the real call is at the line where the
 chain starts. The stack chart shows them as calls too, and the line a
 record is at names the function its code is inlined from: the page does
-not tell inlined code from a call (only that it has no arguments).
+not tell inlined code from a call (only that it has no arguments). The
+one exception is the machine's own primitives, `arch/wasm/include/asm`'s
+and `include/asm-generic`'s `current`, interrupt flag, atomics and bit
+ops (arch::PRIMITIVES): inlined
+everywhere, they are the machine, not calls, so their code counts as the
+line it is inlined at (Tables::fold_primitives).
 
 ## Syscalls
 
