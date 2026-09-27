@@ -241,8 +241,9 @@ fn runner_imports() -> Object {
                 let v = if c.buffers >> i & 1 != 0 { a + req + 32 } else { a };
                 head[4 + 4 * i..8 + 4 * i].copy_from_slice(&v.to_le_bytes());
             }
-            // (Into the runner's memory, which is kernel memory: recorded.)
-            bulk(req, 32 + CALL_DATA as u32);
+            // (Into the runner's memory, which is kernel memory: recorded;
+            // only as much as the request is.)
+            bulk(req, 32 + c.data.len() as u32);
             let mut data = c.data.clone();
             for &r in &c.relocs {
                 let w = r as usize;
@@ -251,7 +252,7 @@ fn runner_imports() -> Object {
             }
             unsafe {
                 core::ptr::copy_nonoverlapping(head.as_ptr(), req as *mut u8, 32);
-                core::ptr::copy_nonoverlapping(data.as_ptr(), (req + 32) as *mut u8, CALL_DATA);
+                core::ptr::copy_nonoverlapping(data.as_ptr(), (req + 32) as *mut u8, data.len());
             }
             c.nr as i32
         })

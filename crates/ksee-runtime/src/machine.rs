@@ -238,16 +238,16 @@ impl Machine {
 /// or a buffer (a string, { bytes }, { size }, { strings }) packed into its
 /// data.
 fn pack(id: u32, nr: u32, args: &[JsValue]) -> Result<Call, JsValue> {
-    let mut c = Call { id, nr, data: vec![0; CALL_DATA], ..Default::default() };
-    let mut used = 0usize;
-    // (Bytes `b` into the data, 8-byte aligned: their offset there.)
-    let mut put = |c: &mut Call, b: &[u8]| -> Result<u32, JsValue> {
-        if used + b.len() > CALL_DATA {
+    let mut c = Call { id, nr, ..Default::default() };
+    // (Bytes `b` into the data, 8-byte aligned: their offset there. The
+    // data is as long as what is in it: what the runner gets, recorded.)
+    let put = |c: &mut Call, b: &[u8]| -> Result<u32, JsValue> {
+        if c.data.len() + b.len() > CALL_DATA {
             return Err("the call's buffers are too big".into());
         }
-        c.data[used..used + b.len()].copy_from_slice(b);
-        let at = used;
-        used += (b.len() + 7) & !7;
+        let at = c.data.len();
+        c.data.extend_from_slice(b);
+        c.data.resize((c.data.len() + 7) & !7, 0);
         Ok(at as u32)
     };
     for (i, a) in args.iter().take(6).enumerate() {

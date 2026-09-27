@@ -104,6 +104,7 @@ pub struct Call {
     pub args: [u32; 6],
     pub buffers: u32,
     pub lens: [u32; 6],
+    /// The buffers, packed (up to CALL_DATA bytes).
     pub data: Vec<u8>,
     /// The words of `data` that are pointers into it (an array of strings'
     /// elements): offsets there, made addresses where the runner has it.
