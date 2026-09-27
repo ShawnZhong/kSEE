@@ -54,17 +54,19 @@
   if (file) ksee.runTo(file, Number(ln), 1);
   r.ranTo = [here, $("where").textContent, was, ksee.time.cursor()];
   if (!file || !(r.ranTo[3] > was) || r.ranTo[1] !== here) throw new Error("run to: " + JSON.stringify(r.ranTo));
-  // Stepping: Shift+→ by any line until a call is entered, → within that call, ↓ then → out of it
+  // Stepping: → with "into calls" on by any line until a call is entered, → within that call, ↓ then → out of it
   // (the Stack's calls, deep), from the explanation's first link (a known place: ksys_read's call
   // site), so that the run is the same every time.
   document.querySelector(".explain a.place").click();
   await sleep(300);
   const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
-  const press = (key, shift = false) => dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey: shift }));
+  const press = (key) => dispatchEvent(new KeyboardEvent("keydown", { key }));
   const frames = () => [...document.querySelectorAll("#stack tr.frame")].map((f) => f.innerText.trim().split("\n")[0].slice(0, 28));
   press("ArrowUp"); // (into ksys_read: the innermost, selected)
   const d0 = depthNow(), trail = [[$("where").textContent, frames()]];
-  for (let k = 0; k < 200 && depthNow() <= d0; k++) press("ArrowRight", true);
+  $("into").checked = true;
+  for (let k = 0; k < 200 && depthNow() <= d0; k++) press("ArrowRight");
+  $("into").checked = false;
   const d1 = depthNow();
   trail.push([$("where").textContent, frames()]);
   press("ArrowRight");

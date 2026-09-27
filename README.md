@@ -42,12 +42,12 @@ links lead into the recording: a function one of the calls runs (the
 cursor at its call: the source, and the Stack with each call's
 arguments and locals, as they were), or a call. Two pairs of keys
 explore it: ← → step in time, to the next line of the Stack's selected
-call (what it called is skipped; with Shift, to the next line at any
-depth); ↑ ↓ move in depth, to the call above or below on the Stack (the
-callee, the caller), and ↑ with none above enters the next call made.
-◀ ▶ ▲ ▼ under the timeline are the four keys (Shift-click ◀ ▶ for any
-line). F4 in the source runs to the line the cursor is on (its next run;
-Shift+F4 its last).
+call (what it called is skipped, unless "into calls" is on: then every
+line, at any depth); ↑ ↓ move in depth, to the call above or below on
+the Stack (the callee, the caller), and ↑ with none above enters the
+next call made. ◀ ▶ ▲ ▼ under the timeline are the four keys. F4 in the
+source runs to the line the cursor is on (its next run; Shift+F4 its
+last).
 
 The program is below the explanation, a call a line, each written as in C
 (`openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`): click one for its
