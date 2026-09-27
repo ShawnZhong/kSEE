@@ -103,9 +103,9 @@ every store to it in its lifetime, a local's frame or the whole
 recording: the member written, from what to what), `changes` (what a
 span of records changed, by object: the structs the calls' arguments
 point to, the task, locals and frames, the kernel's globals by address,
-the machine's own variables apart), `describe` (an object said as its
-fields name it: "fd 3 note.txt"), `raw` (records as text), `run_of` (a line's next or last
-run), `definition`.
+the machine's own variables apart, each object said as its fields name
+it: "fd 3 note.txt"), `raw` (records as text), `run_of` (a line's next or
+last run), `definition`.
 
 ## Tests
 

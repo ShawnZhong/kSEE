@@ -210,14 +210,6 @@ impl Machine {
         self.view(|v| to_js(&v.raw(from, to)))
     }
 
-    /// What the object of type `ty` at `addr` is ("fd 3 /note.txt",
-    /// "inode 12 (ext4)"), as memory shown says (memory_at), for the task
-    /// running at the cursor; null if it has no name.
-    pub fn describe(&self, ty: u32, addr: u32) -> Option<String> {
-        let task = self.past.borrow().and_then(|i| self.rec.borrow().tasks.get(i).copied()).unwrap_or(0);
-        self.with_memory(|mem| self.view(|v| v.describe(mem, ty, addr, task)))
-    }
-
     /// What records `first..=last` changed: the objects written, each with
     /// its writes (view::Changed).
     pub fn changes(&self, first: usize, last: usize) -> JsValue {
