@@ -23,7 +23,7 @@ const ROW = 15, MIN_ROW = 11, STRIP = 12, OVER = 18;
 const css = (v) => getComputedStyle(document.body).getPropertyValue(v).trim();
 const hue = (pid) => (pid * 137) % 360;
 // Calls are colored by where the function is.
-export const AREAS = [["fs/", 210, "fs"], ["mm/", 135, "mm"], ["kernel/sched/", 28, "sched"], ["kernel/", 48, "kernel"],
+const AREAS = [["fs/", 210, "fs"], ["mm/", 135, "mm"], ["kernel/sched/", 28, "sched"], ["kernel/", 48, "kernel"],
                ["drivers/", 280, "drivers"], ["lib/", 175, "lib"], ["include/", 330, "include"], ["arch/", -1, "arch"]];
 export const color = (file, on) => {
   const h = (AREAS.find(([p]) => file?.startsWith(p)) ?? [null, -1])[1], l = on ? 50 : 74;

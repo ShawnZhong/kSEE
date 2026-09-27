@@ -17,7 +17,7 @@ const WORD = /[A-Za-z0-9_]/;
 
 // The expression at offset `k` of `text`: the name there, with the fields
 // before it ("file->f_pos" on f_pos); null if not a name.
-export function exprAt(text, k) {
+function exprAt(text, k) {
   if (!WORD.test(text[k] ?? "")) return null;
   let a = k, b = k;
   while (a > 0 && WORD.test(text[a - 1])) a--;

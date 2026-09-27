@@ -57,8 +57,9 @@ call's position is its last line; if that line is inlined, each function of
 the chain is a frame of its own on the stack (no arguments: there was no
 call), at the line inside it, and the real call is at the line where the
 chain starts. The stack chart shows them as calls too, and the line a
-record is at names the function its code is inlined from: the page does
-not tell inlined code from a call (only that it has no arguments). The
+record is at names the function its code is inlined from. The page says
+which is which (an inlined frame is marked so on the Stack, italic in
+the Calls) and shows no arguments for inlined code: there was no call. The
 one exception is the machine's own primitives, `arch/wasm/include/asm`'s
 and `include/asm-generic`'s `current`, interrupt flag, atomics and bit
 ops (arch::PRIMITIVES): inlined

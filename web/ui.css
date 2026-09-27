@@ -116,7 +116,7 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #trace a.tw { color: var(--dim); display: inline-block; width: 1.1em; }
 #trace ul.tree > li > ul, #trace li > ul { padding-left: 16px; }
 .changed .whead { padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.changed .note, .changelist .note { padding: 1px 8px; font-size: 11px; }
+.changed .note { padding: 1px 8px; font-size: 11px; }
 /* The Records: the raw trace, a virtual list, a row a record */
 #records { position: relative; overflow-y: auto; }
 #records .raw { position: relative; font-size: 11px; }
