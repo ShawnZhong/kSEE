@@ -42,8 +42,9 @@ or a thread or child of it: see [kernel.md](kernel.md)) for a syscall
 (`Machine.call(name, args, tid)`: it rings the runner, which waits in
 a futex on its word); it reads the console's output. `Machine.quiet()` is a promise of
 the kernel **quiet** (idle, until the page's input: the recording stops
-there), with the calls finished meanwhile: returned (`ksee.done`), ended
-by an execve (the new program's `ksee.ready`) or by their task's exit.
+there), with the calls finished meanwhile: returned (the result in the
+runner's request), ended by an execve (the new program's `ksee.ready`) or
+by their task's exit.
 A call may not have finished then: it blocks (a futex's wait, a pipe's
 read), and finishes as a later call wakes it. (While a call is under way,
 idle skips the clock to the next timer only if the call's runner sleeps on
@@ -103,9 +104,7 @@ every store to it in its lifetime, a local's frame or the whole
 recording: the member written, from what to what), `changes` (what a
 span of records changed, by object), `describe` (an object said as its
 fields name it: "fd 3 note.txt"), `raw` (records as text), `run_of` (a line's next or last
-run), `definition`, `callers` (who called a function in the recording, or
-in one syscall: each caller at each line, a count, the first call's
-record: the source's code lens over the function).
+run), `definition`.
 
 ## Tests
 

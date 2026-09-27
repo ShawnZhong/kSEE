@@ -5,9 +5,8 @@
 // or a global with no value here, its declaration's first lines; F12 or
 // Ctrl+click on a
 // name goes to its definition (a function, inline ones too, a type, a
-// global, a field: Machine.definition); over the shown function, who
-// called it in the recording (Machine.callers), each a link to the first
-// such call; F4 runs to the line (Shift+F4: back to its last run).
+// global, a field: Machine.definition); F4 runs to the line (Shift+F4:
+// back to its last run).
 import { $, el } from "./dom.js";
 import { CM, base } from "./editor.js";
 
@@ -65,22 +64,6 @@ export function source(app) {
     lineMarker: (view, line) => (v.cursor?.file === v.file && view.state.doc.lineAt(line.from).number === v.cursor.line ? cursorMark : null),
     lineMarkerChange: (update) => update.transactions.some((tr) => tr.effects.some((e) => e.is(setMarks))),
   });
-  // Who called the shown function: a block above its first line.
-  class Lens extends CM.WidgetType {
-    constructor(dom) { super(); this.dom = dom; }
-    toDOM() { return this.dom; }
-    eq(other) { return other.dom === this.dom; }
-  }
-  function lens(fn) {
-    const cs = m.callers(fn.name, v.syscall), n = cs.reduce((a, c) => a + c.count, 0);
-    const where = v.syscall != null ? "in this syscall" : "in the recording";
-    const item = (text, i) => (i == null ? el("span", { textContent: text })
-      : el("a", { textContent: text, title: "go to where it made the call", onclick: () => app.goCallSite(i) }));
-    return el("div", { className: "lens dim" }, item(n ? `called ${n}× ${where} from` : `not called ${where}`),
-      ...cs.slice(0, 6).map((c) => item(`${c.func}${c.line ? `:${c.line}` : ""}${c.count > 1 ? ` (${c.count}×)` : ""}`, c.first)),
-      ...(cs.length > 6 ? [item(`and ${cs.length - 6} more`)] : []));
-  }
-
   // ---- Hover: the value at the cursor; else a declaration, its first lines ----
   const tips = CM.hoverTooltip(async (view, pos) => {
     const line = view.state.doc.lineAt(pos);
@@ -170,7 +153,7 @@ export function source(app) {
   }
 
   // The marks for the shown file: the lines that ran, the function, the
-  // cursor, the lens.
+  // cursor.
   function decorate() {
     const file = v.file, fn = v.fn?.file === file ? v.fn : null, doc = ed.state.doc;
     const at = (n) => n >= 1 && n <= doc.lines && doc.line(n).from;
@@ -181,7 +164,6 @@ export function source(app) {
     }
     if (fn) {
       for (let n = fn.line; n <= Math.min(fn.last, doc.lines); n++) d.push(CM.Decoration.line({ class: "ln-infn" }).range(at(n)));
-      if (at(fn.line) !== false) d.push(CM.Decoration.widget({ widget: new Lens(lens(fn)), block: true, side: -1 }).range(at(fn.line)));
     }
     if (v.cursor?.file === file && at(v.cursor.line) !== false) d.push(CM.Decoration.line({ class: "ln-cursor" }).range(at(v.cursor.line)));
     d.sort((x, y) => x.from - y.from || x.value.startSide - y.value.startSide);

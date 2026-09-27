@@ -67,7 +67,7 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .tip .f { padding-left: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tip .dim { font-family: system-ui, sans-serif; font-size: 11px; margin-top: 2px; }
 
-/* The source (CodeMirror): its title; the lines that ran, the function, the cursor; the hover; the lens */
+/* The source (CodeMirror): its title; the lines that ran, the function, the cursor; the hover */
 .srcbar { padding: 3px 12px; border-bottom: 1px solid var(--line); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
 #src { overflow: hidden; }
 .cm-editor .ln-hit { background: var(--hit-bg); }
@@ -80,8 +80,6 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .cm-editor .cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground { background: var(--sel); }
 .cm-editor .cm-tooltip { border: 1px solid var(--line); background: var(--panel); border-radius: 4px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); }
 .hovertip { margin: 0; padding: 4px 8px; font-size: 12px; white-space: pre; }
-.lens { font: 11px system-ui, sans-serif; padding: 2px 0 1px 4px; display: flex; flex-wrap: wrap; gap: 0 10px; }
-.lens a { color: var(--accent); }
 
 /* The Stack: calls (frames), their values as trees; the current task */
 .stackhead { padding: 4px 12px; font-size: 11.5px; border-bottom: 1px solid var(--line); }

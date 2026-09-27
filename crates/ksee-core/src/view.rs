@@ -10,7 +10,7 @@ use alloc::collections::BTreeMap;
 use crate::arch;
 use crate::recording::Recording;
 use crate::stack::{self, LineStep};
-use crate::tables::{Loc, Tables};
+use crate::tables::{Loc, Step, Tables};
 use crate::task::read_task;
 use crate::trace::Record;
 use crate::types::{Kind, Types};
@@ -163,18 +163,6 @@ pub struct Function {
     pub sealed: bool,
 }
 
-/// The calls of a function from one place, in a recording.
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Caller {
-    pub func: String,
-    pub file: Option<String>,
-    pub line: Option<u32>,
-    pub count: u32,
-    /// The first such call's record.
-    pub first: usize,
-}
-
 /// Where a function is.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
@@ -313,24 +301,21 @@ impl View<'_> {
     pub fn at(&self, i: usize) -> Option<At> {
         let t = self.tables;
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
-        let mut inlined = None;
         // (The innermost call of `i`'s task at record `j`, and the line it was at.)
         let top = |j: usize| stack::stack_at(t, records, tasks, j, None).pop().map(|c| (c.func, c.step));
-        let (kind, func, loc) = match *records.get(i)? {
+        let located = |func: u32, step: Option<Step>| (step.map(|s| s.loc).or(t.functions.get(&func).map(|f| f.loc)), step.and_then(|s| s.inlined));
+        let (kind, func, (loc, inlined)) = match *records.get(i)? {
             Record::Block { func, n } => {
-                inlined = t.segments(func, n).first().and_then(|s| s.first()).and_then(|s| s.inlined);
-                ("block", func, t.blocks.get(&(func, n)).copied())
+                let inlined = t.segments(func, n).first().and_then(|s| s.first()).and_then(|s| s.inlined);
+                ("block", func, (t.blocks.get(&(func, n)).copied(), inlined))
             }
             Record::Return { func, .. } => {
                 let prev = (0..i).rev().find(|&j| tasks[j] == tasks[i]);
-                let step = prev.and_then(top).and_then(|(_, s)| s);
-                inlined = step.and_then(|s| s.inlined);
-                ("return", func, step.map(|s| s.loc).or(t.functions.get(&func).map(|f| f.loc)))
+                ("return", func, located(func, prev.and_then(top).and_then(|(_, s)| s)))
             }
             r => {
                 let (func, step) = top(i).unwrap_or((0, None));
-                inlined = step.and_then(|s| s.inlined);
-                (if matches!(r, Record::Args { .. }) { "args" } else { "store" }, func, step.map(|s| s.loc).or(t.functions.get(&func).map(|f| f.loc)))
+                (if matches!(r, Record::Args { .. }) { "args" } else { "store" }, func, located(func, step))
             }
         };
         Some(At {
@@ -720,24 +705,6 @@ impl View<'_> {
         (0..n).filter_map(|b| {
             let i = b * total / n;
             Some(self.task(*self.rec.tasks.get(i)?))
-        }).collect()
-    }
-
-    /// Who called function `name` in syscall `n` (or the whole recording):
-    /// each caller at each line, by how often.
-    pub fn callers(&self, name: &str, n: Option<usize>) -> Vec<Caller> {
-        let t = self.tables;
-        let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
-        let Some((first, last, task)) = self.rec.span(n) else { return Vec::new() };
-        let entry = t.find(arch::SYSCALL);
-        stack::callers(t, &self.rec.records, &self.rec.tasks, first, last, task, &ids).into_iter().map(|c| Caller {
-            // (The syscall entry, or its wrappers: named for the syscall, as the Stack has it.)
-            func: match self.rec.syscall_at(c.first).and_then(|n| t.types.syscalls.get(&self.rec.syscalls[n].nr)) {
-                Some(s) if Some(c.func) == entry || self.tables.is_wrapper(c.func) => format!("{s}()"),
-                _ => self.name(c.func),
-            },
-            file: c.step.map(|s| t.file(s.loc).to_string()), line: c.step.map(|s| s.loc.line),
-            count: c.count, first: c.first,
         }).collect()
     }
 

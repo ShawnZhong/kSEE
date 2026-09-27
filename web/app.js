@@ -83,14 +83,6 @@ export function app(m) {
     const f = stack.select(first, inlined);
     if (f) a.selectFrame(f);
   };
-  // Go to where the call from record `first` was made: the cursor at the
-  // call, its caller's frame selected, so the source shows the calling line.
-  a.goCallSite = (first) => {
-    time.go(first);
-    const frames = m.call_stack(first), k = frames.findIndex((f) => f.first === first && !f.inlined);
-    const caller = frames.slice(k + 1).find((f) => !f.inlined);
-    if (caller) a.selectCall(caller.first, null);
-  };
   a.calls = () => calls;
   // Show the moment `at` (see Machine.at): the source there, the Stack,
   // memory as it was, where it is. `frame` ({ first, inlined }, a call on

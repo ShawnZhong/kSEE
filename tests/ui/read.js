@@ -183,10 +183,9 @@
   await until(() => !location.hash.includes("&p=") && document.querySelectorAll("ol.steps > li.done").length === n);
   r.reset = [lis().length, line(lis()[3])];
   if (r.removed !== n - 1 || r.reset[0] !== n || r.reset[1].includes("/mnt/other")) throw new Error("remove, reset: " + JSON.stringify(r));
-  // Code navigation: the lens over the shown function (who called it), F12 to a function, and to a field.
+  // Code navigation: F12 to a function, and to a field.
   ksee.src.showFunction("vfs_mkdir");
   await sleep(1200);
-  r.lens = [...document.querySelectorAll(".cm-editor .lens")].map((e) => e.innerText.replace(/\s+/g, " ")).slice(0, 2);
   // (F12 on a name: ksee.src.definitionAt(line, column), as the key does.)
   const goto = async (needle, off) => {
     const at = ksee.src.find(needle);
@@ -198,7 +197,7 @@
   r.def = $("fn-title").textContent;
   await goto("dir->i_sb", 5);
   r.field = [$("fn-title").textContent, ksee.src.text().split("\n")[ksee.src.lineAt() - 1].trim()];
-  if (!/called \d+×/.test(r.lens[0] ?? "") || !r.def.includes("may_create_dentry") || !r.field[0].includes("fs.h") || !r.field[1].includes("i_sb"))
+  if (!r.def.includes("may_create_dentry") || !r.field[0].includes("fs.h") || !r.field[1].includes("i_sb"))
     throw new Error("navigation: " + JSON.stringify(r));
   // Find a function in the recording: Enter, its next call after the cursor; Shift+Enter, the one before.
   const fbox = document.querySelector("input.find"), fkey = (k, shift = false) => fbox.dispatchEvent(new KeyboardEvent("keydown", { key: k, shiftKey: shift }));

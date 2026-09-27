@@ -178,44 +178,6 @@ pub fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usi
 }
 
 
-/// The calls of a function from one place: from `func` at `step` (its line
-/// then), `count` times, the first at record `first`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Caller {
-    pub func: u32,
-    pub step: Option<Step>,
-    pub first: usize,
-    pub count: u32,
-}
-
-/// Who called any of `callees` in records `from..=to` (of task `task`, or
-/// any): the callers, by how often.
-pub fn callers(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
-               task: Option<u32>, callees: &[u32]) -> Vec<Caller> {
-    let mut out: Vec<Caller> = Vec::new();
-    let to = to.min(records.len().saturating_sub(1));
-    let mut walks: BTreeMap<u32, Walk> = BTreeMap::new();
-    for (i, r) in records.iter().enumerate().take(to + 1) {
-        let tk = tasks[i];
-        let w = walks.entry(tk).or_default();
-        w.apply(t, r, i);
-        if i < from || task.is_some_and(|x| x != tk) {
-            continue;
-        }
-        let d = w.stack.frames.len();
-        if let Record::Block { func, n: 0 } = *r
-            && callees.contains(&func) && d >= 2 {
-                let (caller, step) = (w.stack.frames[d - 2].0, w.at.get(d - 2).copied().flatten());
-                match out.iter_mut().find(|c| c.func == caller && c.step.map(|s| s.loc) == step.map(|s| s.loc)) {
-                    Some(c) => c.count += 1,
-                    None => out.push(Caller { func: caller, step, first: i, count: 1 }),
-                }
-            }
-    }
-    out.sort_by_key(|c| core::cmp::Reverse(c.count));
-    out
-}
-
 /// The calls of any of `funcs` in records `from..=to`: each call's first
 /// record (its block 0), in order.
 pub fn calls_of(records: &[Record], from: usize, to: usize, funcs: &[u32]) -> Vec<usize> {
@@ -429,17 +391,6 @@ mod tests {
         let r = [b(1, 0), b(2, 0), b(2, 1), b(1, 1), b(2, 0)];
         assert_eq!(calls_of(&r, 0, 4, &[2]), [1, 4]);
         assert_eq!(calls_of(&r, 2, 4, &[2]), [4]);
-    }
-
-    #[test]
-    fn callers_are_counted_by_place() {
-        // f (1) calls g (2) twice from line 2, and h (3) calls g once.
-        let t = crate::tables::Tables::parse(
-            "U\nP\t0\tf.c\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1;:2;|;:2;|\nB\t2\t0\t0:10:1\nB\t3\t0\t0:20:1\n", "");
-        let ret = |f| Record::Return { func: f, value: 0 };
-        let r = [b(1, 0), b(2, 0), ret(2), b(2, 0), ret(2), ret(1), b(3, 0), b(2, 0)];
-        let got: Vec<_> = callers(&t, &r, &[7; 8], 0, 7, None, &[2]).iter().map(|c| (c.func, c.count, c.first)).collect();
-        assert_eq!(got, [(1, 2, 1), (3, 1, 7)]);
     }
 
     #[test]

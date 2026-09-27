@@ -162,12 +162,6 @@ check("definitions: a function, a type, a global", m.definition("vfs_write")?.fi
       && m.definition("task_struct")?.file === "include/linux/sched.h" && m.definition("runqueues")?.line > 0 && m.definition("no_such") == null
       && m.definition("list_add")?.file === "include/linux/list.h" && !m.functions("list_add").length);
 check("a field's declaration: file.f_pos, or .f_pos of any struct", m.definition("file.f_pos")?.file === "include/linux/fs.h" && m.definition(".f_pos")?.line > 0);
-{
-  const cs = m.callers("vfs_write", wi);
-  check(`who called vfs_write in the write: ${cs.map((c) => `${c.func}:${c.line} ${c.count}×`).join(", ")}`,
-        cs.length === 1 && cs[0].func === "ksys_write" && cs[0].count === 1 && cs[0].file === "fs/read_write.c" && cs[0].line > 0
-        && m.callers("vfs_write").reduce((a, c) => a + c.count, 0) > 1 && m.callers("ksys_write", wi)[0]?.func === "write()");
-}
 check("a syscall's parameters, typed, with the constants that fit", JSON.stringify(m.syscall("openat")?.params) ===
       JSON.stringify([{ name: "dfd", ty: "int", consts: ["AT_"] }, { name: "filename", ty: "char *", consts: [] },
                       { name: "flags", ty: "int", consts: ["O_"] }, { name: "mode", ty: "umode_t", consts: [] }]));
