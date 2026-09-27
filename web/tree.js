@@ -67,7 +67,7 @@ export function tree(app, st, redraw) {
     const writes = m.writes(o.addr, o.id, span?.from, span?.to);
     const now = writes.findLastIndex((x) => x.i <= cur);
     const items = writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
-      el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: "go to this write", onclick: () => app.time.go(x.i), onpointerenter: () => app.peek(x.i) }),
+      el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: "go to this write", onclick: () => app.time.go(x.i) }),
       el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` })));
     const scope = span ? span.what : "in the recording";
     return el("tr", { className: "history" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },

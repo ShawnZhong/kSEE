@@ -4,7 +4,7 @@
 // for seeing what the compiler recorded. A virtual list: the rows in view
 // are built (Machine.raw), the rest is height. The cursor's row is marked
 // in place, and scrolled to only when it is out of view; click a row to
-// go there, the view follows the pointer over one.
+// go there.
 import { $, el } from "./dom.js";
 
 const ROW = 18, OVER = 30; // px a row; rows built beyond the view
@@ -15,7 +15,6 @@ export function records(app) {
   const list = el("div", { className: "raw mono" }), rows = el("div", { className: "rows" });
   list.append(rows);
   body.replaceChildren(list);
-  body.onpointerleave = () => app.peek(null);
   body.onscroll = () => fill();
   let built = [-1, -1], n = 0, snapshot = null, marked = null;
 
@@ -45,7 +44,7 @@ export function records(app) {
     rows.style.top = `${from * ROW}px`;
     rows.replaceChildren(...m.raw(from, to).map(([i, kind, text]) => el("div", {
       className: `row ${kind}${i === cur ? " on" : ""}`, dataset: { i },
-      onclick: () => app.time.go(i), onpointerenter: () => app.peek(i) },
+      onclick: () => app.time.go(i) },
       el("span", { className: "dim", textContent: i }), el("span", { textContent: text }))));
     marked = cur;
   }

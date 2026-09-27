@@ -101,7 +101,7 @@ export function callstack(app) {
         el("b", { className: "mono", textContent: c.what }), el("span", { className: "dim mono", textContent: ` ${c.ty}` }),
         el("span", { className: "dim", textContent: ` · ${c.n} write${c.n === 1 ? "" : "s"}${c.n > c.writes.length ? `, the last ${c.writes.length}` : ""}` }),
         el("ol", {}, ...c.writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
-          el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: `go to this write: ${place(x.at)}`, onclick: () => app.time.go(x.i), onpointerenter: () => app.peek(x.i) }),
+          el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: `go to this write: ${place(x.at)}`, onclick: () => app.time.go(x.i) }),
           el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` })))))));
     }
   }
