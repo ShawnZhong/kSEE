@@ -318,8 +318,10 @@ impl Types {
         loop {
             match &self.get(self.resolve(ty)).kind {
                 k @ (Kind::Struct(_) | Kind::Union(_)) => {
+                    // (A member of no size, an empty struct such as a spinlock
+                    // on one CPU, shares its offset with the next: not it.)
                     let Some(m) = self.members(k).into_iter()
-                        .find(|m| m.bit_offset / 8 <= off - at && off - at < m.bit_offset / 8 + self.size_of(m.ty).max(1)) else { break };
+                        .find(|m| self.size_of(m.ty) > 0 && m.bit_offset / 8 <= off - at && off - at < m.bit_offset / 8 + self.size_of(m.ty)) else { break };
                     if !path.is_empty() {
                         path.push('.');
                     }
@@ -433,6 +435,9 @@ mod tests {
         assert_eq!(t.leaf(4, 6), ("comm".into(), 3, 4, None));
         assert_eq!(t.leaf(4, 17), ("flags".into(), 7, 16, Some((0, 3))));
         assert_eq!(t.leaf(1, 2), ("".into(), 1, 0, None));
+        // An empty struct (a lock on one CPU) at 4, and int next_fd at 4 too: the int.
+        let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t2\tstruct\tlock\t0\nT\t3\tstruct\tfiles\t8\nM\t3\tcount\t0\t0\t1\nM\t3\tlock\t32\t0\t2\nM\t3\tnext_fd\t32\t0\t1\n");
+        assert_eq!(t.leaf(3, 4), ("next_fd".into(), 1, 4, None));
     }
 
     #[test]
