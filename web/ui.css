@@ -119,17 +119,18 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #trace ul.tree > li > ul, #trace li > ul { padding-left: 16px; }
 .changed .whead { padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .changed .note, .changelist .note { padding: 1px 8px; font-size: 11px; }
-/* The Records: the raw trace, a line a record */
-table.raw { border-collapse: collapse; width: 100%; font-size: 11px; }
-table.raw td { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-table.raw td:first-child { width: 5em; text-align: right; }
-table.raw tr { cursor: pointer; }
-table.raw tr:hover { background: var(--sel); }
-table.raw tr.on { background: var(--at); }
-table.raw tr.call td:last-child { color: var(--fg); font-weight: 600; }
-table.raw tr.store td:last-child { color: var(--accent); }
-table.raw tr.return td:last-child { color: var(--kw); }
-table.raw tr.task td:last-child { color: var(--run); }
+/* The Records: the raw trace, a virtual list, a row a record */
+#records { position: relative; overflow-y: auto; }
+#records .raw { position: relative; font-size: 11px; }
+#records .rows { position: absolute; left: 0; right: 0; }
+#records .row { height: 18px; line-height: 18px; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+#records .row > span:first-child { display: inline-block; width: 5em; text-align: right; margin-right: 8px; }
+#records .row:hover { background: var(--sel); }
+#records .row.on { background: var(--at); }
+#records .row.call > span:last-child { color: var(--fg); font-weight: 600; }
+#records .row.store > span:last-child { color: var(--accent); }
+#records .row.return > span:last-child { color: var(--kw); }
+#records .row.task > span:last-child { color: var(--run); }
 
 #objects .head { padding: 6px 12px 2px; font-size: 11.5px; }
 #objects .changed { border-bottom: 1px solid var(--line); padding: 2px 4px 4px; }

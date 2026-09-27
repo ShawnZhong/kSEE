@@ -110,7 +110,7 @@ export function app(m) {
     view(at);
     a.trace?.mark();
     stack.objects.mark();
-    a.records?.draw();
+    a.records?.mark();
     badge();
   };
   // The view follows the pointer over the timeline: record `i` shown as if
@@ -129,7 +129,7 @@ export function app(m) {
   };
   a.trace = trace(a);
   a.records = records(a);
-  a.outlined = () => (a.trace.draw(), stack.objects.draw());
+  a.outlined = () => (a.trace.draw(), stack.objects.draw(), a.records.draw());
   // (The Records follow the cursor, drawn when the tab is looked at.)
   document.querySelector('h2.tabs a[data-tab="records"]').addEventListener("click", () => a.records.draw());
   examples(a);
@@ -182,7 +182,7 @@ export function app(m) {
     time.mark(step.i);
     a.trace?.mark();
     stack.objects.mark();
-    a.records?.draw();
+    a.records?.mark();
     memoryAt(step.i);
     const at = m.at(step.i);
     src.view.cursor = { file: step.file, line: step.line };

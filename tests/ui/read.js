@@ -38,7 +38,8 @@
   // (The example's own pin stays: the read's struct file, pinned as it opened.)
   if (!$("objects").innerText.includes("fd 3 note.txt") || document.querySelectorAll("#objects .pinned").length !== 1) throw new Error("the example's pin: " + $("objects").innerText.slice(0, 160));
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
-  $("speed").value = "30"; $("play").click(); await sleep(1500); $("play").click();
+  $("speed").value = "30"; $("play").click(); await sleep(1500);
+  if ($("play").textContent.includes("Pause")) $("play").click(); // (it may have reached the end)
   r.played = $("where").textContent.slice(0, 50);
   // Run to a line (the source's F4): the line where the cursor is, its next run
   // (stepping on from where Play stopped until a line that does run again).
@@ -126,7 +127,7 @@
   // The Records tab: the raw trace around the cursor, the cursor's marked.
   document.querySelector('h2.tabs a[data-tab="records"]').click();
   await sleep(100);
-  if (!document.querySelector("#records tr.on") || !document.querySelector("#records tr.store")) throw new Error("the records: " + $("records").innerText.slice(0, 200));
+  if (!document.querySelector("#records .row.on") || !document.querySelector("#records .row.store")) throw new Error("the records: " + $("records").innerText.slice(0, 200));
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
   // (Any call's box, double-clicked: the call, from its first record to its return.)

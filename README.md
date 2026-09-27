@@ -88,7 +88,8 @@ says who called it in the recording, each caller a link to the call.
 An example is one JSON file in user/examples/: a title, a question, `text`
 (the explanation: paragraphs, with links into the recording as
 `[label](2:vfs_read)`, the first call of vfs_read in call 2's recording,
-`:any` for one on any task, or `[label](2)`, call 2 itself; `code` in
+`:any` for one on any task, or `[label](2)`, call 2 itself, and a tab to
+show, `:calls`, `:objects`, `:stack` or `:records`; `code` in
 backticks; `[label](try:1)` runs the example's `tries[0]`, another program
 written as calls separated by `;`, to see what changes), and steps: `{ call, name?, tid?, args }` (`name`:
 a name for the call's result, which later arguments may use, as `fd` or
