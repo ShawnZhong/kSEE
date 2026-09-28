@@ -251,7 +251,7 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
 // The syscall entry: the frame says which syscall, its arguments typed as the syscall's, as constants; the wrapper is a frame of its own, with the same parameters (its SYSCALL_DEFINE line's).
 {
   const op = m.syscalls().find((s) => s.name === "openat"), stack = m.call_stack(m.first_call("do_sys_openat2", op.first, op.last)), entry = stack.at(-1);
-  // (Memory reached through a pointer local, or the task's pointer members, is named too: files->next_fd, through current->files.)
+  // (Memory reached through a pointer local, or the task's pointer members, is named too: files->next_fd, through the task's files.)
   const ops = m.stores(op.first, op.last);
   check(`a store through the task's files is named: ${[...new Set(ops.filter((s) => s.write.member === "next_fd").map((s) => s.what))].join(", ")}`,
         ops.some((s) => s.write.member === "next_fd" && s.kind === "object"));

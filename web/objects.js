@@ -1,7 +1,7 @@
 // The Objects: what the selected call (a syscall, or a call double-clicked
 // in the timeline: the zoom) changed in the kernel's data (Machine.objects),
 // at the moment the page shows: a box per object it writes (named as the
-// code names them: "vfs_read's file", "current->files"), in the order of
+// code names them: "vfs_read's file", "prog(19)->files"), in the order of
 // the calls that name them, the outer first, each in its place at every
 // moment (one not written yet, dim; one on the stack of a call not running
 // then, dashed). Each member it writes as it is then, in the Stack's value

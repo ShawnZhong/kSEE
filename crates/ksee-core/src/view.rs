@@ -898,7 +898,11 @@ impl View<'_> {
             }
         };
         if let Some(ty) = types.find(arch::TASK) {
-            add(arch::CURRENT.into(), "task", ty, task, None, None, None);
+            // (By its name, "prog(19)": the task running as the span begins,
+            // which another may follow in it; not "current".)
+            let who = self.task(task);
+            let who = format!("{}({})", who.comm.unwrap_or_default(), who.pid.unwrap_or(0));
+            add(who.clone(), "task", ty, task, None, None, None);
             // (And what its pointer members point to, as the span ends:
             // current->files, ->fs, ->mm: "files->next_fd" through a local
             // the optimizer kept in a register is reached this way.)
@@ -906,7 +910,7 @@ impl View<'_> {
             if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
                 for mb in members.iter().filter(|mb| mb.bit_size == 0) {
                     if let Some(to) = types.struct_target(mb.ty) {
-                        add(format!("{}->{}", arch::CURRENT, mb.name), "object", to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None, None);
+                        add(format!("{who}->{}", mb.name), "object", to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None, None);
                     }
                 }
             }
