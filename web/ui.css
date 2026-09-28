@@ -132,6 +132,8 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #objects .obj .row { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #objects .obj .row.later { opacity: 0.45; }
 #objects .obj.ended { border-style: dashed; opacity: 0.75; }
+#objects .obj .title { cursor: pointer; }
+#objects .obj table.objs { width: 100%; border-top: 1px solid var(--line); }
 #objects .obj .row.same a { color: var(--dim); }
 #objects .obj .row.link { color: var(--accent); text-align: right; }
 #objects svg.arrows { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }

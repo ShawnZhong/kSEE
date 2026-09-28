@@ -90,7 +90,7 @@ stores as the objects they changed: a box per object (its members
 written, from what to what), its pointers to the others as arrows (a
 kiocb's file, the file's inode, the inode's page), as memory was at the
 cursor; an object on the stack whose call has returned is gone
-(dashed). The
+(dashed); a box's title opens all of it, as the Stack's values are. The
 Calls tab shows the calls the selected call made, in the order they were
 made, each with what it returned (`ksys_read = 26`, `lookup_fast = -2
 (ENOENT)`), inlined code among them (in italics, as the timeline and the

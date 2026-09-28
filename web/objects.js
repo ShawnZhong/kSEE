@@ -9,11 +9,15 @@
 // object on the stack whose call has returned by the cursor is gone (its
 // slot another's): shown as it was then.
 import { $, el } from "./dom.js";
+import { tree } from "./tree.js";
 
 export function objects(app) {
   const { m } = app;
   const body = $("objects");
-  let shown = null;
+  let shown = null, last = null;
+  // (A box opened: all of its object, as the Stack's values are, a tree.)
+  const st = { open: new Set(), last: new Map(), now: new Map() };
+  const { rows: fields } = tree(app, st, () => last && render(...last));
 
   // Draw for the selection at the cursor (only while the tab is shown:
   // again as the cursor moves, the pointers being memory's then).
@@ -29,6 +33,9 @@ export function objects(app) {
   }
 
   function render(nodes, cur) {
+    last = [nodes, cur];
+    st.last = st.now;
+    st.now = new Map();
     // (In the order the pointers lead: from each object nothing points to,
     // depth first; then any left.)
     const pointed = new Set(nodes.flatMap((n) => n.links.map((l) => l.to)));
@@ -64,10 +71,16 @@ export function objects(app) {
       el("span", { textContent: `${l.member} →` })));
     // (An object on the stack whose call has returned: gone, its slot
     // another's; as it was when it went.)
+    // (Its title opens it: all of it, as memory was at the cursor.)
+    const path = `obj/${n.addr}/${n.id}`, open = st.open.has(path), all = [];
+    if (open) fields(m.object_by_id(n.what, n.id, n.addr, 1)?.children ?? [], path, 0, all);
+    const toggle = () => (open ? st.open.delete(path) : st.open.add(path), render(...last));
     return el("div", { className: `obj ${n.kind}${n.ended != null ? " ended" : ""}`, dataset: { k },
                        title: n.ended != null ? "on the stack of a call that has returned by the cursor: as it was then" : "" },
-      el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty}${n.ended != null ? " · gone" : ""}` })),
-      ...rows, ...links);
+      el("div", { className: "title", onclick: toggle, title: open ? "fold it" : "all of it, as it was at the cursor" },
+        el("span", { className: "tw", textContent: open ? "▾" : "▸" }), el("b", { textContent: n.what }),
+        el("span", { className: "dim", textContent: ` ${n.ty}${n.ended != null ? " · gone" : ""}` })),
+      ...rows, ...links, open ? el("table", { className: "objs" }, el("tbody", {}, ...all)) : null);
   }
 
   // The pointers, as arrows from a member's row to its object's title, in
