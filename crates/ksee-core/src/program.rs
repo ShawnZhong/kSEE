@@ -76,7 +76,8 @@ pub fn eval(s: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<i64, String>
                 .ok_or("a ' missing")?;
             let c = unquote(&format!("\"{}\"", &r[..end]))?;
             *t = &r[end + 1..];
-            return c.chars().next().map(|c| c as i64).ok_or_else(|| "an empty character".into());
+            // (A character's byte, or the first of its UTF-8 bytes.)
+            return c.first().map(|&c| c as i64).ok_or_else(|| "an empty character".into());
         }
         // (&x: a program's variable's address, which its name stands for
         // anyway, as C writes it for a struct.)
@@ -128,7 +129,7 @@ pub fn eval(s: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<i64, String>
 #[derive(Debug, Clone, PartialEq)]
 enum Item {
     Expr(String),
-    Str(String),
+    Str(Vec<u8>),
     List(Vec<(Option<String>, Item)>),
 }
 
@@ -187,25 +188,27 @@ fn split(text: &str) -> Vec<&str> {
 }
 
 /// A C string literal's bytes (\n, \t, \\, \", \0, \xHH).
-fn unquote(s: &str) -> Result<String, String> {
+fn unquote(s: &str) -> Result<Vec<u8>, String> {
     let inner = s.strip_prefix('"').and_then(|r| r.strip_suffix('"')).ok_or_else(|| format!("not a string: {s}"))?;
-    let mut out = String::new();
+    let mut out = Vec::new();
     let mut chars = inner.chars();
+    // (A character as its UTF-8 bytes; an escape, the byte it says.)
+    let push = |out: &mut Vec<u8>, c: char| out.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
     while let Some(c) = chars.next() {
         if c != '\\' {
-            out.push(c);
+            push(&mut out, c);
             continue;
         }
         match chars.next() {
-            Some('n') => out.push('\n'),
-            Some('t') => out.push('\t'),
-            Some('r') => out.push('\r'),
-            Some('0') => out.push('\0'),
+            Some('n') => out.push(b'\n'),
+            Some('t') => out.push(b'\t'),
+            Some('r') => out.push(b'\r'),
+            Some('0') => out.push(0),
             Some('x') => {
                 let h: String = chars.by_ref().take(2).collect();
-                out.push(u8::from_str_radix(&h, 16).map_err(|_| format!("bad escape in {s}"))? as char);
+                out.push(u8::from_str_radix(&h, 16).map_err(|_| format!("bad escape in {s}"))?);
             }
-            Some(c) => out.push(c),
+            Some(c) => push(&mut out, c),
             None => return Err(format!("bad escape in {s}")),
         }
     }
@@ -499,7 +502,7 @@ impl Types {
     pub fn arg(&self, text: &str, ty: u32, known: &dyn Fn(&str) -> Option<i64>) -> Result<Arg, String> {
         let s = text.trim();
         if s.starts_with('"') {
-            let mut b = unquote(s)?.into_bytes();
+            let mut b = unquote(s)?;
             b.push(0);
             return Ok(Arg::Bytes(b));
         }
@@ -514,7 +517,7 @@ impl Types {
             // A char **: an array of strings.
             if matches!(self.get(to).kind, Kind::Pointer(c) if self.is_string(c)) {
                 return list.into_iter().map(|(_, it)| match it {
-                    Item::Str(s) => Ok(Some(s)),
+                    Item::Str(s) => Ok(Some(String::from_utf8_lossy(&s).into_owned())),
                     Item::Expr(e) if eval(&e, known)? == 0 => Ok(None),
                     _ => Err("an array of strings: \"…\" or NULL each".to_string()),
                 }).collect::<Result<_, _>>().map(Arg::Strings);
@@ -558,7 +561,7 @@ impl Types {
                 buf[at..at + size].copy_from_slice(&v.to_le_bytes()[..size]);
                 Ok(())
             }
-            (_, Item::Str(s)) => Err(format!("\"{s}\" for a {}", self.name(id))),
+            (_, Item::Str(s)) => Err(format!("\"{}\" for a {}", String::from_utf8_lossy(s), self.name(id))),
             (_, Item::List(_)) => Err(format!("{{…}} for a {}", self.name(id))),
             (_, Item::Expr(e)) => Err(format!("{e} for a {}", self.name(id))),
         }
@@ -571,9 +574,9 @@ impl Types {
         match item {
             Item::Str(s) if self.is_string(elem) => {
                 if s.len() + 1 > count as usize {
-                    return Err(format!("\"{s}\": longer than {count} bytes"));
+                    return Err(format!("\"{}\": longer than {count} bytes", String::from_utf8_lossy(s)));
                 }
-                buf[at..at + s.len()].copy_from_slice(s.as_bytes());
+                buf[at..at + s.len()].copy_from_slice(s);
                 Ok(())
             }
             Item::List(list) if list.len() > count as usize => Err(format!("too many values: {count} at most")),
@@ -678,6 +681,8 @@ mod tests {
     fn strings_and_argv() {
         let t = Types::parse(TYPES);
         assert_eq!(t.arg("\"a\\n\"", 5, &known), Ok(Arg::Bytes(b"a\n\0".to_vec())));
+        // (An escape's byte, not its character's UTF-8: \xff is one byte.)
+        assert_eq!(t.arg("\"\\xff\"", 5, &known), Ok(Arg::Bytes(alloc::vec![0xff, 0])));
         assert_eq!(t.arg("{\"init\", NULL}", 6, &known), Ok(Arg::Strings(vec![Some("init".into()), None])));
         assert_eq!(t.arg("fd", 7, &known), Ok(Arg::Number(3)));
         // (No type known: no layout.)
