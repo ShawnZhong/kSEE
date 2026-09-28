@@ -60,13 +60,13 @@ own program back, and an edit left without Enter goes back to what it was. Add a
 end. As you type, a list shows what fits (syscalls, the constants for the
 parameter, the results so far as `$n`), and the signature. Some examples
 have several threads or processes (a futex, a thread's join, a pipe
-between two processes): a call can be made by a thread or child of the program
-(`19: read(3, [64], 64)`), and a call can block, until a later call wakes
-it. With more than one, the program is in lanes: a column per task (its
-name and tid over it, in the timeline's task colors), the lines in the
-order they were made, down being time; a call that blocked has its lane
-marked until the line during which it returned; each lane has its own line
-to add a call, made by its task. A line can also declare a variable of the program's, as in C: `char
+between two processes): a call can be made by a thread or child of the program, and a call can
+block, until a later call wakes it. With more than one task, the program
+is in lanes: a column per task (its tid over it, in the timeline's task
+colors), the lines in the order they were made, down being time; a call
+that blocked has its lane marked until the line during which it returned;
+each lane has its own line to add a call, made by its task (written out,
+as in the URL: `child: read(0, buf, 64)`, `20: …`). A line can also declare a variable of the program's, as in C: `char
 buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0, 30000000}`,
 memory of its own in the program's process; its name then stands for its
 address (`read(fd, buf, 64)`, `&ts`), `fds[1]` for an element as it is
@@ -131,7 +131,7 @@ show, `:calls`, `:stores`, `:stack` or `:trace`, or `:objects`: the
 function's call selected, at its return, what it changed; `code` in
 backticks; `[label](try:1)` runs the example's `tries[0]`, another program
 written as lines separated by `;`, to see what changes), `steps`: the
-program, its lines as the page shows them (`"int fd = openat(AT_FDCWD,
+program, its lines as the page writes them out (`"int fd = openat(AT_FDCWD,
 \"/note.txt\", O_RDONLY)"`, `"char buf[64]"`, `"child: dup3(fds[0], 0,
 0)"`: a call, its result named and typed as C declares it, or a variable
 declared; `child:` the runner that makes it, a thread id or a result's

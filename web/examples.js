@@ -228,10 +228,13 @@ export async function examples(app) {
     }).map(([s]) => lanes.indexOf(laneOf(s)));
     t.list.replaceChildren(...t.steps.map((s, j) => {
       const d = t.done[j];
-      const e = callEditor({ m, consts, known: (r) => known(j, r), text: text(s), inline: true, common,
+      // (Its runner is its lane's: not written on the line; edited, it
+      // stays, unless the line names another.)
+      const shown = text({ ...s, tid: undefined });
+      const e = callEditor({ m, consts, known: (r) => known(j, r), text: shown, inline: true, common,
         focus: () => pick(j),
-        done: (c) => (c == null ? remove(j) : text(c) === text(s) ? e.input.blur() : change(j, c)),
-        cancel: () => ((e.input.value = text(s)), e.input.blur()) });
+        done: (c) => (c == null ? remove(j) : ((c.tid ??= s.tid), text(c) === text(s) ? e.input.blur() : change(j, c))),
+        cancel: () => ((e.input.value = shown), e.input.blur()) });
       // (Hover: the names it uses, at the cursor.)
       e.input.onmouseenter = () => (e.input.title = names(s, j));
       const lane = lanes.indexOf(laneOf(s));
