@@ -41,10 +41,8 @@ export function callstack(app) {
       // the selected frame's: the others a row each, a click to select.)
       if (!on) return;
       if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body);
-      if (f.locals?.length) {
-        body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3, textContent: "locals" })));
-        rows(f.locals, `${n - k}/${f.func}/locals`, 1, body, { from: f.first, to: m.call_end(f.first) ?? undefined, what: `while ${f.func}'s frame lives` });
-      }
+      // (Then its locals: one list, as the source has them all as names.)
+      if (f.locals) rows(f.locals, `${n - k}/${f.func}/locals`, 1, body, { from: f.first, to: m.call_end(f.first) ?? undefined, what: `while ${f.func}'s frame lives` });
     });
     // At the bottom: the task running then, a link to it in the Tasks.
     if (s.task && s.frames.length)
