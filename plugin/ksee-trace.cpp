@@ -398,6 +398,35 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       B.CreateCall(bulk, {addr, len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size), line});
   }
 
+  // A struct passed by value (byval) is copied by the backend, after this
+  // pass, into the caller's stack: stores no record would have, so memory
+  // as it was would be wrong where the copy lands. Make each copy here
+  // instead, a memcpy (recorded as any) into a slot of the caller's own,
+  // passed as a plain pointer: wasm passes a byval argument as a pointer
+  // to the caller's copy anyway, so the calling convention is the same
+  // (and its callees lose byval too: see run).
+  void copyByval(Function &F) {
+    const DataLayout &DL = M->getDataLayout();
+    SmallVector<std::pair<CallBase *, unsigned>> args;
+    for (Instruction &I : instructions(F))
+      if (auto *CB = dyn_cast<CallBase>(&I))
+        for (unsigned k = 0; k < CB->arg_size() && k < CB->getFunctionType()->getNumParams(); k++)
+          if (CB->isByValArgument(k))
+            args.push_back({CB, k});
+    IRBuilder<> E(&*F.getEntryBlock().getFirstInsertionPt());
+    for (auto [CB, k] : args) {
+      Type *T = CB->getParamByValType(k);
+      Align A = std::max(CB->getParamAlign(k).valueOrOne(), DL.getPrefTypeAlign(T));
+      AllocaInst *slot = E.CreateAlloca(T);
+      slot->setAlignment(A);
+      IRBuilder<> B(CB);
+      B.SetCurrentDebugLocation(CB->getDebugLoc());
+      B.CreateMemCpy(slot, A, CB->getArgOperand(k), Align(1), DL.getTypeAllocSize(T));
+      CB->setArgOperand(k, slot);
+      CB->removeParamAttr(k, Attribute::ByVal);
+    }
+  }
+
   void instrument(Function &F) {
     uint32_t id = fnId(F);
     DISubprogram *SP = F.getSubprogram();
@@ -495,6 +524,12 @@ public:
       if (!F.isDeclaration() && !F.getName().starts_with("__ksee_"))
         todo.push_back(&F);
     createRuntime();
+    for (Function *F : todo)
+      copyByval(*F);
+    // (No byval left: every call makes its copy itself, see copyByval.)
+    for (Function &F : Mod)
+      for (unsigned k = 0; k < F.arg_size(); k++)
+        F.removeParamAttr(k, Attribute::ByVal);
     for (Function *F : todo)
       instrument(*F);
 

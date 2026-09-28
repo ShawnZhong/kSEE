@@ -37,7 +37,11 @@ Every function gets:
   its block's lines: so a line step lands at its first store, and a store
   is attributed to its line). Bulk writes (memcpy, memset, wider stores)
   call the `ksee.bulk(addr, len, line)` import, which logs their old
-  contents the same way.
+  contents the same way. A struct passed by value (`byval`) is copied by
+  the pass itself, a memcpy into a slot of the caller's (recorded as
+  any), passed as a plain pointer (wasm's calling convention for it
+  anyway): the backend would otherwise make the copy after the pass, and
+  its stores would go unrecorded (memory as it was wrong where it lands).
 
 A function that loops but writes no memory and calls nothing (a checksum,
 a search: `crc32c`, `_find_next_bit`, `memcmp`; about 130 of them) is
