@@ -5,12 +5,13 @@
 // its explanation: paragraphs of text with links into the recording.
 //
 // Opening an example makes all its calls, each recorded (a runner makes
-// each: the program (/bin/prog), or a thread or child of it; see Machine.call). A call may
+// each: the program (/bin/prog), or a thread or child of it; see
+// Machine.call). A call may
 // block, and finish as a later one wakes it. Then the explanation's links
 // lead into the recording: `[label](2)` is call 2 (its recording
 // selected), `[label](2:vfs_read)` the first call of vfs_read in it (on
-// the call's task; `:any` on any task), the cursor there, and `:calls`
-// (or `:stores`, `:objects`, `:stack`, `:trace`) shows that tab
+// the call's task; `:any` on any task), the cursor there, and `:objects`
+// (or `:stack`, `:tasks`, `:trace`) shows that tab
 // (`:objects`: the function's call selected, as a double click on it in
 // the timeline does, at its return: what it changed); the first such
 // link is where the cursor starts; `[label](try:1)` runs the example's
@@ -53,7 +54,7 @@ export async function examples(app) {
   // (An example's program: its lines, as written; made steps here, once.)
   for (const ex of list) ex.steps = ex.steps.map(statement);
   // The open example: its steps, the calls asked ({ id, tid, args, how?,
-  // ret?, text?: how once it finished), the runner each started; its
+  // ret?: how once it finished), the runner each started; its
   // explanation's links ({ j: the call, func?, any?, at?: the record, a:
   // the element }).
   const t = { ex: null, steps: [], done: [], started: [], links: [], list: null, text: null, status: null };

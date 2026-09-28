@@ -131,7 +131,7 @@ An example is one JSON file in user/examples/: a title, a question, `text`
 (the explanation: paragraphs, with links into the recording as
 `[label](2:vfs_read)`, the first call of vfs_read in call 2's recording,
 `:any` for one on any task, or `[label](2)`, call 2 itself, and a tab to
-show, `:calls`, `:stores`, `:stack` or `:trace`, or `:objects`: the
+show, `:stack`, `:tasks` or `:trace`, or `:objects`: the
 function's call selected, at its return, what it changed; `code` in
 backticks; `[label](try:1)` runs the example's `tries[0]`, another program
 written as lines separated by `;`, to see what changes), `steps`: the
