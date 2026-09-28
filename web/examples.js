@@ -12,8 +12,8 @@
 // selected), `[label](2:vfs_read)` the first call of vfs_read in it (on
 // the call's task; `:any` on any task), the cursor there, and `:objects`
 // (or `:stack`, `:tasks`, `:trace`) shows that tab
-// (`:objects`: the function's call selected, as a double click on it in
-// the timeline does, at its return: what it changed); the first such
+// (`:objects`: the function's call in focus, as a click on it in the
+// timeline puts it, at its return: what it did); the first such
 // link is where the cursor starts; `[label](try:1)` runs the example's
 // `tries[0]`, another program (calls separated by ";"), instead: to see
 // what changes. `code` in backticks. The program is
@@ -279,7 +279,7 @@ export async function examples(app) {
   function goTo(l) {
     app.select(l.c);
     if (l.at != null && l.tab === "objects") {
-      app.time.selectCall(l.at, l.func);
+      app.time.focusCall(l.at, l.func);
       app.time.go(m.call_end(l.at) ?? l.at);
     } else if (l.at != null) app.goCall(l.at);
     if (l.tab) app.tab(l.tab);

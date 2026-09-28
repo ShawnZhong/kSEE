@@ -110,13 +110,15 @@ export function app(m) {
     if (f) a.selectFrame(f);
   };
   a.syscalls = () => calls;
-  // The selection (time.home(): its records and task), with a key that
-  // changes with it or with the snapshot (the newest record's id: indexes
-  // move): what a panel made of it holds until the key changes.
-  a.selection = () => {
-    const w = time.home();
-    return w && { ...w, key: `${w.a}:${w.b}:${w.task}:${m.record_id(time.records() - 1)}` };
-  };
+  // The selection (time.home(): a syscall's records and task: the line
+  // steps go through them), with a key that changes with it or with the
+  // snapshot (the newest record's id: indexes move): what a panel made of
+  // it holds until the key changes.
+  const keyed = (w) => w && { ...w, key: `${w.a}:${w.b}:${w.task}:${m.record_id(time.records() - 1)}` };
+  a.selection = () => keyed(time.home());
+  // The call the tabs say what it did (Objects, the source's notes): the
+  // one last clicked, or the syscall selected (time.focus), keyed alike.
+  a.focus = () => keyed(time.focus());
   // Show the moment `at` (see Machine.at): the source there, the Stack,
   // memory as it was, where it is. `frame` ({ first, inlined }, a call on
   // the stack then): that call selected on the Stack, the source at the

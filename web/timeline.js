@@ -12,8 +12,9 @@
 // through deep stacks; Shift+scroll, sideways scroll or A/D to pan in time. Hover a call
 // for what it was, and where it is, and the source and the Stack
 // show that moment while the pointer is there; click to put the
-// cursor there and select it (a syscall: its records, from entry to exit);
-// double-click a call to select its records, from its first to its return. Click or
+// cursor there and for what it did (the focus: Objects; a syscall: selected
+// too, its records, from entry to exit, the lines to step through);
+// double-click a call for the window at it. Click or
 // drag the overview to move the window. Find a function (the box in the
 // header, or /): Enter goes to its next call after the cursor, Shift+Enter
 // to the one before; its calls are marked on the overview.
@@ -333,29 +334,32 @@ export function timeline(app) {
     // where it is then). Elsewhere: the cursor at the next block.
     const { c, d } = hit(e), [, first, inl] = c?.frames[d] ?? [];
     if (first == null) return go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
-    // (A syscall: selected too, its records from its entry to its exit.)
-    const s = !inl && t.syscallAt.get(first);
+    // (A syscall: selected too, its records from its entry to its exit;
+    // any call: the one the tabs say what it did.)
+    const [id] = c.frames[d], s = !inl && t.syscallAt.get(first);
     if (s) select(s);
+    else if (!inl) focusCall(first, fn(id)?.name ?? "a call");
     go(Math.max(first, at(e.offsetX)));
     app.selectCall(first, inl ? iname(inl - 1) : null);
   };
   chart.ondblclick = (e) => {
-    // Select the call there: its records, from its first to its return.
+    // The window at the call there, from its first record to its return.
     // (Empty chart: the whole recording again.)
-    const { c, d } = hit(e), [id, first, inl] = c?.frames[d] ?? [];
+    const { c, d } = hit(e), [, first] = c?.frames[d] ?? [];
     if (first == null) return whole();
-    if (inl || t.syscallAt.has(first)) return;
-    selectCall(first, fn(id)?.name ?? "a call");
-    go(first); // (its signature: about to run it, as entering a call is)
+    setWindow(...pad({ a: first, b: m.call_end(first) ?? t.n - 1 }));
   };
-  // Select the call from record `first` (called `title`): its records, from
-  // its first to where it returns (found again after a snapshot, by id).
-  function selectCall(first, title) {
+  // The call the tabs say what it did (Objects, the source's notes): the
+  // one from record `first`, called `title`, its records from its first
+  // to where it returns (found again after a snapshot, by id).
+  function focusCall(first, title) {
     const id = m.record_id(first), task = t.cols.find((c) => c.frames.some((f) => f[1] === first))?.task;
-    selectWindow(() => {
+    t.focusAt = () => {
       const a = m.record_index(id);
-      return a == null ? null : { a, b: m.call_end(a) ?? t.n - 1, task };
-    }, title);
+      return a == null ? null : { a, b: m.call_end(a) ?? t.n - 1, task, title };
+    };
+    t.focus = t.focusAt();
+    app.outlined?.();
   }
   let overDrag = false;
   const overMove = (e) => {
@@ -378,7 +382,7 @@ export function timeline(app) {
   // ---- The API ----
   // A fresh kernel: no selection, no cursor.
   function clear() {
-    Object.assign(t, { where: null, home: null, title: "", cursor: null, sel: null, lit: null });
+    Object.assign(t, { where: null, home: null, focusAt: null, focus: null, title: "", cursor: null, sel: null, lit: null });
   }
   // After a snapshot: the new extent; the window at the selection (or all).
   function refresh(calls) {
@@ -390,6 +394,7 @@ export function timeline(app) {
     t.buckets = m.timeline(Math.max(1, over.clientWidth));
     if (t.found.name) t.found.at = [...m.calls_of(t.found.name, 0, Math.max(0, t.n - 1))];
     t.home = t.where?.() ?? null;
+    t.focus = t.focusAt?.() ?? null;
     t.depth = 1;
     if (t.cursor != null && t.cursor >= t.n) t.cursor = null;
     // (A new recording: the whole of it; one grown: the window as it was.)
@@ -416,11 +421,15 @@ export function timeline(app) {
   // Select syscall `s` (found again in later snapshots by its task and
   // its first record's id: indexes move as the ring goes on).
   function select(s) {
-    selectWindow(() => {
-      // (Gone from the recording: no selection.)
+    const title = `${s.name ?? s.nr} by ${taskName(s.task)}`;
+    // (Gone from the recording: no selection.)
+    const where = () => {
       const c = t.calls.find((c) => c.id === s.id);
-      return c ? { a: c.first, b: c.last ?? t.n - 1, task: c.task.addr } : null;
-    }, `${s.name ?? s.nr} by ${taskName(s.task)}`);
+      return c ? { a: c.first, b: c.last ?? t.n - 1, task: c.task.addr, title } : null;
+    };
+    t.focusAt = where;
+    t.focus = where();
+    selectWindow(where, title);
   }
   // ---- Finding a function ----
   // Find function `name`: its calls marked; `dir` 1: go to the next one
@@ -490,6 +499,6 @@ export function timeline(app) {
     }
     return null;
   }
-  return { refresh, clear, go, mark, select, selectCall, hilite, selected, boxOf, focusFind: () => finder.input.focus(),
-           home: () => t.home, cursor: () => t.cursor, records: () => t.n };
+  return { refresh, clear, go, mark, select, focusCall, hilite, selected, boxOf, focusFind: () => finder.input.focus(),
+           home: () => t.home, focus: () => t.focus, cursor: () => t.cursor, records: () => t.n };
 }

@@ -81,7 +81,7 @@ Rust does the work: JS only lays it out.
 | tasks.js | the Tasks: every task the recording has, at the cursor (`Machine.tasks`): the one running marked, each where it is (its syscall, else its outermost call), a link to its last moment; its task_struct as it was on asking |
 | tree.js | values as trees (the Stack's): pointers open into what they point to, structs into their fields; who last wrote a value; the fields that matter shown, the others folded |
 | trace.js | the Trace tab: the raw trace, a line a record (what the views are built from) |
-| objects.js | the Objects: what the selected call did (`Machine.objects`), a box per object it changed that outlives it, each under the one pointing to it: each member before → after, by which function (a line each, when several did it in turn; a row, its write) |
+| objects.js | the Objects: what the call in focus (the one clicked, or the syscall) did (`Machine.objects`), a box per object it changed that outlives it, each under the one pointing to it: each member before → after, by which function (a line each, when several did it in turn; a row, its write) |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
 | ksee.js | booting |

@@ -1,5 +1,5 @@
-// The Objects: what the selected call (a syscall, or a call double-clicked
-// in the timeline: the zoom) did to the kernel's data (Machine.objects):
+// The Objects: what the call in focus (the syscall selected, or a call
+// clicked in the timeline: app.focus) did to the kernel's data (Machine.objects):
 // a box per object it changed that is still there when it returns
 // (declared as the code names them: "struct file *file in vfs_read",
 // "struct files_struct *prog(19)->files"; and by
@@ -20,31 +20,31 @@ export function objects(app) {
   // member: "3/0"; for the selection.)
   const open = new Set();
 
-  // Draw for the selection (only while the tab is shown; again for another
-  // selection or recording).
+  // Draw for the call in focus (only while the tab is shown; again for
+  // another call or recording).
   function draw() {
     if ($("right").dataset.tab !== "objects") return;
-    const w = app.selection();
+    const w = app.focus();
     const n = m.records(), key = w ? `${w.key}:${n ? m.record_id(n - 1) : ""}` : null;
     if (key !== shown) {
       if (w?.key !== selected) (open.clear(), (selected = w?.key));
       shown = key;
       $("objects-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): what it did to the kernel's data.";
       const top = body.scrollTop;
-      body.replaceChildren(...(w ? render(m.objects(w.a, w.b)).filter(Boolean) : []));
+      body.replaceChildren(...(w ? render(m.objects(w.a, w.b), w.title).filter(Boolean) : []));
       body.scrollTop = top;
     }
     mark(app.time.cursor());
   }
 
-  function render(nodes) {
-    if (!nodes.length) return [el("div", { className: "dim head" }, "It changed nothing that is still there when it returns (its own locals: the Stack).")];
+  function render(nodes, title) {
+    if (!nodes.length) return [el("div", { className: "dim head" }, `${title} changed nothing that is still there when it returns (its own locals: the Stack).`)];
     // (As a tree: each box under the one that points to it (Node.under),
     // from the ones nothing points to; siblings in order.)
     const order = [];
     const visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.under?.[0] === k && visit(c, depth + 1)));
     nodes.forEach((n, k) => n.under == null && visit(k, 0));
-    return [el("div", { className: "dim head" }, `${nodes.length} object${nodes.length === 1 ? "" : "s"}`),
+    return [el("div", { className: "dim head" }, `What ${title} did: ${nodes.length} object${nodes.length === 1 ? "" : "s"}`),
       ...order.map(([k, depth]) => Object.assign(box(nodes[k], nodes, k), { style: `margin-left: ${Math.min(depth, 6) * 14}px` }))];
   }
 

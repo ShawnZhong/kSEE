@@ -146,13 +146,17 @@
   if (!r.stored.length) throw new Error("no stored notes in the source at " + $("where").textContent);
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
-  // (Any call's box, double-clicked: the call, from its first record to its return.)
+  // (Any call's box, clicked: the call in focus, from its first record to
+  // its return (what the Objects say); the syscall still selected.)
   const ksys = ksee.m.call_stack(ksee.m.first_call("ksys_read", read.first, read.last, read.task.addr)).find((f) => f.func === "ksys_read");
-  const kb = ksee.time.boxOf(ksys.first);
-  $("chart").dispatchEvent(new MouseEvent("dblclick", { clientX: kb.x, clientY: kb.y }));
-  const kh = ksee.time.home();
-  if (kh?.a !== ksys.first || kh?.b !== ksee.m.call_end(ksys.first)) throw new Error("ksys_read's selection: " + JSON.stringify(kh) + ", not from " + ksys.first);
-  r.dblclicked = $("chart-title").textContent;
+  const kb = ksee.time.boxOf(ksys.first), readSel = ksee.time.home();
+  for (const t of ["pointerdown", "pointerup"]) $("chart").dispatchEvent(new PointerEvent(t, { clientX: kb.x, clientY: kb.y }));
+  const kf = ksee.time.focus();
+  if (kf?.a !== ksys.first || kf?.b !== ksee.m.call_end(ksys.first) || ksee.time.home() !== readSel) throw new Error("ksys_read in focus: " + JSON.stringify([kf, ksee.time.home()]) + ", not from " + ksys.first);
+  ksee.tab("objects");
+  r.focused = document.querySelector("#objects .head")?.textContent;
+  if (!/^What ksys_read did/.test(r.focused ?? "")) throw new Error("the Objects of the call clicked: " + r.focused);
+  ksee.tab("stack");
   // Your own call: type it, Tab completes the name, Enter makes it.
   const input = document.querySelector(".callform textarea"), key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
   input.value = "mkdira"; key("Tab");

@@ -128,10 +128,10 @@ export function source(app) {
     }
     return out.length ? out.join("   ") : null;
   }
-  // What each line stored or set, at its end, within the selected call up
+  // What each line stored or set, at its end, within the call in focus up
   // to the cursor (Machine.notes): its last, and how many; a link to it.
   function stored(file) {
-    const w = app.selection(), cur = app.time.cursor();
+    const w = app.focus(), cur = app.time.cursor();
     return new Map(w && cur != null ? m.notes(w.a, w.b, file, cur).map((note) => [note.line, note]) : []);
   }
   // What the calls a line made returned, those that returned by the

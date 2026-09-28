@@ -81,13 +81,15 @@ a step, a basic block run: a store takes no room), and which
 task ran; the whole recording at first (scroll to zoom, drag to pan;
 "zoom" or z: the window at the selection, "whole" or x, or a double-click
 on empty chart: all of it again; hover a call for what it was (its arguments, what it returned: `ksys_read = 26`): the
-source and the Stack show that moment while the pointer is there; click it to fix the cursor there; click a syscall, or double-click
-any call, to select it: its records from its start to its end, with
-whatever else ran in between). The
+source and the Stack show that moment while the pointer is there; click it to fix the cursor there, and for
+what it did (the Objects, the source's notes; a syscall: selected too,
+its records from its entry to its exit, with whatever else ran in
+between, the lines to step through); double-click a call: the window at
+it). The
 cursor's line carries its values as it is about to run (as a debugger
 stops before a line: memory and the variables as the lines before it left
 them), and each line what it last
-stored or set so far in the selected call (`file->f_pos: 0 → 26 ×2`, a
+stored or set so far in the call clicked (`file->f_pos: 0 → 26 ×2`, a
 variable's `last_pos: (uninitialized) → -1`: click it for that moment; not the
 temporaries the kernel's macros make up, `__UNIQUE_ID_…`); a step that lands after a call says what it returned.
 Hover
