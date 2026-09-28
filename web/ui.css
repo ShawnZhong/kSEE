@@ -115,9 +115,9 @@ h2.tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
 /* The Objects: a box per object the selected call wrote, each member's values in order (a row: go to its last write) */
 #objects { padding: 0 10px 12px; }
 #objects .head { padding: 6px 2px 2px; font-size: 11.5px; }
-#objects .obj { margin: 8px 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font: 11px/1.5 var(--mono); }
-#objects .obj .title { padding: 3px 8px; border-bottom: 1px solid var(--line); background: var(--sel); overflow-wrap: anywhere; }
-#objects .obj.task .title, #objects .obj.global .title { background: var(--at); }
+#objects .obj { margin: 10px 0 0; font: 11px/1.5 var(--mono); }
+#objects .obj .title { padding: 1px 4px; border-bottom: 1px solid var(--line); white-space: nowrap; width: max-content; min-width: 100%; }
+#objects .obj td.fname { padding-left: 12px; }
 #objects .obj tr { cursor: pointer; }
 #objects .obj tr:hover td { background: var(--sel); }
 #objects .obj tr.on td { background: var(--at); }
