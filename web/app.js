@@ -234,9 +234,9 @@ export function app(m) {
     // and at the call's last line, what it returns, the optimizer's
     // `return x;` being no line of its own.)
     // (And the comparisons it made: where it went, and why.)
-    // (A line making a call: what the call returned, the value its `x =
-    // f(...)` gets, as a debugger's step over says it.)
-    const note = [step.run > 1 && `${ordinal(step.run)} time here`, step.called && `${step.called[0]}() = ${a.kernel.result(step.called[1])}`,
+    // (Not what a call it makes returns: it has not run yet; once it has,
+    // the line says it, as the source's other lines do.)
+    const note = [step.run > 1 && `${ordinal(step.run)} time here`,
                   step.tests.length && step.tests.join(", "),
                   step.ret != null && `returns ${a.kernel.result(step.ret)}`];
     src.view.cursor = { file: step.file, line: step.line, note: note.filter(Boolean).join("   ") || null };
@@ -259,9 +259,14 @@ export function app(m) {
     // (A line's level against this one: -1 shallower, 0 the same, 1 deeper.)
     const cmp = (s) => Math.sign(s.depth - d || s.inl - i);
     // (Every line: but not a leaf of inlined code, a helper that calls
-    // nothing: its lines pass, the line using it stays.)
-    const stop = kind === "line" ? (s) => !s.leaf : (s) => cmp(s) <= 0;
-    for (let j = k + dir; j >= 0 && j < st.length; j += dir) if (stop(st[j])) return showStep(j);
+    // nothing: its lines pass, the line using it stays; and the line it is
+    // on, after them, goes on.)
+    const here = st[k], same = (s) => s.file === here.file && s.line === here.line && s.depth === here.depth && s.inl === here.inl;
+    let passed = false;
+    for (let j = k + dir; j >= 0 && j < st.length; j += dir) {
+      if (kind === "line" && st[j].leaf) passed = true;
+      else if (kind === "line" ? !(passed && same(st[j])) : cmp(st[j]) <= 0) return showStep(j);
+    }
     return false;
   }
   // ↑ with nothing above the selected call: into the next call it makes,

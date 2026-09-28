@@ -172,15 +172,17 @@ export function source(app) {
     }
     return out;
   }
-  // What the calls a line made returned, by the cursor (the selection's
-  // line steps of the function shown): "vfs_read() = 18", its last; a call
-  // made by code inlined into it, at the line it is inlined at.
+  // What the calls a line made returned, those that returned by the
+  // cursor (the selection's line steps of the function shown): "vfs_read()
+  // = 18", its last; a call made by code inlined into it, at the line it is
+  // inlined at.
   function called(file) {
     const cur = app.time.cursor(), out = new Map();
     if (cur == null || !v.fn) return out;
     for (const s of app.lineSteps?.() ?? []) {
       if (s.i > cur) break;
-      if (!s.called || s.func !== v.fn.name) continue;
+      // (Once it returned, by the cursor.)
+      if (!s.called || s.called[2] > cur || s.func !== v.fn.name) continue;
       const [at, where] = s.inlined ? [s.site, v.fn.file] : [s.line, s.file];
       if (where === file && at != null) out.set(at, `${s.called[0]}() = ${app.kernel.result(s.called[1])}`);
     }
@@ -310,7 +312,7 @@ export function source(app) {
       if (at(n) !== false) d.push(CM.Decoration.widget({ widget: new Stored(s, count), side: 2 }).range(doc.line(n).to));
     }
     for (const [n, text] of called(file)) {
-      if (at(n) !== false && n !== v.cursor?.line) d.push(CM.Decoration.widget({ widget: new Note(text), side: 3 }).range(doc.line(n).to));
+      if (at(n) !== false) d.push(CM.Decoration.widget({ widget: new Note(text), side: 3 }).range(doc.line(n).to));
     }
     d.sort((x, y) => x.from - y.from || x.value.startSide - y.value.startSide);
     ed.dispatch({ effects: setMarks.of(CM.Decoration.set(d, true)) });

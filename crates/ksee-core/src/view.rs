@@ -91,8 +91,9 @@ pub struct Line {
     pub tests: Vec<String>,
     /// The call returns after it: what it returned (32 bits).
     pub ret: Option<i32>,
-    /// It made a call: the function, and what it returned.
-    pub called: Option<(String, i32)>,
+    /// It made a call: the function, what it returned, and where (its
+    /// return: the result is not known before).
+    pub called: Option<(String, i32, usize)>,
     /// Inlined: the line of its function's own where the code is inlined
     /// (the outermost inline site: `CLASS(fd_pos, f)(fd)`'s line).
     pub site: Option<u32>,
@@ -508,7 +509,7 @@ impl View<'_> {
             .filter_map(|r| compared(&r)).collect();
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
                inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests, ret: s.ret.map(|v| v as i32),
-               called: s.callee.map(|(f, v)| (self.name(f), v as i32)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line), leaf: false }
+               called: s.callee.map(|(f, v, at)| (self.name(f), v as i32, at)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line), leaf: false }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.

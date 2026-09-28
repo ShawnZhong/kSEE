@@ -259,7 +259,7 @@ impl Calls {
             // it returned, the value its `ret = f(...)` got.)
             if let Record::Return { func, value } = records[i]
                 && let Some(l) = out.iter_mut().rev().find(|l| l.depth <= c.depth).filter(|l| l.depth == c.depth && l.func == c.func) {
-                l.callee = Some((func, value));
+                l.callee = Some((func, value, i));
             }
             let run = runs.entry((p.call, p.n)).or_default();
             if p.seg == 0 {
@@ -346,8 +346,9 @@ pub struct LineStep {
     pub inlined: Option<u32>,
     pub run: u32,
     pub ret: Option<u32>,
-    /// A line that made a call: the call's function, and what it returned.
-    pub callee: Option<(u32, u32)>,
+    /// A line that made a call: the call's function, what it returned,
+    /// and where (its Return record).
+    pub callee: Option<(u32, u32, usize)>,
 }
 
 
@@ -401,7 +402,7 @@ mod tests {
         let got = lines(&t, &r, &[7; 4], 0, 3, None);
         assert_eq!(got.iter().map(|s| s.ret).collect::<Vec<_>>(), [None, None, Some(7), Some(9)]);
         // f's line 2 made the call to g: it says g returned 7.
-        assert_eq!(got.iter().map(|s| s.callee).collect::<Vec<_>>(), [None, Some((2, 7)), None, None]);
+        assert_eq!(got.iter().map(|s| s.callee.map(|(f, v, _)| (f, v))).collect::<Vec<_>>(), [None, Some((2, 7)), None, None]);
         // A loop: f's block 1 (lines 5, 6) three times; each turn counted.
         let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nB\t1\t0\t0:1:1\nB\t1\t1\t0:5:1\nL\t1\t1\t0:5;:6\n", "");
         let r = [b(1, 0), b(1, 1), b(1, 1), b(1, 1)];
