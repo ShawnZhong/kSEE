@@ -106,13 +106,12 @@ code keeps in wasm locals, as the recording has them set. The Tasks tab lists ev
 recording has, at the cursor: the one running marked, each where it is
 (`prog(20)  in read`: its syscall, else its outermost call), its name a
 link to its last moment (the Stack then shows its stack), its task_struct
-as it was on asking; the Stack's `current task` is a link to it. The Stores tab lists every store the
-selected call made, a row each, in order (`vfs_read's file->f_pos: 0 →
-26`, `nr_inodes: 11 → 12`, its own locals and frames said so, memory
-nothing names by its address), each a link, the one in effect at the
-cursor marked and the later ones dim; three or more in a row to one
-object (a frame zeroed, a struct set up) are one row, open on asking. The Objects tab draws the same
-stores as the objects they changed, at the cursor: a box per object,
+as it was on asking; the Stack's `current task` is a link to it. The
+Objects tab draws the selected call's stores (each named as the code
+names what it hit: `vfs_read's file->f_pos`, `nr_inodes`, its own locals
+and frames, memory nothing names by its address) as the objects they
+changed, at the cursor: a box per object, in the order the call first
+wrote them,
 each member the call writes as it is then, in the Stack's value rows (a
 field inside another open to it; its writes on asking; one
 written only later dim), the one the cursor last wrote marked (stepping

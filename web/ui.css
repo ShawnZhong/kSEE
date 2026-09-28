@@ -104,25 +104,17 @@ table.stack tr.frame.on td { background: var(--sel); }
 table.stack tr.frame a.mono { font-weight: 600; }
 table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
 
-/* The right column's tabs (Stack, Trace): the pane chosen */
+/* The right column's tabs: the pane chosen (app.tab) */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
-#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="stores"] .pane[data-tab="stores"], #right[data-tab="objects"] .pane[data-tab="objects"], #right[data-tab="trace"] .pane[data-tab="trace"], #right[data-tab="tasks"] .pane[data-tab="tasks"] { display: flex; }
+#right .pane.on { display: flex; }
 h2.tabs { gap: 0; padding: 0 4px; }
 h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
-#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="stores"] a[data-tab="stores"], #right[data-tab="objects"] a[data-tab="objects"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="tasks"] a[data-tab="tasks"] { color: var(--fg); border-bottom-color: var(--accent); }
+h2.tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
 
 /* The Stack: at the bottom of its pane (callstack.js) */
 #stack { display: flex; flex-direction: column; }
 #stack > table { margin-top: auto; } /* (at the bottom: see callstack.js) */
-/* The Stores: every store the selected call made, a row each, in order; the write in effect at the cursor marked, later ones dim */
-#stores .head { padding: 6px 12px 2px; font-size: 11.5px; }
-#stores ol { margin: 2px 0; padding: 0 12px 4px 30px; font: 11px/1.5 var(--mono); }
-#stores li a { white-space: nowrap; }
-#stores li.on { background: var(--at); }
-#stores li.later { opacity: 0.45; }
-#stores li.same a { color: var(--dim); }
-#stores li.run { list-style: none; margin-left: -1.2em; }
 /* The Objects: a box per object the selected call wrote, at the cursor; its pointers to the others, links */
 #objects { padding: 0 10px 12px; }
 #objects .head { padding: 6px 2px 2px; font-size: 11.5px; }

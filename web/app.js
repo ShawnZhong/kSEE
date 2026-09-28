@@ -10,7 +10,6 @@ import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
 import { trace } from "./trace.js";
-import { stores } from "./stores.js";
 import { objects } from "./objects.js";
 import { tasks } from "./tasks.js";
 import { kernel } from "./kernel.js";
@@ -116,8 +115,8 @@ export function app(m) {
     const w = time.home();
     return w && { ...w, key: `${w.a}:${w.b}:${w.task}:${m.record_id(time.records() - 1)}` };
   };
-  // Its stores (Machine.stores), for the Stores and the source's notes
-  // alike: asked once per key.
+  // Its stores (Machine.stores), for the source's notes: asked once per
+  // key.
   let sel = { key: null, stores: [] };
   a.selectionStores = () => {
     const w = a.selection();
@@ -167,11 +166,19 @@ export function app(m) {
   // The right column's tabs but the Stack, by name: each draws for the
   // selection (`draw`; a tab not shown waits until it is looked at) and
   // follows the cursor (`mark(i)`: record `i`, or the cursor's).
-  const tabs = { tasks: tasks(a), stores: stores(a), objects: objects(a), trace: trace(a) };
+  const tabs = { tasks: tasks(a), objects: objects(a), trace: trace(a) };
   a.tasks = tabs.tasks;
   const marks = (i) => Object.values(tabs).forEach((x) => x.mark(i));
   a.outlined = () => Object.values(tabs).forEach((x) => x.draw());
-  for (const x of document.querySelectorAll("h2.tabs a")) x.onclick = () => (($("right").dataset.tab = x.dataset.tab), tabs[x.dataset.tab]?.draw());
+  // Show tab `name` (its pane and its link marked; #right's data-tab says
+  // which, for the panels), drawn.
+  a.tab = (name) => {
+    $("right").dataset.tab = name;
+    for (const x of document.querySelectorAll("#right [data-tab]")) x.classList.toggle("on", x.dataset.tab === name);
+    tabs[name]?.draw();
+  };
+  for (const x of document.querySelectorAll("h2.tabs a")) x.onclick = () => a.tab(x.dataset.tab);
+  a.tab("stack");
   examples(a);
 
   // ---- Lines: the line steps of the selection (a syscall) ----

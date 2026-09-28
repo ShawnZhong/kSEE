@@ -8,7 +8,6 @@
 // global, a field: Machine.definition); F4 runs to the line (Shift+F4:
 // back to its last run).
 import { $, el } from "./dom.js";
-import { storeText } from "./stores.js";
 import { tree, openable } from "./tree.js";
 import { CM, base } from "./editor.js";
 
@@ -16,6 +15,11 @@ const KEYWORDS = new Set(("auto break case char const continue default do double
   "inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void " +
   "volatile while bool true false NULL").split(" "));
 const WORD = /[A-Za-z0-9_]/;
+
+// A store said (Machine.stores'): "vfs_read's file->f_pos: 0 → 26" (a
+// frame's bytes by their offset: "f's frame+8").
+const storeText = ({ what, kind, write: x }) =>
+  `${what}${x.member ? (x.member.startsWith("+") ? "" : kind === "object" ? "->" : ".") + x.member : ""}: ${x.before} → ${x.after}`;
 
 // The expression at offset `k` of `text`: the name there, with the fields
 // before it ("file->f_pos" on f_pos); null if not a name.

@@ -257,7 +257,7 @@ export async function examples(app) {
       const tr = part.match(/^\[([^\]]*)\]\(try:(\d+)\)$/), prog = tr && t.ex.tries?.[Number(tr[2]) - 1];
       if (tr) return el("a", { className: "try", textContent: tr[1], title: prog ? `run this program instead:\n${prog}` : "no such try",
         onclick: prog ? () => go(t.ex, program(prog), true) : null });
-      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|tasks|stores|objects|trace))?\)$/);
+      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|tasks|objects|trace))?\)$/);
       if (link) {
         const n = Number(link[2]), l = { n, j: stepOf(n), func: link[3], any: !!link[4], tab: link[5] };
         l.c = syscall(l.j);
@@ -281,7 +281,7 @@ export async function examples(app) {
       app.time.selectCall(l.at, l.func);
       app.time.go(m.call_end(l.at) ?? l.at);
     } else if (l.at != null) app.goCall(l.at);
-    if (l.tab) ($("right").dataset.tab = l.tab), app.outlined?.();
+    if (l.tab) app.tab(l.tab);
     for (const x of t.links) x.a.classList.toggle("on", x === l);
     mark(l.j);
   }

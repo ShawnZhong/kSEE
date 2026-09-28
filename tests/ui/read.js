@@ -132,12 +132,7 @@
   r.rets = [document.querySelector(".tip:not([hidden])")?.firstChild?.textContent];
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
   if (!/^ksys_read = \d+$/.test(r.rets[0] ?? "")) throw new Error("no return value in a call's hover: " + JSON.stringify(r.rets));
-  // The Stores tab: the read's stores, a row each in order: the file's f_pos among them, the store at the cursor marked.
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
-  document.querySelector('h2.tabs a[data-tab="stores"]').click();
-  await sleep(100);
-  r.stores = [$("stores").querySelector(".head")?.textContent, $("stores").innerText.slice(0, 200)];
-  if (!/^\d+ stores?/.test(r.stores[0] ?? "") || !$("stores").innerText.includes("file->f_pos: 0 → ") || !document.querySelector("#stores li.on")) throw new Error("the read's stores: " + JSON.stringify(r.stores));
   // The Objects (the explanation's link): each object the call wrote, its
   // members as they are at the cursor (the kiocb's ki_pos), a value's writes on asking.
   const before = ksee.time.cursor();
@@ -147,7 +142,7 @@
   kipos?.querySelector("a.hist")?.click(); await sleep(100);
   r.objects = [kipos && [...kipos.cells].map((c) => c.textContent.trim()).join(" "), document.querySelector("#objects tr.history")?.innerText.replace(/\s+/g, " ").slice(0, 80)];
   if (!/^ki_pos \d+ loff_t/.test(r.objects[0] ?? "") || !/^\d+ writes? /.test(r.objects[1] ?? "")) throw new Error("objects: " + JSON.stringify(r.objects));
-  $("right").dataset.tab = "stack";
+  ksee.tab("stack");
   ksee.select(read); ksee.time.go(before); // (as it was)
   // (At a store: its line in the source says what it stored, at its end.)
   const lastStore = ksee.m.stores(read.first, read.last).at(-1);
@@ -247,6 +242,6 @@
   r.tasks = [...document.querySelectorAll("#tasks tr.task")].map((tr) => tr.innerText.replace(/\s+/g, " ").trim());
   if (!r.console[0] || !r.console[1] || r.console[1].includes("\n") || r.current[0] !== `current task: prog(${ksee.m.main()})` || r.current[1] !== "tasks"
       || !r.current[2]?.includes(`prog(${ksee.m.main()}) in `) || !r.current[3]?.startsWith("pid") || !r.tasks.length) throw new Error("console, current: " + JSON.stringify(r));
-  $("right").dataset.tab = "stack";
+  ksee.tab("stack");
   return r;
 })()

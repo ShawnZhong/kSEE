@@ -51,7 +51,7 @@ export function tasks(app) {
   // The Tasks tab, task `addr` open (the Stack's current task: a link here).
   function open(addr) {
     folded.delete(`task/${addr}`);
-    $("right").dataset.tab = "tasks";
+    app.tab("tasks");
     redraw();
   }
 

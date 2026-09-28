@@ -41,7 +41,6 @@
     <h2 class="tabs">
       <a data-tab="stack" title="the calls at the cursor, their values as they were then">Stack</a>
       <a data-tab="tasks" title="every task the recording has, at the cursor: where each is, its task_struct">Tasks</a>
-      <a data-tab="stores" title="every store the selected call made, in order, each a link">Stores</a>
       <a data-tab="objects" title="the objects the selected call wrote, and how they point to each other">Objects</a>
       <a data-tab="trace" title="the raw trace around the cursor: what the views are built from">Trace</a>
     </h2>
@@ -56,10 +55,6 @@
     <div class="pane" data-tab="trace">
       <div class="stackhead dim" id="trace-note"></div>
       <div class="body" id="trace"></div>
-    </div>
-    <div class="pane" data-tab="stores">
-      <div class="stackhead dim" id="stores-note"></div>
-      <div class="body" id="stores"></div>
     </div>
     <div class="pane" data-tab="objects">
       <div class="stackhead dim" id="objects-note"></div>
