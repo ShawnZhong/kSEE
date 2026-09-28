@@ -106,8 +106,9 @@ leader, a process under its parent): the one running marked, each where it is
 link to its last moment (the Stack then shows its stack), its task_struct
 as it was on asking; the Stack's `current task` is a link to it. The
 Objects tab says what the selected call did to the kernel's data: each
-object it changed that is still there when it returns (named as the code
-names it: `file in vfs_read`, `prog(19)->files`, `nr_inodes`, and by its
+object it changed that is still there when it returns (as the code
+declares it: `struct file *file in vfs_read`, `struct files_struct
+*prog(19)->files`, `unsigned long nr_inodes`, and by its
 address; a global, with where it is declared, a link to it; not its own
 locals, gone by then, nor the machine's plumbing), each member it changed,
 a line a function that changed it in turn, from what to what (`f_mode

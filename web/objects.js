@@ -1,7 +1,8 @@
 // The Objects: what the selected call (a syscall, or a call double-clicked
 // in the timeline: the zoom) did to the kernel's data (Machine.objects):
-// a box per object it changed that is still there when it returns (named
-// as the code names them: "file in vfs_read", "prog(19)->files"; and by
+// a box per object it changed that is still there when it returns
+// (declared as the code names them: "struct file *file in vfs_read",
+// "struct files_struct *prog(19)->files"; and by
 // its address, which it is; a global, where it is declared), each
 // member it changed, a line a function that changed it in turn, from
 // what to what ("f_mode  0 → 0x4000001  init_file", then "0x4000001 →
@@ -70,7 +71,9 @@ export function objects(app) {
     // (The member it hangs from, unless its name says it: prog(19)->real_cred.)
     const via = n.under && !n.what.endsWith(`->${n.under[1]}`) ? `  ← ${n.under[1]}` : "";
     return el("div", { className: `obj ${n.kind}`, dataset: { k } },
-      el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty} at 0x${n.addr.toString(16)}${via}` }),
+      // (As C declares it, the type first: one a pointer reaches, "*": struct file *filp in do_file_open.)
+      el("div", { className: "title" }, el("span", { className: "dim", textContent: `${n.ty} ${n.kind === "object" ? "*" : ""}` }), el("b", { textContent: n.what }),
+        el("span", { className: "dim", textContent: `  at 0x${n.addr.toString(16)}${via}` }),
         decl ? el("a", { className: "decl", textContent: `  ${decl.file}:${decl.line}`, title: "where it is declared", onclick: () => app.src.show(decl.file, decl.line) }) : null),
       el("table", { className: "objs" }, el("tbody", {}, ...rows)));
   }
