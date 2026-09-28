@@ -64,48 +64,47 @@ export function objects(app) {
     if (moment && on && (on.top < view.top || on.bottom > view.bottom)) body.querySelector("tr.on").scrollIntoView({ block: "nearest" });
   }
 
-  // An object's box: its name and type; the members it writes (or, on
-  // asking, all of them), as they are at the cursor; its pointers to the
-  // others.
+  // An object's box: its name and type; the members it writes, down to
+  // each field written, as they are at the cursor (the others of each
+  // level folded: tree.js's keep); its pointers to the others.
   function box(n, nodes, k, cur, now, alive) {
-    const path = `obj/${n.addr}/${n.id}`, all = st.open.has(path);
+    const path = `obj/${n.addr}/${n.id}`;
     const obj = m.object_by_id(n.what, n.id, n.addr, 1);
-    // (Each member it writes, by the name its object has: a nested one's
-    // outermost, "f_path" for "f_path.dentry"; a scalar's own value, the
-    // object itself.)
-    const top = (member) => member.match(/^\[\d+\]|^[^.[]*/)[0];
-    const byMember = new Map();
-    for (const x of n.writes) (byMember.get(top(x.member)) ?? byMember.set(top(x.member), []).get(top(x.member))).push(x);
-    const members = obj?.children ? obj.children.filter((c) => all || byMember.has(c.name)) : obj ? [obj] : [];
+    // (Each write's member as a path in the tree: "f_path.dentry", and
+    // "args[2]" as args then [2]; the way to each, kept.)
+    const leaf = (member) => [path, ...member.split(/\.|(?=\[)/).filter(Boolean)].join(".");
+    const keep = new Set();
+    for (const x of n.writes) {
+      const parts = leaf(x.member).split(".");
+      for (let j = 2; j <= parts.length; j++) keep.add(parts.slice(0, j).join("."));
+    }
     // (The way to each member it writes inside another, open the first time
     // the box is drawn: "_refcount.counter" opens _refcount.)
     if (!seen.has(path)) {
       seen.add(path);
-      for (const x of n.writes) {
-        const parts = x.member.split(/\.|(?=\[)/).filter(Boolean);
-        for (let j = 1; j < parts.length; j++) st.open.add(`${path}.${parts.slice(0, j).join(".")}`);
-      }
+      for (const p of keep) st.open.add(p);
     }
     const life = n.life ? { from: n.life[0], to: n.life[1], what: "while its frame lives" } : null, rows = [];
-    for (const c of members) {
-      const from = rows.length, xs = byMember.get(obj?.children ? c.name : "") ?? [];
-      fields([c], path, 0, rows, life);
-      // (Written only after the cursor: dim; the member last written: marked.)
-      if (xs.length && xs.every((x) => x.i > cur)) rows[from].classList.add("later");
-      if (now && xs.includes(now)) rows[from].classList.add("on");
+    fields(obj?.children ?? (obj ? [obj] : []), path, 0, rows, life, "", obj?.children ? keep : null);
+    // (A member written only after the cursor: dim; the one last written: marked.)
+    const at = new Map(rows.map((r) => [r.dataset.p, r]));
+    const writes = new Map();
+    for (const x of n.writes) (writes.get(leaf(x.member)) ?? writes.set(leaf(x.member), []).get(leaf(x.member))).push(x);
+    for (const [p, xs] of writes) {
+      const r = at.get(p) ?? (obj?.children ? null : rows[0]);
+      if (xs.every((x) => x.i > cur)) r?.classList.add("later");
+      if (now && xs.includes(now)) r?.classList.add("on");
     }
     // (Its pointers to the others: each a link to it.)
     const links = n.links.map((l) => el("div", { className: "row link" },
       el("span", { textContent: `${l.member} → ` }),
       el("a", { textContent: nodes[l.to].what, title: `${nodes[l.to].ty} at 0x${l.value.toString(16)}: go to it`, onclick: () => flash(l.to) })));
-    const toggle = () => (all ? st.open.delete(path) : st.open.add(path), redraw());
-    const more = obj?.children ? el("div", { className: "row more" }, el("a", { textContent: all ? "▾ only what it writes" : `▸ all ${obj.children.length} fields`, onclick: toggle })) : null;
     const note = alive ? "" : n.life && cur < n.life[0] ? " · not made yet" : " · gone";
     const later = n.writes[0].i > cur ? " later" : "";
     return el("div", { className: `obj ${n.kind}${alive ? "" : " ended"}${later}`, dataset: { k },
                        title: alive ? "" : "on the stack of a call not running at the cursor: its memory is not its own then" },
       el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty}${note}` })),
-      el("table", { className: "objs" }, el("tbody", {}, ...rows)), ...links, more);
+      el("table", { className: "objs" }, el("tbody", {}, ...rows)), ...links);
   }
 
   // Go to object `k`'s box: in view, a flash.

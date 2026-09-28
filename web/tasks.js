@@ -3,8 +3,8 @@
 // parent): the one running marked, each where it is
 // (the syscall it is in, else its outermost call, as it last ran); its
 // name a link to that moment (the Stack then shows its stack). Open (as
-// each is, to begin with): its task_struct as it was at the cursor, its key fields, all of them on
-// asking, as the Stack's values are.
+// each is, to begin with): its task_struct as it was at the cursor, its key fields, the others
+// folded, as the Stack's values are.
 import { $, el, taskName } from "./dom.js";
 import { tree } from "./tree.js";
 
@@ -51,10 +51,9 @@ export function tasks(app) {
                   onclick: () => app.time.go(t.last ?? t.first) }),
         el("span", { className: "dim", textContent: t.last == null || !(t.syscall ?? t.func) ? "" : `  in ${t.syscall ?? t.func}` }))));
       if (!open) continue;
-      const full = st.open.has(`${p}/all`), { fields, total } = m.task_fields(t.task.addr, full);
-      rows(fields, p, 1, all);
-      all.push(el("tr", { className: "sub" }, el("td", { colSpan: 3 },
-        el("a", { textContent: full ? "▾ the key fields only" : `▸ all ${total} fields`, onclick: toggle(st.open, `${p}/all`) }))));
+      // (Its key fields; the others folded, as a tree's are.)
+      const key = new Set(m.task_fields(t.task.addr, false).fields.map((f) => `${p}.${f.name}`));
+      rows(m.task_fields(t.task.addr, true).fields, p, 1, all, null, "", key);
     }
     body.replaceChildren(el("table", { className: "objs stack" }, el("tbody", {}, ...all)));
   }

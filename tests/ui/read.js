@@ -251,10 +251,10 @@
   const cur = document.querySelector("#stack tr.task a");
   r.current = [cur?.textContent];
   cur?.click(); await sleep(200);
-  r.current.push($("right").dataset.tab, ...[...document.querySelectorAll("#tasks tr.on, #tasks tr.on ~ tr")].slice(0, 2).map((tr) => tr.innerText.replace(/\s+/g, " ").trim()));
+  r.current.push($("right").dataset.tab, ...[...document.querySelectorAll("#tasks tr.on, #tasks tr.on ~ tr")].slice(0, 14).map((tr) => tr.innerText.replace(/\s+/g, " ").trim()));
   r.tasks = [...document.querySelectorAll("#tasks tr.task")].map((tr) => tr.innerText.replace(/\s+/g, " ").trim());
   if (!r.console[0] || !r.console[1] || r.console[1].includes("\n") || r.current[0] !== `current task: prog(${ksee.m.main()})` || r.current[1] !== "tasks"
-      || !r.current[2]?.includes(`prog(${ksee.m.main()}) in `) || !r.current[3]?.startsWith("pid") || !r.tasks.length) throw new Error("console, current: " + JSON.stringify(r));
+      || !r.current[2]?.includes(`prog(${ksee.m.main()}) in `) || !r.current.slice(3).some((x) => x.startsWith("pid")) || !r.tasks.length) throw new Error("console, current: " + JSON.stringify(r));
   ksee.tab("stack");
   return r;
 })()

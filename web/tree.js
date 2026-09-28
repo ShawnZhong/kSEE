@@ -32,9 +32,14 @@ export function tree(app, st, redraw) {
   // Rows for `list` under `path`, `depth` deep, into `out`; `pre`: their C
   // expressions' start ("file->", "file->f_path."); `life`: their
   // object's lifetime, for its history ({ from, to, what }: a local's
-  // frame, from its call to its return; null: the whole recording).
-  function rows(list, path, depth, out, life = null, pre = "") {
-    for (const o of list) {
+  // frame, from its call to its return; null: the whole recording);
+  // `keep`, if given: the paths to show (what changed, and the way to it),
+  // the others of each level folded into a row of their own ("▸ 5 other
+  // fields"), open on asking.
+  function rows(list, path, depth, out, life = null, pre = "", keep = null) {
+    const others = keep ? list.filter((o) => !keep.has(`${path}.${o.name}`)) : [];
+    const all = !others.length || st.open.has(`${path}/others`);
+    for (const o of all ? list : list.filter((o) => keep.has(`${path}.${o.name}`))) {
       const p = `${path}.${o.name}`, can = openable(o), open = can && st.open.has(p);
       const value = o.value ?? "{…}";
       const e = o.name.startsWith("[") ? pre.replace(/(\.|->)$/, "") + o.name : pre + o.name;
@@ -42,7 +47,7 @@ export function tree(app, st, redraw) {
       const changed = st.last.has(p) && st.last.get(p) !== value;
       // (One with no value yet, or none the recording has: dim.)
       const none = /^\((uninitialized|optimized out)/.test(value);
-      out.push(el("tr", { className: [changed ? "changed" : "", none ? "none" : ""].join(" ").trim() },
+      out.push(el("tr", { className: [changed ? "changed" : "", none ? "none" : ""].join(" ").trim(), dataset: { p } },
         // (Its name, or ▸: open it, or fold it.)
         el("td", { className: `fname${can ? " opens" : ""}`, style: `padding-left:${10 + depth * 14}px`,
                    onclick: can ? () => toggle(st.open, p) : null },
@@ -56,8 +61,10 @@ export function tree(app, st, redraw) {
         el("td", { className: "ftype" }, o.ty, hasWrites(o, life)
           ? el("a", { className: "hist", textContent: "📌", title: "pin it: its value over time, under the timeline", onclick: () => pin(o, e, life) }) : null)));
       // (A pointer's target is another object: its own lifetime.)
-      if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? null : life, o.target != null ? `${e}->` : `${e}.`);
+      if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? null : life, o.target != null ? `${e}->` : `${e}.`, keep);
     }
+    if (others.length) out.push(el("tr", { className: "sub" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
+      el("a", { textContent: all ? "▾ only what changed" : `▸ ${others.length} other field${others.length === 1 ? "" : "s"}`, onclick: () => toggle(st.open, `${path}/others`) }))));
   }
   // Whether value `o` has writes to pin: one in memory; a variable kept
   // in a wasm local, its call's (`life`).
