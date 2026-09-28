@@ -138,12 +138,21 @@ export function source(app) {
   // Stack has (see hover), each once: "fd = 3  count = 64", or null.
   function values(line, text) {
     const out = [], seen = new Set();
+    // (Not a parameter the function has assigned to by this line: what the
+    // recording has of it is what was passed; its new value is in a
+    // register.)
+    const params = new Set(app.stack.frames().filter((f) => f.func === v.fn?.name && !f.inlined).flatMap((f) => f.args ?? []).map((a) => a.name));
+    const doc = ed.state.doc, fnLine = v.fn?.line ?? line;
+    const assigned = (name) => [...Array(Math.max(0, line - fnLine)).keys()].some((k) =>
+      new RegExp(`(^|[^\\w.>])${name}\\s*=[^=]`).test(doc.line(fnLine + 1 + k).text));
     for (let k = 0; k < text.length; k++) {
       const e = exprAt(text, k);
       if (!e) continue;
       k = e.end - 1;
       if (seen.has(e.expr)) continue;
       seen.add(e.expr);
+      const root = e.expr.split(/->|\./)[0];
+      if (inFunction(line) && params.has(root) && assigned(root)) continue;
       const o = app.stack.resolve(e.expr, inFunction(line) ? v.fn.name : null);
       if (o && o.value != null && o.value !== "(optimized out)") out.push(`${e.expr} = ${o.value}`);
     }

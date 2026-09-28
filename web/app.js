@@ -266,7 +266,9 @@ export function app(m) {
     const k = position(), { depth: d, inl: i } = stack.level() ?? st[k];
     // (A line's level against this one: -1 shallower, 0 the same, 1 deeper.)
     const cmp = (s) => Math.sign(s.depth - d || s.inl - i);
-    const stop = kind === "line" ? () => true : (s) => cmp(s) <= 0;
+    // (Every line: but not a leaf of inlined code, a helper that calls
+    // nothing: its lines pass, the line using it stays.)
+    const stop = kind === "line" ? (s) => !s.leaf : (s) => cmp(s) <= 0;
     for (let j = k + dir; j >= 0 && j < st.length; j += dir) if (stop(st[j])) return showStep(j);
     return false;
   }

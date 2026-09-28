@@ -96,6 +96,10 @@ pub struct Line {
     /// Inlined: the line of its function's own where the code is inlined
     /// (the outermost inline site: `CLASS(fd_pos, f)(fd)`'s line).
     pub site: Option<u32>,
+    /// Inlined code that calls nothing before its function's code goes on
+    /// (a helper's lines: task_pid, read_ti_thread_flags): stepping every
+    /// line passes over it, staying on the line that used it.
+    pub leaf: bool,
 }
 
 /// A call on a stack, with its arguments (32 bits each: wider ones lose
@@ -461,12 +465,23 @@ impl View<'_> {
             .filter_map(|r| compared(&r)).collect();
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
                inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests, ret: s.ret.map(|v| v as i32),
-               called: s.callee.map(|(f, v)| (self.name(f), v as i32)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line) }
+               called: s.callee.map(|(f, v)| (self.name(f), v as i32)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line), leaf: false }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.
     pub fn lines(&self, first: usize, last: usize, task: u32) -> Vec<Line> {
-        self.rec.lines(self.tables, first, last, task).iter().map(|s| self.line(s)).collect()
+        let mut out: Vec<Line> = self.rec.lines(self.tables, first, last, task).iter().map(|s| self.line(s)).collect();
+        // (Inlined code is a leaf if no call is made before its run ends:
+        // before the steps come back out of it, or out of its call.)
+        for k in 0..out.len() {
+            let (d, inl) = (out[k].depth, out[k].inl);
+            if inl == 0 {
+                continue;
+            }
+            let calls = out[k + 1..].iter().take_while(|x| x.depth > d || x.depth == d && x.inl >= inl).any(|x| x.depth > d);
+            out[k].leaf = !calls;
+        }
+        out
     }
 
     /// The call stack at record `i`, innermost first; locals read from `mem`
@@ -488,7 +503,7 @@ impl View<'_> {
             let depth = depth as u32;
             let name = self.name(c.func);
             let (raw, frame) = args_of(&c).unzip();
-            let locals = frame.map(|f| self.locals(c.func, f, mem));
+            let locals = frame.map(|f| self.locals(c.func, f, mem, c.first, i));
             // (The syscall entry: its arguments are the syscall's.)
             let at_entry = matches!(records.get(c.first), Some(&Record::Block { func, n: 0 }) if Some(func) == entry);
             let wrapper = name.starts_with(arch::SYSCALL_WRAPPER);
@@ -543,11 +558,21 @@ impl View<'_> {
         }).collect()
     }
 
-    /// Function `func`'s locals in memory, at their offsets from `frame`.
-    fn locals(&self, func: u32, frame: u32, mem: &dyn Memory) -> Vec<Object> {
+    /// Function `func`'s locals in memory, at their offsets from `frame`, as
+    /// the call from record `first` has them at record `at`: one whose slot
+    /// it has not stored to yet is not written yet (its value then is its
+    /// slot's leftovers, another call's: the variable, if it is live, is in
+    /// a register meanwhile).
+    fn locals(&self, func: u32, frame: u32, mem: &dyn Memory, first: usize, at: usize) -> Vec<Object> {
         let types = &self.tables.types;
-        types.locals.get(&func).into_iter().flatten()
-            .map(|(var, ty, off)| types.object(mem, var, frame.wrapping_add(*off), *ty, 0)).collect()
+        types.locals.get(&func).into_iter().flatten().map(|(var, ty, off)| {
+            let addr = frame.wrapping_add(*off);
+            let o = types.object(mem, var, addr, *ty, 0);
+            if self.rec.stores().written(addr, types.size_of(*ty).max(1), first, at) {
+                return o;
+            }
+            Object { value: Some("(not written yet)".into()), children: None, expand: None, target: None, ..o }
+        }).collect()
     }
 
     /// Call `c` and the code inlined into it where it is, innermost first:

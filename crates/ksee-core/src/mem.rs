@@ -58,6 +58,15 @@ impl History {
         first.map(|(_, v)| v)
     }
 
+    /// Whether a store in records `from..=to` wrote any of `addr..addr +
+    /// len` (a range of unknown old contents aside).
+    pub fn written(&self, addr: u32, len: u32, from: usize, to: usize) -> bool {
+        self.by_addr.range(addr.saturating_sub(7)..addr.saturating_add(len)).any(|(&start, list)| {
+            let later = &list[list.partition_point(|&(i, _, _)| i < from)..];
+            later.iter().take_while(|&&(i, _, _)| i <= to).any(|&(_, size, _)| start.saturating_add(size) > addr)
+        })
+    }
+
     /// The newest store to any of `addr..addr + len` at or before record
     /// `at`: (its record, the old value).
     pub fn last_write(&self, records: &[Record], addr: u32, len: u32, at: usize) -> Option<(usize, u64)> {
@@ -113,6 +122,14 @@ mod tests {
         fn read(&self, addr: u32, buf: &mut [u8]) {
             buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
         }
+    }
+
+    #[test]
+    fn a_slot_is_written_in_a_span_or_not() {
+        let r = [Record::Store { addr: 0x10, size: 4, old: 0, line: 0 }, Record::Block { func: 1, n: 1 }, Record::Store { addr: 0x20, size: 8, old: 0, line: 0 }];
+        let h = History::new(&r);
+        assert!(h.written(0x10, 4, 0, 2) && !h.written(0x10, 4, 1, 2));
+        assert!(h.written(0x24, 4, 1, 2) && !h.written(0x28, 4, 0, 2));
     }
 
     #[test]
