@@ -140,24 +140,15 @@ impl Recording {
     }
 
     /// The position of the next (dir > 0) or previous block record from `i`
-    /// that starts a new `unit`: "block", "line" (another source line, on
-    /// the task running at `i`), or "function" (another function than at
-    /// `i`). `i` if none.
-    pub fn seek(&self, t: &Tables, i: usize, dir: i32, unit: &str) -> usize {
+    /// that starts a new `unit`: "block", or "function" (another function
+    /// than at `i`). `i` if none.
+    pub fn seek(&self, i: usize, dir: i32, unit: &str) -> usize {
         let func_at = |j: usize| match self.records.get(j) {
             Some(Record::Block { func, .. }) => Some(*func),
             _ => None,
         };
-        let line_at = |j: usize| match self.records.get(j) {
-            Some(&Record::Block { func, n }) => t.blocks.get(&(func, n)).map(|l| (l.file, l.line)),
-            _ => None,
-        };
-        let (here, here_line, task) = (func_at(i), line_at(i), self.tasks.get(i).copied());
-        let new = |j: usize| func_at(j).is_some_and(|f| match unit {
-            "function" => Some(f) != here,
-            "line" => self.tasks.get(j).copied() == task && line_at(j).is_some() && line_at(j) != here_line,
-            _ => true,
-        });
+        let here = func_at(i);
+        let new = |j: usize| func_at(j).is_some_and(|f| unit != "function" || Some(f) != here);
         let found = if dir > 0 { (i + 1..self.len()).find(|&j| new(j)) } else { (0..i.min(self.len())).rev().find(|&j| new(j)) };
         found.unwrap_or(i)
     }

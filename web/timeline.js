@@ -344,7 +344,7 @@ export function timeline(app) {
     if (first == null) return whole();
     if (inl || t.syscallAt.has(first)) return;
     selectCall(first, fn(id)?.name ?? "a call");
-    go(m.seek(first, 1, "line"));
+    go(first); // (its signature: about to run it, as entering a call is)
   };
   // Select the call from record `first` (called `title`): its records, from
   // its first to where it returns (found again after a snapshot, by id).

@@ -134,7 +134,7 @@ impl Machine {
 
     /// See ksee_core::recording::Recording::seek.
     pub fn seek(&self, i: usize, dir: i32, unit: &str) -> usize {
-        self.rec.borrow().seek(tables(), i, dir, unit)
+        self.rec.borrow().seek(i, dir, unit)
     }
 
     /// The first call of function `name` in records `first..=last` (of the
