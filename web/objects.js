@@ -35,12 +35,12 @@ export function objects(app) {
     shown = key;
     $("objects-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): the objects it wrote, and how they point to each other.";
     if (!w) return body.replaceChildren();
+    moved(); // (another moment: what changed since, marked; not on a redraw)
     render(m.objects(w.a, w.b, cur ?? w.b), cur ?? w.b);
   }
 
   function render(nodes, cur) {
     last = [nodes, cur];
-    moved();
     // (On the stack: there while its call runs; and written by the
     // cursor. The others on asking.)
     const live = (n) => !n.life || (n.life[0] <= cur && cur <= n.life[1]);
@@ -69,7 +69,7 @@ export function objects(app) {
     // (Each member it writes, by the name its object has: a nested one's
     // outermost, "f_path" for "f_path.dentry"; a scalar's own value, the
     // object itself.)
-    const top = (member) => member.match(/^[^.[]*|^\[\d+\]/)[0];
+    const top = (member) => member.match(/^\[\d+\]|^[^.[]*/)[0];
     const byMember = new Map();
     for (const x of n.writes) (byMember.get(top(x.member)) ?? byMember.set(top(x.member), []).get(top(x.member))).push(x);
     const members = obj?.children ? obj.children.filter((c) => all || byMember.has(c.name)) : obj ? [obj] : [];

@@ -10,7 +10,7 @@ import { tree } from "./tree.js";
 export function tasks(app) {
   const { m } = app;
   const body = $("tasks");
-  let shown = null;
+  let shown = null, moment = null;
   // (The tasks folded, by address: "task/<addr>" (each is open to begin
   // with); open, "…/all" for all of its fields; the values' paths open.)
   const folded = new Set(), st = {};
@@ -24,10 +24,11 @@ export function tasks(app) {
     // (Again for another moment, or another recording: a snapshot.)
     const cur = app.time.cursor(), n = m.records(), key = `${cur}:${n ? m.record_id(n - 1) : ""}`;
     if (key === shown) return;
+    // (Another moment: what changed since, marked; not on a redraw.)
+    if (key !== moment) (moved(), (moment = key));
     shown = key;
     $("tasks-note").textContent = cur == null ? "Nothing recorded yet: the tasks come from the recording. Make a call." : "";
     if (cur == null) return body.replaceChildren();
-    moved();
     const all = [];
     for (const t of m.tasks(cur)) {
       const p = `task/${t.task.addr}`, open = !folded.has(p);

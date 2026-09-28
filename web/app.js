@@ -157,7 +157,7 @@ export function app(m) {
     cancelAnimationFrame(peek.raf);
     peek.raf = requestAnimationFrame(() => {
       const to = i ?? time.cursor(), key = to == null ? null : `${to}:${frame?.first ?? ""}:${frame?.inlined ?? ""}`;
-      if (key === peek.key) return;
+      if (i != null && key === peek.key) return; // (back to the cursor: always)
       peek.key = i == null ? null : key;
       const at = to != null ? m.at(to) : null;
       // (Back to the cursor at a line step, no call chosen: that step, its note too.)
@@ -389,6 +389,9 @@ export function app(m) {
   a.restart = async () => {
     halted = null;
     memAt = undefined; // (a fresh kernel's memory: asked again)
+    // (Nothing of the old recording: its selection, its step, its call chosen.)
+    time.clear();
+    (chosen = null), (L.key = null), (L.pos = null), (peek.key = null);
     consoleText = "";
     showConsole();
     await m.restart();

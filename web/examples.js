@@ -41,13 +41,13 @@ export async function examples(app) {
   const { m } = app;
   const consts = app.kernel.C;
   // A program's line (as written: see Machine.statement), as a step: a
-  // call, or a variable's declaration. (One not either: a call of that
-  // name, whose error making it says so.)
+  // call, or a variable's declaration. (One not either: as written, with
+  // why; making it says so.)
   const statement = (line) => {
     try {
       return m.statement(line);
-    } catch {
-      return { call: line, args: [] };
+    } catch (e) {
+      return { raw: line, error: String(e.message ?? e) };
     }
   };
   const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
@@ -182,7 +182,7 @@ export async function examples(app) {
   }
   // A step's line, as written:
   // `tid: name = call(args)`.
-  const text = (s) => s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.type ? `${s.type}${s.type.endsWith("*") ? "" : " "}` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.join(", ")})`;
+  const text = (s) => s.raw ?? s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.type ? `${s.type}${s.type.endsWith("*") ? "" : " "}` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.join(", ")})`;
   // How a call finished, or not yet.
   // (A variable: as it starts; each call's line says how it changed.)
   const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.initial ?? ""}`

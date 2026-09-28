@@ -260,6 +260,7 @@ export function timeline(app) {
     return { k, c, d };
   }
   function hover(e) {
+    if (!t.win) return;
     const { k, c, d } = hit(e);
     const [id, first, inl] = c?.frames[d] ?? [];
     hilite(first ?? null);
@@ -373,6 +374,10 @@ export function timeline(app) {
   });
 
   // ---- The API ----
+  // A fresh kernel: no selection, no cursor.
+  function clear() {
+    Object.assign(t, { where: null, home: null, title: "", cursor: null, sel: null, lit: null });
+  }
   // After a snapshot: the new extent; the window at the selection (or all).
   function refresh(calls) {
     t.n = m.records();
@@ -483,6 +488,6 @@ export function timeline(app) {
     }
     return null;
   }
-  return { refresh, go, mark, select, selectCall, hilite, selected, boxOf, focusFind: () => finder.input.focus(),
+  return { refresh, clear, go, mark, select, selectCall, hilite, selected, boxOf, focusFind: () => finder.input.focus(),
            home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }

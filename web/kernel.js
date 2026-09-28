@@ -38,10 +38,14 @@ export function kernel(m, { snapshot = () => m.snapshot() } = {}) {
   let last = Promise.resolve();
   const settle = () => (last = last.catch(() => {}).then(async () => {
     const news = await m.quiet();
-    snapshot();
-    for (const f of news.finished) {
-      waiting.get(f.id)?.(f);
-      waiting.delete(f.id);
+    // (The calls finished, settled even if the page's refresh throws.)
+    try {
+      snapshot();
+    } finally {
+      for (const f of news.finished) {
+        waiting.get(f.id)?.(f);
+        waiting.delete(f.id);
+      }
     }
     return news;
   }));
@@ -148,6 +152,7 @@ export function runner(k, m, steps) {
   async function next() {
     const j = done.length, s = steps[j];
     if (!s) return null;
+    if (s.error) throw new Error(s.error); // (a line that is no call nor declaration)
     if (s.decl) {
       const v = Object.assign(k.declare(s.decl, tidOf(s), known()), { j });
       vars.push(v);
