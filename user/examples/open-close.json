@@ -16,21 +16,7 @@
     "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); close(fd); close(fd)"
   ],
   "steps": [
-    {
-      "call": "openat",
-      "name": "fd",
-      "args": [
-        "AT_FDCWD",
-        "\"/note.txt\"",
-        "O_RDONLY"
-      ],
-      "type": "int"
-    },
-    {
-      "call": "close",
-      "args": [
-        "fd"
-      ]
-    }
+    "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)",
+    "close(fd)"
   ]
 }

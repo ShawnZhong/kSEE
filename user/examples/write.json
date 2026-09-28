@@ -14,29 +14,8 @@
     "char big[4000]; int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND); write(fd, big, 4000); close(fd)"
   ],
   "steps": [
-    {
-      "call": "openat",
-      "name": "fd",
-      "args": [
-        "AT_FDCWD",
-        "\"/note.txt\"",
-        "O_WRONLY | O_APPEND"
-      ],
-      "type": "int"
-    },
-    {
-      "call": "write",
-      "args": [
-        "fd",
-        "\"more\\n\"",
-        "5"
-      ]
-    },
-    {
-      "call": "close",
-      "args": [
-        "fd"
-      ]
-    }
+    "int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)",
+    "write(fd, \"more\\n\", 5)",
+    "close(fd)"
   ]
 }

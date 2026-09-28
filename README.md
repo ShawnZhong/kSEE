@@ -124,20 +124,21 @@ An example is one JSON file in user/examples/: a title, a question, `text`
 show, `:calls`, `:stores`, `:stack` or `:trace`, or `:objects`: the
 function's call selected, at its return, what it changed; `code` in
 backticks; `[label](try:1)` runs the example's `tries[0]`, another program
-written as calls separated by `;`, to see what changes), and steps: `{ call, name?, tid?, args }` (`name`:
-a name for the call's result, which later arguments may use, as `fd` or
-`$2`; `tid`: the runner that makes it, a number or a result's name, `child`
-for the one a clone started; else /init), and a `group` (the selector's:
-"Start here", "Files, in memory", "Files on ext4", "Time", "Threads and
-processes"; the order is `EXAMPLES` in crates/ksee-cli/src/build.rs), the arguments
-written as in C: `"AT_FDCWD"`, `"O_CREAT | O_WRONLY"` (the kernel's own
-constants, from its UAPI headers), `"0644"`, `"\"a string\""`, `"[64]"`
-(a buffer for the kernel to fill), `"{0, 30000000}"` or
-`"{.tv_nsec = 30000000}"` (a compound literal, laid out as the parameter's
-type says: here a struct timespec), `"{\"init\", NULL}"` (an array of
-strings, for a char **: argv), `"fd"` or `"$1"` (a result),
-`"mem + 65536"`; see crates/ksee-core/src/program.rs. A step can instead
-be `{ decl }`, a variable declared as in C (`"char buf[64]"`). /init mounts an ext4 disk on /mnt (an
+written as lines separated by `;`, to see what changes), `steps`: the
+program, its lines as the page shows them (`"int fd = openat(AT_FDCWD,
+\"/note.txt\", O_RDONLY)"`, `"char buf[64]"`, `"child: dup3(fds[0], 0,
+0)"`: a call, its result named and typed as C declares it, or a variable
+declared; `child:` the runner that makes it, a thread id or a result's
+name, else /init), and a `group` (the selector's: "Start here", "Files,
+in memory", "Files on ext4", "Time", "Threads and processes"; the order is
+`EXAMPLES` in crates/ksee-cli/src/build.rs). A call's arguments are
+written as in C: `AT_FDCWD`, `O_CREAT | O_WRONLY` (the kernel's own
+constants, from its UAPI headers), `0644`, `"a string"`, `{0, 30000000}`
+or `{.tv_nsec = 30000000}` (a compound literal, laid out as the
+parameter's type says: here a struct timespec), `{"init", NULL}` (an
+array of strings, for a char **: argv), `fd` or `$1` (a result), `buf` (a
+variable: its address), `fds[1]`, `mem + 65536`; see
+crates/ksee-core/src/program.rs (Machine.statement parses a line). /init mounts an ext4 disk on /mnt (an
 image in the initramfs, through the loop device), with files for the
 examples to start from: `/mnt/note.txt`, `/mnt/dir/a.txt`; the root, an
 in-memory file system (ramfs: no tmpfs without an MMU), has `/note.txt`.

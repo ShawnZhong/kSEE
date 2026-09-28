@@ -13,40 +13,10 @@
     "char buf[256]; mkdirat(AT_FDCWD, \"/sub\", 0755); int fd = openat(AT_FDCWD, \"/sub\", O_RDONLY | O_DIRECTORY); getdents64(fd, buf, 256); close(fd)"
   ],
   "steps": [
-    {
-      "decl": "char buf[256]"
-    },
-    {
-      "call": "mkdirat",
-      "args": [
-        "AT_FDCWD",
-        "\"/sub\"",
-        "0755"
-      ]
-    },
-    {
-      "call": "openat",
-      "name": "fd",
-      "args": [
-        "AT_FDCWD",
-        "\"/\"",
-        "O_RDONLY | O_DIRECTORY"
-      ],
-      "type": "int"
-    },
-    {
-      "call": "getdents64",
-      "args": [
-        "fd",
-        "buf",
-        "256"
-      ]
-    },
-    {
-      "call": "close",
-      "args": [
-        "fd"
-      ]
-    }
+    "char buf[256]",
+    "mkdirat(AT_FDCWD, \"/sub\", 0755)",
+    "int fd = openat(AT_FDCWD, \"/\", O_RDONLY | O_DIRECTORY)",
+    "getdents64(fd, buf, 256)",
+    "close(fd)"
   ]
 }

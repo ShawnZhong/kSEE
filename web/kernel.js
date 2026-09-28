@@ -143,7 +143,7 @@ export function runner(k, m, steps) {
     const j = done.length, s = steps[j];
     if (!s) return null;
     if (s.decl) {
-      const v = Object.assign(k.declare(s.decl, 1, known()), { j });
+      const v = Object.assign(k.declare(s.decl, tidOf(s), known()), { j });
       vars.push(v);
       done[j] = { decl: v, how: "declared" };
       return { j, decl: v };

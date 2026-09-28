@@ -11,30 +11,8 @@
     "int fd = openat(AT_FDCWD, \"/mnt/new.txt\", O_CREAT | O_WRONLY | O_SYNC, 0644); write(fd, \"hello, ext4\\n\", 12); close(fd)"
   ],
   "steps": [
-    {
-      "call": "openat",
-      "name": "fd",
-      "args": [
-        "AT_FDCWD",
-        "\"/mnt/new.txt\"",
-        "O_CREAT | O_WRONLY",
-        "0644"
-      ],
-      "type": "int"
-    },
-    {
-      "call": "write",
-      "args": [
-        "fd",
-        "\"hello, ext4\\n\"",
-        "12"
-      ]
-    },
-    {
-      "call": "close",
-      "args": [
-        "fd"
-      ]
-    }
+    "int fd = openat(AT_FDCWD, \"/mnt/new.txt\", O_CREAT | O_WRONLY, 0644)",
+    "write(fd, \"hello, ext4\\n\", 12)",
+    "close(fd)"
   ]
 }

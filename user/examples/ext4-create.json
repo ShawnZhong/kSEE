@@ -13,22 +13,7 @@
     "int fd = openat(AT_FDCWD, \"/mnt/nowhere/new.txt\", O_CREAT | O_WRONLY, 0644)"
   ],
   "steps": [
-    {
-      "call": "openat",
-      "name": "fd",
-      "args": [
-        "AT_FDCWD",
-        "\"/mnt/new.txt\"",
-        "O_CREAT | O_WRONLY",
-        "0644"
-      ],
-      "type": "int"
-    },
-    {
-      "call": "close",
-      "args": [
-        "fd"
-      ]
-    }
+    "int fd = openat(AT_FDCWD, \"/mnt/new.txt\", O_CREAT | O_WRONLY, 0644)",
+    "close(fd)"
   ]
 }

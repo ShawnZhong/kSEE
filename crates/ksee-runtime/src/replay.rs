@@ -265,6 +265,34 @@ impl Machine {
         })
     }
 
+    /// A program's line (ksee_core::program::statement): a call, { tid?,
+    /// type?, name?, call, args (as written) }, or a variable's
+    /// declaration, { tid?, decl }; tid a number if it is one, else the
+    /// name of a result (a clone's).
+    pub fn statement(&self, text: &str) -> Result<JsValue, JsValue> {
+        use ksee_core::program::{statement, Statement};
+        let o = js_sys::Object::new();
+        let set = |k: &str, v: JsValue| drop(js_sys::Reflect::set(&o, &k.into(), &v));
+        let tid = |t: Option<String>| match t {
+            Some(t) => t.parse::<f64>().map_or_else(|_| JsValue::from(t), JsValue::from),
+            None => JsValue::UNDEFINED,
+        };
+        match statement(text)? {
+            Statement::Call { tid: t, ty, name, call, args } => {
+                if t.is_some() { set("tid", tid(t)); }
+                if let Some(ty) = ty { set("type", ty.into()); }
+                if let Some(n) = name { set("name", n.into()); }
+                set("call", call.into());
+                set("args", args.into_iter().map(JsValue::from).collect::<js_sys::Array>().into());
+            }
+            Statement::Decl { tid: t, text } => {
+                if t.is_some() { set("tid", tid(t)); }
+                set("decl", text.into());
+            }
+        }
+        Ok(o.into())
+    }
+
     /// The value of `text`, a C constant expression (a runner's thread id,
     /// say: "19", "child", "$2"); `known` as for arg.
     pub fn value(&self, text: &str, known: JsValue) -> Result<f64, JsValue> {

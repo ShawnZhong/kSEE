@@ -14,32 +14,9 @@
     "char buf[4]; int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, buf, 4); read(fd, buf, 4); close(fd)"
   ],
   "steps": [
-    {
-      "decl": "char buf[64]"
-    },
-    {
-      "call": "openat",
-      "name": "fd",
-      "args": [
-        "AT_FDCWD",
-        "\"/note.txt\"",
-        "O_RDONLY"
-      ],
-      "type": "int"
-    },
-    {
-      "call": "read",
-      "args": [
-        "fd",
-        "buf",
-        "64"
-      ]
-    },
-    {
-      "call": "close",
-      "args": [
-        "fd"
-      ]
-    }
+    "char buf[64]",
+    "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)",
+    "read(fd, buf, 64)",
+    "close(fd)"
   ]
 }

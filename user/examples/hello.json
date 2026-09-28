@@ -15,13 +15,6 @@
     "write(5, \"hello\\n\", 6)"
   ],
   "steps": [
-    {
-      "call": "write",
-      "args": [
-        "1",
-        "\"hello\\n\"",
-        "6"
-      ]
-    }
+    "write(1, \"hello\\n\", 6)"
   ]
 }

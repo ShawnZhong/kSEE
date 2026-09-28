@@ -205,6 +205,106 @@ fn unquote(s: &str) -> Result<String, String> {
     Ok(out)
 }
 
+/// A program's line (see statement): a call, `[runner:] [type] [name =]
+/// syscall(args)` (its arguments as written: Types::arg reads each), or a
+/// variable's declaration, `[runner:] type name[n] = init` (Types::declare
+/// reads it).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Statement {
+    Call { tid: Option<String>, ty: Option<String>, name: Option<String>, call: String, args: Vec<String> },
+    Decl { tid: Option<String>, text: String },
+}
+
+/// A program's line, parsed (see Statement): a call if it ends in one
+/// (`name(…)`, its parentheses the line's end), else a declaration.
+pub fn statement(text: &str) -> Result<Statement, String> {
+    let s = text.trim().trim_end_matches(';').trim();
+    let word = |w: &str| !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') && !w.starts_with(|c: char| c.is_ascii_digit());
+    // (`19:` or `child:`, its runner; not `::`.)
+    let (tid, s) = match s.split_once(':') {
+        Some((t, r)) if word(t.trim()) || t.trim().chars().all(|c| c.is_ascii_digit()) && !t.trim().is_empty() => (Some(t.trim().to_string()), r.trim()),
+        _ => (None, s),
+    };
+    // (The call: the first "(" outside strings, closed at the line's end.)
+    let open = s.find('(');
+    let close = open.and_then(|o| {
+        let (mut depth, mut quote) = (0, false);
+        let b = s.as_bytes();
+        let mut i = o;
+        while i < b.len() {
+            match b[i] {
+                b'\\' if quote => i += 1,
+                b'"' => quote = !quote,
+                b'(' | b'{' if !quote => depth += 1,
+                b')' | b'}' if !quote => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(i);
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        None
+    });
+    let (Some(open), Some(close)) = (open, close) else { return Ok(Statement::Decl { tid, text: s.to_string() }) };
+    if close + 1 != s.len() {
+        return Ok(Statement::Decl { tid, text: s.to_string() });
+    }
+    let head = s[..open].trim();
+    let (lhs, call) = match head.rsplit_once('=') {
+        Some((l, c)) if !l.ends_with(['=', '!', '<', '>']) => (Some(l.trim()), c.trim()),
+        _ => (None, head),
+    };
+    if !word(call) {
+        return Err(format!("not a call: {head}"));
+    }
+    // (`int fd`, `void *mem`: the result's type, then its name.)
+    let (ty, name) = match lhs {
+        None => (None, None),
+        Some(l) => {
+            let at = l.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).map_or(0, |k| k + 1);
+            let (t, n) = (l[..at].trim(), &l[at..]);
+            if !word(n) {
+                return Err(format!("not a name for the result: {l}"));
+            }
+            (if t.is_empty() { None } else { Some(t.split_whitespace().collect::<Vec<_>>().join(" ")) }, Some(n.to_string()))
+        }
+    };
+    let inner = &s[open + 1..close];
+    let args = if inner.trim().is_empty() { Vec::new() } else { split(inner) };
+    Ok(Statement::Call { tid, ty, name, call: call.to_string(), args })
+}
+
+/// `text` split at its commas outside strings, () and {}, each trimmed.
+fn split(text: &str) -> Vec<String> {
+    let (mut out, mut cur, mut depth, mut quote) = (Vec::new(), String::new(), 0, false);
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if quote => {
+                cur.push(c);
+                if let Some(n) = chars.next() {
+                    cur.push(n);
+                }
+                continue;
+            }
+            '"' => quote = !quote,
+            '(' | '{' if !quote => depth += 1,
+            ')' | '}' if !quote => depth -= 1,
+            ',' if !quote && depth == 0 => {
+                out.push(core::mem::take(&mut cur).trim().to_string());
+                continue;
+            }
+            _ => {}
+        }
+        cur.push(c);
+    }
+    out.push(cur.trim().to_string());
+    out
+}
+
 /// A value of the kernel's types as data (Types::value): a number, a
 /// string (chars), a list (an array), the members of a struct.
 #[derive(Debug, Clone, PartialEq)]
@@ -557,6 +657,21 @@ mod tests {
 
     fn known(name: &str) -> Option<i64> {
         [("O_CREAT", 64), ("O_WRONLY", 1), ("AT_FDCWD", -100), ("fd", 3), ("$2", 5)].iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
+    }
+
+    #[test]
+    fn a_line_is_a_call_or_a_declaration() {
+        let call = |t: &str| match statement(t).unwrap() {
+            Statement::Call { tid, ty, name, call, args } => (tid, ty, name, call, args),
+            s => panic!("{s:?}"),
+        };
+        let o = |s: &str| Some(s.to_string());
+        assert_eq!(call("int fd = openat(AT_FDCWD, \"/a, b\", O_RDONLY);"),
+                   (None, o("int"), o("fd"), "openat".into(), alloc::vec!["AT_FDCWD".into(), "\"/a, b\"".into(), "O_RDONLY".into()]));
+        assert_eq!(call("child: void *mem = mmap2(NULL, {1, 2}, 3)"), (o("child"), o("void *"), o("mem"), "mmap2".into(), alloc::vec!["NULL".into(), "{1, 2}".into(), "3".into()]));
+        assert_eq!(call("fd = getpid()"), (None, None, o("fd"), "getpid".into(), alloc::vec![]));
+        assert_eq!(statement("char buf[64]").unwrap(), Statement::Decl { tid: None, text: "char buf[64]".into() });
+        assert_eq!(statement("19: struct __kernel_timespec ts = {0, 1}").unwrap(), Statement::Decl { tid: o("19"), text: "struct __kernel_timespec ts = {0, 1}".into() });
     }
 
     #[test]

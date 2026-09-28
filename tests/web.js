@@ -3,7 +3,6 @@
 // the recordings show.
 //   deno run --allow-read tests/web.js
 import { start } from "../target/site/ksee.js";
-import { parseCall } from "../target/site/args.js";
 import { kernel, runner } from "../target/site/kernel.js";
 
 const root = new URL("..", import.meta.url);
@@ -264,6 +263,8 @@ check("a struct as in C, positional or by name", spec("{0, 30000000}") === "0,30
 check("a wrong member is an error", (() => { try { a("clock_nanosleep_time64", 2, "{.tv_min = 1}"); return false; } catch (e) { return /no member/.test(e); } })());
 check("a runner by a result: value()", m.value("$2 + 0", { $2: 19 }) === 19);
 const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/examples.json", root)));
+// (An example's program: its lines, as written, parsed as the page parses them.)
+for (const ex of examples) ex.steps = ex.steps.map((line) => m.statement(line));
 // (Each on a fresh kernel, as the page runs them; a call may block, and
 // finish as a later one wakes it.)
 // (A step's runner, `as`: the one call `as` started; else /init.)
@@ -288,7 +289,7 @@ for (const ex of examples) {
   }
   // (Its tries: each a program that runs; its calls finish, or block on purpose.)
   for (const [k, prog] of (ex.tries ?? []).entries()) {
-    const steps = prog.split(";").map((c) => c.trim()).filter(Boolean).map((c) => parseCall(c) ?? { decl: c });
+    const steps = prog.split(";").map((c) => c.trim()).filter(Boolean).map((c) => m.statement(c));
     const ran = await runExample({ ...ex, steps });
     check(`example ${ex.name}, try ${k + 1}: ${steps.length} calls made (${prog.slice(0, 50)}…)`, ran.length === steps.length && steps.length > 0);
   }

@@ -85,7 +85,7 @@ Rust does the work: JS only lays it out.
 | calls.js | the Calls: the calls the selected call made, in order, each with what it returned, inlined code among them (a chain of single inlined calls on one row); ▸ opens a call's own calls |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
-| args.js | a program's line: `name = call(args)`, `tid: call(args)` (the arguments themselves are ksee-core's program.rs: `Machine.arg`); or a variable's declaration (`Machine.declare`) |
+| args.js | a program's line as shown (as made: the results it names as their values), a result with its errno name; the lines themselves are parsed in ksee-core's program.rs (`Machine.statement`), their arguments read there too (`Machine.arg`), a variable made there (`Machine.declare`) |
 | ksee.js | booting |
 | kernel.js | syscalls from JavaScript: `sys.read(fd, buf, 64)` (a promise of its result: a blocked call pending while others go on), `declare("char buf[64]")` (the program's memory: a variable's `get()`, a JS value, and `set(x)`), JS values as C's (a string, bytes, argv, a variable's address, an object laid out as the parameter's struct); what the page's program lines, the tests and the console (`ksee.kernel`) make their calls through |
 

@@ -9,7 +9,6 @@
 // the list, or gives up; ↑ ↓ with nothing written: the calls before
 // (`history`), as a shell's.
 import { el } from "./dom.js";
-import { parseCall } from "./args.js";
 
 // { el, input, focus }: `text` to start with; `known(runners?)`: the
 // results of the calls before, by name ({ $1: 3, fd: 3 }; `runners`: for
@@ -124,16 +123,13 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
 
   // The call written: { call, args, name?, tid? }, or an error.
   function written() {
-    const c = parseCall(input.value);
-    // (Not a call: a variable of the program's, declared as in C.)
-    if (!c) {
-      try {
-        m.declaration(input.value, known());
-        return { decl: input.value.trim().replace(/;$/, "") };
-      } catch (e) {
-        return /^[\w\s]+[\[=]|^(struct|union|char|int|long|unsigned)\b/.test(input.value.trim()) ? String(e.message ?? e)
-          : "write a call: name(arg, arg, …), or fd = name(…); or a variable: char buf[64]";
-      }
+    // (A call, or a variable of the program's, declared as in C.)
+    let c;
+    try {
+      c = m.statement(input.value);
+      if (c.decl != null) return (m.declaration(c.decl, known()), c);
+    } catch (e) {
+      return `${e.message ?? e}: write a call, name(arg, …) or int fd = name(…); or a variable, char buf[64]`;
     }
     const s = m.syscall(c.call);
     if (!s) return `no syscall ${c.call}`;

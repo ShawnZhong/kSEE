@@ -14,36 +14,9 @@
     "int fd = openat(AT_FDCWD, \"/mnt/log.txt\", O_CREAT | O_WRONLY, 0644); write(fd, \"hello, ext4\\n\", 12); fsync(fd); fsync(fd); close(fd)"
   ],
   "steps": [
-    {
-      "call": "openat",
-      "name": "fd",
-      "args": [
-        "AT_FDCWD",
-        "\"/mnt/log.txt\"",
-        "O_CREAT | O_WRONLY",
-        "0644"
-      ],
-      "type": "int"
-    },
-    {
-      "call": "write",
-      "args": [
-        "fd",
-        "\"hello, ext4\\n\"",
-        "12"
-      ]
-    },
-    {
-      "call": "fsync",
-      "args": [
-        "fd"
-      ]
-    },
-    {
-      "call": "close",
-      "args": [
-        "fd"
-      ]
-    }
+    "int fd = openat(AT_FDCWD, \"/mnt/log.txt\", O_CREAT | O_WRONLY, 0644)",
+    "write(fd, \"hello, ext4\\n\", 12)",
+    "fsync(fd)",
+    "close(fd)"
   ]
 }

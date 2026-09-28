@@ -14,46 +14,9 @@
     "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM | CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID, mem + 65536, NULL, mem, 0); thread: exit(0); futex_time64(mem, FUTEX_WAIT, thread, NULL)"
   ],
   "steps": [
-    {
-      "call": "mmap2",
-      "name": "mem",
-      "args": [
-        "NULL",
-        "65536",
-        "PROT_READ | PROT_WRITE",
-        "MAP_PRIVATE | MAP_ANONYMOUS",
-        "-1",
-        "0"
-      ],
-      "type": "void *"
-    },
-    {
-      "call": "clone",
-      "name": "thread",
-      "args": [
-        "CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM | CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID",
-        "mem + 65536",
-        "NULL",
-        "mem",
-        "0"
-      ],
-      "type": "pid_t"
-    },
-    {
-      "call": "futex_time64",
-      "args": [
-        "mem",
-        "FUTEX_WAIT",
-        "thread",
-        "NULL"
-      ]
-    },
-    {
-      "call": "exit",
-      "tid": "thread",
-      "args": [
-        "0"
-      ]
-    }
+    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
+    "pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM | CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID, mem + 65536, NULL, mem, 0)",
+    "futex_time64(mem, FUTEX_WAIT, thread, NULL)",
+    "thread: exit(0)"
   ]
 }

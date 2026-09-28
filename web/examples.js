@@ -31,7 +31,7 @@
 // stands for its address (`read(fd, buf, 64)`, `&ts`), and each call's
 // line says the variables it changed, as C writes them (`fds = {3, 4}`).
 import { $, el } from "./dom.js";
-import { made, parseCall, result } from "./args.js";
+import { made, result } from "./args.js";
 import { callEditor } from "./calledit.js";
 import { runner } from "./kernel.js";
 
@@ -39,6 +39,14 @@ export async function examples(app) {
   const { m } = app;
   const consts = app.consts();
   const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+  // (An example's program: its lines, as written; made steps here, once.)
+  for (const ex of list) ex.steps = ex.steps.map((line) => {
+    try {
+      return m.statement(line);
+    } catch {
+      return { call: line, args: [] };
+    }
+  });
   // The open example: its steps, the calls asked ({ id, tid, args, how?,
   // ret?, text?: how once it finished), the runner each started; its
   // explanation's links ({ j: the call, func?, any?, at?: the record, a:
@@ -72,14 +80,16 @@ export async function examples(app) {
       else cur += c;
     }
     calls.push(cur);
-    return calls.map((c) => c.trim()).filter(Boolean).map((c) => parseCall(c) ?? (isDecl(c) ? { decl: c } : { call: c, args: [] }));
+    return calls.map((c) => c.trim()).filter(Boolean).map(statement);
   }
-  // (A variable's declaration, as the program has it.)
-  const isDecl = (c) => {
+  // A program's line (as written: see Machine.statement), as a step: a
+  // call, or a variable's declaration. (One not either: a call of that
+  // name, whose error making it says so.)
+  const statement = (line) => {
     try {
-      return !!m.declaration(c, {});
+      return m.statement(line);
     } catch {
-      return false;
+      return { call: line, args: [] };
     }
   };
   // Switch to example `ex` (its program `steps`, `changed` from the
