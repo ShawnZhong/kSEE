@@ -346,7 +346,7 @@ impl View<'_> {
     pub fn raw(&self, from: usize, to: usize) -> Vec<(usize, &'static str, String)> {
         let (t, rec) = (self.tables, self.rec);
         let mut out = Vec::new();
-        for i in from..=to.min(records_len(rec)) {
+        for i in from..=to.min(last_record(rec)) {
             if i > 0 && rec.tasks.get(i) != rec.tasks.get(i - 1) {
                 let task = self.task(rec.tasks[i]);
                 out.push((i, "task", format!("── {}({}) runs", task.comm.unwrap_or_default(), task.pid.unwrap_or(0))));
@@ -568,7 +568,7 @@ impl View<'_> {
             // (And what its pointer members point to, as the span ends:
             // current->files, ->fs, ->mm: "files->next_fd" through a local
             // the optimizer kept in a register is reached this way.)
-            let end = self.rec.memory_at(self.now, last.min(records_len(self.rec)));
+            let end = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
             if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
                 for mb in members.iter().filter(|mb| mb.bit_size == 0) {
                     if let Kind::Pointer(to) = types.get(types.resolve(mb.ty)).kind
@@ -603,7 +603,7 @@ impl View<'_> {
                         // where it points as the call ends.)
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
-                            let end = self.rec.calls.call_end(i).unwrap_or(last).min(records_len(self.rec));
+                            let end = self.rec.calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
                             let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(*off));
                             add(format!("{}'s {var}", f.name), "object", to, v, None, None);
                         }
@@ -779,7 +779,8 @@ impl Types {
     }
 }
 
-fn records_len(rec: &Recording) -> usize {
+/// The last record's index (0 if none).
+fn last_record(rec: &Recording) -> usize {
     rec.records.len().saturating_sub(1)
 }
 

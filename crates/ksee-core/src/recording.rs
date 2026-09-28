@@ -28,8 +28,6 @@ pub struct Recording {
     /// the recording's unit of time (the timeline's axis): one basic block
     /// run; stores take none (a memset is not longer than a line).
     pub blocks: Vec<usize>,
-    /// Each record's step: the blocks up to and including it.
-    pub step: Vec<u32>,
     /// The calls, and where each record's task is in them.
     pub calls: stack::Calls,
     /// The stores, indexed (once asked for).
@@ -75,13 +73,7 @@ impl Recording {
         let calls = stack::Calls::new(t, &records, &tasks);
         let syscalls = syscalls::split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args, &calls);
         let blocks: Vec<usize> = records.iter().enumerate().filter(|(_, r)| matches!(r, Record::Block { .. })).map(|(i, _)| i).collect();
-        let mut step = Vec::with_capacity(records.len());
-        let mut n = 0;
-        for r in &records {
-            n += matches!(r, Record::Block { .. }) as u32;
-            step.push(n);
-        }
-        Recording { records, ids, args, tasks, syscalls, blocks, step, calls, stores: OnceCell::new() }
+        Recording { records, ids, args, tasks, syscalls, blocks, calls, stores: OnceCell::new() }
     }
 
     /// How many steps (blocks) the recording has.
@@ -92,7 +84,7 @@ impl Recording {
     /// Record `i`'s step: the blocks up to it (its own included), so
     /// records between two blocks are at the earlier one's step.
     pub fn step_of(&self, i: usize) -> usize {
-        self.step.get(i).map_or(0, |&s| s.saturating_sub(1) as usize)
+        self.blocks.partition_point(|&b| b <= i).saturating_sub(1)
     }
 
     /// The record step `k` begins at (its block), the last record if past
