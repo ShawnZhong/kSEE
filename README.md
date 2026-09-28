@@ -62,7 +62,12 @@ parameter, the results so far as `$n`), and the signature. Some examples
 have several threads or processes (a futex, a thread's join, a pipe
 between two processes): a call can be made by a thread or child of /init
 (`19: read(3, [64], 64)`), and a call can block, until a later call wakes
-it.
+it. A line can also declare a variable of the program's, as in C: `char
+buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0, 30000000}`,
+memory of its own in /init's process; its name then stands for its
+address (`read(fd, buf, 64)`, `&ts`), `fds[1]` for an element as it is
+when the call is made, and each call's line says the variables it changed,
+as C writes them (`fds = {3, 4}`, `buf = "hello from memory\n"`).
 
 The timeline shows the recording: the call stacks over time (its unit is
 a step, a basic block run: a store takes no room), and which
@@ -128,7 +133,8 @@ constants, from its UAPI headers), `"0644"`, `"\"a string\""`, `"[64]"`
 `"{.tv_nsec = 30000000}"` (a compound literal, laid out as the parameter's
 type says: here a struct timespec), `"{\"init\", NULL}"` (an array of
 strings, for a char **: argv), `"fd"` or `"$1"` (a result),
-`"mem + 65536"`; see crates/ksee-core/src/args.rs. /init mounts an ext4 disk on /mnt (an
+`"mem + 65536"`; see crates/ksee-core/src/program.rs. A step can instead
+be `{ decl }`, a variable declared as in C (`"char buf[64]"`). /init mounts an ext4 disk on /mnt (an
 image in the initramfs, through the loop device), with files for the
 examples to start from: `/mnt/note.txt`, `/mnt/dir/a.txt`; the root, an
 in-memory file system (ramfs: no tmpfs without an MMU), has `/note.txt`.

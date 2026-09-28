@@ -64,6 +64,14 @@ pub struct Kernel {
     /// word, the number, is what the runner waits on).
     pub runners: RefCell<BTreeMap<u32, u32>>,
     pub requests: RefCell<BTreeMap<u32, u32>>,
+    /// The programs' own memory (user/init.c's heap: a process's, its
+    /// threads' and vfork children's too, the same memory): each runner's
+    /// (thread id -> its start), and what of each is handed out (start ->
+    /// (next free, end)).
+    pub heap_of: RefCell<BTreeMap<u32, u32>>,
+    pub heaps: RefCell<BTreeMap<u32, (u32, u32)>>,
+    /// Each runner's room there for its calls' buffers (see SCRATCH).
+    pub scratch: RefCell<BTreeMap<u32, u32>>,
     /// The calls asked (by id: see Machine::call), and how many (the last
     /// id).
     pub calls: RefCell<BTreeMap<u32, Call>>,
@@ -115,12 +123,12 @@ pub struct Call {
     pub lens: [u32; 6],
 }
 
-/// A runner's request (user/init.c): `struct { i32 nr; i32 args[6]; i32
-/// pad; u8 data[REQ_DATA]; }`: its head (the call; nr -1 while none is
-/// asked: the runner waits on it), and its data (the call's buffers, all
-/// together).
-pub const REQ_DATA_AT: u32 = 32;
-pub const REQ_DATA: usize = 4096;
+/// A runner's request (user/init.c): `struct { i32 nr; i32 args[6]; }`,
+/// the call (nr -1 while none is asked: the runner waits on it).
+pub const REQUEST: u32 = 28;
+/// Each runner's room, in its program's memory, for its call's strings and
+/// buffers (one call at a time).
+pub const SCRATCH: u32 = 4096;
 
 /// The kernel's memory is this module's memory.
 pub struct Direct;

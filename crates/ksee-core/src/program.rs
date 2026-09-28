@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use crate::types::{Base, Kind, Types};
+use crate::Memory;
 
 /// An argument's value, as Machine::call takes it.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,7 +31,8 @@ pub enum Arg {
 }
 
 /// A C constant expression: numbers (decimal, 0x hex, 0 octal, a U or L
-/// suffix), names (`known`), `|`, `<<`, `+`, `-`, parentheses.
+/// suffix), names (`known`, `&name` the same; `name[i]` known's as
+/// "name[i]": a variable's element), `|`, `<<`, `+`, `-`, parentheses.
 pub fn eval(s: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<i64, String> {
     type K<'a> = &'a dyn Fn(&str) -> Option<i64>;
     fn or(t: &mut &str, k: K) -> Result<i64, String> {
@@ -70,6 +72,12 @@ pub fn eval(s: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<i64, String>
             *t = r;
             return Ok(-unary(t, k)?);
         }
+        // (&x: a program's variable's address, which its name stands for
+        // anyway, as C writes it for a struct.)
+        if let Some(r) = t.strip_prefix('&') {
+            *t = r;
+            return unary(t, k);
+        }
         if let Some(r) = t.strip_prefix('(') {
             *t = r;
             let v = or(t, k)?;
@@ -91,6 +99,13 @@ pub fn eval(s: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<i64, String>
             num.parse().map_err(|_| format!("not a number: {word}"))
         } else if word == "NULL" {
             Ok(0)
+        } else if let Some(r) = t.trim_start().strip_prefix('[') {
+            // (A variable's element: `fds[1]`, its value, `known`'s as
+            // "fds[1]".)
+            *t = r;
+            let i = or(t, k)?;
+            *t = t.trim_start().strip_prefix(']').ok_or("a ] missing")?;
+            k(&format!("{word}[{i}]")).ok_or_else(|| format!("no {word}[{i}]"))
         } else {
             k(word).ok_or_else(|| format!("not a number, a constant or a result: {word}"))
         }
@@ -181,7 +196,128 @@ fn unquote(s: &str) -> Result<String, String> {
     Ok(out)
 }
 
+/// A program's variable, declared as in C (see Types::declare): its name,
+/// its type (of each element, for an array of `count`), its size, and the
+/// bytes it starts with.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Decl {
+    pub name: String,
+    pub ty: u32,
+    pub count: Option<u32>,
+    pub bytes: Vec<u8>,
+}
+
 impl Types {
+    /// A declaration, as in C, of a program's variable (memory of its own,
+    /// in its process: its name then stands for its address): `char
+    /// buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0,
+    /// 30000000}`, `char path[] = "/note.txt"`; the type the kernel's own
+    /// (a struct, union or enum by its tag, a typedef, a base type by its
+    /// name). `known`: as for arg.
+    pub fn declare(&self, text: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<Decl, String> {
+        let s = text.trim().trim_end_matches(';').trim();
+        let (lhs, init) = match s.split_once('=') {
+            Some((l, r)) => (l.trim(), Some(r.trim())),
+            None => (s, None),
+        };
+        // (Its name, the last word, with [n] after it for an array.)
+        let (head, count) = match lhs.strip_suffix(']').and_then(|l| l.rsplit_once('[')) {
+            Some((h, c)) => (h.trim_end(), Some(c.trim())),
+            None => (lhs, None),
+        };
+        let at = head.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).ok_or("a declaration: a type, then a name")?;
+        let (tyname, name) = (head[..=at].trim(), &head[at + 1..]);
+        if tyname.is_empty() || name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
+            return Err("a declaration: a type, then a name".into());
+        }
+        if tyname.ends_with('*') {
+            return Err(format!("{name}: a pointer: declare what it points to (its name is its address)"));
+        }
+        let ty = self.named(tyname).ok_or_else(|| format!("no type {tyname} in the kernel"))?;
+        let esize = self.size_of(ty) as usize;
+        if esize == 0 {
+            return Err(format!("{tyname}: no size"));
+        }
+        let item = match init {
+            None => None,
+            Some(v) => Some(match v.strip_prefix('{').and_then(|r| r.strip_suffix('}')) {
+                Some(inner) => Item::List(items(inner)?),
+                None if v.starts_with('"') => Item::Str(unquote(v)?),
+                None => Item::Expr(v.to_string()),
+            }),
+        };
+        // (An array's count: as written, or, `[]`, as many as it starts with.)
+        let count = match count {
+            None => None,
+            Some("") => Some(match &item {
+                Some(Item::Str(s)) => s.len() as u32 + 1,
+                Some(Item::List(l)) => l.len() as u32,
+                _ => return Err(format!("{name}[]: how many?")),
+            }),
+            Some(c) => Some(u32::try_from(eval(c, known)?).map_err(|_| format!("{name}[{c}]: not a size"))?),
+        };
+        let mut bytes = vec![0u8; esize * count.unwrap_or(1) as usize];
+        match (&item, count) {
+            (None, _) => {}
+            (Some(Item::Str(s)), Some(n)) if self.is_string(ty) => {
+                if s.len() + 1 > n as usize {
+                    return Err(format!("\"{s}\": longer than {n} bytes"));
+                }
+                bytes[..s.len()].copy_from_slice(s.as_bytes());
+            }
+            (Some(Item::List(list)), Some(n)) => {
+                if list.len() > n as usize {
+                    return Err(format!("{name}: too many values"));
+                }
+                for (i, (_, it)) in list.iter().enumerate() {
+                    self.fill(&mut bytes, i * esize, ty, it, known)?;
+                }
+            }
+            (Some(it), None) => self.fill(&mut bytes, 0, ty, it, known)?,
+            (Some(_), Some(_)) => return Err(format!("{name}: an array starts with {{…}} (or a string, for chars)")),
+        }
+        Ok(Decl { name: name.to_string(), ty, count, bytes })
+    }
+
+    /// The type named `name` as C writes it: "struct timespec", a typedef
+    /// ("loff_t"), a base type ("unsigned int").
+    pub fn named(&self, name: &str) -> Option<u32> {
+        let tag = ["struct ", "union ", "enum "].iter().find_map(|p| name.strip_prefix(p));
+        match tag {
+            Some(t) => self.find(t.trim()),
+            None => self.find(name).or_else(|| self.types.iter().position(|t| t.name == name && matches!(t.kind, Kind::Base(_))).map(|k| k as u32)),
+        }
+    }
+
+    /// A value of type `ty` at `addr` (an array of `count` of them), said
+    /// as C would write it: `"hello"` for chars, `{3, 4}`, `{tv_sec = 0,
+    /// tv_nsec = 30000000}`.
+    pub fn show(&self, mem: &dyn Memory, addr: u32, ty: u32, count: Option<u32>) -> String {
+        let esize = self.size_of(ty);
+        match count {
+            Some(n) if self.is_string(ty) => {
+                let mut b = vec![0u8; n.min(256) as usize];
+                mem.read(addr, &mut b);
+                let len = b.iter().position(|&c| c == 0).unwrap_or(b.len());
+                format!("{:?}", String::from_utf8_lossy(&b[..len]))
+            }
+            Some(n) => format!("{{{}}}", (0..n.min(16)).map(|i| self.show(mem, addr + i * esize, ty, None)).collect::<Vec<_>>().join(", ")),
+            None => match &self.get(self.resolve(ty)).kind {
+                k @ (Kind::Struct(_) | Kind::Union(_)) => format!("{{{}}}", self.members(k).iter().filter(|m| m.bit_size == 0)
+                    .map(|m| {
+                        let mut v = String::new();
+                        self.print(mem, addr + m.bit_offset / 8, m.ty, 0, 0, &mut v);
+                        format!("{} = {v}", m.name)
+                    }).collect::<Vec<_>>().join(", ")),
+                _ => {
+                    let mut v = String::new();
+                    self.print(mem, addr, ty, 0, 0, &mut v);
+                    v
+                }
+            },
+        }
+    }
+
     /// Argument `text` for parameter type `ty` (a syscall's, or 0: unknown):
     /// see the module's doc. `known`: the values of names (constants,
     /// results).
@@ -298,10 +434,36 @@ mod tests {
     }
 
     #[test]
+    fn declarations_are_a_programs_memory() {
+        let t = Types::parse(TYPES);
+        let d = t.declare("struct timespec ts = {0, 30000000}", &known).unwrap();
+        assert_eq!((d.name.as_str(), d.ty, d.count, d.bytes.len()), ("ts", 2, None, 16));
+        assert_eq!(&d.bytes[8..12], &30000000u32.to_le_bytes());
+        let buf = t.declare("char buf[64]", &known).unwrap();
+        assert_eq!((buf.ty, buf.count, buf.bytes.len()), (4, Some(64), 64));
+        let fds = t.declare("int fds[2] = {3, 4}", &known).unwrap();
+        assert_eq!(fds.bytes, [3, 0, 0, 0, 4, 0, 0, 0]);
+        assert_eq!(t.declare("char path[] = \"/x\"", &known).unwrap().bytes, b"/x\0");
+        assert!(t.declare("struct nope x", &known).is_err() && t.declare("char *p", &known).is_err());
+        // Said as C writes it.
+        struct M(Vec<u8>);
+        impl Memory for M {
+            fn read(&self, addr: u32, buf: &mut [u8]) {
+                buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
+            }
+        }
+        let mem = M([fds.bytes.clone(), d.bytes.clone(), b"hi\0".to_vec()].concat());
+        assert_eq!(t.show(&mem, 0, 7, Some(2)), "{3, 4}");
+        assert_eq!(t.show(&mem, 8, 2, None), "{tv_sec = 0, tv_nsec = 30000000}");
+        assert_eq!(t.show(&mem, 24, 4, Some(3)), "\"hi\"");
+    }
+
+    #[test]
     fn expressions() {
         assert_eq!(eval("O_CREAT | O_WRONLY", &known), Ok(65));
         assert_eq!(eval("0644", &known), Ok(420));
         assert_eq!(eval("(1 << 4) + fd - $2", &known), Ok(14));
+        assert_eq!(eval("fds[1] + &fd", &|n| [("fds[1]", 4), ("fd", 3)].iter().find(|(k, _)| *k == n).map(|(_, v)| *v)), Ok(7));
         assert_eq!(eval("NULL", &known), Ok(0));
         assert!(eval("nope", &known).is_err());
         assert!(eval("1 2", &known).is_err());

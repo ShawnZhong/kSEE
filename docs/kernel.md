@@ -125,9 +125,11 @@ There are two programs (C on nolibc): **/init** (user/init.c), and
 child to exec). /init mounts the disk, and then makes the syscalls the page
 asks for, one at a time. It
 waits for them in a `futex` on the first word of its request (`struct
-request`: the number, -1 while none is asked; the arguments; room for
-the buffers), in its own memory, which is kernel memory; `ksee.ready(&req)`
-tells the host where it is. The page writes the call into the request
+request`: the number, -1 while none is asked; the arguments), in its own
+memory, which is kernel memory; `ksee.ready(&req, heap, size)` tells the
+host where it is, and where its program's own memory is (a static
+array: the page's variables, and each call's strings and buffers, which the
+host puts there). The page writes the call into the request
 (recorded, as any write to kernel memory), the number last, and rings
 /init's task (`WASM_IRQ_DOORBELL`: its handler wakes the task,
 kernel/irq.c; the futex wait, woken, sees the number changed and

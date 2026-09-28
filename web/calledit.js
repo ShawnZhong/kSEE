@@ -125,7 +125,16 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
   // The call written: { call, args, name?, tid? }, or an error.
   function written() {
     const c = parseCall(input.value);
-    if (!c) return "write a call: name(arg, arg, …), or fd = name(…)";
+    // (Not a call: a variable of the program's, declared as in C.)
+    if (!c) {
+      try {
+        m.declaration(input.value, known());
+        return { decl: input.value.trim().replace(/;$/, "") };
+      } catch (e) {
+        return /^[\w\s]+[\[=]|^(struct|union|char|int|long|unsigned)\b/.test(input.value.trim()) ? String(e.message ?? e)
+          : "write a call: name(arg, arg, …), or fd = name(…); or a variable: char buf[64]";
+      }
+    }
     const s = m.syscall(c.call);
     if (!s) return `no syscall ${c.call}`;
     if (c.args.length > s.params.length) return `${c.call}: ${s.params.length} arguments, not ${c.args.length}`;

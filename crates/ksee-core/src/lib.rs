@@ -19,7 +19,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod arch;
-pub mod args;
+pub mod program;
 pub mod mem;
 pub mod module;
 pub mod recording;

@@ -36,9 +36,10 @@ export function parseCall(text) {
 }
 
 // Argument `text` as the call was made: the results it names ($n, fd:
-// `values`) replaced by their values (not in strings).
+// `values`), and a variable's elements (fds[1]), replaced by their values
+// (not in strings).
 export const made = (text, values) => String(text).split(/("(?:[^"\\]|\\.)*")/).map((part, i) =>
-  i % 2 ? part : part.replace(/\$?\b[A-Za-z_]\w*|\$\d+/g, (w) => (w in values ? String(values[w]) : w))).join("");
+  i % 2 ? part : part.replace(/\$?\b[A-Za-z_]\w*(?:\[\d+\])?|\$\d+/g, (w) => (w in values ? String(values[w]) : w))).join("");
 
 // A result: a number, or an error's name (from the kernel's errno names).
 export function result(r, consts) {

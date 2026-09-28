@@ -14,18 +14,20 @@
 #include <linux/loop.h>
 
 // Ready for calls: the host puts a call in *req (its number, -1 while
-// none is asked; its arguments, buffer arguments pointing into data); the
-// runner makes it between begin and end (recorded from the one to the
-// other), and end gets the result.
+// none is asked; its arguments); the runner makes it between begin and end
+// (recorded from the one to the other), and end gets the result.
 struct request {
 	volatile int nr;
 	int args[6];
-	int pad;
-	char data[4096];
 };
 
+// The program's own memory, which the host hands out: its variables
+// (`char buf[64]` in the page's program), and each call's strings and
+// buffers. A process's, its threads' too.
+static char heap[65536] __attribute__((aligned(16)));
+
 __attribute__((import_module("ksee"), import_name("ready")))
-void ksee_ready(struct request *req);
+void ksee_ready(struct request *req, char *heap, int size);
 __attribute__((import_module("ksee"), import_name("begin")))
 void ksee_begin(void);
 __attribute__((import_module("ksee"), import_name("end")))
@@ -56,7 +58,7 @@ static void __attribute__((noreturn)) serve(void)
 	struct request req;
 
 	req.nr = -1;
-	ksee_ready(&req);
+	ksee_ready(&req, heap, sizeof heap);
 	for (;;) {
 		while (req.nr < 0)
 			__nolibc_syscall4(__NR_futex_time64, &req.nr, FUTEX_WAIT_PRIVATE, -1, NULL);

@@ -146,6 +146,9 @@ impl Machine {
             k.doorbell.borrow_mut().clear();
             k.runners.borrow_mut().clear();
             k.requests.borrow_mut().clear();
+            k.heap_of.borrow_mut().clear();
+            k.heaps.borrow_mut().clear();
+            k.scratch.borrow_mut().clear();
             k.calls.borrow_mut().clear();
             k.finished.borrow_mut().clear();
         });
@@ -194,7 +197,17 @@ impl Machine {
             return Err(format!("{tid} is still making its call").into());
         }
         let id = k(|k| k.asked.get() + 1);
-        let (mut c, data) = pack(id, &args, req + REQ_DATA_AT)?;
+        // (Its strings and buffers: in the runner's room, in its program's
+        // memory, taken on its first call.)
+        let scratch = match k(|k| k.scratch.borrow().get(&tid).copied()) {
+            Some(at) => at,
+            None => {
+                let at = alloc(tid, SCRATCH)?;
+                k(|k| k.scratch.borrow_mut().insert(tid, at));
+                at
+            }
+        };
+        let (mut c, data) = pack(id, &args, scratch)?;
         (c.tid, c.nr) = (tid, nr);
         let head_args = c.args;
         let trace = k(|k| k.trace.get());
@@ -208,7 +221,7 @@ impl Machine {
         });
         // (The call into the runner's request, in its memory, which is
         // kernel memory: recorded; its number last, the word waited on.)
-        let mut head = [0u8; REQ_DATA_AT as usize];
+        let mut head = [0u8; REQUEST as usize];
         head[0..4].copy_from_slice(&nr.to_le_bytes());
         for (i, a) in head_args.iter().enumerate() {
             head[4 + 4 * i..8 + 4 * i].copy_from_slice(&a.to_le_bytes());
@@ -216,10 +229,11 @@ impl Machine {
         if Direct.read_u32(trace + trace::ON) == 0 {
             Direct.write_u32(trace + trace::ON, 2);
         }
-        imports::log(req, REQ_DATA_AT + data.len() as u32, 0);
+        imports::log(req, REQUEST, 0);
+        imports::log(scratch, data.len() as u32, 0);
         unsafe {
             core::ptr::copy_nonoverlapping(head[4..].as_ptr(), (req + 4) as *mut u8, head.len() - 4);
-            core::ptr::copy_nonoverlapping(data.as_ptr(), (req + REQ_DATA_AT) as *mut u8, data.len());
+            core::ptr::copy_nonoverlapping(data.as_ptr(), scratch as *mut u8, data.len());
         }
         Direct.write_u32(req, nr);
 
@@ -241,10 +255,64 @@ impl Machine {
         })
     }
 
+    /// Declare a variable of the program runner `tid` makes calls for:
+    /// `text` as in C (`char buf[64]`, `struct __kernel_timespec ts = {0,
+    /// 30000000}`: see ksee_core::args's Types::declare; `known` as for
+    /// arg), in its process's own memory, as it starts (the host's writes
+    /// there recorded, as a call's are). { name, addr, ty, count, size (an
+    /// element's) }: its name
+    /// then stands for its address in the calls after.
+    pub fn declare(&self, tid: u32, text: &str, known: JsValue) -> Result<JsValue, JsValue> {
+        let d = tables().types.declare(text, &crate::replay::lookup(&known))?;
+        let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
+        let trace = k(|k| k.trace.get());
+        if Direct.read_u32(trace + trace::ON) == 0 {
+            Direct.write_u32(trace + trace::ON, 2);
+        }
+        imports::log(addr, d.bytes.len() as u32, 0);
+        unsafe { core::ptr::copy_nonoverlapping(d.bytes.as_ptr(), addr as *mut u8, d.bytes.len()) };
+        let o = Object::new();
+        js::set(&o, "name", d.name.as_str());
+        js::set(&o, "addr", addr);
+        js::set(&o, "ty", d.ty);
+        js::set(&o, "count", d.count.map_or(JsValue::NULL, JsValue::from));
+        js::set(&o, "size", tables().types.size_of(d.ty));
+        Ok(o.into())
+    }
+
+    /// Whether `text` declares a variable (see declare): its name, or an
+    /// error; nothing made.
+    pub fn declaration(&self, text: &str, known: JsValue) -> Result<String, JsValue> {
+        Ok(tables().types.declare(text, &crate::replay::lookup(&known))?.name)
+    }
+
+    /// A program's variable (of type `ty`, an array of `count` if given, at
+    /// `addr`: see declare) as it is now, as C would write it: `"hello"`,
+    /// `{3, 4}`, `{tv_sec = 0, tv_nsec = 30000000}`.
+    pub fn show(&self, ty: u32, addr: u32, count: Option<u32>) -> String {
+        tables().types.show(&Direct, addr, ty, count)
+    }
+
     /// The runners' thread ids.
     pub fn runners(&self) -> Vec<u32> {
         k(|k| k.runners.borrow().keys().copied().collect())
     }
+}
+
+/// `len` bytes of the memory of runner `tid`'s program (user/init.c's heap:
+/// its process's): their address.
+fn alloc(tid: u32, len: u32) -> Result<u32, String> {
+    k(|k| {
+        let base = *k.heap_of.borrow().get(&tid).ok_or_else(|| format!("no runner {tid}"))?;
+        let mut heaps = k.heaps.borrow_mut();
+        let (next, end) = heaps.get_mut(&base).ok_or("no memory")?;
+        let at = (*next + 15) & !15;
+        if at + len > *end {
+            return Err("the program's memory is full".into());
+        }
+        *next = at + len;
+        Ok(at)
+    })
 }
 
 /// Call `id` with `args` (see Machine::call): each a number, or a buffer
@@ -256,7 +324,7 @@ fn pack(id: u32, args: &[JsValue], base: u32) -> Result<(Call, Vec<u8>), JsValue
     let mut data = Vec::new();
     // (Bytes `b` into the data, 8-byte aligned: their address.)
     let mut put = |b: &[u8]| -> Result<u32, JsValue> {
-        if data.len() + b.len() > REQ_DATA {
+        if data.len() + b.len() > SCRATCH as usize {
             return Err("the call's buffers are too big".into());
         }
         let at = base + data.len() as u32;

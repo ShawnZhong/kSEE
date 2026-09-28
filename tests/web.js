@@ -160,6 +160,16 @@ m.memory_at(null);
   check(`the read's bytes, back through their copies: ${way.map((w) => `${w.at?.func}(0x${w.addr.toString(16)})`).join(" ← ")}`,
         way.length >= 2 && way[0].from != null && way[1].addr === way[0].from);
 }
+// A program's own variables (Machine.declare): memory in /init's process,
+// passed by address, read back as C writes them.
+{
+  const buf = m.declare(1, "char buf[16]", {}), fds = m.declare(1, "int fds[2]", {});
+  await call("pipe2", [fds.addr, 0]);
+  const [r, w] = m.show(fds.ty, fds.addr, 2).slice(1, -1).split(", ").map(Number);
+  await call("write", [w, "hi", 2]);
+  const n = (await call("read", [r, buf.addr, 16])).ret;
+  check(`variables: fds = ${m.show(fds.ty, fds.addr, 2)}, buf = ${m.show(buf.ty, buf.addr, 16)}`, n === 2 && m.show(buf.ty, buf.addr, 16) === '"hi"');
+}
 // A 64-bit argument, whole: llseek's offset (high 1, low 0) is vfs_llseek's loff_t 1 << 32.
 {
   const ls = (await call("llseek", [rfd, 1, 0, { size: 8 }, 0])).s;

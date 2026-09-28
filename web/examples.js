@@ -25,6 +25,11 @@
 // C (see args.js and Machine.arg): "a string", 0644, O_CREAT | O_WRONLY,
 // [64], {0, 30000000}, fd or $2 (a result: `name` names a call's). Its
 // runner: thread `tid` (a number, or a result: "child", "$2"); else /init.
+// Or a variable of the program's: { decl }, declared as in C (`char
+// buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0, 30000000}`:
+// Machine.declare), memory of its own in /init's process; its name then
+// stands for its address (`read(fd, buf, 64)`, `&ts`), and each call's
+// line says the variables it changed, as C writes them (`fds = {3, 4}`).
 import { $, el } from "./dom.js";
 import { made, parseCall, result } from "./args.js";
 import { callEditor } from "./calledit.js";
@@ -66,8 +71,16 @@ export async function examples(app) {
       else cur += c;
     }
     calls.push(cur);
-    return calls.map((c) => c.trim()).filter(Boolean).map((c) => parseCall(c) ?? { call: c, args: [] });
+    return calls.map((c) => c.trim()).filter(Boolean).map((c) => parseCall(c) ?? (isDecl(c) ? { decl: c } : { call: c, args: [] }));
   }
+  // (A variable's declaration, as the program has it.)
+  const isDecl = (c) => {
+    try {
+      return !!m.declaration(c, {});
+    } catch {
+      return false;
+    }
+  };
   // Switch to example `ex` (its program `steps`, `changed` from the
   // example's: see change), on a fresh kernel, so that it always starts
   // from the same state; and make its calls.
@@ -86,6 +99,7 @@ export async function examples(app) {
     t.steps = steps.map(({ as, ...s }) => (as ? { ...s, tid: `$${as}` } : { ...s }));
     t.done = [];
     t.started = [];
+    t.vars = [];
     t.links = [];
     t.changed = false;
     t.status = el("div", { className: "tstatus dim" });
@@ -144,6 +158,16 @@ export async function examples(app) {
   // is the runner it started: a vfork's child, before the clone returns.)
   const known = (j = t.done.length, runners = false) => {
     const o = {};
+    // (The variables declared before: their addresses; an array's
+    // elements, `fds[1]`, as they are now.)
+    for (const v of t.vars ?? []) {
+      if (v.j >= j) continue;
+      o[v.name] = v.addr;
+      for (let i = 0; i < Math.min(v.count ?? 0, 64); i++) {
+        const x = Number(m.show(v.ty, v.addr + i * v.size));
+        if (!Number.isNaN(x)) o[`${v.name}[${i}]`] = x;
+      }
+    }
     t.done.slice(0, j).forEach((d, i) => {
       const v = d?.ret ?? (runners ? t.started[i] : null);
       if (v == null) return;
@@ -152,13 +176,21 @@ export async function examples(app) {
     });
     return o;
   };
+  // (For "as made": the results and the elements, not the variables: a
+  // variable is clearer by its name than by its address.)
+  const made_ = () => {
+    const o = known();
+    for (const v of t.vars) delete o[v.name];
+    return o;
+  };
   // A step's runner (a thread id): as written, a number or a result.
   const tidOf = (s) => (s.tid == null ? 1 : typeof s.tid === "number" ? s.tid : m.value(String(s.tid), known(t.done.length, true)));
   // A step's call, as written (or with `values` for the results: as made):
   // `tid: name = call(args)`.
-  const text = (s, values) => `${s.tid != null ? `${s.tid}: ` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
+  const text = (s, values) => s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
   // How a call finished, or not yet.
-  const how = (d) => d.how == null ? "… blocked"
+  const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.shown ?? ""}`
+    : d.how == null ? "… blocked"
     : d.how === "exec" ? "(no return: the new program runs)"
     : d.how === "exited" ? "(no return: it exited)" : `= ${result(d.ret, consts)}`;
   // Who makes step `j`'s call, if not /init.
@@ -178,11 +210,12 @@ export async function examples(app) {
       e.input.title = "type to change the call (Enter: run the program again with it; Esc, or leaving it: not; emptied: remove it)";
       return el("li", { className: [d ? "done" : "", d && d.how == null ? "blocked" : ""].join(" ").trim() },
         el("div", { className: "line" }, typeof s.tid === "number" ? null : who(j), e.el,
-          d ? el("span", { className: "mono ret", textContent: how(d) }) : null,
+          d ? el("span", { className: "mono ret", textContent: how(d, s) }) : null,
           el("a", { className: "rm", textContent: "✕", title: "remove the call (the program runs again without it)", onclick: () => remove(j) })),
         t.started[j] ? el("div", { className: "dim more", textContent: `→ tid ${t.started[j]}, a runner` }) : null,
-        d && text(s, known()) !== text(s) ? el("div", { className: "mono dim more", textContent: `as made: ${text(s, known())}` }) : null,
-        d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null);
+        d && text(s, made_()) !== text(s) ? el("div", { className: "mono dim more", textContent: `as made: ${text(s, made_())}` }) : null,
+        d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null,
+        d?.vars ? el("div", { className: "mono more vars", textContent: d.vars }) : null);
     }), el("li", { className: "add" }, t.form));
   }
   // The explanation: its paragraphs, each link a place in the recording
@@ -231,6 +264,19 @@ export async function examples(app) {
     const j = t.done.length, s = t.steps[j];
     if (!s) return false;
     const mine = t.list;
+    // (A variable: made, in /init's memory, as it starts.)
+    if (s.decl) {
+      try {
+        const v = m.declare(1, s.decl, known());
+        t.vars.push({ ...v, j, shown: m.show(v.ty, v.addr, v.count ?? undefined) });
+        t.done[j] = { decl: true, how: "declared" };
+      } catch (e) {
+        t.status.textContent = `Line ${j + 1}: ${e.message ?? e}`;
+        return false;
+      }
+      draw();
+      return true;
+    }
     let q, news;
     try {
       const args = s.args.map((a, k) => m.arg(s.call, k, a, known())), tid = tidOf(s);
@@ -249,6 +295,14 @@ export async function examples(app) {
       const d = t.done.find((x) => x?.id === f.id);
       if (d) Object.assign(d, { how: f.how, ret: f.ret, text: outputs(t.steps[t.done.indexOf(d)].call, d.args, f.buffers) });
     }
+    // (And the variables it changed, as they are now.)
+    const changed = [];
+    for (const v of t.vars) {
+      const now = m.show(v.ty, v.addr, v.count ?? undefined);
+      if (now !== v.shown) changed.push(`${v.name} = ${now}`);
+      v.shown = now;
+    }
+    if (changed.length) q.vars = changed.join("   ");
     app.refresh();
     draw();
     return true;
@@ -257,6 +311,7 @@ export async function examples(app) {
   const syscall = (j) => t.done[j] && app.calls()[m.syscall_of(t.done[j].id)];
   // Call `j` picked: its recording selected.
   function pick(j) {
+    if (t.steps[j]?.decl) return mark(j);
     const c = syscall(j);
     if (!c) return (t.status.textContent = t.done[j] ? "This call's recording is gone: the ring has moved on." : "");
     app.select(c);
@@ -288,7 +343,7 @@ export async function examples(app) {
   }
 
   // The syscalls the examples make: to list first.
-  const common = [...new Set(list.flatMap((x) => x.steps.map((s) => s.call)))];
+  const common = [...new Set(list.flatMap((x) => x.steps.map((s) => s.call)).filter(Boolean))];
   // Add a call, written as in C, and Enter to make it (see calledit.js).
   // (As a shell's prompt: the call made, its result on its line, the
   // prompt again, ↑ for the calls before.)
