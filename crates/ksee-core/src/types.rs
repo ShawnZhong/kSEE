@@ -343,6 +343,12 @@ impl Types {
         }
     }
 
+    /// If `ty` is a pointer to a struct or a union: what it points to.
+    pub fn struct_target(&self, ty: u32) -> Option<u32> {
+        let Kind::Pointer(to) = self.get(self.resolve(ty)).kind else { return None };
+        matches!(self.get(self.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)).then_some(to)
+    }
+
     /// Whether `elem` is a char (so an array or pointer of it is a string).
     pub fn is_string(&self, elem: u32) -> bool {
         matches!(self.get(self.resolve(elem)).kind, Kind::Base(Base::Char)) && self.size_of(elem) == 1

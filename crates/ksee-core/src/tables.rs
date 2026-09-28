@@ -54,13 +54,6 @@ pub struct Step {
     pub inlined: Option<u32>,
 }
 
-/// Byte offset and size of a struct field.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Field {
-    pub offset: u32,
-    pub size: u32,
-}
-
 use crate::types::Types;
 
 #[derive(Debug, Default)]
@@ -258,13 +251,10 @@ impl Tables {
         }
     }
 
-    /// The lines block `n` of `func` runs, in stretches between its calls
-    /// (just its first line, if the plugin said no more).
-    pub fn segments(&self, func: u32, n: u32) -> Vec<Vec<Step>> {
-        match self.lines.get(&(func, n)) {
-            Some(s) => s.clone(),
-            None => alloc::vec![self.blocks.get(&(func, n)).map(|&loc| Step { loc, inlined: None }).into_iter().collect()],
-        }
+    /// A block's first line, the one it runs if the plugin said no more
+    /// (no L line).
+    fn first(&self, func: u32, n: u32) -> Option<Step> {
+        self.blocks.get(&(func, n)).map(|&loc| Step { loc, inlined: None })
     }
 
     /// Every line block `n` of `func` runs: its lines' own, and the lines
@@ -275,7 +265,7 @@ impl Tables {
     pub fn runs(&self, func: u32, n: u32) -> impl Iterator<Item = Loc> + '_ {
         let own = match self.lines.get(&(func, n)) {
             Some(segs) => segs.iter().flatten().copied().collect(),
-            None => self.blocks.get(&(func, n)).map(|&loc| Step { loc, inlined: None }).into_iter().collect::<Vec<_>>(),
+            None => self.first(func, n).into_iter().collect::<Vec<_>>(),
         };
         own.into_iter().flat_map(move |s| {
             let sites = s.inlined.and_then(|k| self.inlines.get(k as usize)).map_or(&[][..], Vec::as_slice);
@@ -288,7 +278,7 @@ impl Tables {
         use alloc::borrow::Cow;
         match self.lines.get(&(func, n)) {
             Some(s) => Cow::Borrowed(s.get(seg as usize).map_or(&[][..], Vec::as_slice)),
-            None if seg == 0 => Cow::Owned(self.blocks.get(&(func, n)).map(|&loc| Step { loc, inlined: None }).into_iter().collect()),
+            None if seg == 0 => Cow::Owned(self.first(func, n).into_iter().collect()),
             None => Cow::Borrowed(&[]),
         }
     }
@@ -312,11 +302,6 @@ impl Tables {
 
     pub fn file(&self, loc: Loc) -> &str {
         self.files.get(loc.file as usize).map_or("?", String::as_str)
-    }
-
-    pub fn field(&self, s: &str, f: &str) -> Option<Field> {
-        let (offset, size) = self.types.field(s, f)?;
-        Some(Field { offset, size })
     }
 
     /// The id of the (first) instrumented function called `name`.
@@ -345,7 +330,7 @@ mod tests {
         assert_eq!((t.file(f.loc), f.loc.line), ("/s/p.c", 2));
         let b = t.blocks[&(7, 0)];
         assert_eq!((t.file(b), b.line, b.column), ("/s/q.h", 2, 39));
-        assert_eq!(t.field("task_struct", "pid"), Some(Field { offset: 736, size: 4 }));
+        assert_eq!(t.types.field("task_struct", "pid"), Some((736, 4)));
     }
 
     #[test]

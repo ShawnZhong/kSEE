@@ -13,15 +13,15 @@ pub struct Task {
 
 /// A task_struct's pid and comm.
 pub fn read_task(t: &Tables, mem: &dyn Memory, p: u32) -> Option<Task> {
-    let (pid, comm) = (t.field(crate::arch::TASK, "pid")?, t.field(crate::arch::TASK, "comm")?);
+    let (pid, comm) = (t.types.field(crate::arch::TASK, "pid")?, t.types.field(crate::arch::TASK, "comm")?);
     if p == 0 {
         return None;
     }
-    let mut name = alloc::vec![0; comm.size as usize];
-    mem.read(p + comm.offset, &mut name);
+    let mut name = alloc::vec![0; comm.1 as usize];
+    mem.read(p + comm.0, &mut name);
     let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
     Some(Task {
-        pid: mem.read_u32(p + pid.offset) as i32,
+        pid: mem.read_u32(p + pid.0) as i32,
         comm: String::from_utf8_lossy(&name[..len]).into(),
     })
 }

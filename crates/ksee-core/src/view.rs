@@ -420,7 +420,7 @@ impl View<'_> {
         let located = |func: u32, step: Option<Step>| (step.map(|s| s.loc).or(t.functions.get(&func).map(|f| f.loc)), step.and_then(|s| s.inlined));
         let (kind, func, (loc, inlined)) = match *records.get(i)? {
             Record::Block { func, n } => {
-                let inlined = t.segments(func, n).first().and_then(|s| s.first()).and_then(|s| s.inlined);
+                let inlined = t.stretch(func, n, 0).first().and_then(|s| s.inlined);
                 ("block", func, (t.blocks.get(&(func, n)).copied(), inlined))
             }
             Record::Return { func, .. } => {
@@ -816,8 +816,7 @@ impl View<'_> {
             let end = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
             if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
                 for mb in members.iter().filter(|mb| mb.bit_size == 0) {
-                    if let Kind::Pointer(to) = types.get(types.resolve(mb.ty)).kind
-                        && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
+                    if let Some(to) = types.struct_target(mb.ty) {
                         add(format!("current->{}", mb.name), "object", to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None);
                     }
                 }
@@ -850,8 +849,7 @@ impl View<'_> {
                     }
                     for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
                         let v = v as u32;
-                        if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
-                            && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
+                        if let Some(to) = types.struct_target(*ty) {
                             add(format!("{}'s {pname}", f.name), "object", to, v, None, frame_of(i, v));
                         }
                     }
@@ -860,8 +858,7 @@ impl View<'_> {
                         // (A local pointing at a struct: that too ("files->next_fd"
                         // through `struct files_struct *files = current->files`),
                         // where it points as the call ends.)
-                        if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
-                            && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
+                        if let Some(to) = types.struct_target(*ty) {
                             let end = self.rec.calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
                             let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
                             add(format!("{}'s {var}", f.name), "object", to, v, None, frame_of(i, v));
