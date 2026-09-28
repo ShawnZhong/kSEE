@@ -13,7 +13,7 @@ pub struct Task {
 
 /// A task_struct's pid and comm.
 pub fn read_task(t: &Tables, mem: &dyn Memory, p: u32) -> Option<Task> {
-    let (pid, comm) = (t.types.field(crate::arch::TASK, "pid")?, t.types.field(crate::arch::TASK, "comm")?);
+    let (pid, comm) = (t.types.field(crate::arch::TASK, crate::arch::TASK_PID)?, t.types.field(crate::arch::TASK, crate::arch::TASK_COMM)?);
     if p == 0 {
         return None;
     }

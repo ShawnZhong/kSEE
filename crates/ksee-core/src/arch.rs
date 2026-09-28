@@ -26,6 +26,10 @@ pub const SWITCH: &str = "__switch_to";
 /// A task (what the task running points at), and the fields of it the
 /// Stack shows first.
 pub const TASK: &str = "task_struct";
+/// What the kernel calls the task running, and a task's id and name.
+pub const CURRENT: &str = "current";
+pub const TASK_PID: &str = "pid";
+pub const TASK_COMM: &str = "comm";
 pub const TASK_FIELDS: [&str; 12] = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
 /// are the syscall's; a `_time64` syscall's is the plain one's.

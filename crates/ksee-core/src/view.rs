@@ -363,7 +363,7 @@ impl View<'_> {
     /// key ones, or `all`.
     pub fn task_fields(&self, mem: &dyn Memory, addr: u32, all: bool) -> TaskFields {
         let types = &self.tables.types;
-        let every = types.find(arch::TASK).and_then(|ty| types.object(mem, "current", addr, ty, 1).children).unwrap_or_default();
+        let every = types.find(arch::TASK).and_then(|ty| types.object(mem, arch::CURRENT, addr, ty, 1).children).unwrap_or_default();
         let total = every.len();
         let fields = if all { every } else {
             arch::TASK_FIELDS.iter().filter_map(|&k| every.iter().find(|o| o.name == k).cloned()).collect()
@@ -809,7 +809,7 @@ impl View<'_> {
             }
         };
         if let Some(ty) = types.find(arch::TASK) {
-            add("current".into(), "task", ty, task, None, None);
+            add(arch::CURRENT.into(), "task", ty, task, None, None);
             // (And what its pointer members point to, as the span ends:
             // current->files, ->fs, ->mm: "files->next_fd" through a local
             // the optimizer kept in a register is reached this way.)
@@ -817,7 +817,7 @@ impl View<'_> {
             if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
                 for mb in members.iter().filter(|mb| mb.bit_size == 0) {
                     if let Some(to) = types.struct_target(mb.ty) {
-                        add(format!("current->{}", mb.name), "object", to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None);
+                        add(format!("{}->{}", arch::CURRENT, mb.name), "object", to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None);
                     }
                 }
             }

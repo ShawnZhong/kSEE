@@ -1,6 +1,6 @@
 // The Objects: what the selected call (a syscall, or a call clicked in the
 // timeline) changed in the kernel's data, at the cursor (Machine.objects):
-// a box per object it wrote (named as the Stores name them: "vfs_read's
+// a box per object it wrote (named as the code names them: "vfs_read's
 // file", "current->files"), each member it writes as it is at the cursor,
 // in the Stack's value rows (tree.js: a pointer opens into what it points
 // to, a value's writes on asking, a value changed since the
