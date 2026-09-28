@@ -14,13 +14,16 @@
     "Try: [write twice, and let the child keep fd 4](try:1): cat prints both lines, but after /init closes its writing end cat's own fd 4 keeps the pipe open, so its read blocks for ever, it never exits, and the waitid blocks too."
   ],
   "tries": [
-    "pipe2([8], 0); child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0); child: dup3(3, 0, 0); child: close(3); child: execve(\"/bin/cat\", {\"cat\", NULL}, NULL); close(3); write(4, \"hello\\n\", 6); write(4, \"again\\n\", 6); close(4); waitid(P_PID, child, [128], WEXITED, NULL)"
+    "int fds[2]; siginfo_t info; pipe2(fds, 0); child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0); child: dup3(fds[0], 0, 0); child: close(fds[0]); child: execve(\"/bin/cat\", {\"cat\", NULL}, NULL); close(fds[0]); write(fds[1], \"hello\\n\", 6); write(fds[1], \"again\\n\", 6); close(fds[1]); waitid(P_PID, child, &info, WEXITED, NULL)"
   ],
   "steps": [
     {
+      "decl": "int fds[2]"
+    },
+    {
       "call": "pipe2",
       "args": [
-        "[8]",
+        "fds",
         "0"
       ]
     },
@@ -39,7 +42,7 @@
       "call": "dup3",
       "tid": "child",
       "args": [
-        "3",
+        "fds[0]",
         "0",
         "0"
       ]
@@ -48,14 +51,14 @@
       "call": "close",
       "tid": "child",
       "args": [
-        "3"
+        "fds[0]"
       ]
     },
     {
       "call": "close",
       "tid": "child",
       "args": [
-        "4"
+        "fds[1]"
       ]
     },
     {
@@ -70,13 +73,13 @@
     {
       "call": "close",
       "args": [
-        "3"
+        "fds[0]"
       ]
     },
     {
       "call": "write",
       "args": [
-        "4",
+        "fds[1]",
         "\"hello\\n\"",
         "6"
       ]
@@ -84,15 +87,18 @@
     {
       "call": "close",
       "args": [
-        "4"
+        "fds[1]"
       ]
+    },
+    {
+      "decl": "siginfo_t info"
     },
     {
       "call": "waitid",
       "args": [
         "P_PID",
         "child",
-        "[128]",
+        "&info",
         "WEXITED",
         "NULL"
       ]

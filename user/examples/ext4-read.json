@@ -9,9 +9,12 @@
     "Try: [read twice](try:1): the page is in the cache after the first read, so the second has no block layer and no ext4 read path in it, and a much shorter Calls list."
   ],
   "tries": [
-    "fd = openat(AT_FDCWD, \"/mnt/note.txt\", O_RDONLY); read(fd, [64], 64); read(fd, [64], 64); close(fd)"
+    "char buf[64]; fd = openat(AT_FDCWD, \"/mnt/note.txt\", O_RDONLY); read(fd, buf, 64); read(fd, buf, 64); close(fd)"
   ],
   "steps": [
+    {
+      "decl": "char buf[64]"
+    },
     {
       "call": "openat",
       "name": "fd",
@@ -25,7 +28,7 @@
       "call": "read",
       "args": [
         "fd",
-        "[64]",
+        "buf",
         "64"
       ]
     },

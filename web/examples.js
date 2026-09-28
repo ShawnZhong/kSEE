@@ -168,14 +168,19 @@ export async function examples(app) {
         if (!Number.isNaN(x)) o[`${v.name}[${i}]`] = x;
       }
     }
+    // (The results: $n for call n, counting calls only.)
     t.done.slice(0, j).forEach((d, i) => {
       const v = d?.ret ?? (runners ? t.started[i] : null);
-      if (v == null) return;
-      o[`$${i + 1}`] = v;
+      if (t.steps[i].decl || v == null) return;
+      o[`$${callNumber(i)}`] = v;
       if (t.steps[i].name) o[t.steps[i].name] = v;
     });
     return o;
   };
+  // Calls are numbered, from 1, as the explanations and $n have them: the
+  // declarations are not calls. Step `i`'s number; call `n`'s step.
+  const callNumber = (i) => t.steps.slice(0, i + 1).filter((s) => !s.decl).length;
+  const stepOf = (n) => t.steps.findIndex((s, i) => !s.decl && callNumber(i) === n);
   // (For "as made": the results and the elements, not the variables: a
   // variable is clearer by its name than by its address.)
   const made_ = () => {
@@ -189,7 +194,8 @@ export async function examples(app) {
   // `tid: name = call(args)`.
   const text = (s, values) => s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
   // How a call finished, or not yet.
-  const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.shown ?? ""}`
+  // (A variable: as it starts; each call's line says how it changed.)
+  const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.initial ?? ""}`
     : d.how == null ? "… blocked"
     : d.how === "exec" ? "(no return: the new program runs)"
     : d.how === "exited" ? "(no return: it exited)" : `= ${result(d.ret, consts)}`;
@@ -231,13 +237,13 @@ export async function examples(app) {
         onclick: prog ? () => go(t.ex, program(prog), true) : null });
       const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|calls|stores|objects|trace))?\)$/);
       if (link) {
-        const l = { j: Number(link[2]) - 1, func: link[3], any: !!link[4], tab: link[5] };
+        const n = Number(link[2]), l = { n, j: stepOf(n), func: link[3], any: !!link[4], tab: link[5] };
         l.c = syscall(l.j);
         l.at = l.c && l.func ? m.first_call(l.func, l.c.first, l.c.last ?? m.records() - 1, l.any ? undefined : l.c.task.addr) : null;
         const found = l.c && (!l.func || l.at != null);
         l.a = el(found ? "a" : "span", { className: `place mono${found ? "" : " gone"}`, textContent: link[1],
-          title: !l.c ? `call ${l.j + 1} is not made` : l.func && l.at == null ? `${l.func} does not run in call ${l.j + 1}`
-            : l.func ? `${l.func}, in call ${l.j + 1}'s recording` : `call ${l.j + 1}'s recording`, onclick: found ? () => goTo(l) : null });
+          title: !l.c ? `call ${l.n} is not made` : l.func && l.at == null ? `${l.func} does not run in call ${l.n}`
+            : l.func ? `${l.func}, in call ${l.n}'s recording` : `call ${l.n}'s recording`, onclick: found ? () => goTo(l) : null });
         t.links.push(l);
         return l.a;
       }
@@ -268,7 +274,8 @@ export async function examples(app) {
     if (s.decl) {
       try {
         const v = m.declare(1, s.decl, known());
-        t.vars.push({ ...v, j, shown: m.show(v.ty, v.addr, v.count ?? undefined) });
+        const shown = m.show(v.ty, v.addr, v.count ?? undefined);
+        t.vars.push({ ...v, j, shown, initial: shown });
         t.done[j] = { decl: true, how: "declared" };
       } catch (e) {
         t.status.textContent = `Line ${j + 1}: ${e.message ?? e}`;
@@ -295,11 +302,16 @@ export async function examples(app) {
       const d = t.done.find((x) => x?.id === f.id);
       if (d) Object.assign(d, { how: f.how, ret: f.ret, text: outputs(t.steps[t.done.indexOf(d)].call, d.args, f.buffers) });
     }
-    // (And the variables it changed, as they are now.)
+    q.ret ??= t.done[j].ret;
+    // (And the variables it changed, as they are now; a directory's
+    // entries, getdents64's records, by their names.)
     const changed = [];
     for (const v of t.vars) {
       const now = m.show(v.ty, v.addr, v.count ?? undefined);
-      if (now !== v.shown) changed.push(`${v.name} = ${now}`);
+      if (now !== v.shown) {
+        const entries = s.call === "getdents64" && s.args[1] === v.name && q.ret > 0;
+        changed.push(entries ? `${v.name}: entries ${dirents(m.memory(v.addr, q.ret)).join(", ")}` : `${v.name} = ${now}`);
+      }
       v.shown = now;
     }
     if (changed.length) q.vars = changed.join("   ");

@@ -293,6 +293,14 @@ impl Machine {
         tables().types.show(&Direct, addr, ty, count)
     }
 
+    /// `len` bytes of memory at `addr`, as it is now (a variable's: see
+    /// declare).
+    pub fn memory(&self, addr: u32, len: u32) -> Uint8Array {
+        let mut b = vec![0u8; len.min(1 << 16) as usize];
+        Direct.read(addr, &mut b);
+        Uint8Array::from(&b[..])
+    }
+
     /// The runners' thread ids.
     pub fn runners(&self) -> Vec<u32> {
         k(|k| k.runners.borrow().keys().copied().collect())

@@ -247,14 +247,33 @@ const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/example
 // (A step's runner, `as`: the one call `as` started; else /init.)
 async function runExample(ex) {
   await m.restart();
-  const rets = [], asked = [], started = [], seen = new Set(m.runners());
-  // (The results so far, by $n and by name, as the page has them; for a
-  // runner, a call not returned yet is the runner it started: vfork's child.)
-  const known = (runners) => Object.fromEntries(ex.steps.slice(0, asked.length).flatMap((st, i) => {
-    const v = rets[i] ?? (runners ? started[i] : null);
-    return v == null ? [] : [[`$${i + 1}`, v], ...(st.name ? [[st.name, v]] : [])];
-  }));
+  const rets = [], asked = [], started = [], vars = [], seen = new Set(m.runners());
+  // (The results so far, by $n (calls counted, not declarations) and by
+  // name, and the variables (their addresses, an array's elements), as the
+  // page has them; for a runner, a call not returned yet is the runner it
+  // started: vfork's child.)
+  const known = (runners) => {
+    const o = {};
+    let n = 0;
+    ex.steps.slice(0, asked.length).forEach((st, i) => {
+      if (st.decl) return;
+      n++;
+      const v = rets[i] ?? (runners ? started[i] : null);
+      if (v != null) Object.assign(o, { [`$${n}`]: v }, st.name ? { [st.name]: v } : {});
+    });
+    for (const v of vars) {
+      o[v.name] = v.addr;
+      for (let i = 0; i < (v.count ?? 0) && i < 64; i++) o[`${v.name}[${i}]`] = Number(m.show(v.ty, v.addr + i * v.size));
+    }
+    return o;
+  };
   for (const st of ex.steps) {
+    if (st.decl) {
+      vars.push(m.declare(1, st.decl, known(false)));
+      asked.push(null);
+      started.push(undefined);
+      continue;
+    }
     const args = st.args.map((x, k) => m.arg(st.call, k, x, known(false)));
     const tid = st.tid == null ? (st.as ? started[st.as - 1] : 1) : typeof st.tid === "number" ? st.tid : m.value(String(st.tid), known(true));
     const q = await ask(st.call, args, tid);
@@ -268,17 +287,17 @@ async function runExample(ex) {
 for (const ex of examples) {
   const asked = await runExample(ex), missing = [], blocked = [];
   ex.steps.forEach((st, j) => {
-    const q = asked[j], s = syscallOf(q), f = fin.get(q);
-    if (!f) blocked.push(`${j + 1}. ${st.call}`);
+    if (!st.decl && !fin.get(asked[j])) blocked.push(`${j + 1}. ${st.call}`);
   });
-  // ([label](2:func:any): see examples.js.)
+  // ([label](2:func:any): see examples.js; call 2, declarations not counted.)
+  const calls = asked.filter((_, j) => !ex.steps[j].decl);
   for (const [, n, func, any] of (ex.text ?? []).join(" ").matchAll(/\]\((\d+)(?::([\w.]+))?(:any)?\)/g)) {
-    const s = syscallOf(asked[Number(n) - 1]);
+    const s = syscallOf(calls[Number(n) - 1]);
     if (!s || (func && m.first_call(func, s.first, s.last ?? m.records() - 1, any ? undefined : s.task.addr) == null)) missing.push(`${n}:${func ?? ""}`);
   }
   // (Its tries: each a program that runs; its calls finish, or block on purpose.)
   for (const [k, prog] of (ex.tries ?? []).entries()) {
-    const steps = prog.split(";").map((c) => parseCall(c.trim())).filter(Boolean);
+    const steps = prog.split(";").map((c) => c.trim()).filter(Boolean).map((c) => parseCall(c) ?? { decl: c });
     const ran = await runExample({ ...ex, steps });
     check(`example ${ex.name}, try ${k + 1}: ${steps.length} calls made (${prog.slice(0, 50)}…)`, ran.length === steps.length && steps.length > 0);
   }

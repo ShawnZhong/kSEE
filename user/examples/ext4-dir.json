@@ -9,9 +9,12 @@
     "Try: [list the new directory instead](try:1): only \".\" and \"..\". Or make a file in it first, then list it."
   ],
   "tries": [
-    "mkdirat(AT_FDCWD, \"/mnt/sub\", 0755); fd = openat(AT_FDCWD, \"/mnt/sub\", O_RDONLY | O_DIRECTORY); getdents64(fd, [256], 256); close(fd)"
+    "char buf[256]; mkdirat(AT_FDCWD, \"/mnt/sub\", 0755); fd = openat(AT_FDCWD, \"/mnt/sub\", O_RDONLY | O_DIRECTORY); getdents64(fd, buf, 256); close(fd)"
   ],
   "steps": [
+    {
+      "decl": "char buf[256]"
+    },
     {
       "call": "mkdirat",
       "args": [
@@ -33,7 +36,7 @@
       "call": "getdents64",
       "args": [
         "fd",
-        "[256]",
+        "buf",
         "256"
       ]
     },

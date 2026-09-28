@@ -295,11 +295,30 @@ impl Types {
     pub fn show(&self, mem: &dyn Memory, addr: u32, ty: u32, count: Option<u32>) -> String {
         let esize = self.size_of(ty);
         match count {
+            // (Chars: a C string, to its last byte not 0: text as text, and
+            // what is not, a NUL or a byte of a record, escaped.)
             Some(n) if self.is_string(ty) => {
-                let mut b = vec![0u8; n.min(256) as usize];
+                let mut b = vec![0u8; n.min(4096) as usize];
                 mem.read(addr, &mut b);
-                let len = b.iter().position(|&c| c == 0).unwrap_or(b.len());
-                format!("{:?}", String::from_utf8_lossy(&b[..len]))
+                let len = b.iter().rposition(|&c| c != 0).map_or(0, |k| k + 1);
+                let mut s = String::from("\"");
+                for (k, &c) in b[..len].iter().enumerate() {
+                    if k == 64 {
+                        s.push_str("\"…");
+                        return s;
+                    }
+                    match c {
+                        b'\n' => s.push_str("\\n"),
+                        b'\t' => s.push_str("\\t"),
+                        b'"' => s.push_str("\\\""),
+                        b'\\' => s.push_str("\\\\"),
+                        0 => s.push_str("\\0"),
+                        0x20..0x7f => s.push(c as char),
+                        _ => s.push_str(&format!("\\x{c:02x}")),
+                    }
+                }
+                s.push('"');
+                s
             }
             Some(n) => format!("{{{}}}", (0..n.min(16)).map(|i| self.show(mem, addr + i * esize, ty, None)).collect::<Vec<_>>().join(", ")),
             None => match &self.get(self.resolve(ty)).kind {
@@ -456,6 +475,8 @@ mod tests {
         assert_eq!(t.show(&mem, 0, 7, Some(2)), "{3, 4}");
         assert_eq!(t.show(&mem, 8, 2, None), "{tv_sec = 0, tv_nsec = 30000000}");
         assert_eq!(t.show(&mem, 24, 4, Some(3)), "\"hi\"");
+        // (Past a NUL too, escaped, as C writes it.)
+        assert_eq!(t.show(&M(b"a\0b\x05\0\0".to_vec()), 0, 4, Some(6)), "\"a\\0b\\x05\"");
     }
 
     #[test]
