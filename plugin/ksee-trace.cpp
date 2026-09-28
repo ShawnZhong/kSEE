@@ -306,12 +306,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       lines = 1;
     }
     for (Instruction &I : BB) {
-      if (auto *CB = dyn_cast<CallBase>(&I); CB && runsProbes(*CB)) {
-        if (!items.empty() && items.back() != "|")
-          items.push_back("|");
-        seen.clear();
-        continue;
-      }
+      // (A call's own line is the stretch's last: the line calling.)
       DILocation *L = I.getDebugLoc().get();
       if (L && L->getLine()) {
         std::string path = fileRef(sourcePath(L->getScope()));
@@ -331,6 +326,12 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
           lines++;
         }
         cur = it->second;
+      }
+      if (auto *CB = dyn_cast<CallBase>(&I); CB && runsProbes(*CB)) {
+        if (!items.empty() && items.back() != "|")
+          items.push_back("|");
+        seen.clear();
+        continue;
       }
       if (isa<StoreInst, AtomicRMWInst, AtomicCmpXchgInst, MemIntrinsic, ICmpInst>(I))
         lineOf[&I] = cur;

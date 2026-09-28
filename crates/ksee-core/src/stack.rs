@@ -202,7 +202,7 @@ impl Calls {
             }
         };
         let nth = nth as u32;
-        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run: 0, ret: None })
+        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run: 0, ret: None, callee: None })
     }
 
     /// A stack chart: for each column (its first record, in `columns`, in
@@ -229,6 +229,12 @@ impl Calls {
             }
             let Some((p, steps)) = self.stretch(t, i) else { continue };
             let c = &self.calls[p.call as usize];
+            // (After a return into it: the line that made the call says what
+            // it returned, the value its `ret = f(...)` got.)
+            if let Record::Return { func, value } = records[i]
+                && let Some(l) = out.iter_mut().rev().find(|l| l.depth <= c.depth).filter(|l| l.depth == c.depth && l.func == c.func) {
+                l.callee = Some((func, value));
+            }
             let run = runs.entry((p.call, p.n)).or_default();
             if p.seg == 0 {
                 *run += 1;
@@ -260,7 +266,7 @@ impl Calls {
                     continue;
                 }
                 let at = if nth == 0 { i } else { first_store.get(&((base + nth) as u32)).copied().unwrap_or(i) };
-                out.push(LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run, ret: None });
+                out.push(LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run, ret: None, callee: None });
             }
             if let Some(l) = out.last_mut().filter(|l| l.record == i) {
                 l.ret = ret;
@@ -354,6 +360,8 @@ pub struct LineStep {
     pub inlined: Option<u32>,
     pub run: u32,
     pub ret: Option<u32>,
+    /// A line that made a call: the call's function, and what it returned.
+    pub callee: Option<(u32, u32)>,
 }
 
 
@@ -429,8 +437,10 @@ mod tests {
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (10, 1, 1), (3, 2, 0)]);
         // g's line and f's last are where they return (both 0 here: 7, 9).
         let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 7 }, Record::Return { func: 1, value: 9 }];
-        let rets: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| s.ret).collect();
-        assert_eq!(rets, [None, None, Some(7), Some(9)]);
+        let got = lines(&t, &r, &[7; 4], 0, 3, None);
+        assert_eq!(got.iter().map(|s| s.ret).collect::<Vec<_>>(), [None, None, Some(7), Some(9)]);
+        // f's line 2 made the call to g: it says g returned 7.
+        assert_eq!(got.iter().map(|s| s.callee).collect::<Vec<_>>(), [None, Some((2, 7)), None, None]);
         // A loop: f's block 1 (lines 5, 6) three times; each turn counted.
         let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nB\t1\t0\t0:1:1\nB\t1\t1\t0:5:1\nL\t1\t1\t0:5;:6\n", "");
         let r = [b(1, 0), b(1, 1), b(1, 1), b(1, 1)];

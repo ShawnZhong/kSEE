@@ -91,6 +91,8 @@ pub struct Line {
     pub tests: Vec<String>,
     /// The call returns after it: what it returned (32 bits).
     pub ret: Option<i32>,
+    /// It made a call: the function, and what it returned.
+    pub called: Option<(String, i32)>,
 }
 
 /// A call on a stack, with its arguments (32 bits each: wider ones lose
@@ -472,7 +474,8 @@ impl View<'_> {
                 Some(format!("{} {op} {} {}", v(lhs), v(rhs), if held { "✓" } else { "✗" }))
             }).collect();
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
-               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests, ret: s.ret.map(|v| v as i32) }
+               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests, ret: s.ret.map(|v| v as i32),
+               called: s.callee.map(|(f, v)| (self.name(f), v as i32)) }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.

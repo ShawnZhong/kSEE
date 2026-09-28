@@ -9,6 +9,7 @@
 // back to its last run).
 import { $, el } from "./dom.js";
 import { storeText } from "./stores.js";
+import { result } from "./args.js";
 import { CM, base } from "./editor.js";
 
 const KEYWORDS = new Set(("auto break case char const continue default do double else enum extern float for goto if " +
@@ -156,6 +157,30 @@ export function source(app) {
     }
     return out;
   }
+  // What the calls a line made returned, by the cursor (the selection's
+  // line steps of the function shown): "vfs_read → 18", its last.
+  function called(file) {
+    const cur = app.time.cursor(), out = new Map();
+    if (cur == null || !v.fn) return out;
+    const consts = (v.consts ??= m.constants());
+    for (const s of app.lineSteps?.() ?? []) {
+      if (s.i > cur) break;
+      if (s.called && s.file === file && s.func === v.fn.name) out.set(s.line, `${s.called[0]} → ${result(s.called[1], consts)}`);
+    }
+    return out;
+  }
+  class Note extends CM.WidgetType {
+    constructor(text) {
+      super();
+      this.text = text;
+    }
+    eq(other) {
+      return other.text === this.text;
+    }
+    toDOM() {
+      return el("span", { className: "note", textContent: this.text });
+    }
+  }
   class Stored extends CM.WidgetType {
     constructor(s, n) {
       super();
@@ -247,9 +272,13 @@ export function source(app) {
       const line = doc.line(v.cursor.line), text = [v.cursor.note, values(v.cursor.line, line.text)].filter(Boolean).join("   ");
       if (text) d.push(CM.Decoration.widget({ widget: new Values(text, indentOf(line.text, ed.state.tabSize)), block: true, side: 1 }).range(line.to));
     }
-    // (What each line stored so far, at its end.)
+    // (What each line stored so far, at its end; and what the calls it
+    // made returned.)
     for (const [n, { s, n: count }] of stored(file)) {
       if (at(n) !== false) d.push(CM.Decoration.widget({ widget: new Stored(s, count), side: 2 }).range(doc.line(n).to));
+    }
+    for (const [n, text] of called(file)) {
+      if (at(n) !== false && n !== v.cursor?.line) d.push(CM.Decoration.widget({ widget: new Note(text), side: 3 }).range(doc.line(n).to));
     }
     d.sort((x, y) => x.from - y.from || x.value.startSide - y.value.startSide);
     ed.dispatch({ effects: setMarks.of(CM.Decoration.set(d, true)) });

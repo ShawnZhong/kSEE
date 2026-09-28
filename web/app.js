@@ -187,6 +187,7 @@ export function app(m) {
     }
     return L.steps;
   }
+  a.lineSteps = () => steps();
   // Where in the steps the cursor is (the first step at or after it).
   function position() {
     const st = steps();
@@ -229,7 +230,10 @@ export function app(m) {
     // and at the call's last line, what it returns, the optimizer's
     // `return x;` being no line of its own.)
     // (And the comparisons it made: where it went, and why.)
-    const note = [step.run > 1 && `${ordinal(step.run)} time here`, step.tests.length && step.tests.join(", "),
+    // (A line making a call: what the call returned, the value its `x =
+    // f(...)` gets, as a debugger's step over says it.)
+    const note = [step.run > 1 && `${ordinal(step.run)} time here`, step.called && `${step.called[0]} → ${result(step.called[1], consts())}`,
+                  step.tests.length && step.tests.join(", "),
                   step.ret != null && `returns ${result(step.ret, consts())}`];
     src.view.cursor = { file: step.file, line: step.line, note: note.filter(Boolean).join("   ") || null };
     src.showFunction(step.func, undefined, step.line, step.file);
