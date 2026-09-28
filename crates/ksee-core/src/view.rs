@@ -548,7 +548,6 @@ impl View<'_> {
             let depth = depth as u32;
             let name = self.name(c.func);
             let (raw, frame) = args_of(&c).unzip();
-            let locals = frame.map(|f| self.locals(c.func, f, mem, c.first, i));
             // (The syscall entry: its arguments are the syscall's.)
             let at_entry = matches!(records.get(c.first), Some(&Record::Block { func, n: 0 }) if Some(func) == entry);
             let wrapper = name.starts_with(arch::SYSCALL_WRAPPER);
@@ -564,15 +563,16 @@ impl View<'_> {
             // parameter it changed, as it is; the other locals after those
             // in memory. And the code inlined into it: its own.)
             let vars = self.var_values(&c, at);
-            let mine = |function: &str, param: bool| vars.iter().filter(move |((f, _, _), (v, _))| *f == function && (v.param > 0) == param)
-                .filter_map(|(_, (v, value))| self.var_object(v, *value, mem)).collect::<Vec<_>>();
+            // (Its function's, in the order it declares them.)
+            let mine = |function: &str, param: bool| {
+                let mut o: Vec<((bool, usize), Object)> = vars.iter().filter(|((f, _, _), (v, _))| *f == function && (v.param > 0) == param)
+                    .filter_map(|(_, (v, value))| Some((self.declared(v), self.var_object(v, *value, mem)?))).collect();
+                o.sort_by_key(|(k, _)| *k);
+                o.into_iter().map(|(_, o)| o).collect::<Vec<_>>()
+            };
             let changed = mine(&name, true);
             let args = args.map(|a| a.into_iter().map(|o| changed.iter().find(|p| p.name == o.name).cloned().unwrap_or(o)).collect());
-            let locals = locals.map(|mut l: Vec<Object>| {
-                let more: Vec<Object> = mine(&name, false).into_iter().filter(|o| !l.iter().any(|x| x.name == o.name)).collect();
-                l.extend(more);
-                l
-            });
+            let locals = frame.map(|f| self.locals(c.func, f, mem, c.first, at, &mine(&name, false)));
             // (The code inlined into it first, innermost first; then it.)
             let frame = |func: String, inlined, at: Option<Loc>| {
                 let (a, l) = if inlined { (mine(&func, true), mine(&func, false)) } else { (Vec::new(), Vec::new()) };
@@ -612,6 +612,15 @@ impl View<'_> {
             }
         }
         out
+    }
+
+    /// Where variable `v` is among its function's: a parameter by its
+    /// number, a local after them, in the order it declares them.
+    fn declared(&self, v: &Var) -> (bool, usize) {
+        match v.param {
+            0 => (true, self.tables.types.locals.get(&v.of).and_then(|l| l.iter().position(|l| l.0 == v.name)).unwrap_or(0)),
+            k => (false, k as usize),
+        }
     }
 
     /// Variable `v` with `value`, as a value of its type (its function's
@@ -656,20 +665,23 @@ impl View<'_> {
         }).collect()
     }
 
-    /// Function `func`'s locals in memory, at their offsets from `frame`, as
-    /// the call from record `first` has them at record `at`: one whose slot
-    /// it has not stored to yet is not written yet (its value then is its
-    /// slot's leftovers, another call's: the variable, if it is live, is in
-    /// a register meanwhile).
-    fn locals(&self, func: u32, frame: u32, mem: &dyn Memory, first: usize, at: usize) -> Vec<Object> {
+    /// Function `func`'s locals, in the order it declares them (the same
+    /// rows at every moment, as a debugger's), as the call from record
+    /// `first` has them at record `at`: one in memory at its offset from
+    /// `frame`, not written yet if its slot has not been stored to (its
+    /// value then is its slot's leftovers, another call's); one in a wasm
+    /// local as `set` has it (Record::Var), else not set yet.
+    fn locals(&self, func: u32, frame: u32, mem: &dyn Memory, first: usize, at: usize, set: &[Object]) -> Vec<Object> {
         let types = &self.tables.types;
-        types.locals.get(&func).into_iter().flatten().filter_map(|(var, ty, off)| Some((var, ty, (*off)?))).map(|(var, ty, off)| {
-            let addr = frame.wrapping_add(off);
-            let o = types.object(mem, var, addr, *ty, 0);
-            if self.rec.stores().written(addr, types.size_of(*ty).max(1), first, at) {
-                return o;
+        let not = |o: Object, why: &str| Object { value: Some(why.into()), children: None, expand: None, target: None, ..o };
+        types.locals.get(&func).into_iter().flatten().map(|(var, ty, off)| match off {
+            Some(off) => {
+                let addr = frame.wrapping_add(*off);
+                let o = types.object(mem, var, addr, *ty, 0);
+                if self.rec.stores().written(addr, types.size_of(*ty).max(1), first, at) { o } else { not(o, "(not written yet)") }
             }
-            Object { value: Some("(not written yet)".into()), children: None, expand: None, target: None, ..o }
+            None => set.iter().find(|o| &o.name == var).cloned()
+                .unwrap_or_else(|| not(types.object(&Arg(&[0; 8], mem), var, 0, *ty, 0), "(not set yet)")),
         }).collect()
     }
 
@@ -1103,7 +1115,7 @@ mod tests {
         let mem = Mem(alloc::vec![0; 128]);
         let v = View { tables: &t, rec: &rec, now: &mem };
         let x = |i| v.call_stack(i, None, &mem, i)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
-        assert_eq!((x(0), x(2), x(3)), (None, Some("5".into()), Some("7".into())));
+        assert_eq!((x(0), x(2), x(3)), (Some("(not set yet)".into()), Some("5".into()), Some("7".into())));
     }
 
     #[test]

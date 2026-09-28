@@ -1,8 +1,9 @@
 // The Stack: the call stack at the cursor, innermost first, a row a call;
 // the selected one (the innermost, unless another is: a click on it, ▲ ▼,
 // a bar in the timeline) with its arguments and its locals as a tree, as a
-// debugger's variables are the selected frame's; rebuilt from the trace
-// (Machine.call_stack: a call's arguments are in its record, its locals in
+// debugger's variables are the selected frame's (every call's, on
+// asking); rebuilt from the trace (Machine.call_stack: a call's arguments
+// are in its record, its locals in
 // memory at their offsets from its frame, the others as the recording has
 // them set). At the bottom, the task running then (a link to it in the
 // Tasks). Pointers open into what they point to, structs into their
@@ -28,6 +29,9 @@ export function callstack(app) {
   function draw(moved = false) {
     s.now = new Map();
     const n = s.frames.length, body = [];
+    // (Every call's values, or only the selected one's: on asking.)
+    if (n > 1) body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3 },
+      el("a", { textContent: s.all ? "▾ only the selected call's values" : "▸ every call's values", onclick: () => ((s.all = !s.all), draw()) }))));
     s.frames.forEach((f, k) => {
       // (Click: select the call; the source shows where it is.)
       const on = s.sel == null ? k === 0 : f === s.sel;
@@ -39,7 +43,7 @@ export function callstack(app) {
       body.push(h);
       // (Only the selected call's values, as a debugger's variables are
       // the selected frame's: the others a row each, a click to select.)
-      if (!on) return;
+      if (!on && !s.all) return;
       if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body);
       // (Then its locals: one list, as the source has them all as names.)
       if (f.locals) rows(f.locals, `${n - k}/${f.func}/locals`, 1, body, { from: f.first, to: m.call_end(f.first) ?? undefined, what: `while ${f.func}'s frame lives` });
