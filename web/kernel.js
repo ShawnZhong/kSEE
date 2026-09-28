@@ -162,7 +162,7 @@ export function runner(k, m, steps) {
     started[j] = [...news.runners].find((r) => !before.has(r));
     for (const f of news.finished) {
       const d = done.find((x) => x?.id === f.id);
-      if (d) Object.assign(d, { how: f.how, ret: f.ret, buffers: f.buffers });
+      if (d) Object.assign(d, { how: f.how, ret: f.ret, buffers: f.buffers, at: j }); // (at: during which step it finished)
     }
     return { j, q, news };
   }

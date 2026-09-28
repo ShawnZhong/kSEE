@@ -62,7 +62,11 @@ parameter, the results so far as `$n`), and the signature. Some examples
 have several threads or processes (a futex, a thread's join, a pipe
 between two processes): a call can be made by a thread or child of /init
 (`19: read(3, [64], 64)`), and a call can block, until a later call wakes
-it. A line can also declare a variable of the program's, as in C: `char
+it. With more than one, the program is in lanes: a column per task (its
+name and tid over it, in the timeline's task colors), the lines in the
+order they were made, down being time; a call that blocked has its lane
+marked until the line during which it returned; each lane has its own line
+to add a call, made by its task. A line can also declare a variable of the program's, as in C: `char
 buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0, 30000000}`,
 memory of its own in /init's process; its name then stands for its
 address (`read(fd, buf, 64)`, `&ts`), `fds[1]` for an element as it is

@@ -238,3 +238,15 @@ h2.fold { cursor: pointer; user-select: none; white-space: nowrap; overflow: hid
 /* What a hover or a click explores: a name with a value at the cursor (in the source), a value with a history (in a tree) */
 .cm-editor .has-value { text-decoration: underline dotted var(--dim); text-underline-offset: 3px; }
 table.objs td.fval.mem:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+/* The program in lanes (more than one runner): a column each, down is time */
+ol.steps.lanes, .laneheads { --col: 300px; }
+ol.steps.lanes > li:not(.add) { display: grid; grid-template-columns: repeat(var(--lanes), var(--col)); column-gap: 10px; }
+ol.steps.lanes > li:not(.add) > .cell { grid-row: 1; border-left: 3px solid hsl(var(--hue) 50% 62%); padding-left: 5px; }
+ol.steps.lanes > li:not(.add) > .wait { grid-row: 1; border-left: 3px dotted hsl(var(--hue) 50% 62%); min-height: 1.4em; }
+ol.steps.lanes { width: max-content; }
+/* (Only the program scrolls sideways, lanes and all; the explanation stays.) */
+#examples .program { overflow-x: auto; }
+ol.steps.lanes > li.add { display: grid; grid-template-columns: repeat(var(--lanes), var(--col)); column-gap: 10px; list-style: none; }
+.laneheads { display: grid; grid-template-columns: repeat(var(--lanes), var(--col)); column-gap: 10px; margin: 4px 12px 0 34px; width: max-content; }
+.laneheads[hidden] { display: none; }
+.laneheads .lane { font-size: 11px; border-bottom: 2px solid hsl(var(--hue) 50% 62%); padding: 2px 5px; }
