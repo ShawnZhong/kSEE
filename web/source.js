@@ -270,6 +270,8 @@ export function source(app) {
     return true;
   }
 
+  // (A name with a value at the cursor: see decorate.)
+  const valued = CM.Decoration.mark({ class: "has-value" });
   // The marks for the shown file: the lines that ran, the function, the
   // cursor.
   function decorate() {
@@ -282,6 +284,17 @@ export function source(app) {
     }
     if (fn) {
       for (let n = fn.line; n <= Math.min(fn.last, doc.lines); n++) d.push(CM.Decoration.line({ class: "ln-infn" }).range(at(n)));
+      // (The names that have a value at the cursor, the function's arguments
+      // and locals on the Stack: underlined, a hover shows them; not a
+      // member's name, after . or ->.)
+      const names = new Set(app.stack.frames().filter((f) => f.func === fn.name && !f.inlined)
+        .flatMap((f) => [...(f.args ?? []), ...(f.locals ?? [])]).filter((o) => o.value !== "(optimized out)").map((o) => o.name));
+      for (let n = fn.line; names.size && n <= Math.min(fn.last, doc.lines); n++) {
+        const line = doc.line(n);
+        for (const w of line.text.matchAll(/[A-Za-z_]\w*/g)) {
+          if (names.has(w[0]) && !/(\.|->)\s*$/.test(line.text.slice(0, w.index))) d.push(valued.range(line.from + w.index, line.from + w.index + w[0].length));
+        }
+      }
     }
     if (v.cursor?.file === file && at(v.cursor.line) !== false) {
       d.push(CM.Decoration.line({ class: "ln-cursor" }).range(at(v.cursor.line)));

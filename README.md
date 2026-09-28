@@ -84,7 +84,9 @@ cursor's line carries its values at its end, and each line what it last
 stored so far in the selected call (`file->f_pos: 0 → 26 ×2`: click it
 for that moment); a step that lands after a call says what it returned.
 Hover
-a name in the source for its value at the cursor, and a value in the Stack
+a name in the source for its value at the cursor (a name with one is
+underlined, dotted: the arguments and locals of the calls on the Stack; a
+struct's value opens, field by field), and a value in the Stack
 for who last wrote it; click it for its writes, a row under it: the
 member, from what to what, in which function, each a link to that moment,
 the one in effect at the cursor marked (a local's while its frame lives,
