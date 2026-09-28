@@ -114,6 +114,11 @@ const rfd = (await call("openat", [-100, "/tmp/note", 0, 0])).ret;
 const { s: read, buffers } = await call("read", [rfd, { size: 64 }, 64]);
 check("read 26 bytes back", read?.ret === 26 && new TextDecoder().decode(buffers[1]).startsWith("hello from the page cache"));
 const inRead = m.line_steps(read.first, read.last, read.task.addr).find((x) => x.func === "vfs_read").i;
+{
+  // (Its last line, the closing brace: `return ret;` compiles to no line of its own.)
+  const last = m.line_steps(read.first, read.last, read.task.addr).findLast((x) => x.func === "vfs_read");
+  check(`vfs_read's last line (${last?.line}) says what it returns: ${last?.ret}`, last?.ret === 26);
+}
 const file = m.call_stack(inRead)[0].args.find((a) => a.name === "file");
 const fpos = (i) => (m.memory_at(i), m.object_by_id("file", file.target, Number(file.value), 1)?.children?.find((c) => c.name === "f_pos"));
 check("f_pos before the read, and after", fpos(read.first)?.value === "0" && fpos(read.last)?.value === "26");

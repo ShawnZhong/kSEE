@@ -202,7 +202,7 @@ impl Calls {
             }
         };
         let nth = nth as u32;
-        Some(LineStep { record: p.record as usize, at: i, nth, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined })
+        Some(LineStep { record: p.record as usize, at: i, nth, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, ret: None })
     }
 
     /// A stack chart: for each column (its first record, in `columns`, in
@@ -230,13 +230,19 @@ impl Calls {
             // ones: a store says which it is on; the first store of each line,
             // among the records up to the task's next block or return.)
             let base: usize = (0..p.seg).map(|k| t.stretch(c.func, p.n, k).len()).sum();
+            // (And if the call returns there, its value: its last line's.)
             let mut first_store: BTreeMap<u32, usize> = BTreeMap::new();
+            let mut ret = None;
             for (j, r) in records.iter().enumerate().skip(i + 1) {
                 if tasks[j] != tk {
                     continue;
                 }
                 match *r {
                     Record::Store { line, .. } => { first_store.entry(line).or_insert(j); }
+                    Record::Return { func, value } => {
+                        ret = (func == c.func).then_some(value);
+                        break;
+                    }
                     _ => break,
                 }
             }
@@ -245,7 +251,10 @@ impl Calls {
                     continue;
                 }
                 let at = if nth == 0 { i } else { first_store.get(&((base + nth) as u32)).copied().unwrap_or(i) };
-                out.push(LineStep { record: i, at, nth: nth as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined });
+                out.push(LineStep { record: i, at, nth: nth as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, ret: None });
+            }
+            if let Some(l) = out.last_mut().filter(|l| l.record == i) {
+                l.ret = ret;
             }
         }
         out
@@ -318,7 +327,8 @@ pub struct ChartCall {
 /// `func` (`inlined` from other functions, maybe: see Tables::inlines),
 /// `depth` calls deep. The line is `at` the record of its first store
 /// (Record::Store's line), or, with no store or the first of its stretch,
-/// the block's: where the cursor goes, and memory as it was there.
+/// the block's: where the cursor goes, and memory as it was there. `ret`:
+/// the last line before the call returns, what it returned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineStep {
     pub record: usize,
@@ -328,6 +338,7 @@ pub struct LineStep {
     pub depth: u32,
     pub loc: crate::tables::Loc,
     pub inlined: Option<u32>,
+    pub ret: Option<u32>,
 }
 
 
@@ -401,6 +412,10 @@ mod tests {
         let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 0 }, Record::Return { func: 1, value: 0 }];
         let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| (s.loc.line, s.record, s.depth)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (10, 1, 1), (3, 2, 0)]);
+        // g's line and f's last are where they return (both 0 here: 7, 9).
+        let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 7 }, Record::Return { func: 1, value: 9 }];
+        let rets: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| s.ret).collect();
+        assert_eq!(rets, [None, None, Some(7), Some(9)]);
     }
 
     #[test]

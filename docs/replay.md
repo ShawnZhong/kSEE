@@ -56,6 +56,10 @@ which of its record's lines it is (`nth`: the Stack there), where it is
 goes there, and memory as it was; a line with no store, or a stretch's
 first, is at the block's record) and how deep it runs (calls deep, and
 inlined deep): the level stepping over or out of a call compares. A
+call's last line before it returns says what it returned (`ret`): the
+optimizer leaves `return x;` no code of its own (its value joins the
+function's one exit, whose line is the closing brace), so that is where
+the page shows it. A
 store's line is the one it says, in the block its task is in
 (`line_at`). `run_of` finds the next (or last) record whose block runs a
 given line: "run to a line".

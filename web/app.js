@@ -216,7 +216,9 @@ export function app(m) {
     a.records?.mark();
     memoryAt(step.at);
     const at = m.at(step.i);
-    src.view.cursor = { file: step.file, line: step.line };
+    // (The call's last line: what it returns, the optimizer's `return x;`
+    // being no line of its own.)
+    src.view.cursor = { file: step.file, line: step.line, note: step.ret != null ? `returns ${result(step.ret, consts())}` : null };
     src.showFunction(step.func, undefined, step.line, step.file);
     // (The stack as it runs: see Machine.call_stack's nth.)
     stack.show(step.i, step, at?.task);
