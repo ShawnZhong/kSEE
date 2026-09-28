@@ -17,8 +17,6 @@ export function callstack(app) {
   const s = { open: new Set(), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
 
   const { rows, kids } = tree(app, s, draw);
-  // (The tabs: the pane chosen.)
-  for (const a of document.querySelectorAll("h2.tabs a")) a.onclick = () => ($("right").dataset.tab = a.dataset.tab);
   const head = (text, where, onclick, cls = "") => el("tr", { className: "frame " + cls },
     el("td", { colSpan: 3 }, el("a", { className: "mono", textContent: text, onclick }),
       el("span", { className: "dim", textContent: where ? `  ${where}` : "" })));
@@ -78,7 +76,6 @@ export function callstack(app) {
   function show(i, step, task) {
     s.last = s.now;
     s.task = task ?? null;
-    app.callTree?.mark();
     // (At a line step: the stack as that line runs; see Machine.call_stack.)
     const frames = i === undefined ? [] : m.call_stack(i ?? undefined, step?.nth);
     s.frames = frames;

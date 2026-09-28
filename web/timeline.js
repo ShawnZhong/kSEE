@@ -21,7 +21,10 @@ import { $, el, taskName } from "./dom.js";
 
 const ROW = 15, MIN_ROW = 11, STRIP = 12, OVER = 18;
 const css = (v) => getComputedStyle(document.body).getPropertyValue(v).trim();
-const hue = (pid) => (pid * 137) % 360;
+// A task's color, by its pid (the idle task, 0, pale), as the strip, the
+// overview and the program's lanes have it.
+export const hue = (pid) => ((pid ?? 0) * 137) % 360;
+const taskColor = (pid) => `hsl(${hue(pid)} 50% ${pid === 0 ? 85 : 62}%)`;
 // Calls are colored by where the function is.
 const AREAS = [["fs/", 210, "fs"], ["mm/", 135, "mm"], ["kernel/sched/", 28, "sched"], ["kernel/", 48, "kernel"],
                ["drivers/", 280, "drivers"], ["lib/", 175, "lib"], ["include/", 330, "include"], ["arch/", -1, "arch"]];
@@ -73,7 +76,7 @@ export function timeline(app) {
       return;
     }
     t.buckets.forEach((b, k) => {
-      ctx.fillStyle = b.pid == null ? css("--line") : `hsl(${hue(b.pid)} 50% ${b.pid === 0 ? 85 : 62}%)`;
+      ctx.fillStyle = b.pid == null ? css("--line") : taskColor(b.pid);
       ctx.fillRect(k, 3, 1, OVER - 6);
     });
     const ox = (i) => (m.step_of(i) / Math.max(1, m.steps() - 1)) * w;
@@ -131,7 +134,7 @@ export function timeline(app) {
     // The task strip.
     for (const r of runs((c) => c.task)) {
       const p = who(r.v);
-      sctx.fillStyle = `hsl(${hue(p?.pid ?? 0)} 50% ${p?.pid === 0 ? 85 : 62}%)`;
+      sctx.fillStyle = taskColor(p?.pid ?? 0);
       sctx.fillRect(r.from * cw, 0, (r.to - r.from) * cw, STRIP);
       label(sctx, taskName(p), r.from * cw, (r.to - r.from) * cw, STRIP / 2, "#1f2328");
     }

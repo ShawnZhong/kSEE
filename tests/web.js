@@ -123,10 +123,10 @@ const inRead = m.line_steps(read.first, read.last, read.task.addr).find((x) => x
 const file = m.call_stack(inRead)[0].args.find((a) => a.name === "file");
 const fpos = (i) => (m.memory_at(i), m.object_by_id("file", file.target, Number(file.value), 1)?.children?.find((c) => c.name === "f_pos"));
 check("f_pos before the read, and after", fpos(read.first)?.value === "0" && fpos(read.last)?.value === "26");
-// (/init's buffer is kernel memory: the read fills it, recorded.)
+// (The program's buffer is kernel memory: the read fills it, recorded.)
 const buf = (i) => (m.memory_at(i), m.call_stack(inRead)[0].args.find((a) => a.name === "buf")?.value);
 check("the user's buffer, before the read and after", !/hello/.test(buf(read.first)) && /"hello from the page cache/.test(buf(read.last)));
-const who = (m.memory_at(read.last), m.last_write(fpos(read.last).addr, 8));
+const who = (m.memory_at(read.last), m.origin(fpos(read.last).addr, 8)[0]);
 check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
 // An object's history: f_pos's writes, the read's among them (0 to 26, by ksys_read);
 // the struct file's writes name their member.

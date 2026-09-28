@@ -34,6 +34,7 @@
 import { $, el, taskName } from "./dom.js";
 import { callEditor } from "./calledit.js";
 import { runner } from "./kernel.js";
+import { hue } from "./timeline.js";
 
 export async function examples(app) {
   const { m } = app;
@@ -193,7 +194,6 @@ export async function examples(app) {
     : d.how == null ? "… blocked"
     : d.how === "exec" ? "(no return: the new program runs)"
     : d.how === "exited" ? "(no return: it exited)" : `= ${app.kernel.result(d.ret)}`;
-  // The program: a call a line, each its own editor; then a line to add one.
   // A step's lane: the runner that makes it, as written (the program's own: "").
   const laneOf = (s) => (s.tid == null ? "" : String(s.tid));
   // The program: a call a line, each its own editor; then a line to add
@@ -208,7 +208,6 @@ export async function examples(app) {
     const lanes = [...new Set(["", ...t.steps.map(laneOf), ...started])], many = lanes.length > 1;
     const tidOf = (lane) => lane === "" ? m.main() : t.done[t.steps.findIndex((s) => laneOf(s) === lane)]?.tid
       ?? t.started[t.steps.findIndex((s) => s.name === lane)];
-    const hue = (tid) => ((tid ?? 0) * 137) % 360;
     t.list.classList.toggle("lanes", many);
     t.list.style.setProperty("--lanes", lanes.length);
     t.lanes.hidden = !many;

@@ -148,11 +148,7 @@ export function app(m) {
     L.pos = null;
     chosen = null;
     view(at);
-    a.callTree?.mark();
-    a.stores?.mark();
-    a.objects?.mark();
-    a.tasks?.mark();
-    a.trace?.mark();
+    marks();
     badge();
   };
   // The view follows the pointer over the timeline: record `i` shown as if
@@ -169,22 +165,18 @@ export function app(m) {
       const at = to != null ? m.at(to) : null;
       stack.peeking(i != null);
       if (at) view(at, i == null ? chosen : frame);
-      // (The Calls, Stores and Trace tabs follow too; back to the cursor's with null.)
-      a.callTree?.mark(to);
-      a.stores?.mark(to);
-      a.trace?.mark(to);
+      // (The tabs follow too; back to the cursor's with null.)
+      marks(to);
     });
   };
-  a.callTree = callTree(a);
-  a.trace = trace(a);
-  a.stores = stores(a);
-  a.objects = objects(a);
-  a.tasks = tasks(a);
-  a.outlined = () => (a.callTree.draw(), a.stores.draw(), a.objects.draw(), a.trace.draw());
-  // (The Records follow the cursor, drawn when the tab is looked at.)
-  document.querySelector('h2.tabs a[data-tab="trace"]').addEventListener("click", () => a.trace.draw());
-  document.querySelector('h2.tabs a[data-tab="objects"]').addEventListener("click", () => a.objects.draw());
-  document.querySelector('h2.tabs a[data-tab="tasks"]').addEventListener("click", () => a.tasks.draw());
+  // The right column's tabs but the Stack, by name: each draws for the
+  // selection (`draw`; a tab not shown waits until it is looked at) and
+  // follows the cursor (`mark(i)`: record `i`, or the cursor's).
+  const tabs = { tasks: tasks(a), calls: callTree(a), stores: stores(a), objects: objects(a), trace: trace(a) };
+  a.tasks = tabs.tasks;
+  const marks = (i) => Object.values(tabs).forEach((x) => x.mark(i));
+  a.outlined = () => Object.values(tabs).forEach((x) => x.draw());
+  for (const x of document.querySelectorAll("h2.tabs a")) x.onclick = () => (($("right").dataset.tab = x.dataset.tab), tabs[x.dataset.tab]?.draw());
   examples(a);
 
   // ---- Lines: the line steps of the selection (a syscall) ----
@@ -236,12 +228,8 @@ export function app(m) {
   function showLine(step) {
     chosen = null;
     time.mark(step.at);
-    a.callTree?.mark();
-    a.stores?.mark();
-    a.objects?.mark();
-    a.trace?.mark();
     memoryAt(step.at);
-    a.tasks?.mark(); // (its task_structs: memory as it was there)
+    marks();
     const at = m.at(step.i);
     // (Its note: which turn of a loop it is, the call running it again;
     // and at the call's last line, what it returns, the optimizer's

@@ -202,13 +202,6 @@ impl Machine {
         self.with_memory(|mem| self.view(|v| to_js(&v.call_stack(i, nth, mem))))
     }
 
-    /// The newest write to `addr..addr + len` at or before the moment
-    /// memory_at shows (view::Write), or null if the recording has none.
-    pub fn last_write(&self, addr: u32, len: u32) -> JsValue {
-        let at = self.past.borrow().unwrap_or(usize::MAX);
-        self.view(|v| to_js(&v.last_write(addr, len, at)))
-    }
-
     /// Where the value at `addr..addr + len` came from, as memory_at shows
     /// it: its newest write, and back through the copies it was made by
     /// (view::Write, newest first; see View::origin).

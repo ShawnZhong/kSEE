@@ -7,7 +7,7 @@
 // to that moment, the one in effect at the cursor marked; a local's writes
 // while its frame lives, another object's within the selected call ("all"
 // for the whole recording); click the value again to close.
-import { el } from "./dom.js";
+import { el, taskName } from "./dom.js";
 
 // The most writes of a value shown (the newest).
 const WRITES = 256;
@@ -28,7 +28,6 @@ export function tree(app, st, redraw) {
     if (o.target != null && o.value !== "NULL") return m.object_by_id(o.name, o.target, Number(o.value), 1)?.children ?? [];
     return null;
   }
-  const openable = (o) => o.children || o.expand != null || (o.target != null && o.value !== "NULL");
 
   // Rows for `list` under `path`, `depth` deep, into `out`; `pre`: their C
   // expressions' start ("file->", "file->f_path."); `life`: their
@@ -80,20 +79,21 @@ export function tree(app, st, redraw) {
       items.length ? el("ol", {}, ...items) : null));
   }
 
-  // The newest write to `o` at the cursor (Machine.last_write): where, by
-  // whom, and the value it overwrote.
   // Who last wrote value `o`, and where from: back through the copies
   // that brought it there (Machine.origin), a line each.
   function wroteIt(o) {
     const way = m.origin(o.addr, Math.min(o.size, 8));
     if (!way.length) return "not written in the recording";
     const [w, ...back] = way, last = way.at(-1);
-    return [`written at ${place(w.at)}, by ${w.task.comm ?? "?"}(${w.task.pid ?? "?"}); was ${w.old}`,
+    return [`written at ${place(w.at)}, by ${taskName(w.task)}; was ${w.old}`,
       ...back.map((x) => `  ← copied from 0x${x.addr.toString(16)}, written at ${place(x.at)}`),
       ...(last.from != null ? [`  ← copied from 0x${last.from.toString(16)}, not written in the recording`] : [])].join("\n");
   }
   return { rows, kids };
 }
+
+// Whether value `o` opens: into its fields, or what it points to.
+export const openable = (o) => o.children || o.expand != null || (o.target != null && o.value !== "NULL");
 
 // Where a write was: "ksys_read fs/read_write.c:720".
 export const place = (at) => (at ? `${at.inlined ?? at.func} ${at.file}:${at.line}` : "?");

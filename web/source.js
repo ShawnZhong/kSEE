@@ -9,7 +9,7 @@
 // back to its last run).
 import { $, el } from "./dom.js";
 import { storeText } from "./stores.js";
-import { tree } from "./tree.js";
+import { tree, openable } from "./tree.js";
 import { CM, base } from "./editor.js";
 
 const KEYWORDS = new Set(("auto break case char const continue default do double else enum extern float for goto if " +
@@ -89,7 +89,6 @@ export function source(app) {
     draw();
     return el("div", { className: "hovertip valuetip" }, el("div", { className: "mono", textContent: h.text }), el("table", { className: "objs" }, body));
   }
-  const openable = (o) => o.children || o.expand != null || (o.target != null && o.value !== "NULL");
   // The declaration of the name at `k` of `text` (a type, a field, a global,
   // an inline function: not a value the recording has): where, and its
   // first lines, for a hover; null if none.
@@ -133,7 +132,6 @@ export function source(app) {
     return fn && n >= fn.line && n <= fn.last;
   }
 
-  // The value of the expression at `k` in line `line` (its `text`), for a
   // The values of the expressions on line `line` (`text`), those the
   // Stack has (see hover), each once: "fd = 3  count = 64", or null.
   function values(line, text) {
@@ -363,14 +361,13 @@ export function source(app) {
 
   // Function `name` (the lines that ran: in syscall `syscall`), in `file`
   // (a block's own, when it is inlined from a header) at line `focus`.
-  function show(name, syscall, focus, file) {
+  function showFunction(name, syscall, focus, file) {
     const [f] = m.functions(name);
     if (!f) return;
     v.fn = f;
     v.syscall = syscall;
     showFile(file ?? f.file, focus);
   }
-  const showFunction = show;
 
   // The shown file's lines (for tests), and the first line at or after
   // `from` with `needle` in it: { line, column (of needle) }, or null.
