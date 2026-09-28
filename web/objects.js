@@ -46,18 +46,9 @@ export function objects(app) {
     const soFar = (n) => live(n) && n.writes[0].i <= cur;
     const away = nodes.filter((n) => !soFar(n)).length;
     const shownAt = (k) => gone || soFar(nodes[k]);
-    // (In the order the pointers lead: from each object nothing points to,
-    // depth first; then any left.)
-    const pointed = new Set(nodes.flatMap((n) => n.links.map((l) => l.to)));
-    const order = [], seen = new Set();
-    const visit = (k) => {
-      if (seen.has(k) || !shownAt(k)) return;
-      seen.add(k);
-      order.push(k);
-      nodes[k].links.forEach((l) => visit(l.to));
-    };
-    nodes.forEach((_, k) => pointed.has(k) || visit(k));
-    nodes.forEach((_, k) => visit(k));
+    // (In the order the call first wrote them, as Machine.objects has them:
+    // stepping on adds one at the end, and none moves.)
+    const order = nodes.map((_, k) => k).filter(shownAt);
     // (The write the cursor is at, or last passed: marked.)
     const now = nodes.flatMap((n) => n.writes).filter((x) => x.i <= cur).reduce((a, x) => (!a || x.i > a.i ? x : a), null);
     body.replaceChildren(el("div", { className: "dim head" }, `${order.length} object${order.length === 1 ? "" : "s"} written${gone ? "" : " so far"}`,
