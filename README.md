@@ -94,7 +94,7 @@ struct's value opens, field by field), and a value in the Stack
 for who last wrote it; click it for its writes, a row under it: the
 member, from what to what, in which function, each a link to that moment,
 the one in effect at the cursor marked (a local's while its frame lives,
-another object's within the selected call; "all" for the whole recording);
+another value's in the whole recording; one never written, none);
 click the value again to close. The Tasks tab lists every task the
 recording has, at the cursor: the one running marked, each where it is
 (`prog(20)  in read`: its syscall, else its outermost call), its name a

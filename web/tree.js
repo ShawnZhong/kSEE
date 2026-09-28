@@ -5,21 +5,19 @@
 // for who last wrote it; click it for its writes (Machine.writes), a row
 // under it: each the member, from what to what, in which function, a link
 // to that moment, the one in effect at the cursor marked; a local's writes
-// while its frame lives, another object's within the selected call ("all"
-// for the whole recording); click the value again to close.
+// while its frame lives, another value's in the whole recording (one never
+// written: none, as its hover says); click the value again to close.
 import { el, taskName } from "./dom.js";
 
 // The most writes of a value shown (the newest).
 const WRITES = 256;
 
 // `st`: a tree's state: { open (paths open), history (paths whose writes
-// are shown), wide (of those, the ones over the whole recording), last,
-// now (values shown before and now, by path) }; `redraw()`: draw it again
+// are shown), last, now (values shown before and now, by path) }; `redraw()`: draw it again
 // (a value opened or closed).
 export function tree(app, st, redraw) {
   const { m } = app;
   st.history ??= new Set();
-  st.wide ??= new Set();
   const toggle = (set, p) => (set.has(p) ? set.delete(p) : set.add(p), redraw());
   // The children of value `o` (an Object, see ksee_core::view), if it has any.
   function kids(o) {
@@ -51,7 +49,7 @@ export function tree(app, st, redraw) {
         // its call's record, at 0.)
         o.addr && o.size
           ? el("td", { className: "fval mem", title: value, onmouseenter: (ev) => (ev.target.title = `${value}\n${wroteIt(o)}\n(click: its writes)`),
-                       onclick: () => toggle(st.history, p) }, value)
+                       onclick: () => (st.history.has(p) || writesOf(o, life).length) && toggle(st.history, p) }, value)
           : el("td", { className: "fval", title: value }, value),
         el("td", { className: "ftype", textContent: o.ty })));
       if (st.history.has(p)) out.push(history(o, p, life, depth));
@@ -59,23 +57,18 @@ export function tree(app, st, redraw) {
       if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? null : life, o.target != null ? `${e}->` : `${e}.`);
     }
   }
-  // Value `o`'s writes (Machine.writes), a row: a local's while its frame
-  // lives (`life`), another object's within the selected call, or, wide,
-  // in the whole recording; the write in effect at the cursor marked.
+  // Value `o`'s writes (Machine.writes): a local's while its frame lives
+  // (`life`), another's in the whole recording.
+  const writesOf = (o, life) => m.writes(o.addr, o.id, life?.from, life?.to, WRITES);
+  // Its writes, a row; the write in effect at the cursor marked.
   function history(o, p, life, depth) {
-    const cur = app.time.cursor() ?? Infinity, wide = st.wide.has(p);
-    const home = app.time.home();
-    const span = wide ? null : life ?? (home ? { from: home.a, to: home.b, what: "in this call" } : null);
-    const writes = m.writes(o.addr, o.id, span?.from, span?.to, WRITES);
+    const cur = app.time.cursor() ?? Infinity, writes = writesOf(o, life);
     const now = writes.findLastIndex((x) => x.i <= cur);
     const items = writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
       el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: "go to this write", onclick: () => app.time.go(x.i) }),
       el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` })));
-    const scope = span ? span.what : "in the recording";
     return el("tr", { className: "history" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
-      el("div", { className: "dim" }, `${writes.length}${writes.length >= WRITES ? "+" : ""} write${writes.length === 1 ? "" : "s"} ${scope}`,
-        span ? el("a", { textContent: " · all", title: "in the whole recording", onclick: () => toggle(st.wide, p) })
-          : life || home ? el("a", { textContent: " · fewer", title: span ? "" : "within the frame, or the call", onclick: () => toggle(st.wide, p) }) : null),
+      el("div", { className: "dim" }, `${writes.length}${writes.length >= WRITES ? "+" : ""} write${writes.length === 1 ? "" : "s"} ${life?.what ?? "in the recording"}`),
       items.length ? el("ol", {}, ...items) : null));
   }
 
