@@ -182,9 +182,7 @@ pub struct Note {
 
 /// An object a span of records (a call) changed, which is still there when
 /// it returns (see View::objects): as the Stores name it (`what`, `kind`,
-/// `ty`, `id`, `addr`, `size`), its members the call left changed, those
-/// it wrote but left as they were (`back`: a count taken and dropped), and
-/// its pointers to the others as the span ends.
+/// `ty`, `id`, `addr`, `size`), and the members the call wrote.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Node {
@@ -195,37 +193,37 @@ pub struct Node {
     pub addr: u32,
     pub size: u32,
     pub changes: Vec<Diff>,
-    pub back: Vec<String>,
-    pub links: Vec<Link>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub depth: u32,
-    /// The node it is shown under (the first that points to it, as the
-    /// span ends), if any.
-    pub under: Option<usize>,
+    /// The node it is shown under, and by which of its members: the first
+    /// that points to it as the span ends ("f_inode"), if any.
+    pub under: Option<(usize, String)>,
 }
 
 /// A member a span of records changed: from `before` (as the span began)
-/// to `after` (as it ends), in `writes` stores, the last at record `last`,
-/// by the code at `at`.
+/// to `after` (as it ends; the same: left as it was, a count taken and
+/// dropped), a pointer into another node as it ends: `to`, its index; and
+/// how, in `runs`: a run a function writing it in turn, in order.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Diff {
     pub member: String,
     pub before: String,
     pub after: String,
+    pub to: Option<usize>,
+    pub runs: Vec<Run>,
+}
+
+/// Writes of one function in a row to a member: from `before` to `after`,
+/// `writes` of them, the last at record `last`, by the code at `at`.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Run {
+    pub before: String,
+    pub after: String,
     pub writes: usize,
     pub last: usize,
     pub at: Option<Line>,
-}
-
-/// A pointer from a node's `member` to node `to` (an index); its value
-/// `value`.
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Link {
-    pub member: String,
-    pub to: usize,
-    pub value: u32,
 }
 
 /// A write to a value (`addr`): at record `i`, on `task`, by the code at
@@ -1046,8 +1044,8 @@ impl View<'_> {
             let k = match nodes.iter().position(|(n, _)| n.addr == s.addr && n.id == s.id) {
                 Some(k) => k,
                 None => {
-                    nodes.push((Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, changes: Vec::new(), back: Vec::new(),
-                                       links: Vec::new(), depth: s.depth, under: None }, Vec::new()));
+                    nodes.push((Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, changes: Vec::new(),
+                                       depth: s.depth, under: None }, Vec::new()));
                     nodes.len() - 1
                 }
             };
@@ -1057,21 +1055,42 @@ impl View<'_> {
                 None => members.push((s.write.member.clone(), alloc::vec![s.write])),
             }
         }
-        let mut nodes: Vec<Node> = nodes.into_iter().map(|(mut n, members)| {
+        // (Each member's changes; one only ever written as it was (memory
+        // zeroed that was zero), not; an object with none, not. A pointer:
+        // where it points as the span ends.)
+        let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
+        let mut nodes: Vec<(Node, Vec<Option<u32>>)> = nodes.into_iter().filter_map(|(mut n, members)| {
+            let mut points = Vec::new();
             for (member, w) in members {
                 let (a, z) = (&w[0], &w[w.len() - 1]);
-                if a.before == z.after {
-                    n.back.push(member);
-                } else {
-                    n.changes.push(Diff { member, before: a.before.clone(), after: z.after.clone(), writes: w.len(), last: z.i, at: z.at.clone() });
+                // (A run: one function's writes in a row; one that left it
+                // as it was, not.)
+                let mut runs: Vec<Run> = Vec::new();
+                for x in &w {
+                    let func = x.at.as_ref().map(|l| l.func.as_str());
+                    match runs.last_mut() {
+                        Some(r) if r.at.as_ref().map(|l| l.func.as_str()) == func => {
+                            (r.after, r.writes, r.last, r.at) = (x.after.clone(), r.writes + 1, x.i, x.at.clone());
+                        }
+                        _ => runs.push(Run { before: x.before.clone(), after: x.after.clone(), writes: 1, last: x.i, at: x.at.clone() }),
+                    }
                 }
+                runs.retain(|r| r.before != r.after);
+                if runs.is_empty() {
+                    continue;
+                }
+                let Record::Store { addr, .. } = self.rec.records[z.i] else { continue };
+                let (_, leaf, off, _) = types.leaf(n.id, addr.wrapping_sub(n.addr));
+                points.push(matches!(types.get(types.resolve(leaf)).kind, Kind::Pointer(_)).then(|| mem.read_u32(n.addr.wrapping_add(off))));
+                n.changes.push(Diff { member, before: a.before.clone(), after: z.after.clone(), to: None, runs });
             }
-            n
+            (!n.changes.is_empty()).then_some((n, points))
         }).collect();
         // (In the order of the calls that name them, the outer first, as a
         // call tree reads; within one call, the first written first. The
         // task first; globals last.)
-        nodes.sort_by_key(|n| n.depth);
+        nodes.sort_by_key(|n| n.0.depth);
+        let (mut nodes, points): (Vec<Node>, Vec<Vec<Option<u32>>>) = nodes.into_iter().unzip();
         // (One name for two (the slabs of two caches a callee named by one
         // parameter): the later numbered: "pfmemalloc_match's slab #2".)
         let mut seen: BTreeMap<String, u32> = BTreeMap::new();
@@ -1084,20 +1103,16 @@ impl View<'_> {
         }
         let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
         // (Each node's pointers to the others, as memory is as the span ends.)
-        let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
-        let links: Vec<Vec<Link>> = nodes.iter().enumerate().map(|(k, n)| {
-            types.pointers(n.id, 3).into_iter().filter_map(|(member, off)| {
-                let value = mem.read_u32(n.addr.wrapping_add(off));
-                let to = within(value).filter(|&to| to != k)?;
-                Some(Link { member, to, value })
-            }).collect()
+        let links: Vec<Vec<(String, usize)>> = nodes.iter().enumerate().map(|(k, n)| {
+            types.pointers(n.id, 3).into_iter().filter_map(|(member, off)| Some((member, within(mem.read_u32(n.addr.wrapping_add(off))).filter(|&to| to != k)?))).collect()
         }).collect();
+        let tos: Vec<Vec<Option<usize>>> = points.iter().enumerate().map(|(k, p)| p.iter().map(|p| p.and_then(within).filter(|&to| to != k)).collect()).collect();
         // (The tree they are shown in, from the ones nothing points to (then
         // any left: a cycle's), each under the first, in order, that points
         // to it.)
         let mut under = alloc::vec![None; nodes.len()];
         let mut placed = alloc::vec![false; nodes.len()];
-        let pointed: alloc::collections::BTreeSet<usize> = links.iter().flatten().map(|l| l.to).collect();
+        let pointed: alloc::collections::BTreeSet<usize> = links.iter().flatten().map(|l| l.1).collect();
         let roots = (0..nodes.len()).filter(|k| !pointed.contains(k)).chain(0..nodes.len());
         for root in roots {
             if placed[root] {
@@ -1106,16 +1121,20 @@ impl View<'_> {
             placed[root] = true;
             let mut queue = alloc::collections::VecDeque::from([root]);
             while let Some(k) = queue.pop_front() {
-                for l in &links[k] {
-                    if !placed[l.to] {
-                        (placed[l.to], under[l.to]) = (true, Some(k));
-                        queue.push_back(l.to);
+                for (member, to) in &links[k] {
+                    if !placed[*to] {
+                        (placed[*to], under[*to]) = (true, Some((k, member.clone())));
+                        queue.push_back(*to);
                     }
                 }
             }
         }
-        for ((n, l), u) in nodes.iter_mut().zip(links).zip(under) {
-            (n.links, n.under) = (l, u);
+        // (A pointer the call wrote: the node it points to.)
+        for ((n, to), u) in nodes.iter_mut().zip(tos).zip(under) {
+            for (d, to) in n.changes.iter_mut().zip(to) {
+                d.to = to;
+            }
+            n.under = u;
         }
         nodes
     }
@@ -1396,25 +1415,25 @@ mod tests {
     #[test]
     fn the_objects_a_call_wrote_are_a_graph() {
         // f (1) takes struct s *p (at 4) and has a local struct t y (at frame
-        // 32 + 8: int c, then struct s *link): it stores p->b and y.c, and
-        // y.link points at *p: two nodes, y linked to p's.
+        // 32 + 8: int c, then struct s *link): it stores p->b, y.c, and
+        // y.link, pointing at *p: two nodes, p under y, by its link.
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
                                T\t4\tstruct\tt\t8\nM\t4\tc\t0\t0\t1\nM\t4\tlink\t32\t0\t3\nP\t1\tf\tp:3\nQ\t1\ty:4:8\n");
-        let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None }, Record::Store { addr: 40, size: 4, old: 0, line: 0, from: None }];
+        let st = |addr, old| Record::Store { addr, size: 4, old, line: 0, from: None };
+        let r = [Record::Block { func: 1, n: 0 }, st(8, 1), st(40, 0), st(44, 0)];
         let mut args = Args::default();
         args.push(0, &[4, 32]);
-        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], args);
         let mut m = alloc::vec![0u8; 64];
         (m[8], m[40], m[44]) = (2, 7, 4);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let nodes = v.objects(0, 2);
-        let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.changes.iter().map(|d| (d.member.clone(), d.before.clone(), d.after.clone())).collect::<Vec<_>>(),
-                                                n.links.iter().map(|l| (l.member.clone(), l.to)).collect::<Vec<_>>())).collect();
-        assert_eq!(got, [("f's p".into(), alloc::vec![("b".into(), "1".into(), "2".into())], alloc::vec![]),
-                         ("f's y".into(), alloc::vec![("c".into(), "0".into(), "7".into())], alloc::vec![("link".into(), 0)])]);
+        let nodes = v.objects(0, 3);
+        let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.changes.iter().map(|d| (d.member.clone(), format!("{} → {}", d.before, d.after), d.to)).collect::<Vec<_>>())).collect();
+        assert_eq!(got, [("f's p".into(), alloc::vec![("b".into(), "1 → 2".into(), None)]),
+                         ("f's y".into(), alloc::vec![("c".into(), "0 → 7".into(), None), ("link".into(), "NULL → 0x4".into(), Some(0))])]);
         // (Shown as a tree: p under y, which points to it.)
-        assert_eq!(nodes.iter().map(|n| n.under).collect::<Vec<_>>(), [Some(1), None]);
+        assert_eq!(nodes.iter().map(|n| n.under.clone()).collect::<Vec<_>>(), [Some((1, "link".into())), None]);
     }
 
     #[test]
@@ -1451,8 +1470,8 @@ mod tests {
         let mut m = alloc::vec![0u8; 128];
         m[12] = 3;
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let got: Vec<_> = v.objects(0, 2).into_iter().map(|n| (n.what, n.changes.into_iter().map(|d| (d.member, d.after)).collect::<Vec<_>>())).collect();
-        assert_eq!(got, [("f's p".into(), alloc::vec![("inner.b".into(), "3".into())])]);
+        let got: Vec<_> = v.objects(0, 2).into_iter().map(|n| (n.what, n.changes.into_iter().map(|d| (d.member, format!("{} → {}", d.before, d.after))).collect::<Vec<_>>())).collect();
+        assert_eq!(got, [("f's p".into(), alloc::vec![("inner.b".into(), "0 → 3".into())])]);
     }
 
     #[test]
@@ -1475,9 +1494,32 @@ mod tests {
     }
 
     #[test]
-    fn a_member_written_back_is_no_change() {
+    fn a_members_changes_are_a_run_a_function() {
+        // f (1) takes struct s *p (at 4) and stores p->b 2 (was 1); g (2),
+        // which it calls with p, stores it back to 1: b left as it was, f's
+        // run 1 → 2, then g's 2 → 1.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:5\t0\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1\nB\t2\t0\t0:5:1\nL\t2\t0\t0:5\n",
+                              "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\nP\t2\tg\tp:3\n");
+        let st = |old| Record::Store { addr: 8, size: 4, old, line: 0, from: None };
+        let r = [Record::Block { func: 1, n: 0 }, st(1), Record::Block { func: 2, n: 0 }, st(2), Record::Return { func: 2, value: 0 }];
+        let mut args = Args::default();
+        args.push(0, &[4, 64]);
+        args.push(2, &[4, 48]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 5], args);
+        let mut m = alloc::vec![0u8; 128];
+        m[8] = 1;
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        let nodes = v.objects(0, 4);
+        let d = &nodes[0].changes[0];
+        let runs: Vec<_> = d.runs.iter().map(|r| (r.at.as_ref().map(|l| l.func.clone()), r.before.clone(), r.after.clone(), r.last)).collect();
+        assert_eq!((nodes[0].what.as_str(), d.member.as_str(), d.before.as_str(), d.after.as_str()), ("f's p", "b", "1", "1"));
+        assert_eq!(runs, [(Some("f".into()), "1".into(), "2".into(), 1), (Some("g".into()), "2".into(), "1".into(), 3)]);
+    }
+
+    #[test]
+    fn a_member_one_function_writes_back_is_no_change() {
         // f (1) takes struct s *p (at 4): it stores p->b 2 (was 1), then 1
-        // again: b written, but as it was.
+        // again: b left as it was, by the one function: no change, no object.
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\n");
         let st = |old| Record::Store { addr: 8, size: 4, old, line: 0, from: None };
@@ -1488,8 +1530,7 @@ mod tests {
         let mut m = alloc::vec![0u8; 64];
         m[8] = 1;
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let got: Vec<_> = v.objects(0, 2).into_iter().map(|n| (n.what, n.changes.len(), n.back)).collect();
-        assert_eq!(got, [("f's p".into(), 0, alloc::vec!["b".into()])]);
+        assert!(v.objects(0, 2).is_empty());
     }
 
     #[test]

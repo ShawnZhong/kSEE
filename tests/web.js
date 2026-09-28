@@ -133,8 +133,8 @@ check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
 {
   const obj = m.objects(read.first, read.last).find((n) => n.addr === Number(file.value) && n.id === file.target);
   const d = obj?.changes.find((x) => x.member === "f_pos");
-  check(`the read changed its file: ${obj?.changes.map((x) => x.member).join(", ")}; f_pos ${d?.before} → ${d?.after} by ${d?.at?.func}`,
-        d?.before === "0" && d?.after === "26" && d?.at?.func === "ksys_read");
+  check(`the read wrote its file: ${obj?.changes.map((x) => x.member).join(", ")}; f_pos ${d?.before} → ${d?.after} by ${d?.runs.map((r) => r.at?.func).join(", ")}`,
+        d?.before === "0" && d?.after === "26" && d.runs.length === 1 && d.runs[0].at?.func === "ksys_read");
   // The read's stores, named as the code names what they hit: a call's file, a local of a call in it (at its frame base's offset), a callee's frame; in order.
   const st = m.stores(read.first, read.last);
   check(`the read's stores: ${st.length}, ${[...new Set(st.map((s) => s.what))].slice(0, 5).join("; ")}…`,

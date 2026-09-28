@@ -126,14 +126,14 @@
   if (!/^ksys_read = \d+$/.test(r.rets[0] ?? "")) throw new Error("no return value in a call's hover: " + JSON.stringify(r.rets));
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   // The Objects (the explanation's link): what the call did, each object
-  // it changed, member by member (the kiocb's ki_pos, 0 → 18); a row goes
-  // to the write that left it so.
+  // it wrote, member by member (the kiocb's ki_pos, 0 → 18, by
+  // filemap_read); a row goes to the write that left it so.
   const before = ksee.time.cursor();
   [...document.querySelectorAll(".explain a.place")].find((x) => /changed/.test(x.textContent))?.click();
   await until(() => $("right").dataset.tab === "objects" && document.querySelector("#objects .obj"));
   const kipos = [...document.querySelectorAll("#objects tr")].find((tr) => tr.cells[0]?.textContent === "ki_pos");
   r.objects = [kipos?.innerText.replace(/\s+/g, " ")];
-  if (!/^ki_pos 0 → \d+$/.test(r.objects[0] ?? "")) throw new Error("objects: " + JSON.stringify(r.objects));
+  if (!/^ki_pos 0 → \d+ filemap_read$/.test(r.objects[0] ?? "")) throw new Error("objects: " + JSON.stringify(r.objects));
   kipos.click(); await sleep(200);
   if (ksee.time.cursor() !== Number(kipos.dataset.last) || !kipos.classList.contains("on")) throw new Error("a change's row goes to its write: " + JSON.stringify([ksee.time.cursor(), kipos.dataset.last]));
   ksee.tab("stack");

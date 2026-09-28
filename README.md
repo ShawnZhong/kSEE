@@ -109,12 +109,14 @@ Objects tab says what the selected call did to the kernel's data: each
 object it changed that is still there when it returns (named as the code
 names it: `vfs_read's file`, `prog(19)->files`, `nr_inodes`; not its own
 locals, gone by then, nor the machine's plumbing), each member it changed
-from what it was to what it is as the call ends (`f_pos  0 → 18`; a row
-goes to the write that left it so), the members it wrote back as they
-were in a line (a count taken and dropped), and its pointers to the
-others, each a link to it (`f_inode → filemap_read's inode`), as a tree:
-a kiocb's file, the file's inode. It is the same at every moment; the
-moments are the Stack's. The line the cursor is on shows its values at
+from what it was to what it is as the call ends (`f_pos  0 → 18`; a
+pointer, to another object: that one, `fd_array[3]  NULL →
+create_pipe_files's f`, a link to it), and who: the function, or, when
+several changed it in turn, a line each (`f_mode`: init_file, then
+file_init_path, …; a count taken by one and dropped by another, dim,
+`1 → 2`, `2 → 1`); a row goes to its write. As a tree: each object under
+the first that points to it (`← f_inode`). It is the same at every moment;
+the moments are the Stack's. The line the cursor is on shows its values at
 its end, as a debugger does (`fd = 3   count = 64`). Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by
 its number and filesystem, a task by its comm and pid. The Trace tab is

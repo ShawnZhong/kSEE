@@ -124,9 +124,14 @@ that call runs (the slot is another's before and after). What a call did
 it (a page's refcount is the page's `_refcount.counter`), those still there
 when it returns (not a local of it or of a call it makes: its scratch):
 each member from what it was as the span began to what it is as it ends,
-the members written but left as they were apart, and the pointers between
-them as it ends (the members of pointer type, `Types::pointers`, whose
+and how: a run a function writing it in turn, from what to what (one
+that left it as it was, not; a member no run changed, not); a pointer, the
+object it points to as it ends; and each object under the first that
+points to it then (the members of pointer type, `Types::pointers`, whose
 value is inside another).
+
+A store with no line of its own (the compiler gave it none, or one past
+its stretch) is on the line its stretch ends on.
 
 ## Where a value came from, and why a branch went
 

@@ -224,20 +224,24 @@ impl Calls {
         let c = &self.calls[p.call as usize];
         // (Which stretch it is in, and where in it.)
         let (mut seg, mut nth) = (0, line as usize);
-        let s = loop {
+        let own = loop {
             let steps = t.stretch(c.func, p.n, seg);
             match steps.get(nth) {
-                Some(&s) => break s,
-                None if steps.is_empty() && seg > p.seg => return None,
+                Some(&s) => break Some(s),
+                None if steps.is_empty() && seg > p.seg => break None,
                 None => (seg, nth) = (seg + 1, nth - steps.len()),
             }
         };
-        // (A line of another stretch than the one it runs in, one before a
-        // call it made: the store has no line of its own, the plugin's last.)
-        if seg != p.seg {
-            return None;
-        }
-        let nth = nth as u32;
+        // (None, or a line of another stretch than the one it runs in (one
+        // before a call it made): the store has no line of its own (the
+        // compiler gave it none), so the line its stretch is on, its last.)
+        let (s, nth) = match own {
+            Some(s) if seg == p.seg => (s, nth as u32),
+            _ => {
+                let steps = t.stretch(c.func, p.n, p.seg);
+                (*steps.last()?, steps.len() as u32 - 1)
+            }
+        };
         Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run: 0, ret: None, callee: None })
     }
 
@@ -442,6 +446,19 @@ mod tests {
         assert_eq!((lines_of(3), lines_of(5)), (alloc::vec![Some(3), Some(10)], alloc::vec![Some(4)]));
         // (At the block's own record, f is at its first line, about to run it; after, at its last.)
         assert_eq!((lines_of(0), lines_of(2)), (alloc::vec![Some(1)], alloc::vec![Some(3)]));
+    }
+
+    #[test]
+    fn a_store_with_no_line_of_its_own_is_on_its_stretchs() {
+        // f's block 0 runs lines 1, 2, 3, then calls g, then line 4: a store
+        // before the call whose line is past its stretch (4, after the call;
+        // or none the block has) is where the stretch ends, line 3.
+        let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1;:2;:3;|;:4\n", "");
+        let st = |line| Record::Store { addr: 8, size: 4, old: 0, line, from: None };
+        let r = [b(1, 0), st(3), st(9)];
+        let c = Calls::new(&t, &r, &[7; 3]);
+        let at = |i| c.line_at(&t, i, &r).map(|s| (s.loc.line, s.nth));
+        assert_eq!((at(1), at(2)), (Some((3, 2)), Some((3, 2))));
     }
 
     #[test]
