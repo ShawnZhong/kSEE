@@ -77,7 +77,8 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   arguments and frame base, returns, stores with old values, where a
   copy came from, the comparisons deciding branches) into one
   ring, in full while a runner makes the syscall it was asked, stores
-  only in between (so memory as it was stays exact).
+  only in between (so memory as it was stays exact, but for bulk writes
+  past 256 bytes).
 - **Rebuilding the past** ([replay.md](replay.md)): from the records alone,
   crates/ksee-core rebuilds which task ran, call stacks, lines within
   blocks, syscalls, and memory as it was at any record.

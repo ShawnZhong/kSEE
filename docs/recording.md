@@ -95,8 +95,10 @@ that syscall, entry to return, and whatever the kernel does meanwhile
 (other tasks it wakes, timers, the clock skipping in idle). `2`: stores
 only, between calls (from the first call on): what the kernel does then
 (the runner's way back to its wait, idle) is not shown, but every write
-is still undone when going back, so memory as it was stays exact: a
-call's locals are on the runner's kernel stack, which its wait reuses.
+is still undone when going back, so memory as it was stays exact (but
+for bulk writes past their first 256 bytes, whose old contents are not
+kept: see replay.md): a call's locals are on the runner's kernel stack,
+which its wait reuses.
 Otherwise each probe costs a load and a branch.
 
 ## What the kernel says about itself
