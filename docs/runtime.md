@@ -112,7 +112,7 @@ line, ask again), each named as the code
 names what it hit:
 the structs the calls' arguments point to, the task, locals and frames,
 the kernel's globals by address, the machine's own variables apart:
-"vfs_read's file"; else by its address), `raw` (records as text), `run_of` (a line's next or
+"file in vfs_read"; else by its address), `raw` (records as text), `run_of` (a line's next or
 last run), `definition`.
 
 ## Tests

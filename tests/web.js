@@ -138,8 +138,8 @@ check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
   // The read's stores, named as the code names what they hit: a call's file, a local of a call in it (at its frame base's offset), a callee's frame; in order.
   const st = m.stores(read.first, read.last);
   check(`the read's stores: ${st.length}, ${[...new Set(st.map((s) => s.what))].slice(0, 5).join("; ")}…`,
-        st.some((s) => /^\w+'s file$/.test(s.what) && s.kind === "object" && s.write.member === "f_pos") && st.some((s) => /'s (kiocb|iter)$/.test(s.what))
-        && st.some((s) => s.what.endsWith("'s frame")) && st.every((s, k) => k === 0 || st[k - 1].write.i < s.write.i));
+        st.some((s) => /^file in \w+$/.test(s.what) && s.kind === "object" && s.write.member === "f_pos") && st.some((s) => /^(kiocb|iter) in /.test(s.what))
+        && st.some((s) => s.what.startsWith("frame of ")) && st.every((s, k) => k === 0 || st[k - 1].write.i < s.write.i));
 }
 m.memory_at(null);
 // What the read did: its file changed; not its kiocb (on the stack, gone

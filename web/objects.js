@@ -1,11 +1,11 @@
 // The Objects: what the selected call (a syscall, or a call double-clicked
 // in the timeline: the zoom) did to the kernel's data (Machine.objects):
 // a box per object it changed that is still there when it returns (named
-// as the code names them: "vfs_read's file", "prog(19)->files"), each
-// member it changed from what it was to what it is as the call ends
-// ("f_pos  0 → 18"; one left as it was, a count taken and dropped, dim),
-// and who: the function, or a line each for the ones that changed it in
-// turn (click: its write). As a tree: each box under the first that
+// as the code names them: "file in vfs_read", "prog(19)->files"), each
+// member it changed, a line a function that changed it in turn, from
+// what to what ("f_mode  0 → 0x4000001  init_file", then "0x4000001 →
+// 0x40a801d  do_dentry_open"; one left as it was, a count one took and
+// another dropped, dim; click: that write). As a tree: each box under the first that
 // points to it, by that member ("← f_inode"). The same at every moment:
 // the moments are the Stack's.
 import { $, el } from "./dom.js";
@@ -47,29 +47,22 @@ export function objects(app) {
   }
 
   // An object's box: its name, its type, the member it hangs from; each
-  // member changed, before → after (a pointer to another box: that box, a
-  // link to it), and who changed it: the function, or, when more did, a
-  // line each, in turn (past six, the others on asking).
+  // member changed, a line a function that changed it in turn, from what
+  // to what (a pointer to another box, at the end: that box, a link to
+  // it); past six, the others on asking. One left as it was, dim.
   function box(n, nodes, k) {
     const rows = [];
     n.changes.forEach((d, j) => {
-      const to = d.to != null ? nodes[d.to] : null, runs = d.runs, one = runs.length === 1;
-      const change = (a, b, last) => [el("span", { className: "dim" }, `${a} → `), last && to ? el("a", { textContent: to.what, onclick: (e) => (e.stopPropagation(), flash(d.to)) }) : b];
-      const go = (r) => ({ dataset: { last: r.last }, onclick: () => app.time.go(r.last),
-        title: `${r.writes === 1 ? "written once" : `written ${r.writes} times`}${r.at ? ` in ${r.at.func} (${r.at.file}:${r.at.line})` : ""}: click to go there` });
-      rows.push(el("tr", { className: d.before === d.after ? "same" : "", ...go(runs.at(-1)) },
-        el("td", { className: "fname" }, d.member || "(itself)"),
-        el("td", { className: "fval" }, ...change(d.before, d.after, true)),
-        el("td", { className: "ftype" }, one ? runs[0].at?.func ?? "" : "")));
-      if (one) return;
-      const p = `${k}/${j}`, all = open.has(p) || runs.length <= 6;
-      for (const [r, q] of (all ? runs : runs.slice(0, 5)).map((r, q) => [r, q])) {
-        rows.push(el("tr", { className: "run", ...go(r) },
-          el("td", { className: "fname" }, r.at?.func ?? "?"),
-          el("td", { className: "fval" }, ...change(r.before, r.after, q === runs.length - 1)), el("td")));
-      }
-      if (!all) rows.push(el("tr", { className: "run" }, el("td", { colSpan: 3 },
-        el("a", { textContent: `▸ ${runs.length - 5} more`, onclick: () => (open.add(p), (shown = null), draw()) }))));
+      const to = d.to != null ? nodes[d.to] : null, runs = d.runs, p = `${k}/${j}`;
+      const list = open.has(p) || runs.length <= 6 ? runs : runs.slice(0, 5);
+      list.forEach((r, q) => rows.push(el("tr", { className: d.before === d.after ? "same" : "", dataset: { last: r.last }, onclick: () => app.time.go(r.last),
+          title: `${r.writes === 1 ? "written once" : `written ${r.writes} times`}${r.at ? ` in ${r.at.func} (${r.at.file}:${r.at.line})` : ""}: click to go there` },
+        el("td", { className: "fname" }, q ? "" : d.member || "(itself)"),
+        el("td", { className: "fval" }, el("span", { className: "dim" }, `${r.before} → `),
+          q === runs.length - 1 && to ? el("a", { textContent: to.what, onclick: (e) => (e.stopPropagation(), flash(d.to)) }) : r.after),
+        el("td", { className: "ftype" }, r.at?.func ?? ""))));
+      if (list.length < runs.length) rows.push(el("tr", {}, el("td"), el("td", { colSpan: 2 },
+        el("a", { textContent: `▸ ${runs.length - list.length} more`, onclick: () => (open.add(p), (shown = null), draw()) }))));
     });
     return el("div", { className: `obj ${n.kind}`, dataset: { k } },
       el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty}${n.under ? `  ← ${n.under[1]}` : ""}` })),

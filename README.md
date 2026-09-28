@@ -107,14 +107,13 @@ link to its last moment (the Stack then shows its stack), its task_struct
 as it was on asking; the Stack's `current task` is a link to it. The
 Objects tab says what the selected call did to the kernel's data: each
 object it changed that is still there when it returns (named as the code
-names it: `vfs_read's file`, `prog(19)->files`, `nr_inodes`; not its own
-locals, gone by then, nor the machine's plumbing), each member it changed
-from what it was to what it is as the call ends (`f_pos  0 → 18`; a
-pointer, to another object: that one, `fd_array[3]  NULL →
-create_pipe_files's f`, a link to it), and who: the function, or, when
-several changed it in turn, a line each (`f_mode`: init_file, then
-file_init_path, …; a count taken by one and dropped by another, dim,
-`1 → 2`, `2 → 1`); a row goes to its write. As a tree: each object under
+names it: `file in vfs_read`, `prog(19)->files`, `nr_inodes`; not its own
+locals, gone by then, nor the machine's plumbing), each member it changed,
+a line a function that changed it in turn, from what to what (`f_mode
+0 → 0x4000001  init_file`, then `0x4000001 → 0x40a801d  do_dentry_open`;
+a pointer, to another object: that one, `fd_array[3]  NULL → f in
+create_pipe_files`, a link to it; a count one took and another dropped,
+dim); a line goes to its write. As a tree: each object under
 the first that points to it (`← f_inode`). It is the same at every moment;
 the moments are the Stack's. The line the cursor is on shows its values at
 its end, as a debugger does (`fd = 3   count = 64`). Objects are said as

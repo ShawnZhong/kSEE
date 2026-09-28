@@ -140,7 +140,7 @@ pub struct Change {
 }
 
 /// A store in a span of records, as the code names what it hit: `what`
-/// ("vfs_read's file", "f's x", "nr_inodes", "current"; the address when
+/// ("file in vfs_read", "x in f", "nr_inodes", "current"; the address when
 /// nothing names it), its `kind` ("task", "object": a struct a call's
 /// argument points to, "global", "machine": one of the machine's
 /// variables, or what its functions name (arch::MACHINE),
@@ -862,8 +862,10 @@ impl View<'_> {
             let Some(at) = s.write.at.as_ref().filter(|at| at.file == file) else { continue };
             let x = &s.write;
             let join = if x.member.starts_with('+') { "" } else if s.kind == "object" { "->" } else { "." };
-            let full = format!("{}{}: {} → {}", s.what, if x.member.is_empty() { String::new() } else { format!("{join}{}", x.member) }, x.before, x.after);
-            let name = if x.member.is_empty() { s.what.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(&s.what) } else { &x.member };
+            // (The member after the name, the function it is in last: "filp->f_pos in vfs_read".)
+            let (expr, within) = s.what.split_once(" in ").map_or((s.what.as_str(), String::new()), |(e, f)| (e, format!(" in {f}")));
+            let full = format!("{expr}{}{within}: {} → {}", if x.member.is_empty() { String::new() } else { format!("{join}{}", x.member) }, x.before, x.after);
+            let name = if x.member.is_empty() { expr.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(expr) } else { &x.member };
             let n = by.get(&at.line).map_or(0, |b| b.n) + 1;
             by.insert(at.line, Note { line: at.line, i: x.i, n, short: format!("{name}: {} → {}", x.before, x.after), full });
         }
@@ -873,7 +875,7 @@ impl View<'_> {
     /// (The work of stores: see it.)
     fn name_stores(&self, first: usize, last: usize) -> Vec<Stored> {
         let (t, types) = (self.tables, &self.tables.types);
-        // (The objects: what (as the code names it: "vfs_read's file"),
+        // (The objects: what (as the code names it: "file in vfs_read"),
         // type, address, size, and for a call's local or frame its life (the
         // call's records: its slots are other calls' before and after). The
         // task first.)
@@ -933,23 +935,23 @@ impl View<'_> {
                     // (Its frame: up to its caller's, if the caller is known.)
                     let caller = calls.call_from(i).and_then(|c| c.parent).and_then(|p| args.get(calls.calls[p as usize].first));
                     if let Some((_, caller)) = caller && caller > frame {
-                        add(format!("{}'s frame", f.name), "frame", 0, frame, Some(caller - frame), Some(i), Some(i));
+                        add(format!("frame of {}", f.name), "frame", 0, frame, Some(caller - frame), Some(i), Some(i));
                     }
                     for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
                         let v = v as u32;
                         if let Some(to) = types.struct_target(*ty) {
-                            add(format!("{}'s {pname}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
+                            add(format!("{pname} in {}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
                         }
                     }
                     for (var, ty, off) in types.locals.get(&func).into_iter().flatten().filter_map(|(v, t, o)| Some((v, t, (*o)?))) {
-                        add(format!("{}'s {var}", f.name), kind("local"), *ty, frame.wrapping_add(off), None, Some(i), Some(i));
+                        add(format!("{var} in {}", f.name), kind("local"), *ty, frame.wrapping_add(off), None, Some(i), Some(i));
                         // (A local pointing at a struct: that too ("files->next_fd"
                         // through `struct files_struct *files = current->files`),
                         // where it points as the call ends.)
                         if let Some(to) = types.struct_target(*ty) {
                             let end = self.rec.calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
                             let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
-                            add(format!("{}'s {var}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
+                            add(format!("{var} in {}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
                         }
                     }
                     // (One the code keeps in a wasm local, pointing at a
@@ -969,7 +971,7 @@ impl View<'_> {
                     }
                     for (v, value) in values {
                         if let Some(to) = self.var_ty(v).and_then(|ty| types.struct_target(ty)) {
-                            add(format!("{}'s {}", v.function, v.name), kind("object"), to, value, None, frame_of(i, value), Some(i));
+                            add(format!("{} in {}", v.name, v.function), kind("object"), to, value, None, frame_of(i, value), Some(i));
                         }
                     }
                 }
@@ -1019,7 +1021,7 @@ impl View<'_> {
             let after = o.value.clone().unwrap_or_default();
             let was = before.insert((c, var), after.clone()).unwrap_or_else(|| "(uninitialized)".into());
             let at = self.rec.line_at(t, i).map(|s| self.line_only(&s));
-            out.push(Stored { what: format!("{}'s {}", v.function, v.name), kind: "var", ty: o.ty, id: 0, addr: 0, size: 0,
+            out.push(Stored { what: format!("{} in {}", v.name, v.function), kind: "var", ty: o.ty, id: 0, addr: 0, size: 0,
                               write: Change { i, member: String::new(), before: was, after, at }, life: None, depth });
         }
         out.sort_by_key(|s| s.write.i);
@@ -1092,7 +1094,7 @@ impl View<'_> {
         nodes.sort_by_key(|n| n.0.depth);
         let (mut nodes, points): (Vec<Node>, Vec<Vec<Option<u32>>>) = nodes.into_iter().unzip();
         // (One name for two (the slabs of two caches a callee named by one
-        // parameter): the later numbered: "pfmemalloc_match's slab #2".)
+        // parameter): the later numbered: "slab in pfmemalloc_match #2".)
         let mut seen: BTreeMap<String, u32> = BTreeMap::new();
         for n in &mut nodes {
             let k = seen.entry(n.what.clone()).or_default();
@@ -1390,8 +1392,8 @@ mod tests {
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
         // (The last, to g's frame after g returned: g's no more.)
         let got: Vec<_> = v.stores(0, 7).iter().map(|s| (s.what.clone(), s.kind, s.write.member.clone(), s.write.after.clone())).collect();
-        assert_eq!(got, [("f's p".into(), "object", "b".into(), "2".into()), ("f's x".into(), "local", "".into(), "7".into()),
-                         ("g's frame".into(), "frame", "+4".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into()),
+        assert_eq!(got, [("p in f".into(), "object", "b".into(), "2".into()), ("x in f".into(), "local", "".into(), "7".into()),
+                         ("frame of g".into(), "frame", "+4".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into()),
                          ("0x15".into(), "other", "".into(), "0".into())]);
     }
 
@@ -1409,7 +1411,7 @@ mod tests {
         m[8] = 2;
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
         let got: Vec<_> = v.stores(0, 2).iter().map(|s| (s.what.clone(), s.write.member.clone(), s.write.after.clone())).collect();
-        assert_eq!(got, [("f's q".into(), "".into(), "0x4".into()), ("f's q".into(), "b".into(), "2".into())]);
+        assert_eq!(got, [("q in f".into(), "".into(), "0x4".into()), ("q in f".into(), "b".into(), "2".into())]);
     }
 
     #[test]
@@ -1430,8 +1432,8 @@ mod tests {
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
         let nodes = v.objects(0, 3);
         let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.changes.iter().map(|d| (d.member.clone(), format!("{} → {}", d.before, d.after), d.to)).collect::<Vec<_>>())).collect();
-        assert_eq!(got, [("f's p".into(), alloc::vec![("b".into(), "1 → 2".into(), None)]),
-                         ("f's y".into(), alloc::vec![("c".into(), "0 → 7".into(), None), ("link".into(), "NULL → 0x4".into(), Some(0))])]);
+        assert_eq!(got, [("p in f".into(), alloc::vec![("b".into(), "1 → 2".into(), None)]),
+                         ("y in f".into(), alloc::vec![("c".into(), "0 → 7".into(), None), ("link".into(), "NULL → 0x4".into(), Some(0))])]);
         // (Shown as a tree: p under y, which points to it.)
         assert_eq!(nodes.iter().map(|n| n.under.clone()).collect::<Vec<_>>(), [Some((1, "link".into())), None]);
     }
@@ -1451,14 +1453,14 @@ mod tests {
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
         assert!(v.objects(0, 2).is_empty());
         let got: Vec<_> = v.objects(0, 1).into_iter().map(|n| (n.what, n.changes.len())).collect();
-        assert_eq!(got, [("f's x".into(), 1)]);
+        assert_eq!(got, [("x in f".into(), 1)]);
     }
 
     #[test]
     fn an_object_inside_another_is_its_member() {
         // f (1) takes struct u *p (at 4: int a, then struct s inner); g
         // (2), which f calls, takes struct s *q (p's inner, at 8) and stores
-        // q->b: one object, f's p, its inner.b changed.
+        // q->b: one object, p in f, its inner.b changed.
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
                                T\t4\tstruct\tu\t12\nM\t4\ta\t0\t0\t1\nM\t4\tinner\t32\t0\t2\nT\t5\tptr\t\t4\t4\nP\t1\tf\tp:5\nP\t2\tg\tq:3\n");
@@ -1471,13 +1473,13 @@ mod tests {
         m[12] = 3;
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
         let got: Vec<_> = v.objects(0, 2).into_iter().map(|n| (n.what, n.changes.into_iter().map(|d| (d.member, format!("{} → {}", d.before, d.after))).collect::<Vec<_>>())).collect();
-        assert_eq!(got, [("f's p".into(), alloc::vec![("inner.b".into(), "0 → 3".into())])]);
+        assert_eq!(got, [("p in f".into(), alloc::vec![("inner.b".into(), "0 → 3".into())])]);
     }
 
     #[test]
     fn two_objects_of_one_name_are_numbered() {
         // f (1), called twice, takes struct s *p (at 4, then at 20) and
-        // stores p->b: two objects, "f's p" and "f's p #2".
+        // stores p->b: two objects, "p in f" and "p in f #2".
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\n");
         let st = |addr| Record::Store { addr, size: 4, old: 0, line: 0, from: None };
@@ -1490,7 +1492,7 @@ mod tests {
         (m[8], m[24]) = (1, 2);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
         let got: Vec<_> = v.objects(0, 5).into_iter().map(|n| n.what).collect();
-        assert_eq!(got, ["f's p", "f's p #2"]);
+        assert_eq!(got, ["p in f", "p in f #2"]);
     }
 
     #[test]
@@ -1512,7 +1514,7 @@ mod tests {
         let nodes = v.objects(0, 4);
         let d = &nodes[0].changes[0];
         let runs: Vec<_> = d.runs.iter().map(|r| (r.at.as_ref().map(|l| l.func.clone()), r.before.clone(), r.after.clone(), r.last)).collect();
-        assert_eq!((nodes[0].what.as_str(), d.member.as_str(), d.before.as_str(), d.after.as_str()), ("f's p", "b", "1", "1"));
+        assert_eq!((nodes[0].what.as_str(), d.member.as_str(), d.before.as_str(), d.after.as_str()), ("p in f", "b", "1", "1"));
         assert_eq!(runs, [(Some("f".into()), "1".into(), "2".into(), 1), (Some("g".into()), "2".into(), "1".into(), 3)]);
     }
 

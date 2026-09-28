@@ -122,8 +122,6 @@ h2.tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
 #objects .obj tr:hover td { background: var(--sel); }
 #objects .obj tr.on td { background: var(--at); }
 #objects .obj tr.same td { color: var(--dim); }
-#objects .obj tr.run td { font-size: 10.5px; color: var(--dim); }
-#objects .obj tr.run td.fname { padding-left: 22px; }
 /* (What comes only after the cursor: dim.) */
 tr.later { opacity: 0.45; }
 #objects .obj.flash { animation: flash 1s; }

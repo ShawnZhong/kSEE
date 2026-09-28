@@ -116,7 +116,7 @@ printed as its type before and after (memory as it was), in
 order, each named as the code names what it hit (a call's pointer
 argument to a struct, a local and what a pointer local points to as the
 call ends, the task running and what its pointer members point to, a
-global: "vfs_read's file->f_pos", "prog(19)->files->next_fd" (the task running as the span begins, by its name); what the
+global: "file->f_pos in vfs_read", "prog(19)->files->next_fd" (the task running as the span begins, by its name); what the
 code did not name, by its address). A call's local, its frame, and an
 object a pointer reaches in a frame on the stack, are theirs only while
 that call runs (the slot is another's before and after). What a call did
