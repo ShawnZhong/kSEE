@@ -3,11 +3,13 @@
 // child's execve let it go; the child's calls are its; cat's output is on
 // the console.
 (async () => {
-  for (let i = 0; i < 100 && (document.querySelectorAll("ol.steps > li.done").length < 10 || !document.querySelector(".explain a.place.on")); i++) await sleep(100);
+  for (let i = 0; i < 120 && (document.querySelectorAll("ol.steps > li.done").length < 12 || !document.querySelector(".explain a.place.on")); i++) await sleep(100);
   const r = { calls: lis().map(line), stop: document.querySelector(".explain").innerText.replace(/\s+/g, " "), console: $("console").textContent };
   const bad = (k, want) => !r.calls[k]?.includes(want);
-  if (document.querySelector("ol.steps > li.blocked") || bad(1, "= 19") || bad(2, "tid ") || bad(5, "tid ") || bad(5, "new program")
-      || bad(7, "= 6") || bad(8, "= 0") || bad(9, "= 0") || !r.stop.includes("create_pipe_files") || !r.console.includes("hello"))
+  // (Its lines: int fds[2], pipe2, clone, the child's four, /init's three,
+  // siginfo_t info, waitid.)
+  if (document.querySelector("ol.steps > li.blocked") || bad(1, "= 0") || bad(2, "= 19") || bad(3, "tid ") || bad(6, "tid ") || bad(6, "new program")
+      || bad(8, "= 6") || bad(9, "= 0") || bad(11, "= 0") || !r.stop.includes("create_pipe_files") || !r.console.includes("hello"))
     throw new Error("the pipe: " + JSON.stringify(r));
   return r;
 })()
