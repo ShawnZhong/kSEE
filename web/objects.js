@@ -45,7 +45,12 @@ export function objects(app) {
     const visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.under?.[0] === k && visit(c, depth + 1)));
     nodes.forEach((n, k) => n.under == null && visit(k, 0));
     return [el("div", { className: "dim head" }, `What ${title} did: ${nodes.length} object${nodes.length === 1 ? "" : "s"}`),
-      ...order.map(([k, depth]) => Object.assign(box(nodes[k], nodes, k), { style: `margin-left: ${Math.min(depth, 6) * 14}px` }))];
+      // (One under another: indented, a guide line down its left.)
+      ...order.map(([k, depth]) => {
+        const b = box(nodes[k], nodes, k);
+        if (depth) (b.classList.add("under"), (b.style.marginLeft = `${Math.min(depth, 6) * 18}px`));
+        return b;
+      })];
   }
 
   // An object's box: its name, its type, the member it hangs from; each

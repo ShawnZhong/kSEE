@@ -116,6 +116,7 @@ h2.tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
 #objects { padding: 0 10px 12px; }
 #objects .head { padding: 6px 2px 2px; font-size: 11.5px; }
 #objects .obj { margin: 10px 0 0; font: 11px/1.5 var(--mono); }
+#objects .obj.under { border-left: 2px solid var(--line); padding-left: 6px; }
 #objects .obj .title { padding: 1px 4px; border-bottom: 1px solid var(--line); white-space: nowrap; width: max-content; min-width: 100%; }
 #objects .obj td.fname { padding-left: 12px; }
 #objects .obj tr { cursor: pointer; }
