@@ -46,3 +46,6 @@ pub const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
 /// flexible array: a directory's entries, getdents64's): the members that
 /// say how long each record is, all of it.
 pub const RECORD_LENGTHS: &[&str] = &["d_reclen"];
+/// The errno names among the UAPI constants (errno-base.h's and errno.h's:
+/// ENOENT, EEXIST): what a failed call's -errno is called.
+pub const ERRNO: &str = "E";

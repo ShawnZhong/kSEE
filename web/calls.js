@@ -10,7 +10,6 @@
 // function is one row with it (set_bit → arch_set_bit → …: the kernel's
 // layers of helpers). What a syscall did, readable.
 import { $, el } from "./dom.js";
-import { result } from "./args.js";
 
 export function callTree(app) {
   const { m } = app;
@@ -75,7 +74,7 @@ export function callTree(app) {
     const f = n.inlined ? null : fn(n.func), pct = Math.round((100 * n.records) / total);
     const a = el("a", { className: n.inlined ? "mono inl" : "mono", textContent: n.inlined ? iname(n.func) : f?.name ?? "?", onclick: () => app.goCall(n.first),
       title: `${n.inlined ? "inlined code (no call): " : `${f?.file ?? ""}:${f?.line ?? ""}: `}${n.records} record${n.records === 1 ? "" : "s"}${pct >= 1 ? ` (${pct}% of the selection)` : ""}, ${n.calls.length} call${n.calls.length === 1 ? "" : "s"}; go there` });
-    return n.ret == null ? [a] : [a, el("span", { className: "ret mono", textContent: ` = ${result(n.ret, app.consts())}` })];
+    return n.ret == null ? [a] : [a, el("span", { className: "ret mono", textContent: ` = ${app.kernel.result(n.ret)}` })];
   }
 
   // The cursor moved: the innermost call shown that it is in, marked.

@@ -309,6 +309,17 @@ impl Machine {
         o.into()
     }
 
+    /// A program's variable (see Machine::declare) as memory_at shows it (at
+    /// the cursor), as C writes it.
+    pub fn show_at_cursor(&self, ty: u32, addr: u32, count: Option<u32>) -> String {
+        self.with_memory(|mem| tables().types.show(mem, addr, ty, count))
+    }
+
+    /// The errno name of `n` (a failed call returns -n): "ENOENT" for 2.
+    pub fn errno(&self, n: f64) -> Option<String> {
+        tables().types.errno(n as i64).map(String::from)
+    }
+
     /// The syscalls' names (the kernel's syscall table).
     pub fn syscall_names(&self) -> Vec<String> {
         tables().types.syscalls.values().cloned().collect()

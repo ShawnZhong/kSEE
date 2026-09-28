@@ -1,5 +1,6 @@
 // A syscall, written as in C: `openat(AT_FDCWD, "/mnt/x", O_CREAT, 0644)`,
-// `fd = openat(…)`, `19: read(fd, [64], 64)` (see args.js). As you type:
+// `int fd = openat(…)`, `19: read(fd, buf, 64)`, or a variable, `char
+// buf[64]` (see ksee-core's program.rs: Machine.statement). As you type:
 // a list of what can go at the cursor (syscall names; then, in an
 // argument, the results so far by name, and the kernel's constants, those
 // that fit the parameter first (Machine.syscall says which)), ↑ ↓ to

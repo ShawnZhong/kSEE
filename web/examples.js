@@ -21,17 +21,17 @@
 // to remove it; add a call at the end; ↺ for the example's own program
 // again.
 //
-// A step: { call, args, name?, tid? }; its arguments written as in
-// C (see args.js and Machine.arg): "a string", 0644, O_CREAT | O_WRONLY,
-// [64], {0, 30000000}, fd or $2 (a result: `name` names a call's). Its
-// runner: thread `tid` (a number, or a result: "child", "$2"); else /init.
+// A step: a line of the program (Machine.statement), a call { call, args,
+// type?, name?, tid? }, its arguments written as in C (Machine.arg): "a
+// string", 0644, O_CREAT | O_WRONLY, {0, 30000000}, fd or $2 (a result:
+// `name` names a call's). Its runner: thread `tid` (a number, or a
+// result: "child", "$2"); else /init.
 // Or a variable of the program's: { decl }, declared as in C (`char
 // buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0, 30000000}`:
 // Machine.declare), memory of its own in /init's process; its name then
 // stands for its address (`read(fd, buf, 64)`, `&ts`), and each call's
 // line says the variables it changed, as C writes them (`fds = {3, 4}`).
 import { $, el } from "./dom.js";
-import { result } from "./args.js";
 import { callEditor } from "./calledit.js";
 import { runner } from "./kernel.js";
 
@@ -168,6 +168,21 @@ export async function examples(app) {
   const known = (...a) => t.run.known(...a);
   const stepOf = (n) => t.run.stepOf(n);
   const tidOf = (s) => t.run.tidOf(s);
+  // The names line `j` (step `s`) uses, as they are at the cursor: a
+  // result, its value; a variable (its own, for a declaration), its value
+  // as memory was there, and who wrote it, back through the copies that
+  // brought it (Machine.origin).
+  function names(s, j) {
+    const words = new Set(text(s).match(/\$?\b[A-Za-z_]\w*/g) ?? []), k = known(j), out = [];
+    for (const v of t.vars) {
+      if (!words.has(v.name) || v.j > j) continue;
+      const way = m.origin(v.addr, Math.min(8, v.size * (v.count ?? 1)));
+      const by = way.map((w) => w.at?.func ?? (w.from == null ? "the page" : "?")).join(" ← ");
+      out.push(`${v.name} = ${m.show_at_cursor(v.ty, v.addr, v.count ?? undefined)}${way.length ? `, written by ${by}` : ""}`);
+    }
+    for (const [n, x] of Object.entries(k)) if (words.has(n) && !t.vars.some((v) => v.name === n)) out.push(`${n} = ${x}`);
+    return out.length ? `At the cursor:\n${out.join("\n")}` : "";
+  }
   // A step's line, as written:
   // `tid: name = call(args)`.
   const text = (s) => s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.type ? `${s.type}${s.type.endsWith("*") ? "" : " "}` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.join(", ")})`;
@@ -176,7 +191,7 @@ export async function examples(app) {
   const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.initial ?? ""}`
     : d.how == null ? "… blocked"
     : d.how === "exec" ? "(no return: the new program runs)"
-    : d.how === "exited" ? "(no return: it exited)" : `= ${result(d.ret, consts)}`;
+    : d.how === "exited" ? "(no return: it exited)" : `= ${app.kernel.result(d.ret)}`;
   // Who makes step `j`'s call, if not /init.
   const who = (j) => {
     const tid = t.done[j]?.tid ?? (typeof t.steps[j].tid === "number" ? t.steps[j].tid : null);
@@ -191,7 +206,8 @@ export async function examples(app) {
         focus: () => pick(j),
         done: (c) => (c == null ? remove(j) : text(c) === text(s) ? e.input.blur() : change(j, c)),
         cancel: () => ((e.input.value = text(s)), e.input.blur()) });
-      e.input.title = "type to change the call (Enter: run the program again with it; Esc, or leaving it: not; emptied: remove it)";
+      // (Hover: the names it uses, at the cursor.)
+      e.input.onmouseenter = () => (e.input.title = names(s, j));
       return el("li", { className: [d ? "done" : "", d && d.how == null ? "blocked" : ""].join(" ").trim() },
         el("div", { className: "line" }, typeof s.tid === "number" ? null : who(j), e.el,
           d ? el("span", { className: "mono ret", textContent: how(d, s) }) : null,

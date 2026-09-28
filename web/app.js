@@ -10,7 +10,6 @@ import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
 import { callTree } from "./calls.js";
-import { result } from "./args.js";
 import { trace } from "./trace.js";
 import { stores } from "./stores.js";
 import { objects } from "./objects.js";
@@ -95,7 +94,6 @@ export function app(m) {
   // resets it to the innermost; the pointer over the timeline shows other
   // positions without touching it, and leaving comes back to both.
   let chosen = null;
-  const consts = a.consts;
   a.selectFrame = (f) => {
     chosen = { first: f.first, inlined: f.inlined ? f.func : null };
     stack.select(f.first, f.inlined ? f.func : null);
@@ -246,15 +244,15 @@ export function app(m) {
     // (And the comparisons it made: where it went, and why.)
     // (A line making a call: what the call returned, the value its `x =
     // f(...)` gets, as a debugger's step over says it.)
-    const note = [step.run > 1 && `${ordinal(step.run)} time here`, step.called && `${step.called[0]} → ${result(step.called[1], consts())}`,
+    const note = [step.run > 1 && `${ordinal(step.run)} time here`, step.called && `${step.called[0]} → ${a.kernel.result(step.called[1])}`,
                   step.tests.length && step.tests.join(", "),
-                  step.ret != null && `returns ${result(step.ret, consts())}`];
+                  step.ret != null && `returns ${a.kernel.result(step.ret)}`];
     src.view.cursor = { file: step.file, line: step.line, note: note.filter(Boolean).join("   ") || null };
     src.showFunction(step.func, undefined, step.line, step.file);
     // (The stack as it runs: see Machine.call_stack's nth.)
     stack.show(step.i, step, at?.task);
     // (A line after a return: what returned, as a debugger's finish says it.)
-    const ret = at?.kind === "return" && at.value != null ? `${at.func} returned ${result(at.value, consts())}` : null;
+    const ret = at?.kind === "return" && at.value != null ? `${at.func} returned ${a.kernel.result(at.value)}` : null;
     where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line, ret });
   }
   // Step, `dir` 1 forward, -1 back: to the next line of the selected

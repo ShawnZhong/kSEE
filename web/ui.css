@@ -234,3 +234,5 @@ h2.fold { cursor: pointer; user-select: none; white-space: nowrap; overflow: hid
 .consolebox.folded { flex-basis: auto !important; max-height: 1.9em; overflow: hidden; }
 #console { margin: 0; padding: 6px 12px; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; color: var(--dim); }
 .consolebox.folded #console { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+/* A value's hover: its fields as a tree (the Stack's), scrolling if long */
+.hovertip.valuetip { max-height: 360px; max-width: 520px; overflow: auto; padding: 4px 6px; font-size: 11.5px; }

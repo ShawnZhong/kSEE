@@ -9,7 +9,7 @@
 // back to its last run).
 import { $, el } from "./dom.js";
 import { storeText } from "./stores.js";
-import { result } from "./args.js";
+import { tree } from "./tree.js";
 import { CM, base } from "./editor.js";
 
 const KEYWORDS = new Set(("auto break case char const continue default do double else enum extern float for goto if " +
@@ -71,8 +71,25 @@ export function source(app) {
     const line = view.state.doc.lineAt(pos);
     const h = hover(line.number, line.text, pos - line.from) ?? await declaration(line.text, pos - line.from);
     return h && { pos: line.from + h.start, end: line.from + h.end, above: true,
-                  create: () => ({ dom: el("pre", { className: "hovertip mono", textContent: h.text }) }) };
+                  create: () => ({ dom: h.o ? valueTip(h) : el("pre", { className: "hovertip mono", textContent: h.text }) }) };
   }, { hoverTime: 200 });
+  // A value's hover: it, and its fields (what it points to) as the Stack's
+  // tree, each opening, as memory was at the cursor; the hover stays while
+  // the pointer is in it.
+  function valueTip(h) {
+    const st = { open: new Set(), last: new Map(), now: new Map() }, body = el("tbody");
+    const { rows, kids } = tree(app, st, draw);
+    function draw() {
+      st.last = st.now;
+      st.now = new Map();
+      const out = [], k = openable(h.o) ? kids(h.o) : null;
+      if (k) rows(k, "tip", 0, out, null, `${h.expr}${h.o.target != null ? "->" : "."}`);
+      body.replaceChildren(...out);
+    }
+    draw();
+    return el("div", { className: "hovertip valuetip" }, el("div", { className: "mono", textContent: h.text }), el("table", { className: "objs" }, body));
+  }
+  const openable = (o) => o.children || o.expand != null || (o.target != null && o.value !== "NULL");
   // The declaration of the name at `k` of `text` (a type, a field, a global,
   // an inline function: not a value the recording has): where, and its
   // first lines, for a hover; null if none.
@@ -163,12 +180,11 @@ export function source(app) {
   function called(file) {
     const cur = app.time.cursor(), out = new Map();
     if (cur == null || !v.fn) return out;
-    const consts = app.consts();
     for (const s of app.lineSteps?.() ?? []) {
       if (s.i > cur) break;
       if (!s.called || s.func !== v.fn.name) continue;
       const [at, where] = s.inlined ? [s.site, v.fn.file] : [s.line, s.file];
-      if (where === file && at != null) out.set(at, `${s.called[0]} → ${result(s.called[1], consts)}`);
+      if (where === file && at != null) out.set(at, `${s.called[0]} → ${app.kernel.result(s.called[1])}`);
     }
     return out;
   }
@@ -224,9 +240,8 @@ export function source(app) {
     // (Arguments only in the shown function's own lines; elsewhere, globals.)
     const o = e && app.stack.resolve(e.expr, inFunction(line) ? v.fn.name : null);
     if (!o) return null;
-    const fields = o.value == null || (o.target != null && o.value !== "NULL") ? (app.stack.kids(o) ?? []).slice(0, 10) : [];
-    const code = [`${e.expr} = ${o.value ?? "{…}"}  // ${o.ty}`, ...fields.map((c) => `  .${c.name} = ${c.value ?? "{…}"}`)].join("\n");
-    return { start: e.start, end: e.end, text: code };
+    // (The value, and to open: its fields, and what it points to, a tree.)
+    return { start: e.start, end: e.end, text: `${e.expr} = ${o.value ?? "{…}"}  // ${o.ty}`, o, expr: e.expr };
   }
   // The definition of `word` (`expr`: the expression it ends, for a field:
   // file->f_pos): { file, line, func? (an instrumented function: its

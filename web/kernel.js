@@ -37,6 +37,7 @@ export function kernel(m, { changed } = {}) {
     const news = await m.quiet();
     m.snapshot();
     for (const f of news.finished) {
+      f.errno = errno(f.ret);
       waiting.get(f.id)?.(f);
       waiting.delete(f.id);
     }
@@ -57,9 +58,15 @@ export function kernel(m, { changed } = {}) {
     return m.arg(name, k, c(v), {});
   }
 
+  // A call's result as the page says it: a number (in hex past 0xffff: a
+  // pointer, a flag word), a failure with its errno's name: "-2 (ENOENT)".
+  const errno = (r) => (r < 0 ? m.errno(-r) : undefined);
+  const result = (r) => (r > 0xffff ? `0x${r.toString(16)}` : r >= 0 ? String(r) : `${r} (${errno(r) ?? "an error"})`);
+
   // Make syscall `name` with `args` (JS values: see the top) on runner
   // `tid` (/init: 1): a promise of how it finished ({ id, tid, how:
-  // "returned" | "exec" | "exited", ret, buffers }), with its `id`, and
+  // "returned" | "exec" | "exited", ret, errno (its name, if it failed),
+  // buffers }), with its `id`, and
   // `quiet`: a promise of the kernel quiet after it ({ finished, runners }:
   // Machine.quiet's), whether or not it finished.
   function call(name, args = [], tid = 1) {
@@ -92,7 +99,7 @@ export function kernel(m, { changed } = {}) {
     ? (...args) => call(name, args, tid).then((f) => f.ret) : undefined });
   const sys = new Proxy(on(1), { get: (t, name) => (name === "on" ? on : t[name]) });
 
-  return { call, declare, sys, C: m.constants(), arg };
+  return { call, declare, sys, C: m.constants(), arg, errno, result };
 }
 
 // A program (the page's: its lines, `steps`), made one step after another:

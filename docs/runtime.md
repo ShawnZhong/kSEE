@@ -85,9 +85,8 @@ Rust does the work: JS only lays it out.
 | calls.js | the Calls: the calls the selected call made, in order, each with what it returned, inlined code among them (a chain of single inlined calls on one row); ▸ opens a call's own calls |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
-| args.js | a call's result, with its errno name (the program's lines are parsed in ksee-core's program.rs: `Machine.statement`; their arguments read there too, `Machine.arg`; a variable made there, `Machine.declare`) |
 | ksee.js | booting |
-| kernel.js | syscalls from JavaScript: `sys.read(fd, buf, 64)` (a promise of its result: a blocked call pending while others go on), `declare("char buf[64]")` (the program's memory: a variable's `get()`, a JS value, and `set(x)`), JS values as C's (a string, bytes, argv, a variable's address, an object laid out as the parameter's struct); what the page's program lines, the tests and the console (`ksee.kernel`) make their calls through |
+| kernel.js | syscalls from JavaScript: `sys.read(fd, buf, 64)` (a promise of its result: a blocked call pending while others go on), `declare("char buf[64]")` (the program's memory: a variable's `get()`, a JS value, and `set(x)`), JS values as C's (a string, bytes, argv, a variable's address, an object laid out as the parameter's struct); what the page's program lines, the tests and the console (`ksee.kernel`) make their calls through; a call's result with its errno's name (`result`, `errno`: Machine.errno) |
 
 A program is a small language, parsed and laid out in the core
 (crates/ksee-core/src/program.rs, `Machine.arg`, `Machine.value`,
