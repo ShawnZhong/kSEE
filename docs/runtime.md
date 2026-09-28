@@ -49,7 +49,7 @@ execve (the new program's `ksee.ready`) or by their task's exit.
 A call may not have finished then: it blocks (a futex's wait, a pipe's
 read), and finishes as a later call wakes it. (While a call is under way,
 idle skips the clock to the next timer only if the call's runner sleeps on
-a timer of its own: sched.rs reads the kernel's timers for one; see
+a timer of its own: ksee-core's arch::timer_wakes reads the kernel's timers for one; see
 [kernel.md](kernel.md).) `Machine.syscall_of(id)` finds a call's syscall
 in the recording. A boot is done when the program (/bin/prog) is ready and the kernel quiet
 (`Machine.start` and `restart` resolve then).

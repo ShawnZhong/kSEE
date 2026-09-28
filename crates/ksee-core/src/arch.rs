@@ -52,3 +52,49 @@ pub const ERRNO: &str = "E";
 pub const FLAG_TYPES: &[&str] = &["fmode_t", "gfp_t", "*flags_t"];
 /// The types printed in octal: file modes.
 pub const OCTAL_TYPES: &[&str] = &["umode_t"];
+
+/// Whether one of `tasks` is the one a queued timer is to wake (it sleeps
+/// on a timer: a sleep, a wait with a timeout). The kernel's own timers,
+/// read as its types lay them out:
+/// - hrtimers (an hrtimer_sleeper's task): each clock base's, in order
+///   (7.2's linked rbtree: from the leftmost, by next);
+/// - the timer wheel (a process_timer's task: schedule_timeout, msleep):
+///   each base's buckets' lists.
+pub fn timer_wakes(t: &crate::types::Types, mem: &dyn crate::Memory, tasks: &[u32]) -> bool {
+    let off = |s: &str, f: &str| t.field(s, f).map(|(off, _)| off);
+    let size = |s: &str| t.find(s).map_or(0, |id| t.size_of(id));
+    // (A list's nodes from `first`, by the next pointer at `next`.)
+    let wakes = |mut p: u32, next: u32, task: u32| {
+        for _ in 0..4096 {
+            if p == 0 {
+                return false;
+            }
+            if tasks.contains(&mem.read_u32(p + task)) {
+                return true;
+            }
+            p = mem.read_u32(p + next);
+        }
+        false
+    };
+    // (A timer's list node is at its start: rb_node_linked in the hrtimer's
+    // timerqueue_linked_node; hlist_node in the timer_list.)
+    let hr = || -> Option<bool> {
+        let &(bases, _) = t.globals.get("hrtimer_bases")?;
+        let (clock, all) = t.field("hrtimer_cpu_base", "clock_base")?;
+        let (active, leftmost, next, task) = (off("hrtimer_clock_base", "active")?, off("rb_root_linked", "rb_leftmost")?,
+                                              off("rb_node_linked", "next")?, off("hrtimer_sleeper", "task")?);
+        let each = size("hrtimer_clock_base");
+        Some((0..all.checked_div(each)?).any(|b| wakes(mem.read_u32(bases + clock + b * each + active + leftmost), next, task)))
+    };
+    let wheel = || -> Option<bool> {
+        let &(bases, ty) = t.globals.get("timer_bases")?;
+        let (vectors, all) = t.field("timer_base", "vectors")?;
+        let (first, next) = (off("hlist_head", "first")?, off("hlist_node", "next")?);
+        let task = off("process_timer", "task").unwrap_or(size("timer_list"));
+        let (each, heads) = (size("timer_base"), all / 4);
+        Some((0..t.size_of(ty).checked_div(each)?).any(|b| {
+            (0..heads).any(|h| wakes(mem.read_u32(bases + b * each + vectors + h * 4 + first), next, task))
+        }))
+    };
+    hr() == Some(true) || wheel() == Some(true)
+}
