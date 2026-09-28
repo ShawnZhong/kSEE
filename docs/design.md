@@ -106,9 +106,10 @@ The choices that shape it:
   fork (threads and vfork, which share memory).
 - One CPU; no preemption (the kernel reschedules at its usual points).
 - Return values and compared values are 32 bits (wider ones lose their
-  high half); locals are only those in memory; values in wasm locals are
-  not recorded, but for the comparisons that decide branches, and where a
-  copied value came from.
+  high half, as do named variables' but 64-bit ones); of the values in
+  wasm locals, only the named variables', the comparisons that decide
+  branches and where a copied value came from are recorded, not every
+  intermediate.
 - A recording is a ring: the oldest records go when it is full.
 - No console input; no user signal handlers (a caught signal kills the
   task).

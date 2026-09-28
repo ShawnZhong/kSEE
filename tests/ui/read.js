@@ -32,14 +32,19 @@
   }
   if (!r.decl?.startsWith("include/linux/fs.h:") || !r.decl.includes("struct kiocb {")) throw new Error("no declaration on hover: " + JSON.stringify(r.decl));
   if (r.notes.length < 3 || !r.notes.some(([n, w, top]) => n === "vfs_read" && top === "vfs_read" && w.includes("ksys_read")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
-  // A value's writes: click one in the Stack (one in memory: a local's, a task's field); a row under it lists
-  // them (a local's while its frame lives); click again to close.
+  // A value's writes: its row's "writes" in the Stack (one in memory: a local's, a task's field); a row
+  // under it lists them (a local's while its frame lives); "writes" again to close.
+  // (The selected call's values only: the first call with one in memory, selected.)
+  for (const h of document.querySelectorAll("#stack tr.frame a.mono")) {
+    if (document.querySelector("#stack td.fval.mem")) break;
+    h.click();
+  }
   const v = document.querySelector("#stack td.fval.mem");
-  v?.click();
+  v?.closest("tr").querySelector("a.hist")?.click();
   r.history = [v?.textContent, document.querySelectorAll("#stack tr.history li").length, document.querySelector("#stack tr.history")?.innerText.slice(0, 120)];
   if (!/writes? (while \w+'s frame lives|in this call|in the recording)/.test(r.history[2] ?? "")) throw new Error("no writes: " + JSON.stringify(r.history));
   document.querySelector("#stack tr.history li a")?.click();
-  v?.click();
+  document.querySelector("#stack a.hist.on")?.click();
   if (document.querySelector("#stack tr.history")) throw new Error("the writes row stays");
   // Run to a line (the source's F4): the line where the cursor is, its next run
   // (stepping on until a line that does run again).
@@ -134,14 +139,14 @@
   r.stores = [$("stores").querySelector(".head")?.textContent, $("stores").innerText.slice(0, 200)];
   if (!/^\d+ stores?/.test(r.stores[0] ?? "") || !$("stores").innerText.includes("file->f_pos: 0 → ") || !document.querySelector("#stores li.on")) throw new Error("the read's stores: " + JSON.stringify(r.stores));
   // The Objects (the explanation's link): each object the call wrote, its
-  // members as they are at the cursor (the kiocb's ki_pos), a value's writes on a click.
+  // members as they are at the cursor (the kiocb's ki_pos), a value's writes on asking.
   const before = ksee.time.cursor();
   [...document.querySelectorAll(".explain a.place")].find((x) => /changed/.test(x.textContent))?.click();
   await until(() => $("right").dataset.tab === "objects" && document.querySelector("#objects .obj"));
   const kipos = [...document.querySelectorAll("#objects tr")].find((tr) => tr.querySelector(".fname")?.textContent.trim() === "ki_pos");
-  kipos?.querySelector(".fval.mem")?.click(); await sleep(100);
+  kipos?.querySelector("a.hist")?.click(); await sleep(100);
   r.objects = [kipos && [...kipos.cells].map((c) => c.textContent.trim()).join(" "), document.querySelector("#objects tr.history")?.innerText.replace(/\s+/g, " ").slice(0, 80)];
-  if (!/^ki_pos \d+ loff_t$/.test(r.objects[0] ?? "") || !/^\d+ writes? /.test(r.objects[1] ?? "")) throw new Error("objects: " + JSON.stringify(r.objects));
+  if (!/^ki_pos \d+ loff_t/.test(r.objects[0] ?? "") || !/^\d+ writes? /.test(r.objects[1] ?? "")) throw new Error("objects: " + JSON.stringify(r.objects));
   $("right").dataset.tab = "stack";
   ksee.select(read); ksee.time.go(before); // (as it was)
   // (At a store: its line in the source says what it stored, at its end.)

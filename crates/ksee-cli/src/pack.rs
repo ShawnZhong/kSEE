@@ -192,8 +192,10 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
             b.extra.push(format!("P\t{fid}\t{name}\t{}", sig.join(",")));
             let mut vars = Vec::new();
             for (vname, ty, at) in locals(&dwarf, &unit, off, &cu)? {
-                if let (Some(t), Some(at)) = (ty, at) {
-                    vars.push(format!("{vname}:{}:{at}", b.canon(&mut cu, t)?));
+                // (One not in memory: no offset. Its values are in the
+                // recording: see the plugin's V lines.)
+                if let Some(t) = ty {
+                    vars.push(format!("{vname}:{}:{}", b.canon(&mut cu, t)?, at.map_or(String::new(), |a| a.to_string())));
                 }
             }
             if !vars.is_empty() {
@@ -215,7 +217,8 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
 }
 
 /// The local variables of the subprogram at `off`, in its lexical blocks
-/// too: (name, type, its offset from the frame base if it is in memory:
+/// too (and those of the calls inlined into it that are in memory, in its
+/// frame): (name, type, its offset from the frame base if it is in memory:
 /// a location `DW_OP_WASM_location 0 <the frame base's local>,
 /// DW_OP_plus_uconst off`, in any range of its list).
 fn locals(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, off: UnitOffset, cu: &Cu)
@@ -261,7 +264,7 @@ fn locals(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, off: UnitOffset, cu: &
             }
         }
     };
-    fn walk(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, node: gimli::EntriesTreeNode<R>, cu: &Cu, out: &mut Out,
+    fn walk(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, node: gimli::EntriesTreeNode<R>, cu: &Cu, out: &mut Out, inlined: bool,
             frame_offset: &dyn Fn(gimli::Expression<R>) -> Result<Option<u32>, gimli::Error>) -> Result<(), gimli::Error> {
         let mut children = node.children();
         while let Some(child) = children.next()? {
@@ -284,17 +287,20 @@ fn locals(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, off: UnitOffset, cu: &
                         }
                         None => {}
                     }
-                    out.push((name, ty, at));
+                    if at.is_some() || !inlined {
+                        out.push((name, ty, at));
+                    }
                 }
                 // (An inlined call's locals in memory are in this frame too.)
-                dw::DW_TAG_lexical_block | dw::DW_TAG_inlined_subroutine => walk(dwarf, unit, child, cu, out, frame_offset)?,
+                dw::DW_TAG_lexical_block => walk(dwarf, unit, child, cu, out, inlined, frame_offset)?,
+                dw::DW_TAG_inlined_subroutine => walk(dwarf, unit, child, cu, out, true, frame_offset)?,
                 _ => {}
             }
         }
         Ok(())
     }
     let mut out = Vec::new();
-    walk(dwarf, unit, root, cu, &mut out, &frame_offset)?;
+    walk(dwarf, unit, root, cu, &mut out, false, &frame_offset)?;
     out.retain(|(n, _, _)| !n.is_empty());
     out.dedup();
     Ok(out)

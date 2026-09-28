@@ -31,6 +31,15 @@ Every function gets:
   lifetime is its call's. The entry block's first line is the function's
   signature, so a call begins there, before its first statement;
 - before each **return**, a return record with the value;
+- where the code sets a **named variable it keeps in a wasm local**, not
+  memory (a `#dbg_value`: most of a function's scalars, `i`, `error`, a
+  pointer; fewer than one local in twenty is in memory), a var record
+  with the value (two words for a wide one): so every local, and a
+  parameter the function changes, has its value at any moment, and so do
+  the parameters and locals of code inlined into it (not a parameter as
+  it is at the call: the call record has it; not a struct in pieces, nor a
+  value the debug info computes). About a third more records per call,
+  and a fifth more code;
 - before each **store** (its stack slots' too: a slot is reused by later
   calls, and a frame's locals must be undone to be seen as they were), a
   store record with the **old value** and the **line** it is on (which of
@@ -68,6 +77,7 @@ overwritten the start of a record) and skip to the next head:
 | `[dst, 5<<28]` | a copy: the store (or bulk write) after it writes dst..dst+len with what was at src (a value loaded and stored as it is, a memcpy); src and len follow |
 | `[lhs, 6<<28 \| line<<4 \| p]` | a comparison that decides a branch (or a select), on its block's line `line`: lhs, then rhs follows (32 bits each); p its predicate (LLVM's icmp's, from eq) |
 | `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows (k = 7: a range of unknown old contents; its length follows) |
+| `[value, 9<<28 \| k]` | variable k of the function running (its V line) takes value (its high word follows, for a wide one) |
 | `[value, 8<<28 \| i]` | continuation i |
 
 `fn` is a hash of the function's name. `pos` counts words ever written and
@@ -100,6 +110,9 @@ The instrumented kernel describes its probes in a custom section,
   each function it is inlined from, innermost first, as an inline site
   (`I k function FILE:line`: the function, and the line where it is
   inlined into the next one out);
+- `V fn k of function name param wide`: variable k of fn, as its var
+  records have it: `name` of `function` (fn, or one inlined into it; `of`
+  its id), its parameter number (0: a local), whether it takes two words;
 - `U`, `P k path`, `I k …`: a unit's files and inline sites; `R words`:
   the ring's size.
 
@@ -109,8 +122,9 @@ one across all the units (each unit the plugin sees has its own copy).
 `ksee pack` (crates/ksee-cli) reads the kernel's DWARF and adds
 `ksee.types`: the types (deduplicated across units, as pahole does for
 BTF), globals, each function's parameters with their types (`P fn name
-param:type,…`) and its locals in memory with their types and offsets
-from the frame base (`Q fn var:type:offset,…`; `fn` the function's id as
+param:type,…`) and its locals with their types and, those in memory,
+their offsets from the frame base (`Q fn var:type:offset,…`, the offset
+empty for one in a wasm local; `fn` the function's id as
 the probes have it: its name's hash, or for a function local to its file
 the unit's "file:name"'s, so that the functions of one name in several
 files each have their own; from the variables' DWARF locations: `DW_OP_fbreg`, or

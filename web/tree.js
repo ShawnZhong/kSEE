@@ -3,11 +3,11 @@
 // click on the name), read
 // from memory as it was at the cursor (Machine.memory_at). Values that
 // changed since the cursor last moved are highlighted; hover one in memory
-// for who last wrote it; click it for its writes (Machine.writes), a row
+// for who last wrote it; its row's "writes" for its writes (Machine.writes), a row
 // under it: each the member, from what to what, in which function, a link
 // to that moment, the one in effect at the cursor marked; a local's writes
-// while its frame lives, another value's in the whole recording (one never
-// written: none, as its hover says); click the value again to close.
+// while its frame lives, another value's in the whole recording; "writes"
+// again to close.
 import { el, taskName } from "./dom.js";
 
 // The most writes of a value shown (the newest).
@@ -44,31 +44,31 @@ export function tree(app, st, redraw) {
         el("td", { className: `fname${can ? " opens" : ""}`, style: `padding-left:${10 + depth * 14}px`,
                    onclick: can ? () => toggle(st.open, p) : null },
           el("span", { className: "tw", textContent: can ? (open ? "▾" : "▸") : "" }), o.name),
-        // (Hover a value: who last wrote it, and what it was before; click:
-        // its writes. Only a value in memory: not an argument, which is in
-        // its call's record, at 0.)
+        // (Hover a value: who last wrote it, and what it was before; the
+        // row's "writes": its writes. Only a value in memory: not an
+        // argument, which is in its call's record, at 0.)
         o.addr && o.size
-          ? el("td", { className: "fval mem", title: value, onmouseenter: (ev) => (ev.target.title = `${value}\n${wroteIt(o)}\n(click: its writes)`),
-                       onclick: () => (st.history.has(p) || writesOf(o, life).length) && toggle(st.history, p) }, value)
+          ? el("td", { className: "fval mem", title: value, onmouseenter: (ev) => (ev.target.title = `${value}\n${wroteIt(o)}`) }, value)
           : el("td", { className: "fval", title: value }, value),
-        el("td", { className: "ftype", textContent: o.ty })));
+        el("td", { className: "ftype" }, o.ty, o.addr && o.size
+          ? el("a", { className: `hist${st.history.has(p) ? " on" : ""}`, textContent: "writes", title: st.history.has(p) ? "fold its writes" : "its writes, each a link to its moment",
+                      onclick: () => toggle(st.history, p) }) : null)));
       if (st.history.has(p)) out.push(history(o, p, life, depth));
       // (A pointer's target is another object: its own lifetime.)
       if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? null : life, o.target != null ? `${e}->` : `${e}.`);
     }
   }
-  // Value `o`'s writes (Machine.writes): a local's while its frame lives
-  // (`life`), another's in the whole recording.
-  const writesOf = (o, life) => m.writes(o.addr, o.id, life?.from, life?.to, WRITES);
-  // Its writes, a row; the write in effect at the cursor marked.
+  // Value `o`'s writes (Machine.writes), a row: a local's while its frame
+  // lives (`life`), another's in the whole recording; the write in effect
+  // at the cursor marked.
   function history(o, p, life, depth) {
-    const cur = app.time.cursor() ?? Infinity, writes = writesOf(o, life);
+    const cur = app.time.cursor() ?? Infinity, writes = m.writes(o.addr, o.id, life?.from, life?.to, WRITES);
     const now = writes.findLastIndex((x) => x.i <= cur);
     const items = writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
       el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: "go to this write", onclick: () => app.time.go(x.i) }),
       el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` })));
     return el("tr", { className: "history" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
-      el("div", { className: "dim" }, `${writes.length}${writes.length >= WRITES ? "+" : ""} write${writes.length === 1 ? "" : "s"} ${life?.what ?? "in the recording"}`),
+      el("div", { className: "dim" }, writes.length ? `${writes.length}${writes.length >= WRITES ? "+" : ""} write${writes.length === 1 ? "" : "s"} ${life?.what ?? "in the recording"}` : `not written ${life?.what ?? "in the recording"}`),
       items.length ? el("ol", {}, ...items) : null));
   }
 

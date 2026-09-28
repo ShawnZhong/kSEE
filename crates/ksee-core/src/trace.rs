@@ -24,6 +24,9 @@ pub enum Record {
     /// (truncated to 32 bits), by `pred` (an LLVM icmp predicate, from
     /// eq: see Pred), on `line` (as a Store's).
     Compare { lhs: u32, rhs: u32, pred: u8, line: u32 },
+    /// Variable `var` of the function running (Tables::vars: a named one
+    /// kept in a wasm local) takes `value` here.
+    Var { var: u32, value: u64 },
 }
 
 /// A Compare's predicate, as LLVM numbers them from eq.
@@ -53,6 +56,7 @@ pub const STORE: u32 = 7;
 pub const UNKNOWN: u32 = 7;
 /// The tag of a continuation pair.
 pub const VALUE: u32 = 8;
+const VAR: u32 = 9;
 
 /// Offset of the ring's words in the trace header (`{ u32 pos; u32 pad;
 /// u32 on; u32 pad; u32 ring[words]; }`, see plugin/ksee-trace.cpp).
@@ -188,6 +192,8 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                         Record::Store { addr: func, size: 1 << class, old: v[0] as u64 | (v[1] as u64) << 32, line }
                     });
                 }
+                // (A wide one's high word after it.)
+                VAR => return Some(Record::Var { var: tag & 0x0fff_ffff, value: func as u64 | (v[0] as u64) << 32 }),
                 _ => continue, // a continuation without its head
             }
         }
@@ -211,6 +217,13 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
     let mut d = Decoder::new(words.len() as u32 / 2, |i| (words[2 * i as usize], words[2 * i as usize + 1]));
     core::iter::from_fn(|| d.next().map(|r| (r, d.values.clone()))).collect()
 }
+
+    #[test]
+    fn a_variable_takes_a_value() {
+        // (A wide one: its high word after it.)
+        let w = [5, VAR << 28 | 2, 9, VAR << 28 | 3, 1, VALUE << 28];
+        assert_eq!(decode(&w), [Record::Var { var: 2, value: 5 }, Record::Var { var: 3, value: 9 | 1 << 32 }]);
+    }
 
     pub fn block(func: u32, n: u32) -> Vec<u32> {
         alloc::vec![func, BLOCK << 28 | n]

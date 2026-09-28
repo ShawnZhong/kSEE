@@ -91,11 +91,15 @@ Hover
 a name in the source for its value at the cursor (a name with one is
 underlined, dotted: the arguments and locals of the calls on the Stack; a
 struct's value opens, field by field, on a click on its name), and a value in the Stack
-for who last wrote it; click it for its writes, a row under it: the
-member, from what to what, in which function, each a link to that moment,
-the one in effect at the cursor marked (a local's while its frame lives,
-another value's in the whole recording; one never written, none);
-click the value again to close. The Tasks tab lists every task the
+for who last wrote it; its row's "writes" (at its end, on hover) for its
+writes, a row under it: the member, from what to what, in which
+function, each a link to that moment, the one in effect at the cursor
+marked (a local's while its frame lives, another value's in the whole
+recording); "writes" again to close. The Stack shows the selected call's
+values (the innermost's, unless another is selected: a click on it, ▲ ▼,
+a bar in the timeline), the others a row each, as a debugger's variables
+are the selected frame's; its locals are all of them, those in memory
+and those the code keeps in wasm locals, as the recording has them set. The Tasks tab lists every task the
 recording has, at the cursor: the one running marked, each where it is
 (`prog(20)  in read`: its syscall, else its outermost call), its name a
 link to its last moment (the Stack then shows its stack), its task_struct
@@ -107,7 +111,7 @@ cursor marked and the later ones dim; three or more in a row to one
 object (a frame zeroed, a struct set up) are one row, open on asking. The Objects tab draws the same
 stores as the objects they changed, at the cursor: a box per object,
 each member the call writes as it is then, in the Stack's value rows (a
-field inside another open to it; a click on a value for its writes; one
+field inside another open to it; its writes on asking; one
 written only later dim), the one the cursor last wrote marked (stepping
 shows each change as it is made); its pointers to the others, each a
 link to it (`f_inode → atime_needs_update's inode`: a kiocb's file, the

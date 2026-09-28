@@ -1,13 +1,15 @@
-// The Stack: the call stack at the cursor, innermost first, each call
-// with its arguments and its locals in memory as a tree (like a debugger's
-// variables), rebuilt from the trace (Machine.call_stack: a call's
-// arguments are in its record, its locals' addresses in another); at the
-// bottom, the task running then (current: a link to it in the Tasks). Pointers open into
-// what they point to, structs into their fields, read from memory as it was
-// at the cursor (Machine.memory_at: see tree.js); what is open stays
-// open while stepping; click a value for its writes (tree.js). Click a call to
-// select it: the source shows where it is (for an outer call, the line
-// calling the next one in).
+// The Stack: the call stack at the cursor, innermost first, a row a call;
+// the selected one (the innermost, unless another is: a click on it, ▲ ▼,
+// a bar in the timeline) with its arguments and its locals as a tree, as a
+// debugger's variables are the selected frame's; rebuilt from the trace
+// (Machine.call_stack: a call's arguments are in its record, its locals in
+// memory at their offsets from its frame, the others as the recording has
+// them set). At the bottom, the task running then (a link to it in the
+// Tasks). Pointers open into what they point to, structs into their
+// fields, read from memory as it was at the cursor (Machine.memory_at: see
+// tree.js); what is open stays open while stepping; click a value for its
+// writes (tree.js). The source shows where the selected call is (for an
+// outer call, the line calling the next one in).
 import { $, el, taskName } from "./dom.js";
 import { tree, place } from "./tree.js";
 
@@ -16,12 +18,14 @@ export function callstack(app) {
   // Open paths, and the values shown before (to highlight changes).
   const s = { open: new Set(), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
 
-  const { rows, kids } = tree(app, s, draw);
+  const { rows, kids } = tree(app, s, () => draw());
   const head = (text, where, onclick, cls = "") => el("tr", { className: "frame " + cls },
     el("td", { colSpan: 3 }, el("a", { className: "mono", textContent: text, onclick }),
       el("span", { className: "dim", textContent: where ? `  ${where}` : "" })));
 
-  function draw() {
+  // Draw the stack; `moved`: for another moment or another call selected
+  // (not a value opened, or its writes: those leave the view where it is).
+  function draw(moved = false) {
     s.now = new Map();
     const n = s.frames.length, body = [];
     s.frames.forEach((f, k) => {
@@ -33,6 +37,9 @@ export function callstack(app) {
       h.onmouseenter = () => app.time.hilite(f.first);
       h.onmouseleave = () => app.time.hilite(null);
       body.push(h);
+      // (Only the selected call's values, as a debugger's variables are
+      // the selected frame's: the others a row each, a click to select.)
+      if (!on) return;
       if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body);
       if (f.locals?.length) {
         body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3, textContent: "locals" })));
@@ -44,12 +51,13 @@ export function callstack(app) {
       body.push(head(`current task: ${taskName(s.task)}`, "current: the task running; its task_struct in the Tasks", () => app.tasks.open(s.task.addr), "task"));
     // (At the bottom of the pane, as the timeline's stacks: the calls that
     // come and go as the cursor moves are on top, the rows under them stay
-    // put; scrolled, as far from the bottom as it was.)
-    const pane = $("stack"), fromBottom = pane.scrollHeight - pane.scrollTop;
+    // put: moved, scrolled as far from the bottom as it was, the selected
+    // call in view; else as it was.)
+    const pane = $("stack"), top = pane.scrollTop, fromBottom = pane.scrollHeight - top;
     pane.replaceChildren(el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
-    pane.scrollTop = pane.scrollHeight - fromBottom;
+    pane.scrollTop = moved ? pane.scrollHeight - fromBottom : top;
     const on = pane.querySelector("tr.frame.on");
-    if (on && !s.peeking) scrollTo(pane, on);
+    if (on && moved) scrollTo(pane, on);
   }
   // (Row `on` in view, if it is not.)
   function scrollTo(pane, on) {
@@ -72,7 +80,7 @@ export function callstack(app) {
     $("stack-note").textContent = frames.length ? "" : m.records()
       ? "The call stack at the cursor, with arguments: pick a moment in the recording."
       : "Nothing recorded yet: the call stack comes from the recording. Make a call.";
-    draw();
+    draw(true);
     return frames;
   }
 
@@ -100,7 +108,7 @@ export function callstack(app) {
     const f = first == null ? s.frames[0]
       : s.frames.find((f) => f.first === first && (inlined ? f.inlined && f.func === inlined : !f.inlined));
     s.sel = f ?? null;
-    draw();
+    draw(true);
     return f ?? null;
   }
   // The selected call's level, as line steps have it (calls deep, inlined

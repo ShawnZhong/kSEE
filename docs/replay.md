@@ -31,8 +31,12 @@ never returned from its last calls, and a new one may get its address.
 
 A frame's arguments and its frame base are the words after its block 0
 (`trace::Args`, by the call's record; `Tables::values` joins a wide
-argument's two); its locals are at their offsets from the base
-(`Types::locals`).
+argument's two); its locals in memory are at their offsets from the base
+(`Types::locals`), and those it keeps in wasm locals, and a parameter it
+changed, are as its last var record in the call says (`Calls::vars_of`:
+each call's, indexed in the same pass), and so are those of the code
+inlined into it (by the inlined function's name: of two inlined copies of
+one function in a call, the later's values).
 The stacks are rebuilt once per snapshot, in one pass (`Calls`): every
 call (its function, first record, the record that ends it, the call it
 was made from and where that one was then), and per record where its
@@ -143,7 +147,8 @@ otherwise. (The comparison as compiled: the optimizer may have turned
 the source's around, so it says what was compared, not which way the
 source's `if` went.)
 
-What it cannot show: values only in wasm locals (registers, in effect),
+What it cannot show: values only in wasm locals (registers, in effect)
+that are no named variable's (an intermediate, `a + b` before it is stored),
 and old contents of bulk writes beyond 256 bytes (their record says
 where and how much, not what: going back shows such bytes as they are
 now).

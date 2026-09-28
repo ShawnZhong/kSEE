@@ -59,6 +59,11 @@
 //                         bits; p: its predicate (LLVM's icmp's, from eq:
 //                         eq ne ugt uge ult ule sgt sge slt sle); line as
 //                         a store's
+//   [value, 9 << 28 | k]  variable k of the function (its V line) takes
+//                         `value` here (the low word; the high one after
+//                         it, for a wide one): a named variable the code
+//                         keeps in a wasm local, not memory, as the debug
+//                         info says it changes (a #dbg_value)
 //   [value, 8 << 28 | i]  continuation i of the head before
 // (The host's runtime writes records too: stores, for its own writes into
 // kernel memory.) fn is a hash of the function's name (for a
@@ -80,6 +85,13 @@
 //                  wide: a bit mask of those that take two words)
 //                B \t fn \t n \t FILE:line:column (block 0: the function's
 //                  signature, where a call begins)
+//                V \t fn \t k \t of \t function \t name \t param \t wide
+//                                     variable k of fn (its records'): a
+//                                     variable of `function` (fn, or one
+//                                     inlined into it; `of` its id, as
+//                                     fn's), `name`, its parameter number
+//                                     (0: a local), whether its values take
+//                                     two words
 //                L \t fn \t n \t lines: the source lines the block runs, in
 //                  order (each once per stretch between calls), separated
 //                  by ';': FILE:line (:line in the same file as the one
@@ -115,7 +127,7 @@ namespace {
 constexpr unsigned RingWords = 1u << 21;
 constexpr unsigned CallArgs = 6;
 constexpr unsigned Values = 2 * CallArgs + 1; // a record's at most: a call's arguments (wide ones two words) and its frame base
-enum Kind { KindBlock = 1, KindReturn = 4, KindCopy = 5, KindCompare = 6, KindStore = 7, KindValue = 8 };
+enum Kind { KindBlock = 1, KindReturn = 4, KindCopy = 5, KindCompare = 6, KindStore = 7, KindValue = 8, KindVar = 9 };
 
 uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
   for (unsigned char c : s)
@@ -481,12 +493,20 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     // its branches (before any probe is added).
     SmallVector<Instruction *> writes;
     SmallVector<ICmpInst *> compares;
+    // (Where the code sets a named variable kept in a wasm local: its
+    // value, and the instruction before which it has it.)
+    SmallVector<std::pair<DbgVariableRecord *, Instruction *>> sets;
     for (Instruction &I : instructions(F)) {
       if (isa<StoreInst, AtomicRMWInst, AtomicCmpXchgInst, MemIntrinsic>(I))
         writes.push_back(&I);
       if (auto *C = dyn_cast<ICmpInst>(&I); C && !C->getType()->isVectorTy() && decides(C))
         compares.push_back(C);
       for (DbgVariableRecord &R : filterDbgVars(I.getDbgRecordRange())) {
+        if (R.isDbgValue() && R.getNumVariableLocationOps() == 1 && !R.getExpression()->getNumElements()) {
+          Value *v = R.getVariableLocationOp(0);
+          if (v && !isa<UndefValue>(v) && (v->getType()->isIntegerTy() || v->getType()->isPointerTy()))
+            sets.push_back({&R, &I});
+        }
         DILocalVariable *V = R.getVariable();
         unsigned k = V ? V->getArg() : 0;
         if (!SP || !k || k > CallArgs || V->getScope()->getSubprogram() != SP || R.getNumVariableLocationOps() != 1)
@@ -546,6 +566,37 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
 
     for (Instruction *I : writes)
       logStore(I);
+
+    // (Each named variable, as the code sets it: see the top. Not a
+    // parameter as it is at the call, which the call record has; not in a
+    // sealed function, a box.)
+    // (A debug record's value need not dominate it, as a use must: only one
+    // that does.)
+    std::map<std::pair<uint32_t, std::string>, unsigned> vars;
+    DominatorTree DT(F);
+    for (auto [R, I] : seal ? decltype(sets){} : sets) {
+      DILocalVariable *V = R->getVariable();
+      DISubprogram *VS = V ? V->getScope()->getSubprogram() : nullptr;
+      Value *v = R->getVariableLocationOp(0);
+      if (!VS || (VS == SP && V->getArg() && isa<Argument>(v)))
+        continue;
+      if (auto *D = dyn_cast<Instruction>(v); D && !DT.dominates(D, I))
+        continue;
+      // (Its function's id, as fnId's: one local to its file by the file.)
+      StringRef fname = VS == SP ? F.getName() : VS->getName();
+      uint32_t of = VS == SP ? id : VS->isLocalToUnit() ? fnv(fname, fnv(":", fnv(M->getSourceFileName()))) : fnv(fname);
+      bool wide = v->getType()->isIntegerTy() && v->getType()->getIntegerBitWidth() > 32;
+      auto [it, fresh] = vars.try_emplace({of, V->getName().str()}, vars.size());
+      if (fresh)
+        probes += ("V\t" + Twine(id) + "\t" + Twine(it->second) + "\t" + Twine(of) + "\t" + fname + "\t" + V->getName() + "\t" +
+                   Twine(V->getArg()) + "\t" + Twine(wide) + "\n").str();
+      IRBuilder<> B(I);
+      SmallVector<Value *, 2> w;
+      words(B, v, w);
+      Value *low = w[0];
+      w.erase(w.begin());
+      record(B, low, KindVar << 28 | it->second, w);
+    }
 
     // (A comparison deciding a branch: its operands, after it; its
     // predicate and line in its tag. Not in a sealed function: its inside

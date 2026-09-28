@@ -3,7 +3,7 @@
 // a box per object it wrote (named as the Stores name them: "vfs_read's
 // file", "current->files"), each member it writes as it is at the cursor,
 // in the Stack's value rows (tree.js: a pointer opens into what it points
-// to, a click on a value lists its writes, a value changed since the
+// to, a value's writes on asking, a value changed since the
 // cursor last moved is marked); one the call writes only after the
 // cursor, dim; the one the cursor last wrote, marked. Its pointers to the
 // other objects, each a link to it ("f_inode → atime_needs_update's

@@ -58,11 +58,14 @@ pub struct Calls {
     /// Per record: where its task is after it (a Place), NONE if nowhere.
     at: Vec<u32>,
     places: Vec<Place>,
+    /// The Var records (the values of variables kept in wasm locals), by
+    /// the call they are in: (call, record), in order.
+    vars: Vec<(u32, u32)>,
 }
 
 impl Calls {
     pub fn new(t: &Tables, records: &[Record], tasks: &[u32]) -> Calls {
-        let mut c = Calls { calls: Vec::new(), at: Vec::with_capacity(records.len()), places: Vec::new() };
+        let mut c = Calls { calls: Vec::new(), at: Vec::with_capacity(records.len()), places: Vec::new(), vars: Vec::new() };
         // (Per task: its calls on the stack, outermost first, and where the innermost is.)
         let mut stacks: BTreeMap<u32, (Vec<u32>, u32)> = BTreeMap::new();
         let entry = Tables::id(crate::arch::TASK_ENTRY);
@@ -112,10 +115,16 @@ impl Calls {
                         };
                     }
                 }
+                Record::Var { .. } => {
+                    if let Some(&call) = frames.last() {
+                        c.vars.push((call, i as u32));
+                    }
+                }
                 _ => {}
             }
             c.at.push(*place);
         }
+        c.vars.sort_unstable();
         c
     }
 
@@ -150,6 +159,19 @@ impl Calls {
     fn stretch<'t>(&self, t: &'t Tables, i: usize) -> Option<(&Place, Cow<'t, [Step]>)> {
         let p = self.place_at(i).filter(|p| p.record as usize == i && p.n != NONE)?;
         Some((p, t.stretch(self.calls[p.call as usize].func, p.n, p.seg)))
+    }
+
+    /// The function running at record `i` (its task's innermost call's).
+    pub fn func_at(&self, i: usize) -> Option<u32> {
+        Some(self.calls.get(self.place_at(i)?.call as usize)?.func)
+    }
+
+    /// The Var records of the call from record `first` (a block 0), by
+    /// record `upto`, in order.
+    pub fn vars_of(&self, first: usize, upto: usize) -> impl Iterator<Item = usize> + '_ {
+        let call = self.place_at(first).filter(|p| self.calls[p.call as usize].first == first).map_or(NONE, |p| p.call);
+        let from = self.vars.partition_point(|&(c, _)| c < call);
+        self.vars[from..].iter().take_while(move |&&(c, i)| c == call && i as usize <= upto).map(|&(_, i)| i as usize)
     }
 
     /// The call the block 0 at record `first` begins.

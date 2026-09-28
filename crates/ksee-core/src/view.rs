@@ -10,7 +10,7 @@ use alloc::collections::BTreeMap;
 use crate::arch;
 use crate::recording::Recording;
 use crate::stack::{self, LineStep};
-use crate::tables::{Loc, Step, Tables};
+use crate::tables::{Loc, Step, Tables, Var};
 use crate::task::read_task;
 use crate::trace::Record;
 use crate::types::{Kind, Types};
@@ -434,9 +434,10 @@ impl View<'_> {
                     None => (kind, 0, (None, None)),
                 }
             }
-            r @ (Record::Task { .. } | Record::Copy { .. }) => {
+            r @ (Record::Task { .. } | Record::Copy { .. } | Record::Var { .. }) => {
                 let (func, step) = top(i).unwrap_or((0, None));
-                (if matches!(r, Record::Task { .. }) { "task" } else { "copy" }, func, located(func, step))
+                let kind = match r { Record::Task { .. } => "task", Record::Copy { .. } => "copy", _ => "var" };
+                (kind, func, located(func, step))
             }
         };
         Some(At {
@@ -484,6 +485,7 @@ impl View<'_> {
                 Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value as i32)),
                 Record::Task { .. } => continue, // (the task's line is above)
                 Record::Copy { dst, src, len } => ("copy", format!("copy {dst:#x} ← {src:#x} [{len}]")),
+                Record::Var { var, value } => ("var", format!("var {} = {}", self.var_at(i, var).map_or("?", |v| v.name.as_str()), num(value))),
                 r @ Record::Compare { .. } => ("compare", format!("compare {}", compared(&r).unwrap_or_default())),
                 Record::Store { addr, size: 0, old, .. } => ("store", format!("store {addr:#x} [{old} bytes] (old contents not kept)")),
                 Record::Store { addr, size, old, .. } => ("store", format!("store {addr:#x} [{size}] {} → {}", num(old), num(self.wrote(i)))),
@@ -554,9 +556,24 @@ impl View<'_> {
                 },
                 None => (None, None),
             };
+            // (The variables it keeps in wasm locals, as they are by now: a
+            // parameter it changed, as it is; the other locals after those
+            // in memory. And the code inlined into it: its own.)
+            let vars = self.var_values(&c, i);
+            let mine = |function: &str, param: bool| vars.iter().filter(move |((f, _, _), (v, _))| *f == function && (v.param > 0) == param)
+                .filter_map(|(_, (v, value))| self.var_object(v, *value, mem)).collect::<Vec<_>>();
+            let changed = mine(&name, true);
+            let args = args.map(|a| a.into_iter().map(|o| changed.iter().find(|p| p.name == o.name).cloned().unwrap_or(o)).collect());
+            let locals = locals.map(|mut l: Vec<Object>| {
+                let more: Vec<Object> = mine(&name, false).into_iter().filter(|o| !l.iter().any(|x| x.name == o.name)).collect();
+                l.extend(more);
+                l
+            });
             // (The code inlined into it first, innermost first; then it.)
-            let frame = |func, inlined, at: Option<Loc>| Frame {
-                func, first: c.first, depth, syscall: None, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args: None, locals: None,
+            let frame = |func: String, inlined, at: Option<Loc>| {
+                let (a, l) = if inlined { (mine(&func, true), mine(&func, false)) } else { (Vec::new(), Vec::new()) };
+                Frame { first: c.first, depth, syscall: None, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line),
+                        args: (!a.is_empty()).then_some(a), locals: (!l.is_empty()).then_some(l), func }
             };
             let nest = self.nest(&c);
             let (&(_, at), inner) = nest.split_last().expect("a call");
@@ -564,6 +581,37 @@ impl View<'_> {
             out.push(Frame { args, locals, syscall, ..frame(name, false, at) });
         }
         out
+    }
+
+    /// Variable `var` of the function running at record `i` (a Var
+    /// record's).
+    fn var_at(&self, i: usize, var: u32) -> Option<&Var> {
+        self.tables.vars.get(&(self.rec.calls.func_at(i)?, var))
+    }
+
+    /// The variables call `c` keeps in wasm locals (Record::Var), by record
+    /// `at`: each one's last value, by its function (the call's, or one
+    /// inlined into it: by name) and its name, parameters by number.
+    fn var_values(&self, c: &stack::StackCall, at: usize) -> BTreeMap<(&str, u32, &str), (&Var, u64)> {
+        let mut out = BTreeMap::new();
+        for j in self.rec.calls.vars_of(c.first, at) {
+            if let Record::Var { var, value } = self.rec.records[j]
+                && let Some(v) = self.tables.vars.get(&(c.func, var)) {
+                out.insert((v.function.as_str(), v.param, v.name.as_str()), (v, value));
+            }
+        }
+        out
+    }
+
+    /// Variable `v` with `value`, as a value of its type (its function's
+    /// parameter's, or local's).
+    fn var_object(&self, v: &Var, value: u64, mem: &dyn Memory) -> Option<Object> {
+        let types = &self.tables.types;
+        let ty = match v.param {
+            0 => types.locals.get(&v.of)?.iter().find(|l| l.0 == v.name)?.1,
+            k => types.params.get(&v.of)?.get(k as usize - 1)?.1,
+        };
+        Some(types.object(&Arg(&value.to_le_bytes(), mem), &v.name, 0, ty, 0))
     }
 
     /// The syscall entry's arguments (the number, then the syscall's): the
@@ -604,8 +652,8 @@ impl View<'_> {
     /// a register meanwhile).
     fn locals(&self, func: u32, frame: u32, mem: &dyn Memory, first: usize, at: usize) -> Vec<Object> {
         let types = &self.tables.types;
-        types.locals.get(&func).into_iter().flatten().map(|(var, ty, off)| {
-            let addr = frame.wrapping_add(*off);
+        types.locals.get(&func).into_iter().flatten().filter_map(|(var, ty, off)| Some((var, ty, (*off)?))).map(|(var, ty, off)| {
+            let addr = frame.wrapping_add(off);
             let o = types.object(mem, var, addr, *ty, 0);
             if self.rec.stores().written(addr, types.size_of(*ty).max(1), first, at) {
                 return o;
@@ -776,15 +824,15 @@ impl View<'_> {
                             add(format!("{}'s {pname}", f.name), "object", to, v, None, frame_of(i, v));
                         }
                     }
-                    for (var, ty, off) in types.locals.get(&func).into_iter().flatten() {
-                        add(format!("{}'s {var}", f.name), "local", *ty, frame.wrapping_add(*off), None, Some(i));
+                    for (var, ty, off) in types.locals.get(&func).into_iter().flatten().filter_map(|(v, t, o)| Some((v, t, (*o)?))) {
+                        add(format!("{}'s {var}", f.name), "local", *ty, frame.wrapping_add(off), None, Some(i));
                         // (A local pointing at a struct: that too ("files->next_fd"
                         // through `struct files_struct *files = current->files`),
                         // where it points as the call ends.)
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
                             let end = self.rec.calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
-                            let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(*off));
+                            let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
                             add(format!("{}'s {var}", f.name), "object", to, v, None, frame_of(i, v));
                         }
                     }
@@ -1030,6 +1078,21 @@ mod tests {
         fn read(&self, addr: u32, buf: &mut [u8]) {
             buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
         }
+    }
+
+    #[test]
+    fn a_variable_in_a_wasm_local_has_its_last_value() {
+        // f (1) keeps int x (variable 0, a local: no offset) in a wasm
+        // local: it takes 5, then 7.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\t0\t1\tf\tx\t0\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:\n");
+        let r = [Record::Block { func: 1, n: 0 }, Record::Var { var: 0, value: 5 }, Record::Block { func: 1, n: 1 }, Record::Var { var: 0, value: 7 }];
+        let mut args = Args::default();
+        args.push(0, &[64]);
+        let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
+        let mem = Mem(alloc::vec![0; 128]);
+        let v = View { tables: &t, rec: &rec, now: &mem };
+        let x = |i| v.call_stack(i, None, &mem)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
+        assert_eq!((x(0), x(2), x(3)), (None, Some("5".into()), Some("7".into())));
     }
 
     #[test]

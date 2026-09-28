@@ -30,6 +30,18 @@ pub struct Function {
     pub sealed: bool,
 }
 
+/// A named variable kept in a wasm local, whose values the recording has
+/// (Record::Var): variable `name` of function `function` (the one whose
+/// records they are, or one inlined into it; `of`: its id), parameter
+/// `param` of it (from 1; 0: a local).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Var {
+    pub of: u32,
+    pub function: String,
+    pub name: String,
+    pub param: u32,
+}
+
 /// A source line a block runs; `inlined`: if it is code inlined into the
 /// block's function, the functions it is inlined from (an index into
 /// [`Tables::inlines`]).
@@ -68,6 +80,8 @@ pub struct Tables {
     pub files: Vec<String>,
     /// The kernel's types.
     pub types: Types,
+    /// (function, k) -> its variable k, as its Var records have it.
+    pub vars: BTreeMap<(u32, u32), Var>,
 }
 
 /// Interns file paths while parsing.
@@ -136,6 +150,12 @@ impl Tables {
                             t.names.len() as u32 - 1
                         });
                         unit.sites.insert(k, (name, unit.loc(site, false)));
+                    }
+                }
+                ["V", id, k, of, function, name, param, _wide] => {
+                    if let (Ok(id), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) {
+                        let param = param.parse().unwrap_or(0);
+                        t.vars.insert((id, k), Var { of, function: function.to_string(), name: name.to_string(), param });
                     }
                 }
                 ["R", words] => t.ring_words = words.parse().unwrap_or(0),
