@@ -63,7 +63,7 @@ pub struct At {
     /// The syscall in progress on the task (its index), if any.
     pub syscall: Option<usize>,
     /// A return's value (truncated to 32 bits).
-    pub value: Option<i32>,
+    pub value: Option<i64>,
 }
 
 /// A source line the kernel ran (see stack::lines), at record `i`, the
@@ -90,10 +90,10 @@ pub struct Line {
     /// in order.
     pub tests: Vec<String>,
     /// The call returns after it: what it returned (32 bits).
-    pub ret: Option<i32>,
+    pub ret: Option<i64>,
     /// It made a call: the function, what it returned, and where (its
     /// return: the result is not known before).
-    pub called: Option<(String, i32, usize)>,
+    pub called: Option<(String, i64, usize)>,
     /// Inlined: the line of its function's own where the code is inlined
     /// (the outermost inline site: `CLASS(fd_pos, f)(fd)`'s line).
     pub site: Option<u32>,
@@ -449,7 +449,7 @@ impl View<'_> {
             inlined: self.inlined_from(inlined),
             task: self.task(self.rec.tasks[i]),
             syscall: self.rec.syscall_at(i),
-            value: match records[i] { Record::Return { value, .. } => Some(value as i32), _ => None },
+            value: match records[i] { Record::Return { value, .. } => Some(value), _ => None },
         })
     }
 
@@ -483,7 +483,7 @@ impl View<'_> {
                         ("block", format!("block {} #{n}{loc}", self.name(func)))
                     }
                 }
-                Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value as i32)),
+                Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value)),
                 Record::Task { .. } => continue, // (the task's line is above)
                 Record::Var { var, value, .. } => ("var", format!("var {} = {}", self.var_at(i, var).map_or("?", |v| v.name.as_str()), num(value))),
                 r @ Record::Compare { .. } => ("compare", format!("compare {}", compared(&r).unwrap_or_default())),
@@ -508,8 +508,8 @@ impl View<'_> {
             .filter(|r| matches!(r, Record::Compare { line, .. } if *line == s.index))
             .filter_map(|r| compared(&r)).collect();
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
-               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests, ret: s.ret.map(|v| v as i32),
-               called: s.callee.map(|(f, v, at)| (self.name(f), v as i32, at)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line), leaf: false }
+               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests, ret: s.ret,
+               called: s.callee.map(|(f, v, at)| (self.name(f), v, at)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line), leaf: false }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.

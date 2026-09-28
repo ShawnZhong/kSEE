@@ -8,8 +8,8 @@ use crate::Memory;
 pub enum Record {
     /// Block `n` of `func` (block 0: a call; its arguments are in Args).
     Block { func: u32, n: u32 },
-    /// A return from `func`, with `value` (truncated to 32 bits).
-    Return { func: u32, value: u32 },
+    /// A return from `func`, with `value` (a 32-bit one sign-extended).
+    Return { func: u32, value: i64 },
     /// A store of `size` bytes at `addr`, which held `old` (size 0: a range
     /// of `old` bytes whose old contents are not logged), on `line`: which
     /// of its block's lines (Tables::segments, "|" apart, from 0); `from`:
@@ -165,7 +165,8 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                     if got < 1 {
                         continue; // truncated
                     }
-                    return Some(Record::Return { func, value: v[0] });
+                    let value = if got > 1 { (v[0] as u64 | (v[1] as u64) << 32) as i64 } else { v[0] as i32 as i64 };
+                    return Some(Record::Return { func, value });
                 }
                 COMPARE => {
                     if got < 1 {
@@ -212,6 +213,12 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
     let mut d = Decoder::new(words.len() as u32 / 2, |i| (words[2 * i as usize], words[2 * i as usize + 1]));
     core::iter::from_fn(|| d.next().map(|r| (r, d.values.clone()))).collect()
 }
+
+    #[test]
+    fn a_wide_return_has_its_high_word() {
+        let w = [5, RETURN << 28, 1, VALUE << 28, 2, VALUE << 28 | 1, 6, RETURN << 28, -2i32 as u32, VALUE << 28];
+        assert_eq!(decode(&w), [Record::Return { func: 5, value: 1 | 2 << 32 }, Record::Return { func: 6, value: -2 }]);
+    }
 
     #[test]
     fn a_variable_takes_a_value() {

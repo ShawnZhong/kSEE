@@ -199,6 +199,9 @@ m.memory_at(null);
   const at = ls && m.first_call("vfs_llseek", ls.first, ls.last, ls.task.addr);
   const off = at != null && m.call_stack(at).find((f) => f.func === "vfs_llseek")?.args?.find((a) => a.name === "offset")?.value;
   check(`a 64-bit argument whole: vfs_llseek's offset ${off}`, off === "4294967296");
+  // (And a 64-bit result: what vfs_llseek returned, the position.)
+  const got = ls && m.line_steps(ls.first, ls.last, ls.task.addr).find((s) => s.called?.[0] === "vfs_llseek")?.called[1];
+  check(`a 64-bit result whole: vfs_llseek returned ${got}`, got === 4294967296);
 }
 const readSteps = m.line_steps(read.first, read.last, read.task.addr);
 check("line steps sit at their first store: some line is at a record past its block's, none before it, and a store is on its line",

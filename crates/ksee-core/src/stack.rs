@@ -350,10 +350,10 @@ pub struct LineStep {
     pub loc: crate::tables::Loc,
     pub inlined: Option<u32>,
     pub run: u32,
-    pub ret: Option<u32>,
+    pub ret: Option<i64>,
     /// A line that made a call: the call's function, what it returned,
     /// and where (its Return record).
-    pub callee: Option<(u32, u32, usize)>,
+    pub callee: Option<(u32, i64, usize)>,
 }
 
 

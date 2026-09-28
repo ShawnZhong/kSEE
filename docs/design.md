@@ -105,8 +105,8 @@ The choices that shape it:
 - No MMU: no page tables, faults, copy-on-write or demand paging; no
   fork (threads and vfork, which share memory).
 - One CPU; no preemption (the kernel reschedules at its usual points).
-- Return values and compared values are 32 bits (wider ones lose their
-  high half, as do named variables' but 64-bit ones); of the values in
+- Compared values are 32 bits (wider ones lose their high half); of the
+  values in
   wasm locals, only the named variables', the comparisons that decide
   branches and where a copied value came from are recorded, not every
   intermediate.

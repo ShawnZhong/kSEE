@@ -43,7 +43,8 @@
 //                         away), then its frame base (the
 //                         stack pointer after its prologue: its locals in
 //                         memory are at their DWARF offsets from it)
-//   [fn, 4 << 28]         a return from fn, followed by the value
+//   [fn, 4 << 28]         a return from fn, followed by the value (low,
+//                         then for one wider than 32 bits high)
 //   [addr, 7 << 28 | line << 4 | k]
 //                         a store of 1 << k bytes at addr (k < 4), followed
 //                         by the old value (low, then for 8 bytes high); k =
@@ -570,7 +571,9 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
           at = C;
         IRBuilder<> B(at);
         Value *ret = R->getReturnValue();
-        record(B, B.getInt32(id), KindReturn << 28, {ret ? toI32(B, ret) : B.getInt32(0)});
+        SmallVector<Value *, 2> w;
+        ret ? words(B, ret, w) : w.push_back(B.getInt32(0));
+        record(B, B.getInt32(id), KindReturn << 28, w);
       }
 
     for (Instruction *I : writes)
