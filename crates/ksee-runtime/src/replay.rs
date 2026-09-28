@@ -217,10 +217,11 @@ impl Machine {
         self.view(|v| to_js(&v.notes(first, last, file, cur)))
     }
 
-    /// The objects records `first..=last` (a call's) wrote, and their
-    /// pointers to each other as memory was at record `at` (view::Node).
-    pub fn objects(&self, first: usize, last: usize, at: usize) -> JsValue {
-        self.view(|v| to_js(&v.objects(first, last, at)))
+    /// What records `first..=last` (a call's) did to the kernel's data: the
+    /// objects they changed, each member from what to what, and their
+    /// pointers to each other as the span ends (view::Node).
+    pub fn objects(&self, first: usize, last: usize) -> JsValue {
+        self.view(|v| to_js(&v.objects(first, last)))
     }
 
 

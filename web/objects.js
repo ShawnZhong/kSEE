@@ -1,121 +1,69 @@
 // The Objects: what the selected call (a syscall, or a call double-clicked
-// in the timeline: the zoom) changed in the kernel's data (Machine.objects),
-// at the moment the page shows: a box per object it writes (named as the
-// code names them: "vfs_read's file", "prog(19)->files"), in the order of
-// the calls that name them, the outer first, each in its place at every
-// moment (one not written yet, dim; one on the stack of a call not running
-// then, dashed). Each member it writes as it is then, in the Stack's value
-// rows (tree.js), the one last written marked, a strip of when (a tick a
-// write); its pointers to the other objects, each a link to it ("f_inode →
-// atime_needs_update's inode"). As a tree: each box under the first that points
-// to it as the call ends (a file's inode under the file).
+// in the timeline: the zoom) did to the kernel's data (Machine.objects):
+// a box per object it changed that is still there when it returns (named
+// as the code names them: "vfs_read's file", "prog(19)->files"), each
+// member it changed from what it was to what it is as the call ends
+// (click: the write that left it so); the members it wrote back as they
+// were, in a line (and the objects it left as they were, in one at the
+// end); its pointers to the others, each a link to it
+// ("f_inode → filemap_read's inode"). As a tree: each box under the first
+// that points to it. The same at every moment: the moments are the Stack's.
 import { $, el } from "./dom.js";
-import { tree } from "./tree.js";
 
 export function objects(app) {
   const { m } = app;
   const body = $("objects");
-  let shown = null, selected = null, last = null, drawnAt = null;
-  // (The values' state, as the Stack's: tree.js; the boxes drawn once.)
-  const st = {}, seen = new Set();
-  const redraw = () => last && render(...last);
-  const { rows: fields, moved } = tree(app, st, redraw);
+  let shown = null;
 
-  // Draw for the selection at record `cur`: the moment the page shows (the
-  // cursor, or the pointer's over the timeline; only while the tab is
-  // shown: again as it moves).
-  function draw(cur = app.time.cursor()) {
+  // Draw for the selection (only while the tab is shown; again for another
+  // selection or recording).
+  function draw() {
     if ($("right").dataset.tab !== "objects") return;
     const w = app.selection();
-    const key = w ? `${w.key}:${cur}` : null;
-    if (key === shown) return;
-    // (Another selection, or recording: its boxes open to what it wrote again.)
-    if (w?.key !== selected) (seen.clear(), (selected = w?.key));
-    shown = key;
-    $("objects-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): the objects it wrote, and how they point to each other.";
-    if (!w) return body.replaceChildren();
-    moved(); // (another moment: what changed since, marked; not on a redraw)
-    render(m.objects(w.a, w.b, cur ?? w.b), cur ?? w.b, [w.a, w.b]);
+    const n = m.records(), key = w ? `${w.key}:${n ? m.record_id(n - 1) : ""}` : null;
+    if (key !== shown) {
+      shown = key;
+      $("objects-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): what it did to the kernel's data.";
+      body.replaceChildren(...(w ? render(m.objects(w.a, w.b)).filter(Boolean) : []));
+    }
+    mark(app.time.cursor());
   }
 
-  function render(nodes, cur, span) {
-    last = [nodes, cur, span];
-    // (All of them, in Machine.objects' order (the calls that name them,
-    // outer first), each in its place at every moment: one on the stack of
-    // a call not running then, dashed; one not written yet, dim.)
-    const live = (n) => !n.life || (n.life[0] <= cur && cur <= n.life[1]);
-    const soFar = nodes.filter((n) => live(n) && n.writes[0].i <= cur).length;
-    // (The write the cursor is at, or last passed: marked.)
-    const now = nodes.flatMap((n) => n.writes).filter((x) => x.i <= cur).reduce((a, x) => (!a || x.i > a.i ? x : a), null);
-    // (Redrawn where it was: the rows do not move; at another moment, the
-    // member last written brought into view if it is out of it.)
-    const top = body.scrollTop, moment = cur !== drawnAt;
-    drawnAt = cur;
+  function render(nodes) {
+    // (The ones it only wrote back as they were (a lock taken and let go):
+    // a line at the end, not boxes.)
+    const same = nodes.filter((n) => !n.changes.length), changed = nodes.length - same.length;
+    if (!changed) return [el("div", { className: "dim head" }, "It changed nothing that is still there when it returns (its own locals: the Stack).")];
     // (As a tree: each box under the one that points to it (Node.under),
-    // from the ones nothing points to; siblings in order.)
-    const order = [];
-    const visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.under === k && visit(c, depth + 1)));
-    nodes.forEach((n, k) => n.under == null && visit(k, 0));
-    body.replaceChildren(el("div", { className: "dim head" }, `${nodes.length} object${nodes.length === 1 ? "" : "s"} written, ${soFar} so far`),
-      ...order.map(([k, depth]) => Object.assign(box(nodes[k], nodes, k, cur, now, live(nodes[k]), span), { style: `margin-left: ${Math.min(depth, 6) * 14}px` })));
-    body.scrollTop = top;
-    const on = body.querySelector("tr.on")?.getBoundingClientRect(), view = body.getBoundingClientRect();
-    if (moment && on && (on.top < view.top || on.bottom > view.bottom)) body.querySelector("tr.on").scrollIntoView({ block: "nearest" });
+    // from the ones nothing changed points to; siblings in order.)
+    const order = [], up = (n) => (n.under != null && nodes[n.under].changes.length ? n.under : null);
+    const visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.changes.length && up(n) === k && visit(c, depth + 1)));
+    nodes.forEach((n, k) => n.changes.length && up(n) == null && visit(k, 0));
+    return [el("div", { className: "dim head" }, `${changed} object${changed === 1 ? "" : "s"} changed`),
+      ...order.map(([k, depth]) => Object.assign(box(nodes[k], nodes, k), { style: `margin-left: ${Math.min(depth, 6) * 14}px` })),
+      same.length ? el("div", { className: "dim head" }, `Written, but left as they were: ${same.map((n) => n.what).join(", ")}`) : null];
   }
 
-  // An object's box: its name and type; the members it writes, down to
-  // each field written, as they are at the cursor (the others of each
-  // level folded: tree.js's keep); its pointers to the others.
-  function box(n, nodes, k, cur, now, alive, span) {
-    const path = `obj/${n.addr}/${n.id}`;
-    const obj = m.object_by_id(n.what, n.id, n.addr, 1);
-    // (Each write's member as a path in the tree: "f_path.dentry", and
-    // "args[2]" as args then [2]; the way to each, kept.)
-    const leaf = (member) => [path, ...member.split(/\.|(?=\[)/).filter(Boolean)].join(".");
-    const keep = new Set();
-    for (const x of n.writes) {
-      const parts = leaf(x.member).split(".");
-      for (let j = 2; j <= parts.length; j++) keep.add(parts.slice(0, j).join("."));
-    }
-    // (The way to each member it writes inside another, open the first time
-    // the box is drawn: "_refcount.counter" opens _refcount.)
-    if (!seen.has(path)) {
-      seen.add(path);
-      for (const p of keep) st.open.add(p);
-    }
-    const rows = [];
-    fields(obj?.children ?? (obj ? [obj] : []), path, 0, rows, "", obj?.children ? keep : null);
-    // (A member written only after the cursor: dim; the one last written: marked.)
-    const at = new Map(rows.map((r) => [r.dataset.p, r]));
-    const writes = new Map();
-    for (const x of n.writes) (writes.get(leaf(x.member)) ?? writes.set(leaf(x.member), []).get(leaf(x.member))).push(x);
-    for (const [p, xs] of writes) {
-      const r = at.get(p) ?? (obj?.children ? null : rows[0]);
-      if (xs.every((x) => x.i > cur)) r?.classList.add("later");
-      if (now && xs.includes(now)) r?.classList.add("on");
-      r?.cells[2]?.append(when(xs, span, cur));
-    }
-    // (Its pointers to the others: each a link to it.)
+  // An object's box: its name and type; each member changed, before → after;
+  // the ones written back; its pointers to the others.
+  function box(n, nodes, k) {
+    const rows = n.changes.map((d) => el("tr", { dataset: { last: d.last }, onclick: () => app.time.go(d.last),
+        title: `${d.writes === 1 ? "written once" : `written ${d.writes} times`}${d.at ? `, last in ${d.at.func} (${d.at.file}:${d.at.line})` : ""}: click to go there` },
+      el("td", { className: "fname" }, d.member || "(itself)"),
+      el("td", { className: "fval" }, el("span", { className: "dim" }, d.before), " → ", d.after)));
+    const back = n.back.length ? el("div", { className: "row dim" }, `written back as they were: ${n.back.map((b) => b || "itself").join(", ")}`) : null;
     const links = n.links.map((l) => el("div", { className: "row link" },
       el("span", { textContent: `${l.member} → ` }),
-      el("a", { textContent: nodes[l.to].what, title: `${nodes[l.to].ty} at 0x${l.value.toString(16)}: go to it`, onclick: () => flash(l.to) })));
-    const note = alive ? "" : n.life && cur < n.life[0] ? " · not made yet" : " · gone";
-    const later = n.writes[0].i > cur ? " later" : "";
-    return el("div", { className: `obj ${n.kind}${alive ? "" : " ended"}${later}`, dataset: { k },
-                       title: alive ? "" : "on the stack of a call not running at the cursor: its memory is not its own then" },
-      el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty}${note}` })),
-      el("table", { className: "objs" }, el("tbody", {}, ...rows)), ...links);
+      nodes[l.to].changes.length ? el("a", { textContent: nodes[l.to].what, title: `${nodes[l.to].ty} at 0x${l.value.toString(16)}: go to it`, onclick: () => flash(l.to) })
+        : el("span", { textContent: nodes[l.to].what })));
+    return el("div", { className: `obj ${n.kind}`, dataset: { k } },
+      el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty}` })),
+      el("table", { className: "objs" }, el("tbody", {}, ...rows)), back, ...links);
   }
 
-  // When the call wrote a member (its writes `xs`, in the selected call's
-  // `span`): a strip, a tick a write, the cursor a line; hover a tick for
-  // the change, click it to go there.
-  function when(xs, [a, b], cur) {
-    const at = (i) => `${(100 * (i - a)) / Math.max(1, b - a)}%`;
-    return el("span", { className: "when" },
-      ...xs.map((x) => el("i", { className: x.i <= cur ? "done" : "", style: `left: ${at(x.i)}`,
-                                   title: `${x.before} → ${x.after}${x.at ? `, in ${x.at.func}` : ""}: click to go there`, onclick: () => app.time.go(x.i) })),
-      cur >= a && cur <= b ? el("b", { style: `left: ${at(cur)}` }) : null);
+  // The change the cursor is at (its last write): marked.
+  function mark(cur) {
+    for (const r of body.querySelectorAll("tr[data-last]")) r.classList.toggle("on", Number(r.dataset.last) === cur);
   }
 
   // Go to object `k`'s box: in view, a flash.
@@ -128,5 +76,5 @@ export function objects(app) {
     b.classList.add("flash");
   }
 
-  return { draw: () => draw(), mark: (i) => draw(i ?? app.time.cursor()) };
+  return { draw, mark: (i) => $("right").dataset.tab === "objects" && mark(i ?? app.time.cursor()) };
 }

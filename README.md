@@ -105,20 +105,16 @@ leader, a process under its parent): the one running marked, each where it is
 (`prog(20)  in read`: its syscall, else its outermost call), its name a
 link to its last moment (the Stack then shows its stack), its task_struct
 as it was on asking; the Stack's `current task` is a link to it. The
-Objects tab draws the selected call's stores (each named as the code
-names what it hit: `vfs_read's file->f_pos`, `nr_inodes`, its own locals
-and frames, memory nothing names by its address) as the objects they
-changed, at the cursor: a box per object, in the order the call first
-wrote them,
-each member the call writes as it is then, in the Stack's value rows (a
-field inside another open to it; the others folded, `▸ 5 other fields`;
-one written only later dim), with a strip for when: a tick a write across
-the call, the cursor a line (hover a tick: from what to what, by which
-function; click: that moment), the one the cursor last wrote marked (stepping
-shows each change as it is made); its pointers to the others, each a
-link to it (`f_inode → atime_needs_update's inode`: a kiocb's file, the
-file's inode, the inode's page); all its fields on asking. An object on the stack is there while its call
-runs; the others on asking. The line the cursor is on shows its values at
+Objects tab says what the selected call did to the kernel's data: each
+object it changed that is still there when it returns (named as the code
+names it: `vfs_read's file`, `prog(19)->files`, `nr_inodes`; not its own
+locals, gone by then, nor the machine's plumbing), each member it changed
+from what it was to what it is as the call ends (`f_pos  0 → 18`; a row
+goes to the write that left it so), the members it wrote back as they
+were in a line (a count taken and dropped), and its pointers to the
+others, each a link to it (`f_inode → filemap_read's inode`), as a tree:
+a kiocb's file, the file's inode. It is the same at every moment; the
+moments are the Stack's. The line the cursor is on shows its values at
 its end, as a debugger does (`fd = 3   count = 64`). Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by
 its number and filesystem, a task by its comm and pid. The Trace tab is

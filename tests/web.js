@@ -129,12 +129,12 @@ const buf = (i) => (m.memory_at(i), m.call_stack(inRead)[0].args.find((a) => a.n
 check("the user's buffer, before the read and after", !/hello/.test(buf(read.first)) && /"hello from the page cache/.test(buf(read.last)));
 const who = (m.memory_at(read.last), m.origin(fpos(read.last).addr, 8)[0]);
 check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
-// The read's writes to its file (Objects): f_pos's once, 0 to 26, by ksys_read.
+// What the read did (Objects): its file's f_pos, 0 to 26, by ksys_read.
 {
-  const obj = m.objects(read.first, read.last, read.last).find((n) => n.addr === Number(file.value) && n.id === file.target);
-  const w = obj?.writes.filter((x) => x.member === "f_pos") ?? [];
-  check(`the read's writes to its file: ${obj?.writes.map((x) => x.member).join(", ")}; f_pos ${w[0]?.before} → ${w[0]?.after} by ${w[0]?.at?.func}`,
-        w.length === 1 && w[0].before === "0" && w[0].after === "26" && w[0].at?.func === "ksys_read");
+  const obj = m.objects(read.first, read.last).find((n) => n.addr === Number(file.value) && n.id === file.target);
+  const d = obj?.changes.find((x) => x.member === "f_pos");
+  check(`the read changed its file: ${obj?.changes.map((x) => x.member).join(", ")}; f_pos ${d?.before} → ${d?.after} by ${d?.at?.func}`,
+        d?.before === "0" && d?.after === "26" && d?.at?.func === "ksys_read");
   // The read's stores, named as the code names what they hit: a call's file, a local of a call in it (at its frame base's offset), a callee's frame; in order.
   const st = m.stores(read.first, read.last);
   check(`the read's stores: ${st.length}, ${[...new Set(st.map((s) => s.what))].slice(0, 5).join("; ")}…`,
@@ -142,12 +142,11 @@ check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
         && st.some((s) => s.what.endsWith("'s frame")) && st.every((s, k) => k === 0 || st[k - 1].write.i < s.write.i));
 }
 m.memory_at(null);
-// The objects the read wrote, as a graph: its kiocb (on the stack, gone
-// when the read ends) points to its file (ki_filp).
+// What the read did: its file changed; not its kiocb (on the stack, gone
+// when the read ends).
 {
-  const g = m.objects(read.first, read.last, read.last), iocb = g.find((n) => n.ty === "struct kiocb");
-  const filp = iocb?.links.find((l) => l.member === "ki_filp");
-  check(`the read's objects: ${g.length}, its kiocb's ki_filp → ${filp && g[filp.to].what}`, filp && g[filp.to].ty === "struct file" && iocb.life?.[1] < read.last);
+  const g = m.objects(read.first, read.last);
+  check(`what the read changed: ${g.map((n) => n.what).join("; ")}`, g.some((n) => n.ty === "struct file") && !g.some((n) => n.ty === "struct kiocb"));
 }
 // Where the read's bytes came from: copied from the page cache, which the
 // write before it filled, copying from its buffer.

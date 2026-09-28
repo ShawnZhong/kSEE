@@ -81,7 +81,7 @@ Rust does the work: JS only lays it out.
 | tasks.js | the Tasks: every task the recording has, at the cursor (`Machine.tasks`): the one running marked, each where it is (its syscall, else its outermost call), a link to its last moment; its task_struct as it was on asking |
 | tree.js | values as trees (the Stack's): pointers open into what they point to, structs into their fields; who last wrote a value; the fields that matter shown, the others folded |
 | trace.js | the Trace tab: the raw trace, a line a record (what the views are built from) |
-| objects.js | the Objects: the objects the selected call wrote as boxes, at the cursor (each member it writes as it is then, as the Stack's values: tree.js; the one last written marked; a strip of when: a tick a write), their pointers to each other as links (`Machine.objects`), those on the stack while their call runs |
+| objects.js | the Objects: what the selected call did, a box per object it changed that outlives it (each member before → after; a row, its write), their pointers to each other as links (`Machine.objects`) |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
 | ksee.js | booting |
@@ -107,8 +107,8 @@ from), `call_stack(i, nth)`, `line_steps`, `chart`,
 `tasks(i)` (each task, where it is), `memory_at(i)` then `object` /
 `global` (memory as it was), `origin` (who last wrote a value, back through its copies), `stores` (a span
 of records' stores, and variable sets, in order (named once per span and
-snapshot: Objects and `notes`, the source's notes by line, ask again at
-each moment), each named as the code
+snapshot: `objects`, what a call did, and `notes`, the source's notes by
+line, ask again), each named as the code
 names what it hit:
 the structs the calls' arguments point to, the task, locals and frames,
 the kernel's globals by address, the machine's own variables apart:

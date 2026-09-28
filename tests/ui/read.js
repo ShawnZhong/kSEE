@@ -125,24 +125,17 @@
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
   if (!/^ksys_read = \d+$/.test(r.rets[0] ?? "")) throw new Error("no return value in a call's hover: " + JSON.stringify(r.rets));
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
-  // The Objects (the explanation's link): each object the call wrote, its
-  // members as they are at the cursor (the kiocb's ki_pos), a value's writes on asking.
+  // The Objects (the explanation's link): what the call did, each object
+  // it changed, member by member (the kiocb's ki_pos, 0 → 18); a row goes
+  // to the write that left it so.
   const before = ksee.time.cursor();
   [...document.querySelectorAll(".explain a.place")].find((x) => /changed/.test(x.textContent))?.click();
   await until(() => $("right").dataset.tab === "objects" && document.querySelector("#objects .obj"));
-  const kipos = [...document.querySelectorAll("#objects tr")].find((tr) => tr.querySelector(".fname")?.textContent.trim() === "ki_pos");
-  // (Each member written, a strip: a tick a write in the call; clicking one goes to that write.)
-  const ticks = kipos ? [...kipos.querySelectorAll(".when i")] : [];
-  r.objects = [kipos && [...kipos.cells].map((c) => (c.querySelector(".when") ? c.firstChild : c).textContent.trim()).join(" "), ticks.map((t) => t.title.split(":")[0])];
-  if (!/^ki_pos \d+ loff_t/.test(r.objects[0] ?? "") || !ticks.length) throw new Error("objects: " + JSON.stringify(r.objects));
-  ticks.at(-1).click(); await sleep(200);
-  // (And they follow the timeline's pointer as the Stack does: another moment, others written so far; back on leaving.)
-  const head = () => document.querySelector("#objects .head")?.textContent, chartBox = $("chart").getBoundingClientRect();
-  const still = head();
-  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: chartBox.left + 2, clientY: chartBox.bottom - 5 })); await sleep(300);
-  r.objects.push(head());
-  $("chart").dispatchEvent(new PointerEvent("pointerleave")); await sleep(300);
-  if (r.objects.at(-1) === still || head() !== still) throw new Error("objects follow the pointer: " + JSON.stringify([still, r.objects.at(-1), head()]));
+  const kipos = [...document.querySelectorAll("#objects tr")].find((tr) => tr.cells[0]?.textContent === "ki_pos");
+  r.objects = [kipos?.innerText.replace(/\s+/g, " ")];
+  if (!/^ki_pos 0 → \d+$/.test(r.objects[0] ?? "")) throw new Error("objects: " + JSON.stringify(r.objects));
+  kipos.click(); await sleep(200);
+  if (ksee.time.cursor() !== Number(kipos.dataset.last) || !kipos.classList.contains("on")) throw new Error("a change's row goes to its write: " + JSON.stringify([ksee.time.cursor(), kipos.dataset.last]));
   ksee.tab("stack");
   ksee.select(read); ksee.time.go(before); // (as it was)
   // (At a store: its line in the source says what it stored, at its end.)

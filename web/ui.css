@@ -112,26 +112,19 @@ h2.tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
 /* The Stack: at the bottom of its pane (callstack.js) */
 #stack { display: flex; flex-direction: column; }
 #stack > table { margin-top: auto; } /* (at the bottom: see callstack.js) */
-/* The Objects: a box per object the selected call wrote, at the cursor; its pointers to the others, links */
+/* The Objects: a box per object the selected call changed, each member before → after (a row: go to its write); its pointers to the others, links */
 #objects { padding: 0 10px 12px; }
 #objects .head { padding: 6px 2px 2px; font-size: 11.5px; }
 #objects .obj { margin: 8px 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font: 11px/1.5 var(--mono); }
 #objects .obj .title { padding: 3px 8px; border-bottom: 1px solid var(--line); background: var(--sel); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #objects .obj.task .title, #objects .obj.global .title { background: var(--at); }
 #objects .obj .row { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#objects .obj tr { cursor: pointer; }
+#objects .obj tr:hover td { background: var(--sel); }
 #objects .obj tr.on td { background: var(--at); }
 /* (What comes only after the cursor: dim.) */
 tr.later { opacity: 0.45; }
-#objects .obj.ended { border-style: dashed; opacity: 0.75; }
-#objects .obj.later { opacity: 0.5; }
-/* When a member was written, in the selected call: a tick a write, the cursor a line (objects.js); at the row's right, the strips of a box in line */
-#objects .when { position: relative; float: right; width: 90px; height: 10px; margin: 3px 0 0 12px;
-                 border-bottom: 1px solid var(--line); }
-#objects .when i { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; background: var(--dim); cursor: pointer; }
-#objects .when i.done { background: var(--accent); }
-#objects .when b { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--fg); pointer-events: none; }
 #objects .obj .row.link span { color: var(--dim); }
-#objects .obj .row.more a { color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
 #objects .obj.flash { animation: flash 1s; }
 @keyframes flash { from { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: 0 0 0 3px transparent; } }
 /* The Records: the raw trace, a virtual list, a row a record */

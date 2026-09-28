@@ -144,7 +144,7 @@ pub struct Change {
 /// ("vfs_read's file", "f's x", "nr_inodes", "current"; the address when
 /// nothing names it), its `kind` ("task", "object": a struct a call's
 /// argument points to, "global", "machine": one of the machine's
-/// variables (arch::MACHINE),
+/// variables, or what its functions name (arch::MACHINE),
 /// "frame": the stack a call used, "local", or "other": memory nothing
 /// names), the object's type `ty` ("" for none; `id` its id), where it is
 /// (`addr`, `size`), and the `write` itself (the member, from what to
@@ -181,12 +181,11 @@ pub struct Note {
     pub full: String,
 }
 
-/// An object a span of records wrote (see View::objects): as the Stores
-/// name it (`what`, `kind`, `ty`, `id`, `addr`, `size`), its writes in
-/// order, and its pointers to the others (as memory is at the cursor, or
-/// for an object on the stack whose call has ended by then, as it ended).
-/// `life`: an object on the stack lives while its call runs (these
-/// records); None: all the recording (as far as it knows).
+/// An object a span of records (a call) changed, which is still there when
+/// it returns (see View::objects): as the Stores name it (`what`, `kind`,
+/// `ty`, `id`, `addr`, `size`), its members the call left changed, those
+/// it wrote but left as they were (`back`: a count taken and dropped), and
+/// its pointers to the others as the span ends.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Node {
@@ -196,18 +195,28 @@ pub struct Node {
     pub id: u32,
     pub addr: u32,
     pub size: u32,
-    pub writes: Vec<Change>,
+    pub changes: Vec<Diff>,
+    pub back: Vec<String>,
     pub links: Vec<Link>,
-    pub life: Option<(usize, usize)>,
-    /// Scratch: on the stack of the call or of one it makes, so gone when
-    /// it returns (its life within the span); not what the call did to the
-    /// kernel's data, only on its way.
-    pub scratch: bool,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub depth: u32,
     /// The node it is shown under (the first that points to it, as the
     /// span ends), if any.
     pub under: Option<usize>,
+}
+
+/// A member a span of records changed: from `before` (as the span began)
+/// to `after` (as it ends), in `writes` stores, the last at record `last`,
+/// by the code at `at`.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Diff {
+    pub member: String,
+    pub before: String,
+    pub after: String,
+    pub writes: usize,
+    pub last: usize,
+    pub at: Option<Line>,
 }
 
 /// A pointer from a node's `member` to node `to` (an index); its value
@@ -922,6 +931,9 @@ impl View<'_> {
             match records[i] {
                 Record::Block { func, n: 0 } => {
                     let Some((f, (words, frame))) = t.functions.get(&func).zip(args.get(i)) else { continue };
+                    // (What the machine's own functions name, its: the call's plumbing.)
+                    let machine = t.file(f.loc).starts_with(arch::MACHINE);
+                    let kind = |k: &'static str| if machine { "machine" } else { k };
                     // (Its frame: up to its caller's, if the caller is known.)
                     let caller = calls.call_from(i).and_then(|c| c.parent).and_then(|p| args.get(calls.calls[p as usize].first));
                     if let Some((_, caller)) = caller && caller > frame {
@@ -930,18 +942,18 @@ impl View<'_> {
                     for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
                         let v = v as u32;
                         if let Some(to) = types.struct_target(*ty) {
-                            add(format!("{}'s {pname}", f.name), "object", to, v, None, frame_of(i, v), Some(i));
+                            add(format!("{}'s {pname}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
                         }
                     }
                     for (var, ty, off) in types.locals.get(&func).into_iter().flatten().filter_map(|(v, t, o)| Some((v, t, (*o)?))) {
-                        add(format!("{}'s {var}", f.name), "local", *ty, frame.wrapping_add(off), None, Some(i), Some(i));
+                        add(format!("{}'s {var}", f.name), kind("local"), *ty, frame.wrapping_add(off), None, Some(i), Some(i));
                         // (A local pointing at a struct: that too ("files->next_fd"
                         // through `struct files_struct *files = current->files`),
                         // where it points as the call ends.)
                         if let Some(to) = types.struct_target(*ty) {
                             let end = self.rec.calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
                             let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
-                            add(format!("{}'s {var}", f.name), "object", to, v, None, frame_of(i, v), Some(i));
+                            add(format!("{}'s {var}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
                         }
                     }
                     // (One the code keeps in a wasm local, pointing at a
@@ -961,7 +973,7 @@ impl View<'_> {
                     }
                     for (v, value) in values {
                         if let Some(to) = self.var_ty(v).and_then(|ty| types.struct_target(ty)) {
-                            add(format!("{}'s {}", v.function, v.name), "object", to, value, None, frame_of(i, value), Some(i));
+                            add(format!("{}'s {}", v.function, v.name), kind("object"), to, value, None, frame_of(i, value), Some(i));
                         }
                     }
                 }
@@ -976,7 +988,7 @@ impl View<'_> {
             let k = globals.partition_point(|g| g.0 <= addr);
             globals[..k].iter().rev().take(8).find(|g| addr < g.0.saturating_add(g.1)).copied()
         };
-        // (Each store to the smallest object holding its first byte.)
+        // (Each store to the outermost object holding its first byte.)
         let mut out = Vec::new();
         // (The regions by address: a store's are those starting at most the
         // largest one's size below it.)
@@ -986,10 +998,12 @@ impl View<'_> {
         for &i in self.rec.stores_between(first, last) {
             let Record::Store { addr, .. } = records[i] else { continue };
             let end = by_start.partition_point(|&k| regions[k].3 <= addr);
-            // (The smallest; of equal ones, the first named.)
+            // (The outermost: an object inside another (a page's refcount, the
+            // atomic_t a callee names) is the other's member; a frame only
+            // if nothing else holds it; of equal ones, the first named.)
             let hit = by_start[..end].iter().rev().take_while(|&&k| addr - regions[k].3 < widest.max(1))
                 .filter(|&&k| addr < regions[k].3.saturating_add(regions[k].4) && regions[k].5.is_none_or(|(a, b)| a <= i && i <= b))
-                .min_by_key(|&&k| (regions[k].4, k)).map(|&k| regions[k].clone())
+                .min_by_key(|&&k| (regions[k].1 == "frame", core::cmp::Reverse(regions[k].4), k)).map(|&k| regions[k].clone())
                 .or_else(|| global_at(addr).map(|(gaddr, size, name, ty)| {
                     let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
                     (name.into(), if machine { "machine" } else { "global" }, types.resolve(ty), gaddr, size, None, u32::MAX)
@@ -1016,64 +1030,76 @@ impl View<'_> {
         out
     }
 
-    /// The objects records `first..=last` (a call's) wrote, as a graph: each
-    /// with its writes (the Stores', by object), in the order of the calls
-    /// that name them, the outer first (then the first written first),
-    /// and its pointers to the others as memory was after record `at`
-    /// (the cursor; an object on the stack, when its call ended if that
-    /// was before): what the call changed in the kernel's data, and how it
-    /// hangs together. (Not the frames or the machine's own
-    /// variables: the call's plumbing.)
-    pub fn objects(&self, first: usize, last: usize, at: usize) -> Vec<Node> {
+    /// What records `first..=last` (a call's) did to the kernel's data:
+    /// the objects they changed that are still there when the call returns
+    /// (not its scratch: its locals and its callees', gone by then; nor the
+    /// frames or the machine's own variables: the call's plumbing), each
+    /// member from what it was to what it is as the span ends; as a graph,
+    /// by their pointers then. In the order of the calls that name them,
+    /// the outer first (then the first written first).
+    pub fn objects(&self, first: usize, last: usize) -> Vec<Node> {
         let types = &self.tables.types;
-        let mut nodes: Vec<Node> = Vec::new();
-        for s in self.stores(first, last).iter().filter(|s| matches!(s.kind, "object" | "task" | "local" | "global") && s.size > 0).cloned() {
-            match nodes.iter_mut().find(|n| n.addr == s.addr && n.id == s.id && n.writes[0].i >= s.life.map_or(0, |l| l.0)) {
-                Some(n) => n.writes.push(s.write),
-                None => nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(),
-                                          life: s.life, scratch: s.life.is_some_and(|(a, b)| first <= a && b <= last), depth: s.depth, under: None }),
+        // (Each object's writes, by member, in order.)
+        let mut nodes: Vec<(Node, Vec<(String, Vec<Change>)>)> = Vec::new();
+        let scratch = |s: &Stored| s.life.is_some_and(|(a, b)| first <= a && b <= last);
+        let all = self.stores(first, last);
+        let stores: Vec<&Stored> = all.iter().filter(|s| matches!(s.kind, "object" | "task" | "local" | "global") && s.size > 0 && !scratch(s)).collect();
+        for s in stores.into_iter().cloned() {
+            let k = match nodes.iter().position(|(n, _)| n.addr == s.addr && n.id == s.id) {
+                Some(k) => k,
+                None => {
+                    nodes.push((Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, changes: Vec::new(), back: Vec::new(),
+                                       links: Vec::new(), depth: s.depth, under: None }, Vec::new()));
+                    nodes.len() - 1
+                }
+            };
+            let members = &mut nodes[k].1;
+            match members.iter_mut().find(|(m, _)| *m == s.write.member) {
+                Some((_, w)) => w.push(s.write),
+                None => members.push((s.write.member.clone(), alloc::vec![s.write])),
             }
         }
-        // (The call's effects first, its scratch after; each in the order of
-        // the calls that name them, the outer first, as a call tree reads;
-        // within one call, the first written first. The task first;
-        // globals, and memory nothing names, last.)
-        nodes.sort_by_key(|n| (n.scratch, n.depth));
-        // (One name for two (a local of two calls of one function): the
-        // later numbered, in the order they are written: "current_time's
-        // now #2".)
-        let mut firsts: Vec<usize> = (0..nodes.len()).collect();
-        firsts.sort_by_key(|&k| nodes[k].writes[0].i);
+        let mut nodes: Vec<Node> = nodes.into_iter().map(|(mut n, members)| {
+            for (member, w) in members {
+                let (a, z) = (&w[0], &w[w.len() - 1]);
+                if a.before == z.after {
+                    n.back.push(member);
+                } else {
+                    n.changes.push(Diff { member, before: a.before.clone(), after: z.after.clone(), writes: w.len(), last: z.i, at: z.at.clone() });
+                }
+            }
+            n
+        }).collect();
+        // (In the order of the calls that name them, the outer first, as a
+        // call tree reads; within one call, the first written first. The
+        // task first; globals last.)
+        nodes.sort_by_key(|n| n.depth);
+        // (One name for two (the slabs of two caches a callee named by one
+        // parameter): the later numbered: "pfmemalloc_match's slab #2".)
         let mut seen: BTreeMap<String, u32> = BTreeMap::new();
-        for k in firsts {
-            let n = seen.entry(nodes[k].what.clone()).or_default();
-            *n += 1;
-            if *n > 1 {
-                nodes[k].what = format!("{} #{n}", nodes[k].what);
+        for n in &mut nodes {
+            let k = seen.entry(n.what.clone()).or_default();
+            *k += 1;
+            if *k > 1 {
+                n.what = format!("{} #{k}", n.what);
             }
         }
         let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
-        // (Each node's pointers to the others, as memory was after record
-        // `at`, or its call's end for one on the stack.)
-        let links_at = |at: usize| -> Vec<Vec<Link>> { nodes.iter().enumerate().map(|(k, n)| {
-            let mem = self.rec.memory_at(self.now, n.life.map_or(at, |l| l.1.min(at)));
+        // (Each node's pointers to the others, as memory is as the span ends.)
+        let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
+        let links: Vec<Vec<Link>> = nodes.iter().enumerate().map(|(k, n)| {
             types.pointers(n.id, 3).into_iter().filter_map(|(member, off)| {
                 let value = mem.read_u32(n.addr.wrapping_add(off));
                 let to = within(value).filter(|&to| to != k)?;
                 Some(Link { member, to, value })
             }).collect()
-        }).collect() };
-        // (The tree they are shown in, from the ones nothing points to, as
-        // the span ends (then any left: a cycle's), each under the first, in
-        // order, that points to it: its shape the same at every moment; the
-        // effects and the scratch each a tree of their own.)
-        let (mut ends, now) = (links_at(last), links_at(at));
-        for (k, l) in ends.iter_mut().enumerate() {
-            l.retain(|l| nodes[l.to].scratch == nodes[k].scratch);
-        }
+        }).collect();
+        // (The tree they are shown in, from the ones nothing points to (then
+        // any left: a cycle's), each under the first, in order, that points
+        // to it.)
         let mut under = alloc::vec![None; nodes.len()];
         let mut placed = alloc::vec![false; nodes.len()];
-        let pointed: alloc::collections::BTreeSet<usize> = ends.iter().flatten().map(|l| l.to).collect();
+        let pointed: alloc::collections::BTreeSet<usize> = links.iter().flatten().map(|l| l.to).collect();
         let roots = (0..nodes.len()).filter(|k| !pointed.contains(k)).chain(0..nodes.len());
         for root in roots {
             if placed[root] {
@@ -1082,7 +1108,7 @@ impl View<'_> {
             placed[root] = true;
             let mut queue = alloc::collections::VecDeque::from([root]);
             while let Some(k) = queue.pop_front() {
-                for l in &ends[k] {
+                for l in &links[k] {
                     if !placed[l.to] {
                         (placed[l.to], under[l.to]) = (true, Some(k));
                         queue.push_back(l.to);
@@ -1090,7 +1116,7 @@ impl View<'_> {
                 }
             }
         }
-        for ((n, l), u) in nodes.iter_mut().zip(now).zip(under) {
+        for ((n, l), u) in nodes.iter_mut().zip(links).zip(under) {
             (n.links, n.under) = (l, u);
         }
         nodes
@@ -1384,31 +1410,88 @@ mod tests {
         let mut m = alloc::vec![0u8; 64];
         (m[8], m[40], m[44]) = (2, 7, 4);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let nodes = v.objects(0, 2, 2);
-        let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.writes.len(), n.links.iter().map(|l| (l.member.clone(), l.to)).collect::<Vec<_>>())).collect();
-        assert_eq!(got, [("f's p".into(), 1, alloc::vec![]), ("f's y".into(), 1, alloc::vec![("link".into(), 0)])]);
+        let nodes = v.objects(0, 2);
+        let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.changes.iter().map(|d| (d.member.clone(), d.before.clone(), d.after.clone())).collect::<Vec<_>>(),
+                                                n.links.iter().map(|l| (l.member.clone(), l.to)).collect::<Vec<_>>())).collect();
+        assert_eq!(got, [("f's p".into(), alloc::vec![("b".into(), "1".into(), "2".into())], alloc::vec![]),
+                         ("f's y".into(), alloc::vec![("c".into(), "0".into(), "7".into())], alloc::vec![("link".into(), 0)])]);
         // (Shown as a tree: p under y, which points to it.)
         assert_eq!(nodes.iter().map(|n| n.under).collect::<Vec<_>>(), [Some(1), None]);
     }
 
     #[test]
-    fn two_objects_of_one_name_are_numbered() {
-        // f (1) called twice, each call storing its local int x (at frame
-        // 32 + 4): two objects, "f's x" and "f's x #2", each scratch.
+    fn a_calls_scratch_is_not_what_it_did() {
+        // f (1) stores its local int x (at frame 32 + 4), then returns: in
+        // the span of the whole call, x is gone as it ends; in a span
+        // before it returns, x is changed (0 → 7).
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:4\n");
-        let st = Record::Store { addr: 36, size: 4, old: 0, line: 0, from: None };
-        let r = [Record::Block { func: 1, n: 0 }, st, Record::Return { func: 1, value: 0 }, Record::Block { func: 1, n: 0 }, st, Record::Return { func: 1, value: 0 }];
+        let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 36, size: 4, old: 0, line: 0, from: None }, Record::Return { func: 1, value: 0 }];
         let mut args = Args::default();
         args.push(0, &[32]);
-        args.push(3, &[32]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
+        let mut m = alloc::vec![0u8; 64];
+        m[36] = 7;
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        assert!(v.objects(0, 2).is_empty());
+        let got: Vec<_> = v.objects(0, 1).into_iter().map(|n| (n.what, n.changes.len())).collect();
+        assert_eq!(got, [("f's x".into(), 1)]);
+    }
+
+    #[test]
+    fn an_object_inside_another_is_its_member() {
+        // f (1) takes struct u *p (at 4: int a, then struct s inner); g
+        // (2), which f calls, takes struct s *q (p's inner, at 8) and stores
+        // q->b: one object, f's p, its inner.b changed.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\n",
+                              "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
+                               T\t4\tstruct\tu\t12\nM\t4\ta\t0\t0\t1\nM\t4\tinner\t32\t0\t2\nT\t5\tptr\t\t4\t4\nP\t1\tf\tp:5\nP\t2\tg\tq:3\n");
+        let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, Record::Store { addr: 12, size: 4, old: 0, line: 0, from: None }];
+        let mut args = Args::default();
+        args.push(0, &[4, 64]);
+        args.push(1, &[8, 48]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
+        let mut m = alloc::vec![0u8; 128];
+        m[12] = 3;
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        let got: Vec<_> = v.objects(0, 2).into_iter().map(|n| (n.what, n.changes.into_iter().map(|d| (d.member, d.after)).collect::<Vec<_>>())).collect();
+        assert_eq!(got, [("f's p".into(), alloc::vec![("inner.b".into(), "3".into())])]);
+    }
+
+    #[test]
+    fn two_objects_of_one_name_are_numbered() {
+        // f (1), called twice, takes struct s *p (at 4, then at 20) and
+        // stores p->b: two objects, "f's p" and "f's p #2".
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
+                              "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\n");
+        let st = |addr| Record::Store { addr, size: 4, old: 0, line: 0, from: None };
+        let r = [Record::Block { func: 1, n: 0 }, st(8), Record::Return { func: 1, value: 0 }, Record::Block { func: 1, n: 0 }, st(24), Record::Return { func: 1, value: 0 }];
+        let mut args = Args::default();
+        args.push(0, &[4, 64]);
+        args.push(3, &[20, 64]);
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 6], args);
-        let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 64]) };
-        let got: Vec<_> = v.objects(0, 5, 5).into_iter().map(|n| (n.what, n.scratch)).collect();
-        assert_eq!(got, [("f's x".into(), true), ("f's x #2".into(), true)]);
-        // (Each its call's scratch: gone when it returns; in the first call
-        // alone, not the second's.)
-        assert_eq!(v.objects(0, 2, 2).into_iter().map(|n| n.scratch).collect::<Vec<_>>(), [true]);
-        assert_eq!(v.objects(1, 5, 5).into_iter().map(|n| n.scratch).collect::<Vec<_>>(), [true]);
+        let mut m = alloc::vec![0u8; 128];
+        (m[8], m[24]) = (1, 2);
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        let got: Vec<_> = v.objects(0, 5).into_iter().map(|n| n.what).collect();
+        assert_eq!(got, ["f's p", "f's p #2"]);
+    }
+
+    #[test]
+    fn a_member_written_back_is_no_change() {
+        // f (1) takes struct s *p (at 4): it stores p->b 2 (was 1), then 1
+        // again: b written, but as it was.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
+                              "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\n");
+        let st = |old| Record::Store { addr: 8, size: 4, old, line: 0, from: None };
+        let r = [Record::Block { func: 1, n: 0 }, st(1), st(2)];
+        let mut args = Args::default();
+        args.push(0, &[4, 32]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
+        let mut m = alloc::vec![0u8; 64];
+        m[8] = 1;
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        let got: Vec<_> = v.objects(0, 2).into_iter().map(|n| (n.what, n.changes.len(), n.back)).collect();
+        assert_eq!(got, [("f's p".into(), 0, alloc::vec!["b".into()])]);
     }
 
     #[test]

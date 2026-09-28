@@ -119,12 +119,14 @@ call ends, the task running and what its pointer members point to, a
 global: "vfs_read's file->f_pos", "prog(19)->files->next_fd" (the task running as the span begins, by its name); what the
 code did not name, by its address). A call's local, its frame, and an
 object a pointer reaches in a frame on the stack, are theirs only while
-that call runs (the slot is another's before and after). The same
-stores by object are a graph (`objects`): each object the span wrote,
-its members written, and its pointers to the others (the members of
-pointer type, `Types::pointers`, whose value is inside another), as
-memory was at the cursor, or for an object on the stack whose call has
-returned, as it was when it did (it is gone).
+that call runs (the slot is another's before and after). What a call did
+(`objects`) is its stores by object, each to the outermost object holding
+it (a page's refcount is the page's `_refcount.counter`), those still there
+when it returns (not a local of it or of a call it makes: its scratch):
+each member from what it was as the span began to what it is as it ends,
+the members written but left as they were apart, and the pointers between
+them as it ends (the members of pointer type, `Types::pointers`, whose
+value is inside another).
 
 ## Where a value came from, and why a branch went
 
