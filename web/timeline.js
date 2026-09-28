@@ -41,10 +41,7 @@ export function timeline(app) {
               depth: 1, row: ROW, // (depth: the deepest stack of the selection seen; row: the rows' height)
               lit: null, sel: null, syscallAt: new Map(),
               found: { name: "", at: [] } }; // (the function found: its calls' records) // (lit, sel: the calls outlined, their first records: hovered here or in the Stack; selected)
-  const funcs = new Map(), tasks = new Map();
-  const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
-  const inames = new Map();
-  const iname = (k) => inames.get(k) ?? inames.set(k, m.inline_name(k)).get(k);
+  const { fn, iname } = app, tasks = new Map();
   const who = (addr) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr)).get(addr));
 
   function canvas(c, h) {
@@ -368,10 +365,8 @@ export function timeline(app) {
     t.n = m.records();
     t.calls = calls;
     t.syscallAt = new Map(calls.map((c) => [c.first, c]));
-    funcs.clear();
     tasks.clear();
     args.clear();
-    inames.clear();
     t.buckets = m.timeline(Math.max(1, over.clientWidth));
     if (t.found.name) t.found.at = [...m.calls_of(t.found.name, 0, Math.max(0, t.n - 1))];
     t.home = t.where?.() ?? null;

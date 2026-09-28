@@ -31,7 +31,7 @@ import { callEditor } from "./calledit.js";
 
 export async function examples(app) {
   const { m } = app;
-  const consts = m.constants();
+  const consts = app.consts();
   const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
   // The open example: its steps, the calls asked ({ id, tid, args, how?,
   // ret?, text?: how once it finished), the runner each started; its

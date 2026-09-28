@@ -14,23 +14,18 @@ import { result } from "./args.js";
 
 export function trace(app) {
   const { m } = app;
-  const funcs = new Map(), inames = new Map();
-  const fn = (id) => (funcs.has(id) ? funcs.get(id) : funcs.set(id, m.function(id)).get(id));
-  const iname = (k) => inames.get(k) ?? inames.set(k, m.inline_name(k)).get(k);
+  const { fn, iname } = app;
   const body = $("trace");
   // The calls opened (by their first record): their calls shown. (A chain
   // of single calls opens by itself: the spine of a syscall shows at once.)
   const opened = new Set();
   let shown = null, tree = [], total = 1, count = 0;
-  const consts = m.constants();
 
   // Draw for the selection (again only if it, or the snapshot, changed).
   function draw() {
     const w = app.selection(), key = w?.key ?? null;
     if (key === shown) return;
     shown = key;
-    funcs.clear();
-    inames.clear();
     opened.clear();
     $("trace-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): the calls it made, in order.";
     if (!w) return body.replaceChildren();
@@ -80,7 +75,7 @@ export function trace(app) {
     const f = n.inlined ? null : fn(n.func), pct = Math.round((100 * n.records) / total);
     const a = el("a", { className: n.inlined ? "mono inl" : "mono", textContent: n.inlined ? iname(n.func) : f?.name ?? "?", onclick: () => app.goCall(n.first),
       title: `${n.inlined ? "inlined code (no call): " : `${f?.file ?? ""}:${f?.line ?? ""}: `}${n.records} record${n.records === 1 ? "" : "s"}${pct >= 1 ? ` (${pct}% of the selection)` : ""}, ${n.calls.length} call${n.calls.length === 1 ? "" : "s"}; go there` });
-    return n.ret == null ? [a] : [a, el("span", { className: "ret mono", textContent: ` = ${result(n.ret, consts)}` })];
+    return n.ret == null ? [a] : [a, el("span", { className: "ret mono", textContent: ` = ${result(n.ret, app.consts())}` })];
   }
 
   // The cursor moved: the innermost call shown that it is in, marked.

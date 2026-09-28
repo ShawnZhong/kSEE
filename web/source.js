@@ -163,7 +163,7 @@ export function source(app) {
   function called(file) {
     const cur = app.time.cursor(), out = new Map();
     if (cur == null || !v.fn) return out;
-    const consts = (v.consts ??= m.constants());
+    const consts = app.consts();
     for (const s of app.lineSteps?.() ?? []) {
       if (s.i > cur) break;
       if (!s.called || s.func !== v.fn.name) continue;

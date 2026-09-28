@@ -21,6 +21,17 @@ const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st
 
 export function app(m) {
   const a = { m };
+  // The kernel's own tables, asked once (the build's: no snapshot changes
+  // them): a function's place, an inlined function's name, the constants
+  // from its UAPI headers.
+  const memo = (f) => {
+    const c = new Map();
+    return (k) => (c.has(k) ? c.get(k) : c.set(k, f(k)).get(k));
+  };
+  a.fn = memo((id) => m.function(id));
+  a.iname = memo((k) => m.inline_name(k));
+  let constants = null;
+  a.consts = () => (constants ??= m.constants());
   const src = source(a), time = timeline(a), stack = callstack(a);
   // (The panels, for each other and for tests.)
   Object.assign(a, { src, time, stack });
@@ -80,8 +91,7 @@ export function app(m) {
   // resets it to the innermost; the pointer over the timeline shows other
   // positions without touching it, and leaving comes back to both.
   let chosen = null;
-  let constants = null;
-  const consts = () => (constants ??= m.constants());
+  const consts = a.consts;
   a.selectFrame = (f) => {
     chosen = { first: f.first, inlined: f.inlined ? f.func : null };
     stack.select(f.first, f.inlined ? f.func : null);
