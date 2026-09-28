@@ -163,9 +163,9 @@ pub struct Stored {
 /// An object a span of records wrote (see View::objects): as the Stores
 /// name it (`what`, `kind`, `ty`, `id`, `addr`, `size`), its writes in
 /// order, and its pointers to the others (as memory is at the cursor, or
-/// for an object on the stack whose call has ended by then, as it ended:
-/// `ended`, that record). `life`: an object on the stack lives while its
-/// call runs (these records); None: all the recording (as far as it knows).
+/// for an object on the stack whose call has ended by then, as it ended).
+/// `life`: an object on the stack lives while its call runs (these
+/// records); None: all the recording (as far as it knows).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Node {
@@ -177,18 +177,16 @@ pub struct Node {
     pub size: u32,
     pub writes: Vec<Change>,
     pub links: Vec<Link>,
-    pub ended: Option<usize>,
     pub life: Option<(usize, usize)>,
 }
 
-/// A pointer from a node's `member` to node `to` (an index), `off` bytes
-/// into it; its value `value`.
+/// A pointer from a node's `member` to node `to` (an index); its value
+/// `value`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Link {
     pub member: String,
     pub to: usize,
-    pub off: u32,
     pub value: u32,
 }
 
@@ -782,19 +780,16 @@ impl View<'_> {
         for s in self.stores(first, last).into_iter().filter(|s| matches!(s.kind, "object" | "task" | "local" | "global") && s.size > 0) {
             match nodes.iter_mut().find(|n| n.addr == s.addr && n.id == s.id && n.writes[0].i >= s.life.map_or(0, |l| l.0)) {
                 Some(n) => n.writes.push(s.write),
-                None => {
-                    let ended = s.life.map(|l| l.1).filter(|&end| end < at);
-                    nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(), ended, life: s.life });
-                }
+                None => nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(), life: s.life }),
             }
         }
         let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
         let links: Vec<Vec<Link>> = nodes.iter().enumerate().map(|(k, n)| {
-            let mem = self.rec.memory_at(self.now, n.ended.unwrap_or(at).min(at));
+            let mem = self.rec.memory_at(self.now, n.life.map_or(at, |l| l.1.min(at)));
             types.pointers(n.id, 3).into_iter().filter_map(|(member, off)| {
             let value = mem.read_u32(n.addr.wrapping_add(off));
             let to = within(value).filter(|&to| to != k)?;
-            Some(Link { member, to, off: value - nodes[to].addr, value })
+            Some(Link { member, to, value })
             }).collect()
         }).collect();
         for (n, l) in nodes.iter_mut().zip(links) {

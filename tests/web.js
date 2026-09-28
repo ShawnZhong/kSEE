@@ -148,7 +148,7 @@ m.memory_at(null);
 {
   const g = m.objects(read.first, read.last, read.last), iocb = g.find((n) => n.ty === "struct kiocb");
   const filp = iocb?.links.find((l) => l.member === "ki_filp");
-  check(`the read's objects: ${g.length}, its kiocb's ki_filp → ${filp && g[filp.to].what}`, filp && g[filp.to].ty === "struct file" && iocb.ended != null);
+  check(`the read's objects: ${g.length}, its kiocb's ki_filp → ${filp && g[filp.to].what}`, filp && g[filp.to].ty === "struct file" && iocb.life?.[1] < read.last);
 }
 // Where the read's bytes came from: copied from the page cache, which the
 // write before it filled, copying from its buffer.
