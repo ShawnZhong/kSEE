@@ -28,6 +28,8 @@ pub struct Recording {
     pub blocks: Vec<usize>,
     /// Each record's step: the blocks up to and including it.
     pub step: Vec<u32>,
+    /// The calls, and where each record's task is in them.
+    pub calls: stack::Calls,
     /// The stores, indexed (once asked for).
     stores: OnceCell<mem::History>,
 }
@@ -79,7 +81,8 @@ impl Recording {
             n += matches!(r, Record::Block { .. }) as u32;
             step.push(n);
         }
-        Recording { records, ids, tasks, syscalls, blocks, step, stores: OnceCell::new() }
+        let calls = stack::Calls::new(t, &records, &tasks);
+        Recording { records, ids, tasks, syscalls, blocks, step, calls, stores: OnceCell::new() }
     }
 
     /// How many steps (blocks) the recording has.
@@ -231,7 +234,7 @@ impl Recording {
 
     /// The source lines run in records `first..=last` of the task at `task`.
     pub fn lines(&self, t: &Tables, first: usize, last: usize, task: u32) -> Vec<LineStep> {
-        stack::lines(t, &self.records, &self.tasks, first, last, Some(task))
+        self.calls.lines(t, &self.records, &self.tasks, first, last, Some(task))
     }
 
     /// The newest store to `addr..addr + len` at or before record `at` (or
@@ -240,17 +243,12 @@ impl Recording {
     pub fn last_write(&self, t: &Tables, addr: u32, len: u32, at: usize) -> Option<(usize, u64, Option<LineStep>)> {
         let at = at.min(self.len().checked_sub(1)?);
         let (i, old) = self.stores().last_write(&self.records, addr, len, at)?;
-        // (After a return into the middle of a block, the caller's line.)
         Some((i, old, self.line_at(t, i)))
     }
 
-    /// The line the task running at record `i` was at (after a return into
-    /// the middle of a block, the caller's line).
+    /// The line the store at record `i` is on.
     pub fn line_at(&self, t: &Tables, i: usize) -> Option<LineStep> {
-        // (The last line begun at or before `i`: a store is on the line
-        // whose first store is at or before it; see LineStep::at.)
-        stack::lines(t, &self.records, &self.tasks, i.saturating_sub(4000), i, self.tasks.get(i).copied())
-            .into_iter().filter(|s| s.at <= i).last()
+        self.calls.line_at(t, i, &self.records)
     }
 
     /// The stores to `addr..addr + len` in records `span` (an object's

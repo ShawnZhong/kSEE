@@ -303,7 +303,7 @@ impl View<'_> {
         let t = self.tables;
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         // (The innermost call of `i`'s task at record `j`, and the line it was at.)
-        let top = |j: usize| stack::stack_at(t, records, tasks, j, None).pop().map(|c| (c.func, c.step));
+        let top = |j: usize| self.rec.calls.stack_at(t, j, None).pop().map(|c| (c.func, c.step));
         let located = |func: u32, step: Option<Step>| (step.map(|s| s.loc).or(t.functions.get(&func).map(|f| f.loc)), step.and_then(|s| s.inlined));
         let (kind, func, (loc, inlined)) = match *records.get(i)? {
             Record::Block { func, n } => {
@@ -401,10 +401,10 @@ impl View<'_> {
     /// from (`inlined`, with no arguments: there was no call).
     pub fn call_stack(&self, i: usize, nth: Option<usize>, mem: &dyn Memory) -> Vec<Frame> {
         let t = self.tables;
-        let (records, tasks) = (&self.rec.records, &self.rec.tasks);
+        let records = &self.rec.records;
         let mut out = Vec::new();
         let entry = t.find(arch::SYSCALL);
-        let calls = stack::stack_at(t, records, tasks, i, nth);
+        let calls = self.rec.calls.stack_at(t, i, nth);
         // (The entry's arguments, the syscall's: a wrapper's parameters are
         // those, as its SYSCALL_DEFINE line has them; its own DWARF one is regs.)
         let entry_raw = calls.iter().find(|c| Some(c.func) == entry).and_then(|c| stack::args_frame(records, c.first)).map(|(a, _)| a);
@@ -623,7 +623,7 @@ impl View<'_> {
                         // where it points as the call ends.)
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
-                            let end = stack::call_end(records, &self.rec.tasks, i).unwrap_or(last).min(records_len(self.rec));
+                            let end = self.rec.calls.call_end(i).unwrap_or(last).min(records_len(self.rec));
                             let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(*off));
                             add(format!("{}'s {var}", f.name), "object", to, v, None, None);
                         }

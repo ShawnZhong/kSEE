@@ -10,94 +10,298 @@
 //! last calls (do_exit, do_task_dead, __switch_to), and a new task may get
 //! its task_struct.
 
+use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use crate::tables::{Step, Tables};
 use crate::trace::Record;
 
-#[derive(Default)]
-struct Stack {
-    /// (function, first record)
-    frames: Vec<(u32, usize)>,
+/// No call, or no place.
+const NONE: u32 = u32::MAX;
+
+/// A call: `func` from record `first` (its block 0; or where the recording
+/// first sees it running) to `last`, the record that ends it (its return,
+/// or where its task's stack starts again), if it ends within the
+/// recording; made from `parent`, `depth` calls deep.
+#[derive(Debug, Clone, Copy)]
+pub struct Call {
+    pub func: u32,
+    pub first: usize,
+    pub last: Option<usize>,
+    pub parent: Option<u32>,
+    pub depth: u32,
+    /// Where its caller was when it made it (a Place), or NONE.
+    site: u32,
 }
 
-impl Stack {
-    /// Apply block `(func, n)` at record `i`.
-    fn block(&mut self, func: u32, n: u32, i: usize) {
-        if n == 0 {
-            if func == Tables::id(crate::arch::TASK_ENTRY) {
-                self.frames.clear(); // (a new task)
-            }
-            self.frames.push((func, i));
-        } else if self.frames.last().is_some_and(|&(f, _)| f == func) {
-            // Still in the same function.
-        } else if let Some(k) = self.frames.iter().rposition(|&(f, _)| f == func) {
-            self.frames.truncate(k + 1);
-        } else {
-            self.frames.clear();
-            self.frames.push((func, i));
-        }
-    }
-
-    /// Function `func` returned.
-    fn exit(&mut self, func: u32) {
-        if let Some(k) = self.frames.iter().rposition(|&(f, _)| f == func) {
-            self.frames.truncate(k);
-        }
-    }
+/// Where a call is: in block `n`, running stretch `seg` of the block's
+/// lines (Tables::segments) from `record` (the block's, or the return into
+/// it); at the last line of stretch `line` (seg, or an earlier one if seg
+/// has none; NONE: no line yet).
+#[derive(Debug, Clone, Copy)]
+struct Place {
+    call: u32,
+    n: u32,
+    seg: u32,
+    line: u32,
+    record: u32,
 }
 
-/// A task's calls, with where each is in its function: the walk that
-/// `lines`, `chart` and `stack_at` share.
-#[derive(Default)]
-struct Walk {
-    stack: Stack,
-    /// Per frame: its block, and the stretch of the block's lines next.
-    blocks: Vec<(u32, usize)>,
-    /// Per frame: the last line it ran.
-    at: Vec<Option<Step>>,
+/// The calls of a recording, rebuilt once from its blocks and returns: every
+/// call, and where each record's task is (its innermost call, and where in
+/// its lines). The stack at a record, where a call ends, the line a store
+/// is on: lookups, not walks.
+#[derive(Debug, Default)]
+pub struct Calls {
+    pub calls: Vec<Call>,
+    /// Per record: where its task is after it (a Place), NONE if nowhere.
+    at: Vec<u32>,
+    places: Vec<Place>,
 }
 
-impl Walk {
-    /// The calls now, outermost first, each at its last line.
-    fn calls(&self) -> Vec<ChartCall> {
-        self.stack.frames.iter().enumerate()
-            .map(|(d, &(func, first))| ChartCall { func, first, step: self.at.get(d).copied().flatten() }).collect()
-    }
-
-    /// Apply record `r` (at `i`): the lines it runs, if any: (function,
-    /// depth, lines), a stretch of a block.
-    fn apply(&mut self, t: &Tables, r: &Record, i: usize) -> Option<(u32, u32, Vec<Step>)> {
-        let (func, n, seg) = match *r {
-            Record::Block { func, n } => {
-                self.stack.block(func, n, i);
-                let depth = self.stack.frames.len();
-                self.blocks.resize(depth, (u32::MAX, 0));
-                self.blocks[depth - 1] = (n, 1);
-                (func, n, 0)
-            }
-            Record::Return { func, .. } => {
-                self.stack.exit(func);
-                self.blocks.truncate(self.stack.frames.len());
-                // The caller goes on after the call: its block's next stretch.
-                let (&(f, _), (n, seg)) = (self.stack.frames.last()?, self.blocks.last_mut()?);
-                if *n == u32::MAX {
-                    return None;
+impl Calls {
+    pub fn new(t: &Tables, records: &[Record], tasks: &[u32]) -> Calls {
+        let mut c = Calls { calls: Vec::new(), at: Vec::with_capacity(records.len()), places: Vec::new() };
+        // (Per task: its calls on the stack, outermost first, and where the innermost is.)
+        let mut stacks: BTreeMap<u32, (Vec<u32>, u32)> = BTreeMap::new();
+        let entry = Tables::id(crate::arch::TASK_ENTRY);
+        for (i, r) in records.iter().enumerate() {
+            let (frames, place) = stacks.entry(tasks[i]).or_insert((Vec::new(), NONE));
+            match *r {
+                Record::Block { func, n } => {
+                    let top = frames.last().map(|&k| c.calls[k as usize].func);
+                    if n == 0 || top != Some(func) {
+                        // A call pushes a frame (a new task's first: on nothing);
+                        // a block further down the stack is a return into it; a
+                        // block of a function not on it starts it again.
+                        let down = frames.iter().rposition(|&k| c.calls[k as usize].func == func);
+                        let keep = match (n, down) {
+                            (0, _) if func == entry => 0,
+                            (0, _) => frames.len(),
+                            (_, Some(k)) => k + 1,
+                            (_, None) => 0,
+                        };
+                        c.end(frames, keep, i);
+                        if n == 0 || down.is_none() {
+                            let parent = frames.last().copied();
+                            let site = if parent.is_some() { *place } else { NONE };
+                            c.calls.push(Call { func, first: i, last: None, parent, depth: frames.len() as u32, site });
+                            frames.push(c.calls.len() as u32 - 1);
+                        }
+                    }
+                    let call = *frames.last().expect("a frame");
+                    let line = if t.stretch(func, n, 0).is_empty() { NONE } else { 0 };
+                    *place = c.place(Place { call, n, seg: 0, line, record: i as u32 });
                 }
-                *seg += 1;
-                (f, *n, *seg - 1)
+                Record::Return { func, .. } => {
+                    if let Some(k) = frames.iter().rposition(|&k| c.calls[k as usize].func == func) {
+                        // (The caller goes on after the call: its block's next stretch.)
+                        let site = c.calls[frames[k] as usize].site;
+                        c.end(frames, k, i);
+                        *place = match frames.last() {
+                            Some(&call) if site != NONE && c.places[site as usize].call == call => {
+                                let p = c.places[site as usize];
+                                let seg = p.seg + 1;
+                                let func = c.calls[call as usize].func;
+                                let line = if t.stretch(func, p.n, seg).is_empty() { p.line } else { seg };
+                                c.place(Place { call, n: p.n, seg, line, record: i as u32 })
+                            }
+                            Some(&call) => c.place(Place { call, n: NONE, seg: 0, line: NONE, record: i as u32 }),
+                            None => NONE,
+                        };
+                    }
+                }
+                _ => {}
             }
-            _ => return None,
-        };
-        let depth = self.stack.frames.len();
-        let steps = t.segments(func, n).into_iter().nth(seg).unwrap_or_default();
-        self.at.resize(depth, None);
-        // (A new call starts without a line; one going on keeps its last.)
-        if steps.last().is_some() || seg == 0 {
-            self.at[depth - 1] = steps.last().copied();
+            c.at.push(*place);
         }
-        Some((func, depth as u32 - 1, steps))
+        c
+    }
+
+    fn place(&mut self, p: Place) -> u32 {
+        self.places.push(p);
+        self.places.len() as u32 - 1
+    }
+
+    /// End the calls on `frames` above the first `keep`, at record `i`.
+    fn end(&mut self, frames: &mut Vec<u32>, keep: usize, i: usize) {
+        for &k in frames.iter().skip(keep) {
+            self.calls[k as usize].last = Some(i);
+        }
+        frames.truncate(keep);
+    }
+
+    /// Where record `i`'s task is after it.
+    fn place_at(&self, i: usize) -> Option<&Place> {
+        self.places.get(*self.at.get(i)? as usize)
+    }
+
+    /// The line place `p`'s call is at (the last of its stretch).
+    fn line(&self, t: &Tables, p: &Place) -> Option<Step> {
+        if p.line == NONE {
+            return None;
+        }
+        t.stretch(self.calls[p.call as usize].func, p.n, p.line).last().copied()
+    }
+
+    /// The lines record `i` runs, if it runs some (a block, or a return
+    /// into the middle of one): (its place, the lines).
+    fn stretch<'t>(&self, t: &'t Tables, i: usize) -> Option<(&Place, Cow<'t, [Step]>)> {
+        let p = self.place_at(i).filter(|p| p.record as usize == i && p.n != NONE)?;
+        Some((p, t.stretch(self.calls[p.call as usize].func, p.n, p.seg)))
+    }
+
+    /// The call the block 0 at record `first` begins.
+    pub fn call_from(&self, first: usize) -> Option<&Call> {
+        let c = self.calls.get(self.place_at(first)?.call as usize)?;
+        (c.first == first).then_some(c)
+    }
+
+    /// Where the call from record `first` (a block 0) ends: the record
+    /// that takes it off its task's stack (its return), or None if it has
+    /// not ended when the records do.
+    pub fn call_end(&self, first: usize) -> Option<usize> {
+        self.call_from(first)?.last
+    }
+
+    /// The call stack of the task running at record `i`, outermost first,
+    /// each call at its last line; the innermost, if `nth`, at the nth of the
+    /// lines record `i` runs (a LineStep's).
+    pub fn stack_at(&self, t: &Tables, i: usize, nth: Option<usize>) -> Vec<ChartCall> {
+        let Some(p) = self.place_at(i) else { return Vec::new() };
+        let mut step = match (nth, self.stretch(t, i)) {
+            (Some(k), Some((_, steps))) if k < steps.len() => Some(steps[k]),
+            _ => self.line(t, p),
+        };
+        let mut out = Vec::new();
+        let mut k = Some(p.call);
+        while let Some(c) = k.map(|k| &self.calls[k as usize]) {
+            out.push(ChartCall { func: c.func, first: c.first, step });
+            step = self.places.get(c.site as usize).and_then(|p| self.line(t, p));
+            k = c.parent;
+        }
+        out.reverse();
+        out
+    }
+
+    /// The line the store at record `i` is on (its record's line: which of
+    /// its block's lines), in the call running it.
+    pub fn line_at(&self, t: &Tables, i: usize, records: &[Record]) -> Option<LineStep> {
+        let &Record::Store { line, .. } = records.get(i)? else { return None };
+        let p = self.place_at(i)?;
+        let c = &self.calls[p.call as usize];
+        // (Which stretch it is in, and where in it.)
+        let (mut seg, mut nth) = (0, line as usize);
+        let s = loop {
+            let steps = t.stretch(c.func, p.n, seg);
+            match steps.get(nth) {
+                Some(&s) => break s,
+                None if steps.is_empty() && seg > p.seg => return None,
+                None => (seg, nth) = (seg + 1, nth - steps.len()),
+            }
+        };
+        let nth = nth as u32;
+        Some(LineStep { record: p.record as usize, at: i, nth, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined })
+    }
+
+    /// A stack chart: for each column (its first record, in `columns`, in
+    /// order: see Recording::columns), the task running there and that
+    /// task's call stack then, outermost first.
+    pub fn chart(&self, t: &Tables, tasks: &[u32], columns: &[usize]) -> Vec<(u32, Vec<ChartCall>)> {
+        columns.iter().filter(|&&i| i < tasks.len()).map(|&i| (tasks[i], self.stack_at(t, i, None))).collect()
+    }
+
+    /// The source lines run in records `from..=to` (of task `task`, or
+    /// any), in order: each block's lines up to its first call, then, as
+    /// each call returns, the lines up to the next (Tables::segments). The
+    /// same line twice in a row counts once.
+    pub fn lines(&self, t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
+                 task: Option<u32>) -> Vec<LineStep> {
+        let mut out: Vec<LineStep> = Vec::new();
+        for i in from..=to.min(records.len().saturating_sub(1)) {
+            let tk = tasks[i];
+            if task.is_some_and(|x| x != tk) {
+                continue;
+            }
+            let Some((p, steps)) = self.stretch(t, i) else { continue };
+            let c = &self.calls[p.call as usize];
+            // (The stretch's lines are numbered on from the block's earlier
+            // ones: a store says which it is on; the first store of each line,
+            // among the records up to the task's next block or return.)
+            let base: usize = (0..p.seg).map(|k| t.stretch(c.func, p.n, k).len()).sum();
+            let mut first_store: BTreeMap<u32, usize> = BTreeMap::new();
+            for (j, r) in records.iter().enumerate().skip(i + 1) {
+                if tasks[j] != tk {
+                    continue;
+                }
+                match *r {
+                    Record::Store { line, .. } => { first_store.entry(line).or_insert(j); }
+                    Record::Args { .. } => {}
+                    _ => break,
+                }
+            }
+            for (nth, s) in steps.iter().enumerate() {
+                if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
+                    continue;
+                }
+                let at = if nth == 0 { i } else { first_store.get(&((base + nth) as u32)).copied().unwrap_or(i) };
+                out.push(LineStep { record: i, at, nth: nth as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined });
+            }
+        }
+        out
+    }
+
+    /// The calls of task `task` in records `from..=to` as a tree, in order:
+    /// what a syscall did, with the code inlined into each call as calls of
+    /// its own (see CallNode::inlined). Calls on the stack before `from` are
+    /// not in it (a syscall's entry, say: its callees are the roots).
+    pub fn call_tree(&self, t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: u32) -> Vec<CallNode> {
+        let to = to.min(records.len().saturating_sub(1));
+        // (The nodes open, outermost first, each by what it is: a call's first
+        // record, or an inlined function; and the finished ones at the top.)
+        let mut open: Vec<((bool, usize), CallNode)> = Vec::new();
+        let mut roots: Vec<CallNode> = Vec::new();
+        let close = |open: &mut Vec<((bool, usize), CallNode)>, roots: &mut Vec<CallNode>, i: usize| {
+            let (_, mut c) = open.pop().expect("an open call");
+            c.last = i;
+            c.records = (i - c.first + 1) as u32;
+            if let Some(&Record::Return { func, value }) = records.get(i) && !c.inlined && func == c.func {
+                c.ret = Some(value as i32);
+            }
+            match open.last_mut() {
+                Some((_, p)) => p.calls.push(c),
+                None => roots.push(c),
+            }
+        };
+        for i in from..=to {
+            if tasks[i] != task || self.stretch(t, i).is_none() {
+                continue;
+            }
+            // What is on the stack since `from`: each call, then the code
+            // inlined at the line it is at (outermost first), as the chart nests
+            // them; against the nodes open: the ones gone close, new ones open.
+            let mut want: Vec<(bool, usize, u32)> = Vec::new();
+            for c in self.stack_at(t, i, None).iter().filter(|c| c.first >= from) {
+                want.push((false, c.first, c.func));
+                let chain = c.step.and_then(|s| s.inlined).and_then(|k| t.inlines.get(k as usize)).map_or(&[][..], Vec::as_slice);
+                want.extend(chain.iter().rev().map(|&(k, _)| (true, k as usize, k)));
+            }
+            let mut k = 0;
+            while k < open.len() && k < want.len() && open[k].0 == (want[k].0, want[k].1) {
+                k += 1;
+            }
+            while open.len() > k {
+                close(&mut open, &mut roots, i);
+            }
+            for &(inlined, id, func) in &want[k..] {
+                open.push(((inlined, id), CallNode { func, inlined, first: i, last: i, records: 1, ret: None, calls: Vec::new() }));
+            }
+        }
+        while !open.is_empty() {
+            close(&mut open, &mut roots, to);
+        }
+        roots
     }
 }
 
@@ -108,27 +312,6 @@ pub struct ChartCall {
     pub func: u32,
     pub first: usize,
     pub step: Option<Step>,
-}
-
-/// A stack chart: for each column (its first record, in `columns`, in
-/// order: see Recording::columns), the task running there and that task's
-/// call stack then, outermost first.
-pub fn chart(t: &Tables, records: &[Record], tasks: &[u32], columns: &[usize]) -> Vec<(u32, Vec<ChartCall>)> {
-    let mut out = Vec::with_capacity(columns.len());
-    let Some(&to) = columns.last() else { return out };
-    let mut walks: BTreeMap<u32, Walk> = BTreeMap::new();
-    let mut col = 0;
-    for (i, r) in records.iter().enumerate().take(to.min(records.len().saturating_sub(1)) + 1) {
-        let task = tasks[i];
-        let w = walks.entry(task).or_default();
-        w.apply(t, r, i);
-        // (A column's first record, or several columns' when zoomed in.)
-        while col < columns.len() && i >= columns[col] {
-            out.push((task, w.calls()));
-            col += 1;
-        }
-    }
-    out
 }
 
 /// A source line the kernel ran: at `record` (the block's, or the return
@@ -146,52 +329,6 @@ pub struct LineStep {
     pub depth: u32,
     pub loc: crate::tables::Loc,
     pub inlined: Option<u32>,
-}
-
-/// The source lines run in records `from..=to` (of task `task`, or any), in
-/// order: each block's lines up to its first call, then, as each call
-/// returns, the lines up to the next (Tables::segments). The same line twice
-/// in a row counts once.
-pub fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
-             task: Option<u32>) -> Vec<LineStep> {
-    let mut out: Vec<LineStep> = Vec::new();
-    let to = to.min(records.len().saturating_sub(1));
-    let mut walks: BTreeMap<u32, Walk> = BTreeMap::new();
-    for (i, r) in records.iter().enumerate().take(to + 1) {
-        let tk = tasks[i];
-        if task.is_some_and(|x| x != tk) {
-            continue;
-        }
-        let w = walks.entry(tk).or_default();
-        let Some((func, depth, steps)) = w.apply(t, r, i) else { continue };
-        if i < from {
-            continue;
-        }
-        // (The stretch's lines are numbered on from the block's earlier
-        // ones: a store says which it is on; the first store of each line,
-        // among the records up to the task's next block or return.)
-        let (n, seg) = w.blocks[depth as usize];
-        let base: usize = t.segments(func, n).iter().take(seg.saturating_sub(1) as usize).map(Vec::len).sum();
-        let mut first_store: BTreeMap<u32, usize> = BTreeMap::new();
-        for (j, r) in records.iter().enumerate().skip(i + 1) {
-            if tasks[j] != tk {
-                continue;
-            }
-            match *r {
-                Record::Store { line, .. } => { first_store.entry(line).or_insert(j); }
-                Record::Args { .. } => {}
-                _ => break,
-            }
-        }
-        for (nth, s) in steps.into_iter().enumerate() {
-            if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
-                continue;
-            }
-            let at = if nth == 0 { i } else { first_store.get(&((base + nth) as u32)).copied().unwrap_or(i) };
-            out.push(LineStep { record: i, at, nth: nth as u32, func, depth, loc: s.loc, inlined: s.inlined });
-        }
-    }
-    out
 }
 
 
@@ -222,110 +359,6 @@ pub struct CallNode {
     pub calls: Vec<CallNode>,
 }
 
-/// The calls of task `task` in records `from..=to` as a tree, in order:
-/// what a syscall did, with the code inlined into each call as calls of
-/// its own (see CallNode::inlined). Calls on the stack before `from` are
-/// not in it (a syscall's entry, say: its callees are the roots).
-pub fn call_tree(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: u32) -> Vec<CallNode> {
-    let to = to.min(records.len().saturating_sub(1));
-    let mut w = Walk::default();
-    // (The nodes open, outermost first, each by what it is: a call's first
-    // record, or an inlined function; and the finished ones at the top.)
-    let mut open: Vec<((bool, usize), CallNode)> = Vec::new();
-    let mut roots: Vec<CallNode> = Vec::new();
-    let close = |open: &mut Vec<((bool, usize), CallNode)>, roots: &mut Vec<CallNode>, i: usize| {
-        let (_, mut c) = open.pop().expect("an open call");
-        c.last = i;
-        c.records = (i - c.first + 1) as u32;
-        if let Some(&Record::Return { func, value }) = records.get(i) && !c.inlined && func == c.func {
-            c.ret = Some(value as i32);
-        }
-        match open.last_mut() {
-            Some((_, p)) => p.calls.push(c),
-            None => roots.push(c),
-        }
-    };
-    for (i, r) in records.iter().enumerate().take(to + 1) {
-        if tasks[i] != task {
-            continue;
-        }
-        if w.apply(t, r, i).is_none() || i < from {
-            continue;
-        }
-        // What is on the stack since `from`: each call, then the code
-        // inlined at the line it is at (outermost first), as the chart nests
-        // them; against the nodes open: the ones gone close, new ones open.
-        let mut want: Vec<(bool, usize)> = Vec::new();
-        for (d, &(_, first)) in w.stack.frames.iter().enumerate() {
-            if first < from {
-                continue;
-            }
-            want.push((false, first));
-            let chain = w.at.get(d).copied().flatten().and_then(|s| s.inlined).map_or(&[][..], |k| t.inlines.get(k as usize).map_or(&[][..], Vec::as_slice));
-            want.extend(chain.iter().rev().map(|&(k, _)| (true, k as usize)));
-        }
-        let mut k = 0;
-        while k < open.len() && k < want.len() && open[k].0 == want[k] {
-            k += 1;
-        }
-        while open.len() > k {
-            close(&mut open, &mut roots, i);
-        }
-        for &(inlined, id) in &want[k..] {
-            let func = if inlined { id as u32 } else { w.stack.frames.iter().find(|f| f.1 == id).map_or(0, |f| f.0) };
-            open.push(((inlined, id), CallNode { func, inlined, first: i, last: i, records: 1, ret: None, calls: Vec::new() }));
-        }
-    }
-    while !open.is_empty() {
-        close(&mut open, &mut roots, to);
-    }
-    roots
-}
-
-/// Where the call from record `first` (a block 0) ends: the last record of
-/// its task's while it is on the stack (its return), or None if it has not
-/// ended when the records do.
-pub fn call_end(records: &[Record], tasks: &[u32], first: usize) -> Option<usize> {
-    let &task = tasks.get(first)?;
-    let mut s = Stack::default();
-    let mut depth = None;
-    for (i, r) in records.iter().enumerate() {
-        if tasks[i] != task {
-            continue;
-        }
-        match *r {
-            Record::Block { func, n } => s.block(func, n, i),
-            Record::Return { func, .. } => s.exit(func),
-            _ => continue,
-        }
-        match depth {
-            None if i == first => depth = Some(s.frames.len()),
-            // (Gone: returned, or its stack started again.)
-            Some(d) if s.frames.get(d - 1).is_none_or(|&(_, at)| at != first) => return Some(i),
-            _ => {}
-        }
-    }
-    None
-}
-
-/// The call stack of the task running at record `at`, outermost first,
-/// each call at its last line; the innermost, if `nth`, at the nth of the
-/// lines record `at` runs (a LineStep's).
-pub fn stack_at(t: &Tables, records: &[Record], tasks: &[u32], at: usize, nth: Option<usize>) -> Vec<ChartCall> {
-    let Some(&task) = tasks.get(at) else { return Vec::new() };
-    let mut w = Walk::default();
-    for (i, r) in records.iter().enumerate().take(at + 1) {
-        if tasks[i] != task {
-            continue;
-        }
-        let Some((_, depth, steps)) = w.apply(t, r, i) else { continue };
-        if let (true, Some(&s)) = (i == at, nth.and_then(|k| steps.get(k))) {
-            w.at[depth as usize] = Some(s);
-        }
-    }
-    w.calls()
-}
-
 /// Call `first`'s arguments and its frame base (the Args record after its
 /// entry block), if the trace has them.
 pub fn args_frame(records: &[Record], first: usize) -> Option<(Vec<u32>, u32)> {
@@ -344,7 +377,20 @@ mod tests {
     }
 
     fn stack_at(records: &[Record], tasks: &[u32], at: usize) -> Vec<u32> {
-        super::stack_at(&Tables::default(), records, tasks, at, None).into_iter().map(|c| c.func).collect()
+        let t = Tables::default();
+        Calls::new(&t, records, tasks).stack_at(&t, at, None).into_iter().map(|c| c.func).collect()
+    }
+
+    fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: Option<u32>) -> Vec<LineStep> {
+        Calls::new(t, records, tasks).lines(t, records, tasks, from, to, task)
+    }
+
+    fn call_tree(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: u32) -> Vec<CallNode> {
+        Calls::new(t, records, tasks).call_tree(t, records, tasks, from, to, task)
+    }
+
+    fn call_end(records: &[Record], tasks: &[u32], first: usize) -> Option<usize> {
+        Calls::new(&Tables::default(), records, tasks).call_end(first)
     }
 
     #[test]
@@ -377,6 +423,13 @@ mod tests {
         let r = [b(1, 0), st(1), st(1), b(2, 0), Record::Return { func: 2, value: 0 }, st(3), Record::Return { func: 1, value: 0 }];
         let got: Vec<_> = lines(&t, &r, &[7; 7], 0, 6, None).iter().map(|s| (s.loc.line, s.record, s.at)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 1), (3, 0, 0), (10, 3, 3), (4, 4, 4)]);
+        // A store is on its line (the block's third item, line 4, after the call); the
+        // stack there has f at line 4, and at g, f where it calls g (line 3).
+        let c = Calls::new(&t, &r, &[7; 7]);
+        let at = |i| c.line_at(&t, i, &r).map(|s| (s.loc.line, s.nth, s.record));
+        assert_eq!((at(1), at(5), at(0)), (Some((2, 1, 0)), Some((4, 0, 4)), None));
+        let lines_of = |i| c.stack_at(&t, i, None).iter().map(|c| c.step.map(|s| s.loc.line)).collect::<Vec<_>>();
+        assert_eq!((lines_of(3), lines_of(5)), (alloc::vec![Some(3), Some(10)], alloc::vec![Some(4)]));
     }
 
     #[test]

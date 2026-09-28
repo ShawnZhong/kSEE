@@ -242,6 +242,16 @@ impl Tables {
         }
     }
 
+    /// Stretch `seg` of those lines (none past the last).
+    pub fn stretch(&self, func: u32, n: u32, seg: u32) -> alloc::borrow::Cow<'_, [Step]> {
+        use alloc::borrow::Cow;
+        match self.lines.get(&(func, n)) {
+            Some(s) => Cow::Borrowed(s.get(seg as usize).map_or(&[][..], Vec::as_slice)),
+            None if seg == 0 => Cow::Owned(self.blocks.get(&(func, n)).map(|&loc| Step { loc, inlined: None }).into_iter().collect()),
+            None => Cow::Borrowed(&[]),
+        }
+    }
+
     /// The blocks of `func`, in order.
     pub fn blocks_of(&self, func: u32) -> impl Iterator<Item = (u32, Loc)> + '_ {
         self.blocks.range((func, 0)..=(func, u32::MAX)).map(|(&(_, n), &l)| (n, l))

@@ -31,26 +31,31 @@ never returned from its last calls, and a new one may get its address.
 
 A frame's arguments and its frame base are the Args record after its
 block 0; its locals are at their offsets from the base (`Types::locals`).
-One walk (`Walk`)
-serves the Stack at a record (`stack_at`), the stack chart (`chart`: every
-task's stack at the columns' first records; the columns are equal in
-steps, the recording's unit of time: a block run, so a store takes none
-and a memset is not longer than a line) and line steps (`lines`): each
-call with the line it is at.
+The stacks are rebuilt once per snapshot, in one pass (`Calls`): every
+call (its function, first record, the record that ends it, the call it
+was made from and where that one was then), and per record where its
+task is after it (its innermost call, the block and the stretch of its
+lines). So the Stack at a record (`stack_at`: from the innermost call out,
+through each call's caller), where a call ends (`call_end`), the stack
+chart (`chart`: every task's stack at the columns' first records; the
+columns are equal in steps, the recording's unit of time: a block run, so
+a store takes none and a memset is not longer than a line) and a store's
+line are lookups, not walks from the first record.
 
 ## Lines within blocks
 
 A block runs several source lines, and calls functions in between. The
 plugin's `L` lines give a block's lines in stretches split at its calls;
-`lines` walks the records per task: at a block, its first stretch; after a
-return into it, the next. So stepping goes line by line, into and out of
+at a block, its first stretch runs; after a return into it, the next
+(`lines`: those of a span of records). So stepping goes line by line, into and out of
 calls, including lines inlined from other functions. Each line step says
 which of its record's lines it is (`nth`: the Stack there), where it is
 `at` (the record of its first store, which says its line: the cursor
 goes there, and memory as it was; a line with no store, or a stretch's
 first, is at the block's record) and how deep it runs (calls deep, and
 inlined deep): the level stepping over or out of a call compares. A
-store's line is the last begun at or before it (`line_at`). `run_of` finds the next (or last) record whose block runs a
+store's line is the one it says, in the block its task is in
+(`line_at`). `run_of` finds the next (or last) record whose block runs a
 given line: "run to a line".
 
 ## Inlined code

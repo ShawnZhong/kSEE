@@ -75,7 +75,7 @@ impl Machine {
     /// values.
     pub fn call_tree(&self, first: usize, last: usize, task: u32) -> JsValue {
         let rec = self.rec.borrow();
-        to_js(&ksee_core::stack::call_tree(tables(), &rec.records, &rec.tasks, first + 1, last, task))
+        to_js(&rec.calls.call_tree(tables(), &rec.records, &rec.tasks, first + 1, last, task))
     }
 
     /// The calls of function `name` in records `first..=last`: each call's
@@ -86,10 +86,9 @@ impl Machine {
     }
 
     /// Where the call from record `first` ends (its return), or None if it
-    /// has not when the recording does (see ksee_core::stack::call_end).
+    /// has not when the recording does (see ksee_core::stack::Calls).
     pub fn call_end(&self, first: usize) -> Option<usize> {
-        let rec = self.rec.borrow();
-        ksee_core::stack::call_end(&rec.records, &rec.tasks, first)
+        self.rec.borrow().calls.call_end(first)
     }
 
     /// Show memory (object, object_by_id, global, call_stack's locals) as it
@@ -151,7 +150,7 @@ impl Machine {
     }
 
     /// A stack chart of records `first..=last` in `n` columns of equal
-    /// steps (see ksee_core::stack::chart, Recording::columns), flattened:
+    /// steps (see ksee_core::stack::Calls::chart, Recording::columns), flattened:
     /// per column, the task, the
     /// depth, then per call, outermost first, (function, first record,
     /// inlined): inlined 0 for a call; for code inlined into the call
@@ -165,7 +164,7 @@ impl Machine {
         }
         let columns = rec.columns(first, last.min(rec.len() - 1), n);
         self.view(|v| {
-            for (task, calls) in ksee_core::stack::chart(v.tables, &rec.records, &rec.tasks, &columns) {
+            for (task, calls) in rec.calls.chart(v.tables, &rec.tasks, &columns) {
                 // (Each call, then the code inlined into it: outermost first.)
                 let rows: Vec<[u32; 3]> = calls.iter().flat_map(|c| {
                     v.nest(c).into_iter().rev().map(|(k, _)| [c.func, c.first as u32, k.map_or(0, |k| k + 1)])
