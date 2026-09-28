@@ -71,7 +71,7 @@ pub extern "C" fn bulk(addr: u32, len: u32, line: u32, from: u32) {
 
 /// What the runtime itself writes into kernel memory (a call's request,
 /// a runner's word): Store records with the old contents of `addr..addr +
-/// len`, in 8-byte stores, up to 256 bytes (the rest as a range of
+/// len`, in 8-byte stores, up to a page, 4096 bytes (the rest as a range of
 /// unknown old contents); `line`: the kernel's store's line (see the
 /// plugin), 0 for the runtime's own; `from`: where the bytes are copied
 /// from (each store then says where its own come from), else 0.
@@ -80,7 +80,7 @@ pub fn log(addr: u32, len: u32, line: u32, from: u32) {
     if len == 0 {
         return;
     }
-    let logged = len.min(256);
+    let logged = len.min(4096);
     let mut off = 0;
     while off < logged {
         let class = match logged - off { 8.. => 3, 4..=7 => 2, 2..=3 => 1, _ => 0 };

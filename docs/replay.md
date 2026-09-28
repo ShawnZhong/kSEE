@@ -149,7 +149,7 @@ source's `if` went.)
 
 What it cannot show: values only in wasm locals (registers, in effect)
 that are no named variable's (an intermediate, `a + b` before it is stored),
-and old contents of bulk writes beyond 256 bytes (their record says
+and old contents of bulk writes beyond 4096 bytes (their record says
 where and how much, not what: going back shows such bytes as they are
 now).
 
