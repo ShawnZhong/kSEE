@@ -97,7 +97,8 @@ for who last wrote it; its row's "writes" (at its end, on hover) for its
 writes, a row under it: the member, from what to what, in which
 function, each a link to that moment, the one in effect at the cursor
 marked (a local's while its frame lives, another value's in the whole
-recording); "writes" again to close. The Stack shows the selected call's
+recording; a variable the code keeps in a wasm local, the values its call
+set it to: a loop's counter, turn by turn); "writes" again to close. The Stack shows the selected call's
 values (the innermost's, unless another is selected: a click on it, ▲ ▼,
 a bar in the timeline), the others a row each, as a debugger's variables
 are the selected frame's (every call's, on asking); its locals are all

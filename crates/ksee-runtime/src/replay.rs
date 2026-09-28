@@ -224,6 +224,12 @@ impl Machine {
         self.view(|v| to_js(&v.writes(addr, ty, from.unwrap_or(0)..=to.unwrap_or(usize::MAX), limit.unwrap_or(usize::MAX))))
     }
 
+    /// The values variable `var` (an Object's) of the call from record
+    /// `first` took, in order: [[record, value], …] (view::var_writes).
+    pub fn var_writes(&self, first: usize, var: u32) -> JsValue {
+        self.view(|v| to_js(&v.var_writes(first, var)))
+    }
+
     /// The task running at the start of each of `n` buckets of the
     /// recording, for its overview (view::TaskRef).
     pub fn timeline(&self, n: usize) -> JsValue {

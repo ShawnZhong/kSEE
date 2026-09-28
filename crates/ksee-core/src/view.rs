@@ -299,6 +299,9 @@ pub struct Object {
     pub expand: Option<u32>,
     /// For a pointer to a struct or union: the target's type id.
     pub target: Option<u32>,
+    /// A variable kept in a wasm local: its number among its call's
+    /// (Machine.var_writes: its values over time).
+    pub var: Option<u32>,
 }
 
 /// A task's fields: the key ones (arch::TASK_FIELDS, in that order), or
@@ -642,7 +645,17 @@ impl View<'_> {
             0 => types.locals.get(&v.of)?.iter().find(|l| l.0 == v.name)?.1,
             k => types.params.get(&v.of)?.get(k as usize - 1)?.1,
         };
-        Some(types.object(&Arg(&value.to_le_bytes(), mem), &v.name, 0, ty, 0))
+        Some(Object { var: Some(v.k), ..types.object(&Arg(&value.to_le_bytes(), mem), &v.name, 0, ty, 0) })
+    }
+
+    /// The values variable `var` of the call from record `first` took, in
+    /// order (its Var records): (record, the value as its type says).
+    pub fn var_writes(&self, first: usize, var: u32) -> Vec<(usize, String)> {
+        let Some(v) = self.rec.calls.func_at(first).and_then(|f| self.tables.vars.get(&(f, var))) else { return Vec::new() };
+        self.rec.calls.vars_of(first, usize::MAX).filter_map(|j| match self.rec.records[j] {
+            Record::Var { var: k, value, .. } if k == var => Some((j, self.var_object(v, value, self.now)?.value?)),
+            _ => None,
+        }).collect()
     }
 
     /// The syscall entry's arguments (the number, then the syscall's): the
@@ -1011,7 +1024,7 @@ impl Types {
         let t = self.get(id);
         let mut o = Object {
             name: name.to_string(), ty: self.name(ty), addr, id: ty, size: self.size_of(ty),
-            value: None, children: None, expand: None, target: None,
+            value: None, children: None, expand: None, target: None, var: None,
         };
         match &t.kind {
             Kind::Struct(_) | Kind::Union(_) => {
@@ -1126,6 +1139,8 @@ mod tests {
         let v = View { tables: &t, rec: &rec, now: &mem };
         let x = |i| v.call_stack(i, None, &mem, i)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
         assert_eq!((x(0), x(2), x(3)), (Some("(not set yet)".into()), Some("5".into()), Some("7".into())));
+        // (And its values over time, each at its record.)
+        assert_eq!(v.var_writes(0, 0), [(1, "5".into()), (3, "7".into())]);
     }
 
     #[test]

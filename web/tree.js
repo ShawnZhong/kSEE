@@ -54,23 +54,30 @@ export function tree(app, st, redraw) {
         o.addr && o.size
           ? el("td", { className: "fval mem", title: value, onmouseenter: (ev) => (ev.target.title = `${value}\n${wroteIt(o)}`) }, value)
           : el("td", { className: "fval", title: value }, value),
-        el("td", { className: "ftype" }, o.ty, o.addr && o.size
+        el("td", { className: "ftype" }, o.ty, hasWrites(o, life)
           ? el("a", { className: `hist${st.history.has(p) ? " on" : ""}`, textContent: "writes", title: st.history.has(p) ? "fold its writes" : "its writes, each a link to its moment",
                       onclick: () => toggle(st.history, p) }) : null)));
-      if (st.history.has(p)) out.push(history(o, p, life, depth));
+      if (st.history.has(p) && hasWrites(o, life)) out.push(history(o, p, life, depth));
       // (A pointer's target is another object: its own lifetime.)
       if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? null : life, o.target != null ? `${e}->` : `${e}.`);
     }
   }
+  // Whether value `o` has writes to list: one in memory; a variable kept
+  // in a wasm local, its call's (`life`).
+  const hasWrites = (o, life) => (o.addr && o.size) || (o.var != null && life);
   // Value `o`'s writes (Machine.writes), a row: a local's while its frame
-  // lives (`life`), another's in the whole recording; the write in effect
-  // at the cursor marked.
+  // lives (`life`), another's in the whole recording; a variable in a wasm
+  // local, the values its call set it to (Machine.var_writes); the write
+  // in effect at the cursor marked.
   function history(o, p, life, depth) {
-    const cur = app.time.cursor() ?? Infinity, writes = m.writes(o.addr, o.id, life?.from, life?.to, WRITES);
+    const cur = app.time.cursor() ?? Infinity;
+    const writes = o.var != null
+      ? m.var_writes(life.from, o.var).map(([i, after], k, all) => ({ i, before: k ? all[k - 1][1] : "(not set)", after }))
+      : m.writes(o.addr, o.id, life?.from, life?.to, WRITES);
     const now = writes.findLastIndex((x) => x.i <= cur);
     const items = writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
       el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: "go to this write", onclick: () => app.time.go(x.i) }),
-      el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` })));
+      x.at ? el("span", { className: "dim", textContent: ` in ${x.at.func}` }) : null));
     return el("tr", { className: "history" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
       el("div", { className: "dim" }, writes.length ? `${writes.length}${writes.length >= WRITES ? "+" : ""} write${writes.length === 1 ? "" : "s"} ${life?.what ?? "in the recording"}` : `not written ${life?.what ?? "in the recording"}`),
       items.length ? el("ol", {}, ...items) : null));
