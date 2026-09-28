@@ -14,7 +14,7 @@
     "Try: [write twice, and let the child keep fd 4](try:1): cat prints both lines, but after /init closes its writing end cat's own fd 4 keeps the pipe open, so its read blocks for ever, it never exits, and the waitid blocks too."
   ],
   "tries": [
-    "int fds[2]; siginfo_t info; pipe2(fds, 0); child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0); child: dup3(fds[0], 0, 0); child: close(fds[0]); child: execve(\"/bin/cat\", {\"cat\", NULL}, NULL); close(fds[0]); write(fds[1], \"hello\\n\", 6); write(fds[1], \"again\\n\", 6); close(fds[1]); waitid(P_PID, child, &info, WEXITED, NULL)"
+    "int fds[2]; siginfo_t info; pipe2(fds, 0); pid_t child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0); child: dup3(fds[0], 0, 0); child: close(fds[0]); child: execve(\"/bin/cat\", {\"cat\", NULL}, NULL); close(fds[0]); write(fds[1], \"hello\\n\", 6); write(fds[1], \"again\\n\", 6); close(fds[1]); waitid(P_PID, child, &info, WEXITED, NULL)"
   ],
   "steps": [
     {
@@ -36,7 +36,8 @@
         "NULL",
         "NULL",
         "0"
-      ]
+      ],
+      "type": "pid_t"
     },
     {
       "call": "dup3",

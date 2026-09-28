@@ -72,6 +72,15 @@ pub fn eval(s: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<i64, String>
             *t = r;
             return Ok(-unary(t, k)?);
         }
+        // ('h', '\n': a character's number.)
+        if let Some(r) = t.strip_prefix('\'') {
+            let end = r.char_indices().skip(1).find(|&(i, c)| c == '\'' && !r[..i].ends_with('\\')).map(|(i, _)| i)
+                .or_else(|| r.find('\''))
+                .ok_or("a ' missing")?;
+            let c = unquote(&format!("\"{}\"", &r[..end]))?;
+            *t = &r[end + 1..];
+            return c.chars().next().map(|c| c as i64).ok_or_else(|| "an empty character".into());
+        }
         // (&x: a program's variable's address, which its name stands for
         // anyway, as C writes it for a struct.)
         if let Some(r) = t.strip_prefix('&') {
@@ -353,6 +362,40 @@ impl Types {
         }
     }
 
+    /// The `len` bytes at `addr` as records of struct `ty`, if it is one of
+    /// variable length (it ends in a flexible array, and has a member that
+    /// says each record's length: arch::RECORD_LENGTHS), one after another:
+    /// "[{d_ino = 1, …, d_name = \".\"}, …]", as the kernel's type reads them.
+    pub fn records(&self, mem: &dyn Memory, addr: u32, len: u32, ty: u32) -> Option<String> {
+        let members = self.members(&self.get(self.resolve(ty)).kind);
+        let last = members.last()?;
+        let Kind::Array { elem, count: 0 } = self.get(self.resolve(last.ty)).kind else { return None };
+        let size = members.iter().find(|m| crate::arch::RECORD_LENGTHS.contains(&m.name.as_str()))?;
+        let mut out = Vec::new();
+        let mut at = 0;
+        while at < len && out.len() < 64 {
+            let rec = addr + at;
+            let reclen = self.read_int(mem, rec + size.bit_offset / 8, self.size_of(size.ty).min(8), 0, 0) as u32;
+            if reclen == 0 {
+                break;
+            }
+            let fields: Vec<String> = members.iter().filter(|m| m.bit_size == 0).map(|m| {
+                let off = m.bit_offset / 8;
+                let v = if core::ptr::eq(m, last) {
+                    self.show(mem, rec + off, elem, Some(reclen.saturating_sub(off)))
+                } else {
+                    let mut v = String::new();
+                    self.print(mem, rec + off, m.ty, 0, 0, &mut v);
+                    v
+                };
+                format!("{} = {v}", m.name)
+            }).collect();
+            out.push(format!("{{{}}}", fields.join(", ")));
+            at += reclen;
+        }
+        Some(format!("[{}]", out.join(", ")))
+    }
+
     /// A value of type `ty` at `addr` (an array of `count` of them), said
     /// as C would write it: `"hello"` for chars, `{3, 4}`, `{tv_sec = 0,
     /// tv_nsec = 30000000}`.
@@ -553,6 +596,7 @@ mod tests {
         assert_eq!(eval("O_CREAT | O_WRONLY", &known), Ok(65));
         assert_eq!(eval("0644", &known), Ok(420));
         assert_eq!(eval("(1 << 4) + fd - $2", &known), Ok(14));
+        assert_eq!((eval("'h'", &known), eval("'\\n'", &known), eval("'\\0' + 1", &known)), (Ok(104), Ok(10), Ok(1)));
         assert_eq!(eval("fds[1] + &fd", &|n| [("fds[1]", 4), ("fd", 3)].iter().find(|(k, _)| *k == n).map(|(_, v)| *v)), Ok(7));
         assert_eq!(eval("NULL", &known), Ok(0));
         assert!(eval("nope", &known).is_err());

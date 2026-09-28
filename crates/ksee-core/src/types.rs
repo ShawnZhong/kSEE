@@ -291,6 +291,8 @@ impl Types {
                 let _ = match b {
                     Base::Signed if bits > 0 => write!(out, "{}", signed(v, bits)),
                     Base::Bool => write!(out, "{}", v != 0),
+                    // (A char: its number, and the character if it is one.)
+                    Base::Char if (0x20..0x7f).contains(&v) => write!(out, "{} '{}'", v, v as u8 as char),
                     Base::Char => write!(out, "{}", signed(v, bits.max(1))),
                     Base::Float if size == 4 => write!(out, "{}", f32::from_bits(v as u32)),
                     Base::Float => write!(out, "{}", f64::from_bits(v)),

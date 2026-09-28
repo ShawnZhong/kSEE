@@ -42,3 +42,7 @@ pub const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
     ("dfd", &["AT_"]), ("olddfd", &["AT_"]), ("newdfd", &["AT_"]), ("flags", &["O_"]), ("prot", &["PROT_"]),
     ("which_clock", &["CLOCK_"]), ("op", &["FUTEX_"]),
 ];
+/// Records of a variable length, one after another (a struct ending in a
+/// flexible array: a directory's entries, getdents64's): the members that
+/// say how long each record is, all of it.
+pub const RECORD_LENGTHS: &[&str] = &["d_reclen"];

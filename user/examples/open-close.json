@@ -12,8 +12,8 @@
     "Try: [open the same file twice](try:1) before closing, and see what number the second open gets; or [close it twice](try:2): the second close fails with EBADF, decided before any file is looked at."
   ],
   "tries": [
-    "fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); fd2 = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); close(fd); close(fd2)",
-    "fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); close(fd); close(fd)"
+    "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); fd2 = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); close(fd); close(fd2)",
+    "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); close(fd); close(fd)"
   ],
   "steps": [
     {
@@ -23,7 +23,8 @@
         "AT_FDCWD",
         "\"/note.txt\"",
         "O_RDONLY"
-      ]
+      ],
+      "type": "int"
     },
     {
       "call": "close",

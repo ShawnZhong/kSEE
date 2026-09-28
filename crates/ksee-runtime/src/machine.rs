@@ -304,6 +304,17 @@ impl Machine {
         Ok(())
     }
 
+    /// The `len` bytes at `addr`, passed as argument `k` of syscall `call`,
+    /// as the records its parameter's type says they are, if they are of
+    /// variable length (Types::records: getdents64's entries); else null.
+    pub fn as_records(&self, call: &str, k: usize, addr: u32, len: u32) -> Option<String> {
+        use ksee_core::types::Kind;
+        let types = &tables().types;
+        let &(_, ty) = types.syscall_params(call)?.get(k)?;
+        let Kind::Pointer(to) = types.get(types.resolve(ty)).kind else { return None };
+        types.records(&Direct, addr, len, to)
+    }
+
     /// `len` bytes of memory at `addr`, as it is now (a variable's: see
     /// declare).
     pub fn memory(&self, addr: u32, len: u32) -> Uint8Array {

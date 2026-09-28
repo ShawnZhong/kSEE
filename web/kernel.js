@@ -122,7 +122,8 @@ export function runner(k, m, steps) {
     for (const v of vars) {
       if (v.j >= j) continue;
       o[v.name] = v.addr;
-      const now = v.count != null ? v.get() : null;
+      // (A char array's elements: its bytes, as C has them.)
+      const now = v.count == null ? null : typeof v.get() === "string" ? [...v.bytes()] : v.get();
       if (Array.isArray(now)) now.forEach((x, i) => typeof x === "number" && (o[`${v.name}[${i}]`] = x));
     }
     done.slice(0, j).forEach((d, i) => {

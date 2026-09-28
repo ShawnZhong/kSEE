@@ -10,8 +10,8 @@
     "[The whole call as a tree](2:ksys_read:calls) is on the right, and [what it stored](2:ksys_read:stores): the file's position, the count read. [What filemap_read changed](2:filemap_read:objects): the read's position (the `kiocb`'s `ki_pos`, 0 to 18), the page's reference count, the inode's access time; and the page is the inode's (its `mapping`). The Stack shows `count` and `buf`. Try: [read twice](try:1): the position has moved, so the second read returns 0, the end of the file; or [4 bytes at a time](try:2)."
   ],
   "tries": [
-    "char buf[64]; fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, buf, 64); read(fd, buf, 64); close(fd)",
-    "char buf[4]; fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, buf, 4); read(fd, buf, 4); close(fd)"
+    "char buf[64]; int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, buf, 64); read(fd, buf, 64); close(fd)",
+    "char buf[4]; int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, buf, 4); read(fd, buf, 4); close(fd)"
   ],
   "steps": [
     {
@@ -24,7 +24,8 @@
         "AT_FDCWD",
         "\"/note.txt\"",
         "O_RDONLY"
-      ]
+      ],
+      "type": "int"
     },
     {
       "call": "read",

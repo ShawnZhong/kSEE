@@ -10,8 +10,8 @@
     "Try: [without O_APPEND](try:1) the write overwrites the file's start, the position being 0. [A write of 4000 bytes](try:2) (zeros), appended after what is there, crosses a page boundary, so the loop in `generic_perform_write` runs twice."
   ],
   "tries": [
-    "fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY); write(fd, \"more\\n\", 5); close(fd)",
-    "char big[4000]; fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND); write(fd, big, 4000); close(fd)"
+    "int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY); write(fd, \"more\\n\", 5); close(fd)",
+    "char big[4000]; int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND); write(fd, big, 4000); close(fd)"
   ],
   "steps": [
     {
@@ -21,7 +21,8 @@
         "AT_FDCWD",
         "\"/note.txt\"",
         "O_WRONLY | O_APPEND"
-      ]
+      ],
+      "type": "int"
     },
     {
       "call": "write",

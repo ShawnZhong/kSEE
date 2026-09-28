@@ -13,8 +13,8 @@
     "Try: [wake with 0 waiters allowed](try:1): the thread stays blocked until a real wake. Or [wait on another word](try:2), `mem + 4`, and wake `mem`: a different key, so nobody wakes, until `mem + 4` is woken."
   ],
   "tries": [
-    "mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0); thread: futex_time64(mem, FUTEX_WAIT_PRIVATE, 0, NULL); futex_time64(mem, FUTEX_WAKE_PRIVATE, 0, NULL); futex_time64(mem, FUTEX_WAKE_PRIVATE, 1, NULL)",
-    "mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0); thread: futex_time64(mem + 4, FUTEX_WAIT_PRIVATE, 0, NULL); futex_time64(mem, FUTEX_WAKE_PRIVATE, 1, NULL); futex_time64(mem + 4, FUTEX_WAKE_PRIVATE, 1, NULL)"
+    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0); thread: futex_time64(mem, FUTEX_WAIT_PRIVATE, 0, NULL); futex_time64(mem, FUTEX_WAKE_PRIVATE, 0, NULL); futex_time64(mem, FUTEX_WAKE_PRIVATE, 1, NULL)",
+    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0); thread: futex_time64(mem + 4, FUTEX_WAIT_PRIVATE, 0, NULL); futex_time64(mem, FUTEX_WAKE_PRIVATE, 1, NULL); futex_time64(mem + 4, FUTEX_WAKE_PRIVATE, 1, NULL)"
   ],
   "steps": [
     {
@@ -27,7 +27,8 @@
         "MAP_PRIVATE | MAP_ANONYMOUS",
         "-1",
         "0"
-      ]
+      ],
+      "type": "void *"
     },
     {
       "call": "clone",
@@ -38,7 +39,8 @@
         "NULL",
         "NULL",
         "0"
-      ]
+      ],
+      "type": "pid_t"
     },
     {
       "call": "getpid",

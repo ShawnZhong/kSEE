@@ -10,8 +10,8 @@
     "Try: [without the fsync](try:1), the write and the close leave everything in memory. [With two fsyncs](try:2), the second has nothing dirty to write and returns almost at once."
   ],
   "tries": [
-    "fd = openat(AT_FDCWD, \"/mnt/log.txt\", O_CREAT | O_WRONLY, 0644); write(fd, \"hello, ext4\\n\", 12); close(fd)",
-    "fd = openat(AT_FDCWD, \"/mnt/log.txt\", O_CREAT | O_WRONLY, 0644); write(fd, \"hello, ext4\\n\", 12); fsync(fd); fsync(fd); close(fd)"
+    "int fd = openat(AT_FDCWD, \"/mnt/log.txt\", O_CREAT | O_WRONLY, 0644); write(fd, \"hello, ext4\\n\", 12); close(fd)",
+    "int fd = openat(AT_FDCWD, \"/mnt/log.txt\", O_CREAT | O_WRONLY, 0644); write(fd, \"hello, ext4\\n\", 12); fsync(fd); fsync(fd); close(fd)"
   ],
   "steps": [
     {
@@ -22,7 +22,8 @@
         "\"/mnt/log.txt\"",
         "O_CREAT | O_WRONLY",
         "0644"
-      ]
+      ],
+      "type": "int"
     },
     {
       "call": "write",

@@ -167,7 +167,7 @@ export async function examples(app) {
   const tidOf = (s) => t.run.tidOf(s);
   // A step's call, as written (or with `values` for the results: as made):
   // `tid: name = call(args)`.
-  const text = (s, values) => s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
+  const text = (s, values) => s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.type ? `${s.type}${s.type.endsWith("*") ? "" : " "}` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
   // How a call finished, or not yet.
   // (A variable: as it starts; each call's line says how it changed.)
   const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.initial ?? ""}`
@@ -262,14 +262,16 @@ export async function examples(app) {
     const q = r.q;
     // (What the calls finished left in their buffers: it, or ones it woke.)
     for (const [i, d] of t.done.entries()) if (d?.buffers && d.text == null) d.text = outputs(t.steps[i].call, d.args, d.buffers);
-    // (And the variables it changed, as they are now; a directory's
-    // entries, getdents64's records, by their names.)
+    // (And the variables it changed, as they are now; one it was passed as
+    // records of a variable length, as its parameter's type reads them:
+    // Machine.as_records, a directory's entries.)
     const changed = [];
     for (const v of t.vars) {
       const now = m.show(v.ty, v.addr, v.count ?? undefined);
       if (now !== v.shown) {
-        const entries = s.call === "getdents64" && s.args[1] === v.name && q.ret > 0;
-        changed.push(entries ? `${v.name}: entries ${dirents(m.memory(v.addr, q.ret)).join(", ")}` : `${v.name} = ${now}`);
+        const k = s.args.indexOf(v.name), size = v.size * (v.count ?? 1);
+        const records = k >= 0 && q.ret > 0 ? m.as_records(s.call, k, v.addr, Math.min(q.ret, size)) : null;
+        changed.push(`${v.name} = ${records ?? now}`);
       }
       v.shown = now;
     }
@@ -291,22 +293,10 @@ export async function examples(app) {
   // (Call `j`'s line marked, the others not.)
   const mark = (j) => [...t.list.children].forEach((li, k) => li.classList.toggle("on", k === j));
 
-  // What a call left in the buffers it was to fill.
+  // What a call left in the buffers it was to fill (`[64]`, as older
+  // programs have them: a variable says it better).
   function outputs(call, args, buffers) {
-    const shown = (b) => call === "getdents64" ? `entries: ${dirents(b).join(", ")}`
-      : call === "pipe2" ? `fds: ${[...new Int32Array(b.buffer, b.byteOffset, 2)].join(", ")}` : bytes(b);
-    return args.map((a, i) => (a?.size != null && buffers?.[i] ? shown(buffers[i]) : null)).filter(Boolean).join("  ");
-  }
-  function dirents(b) {
-    const v = new DataView(b.buffer, b.byteOffset, b.byteLength), names = [];
-    // (struct linux_dirent64: ino, off, reclen (u16), type, name)
-    for (let o = 0; o + 19 < b.length;) {
-      const len = v.getUint16(o + 16, true);
-      if (!len) break;
-      names.push(new TextDecoder().decode(b.subarray(o + 19, b.indexOf(0, o + 19))));
-      o += len;
-    }
-    return names;
+    return args.map((a, i) => (a?.size != null && buffers?.[i] ? bytes(buffers[i]) : null)).filter(Boolean).join("  ");
   }
   function bytes(b) {
     const n = b.indexOf(0) < 0 ? b.length : b.indexOf(0), s = new TextDecoder().decode(b.subarray(0, n));
