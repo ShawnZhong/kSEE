@@ -94,7 +94,7 @@ export function app(m) {
     chosen = { first: f.first, inlined: f.inlined ? f.func : null };
     stack.select(f.first, f.inlined ? f.func : null);
     src.view.cursor = { file: f.file, line: f.line };
-    const at = time.cursor() != null ? m.at(time.cursor()) : null, s = at?.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
+    const at = time.cursor() != null ? m.at(time.cursor()) : null, s = calls[at?.syscall] ?? null;
     // (Inlined code: in the function it is inlined into, at its own line.)
     const owner = f.inlined ? stack.owner(f) : f;
     src.showFunction(owner?.func ?? f.func, at?.syscall ?? undefined, f.line, f.file);
@@ -130,7 +130,7 @@ export function app(m) {
   // shows.
   function view(at, frame = null) {
     memoryAt(at.i);
-    const s = at.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
+    const s = calls[at.syscall] ?? null;
     stack.show(at.i, null, at.task);
     const f = frame && stack.select(frame.first, frame.inlined);
     const here = f ? { func: f.func, file: f.file, line: f.line, inlined: null, owner: (f.inlined ? stack.owner(f) : f)?.func } : at;
@@ -292,7 +292,7 @@ export function app(m) {
   a.runTo = (file, line, dir) => {
     const i = m.run_of(file, line, time.cursor() ?? 0, dir);
     if (i == null) return ($("where").textContent = `${file}:${line} does not run ${dir > 0 ? "again" : "before"} in the recording`);
-    const at = m.at(i), s = at?.syscall != null ? calls.find((c) => c.index === at.syscall) : null;
+    const at = m.at(i), s = calls[at?.syscall] ?? null;
     if (s) time.select(s);
     time.mark(i);
     const st = steps(), k = st.findIndex((x) => x.i === i && x.line === line && x.file === file);
