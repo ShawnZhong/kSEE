@@ -70,9 +70,8 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .cm-editor .ln-infn { box-shadow: inset 3px 0 var(--accent); }
 .cm-editor .ln-cursor { background: var(--sel) !important; }
 /* (The notes at a line's end: clipped, not a horizontal scroll.) */
-.cm-editor a.stored { color: var(--dim); font-style: italic; display: inline-block; margin-left: 3ch; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.cm-editor a.stored { color: var(--dim); font-style: italic; display: inline-block; margin-left: 3ch; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; cursor: pointer; }
 .cm-editor .values { color: var(--dim); font-style: italic; background: var(--sel); white-space: pre-wrap; padding-bottom: 2px; }
-.cm-editor a.stored { cursor: pointer; }
 .cm-editor .note { color: var(--dim); font-style: italic; margin-left: 3ch; white-space: nowrap; }
 .cm-editor a.stored:hover { color: var(--accent); }
 .cm-cursorGutter { width: 14px; }
@@ -121,9 +120,9 @@ h2.tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
 #objects .obj .title { padding: 3px 8px; border-bottom: 1px solid var(--line); background: var(--sel); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #objects .obj.task .title, #objects .obj.global .title { background: var(--at); }
 #objects .obj .row { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#objects .obj tr.later { opacity: 0.45; }
 #objects .obj tr.on td { background: var(--at); }
-#tasks tr.later { opacity: 0.45; }
+/* (What comes only after the cursor: dim.) */
+tr.later { opacity: 0.45; }
 #objects .obj.ended { border-style: dashed; opacity: 0.75; }
 #objects .obj .row.link span { color: var(--dim); }
 #objects .obj .row.more a { color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
@@ -168,7 +167,7 @@ table.objs tr.history li.on { background: var(--at); }
 .explain a.try:hover { text-decoration: none; background: var(--sel); }
 
 /* The program: a call a line (its editor, its result), the one at the tutorial's stop */
-.ptitle { margin: 10px 12px 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.ptitle { margin: 10px 12px 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: baseline; }
 ol.steps { margin: 8px 12px; padding-left: 22px; }
 ol.steps > li { margin: 4px 0; }
 ol.steps > li.on { background: var(--sel); border-radius: 3px; }
@@ -176,7 +175,6 @@ ol.steps .line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6
 ol.steps .line .calledit { flex: 1 1 12em; min-width: 0; }
 ol.steps .line .rm { color: var(--dim); font-size: 11px; visibility: hidden; }
 ol.steps > li:hover .line .rm { visibility: visible; }
-.ptitle { display: flex; align-items: baseline; }
 .ptitle a { margin-left: auto; text-transform: none; letter-spacing: 0; }
 ol.steps .ret { color: var(--accent); margin-left: auto; white-space: nowrap; }
 ol.steps > li.blocked .ret { color: var(--pp); font-style: italic; }
