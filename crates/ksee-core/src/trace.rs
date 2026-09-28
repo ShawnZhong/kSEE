@@ -20,9 +20,9 @@ pub enum Record {
     /// begins (no switch says so).
     Task { task: u32 },
     /// A comparison that decides a branch (or a select): `lhs` with `rhs`
-    /// (truncated to 32 bits), by `pred` (an LLVM icmp predicate, from
+    /// (`wide`: 64 bits, else 32), by `pred` (an LLVM icmp predicate, from
     /// eq: see Pred), on `line` (as a Store's).
-    Compare { lhs: u32, rhs: u32, pred: u8, line: u32 },
+    Compare { lhs: u64, rhs: u64, wide: bool, pred: u8, line: u32 },
     /// Variable `var` of the function running (Tables::vars: a named one
     /// kept in a wasm local) takes `value` here, on `line` (as a Store's).
     Var { var: u32, line: u32, value: u64 },
@@ -35,11 +35,26 @@ pub const PREDICATES: [(&str, bool); 10] =
 impl Record {
     /// A Compare's operator, whether it is signed, and whether it held.
     pub fn compare(&self) -> Option<(&'static str, bool, bool)> {
-        let Record::Compare { lhs, rhs, pred, .. } = *self else { return None };
-        let (op, signed) = *PREDICATES.get(pred as usize)?;
-        let (a, b) = if signed { (lhs as i32 as i64, rhs as i32 as i64) } else { (lhs as i64, rhs as i64) };
+        let (op, signed) = *PREDICATES.get(self.compared()?.3 as usize)?;
+        let (a, b) = self.operands(signed)?;
         let held = match op { "==" => a == b, "!=" => a != b, ">" => a > b, ">=" => a >= b, "<" => a < b, _ => a <= b };
         Some((op, signed, held))
+    }
+
+    /// A Compare's operands, as numbers: signed or not, 32 or 64 bits.
+    pub fn operands(&self, signed: bool) -> Option<(i128, i128)> {
+        let (lhs, rhs, wide, _) = self.compared()?;
+        let n = |x: u64| match (signed, wide) {
+            (true, true) => x as i64 as i128,
+            (true, false) => x as u32 as i32 as i128,
+            (false, _) => x as i128,
+        };
+        Some((n(lhs), n(rhs)))
+    }
+
+    fn compared(&self) -> Option<(u64, u64, bool, u8)> {
+        let Record::Compare { lhs, rhs, wide, pred, .. } = *self else { return None };
+        Some((lhs, rhs, wide, pred))
     }
 }
 
@@ -172,7 +187,10 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                     if got < 1 {
                         continue;
                     }
-                    return Some(Record::Compare { lhs: func, rhs: v[0], pred: (tag & 0xf) as u8, line: tag >> 4 & 0xff_ffff });
+                    // (A wide one: then the high words, lhs's and rhs's.)
+                    let wide = got >= 3;
+                    let hi = |k: usize| if wide { (self.values[k] as u64) << 32 } else { 0 };
+                    return Some(Record::Compare { lhs: func as u64 | hi(1), rhs: v[0] as u64 | hi(2), wide, pred: (tag & 0xf) as u8, line: tag >> 4 & 0xff_ffff });
                 }
                 STORE => {
                     // (The old value, or a range's length; then, a copy's, where from.)
@@ -269,10 +287,13 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
         // A store of 4 bytes at 0x100 (it held 5) copied from 0x300; then 18 >= 0 (sge, 7), on line 2.
         let w = [0x100, STORE << 28 | 2, 5, VALUE << 28, 0x300, VALUE << 28 | 1, 18, COMPARE << 28 | 2 << 4 | 7, 0, VALUE << 28];
         let got = decode(&w);
-        assert_eq!(got, [Record::Store { addr: 0x100, size: 4, old: 5, line: 0, from: Some(0x300) }, Record::Compare { lhs: 18, rhs: 0, pred: 7, line: 2 }]);
+        assert_eq!(got, [Record::Store { addr: 0x100, size: 4, old: 5, line: 0, from: Some(0x300) }, Record::Compare { lhs: 18, rhs: 0, wide: false, pred: 7, line: 2 }]);
         assert_eq!(got[1].compare(), Some((">=", true, true)));
-        assert_eq!(Record::Compare { lhs: -1i32 as u32, rhs: 0, pred: 3, line: 0 }.compare(), Some((">=", false, true)));
-        assert_eq!(Record::Compare { lhs: 5, rhs: 5, pred: 1, line: 0 }.compare(), Some(("!=", false, false)));
+        assert_eq!(Record::Compare { lhs: -1i32 as u32 as u64, rhs: 0, wide: false, pred: 3, line: 0 }.compare(), Some((">=", false, true)));
+        // (Wide: 2^32 > 1 (sgt, 6) holds; their low halves, 0 > 1, would not.)
+        let w = [0, COMPARE << 28 | 6, 1, VALUE << 28, 1, VALUE << 28 | 1, 0, VALUE << 28 | 2];
+        assert_eq!(decode(&w)[0].compare(), Some((">", true, true)));
+        assert_eq!(Record::Compare { lhs: 5, rhs: 5, wide: false, pred: 1, line: 0 }.compare(), Some(("!=", false, false)));
     }
 
     #[test]

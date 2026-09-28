@@ -56,8 +56,8 @@
 //                         counted from 0) the store is on
 //   [lhs, 6 << 28 | line << 4 | p]
 //                         a comparison deciding a branch (or a select),
-//                         of lhs with the value after it, truncated to 32
-//                         bits; p: its predicate (LLVM's icmp's, from eq:
+//                         of lhs with the value after it (for one wider
+//                         than 32 bits, then lhs's high word, rhs's); p: its predicate (LLVM's icmp's, from eq:
 //                         eq ne ugt uge ult ule sgt sge slt sle); line as
 //                         a store's
 //   [value, 9 << 28 | line << 16 | k]
@@ -662,7 +662,14 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     for (ICmpInst *C : seal ? SmallVector<ICmpInst *>{} : compares) {
       IRBuilder<> B(C->getNextNode());
       unsigned line = std::min(lineOf.lookup(C), (1u << 24) - 1), pred = C->getPredicate() - CmpInst::FIRST_ICMP_PREDICATE;
-      record(B, toI32(B, C->getOperand(0)), KindCompare << 28 | line << 4 | pred, {toI32(B, C->getOperand(1))});
+      // (Its operands, 32 bits each; wider, their high words after.)
+      SmallVector<Value *, 2> l, r;
+      words(B, C->getOperand(0), l);
+      words(B, C->getOperand(1), r);
+      SmallVector<Value *, 3> rest{r[0]};
+      if (l.size() > 1)
+        rest.append({l[1], r[1]});
+      record(B, l[0], KindCompare << 28 | line << 4 | pred, rest);
     }
 
     unsigned wide = 0;

@@ -105,11 +105,9 @@ The choices that shape it:
 - No MMU: no page tables, faults, copy-on-write or demand paging; no
   fork (threads and vfork, which share memory).
 - One CPU; no preemption (the kernel reschedules at its usual points).
-- Compared values are 32 bits (wider ones lose their high half); of the
-  values in
-  wasm locals, only the named variables', the comparisons that decide
-  branches and where a copied value came from are recorded, not every
-  intermediate.
+- Of the values in wasm locals, only the named variables', the
+  comparisons that decide branches and where a copied value came from are
+  recorded, not every intermediate.
 - A recording is a ring: the oldest records go when it is full.
 - No console input; no user signal handlers (a caught signal kills the
   task).

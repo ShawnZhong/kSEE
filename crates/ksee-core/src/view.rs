@@ -1071,8 +1071,8 @@ fn num(v: u64) -> String {
 /// ones as such, else as numbers are).
 fn compared(r: &Record) -> Option<String> {
     let (op, signed, held) = r.compare()?;
-    let &Record::Compare { lhs, rhs, .. } = r else { return None };
-    let v = |x: u32| if signed { (x as i32).to_string() } else { num(x as u64) };
+    let (lhs, rhs) = r.operands(signed)?;
+    let v = |x: i128| if signed { x.to_string() } else { num(x as u64) };
     Some(format!("{} {op} {} {}", v(lhs), v(rhs), if held { "✓" } else { "✗" }))
 }
 
