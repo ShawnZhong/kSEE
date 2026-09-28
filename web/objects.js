@@ -7,7 +7,8 @@
 // then, dashed). Each member it writes as it is then, in the Stack's value
 // rows (tree.js), the one last written marked; its pointers to the other
 // objects, each a link to it ("f_inode → atime_needs_update's inode"); all
-// of its fields on asking.
+// of its fields on asking. As a tree: each box under the first that points
+// to it as the call ends (a file's inode under the file).
 import { $, el } from "./dom.js";
 import { tree } from "./tree.js";
 
@@ -51,8 +52,13 @@ export function objects(app) {
     // member last written brought into view if it is out of it.)
     const top = body.scrollTop, moment = cur !== drawnAt;
     drawnAt = cur;
+    // (As a tree: each box under the one that points to it (Node.under),
+    // from the ones nothing points to; siblings in order.)
+    const order = [];
+    const visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.under === k && visit(c, depth + 1)));
+    nodes.forEach((n, k) => n.under == null && visit(k, 0));
     body.replaceChildren(el("div", { className: "dim head" }, `${nodes.length} object${nodes.length === 1 ? "" : "s"} written, ${soFar} so far`),
-      ...nodes.map((n, k) => box(n, nodes, k, cur, now, live(n))));
+      ...order.map(([k, depth]) => Object.assign(box(nodes[k], nodes, k, cur, now, live(nodes[k])), { style: `margin-left: ${Math.min(depth, 6) * 14}px` })));
     body.scrollTop = top;
     const on = body.querySelector("tr.on")?.getBoundingClientRect(), view = body.getBoundingClientRect();
     if (moment && on && (on.top < view.top || on.bottom > view.bottom)) body.querySelector("tr.on").scrollIntoView({ block: "nearest" });

@@ -201,6 +201,9 @@ pub struct Node {
     pub life: Option<(usize, usize)>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub depth: u32,
+    /// The node it is shown under (the first that points to it, as the
+    /// span ends), if any.
+    pub under: Option<usize>,
 }
 
 /// A pointer from a node's `member` to node `to` (an index); its value
@@ -1016,7 +1019,7 @@ impl View<'_> {
         for s in self.stores(first, last).iter().filter(|s| matches!(s.kind, "object" | "task" | "local" | "global") && s.size > 0).cloned() {
             match nodes.iter_mut().find(|n| n.addr == s.addr && n.id == s.id && n.writes[0].i >= s.life.map_or(0, |l| l.0)) {
                 Some(n) => n.writes.push(s.write),
-                None => nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(), life: s.life, depth: s.depth }),
+                None => nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(), life: s.life, depth: s.depth, under: None }),
             }
         }
         // (In the order of the calls that name them, the outer first, as a
@@ -1024,16 +1027,41 @@ impl View<'_> {
         // task first; globals, and memory nothing names, last.)
         nodes.sort_by_key(|n| n.depth);
         let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
-        let links: Vec<Vec<Link>> = nodes.iter().enumerate().map(|(k, n)| {
+        // (Each node's pointers to the others, as memory was after record
+        // `at`, or its call's end for one on the stack.)
+        let links_at = |at: usize| -> Vec<Vec<Link>> { nodes.iter().enumerate().map(|(k, n)| {
             let mem = self.rec.memory_at(self.now, n.life.map_or(at, |l| l.1.min(at)));
             types.pointers(n.id, 3).into_iter().filter_map(|(member, off)| {
-            let value = mem.read_u32(n.addr.wrapping_add(off));
-            let to = within(value).filter(|&to| to != k)?;
-            Some(Link { member, to, value })
+                let value = mem.read_u32(n.addr.wrapping_add(off));
+                let to = within(value).filter(|&to| to != k)?;
+                Some(Link { member, to, value })
             }).collect()
-        }).collect();
-        for (n, l) in nodes.iter_mut().zip(links) {
-            n.links = l;
+        }).collect() };
+        // (The tree they are shown in, from the ones nothing points to, as
+        // the span ends (then any left: a cycle's), each under the first, in
+        // order, that points to it: its shape the same at every moment.)
+        let (ends, now) = (links_at(last), links_at(at));
+        let mut under = alloc::vec![None; nodes.len()];
+        let mut placed = alloc::vec![false; nodes.len()];
+        let pointed: alloc::collections::BTreeSet<usize> = ends.iter().flatten().map(|l| l.to).collect();
+        let roots = (0..nodes.len()).filter(|k| !pointed.contains(k)).chain(0..nodes.len());
+        for root in roots {
+            if placed[root] {
+                continue;
+            }
+            placed[root] = true;
+            let mut queue = alloc::collections::VecDeque::from([root]);
+            while let Some(k) = queue.pop_front() {
+                for l in &ends[k] {
+                    if !placed[l.to] {
+                        (placed[l.to], under[l.to]) = (true, Some(k));
+                        queue.push_back(l.to);
+                    }
+                }
+            }
+        }
+        for ((n, l), u) in nodes.iter_mut().zip(now).zip(under) {
+            (n.links, n.under) = (l, u);
         }
         nodes
     }
@@ -1315,6 +1343,8 @@ mod tests {
         let nodes = v.objects(0, 2, 2);
         let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.writes.len(), n.links.iter().map(|l| (l.member.clone(), l.to)).collect::<Vec<_>>())).collect();
         assert_eq!(got, [("f's p".into(), 1, alloc::vec![]), ("f's y".into(), 1, alloc::vec![("link".into(), 0)])]);
+        // (Shown as a tree: p under y, which points to it.)
+        assert_eq!(nodes.iter().map(|n| n.under).collect::<Vec<_>>(), [Some(1), None]);
     }
 
     #[test]
