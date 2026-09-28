@@ -484,6 +484,6 @@ export function timeline(app) {
     }
     return null;
   }
-  return { refresh, go, mark, select, hilite, selected, boxOf, deepest, find, focusFind: () => finder.input.focus(),
+  return { refresh, go, mark, select, selectCall, hilite, selected, boxOf, deepest, find, focusFind: () => finder.input.focus(),
            home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }

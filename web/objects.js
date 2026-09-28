@@ -10,7 +10,8 @@
 // as it is made. A member's writes on asking (each a link to its moment);
 // all of its object's fields on asking, as the Stack's values are. An object
 // on the stack is there while its call runs, as on the Stack; the ones
-// gone (or not yet made) on asking.
+// gone (or not yet made), and the ones the call writes only after the
+// cursor, on asking: what it changed so far first.
 import { $, el } from "./dom.js";
 import { tree } from "./tree.js";
 
@@ -42,10 +43,12 @@ export function objects(app) {
     last = [nodes, cur];
     st.last = st.now;
     st.now = new Map();
-    // (On the stack: there while its call runs.)
+    // (On the stack: there while its call runs; and written by the
+    // cursor. The others on asking.)
     const live = (n) => !n.life || (n.life[0] <= cur && cur <= n.life[1]);
-    const away = nodes.filter((n) => !live(n)).length;
-    const shownAt = (k) => gone || live(nodes[k]);
+    const soFar = (n) => live(n) && n.writes[0].i <= cur;
+    const away = nodes.filter((n) => !soFar(n)).length;
+    const shownAt = (k) => gone || soFar(nodes[k]);
     // (In the order the pointers lead: from each object nothing points to,
     // depth first; then any left.)
     const pointed = new Set(nodes.flatMap((n) => n.links.map((l) => l.to)));
@@ -60,9 +63,10 @@ export function objects(app) {
     nodes.forEach((_, k) => visit(k));
     // (The write the cursor is at, or last passed: marked.)
     const now = nodes.flatMap((n) => n.writes).filter((x) => x.i <= cur).reduce((a, x) => (!a || x.i > a.i ? x : a), null);
-    body.replaceChildren(el("div", { className: "dim head" }, `${order.length} object${order.length === 1 ? "" : "s"} written`,
-      away ? el("a", { textContent: gone ? ` · hide the ${away} not alive at the cursor` : ` · ${away} more on the stack, not alive at the cursor`,
-                       title: "objects on the stack of a call not running at the cursor (returned, or not called yet)", onclick: () => ((gone = !gone), redraw()) }) : ""),
+    body.replaceChildren(el("div", { className: "dim head" }, `${order.length} object${order.length === 1 ? "" : "s"} written${gone ? "" : " so far"}`,
+      away ? el("a", { textContent: gone ? ` · only those written so far` : ` · ${away} more, written later or not alive at the cursor`,
+                       title: "objects the call writes after the cursor, and objects on the stack of a call not running at the cursor (returned, or not called yet)",
+                       onclick: () => ((gone = !gone), redraw()) }) : ""),
       ...order.map((k) => box(nodes[k], nodes, k, cur, now, live(nodes[k]), shownAt)));
     body.querySelector(".row.on")?.scrollIntoView({ block: "nearest" });
   }
