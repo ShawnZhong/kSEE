@@ -689,7 +689,7 @@ impl View<'_> {
         }).collect()
     }
 
-    /// Function `func`'s locals, in the order it declares them (the same
+    /// Function `func`'s locals, each name once, in the order it declares them (the same
     /// rows at every moment, as a debugger's), as the call from record
     /// `first` has them at record `at`: one in memory at its offset from
     /// `frame`, not written yet if its slot has not been stored to (its
@@ -698,7 +698,10 @@ impl View<'_> {
     fn locals(&self, func: u32, frame: u32, mem: &dyn Memory, first: usize, at: usize, set: &[Object]) -> Vec<Object> {
         let types = &self.tables.types;
         let not = |o: Object, why: &str| Object { value: Some(why.into()), children: None, expand: None, target: None, ..o };
-        types.locals.get(&func).into_iter().flatten().map(|(var, ty, off)| match off {
+        // (A name once: two variables of one name, in two of its scopes, are
+        // one to the recording, which knows a variable by its name.)
+        let mut seen = alloc::collections::BTreeSet::new();
+        types.locals.get(&func).into_iter().flatten().filter(|(var, _, _)| seen.insert(var.as_str())).map(|(var, ty, off)| match off {
             Some(off) => {
                 let addr = frame.wrapping_add(*off);
                 let o = types.object(mem, var, addr, *ty, 0);
