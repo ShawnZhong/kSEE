@@ -232,9 +232,16 @@
   fbox.value = "nope_fn"; fkey("Enter");
   r.noFn = document.querySelector(".findhint").textContent;
   if (!r.found.at(-2).match(/^\d+ of \d+$/) || !r.found.at(-1) || r.noFn !== "no function nope_fn") throw new Error("find: " + JSON.stringify(r));
-  // The console, folded to its last line; the current task, open to its key fields.
+  // The console, folded to its last line; the current task, a link to the
+  // Tasks: there, open, its key fields; each task, where it is.
   r.console = [$("pane-console").classList.contains("folded"), $("console").textContent];
-  r.current = [...document.querySelectorAll("#stack tr.task, #stack tr.task ~ tr")].slice(0, 3).map((tr) => tr.innerText.replace(/\s+/g, " ").trim());
-  if (!r.console[0] || !r.console[1] || r.console[1].includes("\n") || !r.current[0]?.startsWith(`current task: prog(${ksee.m.main()})`) || !r.current[1]?.startsWith("pid")) throw new Error("console, current: " + JSON.stringify(r));
+  const cur = document.querySelector("#stack tr.task a");
+  r.current = [cur?.textContent];
+  cur?.click(); await sleep(200);
+  r.current.push($("right").dataset.tab, ...[...document.querySelectorAll("#tasks tr.on, #tasks tr.on ~ tr")].slice(0, 2).map((tr) => tr.innerText.replace(/\s+/g, " ").trim()));
+  r.tasks = [...document.querySelectorAll("#tasks tr.task")].map((tr) => tr.innerText.replace(/\s+/g, " ").trim());
+  if (!r.console[0] || !r.console[1] || r.console[1].includes("\n") || r.current[0] !== `current task: prog(${ksee.m.main()})` || r.current[1] !== "tasks"
+      || !r.current[2]?.includes(`prog(${ksee.m.main()}) in `) || !r.current[3]?.startsWith("pid") || !r.tasks.length) throw new Error("console, current: " + JSON.stringify(r));
+  $("right").dataset.tab = "stack";
   return r;
 })()

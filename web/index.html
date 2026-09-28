@@ -40,6 +40,7 @@
   <div class="col" id="right" data-tab="stack">
     <h2 class="tabs">
       <a data-tab="stack" title="the calls at the cursor, their values as they were then">Stack</a>
+      <a data-tab="tasks" title="every task the recording has, at the cursor: where each is, its task_struct">Tasks</a>
       <a data-tab="calls" title="the selected call as a tree of the calls it made, in order">Calls</a>
       <a data-tab="stores" title="every store the selected call made, in order, each a link">Stores</a>
       <a data-tab="objects" title="the objects the selected call wrote, and how they point to each other">Objects</a>
@@ -48,6 +49,10 @@
     <div class="pane" data-tab="stack">
       <div class="stackhead dim" id="stack-note"></div>
       <div class="body" id="stack"></div>
+    </div>
+    <div class="pane" data-tab="tasks">
+      <div class="stackhead dim" id="tasks-note"></div>
+      <div class="body" id="tasks"></div>
     </div>
     <div class="pane" data-tab="trace">
       <div class="stackhead dim" id="trace-note"></div>

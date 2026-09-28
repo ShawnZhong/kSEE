@@ -128,6 +128,11 @@ impl Machine {
         self.view(|v| to_js(&v.at(i)))
     }
 
+    /// The tasks the recording has, as they are at record `i` (view::TaskAt).
+    pub fn tasks(&self, i: usize) -> JsValue {
+        self.view(|v| to_js(&v.tasks(i)))
+    }
+
     /// Who the task at address `task` is (view::TaskRef).
     pub fn task(&self, task: u32) -> JsValue {
         self.view(|v| to_js(&v.task(task)))

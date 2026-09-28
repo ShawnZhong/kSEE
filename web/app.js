@@ -13,6 +13,7 @@ import { callTree } from "./calls.js";
 import { trace } from "./trace.js";
 import { stores } from "./stores.js";
 import { objects } from "./objects.js";
+import { tasks } from "./tasks.js";
 import { kernel } from "./kernel.js";
 
 
@@ -150,6 +151,7 @@ export function app(m) {
     a.callTree?.mark();
     a.stores?.mark();
     a.objects?.mark();
+    a.tasks?.mark();
     a.trace?.mark();
     badge();
   };
@@ -177,10 +179,12 @@ export function app(m) {
   a.trace = trace(a);
   a.stores = stores(a);
   a.objects = objects(a);
+  a.tasks = tasks(a);
   a.outlined = () => (a.callTree.draw(), a.stores.draw(), a.objects.draw(), a.trace.draw());
   // (The Records follow the cursor, drawn when the tab is looked at.)
   document.querySelector('h2.tabs a[data-tab="trace"]').addEventListener("click", () => a.trace.draw());
   document.querySelector('h2.tabs a[data-tab="objects"]').addEventListener("click", () => a.objects.draw());
+  document.querySelector('h2.tabs a[data-tab="tasks"]').addEventListener("click", () => a.tasks.draw());
   examples(a);
 
   // ---- Lines: the line steps of the selection (a syscall) ----
@@ -237,6 +241,7 @@ export function app(m) {
     a.objects?.mark();
     a.trace?.mark();
     memoryAt(step.at);
+    a.tasks?.mark(); // (its task_structs: memory as it was there)
     const at = m.at(step.i);
     // (Its note: which turn of a loop it is, the call running it again;
     // and at the call's last line, what it returns, the optimizer's

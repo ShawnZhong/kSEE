@@ -77,7 +77,8 @@ Rust does the work: JS only lays it out.
 | app.js | wires the panels to the Machine; the status (idle, replay, halted); the cursor; stepping (in time: the selected call's lines, or every line; in depth: the calls above and below), run to a line; the keys |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom), on an axis of steps (blocks run: `Machine.steps`); zoom, pan |
 | source.js | the source at the cursor (CodeMirror): lines that ran, the function, the cursor's line's values at its end, what each line stored so far at its end (a link to the store), hover values, definitions |
-| callstack.js | the Stack: calls with arguments and locals, the task (current); the right column's tabs |
+| callstack.js | the Stack: calls with arguments and locals, the task running (a link to it in the Tasks); the right column's tabs |
+| tasks.js | the Tasks: every task the recording has, at the cursor (`Machine.tasks`): the one running marked, each where it is (its syscall, else its outermost call), a link to its last moment; its task_struct as it was on asking |
 | tree.js | values as trees (the Stack's): pointers open into what they point to, structs into their fields; who last wrote a value; a value's writes, a row under it |
 | trace.js | the Trace tab: the raw trace, a line a record (what the views are built from) |
 | stores.js | the Stores: every store the selected call made, a row each in order, each a link; the store at the cursor marked |
@@ -105,7 +106,7 @@ ksee pack evaluates the UAPI headers' constants with the same evaluator.
 Every view asks the Machine for the moment at the cursor: `at(i)` (every
 record located: a store at its line, a return at the line it returned
 from), `call_stack(i, nth)`, `line_steps`, `chart`,
-`memory_at(i)` then `object` /
+`tasks(i)` (each task, where it is), `memory_at(i)` then `object` /
 `global` (memory as it was), `last_write`, `writes` (an object's history:
 every store to it in its lifetime, a local's frame or the whole
 recording: the member written, from what to what), `stores` (a span

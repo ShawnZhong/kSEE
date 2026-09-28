@@ -95,7 +95,11 @@ for who last wrote it; click it for its writes, a row under it: the
 member, from what to what, in which function, each a link to that moment,
 the one in effect at the cursor marked (a local's while its frame lives,
 another object's within the selected call; "all" for the whole recording);
-click the value again to close. The Stores tab lists every store the
+click the value again to close. The Tasks tab lists every task the
+recording has, at the cursor: the one running marked, each where it is
+(`prog(20)  in read`: its syscall, else its outermost call), its name a
+link to its last moment (the Stack then shows its stack), its task_struct
+as it was on asking; the Stack's `current task` is a link to it. The Stores tab lists every store the
 selected call made, a row each, in order (`vfs_read's file->f_pos: 0 →
 26`, `nr_inodes: 11 → 12`, its own locals and frames said so, memory
 nothing names by its address), each a link, the one in effect at the

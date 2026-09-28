@@ -107,11 +107,11 @@ table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-famil
 
 /* The right column's tabs (Stack, Trace): the pane chosen */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
-#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="calls"] .pane[data-tab="calls"], #right[data-tab="stores"] .pane[data-tab="stores"], #right[data-tab="objects"] .pane[data-tab="objects"], #right[data-tab="trace"] .pane[data-tab="trace"] { display: flex; }
+#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="calls"] .pane[data-tab="calls"], #right[data-tab="stores"] .pane[data-tab="stores"], #right[data-tab="objects"] .pane[data-tab="objects"], #right[data-tab="trace"] .pane[data-tab="trace"], #right[data-tab="tasks"] .pane[data-tab="tasks"] { display: flex; }
 h2.tabs { gap: 0; padding: 0 4px; }
 h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
-#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="calls"] a[data-tab="calls"], #right[data-tab="stores"] a[data-tab="stores"], #right[data-tab="objects"] a[data-tab="objects"], #right[data-tab="trace"] a[data-tab="trace"] { color: var(--fg); border-bottom-color: var(--accent); }
+#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="calls"] a[data-tab="calls"], #right[data-tab="stores"] a[data-tab="stores"], #right[data-tab="objects"] a[data-tab="objects"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="tasks"] a[data-tab="tasks"] { color: var(--fg); border-bottom-color: var(--accent); }
 
 /* The Trace: the tree of calls, the one the cursor is in marked */
 /* The Stack: room above a selected call for what it calls (callstack.js focus) */
@@ -137,6 +137,7 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #objects .obj .row a.count { color: var(--dim); }
 #objects .obj ol.writes { margin: 0; padding: 0 8px 2px 28px; }
 #objects .obj ol.writes li.later { opacity: 0.45; }
+#tasks tr.later { opacity: 0.45; }
 #objects .obj ol.writes li.on { background: var(--at); }
 #objects .obj.ended { border-style: dashed; opacity: 0.75; }
 #objects .obj .title { cursor: pointer; }
@@ -150,7 +151,7 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #calls a.inl { font-style: italic; }
 #calls ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }
 #calls ul.tree { padding: 0 12px 8px; }
-#calls li { margin: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#calls li { margin: 1px 0; white-space: nowrap; }
 #calls li.on > a.mono { background: var(--at); border-radius: 2px; }
 #calls a.tw { color: var(--dim); display: inline-block; width: 1.1em; }
 #calls ul.tree > li > ul, #calls li > ul { padding-left: 16px; }

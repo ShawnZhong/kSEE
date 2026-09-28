@@ -2,21 +2,19 @@
 // with its arguments and its locals in memory as a tree (like a debugger's
 // variables), rebuilt from the trace (Machine.call_stack: a call's
 // arguments are in its record, its locals' addresses in another); at the
-// bottom, the task running then (current: its key fields, open, and all
-// of them on asking). Pointers open into
+// bottom, the task running then (current: a link to it in the Tasks). Pointers open into
 // what they point to, structs into their fields, read from memory as it was
 // at the cursor (Machine.memory_at: see tree.js); what is open stays
 // open while stepping; click a value for its writes (tree.js). Click a call to
 // select it: the source shows where it is (for an outer call, the line
 // calling the next one in).
-import { $, el } from "./dom.js";
+import { $, el, taskName } from "./dom.js";
 import { tree, place } from "./tree.js";
 
 export function callstack(app) {
   const { m } = app;
   // Open paths, and the values shown before (to highlight changes).
-  // (The current task open to begin with.)
-  const s = { open: new Set(["task"]), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
+  const s = { open: new Set(), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
 
   const { rows, kids } = tree(app, s, draw);
   // (The tabs: the pane chosen.)
@@ -43,20 +41,9 @@ export function callstack(app) {
         rows(f.locals, `${n - k}/${f.func}/locals`, 1, body, { from: f.first, to: m.call_end(f.first) ?? undefined, what: `while ${f.func}'s frame lives` });
       }
     });
-    // At the bottom: the task running then (its task_struct, as it was).
-    if (s.task && s.frames.length) {
-      const toggle = (p) => () => {
-        s.open.has(p) ? s.open.delete(p) : s.open.add(p);
-        draw();
-      };
-      body.push(head(`current task: ${s.task.comm ?? "?"}(${s.task.pid ?? "?"})`, "current: the task running", toggle("task"), "task"));
-      if (s.open.has("task")) {
-        const full = s.open.has("task/all"), { fields, total } = m.task_fields(s.task.addr, full);
-        rows(fields, "task", 1, body);
-        body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3 },
-          el("a", { textContent: full ? "▾ the key fields only" : `▸ all ${total} fields`, onclick: toggle("task/all") }))));
-      }
-    }
+    // At the bottom: the task running then, a link to it in the Tasks.
+    if (s.task && s.frames.length)
+      body.push(head(`current task: ${taskName(s.task)}`, "current: the task running; its task_struct in the Tasks", () => app.tasks.open(s.task.addr), "task"));
     $("stack").replaceChildren(el("div", { className: "spacer" }), el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
     focus();
   }

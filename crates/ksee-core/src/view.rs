@@ -309,6 +309,21 @@ pub struct TaskFields {
     pub total: usize,
 }
 
+/// A task the recording has, at a record: whether it is the one running
+/// there; its `last` record by then (None: it first runs after, at
+/// `first`), and there the syscall it is in, else its outermost call (what
+/// it does: off the CPU, its innermost is always the switch).
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct TaskAt {
+    pub task: TaskRef,
+    pub running: bool,
+    pub first: usize,
+    pub last: Option<usize>,
+    pub syscall: Option<String>,
+    pub func: Option<String>,
+}
+
 /// Views of a recording. `now`: memory as it is (for tasks the recording
 /// does not name).
 pub struct View<'a> {
@@ -353,6 +368,30 @@ impl View<'_> {
             arch::TASK_FIELDS.iter().filter_map(|&k| every.iter().find(|o| o.name == k).cloned()).collect()
         };
         TaskFields { fields, total }
+    }
+
+    /// The tasks the recording has, in the order they first run, as they
+    /// are at record `i` (TaskAt).
+    pub fn tasks(&self, i: usize) -> Vec<TaskAt> {
+        let t = self.tables;
+        // (Each task's first record, and its last by `i`.)
+        let mut seen: Vec<(u32, usize, Option<usize>)> = Vec::new();
+        for (j, &task) in self.rec.tasks.iter().enumerate().filter(|&(_, &task)| task != 0) {
+            let k = match seen.iter().position(|s| s.0 == task) {
+                Some(k) => k,
+                None => (seen.push((task, j, None)), seen.len() - 1).1,
+            };
+            if j <= i {
+                seen[k].2 = Some(j);
+            }
+        }
+        seen.into_iter().map(|(addr, first, last)| TaskAt {
+            task: self.task(addr),
+            running: self.rec.tasks.get(i) == Some(&addr),
+            first, last,
+            syscall: last.and_then(|j| self.rec.syscall_at(j)).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr).cloned()),
+            func: last.and_then(|j| self.rec.calls.stack_at(t, j, None).into_iter().next()).and_then(|c| t.functions.get(&c.func)).map(|f| f.name.clone()),
+        }).collect()
     }
 
     pub fn syscalls(&self) -> Vec<SyscallSummary> {
@@ -991,6 +1030,22 @@ mod tests {
         fn read(&self, addr: u32, buf: &mut [u8]) {
             buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
         }
+    }
+
+    #[test]
+    fn each_task_where_it_last_ran() {
+        // Task 0x100 runs f (1), switches (__switch_to, 2) to 0x200, which
+        // runs f.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\t__switch_to\t0:1\t3\n", "");
+        let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, Record::Return { func: 2, value: 0 }, Record::Block { func: 1, n: 0 }];
+        let mut args = Args::default();
+        args.push(1, &[0x100, 0x200, 0]);
+        let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
+        let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 16]) };
+        let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.running, x.first, x.last)).collect::<Vec<_>>();
+        assert_eq!(at(0), [(0x100, true, 0, Some(0)), (0x200, false, 2, None)]);
+        assert_eq!(at(3), [(0x100, false, 0, Some(1)), (0x200, true, 2, Some(3))]);
+        assert_eq!(v.tasks(3)[0].func.as_deref(), Some("f"));
     }
 
     #[test]
