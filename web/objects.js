@@ -1,7 +1,8 @@
 // The Objects: what the selected call (a syscall, or a call double-clicked
 // in the timeline: the zoom) did to the kernel's data (Machine.objects):
 // a box per object it changed that is still there when it returns (named
-// as the code names them: "file in vfs_read", "prog(19)->files"), each
+// as the code names them: "file in vfs_read", "prog(19)->files"; and by
+// its address, which it is), each
 // member it changed, a line a function that changed it in turn, from
 // what to what ("f_mode  0 → 0x4000001  init_file", then "0x4000001 →
 // 0x40a801d  do_dentry_open"; one left as it was, a count one took and
@@ -65,7 +66,7 @@ export function objects(app) {
         el("a", { textContent: `▸ ${runs.length - list.length} more`, onclick: () => (open.add(p), (shown = null), draw()) }))));
     });
     return el("div", { className: `obj ${n.kind}`, dataset: { k } },
-      el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty}${n.under ? `  ← ${n.under[1]}` : ""}` })),
+      el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty} at 0x${n.addr.toString(16)}${n.under ? `  ← ${n.under[1]}` : ""}` })),
       el("table", { className: "objs" }, el("tbody", {}, ...rows)));
   }
 
