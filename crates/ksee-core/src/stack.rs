@@ -161,9 +161,14 @@ impl Calls {
         Some((p, t.stretch(self.calls[p.call as usize].func, p.n, p.seg)))
     }
 
+    /// The call running at record `i` (its task's innermost).
+    pub fn call_at(&self, i: usize) -> Option<&Call> {
+        self.calls.get(self.place_at(i)?.call as usize)
+    }
+
     /// The function running at record `i` (its task's innermost call's).
     pub fn func_at(&self, i: usize) -> Option<u32> {
-        Some(self.calls.get(self.place_at(i)?.call as usize)?.func)
+        Some(self.call_at(i)?.func)
     }
 
     /// The Var records of the call from record `first` (a block 0), by

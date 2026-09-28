@@ -150,7 +150,7 @@ impl Tables {
                     }
                 }
                 ["V", id, k, of, function, name, param, arg] => {
-                    if let (Ok(id), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) {
+                    if let (Ok(id), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) && !name.starts_with(crate::arch::MADE_UP) {
                         let (param, arg) = (param.parse().unwrap_or(0), arg.parse().unwrap_or(0));
                         t.vars.insert((id, k), Var { k, of, function: function.to_string(), name: name.to_string(), param, arg });
                     }

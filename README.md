@@ -87,8 +87,9 @@ whatever else ran in between). The
 cursor's line carries its values as it is about to run (as a debugger
 stops before a line: memory and the variables as the lines before it left
 them), and each line what it last
-stored so far in the selected call (`file->f_pos: 0 → 26 ×2`: click it
-for that moment); a step that lands after a call says what it returned.
+stored or set so far in the selected call (`file->f_pos: 0 → 26 ×2`, a
+variable's `last_pos: (not set) → -1`: click it for that moment; not the
+temporaries the kernel's macros make up, `__UNIQUE_ID_…`); a step that lands after a call says what it returned.
 Hover
 a name in the source for its value at the cursor (a name with one is
 underlined, dotted: the arguments and locals of the calls on the Stack; a

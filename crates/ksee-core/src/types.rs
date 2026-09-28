@@ -143,6 +143,10 @@ impl Types {
                     let list = c[2].split(',').filter_map(|p| {
                         let mut f = p.split(':');
                         let (n, t, o) = (f.next()?, f.next()?, f.next()?);
+                        // (Not one the kernel's macros made up.)
+                        if n.starts_with(crate::arch::MADE_UP) {
+                            return None;
+                        }
                         Some((n.to_string(), t.parse().ok()?, o.parse().ok()))
                     }).collect();
                     locals.insert(num(1), list);

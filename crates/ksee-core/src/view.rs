@@ -909,6 +909,20 @@ impl View<'_> {
                 None => Stored { what: format!("{addr:#x}"), kind: "other", ty: String::new(), id: 0, addr, size: 0, write: self.change(addr, 0, i), life: None },
             });
         }
+        // (And each variable kept in a wasm local, as the code sets it:
+        // from its value before, in its call, to its value then.)
+        let mut before: BTreeMap<(usize, u32), String> = BTreeMap::new();
+        for i in first..=last.min(records.len().saturating_sub(1)) {
+            let Record::Var { var, value, .. } = records[i] else { continue };
+            let Some((c, v)) = calls.call_at(i).and_then(|c| Some((c.first, t.vars.get(&(c.func, var))?))) else { continue };
+            let Some(o) = self.var_object(v, value, self.now) else { continue };
+            let after = o.value.clone().unwrap_or_default();
+            let was = before.insert((c, var), after.clone()).unwrap_or_else(|| "(not set)".into());
+            let at = self.rec.line_at(t, i).map(|s| self.line(&s));
+            out.push(Stored { what: format!("{}'s {}", v.function, v.name), kind: "var", ty: o.ty, id: 0, addr: 0, size: 0,
+                              write: Change { i, member: String::new(), before: was, after, task: self.task(self.rec.tasks[i]), at }, life: None });
+        }
+        out.sort_by_key(|s| s.write.i);
         out
     }
 
