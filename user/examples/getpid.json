@@ -1,13 +1,14 @@
 {
-  "title": "What does the smallest syscall do?",
+  "title": "Start here: what does the smallest syscall do?",
   "group": "Start here",
   "question": "getpid() asks the kernel one question: which process am I? What does it take to answer?",
   "text": [
-    "`getpid()` is about the smallest syscall there is: no arguments, one number back. Following it shows the path every syscall takes, and where a process's id lives.",
+    "`getpid()` is about the smallest syscall there is: no arguments, one number back. Following it shows the path every syscall takes, and where a process's id lives. kSEE recorded everything the kernel did for that one call, and this page is that recording. The timeline above shows the calls the kernel made, one bar each, the deepest on top; the source below shows the line the cursor is at, with the lines that ran in green; the Stack on the right shows the calls that led there, with their arguments as they were.",
     "1. [wasm_syscall](1:wasm_syscall) is the way in, for every syscall: it saves the call's number and arguments in the task's registers (`regs`), then calls the syscall table's entry for number 172, getpid's.",
     "2. getpid returns the id of the task's thread group, not of the task itself: [task_tgid_vnr](1:task_tgid_vnr:any) asks for `current`'s, the task running, as its caller sees it.",
     "3. [__task_pid_nr_ns](1:__task_pid_nr_ns) takes two things: the `struct pid` of the thread group (`task_pid_ptr`: in `current->signal`, shared by the process's threads), and the pid namespace the caller is in (`task_active_pid_ns`).",
-    "4. [pid_nr_ns](1:pid_nr_ns) reads the number: a `struct pid` has one per namespace level, and here there is one level, so it is `numbers[0].nr`: the program's pid (the program, the first process, is 1; the program is its child). Then back out: the result goes into `regs->ret`, and [wasm_syscall](1:wasm_syscall) returns it.",
+    "4. [pid_nr_ns](1:pid_nr_ns) reads the number: a `struct pid` has one per namespace level, and here there is one level, so it is `numbers[0].nr`: the program's pid (/init, the first process, is 1; the kernel's own threads, and then the program, come after it). Then back out: the result goes into `regs->ret`, and [wasm_syscall](1:wasm_syscall) returns it.",
+    "Now step with ◀ ▶ (or ← →), a line at a time, forwards or back; Play runs; hover a name in the source for its value.",
     "Try: [from a thread](try:1): a thread of the program gets the same getpid (its thread group's), but its own gettid."
   ],
   "tries": [
