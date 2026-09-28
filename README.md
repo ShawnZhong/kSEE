@@ -55,7 +55,7 @@ recording; type in it to change it, and Enter: the page starts a fresh
 kernel and makes the calls again, which comes to the very same state
 up to the change (the machine is deterministic: its clock is virtual);
 the calls are in the URL (`#ex=NAME&p=CALLS`: the program if
-changed, its calls separated by `;`), a link to them. ✕ (or emptying its line) removes a call, ↺ brings the example's
+changed, its calls separated by `;`), a link to them. ✕ (or emptying its line) removes a call, ↺ reset (always there) brings the example's
 own program back, and an edit left without Enter goes back to what it was. Add a call at the
 end. As you type, a list shows what fits (syscalls, the constants for the
 parameter, the results so far as `$n`), and the signature. Some examples

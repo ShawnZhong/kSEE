@@ -98,7 +98,6 @@ export async function examples(app) {
   function go(ex, steps = ex.steps, changed = false) {
     open(ex, steps);
     t.changed = changed;
-    t.reset.hidden = !changed;
     toURL();
     t.status.textContent = "Starting a fresh kernel…";
     app.restart().then(run);
@@ -132,8 +131,8 @@ export async function examples(app) {
     t.form = form();
     $("examples").replaceChildren(
       ex.question ? el("div", { className: "q", textContent: ex.question }) : null,
-      t.text, el("div", { className: "ptitle dim" }, "Program", t.reset = el("a", { textContent: "↺ the example's", hidden: true,
-        title: "the example's own program again (yours is in the URL until then)", onclick: () => go(ex) })), el("div", { className: "program" }, t.lanes, t.list), t.status);
+      t.text, el("div", { className: "ptitle dim" }, "Program", el("a", { textContent: "↺ reset",
+        title: "the example's own program again, on a fresh kernel (yours is in the URL until then)", onclick: () => go(ex) })), el("div", { className: "program" }, t.lanes, t.list), t.status);
     draw();
     explain();
   }
