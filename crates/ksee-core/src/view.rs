@@ -169,6 +169,18 @@ pub struct Stored {
     pub depth: u32,
 }
 
+/// What a source line stored (or set) by a moment (View::notes): its
+/// last store at record `i`, `n` of them, said `short` and in `full`.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Note {
+    pub line: u32,
+    pub i: usize,
+    pub n: usize,
+    pub short: String,
+    pub full: String,
+}
+
 /// An object a span of records wrote (see View::objects): as the Stores
 /// name it (`what`, `kind`, `ty`, `id`, `addr`, `size`), its writes in
 /// order, and its pointers to the others (as memory is at the cursor, or
@@ -836,7 +848,35 @@ impl View<'_> {
     /// to a struct, a local, the task running, a callee's frame (from its
     /// frame base up to its caller's: the stack it used beyond its named
     /// locals; no type), a global of the kernel's; else by its address.
-    pub fn stores(&self, first: usize, last: usize) -> Vec<Stored> {
+    pub fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Vec<Stored>> {
+        if let Some((span, got)) = &*self.rec.named.borrow() && *span == (first, last) {
+            return got.clone();
+        }
+        let got = alloc::rc::Rc::new(self.name_stores(first, last));
+        *self.rec.named.borrow_mut() = Some(((first, last), got.clone()));
+        got
+    }
+
+    /// What each line of `file` stored (or set) in records `first..=last`
+    /// by record `cur`: its last, and how many (the source's notes), each
+    /// said short (the member, or the variable, and the change: the line
+    /// says the rest) and in full.
+    pub fn notes(&self, first: usize, last: usize, file: &str, cur: usize) -> Vec<Note> {
+        let mut by: BTreeMap<u32, Note> = BTreeMap::new();
+        for s in self.stores(first, last).iter().filter(|s| s.write.i <= cur) {
+            let Some(at) = s.write.at.as_ref().filter(|at| at.file == file) else { continue };
+            let x = &s.write;
+            let join = if x.member.starts_with('+') { "" } else if s.kind == "object" { "->" } else { "." };
+            let full = format!("{}{}: {} → {}", s.what, if x.member.is_empty() { String::new() } else { format!("{join}{}", x.member) }, x.before, x.after);
+            let name = if x.member.is_empty() { s.what.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(&s.what) } else { &x.member };
+            let n = by.get(&at.line).map_or(0, |b| b.n) + 1;
+            by.insert(at.line, Note { line: at.line, i: x.i, n, short: format!("{name}: {} → {}", x.before, x.after), full });
+        }
+        by.into_values().collect()
+    }
+
+    /// (The work of stores: see it.)
+    fn name_stores(&self, first: usize, last: usize) -> Vec<Stored> {
         let (t, types) = (self.tables, &self.tables.types);
         // (The objects: what (as the code names it: "vfs_read's file"),
         // type, address, size, and for a call's local or frame its life (the
@@ -973,7 +1013,7 @@ impl View<'_> {
     pub fn objects(&self, first: usize, last: usize, at: usize) -> Vec<Node> {
         let types = &self.tables.types;
         let mut nodes: Vec<Node> = Vec::new();
-        for s in self.stores(first, last).into_iter().filter(|s| matches!(s.kind, "object" | "task" | "local" | "global") && s.size > 0) {
+        for s in self.stores(first, last).iter().filter(|s| matches!(s.kind, "object" | "task" | "local" | "global") && s.size > 0).cloned() {
             match nodes.iter_mut().find(|n| n.addr == s.addr && n.id == s.id && n.writes[0].i >= s.life.map_or(0, |l| l.0)) {
                 Some(n) => n.writes.push(s.write),
                 None => nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(), life: s.life, depth: s.depth }),
@@ -1251,7 +1291,7 @@ mod tests {
         (m[8], m[36], m[20], m[100]) = (2, 7, 9, 5);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
         // (The last, to g's frame after g returned: g's no more.)
-        let got: Vec<_> = v.stores(0, 7).into_iter().map(|s| (s.what, s.kind, s.write.member, s.write.after)).collect();
+        let got: Vec<_> = v.stores(0, 7).iter().map(|s| (s.what.clone(), s.kind, s.write.member.clone(), s.write.after.clone())).collect();
         assert_eq!(got, [("f's p".into(), "object", "b".into(), "2".into()), ("f's x".into(), "local", "".into(), "7".into()),
                          ("g's frame".into(), "frame", "+4".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into()),
                          ("0x15".into(), "other", "".into(), "0".into())]);

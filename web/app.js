@@ -117,14 +117,6 @@ export function app(m) {
     const w = time.home();
     return w && { ...w, key: `${w.a}:${w.b}:${w.task}:${m.record_id(time.records() - 1)}` };
   };
-  // Its stores (Machine.stores), for the source's notes: asked once per
-  // key.
-  let sel = { key: null, stores: [] };
-  a.selectionStores = () => {
-    const w = a.selection();
-    if (w && w.key !== sel.key) sel = { key: w.key, stores: m.stores(w.a, w.b) };
-    return w ? sel.stores : [];
-  };
   // Show the moment `at` (see Machine.at): the source there, the Stack,
   // memory as it was, where it is. `frame` ({ first, inlined }, a call on
   // the stack then): that call selected on the Stack, the source at the

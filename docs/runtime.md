@@ -109,7 +109,9 @@ from), `call_stack(i, nth)`, `line_steps`, `chart`,
 every store to it in its lifetime, a local's frame or the whole
 recording: the member written, from what to what), `var_writes` (a
 variable in a wasm local: the values its call set it to), `stores` (a span
-of records' stores, and variable sets, in order, each named as the code
+of records' stores, and variable sets, in order (named once per span and
+snapshot: Objects and `notes`, the source's notes by line, ask again at
+each moment), each named as the code
 names what it hit:
 the structs the calls' arguments point to, the task, locals and frames,
 the kernel's globals by address, the machine's own variables apart:

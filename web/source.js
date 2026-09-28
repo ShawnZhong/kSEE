@@ -11,11 +11,6 @@ import { $, el } from "./dom.js";
 import { tree, openable } from "./tree.js";
 import { CM, base } from "./editor.js";
 
-// A store said (Machine.stores'): "vfs_read's file->f_pos: 0 → 26" (a
-// frame's bytes by their offset: "f's frame+8").
-const storeText = ({ what, kind, write: x }) =>
-  `${what}${x.member ? (x.member.startsWith("+") ? "" : kind === "object" ? "->" : ".") + x.member : ""}: ${x.before} → ${x.after}`;
-
 export function source(app) {
   const { m } = app;
   // A line's names, each with the fields before it (Machine.names: "file->
@@ -133,30 +128,11 @@ export function source(app) {
     }
     return out.length ? out.join("   ") : null;
   }
-  // What a line stored, at its end, within the selected call up to the
-  // cursor: its last store (the selection's stores by line, once per
-  // selection), and how many it made; a link to that store.
+  // What each line stored or set, at its end, within the selected call up
+  // to the cursor (Machine.notes): its last, and how many; a link to it.
   function stored(file) {
     const w = app.selection(), cur = app.time.cursor();
-    if (!w || cur == null) return new Map();
-    const key = w.key;
-    if (v.stores?.key !== key) {
-      const byLine = new Map();
-      for (const s of app.selectionStores()) {
-        if (!s.write.at) continue;
-        const k = `${s.write.at.file}:${s.write.at.line}`;
-        (byLine.get(k) ?? byLine.set(k, []).get(k)).push(s);
-      }
-      v.stores = { key, byLine };
-    }
-    const out = new Map();
-    for (const [k, list] of v.stores.byLine) {
-      const cut = k.lastIndexOf(":");
-      if (k.slice(0, cut) !== file) continue;
-      const done = list.filter((s) => s.write.i <= cur);
-      if (done.length) out.set(Number(k.slice(cut + 1)), { s: done.at(-1), n: done.length });
-    }
-    return out;
+    return new Map(w && cur != null ? m.notes(w.a, w.b, file, cur).map((note) => [note.line, note]) : []);
   }
   // What the calls a line made returned, those that returned by the
   // cursor (the selection's line steps of the function shown): "vfs_read()
@@ -187,23 +163,22 @@ export function source(app) {
     }
   }
   class Stored extends CM.WidgetType {
-    constructor(s, n) {
+    constructor(note) {
       super();
-      this.s = s;
-      this.n = n;
+      this.note = note;
     }
     eq(other) {
-      return other.s.write.i === this.s.write.i && other.n === this.n;
+      return other.note.i === this.note.i && other.note.n === this.note.n;
     }
     ignoreEvent() {
       return true;
     }
     toDOM() {
       // (Short: the member, or the variable, and the change; the line says
-      // the rest. In full on hover, and in the Stores.)
-      const x = this.s.write, what = x.member || this.s.what.split(/\W/).pop();
-      return el("a", { className: "stored", textContent: `${what}: ${x.before} → ${x.after}${this.n > 1 ? ` ×${this.n}` : ""}`,
-                       title: `${storeText(this.s)}: what this line stored, last; click: go to that store`, onclick: () => app.time.go(x.i) });
+      // the rest. In full on hover.)
+      const x = this.note;
+      return el("a", { className: "stored", textContent: `${x.short}${x.n > 1 ? ` ×${x.n}` : ""}`,
+                       title: `${x.full}: what this line stored, last; click: go to that store`, onclick: () => app.time.go(x.i) });
     }
   }
   // The cursor line's notes, a line of their own under it, as indented as
@@ -292,8 +267,8 @@ export function source(app) {
     }
     // (What each line stored so far, at its end; and what the calls it
     // made returned.)
-    for (const [n, { s, n: count }] of stored(file)) {
-      if (at(n) !== false) d.push(CM.Decoration.widget({ widget: new Stored(s, count), side: 2 }).range(doc.line(n).to));
+    for (const [n, note] of stored(file)) {
+      if (at(n) !== false) d.push(CM.Decoration.widget({ widget: new Stored(note), side: 2 }).range(doc.line(n).to));
     }
     for (const [n, text] of called(file)) {
       if (at(n) !== false) d.push(CM.Decoration.widget({ widget: new Note(text), side: 3 }).range(doc.line(n).to));

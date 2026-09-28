@@ -208,7 +208,13 @@ impl Machine {
     /// The stores in records `first..=last` (a call's), in order, each as
     /// the code names what it hit (view::Stored).
     pub fn stores(&self, first: usize, last: usize) -> JsValue {
-        self.view(|v| to_js(&v.stores(first, last)))
+        self.view(|v| to_js(&*v.stores(first, last)))
+    }
+
+    /// What each line of `file` stored or set in records `first..=last` by
+    /// record `cur` (view::Note): the source's notes.
+    pub fn notes(&self, first: usize, last: usize, file: &str, cur: usize) -> JsValue {
+        self.view(|v| to_js(&v.notes(first, last, file, cur)))
     }
 
     /// The objects records `first..=last` (a call's) wrote, and their
