@@ -730,7 +730,7 @@ impl View<'_> {
     /// Function `func`'s locals, each name once, in the order it declares them (the same
     /// rows at every moment, as a debugger's), as the call from record
     /// `first` has them at record `at`: one in memory at its offset from
-    /// `frame`, not written yet if its slot has not been stored to (its
+    /// `frame`, uninitialized if its slot has not been stored to (its
     /// value then is its slot's leftovers, another call's); one in a wasm
     /// local as `set` has it (Record::Var), else not set yet.
     fn locals(&self, func: u32, frame: u32, mem: &dyn Memory, first: usize, at: usize, set: &[Object]) -> Vec<Object> {
@@ -743,10 +743,10 @@ impl View<'_> {
             Some(off) => {
                 let addr = frame.wrapping_add(*off);
                 let o = types.object(mem, var, addr, *ty, 0);
-                if self.rec.stores().written(addr, types.size_of(*ty).max(1), first, at) { o } else { not(o, "(not written yet)") }
+                if self.rec.stores().written(addr, types.size_of(*ty).max(1), first, at) { o } else { not(o, "(uninitialized)") }
             }
             None => set.iter().find(|o| &o.name == var).cloned()
-                .unwrap_or_else(|| not(types.object(&Arg(&[0; 8], mem), var, 0, *ty, 0), "(not set yet)")),
+                .unwrap_or_else(|| not(types.object(&Arg(&[0; 8], mem), var, 0, *ty, 0), "(uninitialized)")),
         }).collect()
     }
 
@@ -996,7 +996,7 @@ impl View<'_> {
             let Some((c, depth, v)) = calls.call_at(i).and_then(|c| Some((c.first, c.depth, t.vars.get(&(c.func, var))?))) else { continue };
             let Some(o) = self.var_object(v, value, self.now) else { continue };
             let after = o.value.clone().unwrap_or_default();
-            let was = before.insert((c, var), after.clone()).unwrap_or_else(|| "(not set)".into());
+            let was = before.insert((c, var), after.clone()).unwrap_or_else(|| "(uninitialized)".into());
             let at = self.rec.line_at(t, i).map(|s| self.line_only(&s));
             out.push(Stored { what: format!("{}'s {}", v.function, v.name), kind: "var", ty: o.ty, id: 0, addr: 0, size: 0,
                               write: Change { i, member: String::new(), before: was, after, task: self.task(self.rec.tasks[i]), at }, life: None, depth });
@@ -1260,7 +1260,7 @@ mod tests {
         let mem = Mem(alloc::vec![0; 128]);
         let v = View { tables: &t, rec: &rec, now: &mem };
         let x = |i| v.call_stack(i, None, &mem, i)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
-        assert_eq!((x(0), x(2), x(3)), (Some("(not set yet)".into()), Some("5".into()), Some("7".into())));
+        assert_eq!((x(0), x(2), x(3)), (Some("(uninitialized)".into()), Some("5".into()), Some("7".into())));
         // (And its values over time, each at its record.)
         assert_eq!(v.var_writes(0, 0), [(1, "5".into()), (3, "7".into())]);
     }

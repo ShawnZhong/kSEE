@@ -44,7 +44,7 @@ export function tree(app, st, redraw) {
       st.now.set(p, value);
       const changed = st.last.has(p) && st.last.get(p) !== value;
       // (One with no value yet, or none the recording has: dim.)
-      const none = /^\((not |optimized out)/.test(value);
+      const none = /^\((uninitialized|optimized out)/.test(value);
       out.push(el("tr", { className: [changed ? "changed" : "", none ? "none" : ""].join(" ").trim() },
         // (Its name, or ▸: open it, or fold it.)
         el("td", { className: `fname${can ? " opens" : ""}`, style: `padding-left:${10 + depth * 14}px`,
@@ -74,7 +74,7 @@ export function tree(app, st, redraw) {
   function history(o, p, life, depth) {
     const cur = app.time.cursor() ?? Infinity;
     const writes = o.var != null
-      ? m.var_writes(life.from, o.var).map(([i, after], k, all) => ({ i, before: k ? all[k - 1][1] : "(not set)", after }))
+      ? m.var_writes(life.from, o.var).map(([i, after], k, all) => ({ i, before: k ? all[k - 1][1] : "(uninitialized)", after }))
       : m.writes(o.addr, o.id, life?.from, life?.to, WRITES);
     const now = writes.findLastIndex((x) => x.i <= cur);
     const items = writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
