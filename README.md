@@ -14,14 +14,14 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
 ## Layout
 
 - `linux/`: the kernel with `arch/wasm` (submodule, ShawnZhong/kSEE-linux)
-- `plugin/`: the LLVM pass that instruments the kernel (blocks, calls, returns, stores)
+- `plugin/`: the LLVM pass that instruments the kernel (blocks, calls, returns, stores, variables, comparisons)
 - `crates/`: Rust: `ksee-core` (decoding and rebuilding the recording:
   stacks, lines, memory as it was, types), `ksee-runtime` (wasm: boots the
   kernel and runs its tasks, serves the page), `ksee-cli` (`./ksee.sh`: build, test,
   serve; pack the kernel for the page)
 - `web/`: the page (HTML, JS, CSS); the build puts it, with what it loads,
   in `target/site/` (served, and deployed)
-- `user/`: `init.c` (C on nolibc: it makes the page's syscalls), `examples/`
+- `user/`: `init.c` (sets up, starts the program), `prog.c` (the page's program: it makes its syscalls; C on nolibc), `examples/`
 - `tests/`: the page's tests (see below)
 
 ## Running
