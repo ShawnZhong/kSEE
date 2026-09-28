@@ -312,7 +312,7 @@ export function app(m) {
   // page but where text is typed (a program's call, the find box): after
   // a click on "into calls", or in the source, too.
   addEventListener("keydown", (e) => {
-    if (e.target.closest?.("input:not([type=checkbox]), select, textarea")) return;
+    if (e.target.closest?.("input:not([type=checkbox]), select, textarea") || e.altKey || e.ctrlKey || e.metaKey) return;
     const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key], updown = { ArrowUp: -1, ArrowDown: 1 }[e.key];
     if (arrow) step(by(), arrow);
     else if (updown) climb(updown);
@@ -380,6 +380,7 @@ export function app(m) {
   // is ready for calls.
   a.restart = async () => {
     halted = null;
+    memAt = undefined; // (a fresh kernel's memory: asked again)
     consoleText = "";
     showConsole();
     await m.restart();

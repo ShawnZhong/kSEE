@@ -306,6 +306,8 @@ export function timeline(app) {
   let drag = null;
   chart.onpointerdown = (e) => {
     tip.hidden = true;
+    // (Released off the chart too: the drag ends.)
+    try { chart.setPointerCapture(e.pointerId); } catch { /* a synthetic event */ }
     if (t.win) drag = { x: e.clientX, y: e.clientY, top: $("chartbox").scrollTop, a: t.win.sa, b: t.win.sb, moved: false };
   };
   // Drag: pan, in time (sideways) and through the stacks (up and down).
@@ -365,7 +367,10 @@ export function timeline(app) {
   };
   over.onpointermove = (e) => overDrag && overMove(e);
   over.onpointerup = () => (overDrag = false);
-  addEventListener("resize", () => t.win && (load(), draw()));
+  addEventListener("resize", () => {
+    t.buckets = t.n ? m.timeline(Math.max(1, over.clientWidth)) : [];
+    if (t.win) (load(), draw());
+  });
 
   // ---- The API ----
   // After a snapshot: the new extent; the window at the selection (or all).
@@ -405,8 +410,9 @@ export function timeline(app) {
   // its first record's id: indexes move as the ring goes on).
   function select(s) {
     selectWindow(() => {
-      const c = t.calls.find((c) => c.id === s.id) ?? s;
-      return { a: c.first, b: c.last ?? t.n - 1, task: c.task.addr };
+      // (Gone from the recording: no selection.)
+      const c = t.calls.find((c) => c.id === s.id);
+      return c ? { a: c.first, b: c.last ?? t.n - 1, task: c.task.addr } : null;
     }, `${s.name ?? s.nr} by ${taskName(s.task)}`);
   }
   // ---- Finding a function ----

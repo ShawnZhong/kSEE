@@ -21,9 +21,10 @@ export function tasks(app) {
   // Draw at the cursor (only while the tab is shown: again as it moves).
   function draw() {
     if ($("right").dataset.tab !== "tasks") return;
-    const cur = app.time.cursor();
-    if (cur === shown) return;
-    shown = cur;
+    // (Again for another moment, or another recording: a snapshot.)
+    const cur = app.time.cursor(), n = m.records(), key = `${cur}:${n ? m.record_id(n - 1) : ""}`;
+    if (key === shown) return;
+    shown = key;
     $("tasks-note").textContent = cur == null ? "Nothing recorded yet: the tasks come from the recording. Make a call." : "";
     if (cur == null) return body.replaceChildren();
     st.last = st.now;

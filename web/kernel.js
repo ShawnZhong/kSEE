@@ -27,21 +27,20 @@ const c = (v) => v === null || v === undefined ? "NULL"
   : typeof v === "object" ? `{${Object.entries(v).map(([k, x]) => `.${k} = ${c(x)}`).join(", ")}}`
   : String(v);
 
-export function kernel(m, { changed } = {}) {
+export function kernel(m) {
   // (The calls not finished yet, by id: their promises' resolves.)
   const waiting = new Map();
   // (Each call's quiet: the kernel run until it waits for the page again,
-  // one after another; what it finished settles.)
+  // one after another; what it finished settles. A quiet cut short, by a
+  // restart, does not stop the ones after.)
   let last = Promise.resolve();
-  const settle = () => (last = last.then(async () => {
+  const settle = () => (last = last.catch(() => {}).then(async () => {
     const news = await m.quiet();
     m.snapshot();
     for (const f of news.finished) {
-      f.errno = errno(f.ret);
       waiting.get(f.id)?.(f);
       waiting.delete(f.id);
     }
-    changed?.(news);
     return news;
   }));
 
@@ -65,8 +64,7 @@ export function kernel(m, { changed } = {}) {
 
   // Make syscall `name` with `args` (JS values: see the top) on runner
   // `tid` (none: the program's own, Machine.main): a promise of how it finished ({ id, tid, how:
-  // "returned" | "exec" | "exited", ret, errno (its name, if it failed) }),
-  // with its `id`, and
+  // "returned" | "exec" | "exited", ret }), with its `id`, and
   // `quiet`: a promise of the kernel quiet after it ({ finished, runners }:
   // Machine.quiet's), whether or not it finished.
   function call(name, args = [], tid) {
@@ -165,5 +163,5 @@ export function runner(k, m, steps) {
     }
     return { j, q, news };
   }
-  return { steps, done, started, vars, known, tidOf, callNumber, stepOf, next };
+  return { steps, done, started, vars, known, tidOf, stepOf, next };
 }

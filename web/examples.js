@@ -101,7 +101,9 @@ export async function examples(app) {
     t.changed = changed;
     toURL();
     t.status.textContent = "Starting a fresh kernel…";
-    app.restart().then(run);
+    // (Only this program's run: switched again meanwhile, another's.)
+    const mine = t.list;
+    app.restart().then(() => t.list === mine && run());
   }
 
   function open(ex, steps = ex.steps) {

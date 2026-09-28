@@ -16,7 +16,7 @@ import { tree } from "./tree.js";
 export function objects(app) {
   const { m } = app;
   const body = $("objects");
-  let shown = null, last = null, gone = false;
+  let shown = null, selected = null, last = null, gone = false;
   // (The values' state, as the Stack's: tree.js; a box's path in `open`:
   // all of its fields.)
   const st = { open: new Set(), last: new Map(), now: new Map() }, seen = new Set();
@@ -30,6 +30,8 @@ export function objects(app) {
     const w = app.selection(), cur = app.time.cursor();
     const key = w ? `${w.key}:${cur}` : null;
     if (key === shown) return;
+    // (Another selection, or recording: its boxes open to what it wrote again.)
+    if (w?.key !== selected) (seen.clear(), (selected = w?.key));
     shown = key;
     $("objects-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): the objects it wrote, and how they point to each other.";
     if (!w) return body.replaceChildren();

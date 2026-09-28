@@ -303,7 +303,12 @@ for (const ex of examples) {
 await call("mkdirat", [-100, "/tmp", 0o755]);
 check("/tmp is there before", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === -17);
 const before = out.length;
+// (Restarted while a call is under way, its quiet not come: the calls after it still finish.)
+const cut = kern.call("getpid", []);
+cut.quiet.catch(() => {});
 await m.restart();
+const after = await Promise.race([kern.call("getpid", []), new Promise((ok) => setTimeout(() => ok(null), 5000))]);
+check(`a call after a restart cut one short finishes (${after?.ret})`, after?.ret === m.main());
 check("restarted: the program ready again", m.runners().includes(m.main()) && (await call("getpid", [])).ret === m.main());
 check("... on a fresh kernel: /tmp is not there", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === 0);
 

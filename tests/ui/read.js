@@ -178,7 +178,7 @@
   const sel = document.querySelector("#ex-head select");
   sel.selectedIndex = [...sel.options].findIndex((o) => o.textContent.includes("directory"));
   sel.dispatchEvent(new Event("change"));
-  await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".tour li.on"));
+  await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".explain a.place.on"));
   r.switched = [location.hash, window.stayed, line(lis()[1])];
   // (Its first line declares its buffer; its first call is mkdirat.)
   if (!location.hash.startsWith("#ex=dir&") && location.hash !== "#ex=dir" || !window.stayed || !r.switched[2]?.startsWith("mkdirat")) throw new Error("not switched: " + JSON.stringify(r.switched));
