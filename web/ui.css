@@ -49,6 +49,8 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 #pins .pin { position: relative; height: 16px; border-top: 1px solid var(--line); overflow: hidden; }
 #pins .seg { position: absolute; top: 1px; bottom: 1px; box-sizing: border-box; border-left: 1px solid var(--accent); background: var(--sel);
              font-size: 10px; line-height: 14px; padding-left: 3px; white-space: nowrap; overflow: hidden; cursor: pointer; }
+#pins .pin:not(.plot) .seg:not(.before) { background: hsl(var(--hue) 55% 85%); }
+#pins .pin.plot .seg:not(.before) { background: linear-gradient(to top, var(--sel) var(--level), transparent var(--level)); }
 #pins .seg.before { background: transparent; border-left: none; color: var(--dim); }
 #pins .plabel { position: absolute; left: 0; top: 1px; z-index: 1; background: var(--panel); color: var(--dim); font-size: 10px; line-height: 14px; padding: 0 4px; }
 #pins .unpin { position: absolute; right: 4px; top: 0; z-index: 1; font-size: 11px; }

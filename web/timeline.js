@@ -224,9 +224,18 @@ export function timeline(app) {
         (value = x2.value), (at = x2);
       }
       segs.push({ from, to: w, value, at });
-      return el("div", { className: "pin" },
+      // (Numbers as a step plot: each segment's level its value's place
+      // between the least and the most; other values, a color each, so a
+      // value coming back reads as the same.)
+      const num = (v) => (/^-?(0x[0-9a-f]+|\d+)$/i.test(v) ? Number(v) : null);
+      const nums = p.writes.map((x2) => num(x2.value));
+      const plot = nums.length && nums.every((v) => v != null);
+      const [lo, hi] = plot ? [Math.min(...nums), Math.max(...nums)] : [0, 0];
+      const look = (v) => plot ? `--level: ${hi > lo ? 15 + 85 * ((num(v) ?? lo) - lo) / (hi - lo) : 50}%`
+        : `--hue: ${[...String(v)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)}`;
+      return el("div", { className: `pin${plot ? " plot" : ""}` },
         ...segs.filter((s) => s.to - s.from >= 1).map((s) => el("span", { className: `seg mono${s.at ? "" : " before"}`,
-          style: `left: ${s.from}px; width: ${s.to - s.from}px`, textContent: s.at && s.to - s.from > 28 ? s.value : "", // (the value before: under the label, on hover)
+          style: `left: ${s.from}px; width: ${s.to - s.from}px; ${s.at ? look(s.value) : ""}`, textContent: s.at && s.to - s.from > 28 ? s.value : "", // (the value before: under the label, on hover)
           title: `${p.label} = ${s.value}${s.at ? `\nwritten in ${s.at.where ?? "?"}: click to go there` : ""}`,
           onclick: () => s.at && go(s.at.i) })),
         el("span", { className: "plabel mono", textContent: p.label }),
