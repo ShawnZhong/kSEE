@@ -244,7 +244,7 @@ export function app(m) {
     // (And the comparisons it made: where it went, and why.)
     // (A line making a call: what the call returned, the value its `x =
     // f(...)` gets, as a debugger's step over says it.)
-    const note = [step.run > 1 && `${ordinal(step.run)} time here`, step.called && `${step.called[0]} → ${a.kernel.result(step.called[1])}`,
+    const note = [step.run > 1 && `${ordinal(step.run)} time here`, step.called && `${step.called[0]}() = ${a.kernel.result(step.called[1])}`,
                   step.tests.length && step.tests.join(", "),
                   step.ret != null && `returns ${a.kernel.result(step.ret)}`];
     src.view.cursor = { file: step.file, line: step.line, note: note.filter(Boolean).join("   ") || null };
