@@ -373,6 +373,7 @@ export function source(app) {
   // For tests: go to the definition of the name at `line`, `column`.
   const definitionAtLine = (line, column) => definitionAt(ed.state.doc.line(line).from + column - 1);
 
-  return { view: v, showFunction, hoverAt, text, find, definitionAt: definitionAtLine,
+  // (`editor`: CodeMirror's view, for tests: a real hover.)
+  return { view: v, editor: ed, showFunction, hoverAt, text, find, definitionAt: definitionAtLine,
            lineAt: () => ed.state.doc.lineAt(ed.state.selection.main.head).number };
 }
