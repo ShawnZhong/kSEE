@@ -64,12 +64,12 @@ export function kernel(m, { changed } = {}) {
   const result = (r) => (r > 0xffff ? `0x${r.toString(16)}` : r >= 0 ? String(r) : `${r} (${errno(r) ?? "an error"})`);
 
   // Make syscall `name` with `args` (JS values: see the top) on runner
-  // `tid` (/init: 1): a promise of how it finished ({ id, tid, how:
+  // `tid` (none: the program's own, Machine.main): a promise of how it finished ({ id, tid, how:
   // "returned" | "exec" | "exited", ret, errno (its name, if it failed),
   // buffers }), with its `id`, and
   // `quiet`: a promise of the kernel quiet after it ({ finished, runners }:
   // Machine.quiet's), whether or not it finished.
-  function call(name, args = [], tid = 1) {
+  function call(name, args = [], tid) {
     const id = m.call(name, args.map((v, k) => arg(name, k, v)), tid);
     const done = new Promise((ok) => waiting.set(id, ok));
     return Object.assign(done, { id, quiet: settle() });
@@ -82,7 +82,7 @@ export function kernel(m, { changed } = {}) {
   // set(x) (x a JS value, laid out as its type says; recorded), show() (as
   // C writes it), bytes(n) (its first n bytes) }; passed to a call, its
   // address. `known`: the names its initializer may use.
-  function declare(text, tid = 1, known = {}) {
+  function declare(text, tid, known = {}) {
     const v = m.declare(tid, text, known), count = v.count ?? undefined;
     return Object.assign(v, {
       get: () => m.get(v.ty, v.addr, count),
@@ -97,7 +97,7 @@ export function kernel(m, { changed } = {}) {
   // the same, made by another runner.
   const on = (tid) => new Proxy({}, { get: (_, name) => typeof name === "string" && name !== "then"
     ? (...args) => call(name, args, tid).then((f) => f.ret) : undefined });
-  const sys = new Proxy(on(1), { get: (t, name) => (name === "on" ? on : t[name]) });
+  const sys = new Proxy(on(undefined), { get: (t, name) => (name === "on" ? on : t[name]) });
 
   return { call, declare, sys, C: m.constants(), arg, errno, result };
 }
@@ -141,8 +141,9 @@ export function runner(k, m, steps) {
     });
     return o;
   }
-  // Step `s`'s runner (a thread id): as written, a number or a result; else /init.
-  const tidOf = (s) => (s.tid == null ? 1 : typeof s.tid === "number" ? s.tid : m.value(String(s.tid), known(done.length, true)));
+  // Step `s`'s runner (a thread id): as written, a number or a result;
+  // else the program's own (Machine.main).
+  const tidOf = (s) => (s.tid == null ? m.main() : typeof s.tid === "number" ? s.tid : m.value(String(s.tid), known(done.length, true)));
   // Make the next step (null if none): a variable declared, or a call made
   // and the kernel run until it is quiet ({ j, q, news }; q gets how it
   // went, and so do the calls before it finished meanwhile).

@@ -334,7 +334,8 @@ export function app(m) {
 
   // ---- Resizing: the columns, and the timeline's height ----
   const sizes = { left: 340, right: 380, chart: 190, console: 140, consoleOpen: false };
-  try { Object.assign(sizes, JSON.parse(localStorage.getItem("ksee.sizes") ?? "{}")); } catch { /* none kept */ }
+  // (The console folded on every load: kept are only the sizes.)
+  try { Object.assign(sizes, JSON.parse(localStorage.getItem("ksee.sizes") ?? "{}"), { consoleOpen: false }); } catch { /* none kept */ }
   const layout = () => {
     $("app").style.gridTemplateColumns = `${sizes.left}px 5px minmax(0, 1fr)`;
     $("main").style.gridTemplateColumns = `minmax(300px, 1fr) 5px ${sizes.right}px`;

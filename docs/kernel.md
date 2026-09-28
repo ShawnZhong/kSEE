@@ -4,7 +4,7 @@ Linux 7.2 compiled to WebAssembly, with nothing emulated: `linux/arch/wasm`
 (submodule, branch `wasm`) is a minimal architecture port, and almost
 everything else is the generic kernel. Outside arch/wasm the port changes
 five files, 78 lines (build scripts, the initramfs's alignment, and nolibc's
-`arch-wasm.h` for /init).
+`arch-wasm.h` for the programs).
 
 The configuration: wasm32, `CONFIG_MMU=n`, one CPU, `PREEMPT_NONE`, an
 initramfs, a console (output), a timer; the block layer, the loop
@@ -72,7 +72,7 @@ kernel's types, no kernel change); else the call is blocked:
 it waits for another call, and the machine is quiet at once. (During the
 boot, it skips a virtual second's worth: what the boot leaves for later.)
 
-## Programs, and /init
+## Programs
 
 Programs are **position-independent** wasm modules (`-fPIC -pie`, the
 tool conventions' dynamic linking) that import the kernel's memory: as on
@@ -118,34 +118,41 @@ one, in `user_entry` (`restart_task`). No `CLONE_SETTLS`: programs have no
 thread-local storage. Futexes are the kernel's own
 (`CONFIG_FUTEX`; one CPU, so plain loads and stores in user space).
 
-## /init, and the runners
+## /init, the program, and the runners
 
-There are two programs (C on nolibc): **/init** (user/init.c), and
-**/bin/cat** (user/cat.c: its input to its output, for the pipe example's
-child to exec). /init mounts the disk, and then makes the syscalls the page
-asks for, one at a time. It
-waits for them in a `futex` on the first word of its request (`struct
-request`: the number, -1 while none is asked; the arguments), in its own
-memory, which is kernel memory; `ksee.ready(&req, heap, size)` tells the
-host where it is, and where its program's own memory is (a static
-array: the page's variables, and each call's strings and buffers, which the
-host puts there). The page writes the call into the request
-(recorded, as any write to kernel memory), the number last, and rings
-/init's task (`WASM_IRQ_DOORBELL`: its handler wakes the task,
-kernel/irq.c; the futex wait, woken, sees the number changed and
-returns); /init makes the syscall between `ksee.begin` and
-`ksee.end(ret)`, which bracket the recording and carry the result, and
-waits again. So every syscall the page shows is a real process's, with
-its fds and its memory, and the protocol is a struct in shared memory
-and a bracket. (A plain futex, not console input, a signal, or a device:
-those would put a worker, a signal's delivery or the VFS at the start of
-every call's recording; and no syscall of this port's own.)
+There are three programs (C on nolibc). **/init** (user/init.c) sets up:
+it mounts devtmpfs and the disk, then starts **/bin/prog** (user/prog.c)
+as its vfork child, waits for it, and starts it again when it exits. The
+program is the page's: a process as any (not pid 1), it makes the
+syscalls the page asks for, one at a time. **/bin/cat** (user/cat.c: its
+input to its output) is for the pipe example's child to exec.
 
-A clone child of /init (a thread, a vfork child) is a **runner** too, and
-so is /init exec'd again (the doorbell rings one task). A runner's `execve` call is over once the new program is
-loaded (`user_start`): a runner again only if it says so (`ksee.ready`), as
-/init does and cat does not. So the page can make calls as several threads and
-processes: one blocks (a futex's wait, a pipe's read), another wakes it.
+The program waits for a call in a `futex` on the first word of its
+request (`struct request`: the number, -1 while none is asked; the
+arguments), in its own memory, which is kernel memory; `ksee.ready(&req,
+heap, size, main)` tells the host where it is, and where its own memory
+is (a static array: the page's variables, and each call's strings and
+buffers, which the host puts there); `main`: it is the program itself, the
+runner the page's calls go to unless they name another (`Machine.main`).
+The page writes the call into the request (recorded, as any write to
+kernel memory), the number last, and rings the runner's task
+(`WASM_IRQ_DOORBELL`: its handler wakes the task, kernel/irq.c; the futex
+wait, woken, sees the number changed and returns); it makes the syscall
+between `ksee.begin` and `ksee.end(ret)`, which bracket the recording and
+carry the result, and waits again. So every syscall the page shows is a
+real process's, with its fds and its memory, and the protocol is a struct
+in shared memory and a bracket. (A plain futex, not console input, a
+signal, or a device: those would put a worker, a signal's delivery or the
+VFS at the start of every call's recording; and no syscall of this port's
+own.)
+
+A clone child of the program (a thread, a vfork child) is a **runner**
+too, and so is the program exec'd again (the doorbell rings one task). A
+runner's `execve` call is over once the new program is loaded
+(`user_start`): a runner again only if it says so (`ksee.ready`), as
+/bin/prog does and cat does not. So the page can make calls as several
+threads and processes: one blocks (a futex's wait, a pipe's read),
+another wakes it.
 
 ## A disk
 
@@ -160,7 +167,7 @@ comes with files for the examples to start from (`mkfs.ext4 -d`):
 ## Console
 
 kernel/console.c: one console, printk's from `setup_arch` on: output only,
-to the host, synchronously (`console_write`). `/dev/console`, /init's
+to the host, synchronously (`console_write`). `/dev/console`, the programs'
 stdin, stdout and stderr, is a plain character device on it: a write goes
 straight to the host, a read is at its end. There is no tty layer
 (`CONFIG_TTY=n`): a tty's line discipline and locks would be in every

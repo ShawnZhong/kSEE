@@ -9,7 +9,7 @@
 //! pushes): links to web/'s files (the page's own), and
 //!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
 //!   vmlinux.gz, src/       the kernel for the page (pack; target/vmlinux)
-//!   initramfs.cpio.gz      /init (user/init.c), /bin/cat (user/cat.c), and an ext4 disk image
+//!   initramfs.cpio.gz      /init (user/init.c), /bin/prog (user/prog.c: the page's program), /bin/cat (user/cat.c), and an ext4 disk image
 //!                          (/disk.img, mkfs.ext4), from target/initramfs/
 //!
 //! (Gzipped by the build: hosts compress them less, or not at all; the
@@ -87,10 +87,10 @@ pub fn build() {
             .unwrap_or_else(|e| crate::fail(&format!("target/vmlinux: {e}")));
         gzip("target/vmlinux", &format!("{SITE}/vmlinux.gz"));
     }
-    // The programs (/init, /bin/cat) use nolibc, with the kernel's UAPI headers.
+    // The programs (/init, /bin/prog, /bin/cat) use nolibc, with the kernel's UAPI headers.
     run(&mut kmake(&["headers"]));
-    let programs = ["init", "cat"];
-    let inputs = ["user/init.c", "user/cat.c", "user/initramfs.list", "linux/usr/gen_init_cpio",
+    let programs = ["init", "prog", "cat"];
+    let inputs = ["user/init.c", "user/prog.c", "user/cat.c", "user/initramfs.list", "linux/usr/gen_init_cpio",
                   "linux/tools/include/nolibc/arch-wasm.h"];
     let dir = "target/initramfs";
     let cpio_out = format!("{dir}/initramfs.cpio");

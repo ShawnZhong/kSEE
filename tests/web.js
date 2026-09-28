@@ -1,5 +1,5 @@
 // Boot the kernel under Deno with the page's own module (web/ksee.js), have
-// /init make syscalls (as the page's examples do), recorded, and check what
+// the program make syscalls (as the page's examples do), recorded, and check what
 // the recordings show.
 //   deno run --allow-read tests/web.js
 import { start } from "../target/site/ksee.js";
@@ -31,7 +31,7 @@ const kern = kernel(m);
 const fin = new Map();
 // Ask runner `tid` to make syscall `name`, recorded, and wait until the
 // kernel is quiet: the call's id (it may not have finished: blocked).
-async function ask(name, args, tid = 1) {
+async function ask(name, args, tid) {
   const made = kern.call(name, args, tid);
   for (const f of (await made.quiet).finished) fin.set(f.id, f);
   return made.id;
@@ -39,18 +39,18 @@ async function ask(name, args, tid = 1) {
 // Its syscall summary.
 const syscallOf = (id) => m.syscalls()[m.syscall_of(id)];
 // Syscall `name`, made by runner `tid`: { ret, buffers, how, s (its syscall summary) }.
-async function call(name, args, tid = 1) {
+async function call(name, args, tid) {
   const id = await ask(name, args, tid);
   return { ...fin.get(id), s: syscallOf(id) };
 }
 const ran = (s, func) => s?.last != null && m.first_call(func, s.first, s.last, s.task.addr) != null;
 
-check("init ready: a runner", m.runners().includes(1));
+check(`the program ready: a runner (${m.main()}), not /init`, m.main() > 1 && m.runners().includes(m.main()));
 check("nothing recorded at first", (m.snapshot(), m.records() === 0));
 
 // Calls, traced.
 const w = (await call("write", [1, "hello kSEE\n", 11])).s;
-check("a write, on /init (pid 1), shown on the console", w?.ret === 11 && w.task.comm === "init" && await until(() => out.includes("hello kSEE")));
+check(`a write, by the program (${w?.task.comm}, pid ${w?.task.pid}), shown on the console`, w?.ret === 11 && w.task.comm === "prog" && w.task.pid === m.main() && await until(() => out.includes("hello kSEE")));
 check("write ran vfs_write", ran(w, "vfs_write"));
 check("getpid ran __task_pid_nr_ns", ran((await call("getpid", [])).s, "__task_pid_nr_ns"));
 check("mkdirat ran vfs_mkdir", ran((await call("mkdirat", [-100, "/tmp", 0o755])).s, "vfs_mkdir"));
@@ -100,7 +100,7 @@ check("a past call stack, with arguments", stack[0]?.func === "vfs_write" && kw?
 check("memory as it was: writes undone", m.memory_at(w.first) > m.memory_at(w.last));
 m.memory_at(inWrite(w));
 const task = m.object("task_struct", w.task.addr, 1);
-check("the task, as it was", task?.children?.find((c) => c.name === "comm")?.value === '"init"');
+check("the task, as it was", task?.children?.find((c) => c.name === "comm")?.value === '"prog"');
 check("a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr_running"));
 m.memory_at(null);
 function inWrite(s) {
@@ -161,10 +161,10 @@ m.memory_at(null);
   check(`the read's bytes, back through their copies: ${way.map((w) => `${w.at?.func}(0x${w.addr.toString(16)})`).join(" ← ")}`,
         way.length >= 2 && way[0].from != null && way[1].addr === way[0].from);
 }
-// A program's own variables (Machine.declare): memory in /init's process,
+// A program's own variables (Machine.declare): memory in the program's process,
 // passed by address, read back as C writes them.
 {
-  const buf = m.declare(1, "char buf[16]", {}), fds = m.declare(1, "int fds[2]", {});
+  const buf = m.declare(undefined, "char buf[16]", {}), fds = m.declare(undefined, "int fds[2]", {});
   await call("pipe2", [fds.addr, 0]);
   const [r, w] = m.show(fds.ty, fds.addr, 2).slice(1, -1).split(", ").map(Number);
   await call("write", [w, "hi", 2]);
@@ -213,7 +213,7 @@ check("a local on the stack, as it was: ksys_read's pos, 0 then 26",
 m.memory_at(null);
 await call("close", [rfd]);
 // (A user pointer must be in RAM: not the runtime's memory, below it.)
-check("a bad user pointer: EFAULT", (await call("write", [1, 0x1000, 4])).ret === -14 && (await call("getpid", [])).ret === 1);
+check("a bad user pointer: EFAULT", (await call("write", [1, 0x1000, 4])).ret === -14 && (await call("getpid", [])).ret === m.main());
 
 // A char * shows its string: mkdir's struct filename, its name.
 {
@@ -302,7 +302,7 @@ await call("mkdirat", [-100, "/tmp", 0o755]);
 check("/tmp is there before", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === -17);
 const before = out.length;
 await m.restart();
-check("restarted: init ready again", m.runners().includes(1) && (await call("getpid", [])).ret === 1);
+check("restarted: the program ready again", m.runners().includes(m.main()) && (await call("getpid", [])).ret === m.main());
 check("... on a fresh kernel: /tmp is not there", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === 0);
 
 // Deterministic: the same calls on a fresh kernel make the same recording,

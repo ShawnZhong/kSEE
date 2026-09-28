@@ -91,7 +91,7 @@
   if (!(d1 > d0 && d2 <= d1 && d3 <= d2 && d3 < d1)) throw new Error("stepping: " + JSON.stringify(r.stepped) + " " + JSON.stringify(trail));
   r.chart = $("chart-title").textContent;
   // (The read's own box: its syscall entry's.)
-  const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === 1 && x.last != null);
+  const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === ksee.m.main() && x.last != null);
   ksee.select(read); // (its box in the window: the tutorial may have ended in another call)
   const box = ksee.time.boxOf(read.first), at = { clientX: box?.x, clientY: box?.y };
   const cursorTitle = $("where").textContent; // (the cursor's: the view comes back to it)
@@ -235,6 +235,6 @@
   // The console, folded to its last line; the current task, open to its key fields.
   r.console = [$("pane-console").classList.contains("folded"), $("console").textContent];
   r.current = [...document.querySelectorAll("#stack tr.task, #stack tr.task ~ tr")].slice(0, 3).map((tr) => tr.innerText.replace(/\s+/g, " ").trim());
-  if (!r.console[0] || !r.console[1] || r.console[1].includes("\n") || !r.current[0]?.startsWith("current task: init(1)") || !r.current[1]?.startsWith("pid")) throw new Error("console, current: " + JSON.stringify(r));
+  if (!r.console[0] || !r.console[1] || r.console[1].includes("\n") || !r.current[0]?.startsWith(`current task: prog(${ksee.m.main()})`) || !r.current[1]?.startsWith("pid")) throw new Error("console, current: " + JSON.stringify(r));
   return r;
 })()

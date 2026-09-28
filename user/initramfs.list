@@ -4,5 +4,6 @@ file /init init.wasm 0755 0 0
 file /note.txt note.txt 0644 0 0
 dir /bin 0755 0 0
 file /bin/cat cat.wasm 0755 0 0
+file /bin/prog prog.wasm 0755 0 0
 dir /mnt 0755 0 0
 file /disk.img disk.img 0644 0 0

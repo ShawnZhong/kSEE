@@ -93,7 +93,7 @@ impl Machine {
 
     /// Boot: kernel memory as new (zeros, and the initramfs), a new kernel
     /// instance (instantiating initializes its data), and its boot CPU; done
-    /// once /init is ready for calls.
+    /// once the program (user/prog.c) is ready for calls.
     async fn boot(&self) -> Result<(), JsValue> {
         let ram = k(|k| k.ram.get());
         unsafe { core::ptr::write_bytes(KERNEL_BASE as *mut u8, 0, (ram - KERNEL_BASE) as usize) };
@@ -120,8 +120,8 @@ impl Machine {
         });
         crate::programs::instantiated(&kernel);
         sched::boot(&kernel)?;
-        // (Quiet, with /init ready.)
-        while !k(|k| k.runners.borrow().contains_key(&1)) {
+        // (Quiet, with the program ready.)
+        while k(|k| k.main.get()).is_none() {
             JsFuture::from(self.quiet()).await?;
         }
         Ok(())
@@ -145,6 +145,7 @@ impl Machine {
             k.console_out.borrow_mut().clear();
             k.doorbell.borrow_mut().clear();
             k.runners.borrow_mut().clear();
+            k.main.set(None);
             k.requests.borrow_mut().clear();
             k.heap_of.borrow_mut().clear();
             k.heaps.borrow_mut().clear();
@@ -177,17 +178,17 @@ impl Machine {
 
     // ---- Syscalls, made by the runners ----
 
-    /// Have runner `tid` (1: /init; see user/init.c) make syscall `name`
+    /// Have runner `tid` (none: the program's own, Machine::main; see user/prog.c) make syscall `name`
     /// (e.g. "openat") with `args`: each a number, a string (as a
     /// NUL-terminated buffer), { bytes } (a buffer of them: an array or a
     /// Uint8Array), { size } (a buffer of that many zero bytes, for the
     /// call to fill), or { strings } (an array of char *, null for NULL:
     /// argv). The call's id: it finishes when it returns; or, when
     /// it blocks, later, as another call wakes it (see quiet). Recorded
-    /// from the runner's begin to its end (user/init.c): the syscall,
+    /// from the runner's begin to its end (user/prog.c): the syscall,
     /// entry to return, and whatever the kernel does meanwhile.
     pub fn call(&self, name: &str, args: Vec<JsValue>, tid: Option<u32>) -> Result<u32, JsValue> {
-        let tid = tid.unwrap_or(1);
+        let tid = tid.or(k(|k| k.main.get())).ok_or("the program is not ready")?;
         let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
             .ok_or_else(|| format!("no syscall {name}"))?;
         let Some((task, req)) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.requests.borrow().get(&tid)?))) else {
@@ -262,7 +263,8 @@ impl Machine {
     /// there recorded, as a call's are). { name, addr, ty, count, size (an
     /// element's) }: its name
     /// then stands for its address in the calls after.
-    pub fn declare(&self, tid: u32, text: &str, known: JsValue) -> Result<JsValue, JsValue> {
+    pub fn declare(&self, tid: Option<u32>, text: &str, known: JsValue) -> Result<JsValue, JsValue> {
+        let tid = tid.or(k(|k| k.main.get())).ok_or("the program is not ready")?;
         let d = tables().types.declare(text, &crate::replay::lookup(&known))?;
         let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
         write_logged(addr, &d.bytes);
@@ -323,6 +325,12 @@ impl Machine {
         Uint8Array::from(&b[..])
     }
 
+    /// The program's own runner (user/prog.c's main thread), its tid: the
+    /// one the page's calls are made by unless they say another.
+    pub fn main(&self) -> Option<u32> {
+        k(|k| k.main.get())
+    }
+
     /// The runners' thread ids.
     pub fn runners(&self) -> Vec<u32> {
         k(|k| k.runners.borrow().keys().copied().collect())
@@ -362,7 +370,7 @@ fn js_value(v: &ksee_core::program::Value) -> JsValue {
     }
 }
 
-/// `len` bytes of the memory of runner `tid`'s program (user/init.c's heap:
+/// `len` bytes of the memory of runner `tid`'s program (user/prog.c's heap:
 /// its process's): their address.
 fn alloc(tid: u32, len: u32) -> Result<u32, String> {
     k(|k| {

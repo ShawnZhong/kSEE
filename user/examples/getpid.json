@@ -7,8 +7,8 @@
     "1. [wasm_syscall](1:wasm_syscall) is the way in, for every syscall: it saves the call's number and arguments in the task's registers (`regs`), then calls the syscall table's entry for number 172, getpid's.",
     "2. getpid returns the id of the task's thread group, not of the task itself: [task_tgid_vnr](1:task_tgid_vnr:any) asks for `current`'s, the task running, as its caller sees it.",
     "3. [__task_pid_nr_ns](1:__task_pid_nr_ns) takes two things: the `struct pid` of the thread group (`task_pid_ptr`: in `current->signal`, shared by the process's threads), and the pid namespace the caller is in (`task_active_pid_ns`).",
-    "4. [pid_nr_ns](1:pid_nr_ns) reads the number: a `struct pid` has one per namespace level, and here there is one level, so it is `numbers[0].nr`: 1, as /init is the first process. Then back out: the result goes into `regs->ret`, and [wasm_syscall](1:wasm_syscall) returns it.",
-    "Try: [from a thread](try:1): a thread of /init gets the same getpid, 1 (its thread group's), but its own gettid."
+    "4. [pid_nr_ns](1:pid_nr_ns) reads the number: a `struct pid` has one per namespace level, and here there is one level, so it is `numbers[0].nr`: the program's pid (the program, the first process, is 1; the program is its child). Then back out: the result goes into `regs->ret`, and [wasm_syscall](1:wasm_syscall) returns it.",
+    "Try: [from a thread](try:1): a thread of the program gets the same getpid (its thread group's), but its own gettid."
   ],
   "tries": [
     "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0); thread: getpid(); thread: gettid()"

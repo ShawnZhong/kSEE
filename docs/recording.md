@@ -77,7 +77,7 @@ writes its own records only while the kernel runs (one thread).
 
 Probes record **only while `on` is set**, at one of two levels. `1`:
 everything, while a runner is between `ksee.begin` and `ksee.end`
-(user/init.c: around the syscall the page asked for), so a recording is
+(user/prog.c: around the syscall the page asked for), so a recording is
 that syscall, entry to return, and whatever the kernel does meanwhile
 (other tasks it wakes, timers, the clock skipping in idle). `2`: stores
 only, between calls (from the first call on): what the kernel does then

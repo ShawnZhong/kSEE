@@ -5,7 +5,7 @@
 // its explanation: paragraphs of text with links into the recording.
 //
 // Opening an example makes all its calls, each recorded (a runner makes
-// each: /init, or a thread or child of it; see Machine.call). A call may
+// each: the program (/bin/prog), or a thread or child of it; see Machine.call). A call may
 // block, and finish as a later one wakes it. Then the explanation's links
 // lead into the recording: `[label](2)` is call 2 (its recording
 // selected), `[label](2:vfs_read)` the first call of vfs_read in it (on
@@ -25,10 +25,10 @@
 // type?, name?, tid? }, its arguments written as in C (Machine.arg): "a
 // string", 0644, O_CREAT | O_WRONLY, {0, 30000000}, fd or $2 (a result:
 // `name` names a call's). Its runner: thread `tid` (a number, or a
-// result: "child", "$2"); else /init.
+// result: "child", "$2"); else the program (Machine.main).
 // Or a variable of the program's: { decl }, declared as in C (`char
 // buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0, 30000000}`:
-// Machine.declare), memory of its own in /init's process; its name then
+// Machine.declare), memory of its own in the program's process; its name then
 // stands for its address (`read(fd, buf, 64)`, `&ts`), and each call's
 // line says the variables it changed, as C writes them (`fds = {3, 4}`).
 import { $, el } from "./dom.js";
@@ -195,7 +195,7 @@ export async function examples(app) {
     : d.how === "exec" ? "(no return: the new program runs)"
     : d.how === "exited" ? "(no return: it exited)" : `= ${app.kernel.result(d.ret)}`;
   // The program: a call a line, each its own editor; then a line to add one.
-  // A step's lane: the runner that makes it, as written (/init's: "").
+  // A step's lane: the runner that makes it, as written (the program's own: "").
   const laneOf = (s) => (s.tid == null ? "" : String(s.tid));
   // The program: a call a line, each its own editor; then a line to add
   // one. With more than one runner, in lanes: a column each (its name and
@@ -207,16 +207,20 @@ export async function examples(app) {
     // clone started, by its result's name, even before a call of its.)
     const started = t.steps.filter((s, j) => t.started[j] && s.name).map((s) => s.name);
     const lanes = [...new Set(["", ...t.steps.map(laneOf), ...started])], many = lanes.length > 1;
-    const tidOf = (lane) => lane === "" ? 1 : t.done[t.steps.findIndex((s) => laneOf(s) === lane)]?.tid
+    const tidOf = (lane) => lane === "" ? m.main() : t.done[t.steps.findIndex((s) => laneOf(s) === lane)]?.tid
       ?? t.started[t.steps.findIndex((s) => s.name === lane)];
     const hue = (tid) => ((tid ?? 0) * 137) % 360;
     t.list.classList.toggle("lanes", many);
     t.list.style.setProperty("--lanes", lanes.length);
     t.lanes.hidden = !many;
-    t.form.querySelector("textarea").placeholder = many ? "add a call, by /init…" : "add a call…";
+    // (Each lane's line to add a call: by its tid.)
+    for (const [k, lane] of lanes.entries()) {
+      const f = lane === "" ? t.form : t.forms.get(lane);
+      if (f) f.querySelector("textarea").placeholder = many ? `add a call, by ${tidOf(lane) ?? lane}…` : "add a call…";
+    }
     t.lanes.style.setProperty("--lanes", lanes.length);
     t.lanes.replaceChildren(...(many ? lanes.map((lane) => el("div", { className: "lane mono", style: `--hue: ${hue(tidOf(lane))}`,
-      textContent: lane === "" ? "/init (pid 1)" : `${lane}${tidOf(lane) != null && String(tidOf(lane)) !== lane ? ` (tid ${tidOf(lane)})` : ""}` })) : []));
+      textContent: tidOf(lane) != null ? `tid ${tidOf(lane)}` : lane })) : []));
     // (The calls still waiting at each line: their lanes, marked.)
     const waiting = (r) => t.steps.map((s, j) => [s, j]).filter(([s, j]) => {
       const d = t.done[j];
@@ -237,7 +241,6 @@ export async function examples(app) {
           d ? el("span", { className: "mono ret", textContent: how(d, s) }) : null,
           el("a", { className: "rm", textContent: "✕", title: "remove the call (the program runs again without it)", onclick: () => remove(j) })),
         later,
-        t.started[j] ? el("div", { className: "dim more", textContent: `→ tid ${t.started[j]}, a runner` }) : null,
         d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null,
         d?.vars ? el("div", { className: "mono more vars", textContent: d.vars }) : null);
       const waits = many ? waiting(j).filter((k) => k !== lane).map((k) => el("div", { className: "wait", style: `grid-column: ${k + 1}; --hue: ${hue(tidOf(lanes[k]))}`, title: "a call of this lane's, waiting (blocked)" })) : [];
@@ -357,7 +360,7 @@ export async function examples(app) {
   // prompt again, ↑ for the calls before.)
   // (In a lane: its runner makes the call, the prefix written for it.)
   function form(lane = "") {
-    const e = callEditor({ m, consts, known: (r) => known(t.done.length, r), common, placeholder: lane ? `add a call, by ${lane}…` : "add a call…", history: () => t.steps.map((s) => text(s)),
+    const e = callEditor({ m, consts, known: (r) => known(t.done.length, r), common, placeholder: "add a call…", history: () => t.steps.map((s) => text(s)),
       done: async (c) => {
         if (lane && c.tid == null) c.tid = /^\d+$/.test(lane) ? Number(lane) : lane;
         t.steps.push(c);

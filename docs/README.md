@@ -6,7 +6,7 @@ How it works, part by part:
 
 - [kernel.md](kernel.md): Linux on wasm (arch/wasm): tasks as suspended stacks (JSPI),
   interrupts and the virtual clock, programs in kernel memory, threads and
-  vfork, /init and the runners that make the page's syscalls, a disk, the
+  vfork, /init, the program and the runners that make the page's syscalls, a disk, the
   console.
 - [recording.md](recording.md): what the compiler records, the ring, and
   what the kernel says about itself.

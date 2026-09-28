@@ -5,11 +5,11 @@
   "text": [
     "Two threads share memory. One waits for a word to change and the other wakes it: a futex, the primitive under every mutex and condition variable. The question is how the kernel makes sure no wake-up is lost.",
     "1. [do_mmap](1:do_mmap) gives the new thread a stack: anonymous, zeroed pages (no MMU here, so at one address, the same for every thread).",
-    "2. [copy_process](2:copy_process) makes a new task that shares /init's memory, files and signal handlers: a thread of the same process (CLONE_THREAD). [wake_up_new_task](2:wake_up_new_task) makes it runnable; it starts on the stack it was given (its top, `mem + 65536`; stacks grow down).",
+    "2. [copy_process](2:copy_process) makes a new task that shares the program's memory, files and signal handlers: a thread of the same process (CLONE_THREAD). [wake_up_new_task](2:wake_up_new_task) makes it runnable; it starts on the stack it was given (its top, `mem + 65536`; stacks grow down).",
     "3. In the thread, getpid: [__task_pid_nr_ns](3:__task_pid_nr_ns) returns the process's id, the thread group's, not the thread's own.",
     "4. The thread waits, saying it expects the word to hold 1. [futex_wait_setup](4:futex_wait_setup) checks the word with the waiter queue's lock held: it holds 0, so the call returns at once with EAGAIN. That check under the lock is the whole trick: a wake-up cannot slip in between the check and the sleep.",
     "5. Now it waits expecting 0, which is right: [futex_do_wait](5:futex_do_wait) queues the thread on the futex's hash bucket and [schedule](5:schedule) gives the CPU away. The call blocks: it returns only when someone wakes it.",
-    "6. /init wakes one waiter: [futex_wake](6:futex_wake) finds the waiters queued on this word (its key: this process's memory, this address), and [wake_up_q](6:wake_up_q) wakes the thread. Its wait returns 0.",
+    "6. The program wakes one waiter: [futex_wake](6:futex_wake) finds the waiters queued on this word (its key: this process's memory, this address), and [wake_up_q](6:wake_up_q) wakes the thread. Its wait returns 0.",
     "Try: [wake with 0 waiters allowed](try:1): the thread stays blocked until a real wake. Or [wait on another word](try:2), `mem + 4`, and wake `mem`: a different key, so nobody wakes, until `mem + 4` is woken."
   ],
   "tries": [

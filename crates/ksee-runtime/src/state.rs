@@ -59,12 +59,15 @@ pub struct Kernel {
     pub console_out: RefCell<Vec<u8>>,
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
     pub doorbell: RefCell<VecDeque<u32>>,
-    /// The runners ready for the page's calls (user/init.c): thread id ->
+    /// The runners ready for the page's calls (user/prog.c): thread id ->
     /// task, and thread id -> its request (where a call is put: its first
     /// word, the number, is what the runner waits on).
     pub runners: RefCell<BTreeMap<u32, u32>>,
+    /// The program's own runner (user/prog.c's main thread: the page's
+    /// calls' by default), once it is ready.
+    pub main: Cell<Option<u32>>,
     pub requests: RefCell<BTreeMap<u32, u32>>,
-    /// The programs' own memory (user/init.c's heap: a process's, its
+    /// The programs' own memory (user/prog.c's heap: a process's, its
     /// threads' and vfork children's too, the same memory): each runner's
     /// (thread id -> its start), and what of each is handed out (start ->
     /// (next free, end)).
@@ -105,7 +108,7 @@ pub fn k<T>(f: impl FnOnce(&Kernel) -> T) -> T {
     K.with(f)
 }
 
-/// A syscall a runner makes (user/init.c): asked (written into its
+/// A syscall a runner makes (user/prog.c): asked (written into its
 /// request), begun (recorded from `from`, the id of the record there),
 /// then done (see Finished).
 #[derive(Default)]
@@ -123,7 +126,7 @@ pub struct Call {
     pub lens: [u32; 6],
 }
 
-/// A runner's request (user/init.c): `struct { i32 nr; i32 args[6]; }`,
+/// A runner's request (user/prog.c): `struct { i32 nr; i32 args[6]; }`,
 /// the call (nr -1 while none is asked: the runner waits on it).
 pub const REQUEST: u32 = 28;
 /// Each runner's room, in its program's memory, for its call's strings and

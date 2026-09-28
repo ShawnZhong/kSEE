@@ -37,7 +37,7 @@ the machine (its tasks dropped; a stopped machine's stack that suspends is
 never resumed), let what it had under way end, and boot again.
 
 **The page and the kernel** talk through memory and promises: the page
-raises interrupts (a bit, and a wake-up of idle), and asks a runner (/init,
+raises interrupts (a bit, and a wake-up of idle), and asks a runner (the program,
 or a thread or child of it: see [kernel.md](kernel.md)) for a syscall
 (`Machine.call(name, args, tid)`: it writes the call into the runner's
 request and rings the runner, which waits in a futex on its number; the
@@ -51,7 +51,7 @@ read), and finishes as a later call wakes it. (While a call is under way,
 idle skips the clock to the next timer only if the call's runner sleeps on
 a timer of its own: sched.rs reads the kernel's timers for one; see
 [kernel.md](kernel.md).) `Machine.syscall_of(id)` finds a call's syscall
-in the recording. A boot is done when /init is ready and the kernel quiet
+in the recording. A boot is done when the program (/bin/prog) is ready and the kernel quiet
 (`Machine.start` and `restart` resolve then).
 
 **Deterministic.** Nothing of the host's gets in but the page's calls: the
@@ -96,7 +96,7 @@ and compound literals laid out by the parameter's type (a struct,
 positional or by member; an array; argv for a `char **`); and a line can
 declare a variable of the program's as in C (`char buf[64]`, `struct
 __kernel_timespec ts = {0, 30000000}`: a type of the kernel's), which
-`Machine.declare` puts in the program's own memory (user/init.c's heap, in
+`Machine.declare` puts in the program's own memory (user/prog.c's heap, in
 its process), its name then its address (`&ts` too; `fds[1]` an element),
 `Machine.show` printing it as C writes it. A call's strings and buffers go
 in the same memory, in the runner's room for them (`SCRATCH`).
@@ -119,7 +119,7 @@ last run), `definition`.
 
 - `cargo test -p ksee-core`: the rebuilding, on made-up records.
 - tests/web.js (Deno, with the page's own ksee.js): boots the kernel, has
-  /init make syscalls, recorded (and every example's), and checks what the
+  the program make syscalls, recorded (and every example's), and checks what the
   recordings show: stacks with arguments, lines, memory as it was, who
   wrote a value, tasks, the examples' stops.
 - tests/ui.js: the page in headless Chromium over CDP, a script from

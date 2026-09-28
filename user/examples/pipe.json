@@ -1,17 +1,17 @@
 {
   "title": "How do two processes talk through a pipe?",
-  "question": "/init makes a pipe and starts a child that runs cat, reading from it, as a shell does for `echo hello | cat`. What does the kernel do as one process waits for the other?",
+  "question": "The program makes a pipe and starts a child that runs cat, reading from it, as a shell does for `echo hello | cat`. What does the kernel do as one process waits for the other?",
   "group": "Threads and processes",
   "text": [
-    "/init makes a pipe and starts a child that runs cat reading from it, as a shell does for `echo hello | cat`. Ten calls, two processes, and the kernel in between.",
+    "The program makes a pipe and starts a child that runs cat reading from it, as a shell does for `echo hello | cat`. Ten calls, two processes, and the kernel in between.",
     "1. [create_pipe_files](1:create_pipe_files): a pipe is a buffer in the kernel and two files for it. The program's line shows the fds: 3 reads, 4 writes.",
-    "2. [copy_process](2:copy_process) makes the child. With no MMU it is a vfork: the child borrows /init's memory instead of copying it, and gets copies of /init's fds, the pipe's too. So [wait_for_vfork_done](2:wait_for_vfork_done) makes /init wait until the child runs a program of its own: the clone blocks.",
+    "2. [copy_process](2:copy_process) makes the child. With no MMU it is a vfork: the child borrows the program's memory instead of copying it, and gets copies of the program's fds, the pipe's too. So [wait_for_vfork_done](2:wait_for_vfork_done) makes the program wait until the child runs a program of its own: the clone blocks.",
     "3. The child arranges its fds as a shell would: [do_dup2](3:do_dup2) makes fd 0, its stdin, the pipe's reading end; then it closes fd 3, which fd 0 replaces, and fd 4, the writing end, which it must not keep, or it would never see the end of its input ([file_close_fd](5:file_close_fd)).",
-    "4. [begin_new_exec](6:begin_new_exec): the child runs cat, with memory of its own now and its fds kept. cat reads fd 0: the pipe is empty, so it sleeps. And [complete_vfork_done](6:complete_vfork_done) lets /init go: its clone returns the child's pid.",
-    "5. /init closes its reading end, keeps the writing end, and writes hello: [anon_pipe_write](8:anon_pipe_write) puts the bytes into the pipe's buffer, and [try_to_wake_up](8:try_to_wake_up:any) wakes the reader. cat's read returns the 6 bytes, and it writes them to its output: see the Console.",
-    "6. /init closes the writing end: [pipe_release](9:pipe_release:any) finds no writer left and wakes the readers. cat's read returns 0, the end of its input, and it exits, sending SIGCHLD to its parent; it stays a zombie until the parent asks how it ended.",
+    "4. [begin_new_exec](6:begin_new_exec): the child runs cat, with memory of its own now and its fds kept. cat reads fd 0: the pipe is empty, so it sleeps. And [complete_vfork_done](6:complete_vfork_done) lets the program go: its clone returns the child's pid.",
+    "5. The program closes its reading end, keeps the writing end, and writes hello: [anon_pipe_write](8:anon_pipe_write) puts the bytes into the pipe's buffer, and [try_to_wake_up](8:try_to_wake_up:any) wakes the reader. cat's read returns the 6 bytes, and it writes them to its output: see the Console.",
+    "6. The program closes the writing end: [pipe_release](9:pipe_release:any) finds no writer left and wakes the readers. cat's read returns 0, the end of its input, and it exits, sending SIGCHLD to its parent; it stays a zombie until the parent asks how it ended.",
     "7. [do_wait](10:do_wait) is that asking: [wait_task_zombie](10:wait_task_zombie) takes the child's exit status (it exited, with 0), and [release_task](10:release_task) reaps it. The child is gone.",
-    "Try: [write twice, and let the child keep fd 4](try:1): cat prints both lines, but after /init closes its writing end cat's own fd 4 keeps the pipe open, so its read blocks for ever, it never exits, and the waitid blocks too."
+    "Try: [write twice, and let the child keep fd 4](try:1): cat prints both lines, but after the program closes its writing end cat's own fd 4 keeps the pipe open, so its read blocks for ever, it never exits, and the waitid blocks too."
   ],
   "tries": [
     "int fds[2]; siginfo_t info; pipe2(fds, 0); pid_t child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0); child: dup3(fds[0], 0, 0); child: close(fds[0]); child: execve(\"/bin/cat\", {\"cat\", NULL}, NULL); close(fds[0]); write(fds[1], \"hello\\n\", 6); write(fds[1], \"again\\n\", 6); close(fds[1]); waitid(P_PID, child, &info, WEXITED, NULL)"

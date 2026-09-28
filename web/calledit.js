@@ -104,9 +104,9 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
       el("span", { className: "mono", textContent: it.label }), " ",
       el("span", { className: "dim", textContent: it.detail ?? "" }))));
     const sig = c.name && signature(c.name, c.param ?? -1);
-    const others = [...m.runners()].filter((r) => r !== 1);
+    const others = [...m.runners()].filter((r) => r !== m.main());
     hint.replaceChildren(...(sig ? sig : c.name && c.param != null ? [`no syscall ${c.name}`]
-      : others.length && !input.value ? [`runners: 1 (/init), ${others.join(", ")}: "${others[0]}: call(…)" for another`] : []));
+      : others.length && !input.value ? [`runners: ${m.main()} (the program), ${others.join(", ")}: "${others[0]}: call(…)" for another`] : []));
   }
 
   // Take suggestion `k`: it replaces the word at the cursor (or the name).

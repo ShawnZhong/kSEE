@@ -1,6 +1,6 @@
 //! User programs: position-independent modules, in kernel memory (see the
 //! kernel's binfmt_wasm.c): compiled (exec), instantiated where exec mapped
-//! them, and each task's user stack pointer; and the runners (user/init.c),
+//! them, and each task's user stack pointer; and the runners (user/prog.c),
 //! the programs that make the page's calls.
 
 use std::cell::RefCell;
@@ -70,6 +70,9 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
                 runners.remove(t);
                 k.requests.borrow_mut().remove(t);
                 k.heap_of.borrow_mut().remove(t);
+                if k.main.get() == Some(*t) {
+                    k.main.set(None); // (the program exited: /init starts it again)
+                }
                 k.scratch.borrow_mut().remove(t);
             })
         });
@@ -223,23 +226,27 @@ fn on_off() {
     Direct.write_u32(k(|k| k.trace.get()) + ksee_core::trace::ON, if on { 1 } else { 2 });
 }
 
-/// The imports of a runner (user/init.c), module ksee. ready(req, heap,
-/// size): the current thread is a runner, waiting for calls in a futex on
+/// The imports of a runner (user/prog.c), module ksee. ready(req, heap,
+/// size, main): the current thread is a runner (the program's own, its
+/// main thread, if `main`: see Machine::main), waiting for calls in a futex on
 /// the number in its request at `req` (state::REQUEST: the host puts a
 /// call there, and rings); its program's own memory at `heap` (its
 /// variables, see Machine::declare; its calls' buffers, state::SCRATCH). begin(), end(ret): around the call it makes: recorded from the
 /// one to the other; the result.
 fn runner_imports() -> Object {
     let ksee = Object::new();
-    js::set(&ksee, "ready", func(Closure::<dyn FnMut(u32, u32, u32)>::new(|req: u32, heap: u32, size: u32| {
+    js::set(&ksee, "ready", func(Closure::<dyn FnMut(u32, u32, u32, u32)>::new(|req: u32, heap: u32, size: u32, main: u32| {
         let (tid, task) = (tid(), current());
         k(|k| {
+            if main != 0 {
+                k.main.set(Some(tid));
+            }
             k.runners.borrow_mut().insert(tid, task);
             k.requests.borrow_mut().insert(tid, req);
             k.heap_of.borrow_mut().insert(tid, heap);
             k.heaps.borrow_mut().entry(heap).or_insert((heap, heap + size));
         });
-        if tid == 1 && k(|k| k.calls.borrow().values().all(|c| c.done)) {
+        if main != 0 && k(|k| k.calls.borrow().values().all(|c| c.done)) {
             // (The boot's over: let what it left for later run now, while
             // nothing is recorded.)
             k(|k| k.waiting.set(Some(k.clock.get())));
