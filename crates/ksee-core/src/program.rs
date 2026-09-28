@@ -133,47 +133,57 @@ enum Item {
 }
 
 /// The text in the braces of a literal, split at its commas (not those in
-/// strings or nested braces), each item with its `.name =` if given.
+/// strings or nested brackets), each item with its `.name =` if given.
 fn items(text: &str) -> Result<Vec<(Option<String>, Item)>, String> {
-    let mut out = Vec::new();
-    let (mut depth, mut quote, mut start) = (0, false, 0);
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    let push = |s: &str, out: &mut Vec<(Option<String>, Item)>| -> Result<(), String> {
-        let s = s.trim();
-        if s.is_empty() {
-            return Ok(());
-        }
+    split(text).into_iter().filter(|s| !s.is_empty()).map(|s| {
         let (name, value) = match s.strip_prefix('.').and_then(|r| r.split_once('=')) {
             Some((n, v)) if n.trim().chars().all(|c| c.is_ascii_alphanumeric() || c == '_') => (Some(n.trim().to_string()), v.trim()),
             _ => (None, s),
         };
-        let item = if let Some(inner) = value.strip_prefix('{').and_then(|v| v.strip_suffix('}')) {
-            Item::List(items(inner)?)
-        } else if value.starts_with('"') {
-            Item::Str(unquote(value)?)
-        } else {
-            Item::Expr(value.to_string())
-        };
-        out.push((name, item));
-        Ok(())
-    };
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\\' if quote => i += 1,
-            b'"' => quote = !quote,
-            b'{' if !quote => depth += 1,
-            b'}' if !quote => depth -= 1,
-            b',' if !quote && depth == 0 => {
-                push(&text[start..i], &mut out)?;
-                start = i + 1;
+        Ok((name, literal(value)?))
+    }).collect()
+}
+
+/// Each byte of `text`'s nesting: None in a string (its quotes too), else
+/// how many brackets ((, {, [) are open around it (a bracket's own: its
+/// pair's).
+fn nesting(text: &str) -> Vec<Option<u32>> {
+    let (mut out, mut depth, mut quote, mut escaped) = (Vec::with_capacity(text.len()), 0u32, false, false);
+    for &b in text.as_bytes() {
+        if quote || b == b'"' {
+            out.push(None);
+            match b {
+                _ if escaped => escaped = false,
+                b'\\' => escaped = true,
+                b'"' => quote = !quote,
+                _ => {}
             }
-            _ => {}
+            continue;
         }
-        i += 1;
+        if matches!(b, b')' | b'}' | b']') {
+            depth = depth.saturating_sub(1);
+        }
+        out.push(Some(depth));
+        if matches!(b, b'(' | b'{' | b'[') {
+            depth += 1;
+        }
     }
-    push(&text[start..], &mut out)?;
-    Ok(out)
+    out
+}
+
+/// `text` split at its commas outside strings and brackets, each trimmed.
+fn split(text: &str) -> Vec<&str> {
+    let n = nesting(text);
+    let mut out = Vec::new();
+    let mut start = 0;
+    for (i, &b) in text.as_bytes().iter().enumerate() {
+        if b == b',' && n[i] == Some(0) {
+            out.push(text[start..i].trim());
+            start = i + 1;
+        }
+    }
+    out.push(text[start..].trim());
+    out
 }
 
 /// A C string literal's bytes (\n, \t, \\, \", \0, \xHH).
@@ -223,28 +233,10 @@ pub fn statement(text: &str) -> Result<Statement, String> {
         _ => (None, s),
     };
     // (The call: the first "(" outside strings, closed at the line's end.)
-    let open = s.find('(');
-    let close = open.and_then(|o| {
-        let (mut depth, mut quote) = (0, false);
-        let b = s.as_bytes();
-        let mut i = o;
-        while i < b.len() {
-            match b[i] {
-                b'\\' if quote => i += 1,
-                b'"' => quote = !quote,
-                b'(' | b'{' if !quote => depth += 1,
-                b')' | b'}' if !quote => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Some(i);
-                    }
-                }
-                _ => {}
-            }
-            i += 1;
-        }
-        None
-    });
+    let n = nesting(s);
+    let b = s.as_bytes();
+    let open = (0..b.len()).find(|&i| b[i] == b'(' && n[i].is_some());
+    let close = open.and_then(|o| (o + 1..b.len()).find(|&i| b[i] == b')' && n[i] == n[o]));
     let (Some(open), Some(close)) = (open, close) else { return Ok(Statement::Decl { tid, text: s.to_string() }) };
     if close + 1 != s.len() {
         return Ok(Statement::Decl { tid, text: s.to_string() });
@@ -270,36 +262,8 @@ pub fn statement(text: &str) -> Result<Statement, String> {
         }
     };
     let inner = &s[open + 1..close];
-    let args = if inner.trim().is_empty() { Vec::new() } else { split(inner) };
+    let args = if inner.trim().is_empty() { Vec::new() } else { split(inner).into_iter().map(String::from).collect() };
     Ok(Statement::Call { tid, ty, name, call: call.to_string(), args })
-}
-
-/// `text` split at its commas outside strings, () and {}, each trimmed.
-fn split(text: &str) -> Vec<String> {
-    let (mut out, mut cur, mut depth, mut quote) = (Vec::new(), String::new(), 0, false);
-    let mut chars = text.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' if quote => {
-                cur.push(c);
-                if let Some(n) = chars.next() {
-                    cur.push(n);
-                }
-                continue;
-            }
-            '"' => quote = !quote,
-            '(' | '{' if !quote => depth += 1,
-            ')' | '}' if !quote => depth -= 1,
-            ',' if !quote && depth == 0 => {
-                out.push(core::mem::take(&mut cur).trim().to_string());
-                continue;
-            }
-            _ => {}
-        }
-        cur.push(c);
-    }
-    out.push(cur.trim().to_string());
-    out
 }
 
 /// A value of the kernel's types as data (Types::value): a number, a
@@ -389,26 +353,11 @@ impl Types {
     /// The bytes of a variable of type `ty` (an array of `count`) that
     /// `item` makes (none: zeros).
     fn lay(&self, ty: u32, count: Option<u32>, item: Option<&Item>, known: &dyn Fn(&str) -> Option<i64>) -> Result<Vec<u8>, String> {
-        let esize = self.size_of(ty) as usize;
-        let mut bytes = vec![0u8; esize * count.unwrap_or(1) as usize];
+        let mut bytes = vec![0u8; self.size_of(ty) as usize * count.unwrap_or(1) as usize];
         match (item, count) {
             (None, _) => {}
-            (Some(Item::Str(s)), Some(n)) if self.is_string(ty) => {
-                if s.len() + 1 > n as usize {
-                    return Err(format!("\"{s}\": longer than {n} bytes"));
-                }
-                bytes[..s.len()].copy_from_slice(s.as_bytes());
-            }
-            (Some(Item::List(list)), Some(n)) => {
-                if list.len() > n as usize {
-                    return Err("too many values".into());
-                }
-                for (i, (_, it)) in list.iter().enumerate() {
-                    self.fill(&mut bytes, i * esize, ty, it, known)?;
-                }
-            }
+            (Some(it), Some(n)) => self.fill_array(&mut bytes, 0, ty, n, it, known)?,
             (Some(it), None) => self.fill(&mut bytes, 0, ty, it, known)?,
-            (Some(_), Some(_)) => return Err("an array is {…} (or a string, for chars)".into()),
         }
         Ok(bytes)
     }
@@ -596,25 +545,7 @@ impl Types {
                 }
                 Ok(())
             }
-            (Kind::Array { elem, .. }, Item::Str(s)) if self.is_string(*elem) => {
-                let b = s.as_bytes();
-                let room = self.size_of(id) as usize;
-                if b.len() + 1 > room {
-                    return Err(format!("\"{s}\": longer than {room} bytes"));
-                }
-                buf[at..at + b.len()].copy_from_slice(b);
-                Ok(())
-            }
-            (Kind::Array { elem, count }, Item::List(list)) => {
-                if list.len() > *count as usize {
-                    return Err(format!("{}: too many values", self.name(id)));
-                }
-                let esize = self.size_of(*elem) as usize;
-                for (i, (_, it)) in list.iter().enumerate() {
-                    self.fill(buf, at + i * esize, *elem, it, known)?;
-                }
-                Ok(())
-            }
+            (&Kind::Array { elem, count }, Item::Str(_) | Item::List(_)) => self.fill_array(buf, at, elem, count, item, known),
             (Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_), Item::Expr(e)) => {
                 let v = eval(e, known)?;
                 let size = self.size_of(id).clamp(1, 8) as usize;
@@ -627,6 +558,24 @@ impl Types {
             (_, Item::Str(s)) => Err(format!("\"{s}\" for a {}", self.name(id))),
             (_, Item::List(_)) => Err(format!("{{…}} for a {}", self.name(id))),
             (_, Item::Expr(e)) => Err(format!("{e} for a {}", self.name(id))),
+        }
+    }
+
+    /// Lay `item` out at `at` in `buf` as `count` of type `elem` (an
+    /// array): a string, for chars; else {…}, an element each.
+    fn fill_array(&self, buf: &mut Vec<u8>, at: usize, elem: u32, count: u32, item: &Item, known: &dyn Fn(&str) -> Option<i64>) -> Result<(), String> {
+        let esize = self.size_of(elem) as usize;
+        match item {
+            Item::Str(s) if self.is_string(elem) => {
+                if s.len() + 1 > count as usize {
+                    return Err(format!("\"{s}\": longer than {count} bytes"));
+                }
+                buf[at..at + s.len()].copy_from_slice(s.as_bytes());
+                Ok(())
+            }
+            Item::List(list) if list.len() > count as usize => Err(format!("too many values: {count} at most")),
+            Item::List(list) => list.iter().enumerate().try_for_each(|(i, (_, it))| self.fill(buf, at + i * esize, elem, it, known)),
+            _ => Err("an array is {…} (or a string, for chars)".into()),
         }
     }
 }
