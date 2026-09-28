@@ -38,16 +38,20 @@ import { hue } from "./timeline.js";
 
 export async function examples(app) {
   const { m } = app;
-  const consts = app.consts();
-  const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
-  // (An example's program: its lines, as written; made steps here, once.)
-  for (const ex of list) ex.steps = ex.steps.map((line) => {
+  const consts = app.kernel.C;
+  // A program's line (as written: see Machine.statement), as a step: a
+  // call, or a variable's declaration. (One not either: a call of that
+  // name, whose error making it says so.)
+  const statement = (line) => {
     try {
       return m.statement(line);
     } catch {
       return { call: line, args: [] };
     }
-  });
+  };
+  const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+  // (An example's program: its lines, as written; made steps here, once.)
+  for (const ex of list) ex.steps = ex.steps.map(statement);
   // The open example: its steps, the calls asked ({ id, tid, args, how?,
   // ret?, text?: how once it finished), the runner each started; its
   // explanation's links ({ j: the call, func?, any?, at?: the record, a:
@@ -83,16 +87,6 @@ export async function examples(app) {
     calls.push(cur);
     return calls.map((c) => c.trim()).filter(Boolean).map(statement);
   }
-  // A program's line (as written: see Machine.statement), as a step: a
-  // call, or a variable's declaration. (One not either: a call of that
-  // name, whose error making it says so.)
-  const statement = (line) => {
-    try {
-      return m.statement(line);
-    } catch {
-      return { call: line, args: [] };
-    }
-  };
   // Switch to example `ex` (its program `steps`, `changed` from the
   // example's: see change), on a fresh kernel, so that it always starts
   // from the same state; and make its calls.
@@ -170,7 +164,6 @@ export async function examples(app) {
   // The program's names, numbers and runners: its runner's (kernel.js).
   const known = (...a) => t.run.known(...a);
   const stepOf = (n) => t.run.stepOf(n);
-  const tidOf = (s) => t.run.tidOf(s);
   // The names line `j` (step `s`) uses, as they are at the cursor: a
   // result, its value; a variable (its own, for a declaration), its value
   // as memory was there, and who wrote it, back through the copies that

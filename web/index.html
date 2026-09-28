@@ -73,10 +73,9 @@
 import { start } from "./ksee.js";
 import { app } from "./app.js";
 
-const params = new URLSearchParams(location.search);
 // (window.ksee: for the console, and tests/ui.js)
 try {
-  window.ksee = app(await start({ kernel: "./vmlinux.gz", initrd: "./initramfs.cpio.gz", cmdline: params.get("cmdline") ?? "" }));
+  window.ksee = app(await start({ kernel: "./vmlinux.gz", initrd: "./initramfs.cpio.gz", }));
 } catch (e) {
   document.getElementById("status").textContent = e.message;
   throw e;

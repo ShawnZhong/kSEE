@@ -130,7 +130,6 @@ export function callstack(app) {
   const neighbour = (dir) => s.frames[(s.sel ? s.frames.indexOf(s.sel) : 0) + dir] ?? null;
 
   // The pointer is over the timeline (on), or not.
-  const peeking = (on) => (s.peeking = on);
 
-  return { show, select, peeking, level, owner, neighbour, frames: () => s.frames, resolve, kids };
+  return { show, select, level, owner, neighbour, frames: () => s.frames, resolve, kids };
 }

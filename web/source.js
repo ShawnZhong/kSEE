@@ -335,7 +335,6 @@ export function source(app) {
   let was = { file: null, fn: null }; // (what the view showed last: a jump, or a step)
   async function showFile(file, focus) {
     v.file = file;
-    v.focus = focus;
     const text = await fetchFile(file);
     if (v.file !== file) return; // changed while loading
     // (Another file: its state in; the one shown keeps its own, as it is
@@ -389,6 +388,6 @@ export function source(app) {
   const definitionAtLine = (line, column) => definitionAt(ed.state.doc.line(line).from + column - 1);
 
   // (`editor`: CodeMirror's view, for tests: a real hover.)
-  return { view: v, editor: ed, showFunction, hoverAt, text, find, definitionAt: definitionAtLine,
+  return { view: v, showFunction, hoverAt, text, find, definitionAt: definitionAtLine,
            lineAt: () => ed.state.doc.lineAt(ed.state.selection.main.head).number };
 }

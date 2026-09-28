@@ -2,11 +2,11 @@
 // boot a kernel (on this thread: its tasks are JSPI stacks, see sched.rs).
 import init, { Machine } from "./pkg/ksee_runtime.js";
 
-export async function start({ kernel, initrd, cmdline = "", ramMiB = 64 }) {
+export async function start({ kernel, initrd }) {
   if (!WebAssembly.Suspending) throw new Error("this browser has no JSPI (WebAssembly.Suspending): kSEE needs Chrome 137, Firefox 153, Safari 27 or later");
   await init({ module_or_path: new URL("./pkg/ksee_runtime_bg.wasm", import.meta.url) });
   [kernel, initrd] = await Promise.all([kernel, initrd].map((u) => u && unpacked(String(u))));
-  return Machine.start({ kernel, initrd, cmdline, ram: ramMiB << 20 });
+  return Machine.start({ kernel, initrd, ram: 64 << 20 });
 }
 
 // A .gz file (the build gzips the kernel and the initramfs), unpacked, as a

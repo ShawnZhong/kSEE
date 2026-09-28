@@ -22,16 +22,13 @@ const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st
 export function app(m) {
   const a = { m };
   // The kernel's own tables, asked once (the build's: no snapshot changes
-  // them): a function's place, an inlined function's name, the constants
-  // from its UAPI headers.
+  // them): a function's place, an inlined function's name.
   const memo = (f) => {
     const c = new Map();
     return (k) => (c.has(k) ? c.get(k) : c.set(k, f(k)).get(k));
   };
   a.fn = memo((id) => m.function(id));
   a.iname = memo((k) => m.inline_name(k));
-  let constants = null;
-  a.consts = () => (constants ??= m.constants());
   // The kernel's syscalls, from JavaScript (kernel.js): the program's
   // lines are made through it, and the console may use it (ksee.kernel).
   a.kernel = kernel(m);
@@ -162,7 +159,6 @@ export function app(m) {
       if (key === peek.key) return;
       peek.key = i == null ? null : key;
       const at = to != null ? m.at(to) : null;
-      stack.peeking(i != null);
       if (at) view(at, i == null ? chosen : frame);
       // (The tabs follow too; back to the cursor's with null.)
       marks(to);
