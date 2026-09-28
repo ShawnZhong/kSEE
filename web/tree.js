@@ -82,10 +82,15 @@ export function tree(app, st, redraw) {
 
   // The newest write to `o` at the cursor (Machine.last_write): where, by
   // whom, and the value it overwrote.
+  // Who last wrote value `o`, and where from: back through the copies
+  // that brought it there (Machine.origin), a line each.
   function wroteIt(o) {
-    const w = m.last_write(o.addr, Math.min(o.size, 8));
-    if (!w) return "not written in the recording";
-    return `written at ${place(w.at)}, by ${w.task.comm ?? "?"}(${w.task.pid ?? "?"}); was ${w.old}`;
+    const way = m.origin(o.addr, Math.min(o.size, 8));
+    if (!way.length) return "not written in the recording";
+    const [w, ...back] = way, last = way.at(-1);
+    return [`written at ${place(w.at)}, by ${w.task.comm ?? "?"}(${w.task.pid ?? "?"}); was ${w.old}`,
+      ...back.map((x) => `  ← copied from 0x${x.addr.toString(16)}, written at ${place(x.at)}`),
+      ...(last.from != null ? [`  ← copied from 0x${last.from.toString(16)}, not written in the recording`] : [])].join("\n");
   }
   return { rows, kids };
 }

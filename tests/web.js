@@ -150,6 +150,16 @@ m.memory_at(null);
   const filp = iocb?.links.find((l) => l.member === "ki_filp");
   check(`the read's objects: ${g.length}, its kiocb's ki_filp → ${filp && g[filp.to].what}`, filp && g[filp.to].ty === "struct file" && iocb.ended != null);
 }
+// Where the read's bytes came from: copied from the page cache, which the
+// write before it filled, copying from its buffer.
+{
+  const buf = parseInt(m.call_stack(inRead)[0].args.find((a) => a.name === "buf").value, 16);
+  m.memory_at(read.last);
+  const way = m.origin(buf, 4);
+  m.memory_at(null);
+  check(`the read's bytes, back through their copies: ${way.map((w) => `${w.at?.func}(0x${w.addr.toString(16)})`).join(" ← ")}`,
+        way.length >= 2 && way[0].from != null && way[1].addr === way[0].from);
+}
 // A 64-bit argument, whole: llseek's offset (high 1, low 0) is vfs_llseek's loff_t 1 << 32.
 {
   const ls = (await call("llseek", [rfd, 1, 0, { size: 8 }, 0])).s;

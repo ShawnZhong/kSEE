@@ -17,12 +17,36 @@ pub enum Record {
     /// The task running (its task_struct): the runtime's, where a recording
     /// begins (no switch says so).
     Task { task: u32 },
+    /// The store (or bulk write) after it writes `dst..dst + len` with what
+    /// was at `src`: a copy.
+    Copy { dst: u32, src: u32, len: u32 },
+    /// A comparison that decides a branch (or a select): `lhs` with `rhs`
+    /// (truncated to 32 bits), by `pred` (an LLVM icmp predicate, from
+    /// eq: see Pred), on `line` (as a Store's).
+    Compare { lhs: u32, rhs: u32, pred: u8, line: u32 },
+}
+
+/// A Compare's predicate, as LLVM numbers them from eq.
+pub const PREDICATES: [(&str, bool); 10] =
+    [("==", false), ("!=", false), (">", false), (">=", false), ("<", false), ("<=", false), (">", true), (">=", true), ("<", true), ("<=", true)];
+
+impl Record {
+    /// A Compare's operator, whether it is signed, and whether it held.
+    pub fn compare(&self) -> Option<(&'static str, bool, bool)> {
+        let Record::Compare { lhs, rhs, pred, .. } = *self else { return None };
+        let (op, signed) = *PREDICATES.get(pred as usize)?;
+        let (a, b) = if signed { (lhs as i32 as i64, rhs as i32 as i64) } else { (lhs as i64, rhs as i64) };
+        let held = match op { "==" => a == b, "!=" => a != b, ">" => a > b, ">=" => a >= b, "<" => a < b, _ => a <= b };
+        Some((op, signed, held))
+    }
 }
 
 const BLOCK: u32 = 1;
 /// The tag of a Task record (the runtime's).
 pub const TASK: u32 = 3;
 const RETURN: u32 = 4;
+const COPY: u32 = 5;
+const COMPARE: u32 = 6;
 /// The tag of a Store record's head (the plugin's, and the runtime's).
 pub const STORE: u32 = 7;
 /// A Store record's size class for a range of unknown old contents.
@@ -141,6 +165,18 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                     }
                     return Some(Record::Return { func, value: v[0] });
                 }
+                COPY => {
+                    if got < 2 {
+                        continue;
+                    }
+                    return Some(Record::Copy { dst: func, src: v[0], len: v[1] });
+                }
+                COMPARE => {
+                    if got < 1 {
+                        continue;
+                    }
+                    return Some(Record::Compare { lhs: func, rhs: v[0], pred: (tag & 0xf) as u8, line: tag >> 4 & 0xff_ffff });
+                }
                 STORE => {
                     let (class, line) = (tag & 0xf, tag >> 4 & 0xff_ffff);
                     if got < if class == 3 { 2 } else { 1 } {
@@ -211,6 +247,17 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
         assert_eq!(decode(&w), [Record::Block { func: 9, n: 0 },
                                 Record::Store { addr: 0x100, size: 4, old: 5, line: 3 }, Record::Store { addr: 0x200, size: 0, old: 64, line: 0 },
                                 Record::Block { func: 9, n: 1 }]);
+    }
+
+    #[test]
+    fn copies_and_comparisons() {
+        // A copy of 4 bytes from 0x300 to 0x100; then 18 >= 0 (sge, 7), on line 2.
+        let w = [0x100, COPY << 28, 0x300, VALUE << 28, 4, VALUE << 28 | 1, 18, COMPARE << 28 | 2 << 4 | 7, 0, VALUE << 28];
+        let got = decode(&w);
+        assert_eq!(got, [Record::Copy { dst: 0x100, src: 0x300, len: 4 }, Record::Compare { lhs: 18, rhs: 0, pred: 7, line: 2 }]);
+        assert_eq!(got[1].compare(), Some((">=", true, true)));
+        assert_eq!(Record::Compare { lhs: -1i32 as u32, rhs: 0, pred: 3, line: 0 }.compare(), Some((">=", false, true)));
+        assert_eq!(Record::Compare { lhs: 5, rhs: 5, pred: 1, line: 0 }.compare(), Some(("!=", false, false)));
     }
 
     #[test]

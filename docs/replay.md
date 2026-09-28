@@ -124,6 +124,23 @@ pointer type, `Types::pointers`, whose value is inside another), as
 memory was at the cursor, or for an object on the stack whose call has
 returned, as it was when it did (it is gone).
 
+## Where a value came from, and why a branch went
+
+A store that copies (a value loaded and stored as it is, a memcpy) has a
+Copy record before it: where from. So a value's way through memory can be
+followed back (`origin`): its last write, and while that was a copy, the
+last write of what it copied, and so on: the bytes a read returns, from
+the page cache, which a write filled from its caller's buffer. It ends
+where a value was computed (in wasm locals), or at memory written before
+the recording.
+
+A comparison that decides a branch has a Compare record: its operands and
+its predicate. A line step says the comparisons it made (`tests`: "18 >=
+0 ✓"): the values the branch went by, which live only in wasm locals
+otherwise. (The comparison as compiled: the optimizer may have turned
+the source's around, so it says what was compared, not which way the
+source's `if` went.)
+
 What it cannot show: values only in wasm locals (registers, in effect),
 and old contents of bulk writes beyond 256 bytes (their record says
 where and how much, not what: going back shows such bytes as they are

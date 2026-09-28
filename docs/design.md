@@ -75,7 +75,8 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   writes into its memory; the doorbell interrupt wakes it).
 - **The recording** ([recording.md](recording.md)): an LLVM pass
   instruments every function the same way (blocks, calls with their
-  arguments and frame base, returns, stores with old values) into one
+  arguments and frame base, returns, stores with old values, where a
+  copy came from, the comparisons deciding branches) into one
   ring, in full while a runner makes the syscall it was asked, stores
   only in between (so memory as it was stays exact).
 - **Rebuilding the past** ([replay.md](replay.md)): from the records alone,
@@ -104,8 +105,10 @@ The choices that shape it:
 - No MMU: no page tables, faults, copy-on-write or demand paging; no
   fork (threads and vfork, which share memory; one program: /init).
 - One CPU; no preemption (the kernel reschedules at its usual points).
-- Return values are 32 bits (wider ones lose their high half); locals are
-  only those in memory; values in wasm locals are not recorded.
+- Return values and compared values are 32 bits (wider ones lose their
+  high half); locals are only those in memory; values in wasm locals are
+  not recorded, but for the comparisons that decide branches, and where a
+  copied value came from.
 - A recording is a ring: the oldest records go when it is full.
 - No console input; no user signal handlers (a caught signal kills the
   task).

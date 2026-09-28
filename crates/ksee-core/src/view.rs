@@ -86,6 +86,9 @@ pub struct Line {
     pub inl: u32,
     /// Which turn of a loop it is (see LineStep::run).
     pub run: u32,
+    /// The comparisons it made that decided where it went ("18 >= 0 ✓"),
+    /// in order.
+    pub tests: Vec<String>,
     /// The call returns after it: what it returned (32 bits).
     pub ret: Option<i32>,
 }
@@ -182,15 +185,20 @@ pub struct Link {
     pub value: u32,
 }
 
-/// The newest write to a value: at record `i`, on `task`, by the code at
-/// `at` (the line, if known); `old` what it overwrote.
+/// A write to a value (`addr`): at record `i`, on `task`, by the code at
+/// `at` (the line, if known); `old` what it overwrote (printed: a number,
+/// in hex past 0xffff); `from`: if it
+/// copied what was at another address (a value loaded and stored as it
+/// is, a memcpy), that address.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Write {
     pub i: usize,
-    pub old: u64,
+    pub addr: u32,
+    pub old: String,
     pub task: TaskRef,
     pub at: Option<Line>,
+    pub from: Option<u32>,
 }
 
 /// A function: where it is, from `line` to `last` (of its blocks in its
@@ -370,14 +378,17 @@ impl View<'_> {
                 let prev = (0..i).rev().find(|&j| tasks[j] == tasks[i]);
                 ("return", func, located(func, prev.and_then(top).and_then(|(_, s)| s)))
             }
-            // (A store: on its line, Record::Store's, see line_at.)
-            Record::Store { .. } => match self.rec.line_at(t, i) {
-                Some(l) => ("store", l.func, (Some(l.loc), l.inlined)),
-                None => ("store", 0, (None, None)),
-            },
-            Record::Task { .. } => {
+            // (A store, a comparison: on its line, the record's, see line_at.)
+            r @ (Record::Store { .. } | Record::Compare { .. }) => {
+                let kind = if matches!(r, Record::Store { .. }) { "store" } else { "compare" };
+                match self.rec.line_at(t, i) {
+                    Some(l) => (kind, l.func, (Some(l.loc), l.inlined)),
+                    None => (kind, 0, (None, None)),
+                }
+            }
+            r @ (Record::Task { .. } | Record::Copy { .. }) => {
                 let (func, step) = top(i).unwrap_or((0, None));
-                ("task", func, located(func, step))
+                (if matches!(r, Record::Task { .. }) { "task" } else { "copy" }, func, located(func, step))
             }
         };
         Some(At {
@@ -425,6 +436,12 @@ impl View<'_> {
                 }
                 Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value as i32)),
                 Record::Task { .. } => continue, // (the task's line is above)
+                Record::Copy { dst, src, len } => ("copy", format!("copy {dst:#x} ← {src:#x} [{len}]")),
+                r @ Record::Compare { lhs, rhs, .. } => {
+                    let (op, signed, held) = r.compare().unwrap_or(("?", false, false));
+                    let v = |x: u32| if signed { (x as i32).to_string() } else { num(x as u64) };
+                    ("compare", format!("compare {} {op} {} {}", v(lhs), v(rhs), if held { "✓" } else { "✗" }))
+                }
                 Record::Store { addr, size: 0, old, .. } => ("store", format!("store {addr:#x} [{old} bytes] (old contents not kept)")),
                 Record::Store { addr, size, old, .. } => {
                     let mut new = [0u8; 8];
@@ -440,8 +457,20 @@ impl View<'_> {
 
     fn line(&self, s: &LineStep) -> Line {
         let t = self.tables;
+        // (Its comparisons: among its stretch's records, those on it.)
+        let (records, tasks) = (&self.rec.records, &self.rec.tasks);
+        let task = tasks.get(s.record).copied();
+        let tests = (s.record + 1..records.len()).filter(|&j| Some(tasks[j]) == task)
+            .map(|j| records[j]).take_while(|r| matches!(r, Record::Store { .. } | Record::Copy { .. } | Record::Compare { .. }))
+            .filter(|r| matches!(r, Record::Compare { line, .. } if *line == s.index))
+            .filter_map(|r| {
+                let (op, signed, held) = r.compare()?;
+                let Record::Compare { lhs, rhs, .. } = r else { return None };
+                let v = |x: u32| if signed || x <= 0xffff { (x as i32).to_string() } else { format!("{x:#x}") };
+                Some(format!("{} {op} {} {}", v(lhs), v(rhs), if held { "✓" } else { "✗" }))
+            }).collect();
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
-               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, ret: s.ret.map(|v| v as i32) }
+               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests, ret: s.ret.map(|v| v as i32) }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.
@@ -564,7 +593,27 @@ impl View<'_> {
     /// The newest write to `addr..addr + len` at or before record `at`.
     pub fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
         let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
-        Some(Write { i, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)) })
+        let from = self.rec.copied_from(i, addr);
+        let old = if old > 0xffff { format!("{old:#x}") } else { old.to_string() };
+        Some(Write { i, addr, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)), from })
+    }
+
+    /// Where the value at `addr..addr + len` after record `at` came from:
+    /// its newest write, and while that copied it from elsewhere, the
+    /// newest write there before it, and so on (up to `max`): the value's
+    /// way through memory, newest first. (The last one computed it, or
+    /// copied it from memory the recording did not see written.)
+    pub fn origin(&self, addr: u32, len: u32, at: usize, max: usize) -> Vec<Write> {
+        let mut out: Vec<Write> = Vec::new();
+        let (mut addr, mut at) = (addr, at);
+        while out.len() < max {
+            let Some(w) = self.last_write(addr, len, at) else { break };
+            let (i, from) = (w.i, w.from);
+            out.push(w);
+            let (Some(src), Some(before)) = (from, i.checked_sub(1)) else { break };
+            (addr, at) = (src, before);
+        }
+        out
     }
 
     /// An object's history: the newest `limit` stores to the value of type
@@ -982,6 +1031,22 @@ mod tests {
         let nodes = v.objects(0, 2, 2);
         let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.writes.len(), n.links.iter().map(|l| (l.member.clone(), l.to)).collect::<Vec<_>>())).collect();
         assert_eq!(got, [("f's p".into(), 1, alloc::vec![]), ("f's y".into(), 1, alloc::vec![("link".into(), 0)])]);
+    }
+
+    #[test]
+    fn a_value_is_followed_through_its_copies() {
+        // 7 stored at 0x30 (computed), then copied to 0x10 (a load, a store),
+        // then to 0x20 by a memcpy of 8 (two stores): 0x24's way back is
+        // 0x24 <- 0x14 <- ... 0x14 was never written; 0x20's is 0x20 <- 0x10 <- 0x30.
+        let t = Tables::default();
+        let st = |addr| Record::Store { addr, size: 4, old: 0, line: 0 };
+        let r = [st(0x30), Record::Copy { dst: 0x10, src: 0x30, len: 4 }, st(0x10),
+                 Record::Copy { dst: 0x20, src: 0x10, len: 8 }, st(0x20), st(0x24)];
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 6], Args::default());
+        let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 64]) };
+        let way = |a| v.origin(a, 4, 5, 8).iter().map(|w| (w.i, w.addr, w.from)).collect::<Vec<_>>();
+        assert_eq!(way(0x20), [(4, 0x20, Some(0x10)), (2, 0x10, Some(0x30)), (0, 0x30, None)]);
+        assert_eq!(way(0x24), [(5, 0x24, Some(0x14))]);
     }
 
     #[test]

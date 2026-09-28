@@ -228,7 +228,9 @@ export function app(m) {
     // (Its note: which turn of a loop it is, the call running it again;
     // and at the call's last line, what it returns, the optimizer's
     // `return x;` being no line of its own.)
-    const note = [step.run > 1 && `${ordinal(step.run)} time here`, step.ret != null && `returns ${result(step.ret, consts())}`];
+    // (And the comparisons it made: where it went, and why.)
+    const note = [step.run > 1 && `${ordinal(step.run)} time here`, step.tests.length && step.tests.join(", "),
+                  step.ret != null && `returns ${result(step.ret, consts())}`];
     src.view.cursor = { file: step.file, line: step.line, note: note.filter(Boolean).join("   ") || null };
     src.showFunction(step.func, undefined, step.line, step.file);
     // (The stack as it runs: see Machine.call_stack's nth.)

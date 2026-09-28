@@ -185,10 +185,10 @@ impl Calls {
         out
     }
 
-    /// The line the store at record `i` is on (its record's line: which of
-    /// its block's lines), in the call running it.
+    /// The line the store (or comparison) at record `i` is on (its record's
+    /// line: which of its block's lines), in the call running it.
     pub fn line_at(&self, t: &Tables, i: usize, records: &[Record]) -> Option<LineStep> {
-        let &Record::Store { line, .. } = records.get(i)? else { return None };
+        let (&Record::Store { line, .. } | &Record::Compare { line, .. }) = records.get(i)? else { return None };
         let p = self.place_at(i)?;
         let c = &self.calls[p.call as usize];
         // (Which stretch it is in, and where in it.)
@@ -202,7 +202,7 @@ impl Calls {
             }
         };
         let nth = nth as u32;
-        Some(LineStep { record: p.record as usize, at: i, nth, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run: 0, ret: None })
+        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run: 0, ret: None })
     }
 
     /// A stack chart: for each column (its first record, in `columns`, in
@@ -247,6 +247,7 @@ impl Calls {
                 }
                 match *r {
                     Record::Store { line, .. } => { first_store.entry(line).or_insert(j); }
+                    Record::Copy { .. } | Record::Compare { .. } => {}
                     Record::Return { func, value } => {
                         ret = (func == c.func).then_some(value);
                         break;
@@ -259,7 +260,7 @@ impl Calls {
                     continue;
                 }
                 let at = if nth == 0 { i } else { first_store.get(&((base + nth) as u32)).copied().unwrap_or(i) };
-                out.push(LineStep { record: i, at, nth: nth as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run, ret: None });
+                out.push(LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run, ret: None });
             }
             if let Some(l) = out.last_mut().filter(|l| l.record == i) {
                 l.ret = ret;
@@ -345,6 +346,8 @@ pub struct LineStep {
     pub record: usize,
     pub at: usize,
     pub nth: u32,
+    /// Which of its block's lines it is (a Store's or a Compare's line).
+    pub index: u32,
     pub func: u32,
     pub depth: u32,
     pub loc: crate::tables::Loc,

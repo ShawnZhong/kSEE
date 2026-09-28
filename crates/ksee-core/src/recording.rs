@@ -221,6 +221,25 @@ impl Recording {
         Some((i, old, self.line_at(t, i)))
     }
 
+    /// Where the store at record `i` copied its byte at `addr` from, if it
+    /// is a copy: a Copy record just before it (on its task), or before the
+    /// stores of its bulk write, all within the copy's range.
+    pub fn copied_from(&self, i: usize, addr: u32) -> Option<u32> {
+        let task = *self.tasks.get(i)?;
+        let mut stores = alloc::vec![addr];
+        for j in (0..i).rev().filter(|&j| self.tasks[j] == task) {
+            match self.records[j] {
+                Record::Copy { dst, src, len } => {
+                    let within = |a: u32| a.wrapping_sub(dst) < len;
+                    return stores.iter().all(|&a| within(a)).then(|| src.wrapping_add(addr - dst));
+                }
+                Record::Store { addr, .. } if stores.len() < 64 => stores.push(addr),
+                _ => return None,
+            }
+        }
+        None
+    }
+
     /// The line the store at record `i` is on.
     pub fn line_at(&self, t: &Tables, i: usize) -> Option<LineStep> {
         self.calls.line_at(t, i, &self.records)

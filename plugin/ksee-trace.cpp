@@ -50,6 +50,15 @@
 //                         followed by its length. line: which of its
 //                         block's lines (the L line's items, "|" apart,
 //                         counted from 0) the store is on
+//   [dst, 5 << 28]        a copy: the store (or memcpy) after it writes
+//                         dst..dst + len with what was at src, followed by
+//                         src and len (a value loaded and stored as it is)
+//   [lhs, 6 << 28 | line << 4 | p]
+//                         a comparison deciding a branch (or a select),
+//                         of lhs with the value after it, truncated to 32
+//                         bits; p: its predicate (LLVM's icmp's, from eq:
+//                         eq ne ugt uge ult ule sgt sge slt sle); line as
+//                         a store's
 //   [value, 8 << 28 | i]  continuation i of the head before
 // (The host's runtime writes records too: stores, for its own writes into
 // kernel memory.) fn is a hash of the function's name (for a
@@ -106,7 +115,7 @@ namespace {
 constexpr unsigned RingWords = 1u << 21;
 constexpr unsigned CallArgs = 6;
 constexpr unsigned Values = 2 * CallArgs + 1; // a record's at most: a call's arguments (wide ones two words) and its frame base
-enum Kind { KindBlock = 1, KindReturn = 4, KindStore = 7, KindValue = 8 };
+enum Kind { KindBlock = 1, KindReturn = 4, KindCopy = 5, KindCompare = 6, KindStore = 7, KindValue = 8 };
 
 uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
   for (unsigned char c : s)
@@ -323,7 +332,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         }
         cur = it->second;
       }
-      if (isa<StoreInst, AtomicRMWInst, AtomicCmpXchgInst, MemIntrinsic>(I))
+      if (isa<StoreInst, AtomicRMWInst, AtomicCmpXchgInst, MemIntrinsic, ICmpInst>(I))
         lineOf[&I] = cur;
     }
     while (!items.empty() && items.back() == "|")
@@ -392,6 +401,15 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     Value *addr = B.CreatePtrToInt(ptr, i32);
     int k = size == 1 ? 0 : size == 2 ? 1 : size == 4 ? 2 : size == 8 ? 3 : -1;
     Value *line = B.getInt32(std::min(lineOf.lookup(I), (1u << 24) - 1));
+    // (A copy, a value loaded and stored as it is, or a memcpy: where from,
+    // first. See the top.)
+    Value *from = nullptr;
+    if (auto *S = dyn_cast<StoreInst>(I); S && isa<LoadInst>(S->getValueOperand()))
+      from = cast<LoadInst>(S->getValueOperand())->getPointerOperand();
+    else if (auto *MT = dyn_cast<MemTransferInst>(I))
+      from = MT->getRawSource();
+    if (from)
+      record(B, addr, KindCopy << 28, {B.CreatePtrToInt(from, i32), len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size)});
     if (!len && k >= 0)
       B.CreateCall(putStore[k], {addr, line});
     else
@@ -427,6 +445,22 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     }
   }
 
+  // Whether `V` (an i1) decides a branch or a select: directly, or
+  // through the and, or and xor that combine conditions.
+  static bool decides(Value *V, unsigned depth = 3) {
+    for (User *U : V->users()) {
+      if (auto *Br = dyn_cast<BranchInst>(U); Br && Br->isConditional())
+        return true;
+      if (auto *S = dyn_cast<SelectInst>(U); S && S->getCondition() == V)
+        return true;
+      if (auto *Op = dyn_cast<BinaryOperator>(U); Op && depth && Op->getType()->isIntegerTy(1) &&
+          (Op->getOpcode() == Instruction::And || Op->getOpcode() == Instruction::Or || Op->getOpcode() == Instruction::Xor) &&
+          decides(Op, depth - 1))
+        return true;
+    }
+    return false;
+  }
+
   void instrument(Function &F) {
     uint32_t id = fnId(F);
     DISubprogram *SP = F.getSubprogram();
@@ -439,11 +473,15 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     // (after optimization, arguments may no longer be the source's).
     SmallVector<Value *, CallArgs> params;
     unsigned known = 0;
-    // The function's own writes to memory (before any probe is added).
+    // The function's own writes to memory, and the comparisons that decide
+    // its branches (before any probe is added).
     SmallVector<Instruction *> writes;
+    SmallVector<ICmpInst *> compares;
     for (Instruction &I : instructions(F)) {
       if (isa<StoreInst, AtomicRMWInst, AtomicCmpXchgInst, MemIntrinsic>(I))
         writes.push_back(&I);
+      if (auto *C = dyn_cast<ICmpInst>(&I); C && !C->getType()->isVectorTy() && decides(C))
+        compares.push_back(C);
       for (DbgVariableRecord &R : filterDbgVars(I.getDbgRecordRange())) {
         DILocalVariable *V = R.getVariable();
         unsigned k = V ? V->getArg() : 0;
@@ -504,6 +542,15 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
 
     for (Instruction *I : writes)
       logStore(I);
+
+    // (A comparison deciding a branch: its operands, after it; its
+    // predicate and line in its tag. Not in a sealed function: its inside
+    // is a box.)
+    for (ICmpInst *C : seal ? SmallVector<ICmpInst *>{} : compares) {
+      IRBuilder<> B(C->getNextNode());
+      unsigned line = std::min(lineOf.lookup(C), (1u << 24) - 1), pred = C->getPredicate() - CmpInst::FIRST_ICMP_PREDICATE;
+      record(B, toI32(B, C->getOperand(0)), KindCompare << 28 | line << 4 | pred, {toI32(B, C->getOperand(1))});
+    }
 
     unsigned wide = 0;
     for (auto [k, p] : enumerate(params))
