@@ -291,6 +291,12 @@ impl Machine {
         Ok(ksee_core::program::eval(text, &lookup(&known))? as f64)
     }
 
+    /// The kernel's areas (ksee_core::arch::AREAS): [[a file's start, its
+    /// name], …], for the timeline's colors.
+    pub fn areas(&self) -> JsValue {
+        ksee_core::arch::AREAS.iter().map(|&(p, n)| js_sys::Array::of2(&p.into(), &n.into())).collect::<js_sys::Array>().into()
+    }
+
     /// Constants from the kernel's UAPI headers (O_*, AT_*, CLOCK_*, and
     /// errno's E*): { name: value }.
     pub fn constants(&self) -> JsValue {

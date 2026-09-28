@@ -25,16 +25,18 @@ const css = (v) => getComputedStyle(document.body).getPropertyValue(v).trim();
 // overview and the program's lanes have it.
 export const hue = (pid) => ((pid ?? 0) * 137) % 360;
 const taskColor = (pid) => `hsl(${hue(pid)} 50% ${pid === 0 ? 85 : 62}%)`;
-// Calls are colored by where the function is.
-const AREAS = [["fs/", 210, "fs"], ["mm/", 135, "mm"], ["kernel/sched/", 28, "sched"], ["kernel/", 48, "kernel"],
-               ["drivers/", 280, "drivers"], ["lib/", 175, "lib"], ["include/", 330, "include"], ["arch/", -1, "arch"]];
-export const color = (file, on) => {
-  const h = (AREAS.find(([p]) => file?.startsWith(p)) ?? [null, -1])[1], l = on ? 50 : 74;
-  return h < 0 ? `hsl(0 0% ${l + 5}%)` : `hsl(${h} ${on ? 65 : 55}% ${l}%)`;
-};
+// Calls are colored by the kernel's area their function is in
+// (Machine.areas), a hue each in order; the last (arch) gray, as is a call
+// in none.
+const HUES = [210, 135, 28, 48, 280, 175, 330];
 
 export function timeline(app) {
   const { m } = app;
+  const areas = m.areas();
+  const color = (file, on) => {
+    const h = HUES[areas.findIndex(([p]) => file?.startsWith(p))] ?? -1, l = on ? 50 : 74;
+    return h < 0 ? `hsl(0 0% ${l + 5}%)` : `hsl(${h} ${on ? 65 : 55}% ${l}%)`;
+  };
   const over = $("overview"), chart = $("chart"), strip = $("strip");
   // n: records; calls: syscalls; win: the window shown { a, b }; home: the
   // selection (a syscall's records, and its task); cols: the
@@ -471,7 +473,7 @@ export function timeline(app) {
     } else draw();
   }
   // The legend.
-  $("legend").replaceChildren(...AREAS.map(([p, , name]) => {
+  $("legend").replaceChildren(...areas.map(([p, name]) => {
     const k = document.createElement("span");
     k.className = "key";
     k.innerHTML = `<i style="background:${color(p, false)}"></i>${name}`;

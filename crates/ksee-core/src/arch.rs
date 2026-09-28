@@ -109,3 +109,9 @@ pub fn timer_wakes(t: &crate::types::Types, mem: &dyn crate::Memory, tasks: &[u3
 /// The variables the kernel's macros make up (`__UNIQUE_ID`: min_t's,
 /// max_t's temporaries), not the source's own: not shown.
 pub const MADE_UP: &str = "__UNIQUE_ID_";
+
+/// The kernel's areas, by where a function's file is (the first that fits;
+/// the timeline colors a call by its area's, the last gray): its
+/// subsystems' directories.
+pub const AREAS: &[(&str, &str)] = &[("fs/", "fs"), ("mm/", "mm"), ("kernel/sched/", "sched"), ("kernel/", "kernel"),
+                                     ("drivers/", "drivers"), ("lib/", "lib"), ("include/", "include"), ("arch/", "arch")];
