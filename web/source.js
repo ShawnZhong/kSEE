@@ -11,36 +11,18 @@ import { $, el } from "./dom.js";
 import { tree, openable } from "./tree.js";
 import { CM, base } from "./editor.js";
 
-const KEYWORDS = new Set(("auto break case char const continue default do double else enum extern float for goto if " +
-  "inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void " +
-  "volatile while bool true false NULL").split(" "));
-const WORD = /[A-Za-z0-9_]/;
-
 // A store said (Machine.stores'): "vfs_read's file->f_pos: 0 → 26" (a
 // frame's bytes by their offset: "f's frame+8").
 const storeText = ({ what, kind, write: x }) =>
   `${what}${x.member ? (x.member.startsWith("+") ? "" : kind === "object" ? "->" : ".") + x.member : ""}: ${x.before} → ${x.after}`;
 
-// The expression at offset `k` of `text`: the name there, with the fields
-// before it ("file->f_pos" on f_pos); null if not a name.
-function exprAt(text, k) {
-  if (!WORD.test(text[k] ?? "")) return null;
-  let a = k, b = k;
-  while (a > 0 && WORD.test(text[a - 1])) a--;
-  while (b < text.length && WORD.test(text[b])) b++;
-  let expr = text.slice(a, b);
-  if (/^\d/.test(expr) || KEYWORDS.has(expr)) return null;
-  for (;;) {
-    const m = text.slice(0, a).match(/([A-Za-z_]\w*)\s*(->|\.)\s*$/);
-    if (!m) break;
-    expr = `${m[1]}${m[2]}${expr}`;
-    a -= m[0].length;
-  }
-  return { expr, start: a, end: b };
-}
-
 export function source(app) {
   const { m } = app;
+  // A line's names, each with the fields before it (Machine.names: "file->
+  // f_pos" for f_pos), once per text; the one at offset `k`, or null.
+  const lines = new Map();
+  const namesOf = (text) => lines.get(text) ?? lines.set(text, m.names(text)).get(text);
+  const exprAt = (text, k) => namesOf(text).find((n) => n.at <= k && k < n.end) ?? null;
   const texts = new Map();
   const fetchFile = (file) => {
     if (!texts.has(file))
@@ -143,10 +125,7 @@ export function source(app) {
   // Stack has (see hover), each once: "fd = 3  count = 64", or null.
   function values(line, text) {
     const out = [], seen = new Set();
-    for (let k = 0; k < text.length; k++) {
-      const e = exprAt(text, k);
-      if (!e) continue;
-      k = e.end - 1;
+    for (const e of namesOf(text)) {
       if (seen.has(e.expr)) continue;
       seen.add(e.expr);
       const o = app.stack.resolve(e.expr, owner(line));
@@ -301,9 +280,7 @@ export function source(app) {
         .flatMap((f) => [...(f.args ?? []), ...(f.locals ?? [])]).filter((o) => o.value !== "(optimized out)").map((o) => o.name));
       for (let n = fn.line; names.size && n <= Math.min(fn.last, doc.lines); n++) {
         const line = doc.line(n);
-        for (const w of line.text.matchAll(/[A-Za-z_]\w*/g)) {
-          if (names.has(w[0]) && !/(\.|->)\s*$/.test(line.text.slice(0, w.index))) d.push(valued.range(line.from + w.index, line.from + w.index + w[0].length));
-        }
+        for (const w of namesOf(line.text)) if (!w.member && names.has(w.expr)) d.push(valued.range(line.from + w.at, line.from + w.end));
       }
     }
     if (v.cursor?.file === file && at(v.cursor.line) !== false) {

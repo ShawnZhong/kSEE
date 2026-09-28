@@ -291,6 +291,12 @@ impl Machine {
         Ok(ksee_core::program::eval(text, &lookup(&known))? as f64)
     }
 
+    /// The names in `text`, a line of C source, each with the fields
+    /// before it (ksee_core::program::names): what a hover is of.
+    pub fn names(&self, text: &str) -> JsValue {
+        to_js(&ksee_core::program::names(text))
+    }
+
     /// The kernel's areas (ksee_core::arch::AREAS): [[a file's start, its
     /// name], …], for the timeline's colors.
     pub fn areas(&self) -> JsValue {
