@@ -215,6 +215,16 @@ check("line steps sit at their first store: some line is at a record past its bl
 const pos = (i) => (m.memory_at(i), m.call_stack(i).find((c) => c.func === "ksys_read")?.locals?.find((l) => l.name === "pos")?.value);
 check("a local on the stack, as it was: ksys_read's pos, 0 then 26",
       pos(inRead) === "0" && pos(readSteps.findLast((x) => x.func === "ksys_read").i) === "26");
+// A variable the code keeps in a wasm local: in the Stack as it is by the
+// cursor (ksys_read's ret, set to what vfs_read returned), and its values
+// over time (Machine.var_writes).
+{
+  const last = readSteps.findLast((x) => x.func === "ksys_read").i;
+  const ret = m.call_stack(last).find((c) => c.func === "ksys_read")?.locals?.find((l) => l.name === "ret");
+  const first = m.call_stack(last).find((c) => c.func === "ksys_read")?.first;
+  const values = ret?.var != null ? m.var_writes(first, ret.var).map(([, v]) => v) : [];
+  check(`a local in a wasm local: ksys_read's ret = ${ret?.value}, its values ${values.join(", ")}`, ret?.value === "26" && values.at(-1) === "26");
+}
 m.memory_at(null);
 await call("close", [rfd]);
 // (A user pointer must be in RAM: not the runtime's memory, below it.)
