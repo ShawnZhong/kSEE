@@ -132,9 +132,11 @@ impl Recording {
         let files: Vec<u32> = (0..t.files.len() as u32).filter(|&k| t.files[k as usize] == file).collect();
         let at = |l: &crate::tables::Loc| l.line == line && files.contains(&l.file);
         // (The blocks that run it.)
+        // (Its own code, or code inlined at it: see View::coverage.)
+        let sites = |s: &crate::tables::Step| s.inlined.and_then(|k| t.inlines.get(k as usize)).is_some_and(|c| c.iter().any(|(_, l)| at(l)));
         let blocks: alloc::collections::BTreeSet<(u32, u32)> = t.blocks.iter()
             .filter(|(key, l)| match t.lines.get(key) {
-                Some(segs) => segs.iter().flatten().any(|s| at(&s.loc)),
+                Some(segs) => segs.iter().flatten().any(|s| at(&s.loc) || sites(s)),
                 None => at(l),
             })
             .map(|(&key, _)| key).collect();

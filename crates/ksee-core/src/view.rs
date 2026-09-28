@@ -846,7 +846,9 @@ impl View<'_> {
 
     /// The lines of `file` that code ran, in syscall `n` (or the whole
     /// recording), with how often (the most of the blocks running it).
-    /// Lines inlined into a block are its too.
+    /// Lines inlined into a block are its too, and so are the lines they
+    /// are inlined at (`x = helper();` with helper inlined runs no code of
+    /// its own line's: its callee's lines run in its place).
     pub fn coverage(&self, file: &str, n: Option<usize>) -> Vec<LineCount> {
         let t = self.tables;
         let counts = self.rec.block_counts(n);
@@ -861,7 +863,10 @@ impl View<'_> {
                 }
             };
             match t.lines.get(&(f, b)) {
-                Some(segs) => segs.iter().flatten().for_each(|s| mark(s.loc)),
+                Some(segs) => segs.iter().flatten().for_each(|s| {
+                    mark(s.loc);
+                    self.chain(s.inlined).iter().for_each(|&(_, site)| mark(site));
+                }),
                 None => mark(l),
             }
         }
@@ -1072,6 +1077,8 @@ mod tests {
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
         let frames: Vec<_> = v.call_stack(1, None, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
         assert_eq!(frames, [("g".into(), Some(10), false), ("h".into(), Some(20), true), ("f".into(), Some(2), false)]);
+        // (Line 2, where h is inlined, ran too: h's line 20 ran for it.)
+        assert!(v.coverage("f.c", None).iter().any(|l| l.line == 2));
         // At record 0, its first line (nth 0): f at line 1, nothing inlined.
         let first: Vec<_> = v.call_stack(0, Some(0), &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
         assert_eq!(first, [("f".into(), Some(1))]);
