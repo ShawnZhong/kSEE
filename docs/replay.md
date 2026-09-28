@@ -52,9 +52,11 @@ at a block, its first stretch runs; after a return into it, the next
 (`lines`: those of a span of records). So stepping goes line by line, into and out of
 calls, including lines inlined from other functions. Each line step says
 which of its record's lines it is (`nth`: the Stack there), where it is
-`at` (the record of its first store, which says its line: the cursor
-goes there, and memory as it was; a line with no store, or a stretch's
-first, is at the block's record) and how deep it runs (calls deep, and
+`at` (the record of its first store or comparison, which says its line:
+the instruction doing what the line says, its assignment or its test,
+as the debug info's key instructions have it; the cursor goes there, and
+memory as it was; a line with neither, or a stretch's first, is at the
+block's record) and how deep it runs (calls deep, and
 inlined deep): the level stepping over or out of a call compares. A
 call's last line before it returns says what it returned (`ret`): the
 optimizer leaves `return x;` no code of its own (its value joins the

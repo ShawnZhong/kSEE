@@ -252,8 +252,11 @@ impl Calls {
                     continue;
                 }
                 match *r {
-                    Record::Store { line, .. } => { first_store.entry(line).or_insert(j); }
-                    Record::Copy { .. } | Record::Compare { .. } => {}
+                    // (A line is at its first store, or comparison: the
+                    // instruction that does what it says, its assignment or
+                    // its test, as the debug info's key instructions have it.)
+                    Record::Store { line, .. } | Record::Compare { line, .. } => { first_store.entry(line).or_insert(j); }
+                    Record::Copy { .. } => {}
                     Record::Return { func, value } => {
                         ret = (func == c.func).then_some(value);
                         break;
