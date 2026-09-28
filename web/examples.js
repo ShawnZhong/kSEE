@@ -31,7 +31,7 @@
 // stands for its address (`read(fd, buf, 64)`, `&ts`), and each call's
 // line says the variables it changed, as C writes them (`fds = {3, 4}`).
 import { $, el } from "./dom.js";
-import { made, result } from "./args.js";
+import { result } from "./args.js";
 import { callEditor } from "./calledit.js";
 import { runner } from "./kernel.js";
 
@@ -167,17 +167,10 @@ export async function examples(app) {
   // The program's names, numbers and runners: its runner's (kernel.js).
   const known = (...a) => t.run.known(...a);
   const stepOf = (n) => t.run.stepOf(n);
-  // (For "as made": the results and the elements, not the variables: a
-  // variable is clearer by its name than by its address.)
-  const made_ = () => {
-    const o = known();
-    for (const v of t.vars) delete o[v.name];
-    return o;
-  };
   const tidOf = (s) => t.run.tidOf(s);
-  // A step's call, as written (or with `values` for the results: as made):
+  // A step's line, as written:
   // `tid: name = call(args)`.
-  const text = (s, values) => s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.type ? `${s.type}${s.type.endsWith("*") ? "" : " "}` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
+  const text = (s) => s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.type ? `${s.type}${s.type.endsWith("*") ? "" : " "}` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.join(", ")})`;
   // How a call finished, or not yet.
   // (A variable: as it starts; each call's line says how it changed.)
   const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.initial ?? ""}`
@@ -204,7 +197,6 @@ export async function examples(app) {
           d ? el("span", { className: "mono ret", textContent: how(d, s) }) : null,
           el("a", { className: "rm", textContent: "✕", title: "remove the call (the program runs again without it)", onclick: () => remove(j) })),
         t.started[j] ? el("div", { className: "dim more", textContent: `→ tid ${t.started[j]}, a runner` }) : null,
-        d && text(s, made_()) !== text(s) ? el("div", { className: "mono dim more", textContent: `as made: ${text(s, made_())}` }) : null,
         d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null,
         d?.vars ? el("div", { className: "mono more vars", textContent: d.vars }) : null);
     }), el("li", { className: "add" }, t.form));
