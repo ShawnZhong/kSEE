@@ -10,7 +10,9 @@ import { place } from "./tree.js";
 
 const TAG = { local: "local", frame: "frame", regs: "registers", machine: "the machine's" };
 // A store said: "vfs_read's file->f_pos: 0 → 26".
-export const storeText = ({ what, kind, write: x }) => `${what}${x.member ? (kind === "object" || kind === "regs" ? "->" : ".") + x.member : ""}: ${x.before} → ${x.after}`;
+// (A frame's bytes by their offset: "f's frame+8".)
+const joint = (kind, member) => (member.startsWith("+") ? "" : kind === "object" || kind === "regs" ? "->" : ".");
+export const storeText = ({ what, kind, write: x }) => `${what}${x.member ? joint(kind, x.member) + x.member : ""}: ${x.before} → ${x.after}`;
 
 export function stores(app) {
   const body = $("stores");
@@ -30,7 +32,8 @@ export function stores(app) {
     body.replaceChildren(
       el("div", { className: "dim head" }, `${rows.length} store${rows.length === 1 ? "" : "s"} · `,
         el("a", { textContent: "here", title: "the store in effect at the cursor", onclick: () => body.querySelector("li.on")?.scrollIntoView({ block: "center" }) })),
-      el("ol", {}, ...rows.map(({ what, kind, ty, write: x }) => el("li", { dataset: { i: x.i } },
+      // (A store that left the value as it was: dim.)
+      el("ol", {}, ...rows.map(({ what, kind, ty, write: x }) => el("li", { dataset: { i: x.i }, className: x.before === x.after ? "same" : "" },
         el("a", { className: "mono", textContent: storeText({ what, kind, write: x }), title: `go to this store${ty ? ` (${ty})` : ""}`, onclick: () => app.time.go(x.i) }),
         el("span", { className: "dim", textContent: ` ${place(x.at)}${TAG[kind] ? ` · ${TAG[kind]}` : ""}` })))));
     mark();

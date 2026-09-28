@@ -148,6 +148,7 @@ export function app(m) {
       if (key === peek.key) return;
       peek.key = i == null ? null : key;
       const at = to != null ? m.at(to) : null;
+      stack.peeking(i != null);
       if (at) view(at, i == null ? chosen : frame);
       // (The Calls, Stores and Trace tabs follow too; back to the cursor's with null.)
       a.trace?.mark(to);

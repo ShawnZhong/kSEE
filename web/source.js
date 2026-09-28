@@ -169,7 +169,7 @@ export function source(app) {
       return true;
     }
     toDOM() {
-      return el("a", { className: "stored", textContent: `   ${storeText(this.s)}${this.n > 1 ? ` ×${this.n}` : ""}`,
+      return el("a", { className: "stored", textContent: `${storeText(this.s)}${this.n > 1 ? ` ×${this.n}` : ""}`,
                        title: "what this line stored, last; click: go to that store", onclick: () => app.time.go(this.s.write.i) });
     }
   }
@@ -182,7 +182,7 @@ export function source(app) {
       return other.text === this.text;
     }
     toDOM() {
-      return el("span", { className: "values", textContent: `   ${this.text}` });
+      return el("span", { className: "values", textContent: this.text });
     }
   }
   // hover: { start, end, text }, or null.

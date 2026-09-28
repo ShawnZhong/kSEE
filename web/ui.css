@@ -74,7 +74,7 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .cm-editor .ln-infn { box-shadow: inset 3px 0 var(--accent); }
 .cm-editor .ln-cursor { background: var(--sel) !important; }
 /* (The notes at a line's end: clipped, not a horizontal scroll.) */
-.cm-editor .values, .cm-editor a.stored { color: var(--dim); font-style: italic; display: inline-block; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.cm-editor .values, .cm-editor a.stored { color: var(--dim); font-style: italic; display: inline-block; margin-left: 3ch; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .cm-editor a.stored { cursor: pointer; }
 .cm-editor a.stored:hover { color: var(--accent); }
 #trace .ret { color: var(--dim); }
@@ -121,6 +121,7 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #stores li a { white-space: nowrap; }
 #stores li.on { background: var(--at); }
 #stores li.later { opacity: 0.45; }
+#stores li.same a { color: var(--dim); }
 #stores .note { padding: 6px 12px; font-size: 11px; }
 #trace a.inl { font-style: italic; }
 #trace ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }

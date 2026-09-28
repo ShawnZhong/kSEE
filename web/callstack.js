@@ -60,18 +60,26 @@ export function callstack(app) {
     $("stack").replaceChildren(el("div", { className: "spacer" }), el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
     focus();
   }
-  // Above a selected call, room for the calls that can still appear there
-  // (the deepest stack over its bar in the timeline, less those shown),
-  // each about a frame's height now: as the pointer moves along the bar
-  // and its callees come and go, the selected row stays put. A row that
-  // would be low in the pane is scrolled to a third of the way down.
+  // While the pointer is over the timeline (`peeking`), above a selected
+  // call, room for the calls that can still appear there (the deepest
+  // stack over its bar, less those shown), each about a frame's height
+  // now: as the pointer moves along the bar and its callees come and go,
+  // the selected row stays put. (At rest, none: nothing comes and goes.)
+  // A row that would be low in the pane is scrolled to a third of the way
+  // down.
   function focus() {
     const pane = $("stack"), on = pane.querySelector("tr.frame.on"), table = pane.querySelector("table"), spacer = pane.querySelector(".spacer");
     const rows = [...pane.querySelectorAll("tr.frame")], k = on ? rows.indexOf(on) : 0;
-    if (!on || !s.sel) return (spacer.style.height = "0px");
+    spacer.style.height = "0px";
+    spacer.textContent = "";
+    if (!on) return;
+    if (!s.sel || !s.peeking) return scrollTo(pane, on);
     const need = Math.max(0, app.time.deepest(s.sel.first) - k), each = table.offsetHeight / Math.max(1, rows.length);
     spacer.style.height = `${Math.round(need * each)}px`;
     spacer.textContent = need ? "what it calls shows here" : "";
+    scrollTo(pane, on);
+  }
+  function scrollTo(pane, on) {
     const top = on.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
     if (top > pane.clientHeight * 0.66) pane.scrollTop = top - pane.clientHeight / 3;
   }
@@ -139,5 +147,8 @@ export function callstack(app) {
   // null at the ends.
   const neighbour = (dir) => s.frames[(s.sel ? s.frames.indexOf(s.sel) : 0) + dir] ?? null;
 
-  return { show, select, level, owner, neighbour, frames: () => s.frames, resolve, kids };
+  // The pointer is over the timeline (on), or not.
+  const peeking = (on) => (s.peeking = on);
+
+  return { show, select, peeking, level, owner, neighbour, frames: () => s.frames, resolve, kids };
 }
