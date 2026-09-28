@@ -38,8 +38,12 @@ Every function gets:
   parameter the function changes, has its value at any moment, and so do
   the parameters and locals of code inlined into it (not a parameter as
   it is at the call: the call record has it; not a struct in pieces, nor a
-  value the debug info computes). About a third more records per call,
-  and a fifth more code;
+  value the debug info computes). Not a set that says nothing new: of a
+  variable that only ever takes one value, after another set of it; of an
+  inlined call's parameter passed one of the call's own arguments (the
+  call record has it). About three quarters more records per call (two
+  words each, the smallest: two fifths more of the ring's words), and a
+  fifth more code;
 - before each **store** (its stack slots' too: a slot is reused by later
   calls, and a frame's locals must be undone to be seen as they were), a
   store record with the **old value** and the **line** it is on (which of
@@ -109,9 +113,11 @@ The instrumented kernel describes its probes in a custom section,
   each function it is inlined from, innermost first, as an inline site
   (`I k function FILE:line`: the function, and the line where it is
   inlined into the next one out);
-- `V fn k of function name param wide`: variable k of fn, as its var
+- `V fn k of function name param wide arg`: variable k of fn, as its var
   records have it: `name` of `function` (fn, or one inlined into it; `of`
   its id), its parameter number (0: a local), whether it takes two words;
+  `arg`, if nonzero: it is fn's parameter arg throughout (an inlined
+  call's parameter passed one of fn's), with no records;
 - `U`, `P k path`, `I k …`: a unit's files and inline sites; `R words`:
   the ring's size.
 

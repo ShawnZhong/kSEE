@@ -87,13 +87,17 @@
 //                  wide: a bit mask of those that take two words)
 //                B \t fn \t n \t FILE:line:column (block 0: the function's
 //                  signature, where a call begins)
-//                V \t fn \t k \t of \t function \t name \t param \t wide
+//                V \t fn \t k \t of \t function \t name \t param \t wide \t arg
 //                                     variable k of fn (its records'): a
 //                                     variable of `function` (fn, or one
 //                                     inlined into it; `of` its id, as
 //                                     fn's), `name`, its parameter number
 //                                     (0: a local), whether its values take
-//                                     two words
+//                                     two words; arg: if nonzero, it is
+//                                     fn's parameter arg (a word of the
+//                                     call record) throughout, with no
+//                                     records (an inlined call's parameter
+//                                     passed one of fn's)
 //                L \t fn \t n \t lines: the source lines the block runs, in
 //                  order (each once per stretch between calls), separated
 //                  by ';': FILE:line (:line in the same file as the one
@@ -581,30 +585,74 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     // that does.)
     std::map<std::pair<uint32_t, std::string>, unsigned> vars;
     DominatorTree DT(F);
-    for (auto [R, I] : seal ? decltype(sets){} : sets) {
+    // (A variable that only ever takes one value, where a set of it follows
+    // another, surely: nothing new; only the sets no other dominates. Each
+    // inline site's copy of a variable is a variable of its own.)
+    std::map<std::pair<DILocalVariable *, DILocation *>, SmallVector<unsigned>> same;
+    for (auto [k, s] : enumerate(sets))
+      same[{s.first->getVariable(), s.first->getDebugLoc()->getInlinedAt()}].push_back(k);
+    std::vector<bool> redundant(sets.size());
+    for (auto &[_, ks] : same) {
+      Value *v = sets[ks[0]].first->getVariableLocationOp(0);
+      if (any_of(ks, [&](unsigned k) { return sets[k].first->getVariableLocationOp(0) != v; }))
+        continue;
+      for (unsigned k : ks)
+        redundant[k] = any_of(ks, [&](unsigned j) {
+          Instruction *a = sets[j].second, *b = sets[k].second;
+          return a == b ? j < k : DT.dominates(a, b);
+        });
+    }
+    // (Each set's variable: its function's id, as fnId's (one local to its
+    // file by the file), and name; or none.)
+    struct Set { DbgVariableRecord *R; Instruction *I; uint32_t of; StringRef function; int arg; };
+    SmallVector<Set> todo;
+    for (auto [n, set] : enumerate(seal ? decltype(sets){} : sets)) {
+      auto [R, I] = set;
       DILocalVariable *V = R->getVariable();
       DISubprogram *VS = V ? V->getScope()->getSubprogram() : nullptr;
       Value *v = R->getVariableLocationOp(0);
-      if (!VS || (VS == SP && V->getArg() && isa<Argument>(v)))
+      if (redundant[n] || !VS || (VS == SP && V->getArg() && isa<Argument>(v)))
         continue;
       if (auto *D = dyn_cast<Instruction>(v); D && !DT.dominates(D, I))
         continue;
-      // (Its function's id, as fnId's: one local to its file by the file.)
       StringRef fname = VS == SP ? F.getName() : VS->getName();
       uint32_t of = VS == SP ? id : VS->isLocalToUnit() ? fnv(fname, fnv(":", fnv(M->getSourceFileName()))) : fnv(fname);
+      // (A parameter of an inlined call that is one of the call's own
+      // arguments, which the call record has: its value, for the whole
+      // inlined call, is that; no record.)
+      int arg = -1;
+      if (VS != SP && V->getArg())
+        for (auto [k, p] : enumerate(params))
+          if (p == v)
+            arg = k;
+      todo.push_back({R, I, of, fname, arg});
+    }
+    // (A variable is the call's argument k if every set of it is.)
+    std::map<std::pair<uint32_t, std::string>, int> argOf;
+    for (Set &t : todo) {
+      auto [it, fresh] = argOf.try_emplace({t.of, t.R->getVariable()->getName().str()}, t.arg);
+      if (!fresh && it->second != t.arg)
+        it->second = -1;
+    }
+    for (Set &t : todo) {
+      DILocalVariable *V = t.R->getVariable();
+      Value *v = t.R->getVariableLocationOp(0);
       bool wide = v->getType()->isIntegerTy() && v->getType()->getIntegerBitWidth() > 32;
-      auto [it, fresh] = vars.try_emplace({of, V->getName().str()}, vars.size());
+      int arg = argOf[{t.of, V->getName().str()}];
+      auto [it, fresh] = vars.try_emplace({t.of, V->getName().str()}, vars.size());
       if (it->second >= 1u << 16)
         continue;
       if (fresh)
-        probes += ("V\t" + Twine(id) + "\t" + Twine(it->second) + "\t" + Twine(of) + "\t" + fname + "\t" + V->getName() + "\t" +
-                   Twine(V->getArg()) + "\t" + Twine(wide) + "\n").str();
-      IRBuilder<> B(I);
+        probes += ("V\t" + Twine(id) + "\t" + Twine(it->second) + "\t" + Twine(t.of) + "\t" + t.function + "\t" + V->getName() + "\t" +
+                   Twine(V->getArg()) + "\t" + Twine(wide) + "\t" + Twine(arg + 1) + "\n").str();
+      if (arg >= 0)
+        continue;
+      IRBuilder<> B(t.I);
       SmallVector<Value *, 2> w;
       words(B, v, w);
       Value *low = w[0];
       w.erase(w.begin());
-      record(B, low, KindVar << 28 | std::min(lineOf.lookup(I), (1u << 12) - 1) << 16 | it->second, w);
+      record(B, low, KindVar << 28 | std::min(lineOf.lookup(t.I), (1u << 12) - 1) << 16 | it->second, w);
     }
 
     // (A comparison deciding a branch: its operands, after it; its

@@ -598,6 +598,13 @@ impl View<'_> {
     /// inlined into it: by name) and its name, parameters by number.
     fn var_values(&self, c: &stack::StackCall, at: usize) -> BTreeMap<(&str, u32, &str), (&Var, u64)> {
         let mut out = BTreeMap::new();
+        // (One that is the call's argument throughout: that.)
+        let args = self.rec.args.get(c.first).map(|(w, _)| self.tables.values(c.func, w)).unwrap_or_default();
+        for (_, v) in self.tables.vars.range((c.func, 0)..=(c.func, u32::MAX)).filter(|(_, v)| v.arg > 0) {
+            if let Some(&value) = args.get(v.arg as usize - 1) {
+                out.insert((v.function.as_str(), v.param, v.name.as_str()), (v, value));
+            }
+        }
         for j in self.rec.calls.vars_of(c.first, at) {
             if let Record::Var { var, value, .. } = self.rec.records[j]
                 && let Some(v) = self.tables.vars.get(&(c.func, var)) {
@@ -1088,7 +1095,7 @@ mod tests {
     fn a_variable_in_a_wasm_local_has_its_last_value() {
         // f (1) keeps int x (variable 0, a local: no offset) in a wasm
         // local: it takes 5, then 7.
-        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\t0\t1\tf\tx\t0\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:\n");
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\t0\t1\tf\tx\t0\t0\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:\n");
         let r = [Record::Block { func: 1, n: 0 }, Record::Var { var: 0, line: 0, value: 5 }, Record::Block { func: 1, n: 1 }, Record::Var { var: 0, line: 0, value: 7 }];
         let mut args = Args::default();
         args.push(0, &[64]);

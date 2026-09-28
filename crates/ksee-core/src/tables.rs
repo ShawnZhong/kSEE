@@ -33,13 +33,16 @@ pub struct Function {
 /// A named variable kept in a wasm local, whose values the recording has
 /// (Record::Var): variable `name` of function `function` (the one whose
 /// records they are, or one inlined into it; `of`: its id), parameter
-/// `param` of it (from 1; 0: a local).
+/// `param` of it (from 1; 0: a local). `arg`: if nonzero, it is the
+/// call's parameter `arg` throughout (an inlined call's parameter passed
+/// one of the call's own), with no records.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Var {
     pub of: u32,
     pub function: String,
     pub name: String,
     pub param: u32,
+    pub arg: u32,
 }
 
 /// A source line a block runs; `inlined`: if it is code inlined into the
@@ -152,10 +155,10 @@ impl Tables {
                         unit.sites.insert(k, (name, unit.loc(site, false)));
                     }
                 }
-                ["V", id, k, of, function, name, param, _wide] => {
+                ["V", id, k, of, function, name, param, _wide, arg] => {
                     if let (Ok(id), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) {
-                        let param = param.parse().unwrap_or(0);
-                        t.vars.insert((id, k), Var { of, function: function.to_string(), name: name.to_string(), param });
+                        let (param, arg) = (param.parse().unwrap_or(0), arg.parse().unwrap_or(0));
+                        t.vars.insert((id, k), Var { of, function: function.to_string(), name: name.to_string(), param, arg });
                     }
                 }
                 ["R", words] => t.ring_words = words.parse().unwrap_or(0),
