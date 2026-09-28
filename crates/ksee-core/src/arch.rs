@@ -34,9 +34,9 @@ pub const TIME64: &str = "_time64";
 /// The constants that fit a syscall's parameter, by the starts of their
 /// names: for "syscall.param", else any syscall's parameter of that name.
 pub const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
-    ("mmap2.flags", &["MAP_"]), ("openat.flags", &["O_"]), ("unlinkat.flag", &["AT_"]), ("renameat2.flags", &["RENAME_"]),
+    ("mmap2.flags", &["MAP_"]), ("unlinkat.flag", &["AT_"]), ("renameat2.flags", &["RENAME_"]),
     ("waitid.which", &["P_"]), ("waitid.options", &["W"]), ("clone.clone_flags", &["CLONE_", "SIG"]),
-    ("futex_time64.op", &["FUTEX_"]), ("clock_nanosleep_time64.which_clock", &["CLOCK_"]), ("clock_nanosleep_time64.flags", &["TIMER_"]),
+    ("clock_nanosleep_time64.flags", &["TIMER_"]),
     ("dfd", &["AT_"]), ("olddfd", &["AT_"]), ("newdfd", &["AT_"]), ("flags", &["O_"]), ("prot", &["PROT_"]),
     ("which_clock", &["CLOCK_"]), ("op", &["FUTEX_"]),
 ];
@@ -47,3 +47,8 @@ pub const RECORD_LENGTHS: &[&str] = &["d_reclen"];
 /// The errno names among the UAPI constants (errno-base.h's and errno.h's:
 /// ENOENT, EEXIST): what a failed call's -errno is called.
 pub const ERRNO: &str = "E";
+
+/// The types that hold flags, printed in hex (`*`: a name's end).
+pub const FLAG_TYPES: &[&str] = &["fmode_t", "gfp_t", "*flags_t"];
+/// The types printed in octal: file modes.
+pub const OCTAL_TYPES: &[&str] = &["umode_t"];

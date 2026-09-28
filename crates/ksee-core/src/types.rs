@@ -277,10 +277,11 @@ impl Types {
         }
     }
 
-    /// Whether `ty` holds flags (named so: fmode_t, gfp_t, vm_flags_t, ...).
+    /// Whether `ty` holds flags (arch::FLAG_TYPES: fmode_t, gfp_t,
+    /// vm_flags_t, ...).
     fn is_flags(&self, ty: u32) -> bool {
         let name = self.name(ty);
-        matches!(name.as_str(), "fmode_t" | "gfp_t" | "fop_flags_t") || name.ends_with("flags_t")
+        crate::arch::FLAG_TYPES.iter().any(|&f| name == f || f.starts_with('*') && name.ends_with(&f[1..]))
     }
 
     /// Print the scalar (or string) value of type `ty` at `addr`, possibly
@@ -305,13 +306,16 @@ impl Types {
                     Base::Float => write!(out, "{}", f64::from_bits(v)),
                     // Unsigned: decimal, but flags in hex and file modes in octal.
                     _ if v > 9 && self.is_flags(ty) => write!(out, "{v:#x}"),
-                    _ if v > 7 && self.name(ty) == "umode_t" => write!(out, "0{v:o}"),
+                    _ if v > 7 && crate::arch::OCTAL_TYPES.contains(&self.name(ty).as_str()) => write!(out, "0{v:o}"),
                     _ => write!(out, "{v}"),
                 };
             }
             Kind::Enum(values) => {
-                let v = self.read_int(mem, addr, t.size.min(8), bit_off, bit_size) as i64;
-                match values.iter().find(|(_, x)| *x == v) {
+                // (An enumerator may be negative: as the value's bits, or signed.)
+                let bits = if bit_size > 0 { bit_size } else { t.size.min(8) * 8 };
+                let u = self.read_int(mem, addr, t.size.min(8), bit_off, bit_size);
+                let v = if bits > 0 && bits < 64 { (u << (64 - bits)) as i64 >> (64 - bits) } else { u as i64 };
+                match values.iter().find(|(_, x)| *x == v || *x == u as i64) {
                     Some((name, _)) => out.push_str(name),
                     None => {
                         let _ = write!(out, "{v}");
@@ -415,7 +419,7 @@ impl Types {
         mem.read(addr, &mut buf[..bytes as usize]);
         let v = u64::from_le_bytes(buf);
         if bit_size > 0 {
-            (v >> bit_off) & ((1u64 << bit_size) - 1)
+            (v >> bit_off) & (u64::MAX >> (64 - bit_size.min(64)))
         } else {
             v
         }

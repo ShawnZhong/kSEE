@@ -68,7 +68,7 @@ impl Calls {
         let mut c = Calls { calls: Vec::new(), at: Vec::with_capacity(records.len()), places: Vec::new(), vars: Vec::new() };
         // (Per task: its calls on the stack, outermost first, and where the innermost is.)
         let mut stacks: BTreeMap<u32, (Vec<u32>, u32)> = BTreeMap::new();
-        let entry = Tables::id(crate::arch::TASK_ENTRY);
+        let entry = t.find(crate::arch::TASK_ENTRY);
         for (i, r) in records.iter().enumerate() {
             let (frames, place) = stacks.entry(tasks[i]).or_insert((Vec::new(), NONE));
             match *r {
@@ -80,7 +80,7 @@ impl Calls {
                         // block of a function not on it starts it again.
                         let down = frames.iter().rposition(|&k| c.calls[k as usize].func == func);
                         let keep = match (n, down) {
-                            (0, _) if func == entry => 0,
+                            (0, _) if Some(func) == entry => 0,
                             (0, _) => frames.len(),
                             (_, Some(k)) => k + 1,
                             (_, None) => 0,
@@ -227,6 +227,11 @@ impl Calls {
                 None => (seg, nth) = (seg + 1, nth - steps.len()),
             }
         };
+        // (A line of another stretch than the one it runs in, one before a
+        // call it made: the store has no line of its own, the plugin's last.)
+        if seg != p.seg {
+            return None;
+        }
         let nth = nth as u32;
         Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run: 0, ret: None, callee: None })
     }
@@ -437,9 +442,10 @@ mod tests {
     #[test]
     fn a_new_task_starts_empty() {
         // A task that exited in f (never returning), then a new task at its address.
-        let entry = Tables::id(crate::arch::TASK_ENTRY);
-        let r = [b(entry, 0), b(1, 0), b(entry, 0), b(2, 0)];
-        assert_eq!(stack_at(&r, &[7; 4], 3), [entry, 2]);
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t5\twasm_task_entry\t0:1\t0\n", "");
+        let r = [b(5, 0), b(1, 0), b(5, 0), b(2, 0)];
+        let got: Vec<u32> = Calls::new(&t, &r, &[7; 4]).stack_at(&t, 3, None).into_iter().map(|c| c.func).collect();
+        assert_eq!(got, [5, 2]);
     }
 
     #[test]

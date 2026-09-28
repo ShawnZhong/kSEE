@@ -556,7 +556,7 @@ impl Types {
             // (The parameter's type: what the braces make.)
             let to = match self.get(self.resolve(ty)).kind {
                 Kind::Pointer(to) => self.resolve(to),
-                _ if ty == 0 => 0,
+                _ if ty == 0 => return Err("{…}: a parameter of no known type".into()),
                 _ => return Err(format!("{{…}} for a {}: not a pointer", self.name(ty))),
             };
             // A char **: an array of strings.
@@ -566,15 +566,6 @@ impl Types {
                     Item::Expr(e) if eval(&e, known)? == 0 => Ok(None),
                     _ => Err("an array of strings: \"…\" or NULL each".to_string()),
                 }).collect::<Result<_, _>>().map(Arg::Strings);
-            }
-            if to == 0 {
-                // (Unknown: 64-bit values, as before types said.)
-                let mut b = Vec::new();
-                for (_, it) in list {
-                    let Item::Expr(e) = it else { return Err("a value expected".into()) };
-                    b.extend_from_slice(&eval(&e, known)?.to_le_bytes());
-                }
-                return Ok(Arg::Bytes(b));
             }
             let mut b = vec![0u8; self.size_of(to) as usize];
             self.fill(&mut b, 0, to, &Item::List(list), known)?;
@@ -736,8 +727,8 @@ mod tests {
         assert_eq!(t.arg("\"a\\n\"", 5, &known), Ok(Arg::Bytes(b"a\n\0".to_vec())));
         assert_eq!(t.arg("{\"init\", NULL}", 6, &known), Ok(Arg::Strings(vec![Some("init".into()), None])));
         assert_eq!(t.arg("fd", 7, &known), Ok(Arg::Number(3)));
-        // (No type known: 64-bit values.)
-        assert_eq!(t.arg("{1, 2}", 0, &known), Ok(Arg::Bytes([1u64.to_le_bytes(), 2u64.to_le_bytes()].concat())));
+        // (No type known: no layout.)
+        assert!(t.arg("{1, 2}", 0, &known).is_err());
         assert!(t.arg("{1}", 7, &known).unwrap_err().contains("not a pointer"));
     }
 }

@@ -504,7 +504,7 @@ impl View<'_> {
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         let task = tasks.get(s.record).copied();
         let tests = (s.record + 1..records.len()).filter(|&j| Some(tasks[j]) == task)
-            .map(|j| records[j]).take_while(|r| matches!(r, Record::Store { .. } | Record::Compare { .. }))
+            .map(|j| records[j]).take_while(|r| matches!(r, Record::Store { .. } | Record::Compare { .. } | Record::Var { .. }))
             .filter(|r| matches!(r, Record::Compare { line, .. } if *line == s.index))
             .filter_map(|r| compared(&r)).collect();
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
@@ -726,7 +726,9 @@ impl View<'_> {
     pub fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
         let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
         let from = self.rec.copied_from(i, addr);
-        Some(Write { i, addr, old: num(old), task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)), from })
+        // (A range whose old contents are not kept: its record has its length.)
+        let old = if matches!(self.rec.records[i], Record::Store { size: 0, .. }) { "(not kept)".into() } else { num(old) };
+        Some(Write { i, addr, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)), from })
     }
 
     /// Where the value at `addr..addr + len` after record `at` came from:

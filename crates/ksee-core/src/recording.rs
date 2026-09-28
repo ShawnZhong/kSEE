@@ -222,7 +222,8 @@ impl Recording {
     /// is a copy (its record says where its bytes come from).
     pub fn copied_from(&self, i: usize, addr: u32) -> Option<u32> {
         match self.records.get(i)? {
-            Record::Store { addr: at, from: Some(from), .. } => Some(from.wrapping_add(addr.wrapping_sub(*at))),
+            // (From where the store and the value overlap.)
+            Record::Store { addr: at, from: Some(from), .. } => Some(from.wrapping_add(addr.max(*at) - at)),
             _ => None,
         }
     }
