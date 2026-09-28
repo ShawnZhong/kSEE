@@ -330,6 +330,14 @@ for (const name of ["create", "futex"]) {
   check(`deterministic: the same calls, the same records (${one.slice(0, 60)}…)`, one === two || console.log(one, "\n", two));
 }
 
+// An execve with its argv (a vfork child runs the program again): it
+// finishes as an exec, and the kernel has no NULL argv to warn of.
+{
+  const steps = ['pid_t child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0)', 'child: execve("/bin/prog", {"prog", "-x", NULL}, NULL)'].map((l) => m.statement(l));
+  const ran = await runExample({ steps });
+  check(`an execve with argv runs the program (${fin.get(ran[1])?.how})`, fin.get(ran[1])?.how === "exec" && !out.includes("NULL argv"));
+}
+
 // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts)
 await m.restart();
 m.call("reboot", [0xfee1dead, 672274793, 0x4321fedc, 0]);

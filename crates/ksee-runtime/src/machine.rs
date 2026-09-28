@@ -393,14 +393,14 @@ fn pack(args: &[JsValue], base: u32) -> Result<([u32; 6], Vec<u8>), JsValue> {
     for (i, a) in args.iter().enumerate() {
         // { strings: [s, …, null] }: an array of char * (null: NULL), as argv.
         if let Ok(list) = js::get(a, "strings").dyn_into::<js_sys::Array>() {
-            let mut words = Vec::new();
+            let mut pointers = Vec::new();
             for s in list.iter() {
-                words.push(match s.as_string() {
+                pointers.push(match s.as_string() {
                     Some(s) => put(&[s.as_bytes(), &[0]].concat())?,
                     None => 0,
                 });
             }
-            let array: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let array: Vec<u8> = pointers.iter().flat_map(|w| w.to_le_bytes()).collect();
             words[i] = put(&array)?;
             continue;
         }
