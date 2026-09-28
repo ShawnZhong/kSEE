@@ -38,8 +38,6 @@ pub struct Function {
 /// one of the call's own), with no records.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Var {
-    /// Its number among its function's (its records').
-    pub k: u32,
     pub of: u32,
     pub function: String,
     pub name: String,
@@ -152,7 +150,7 @@ impl Tables {
                 ["V", id, k, of, function, name, param, arg] => {
                     if let (Ok(id), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) && !name.starts_with(crate::arch::MADE_UP) {
                         let (param, arg) = (param.parse().unwrap_or(0), arg.parse().unwrap_or(0));
-                        t.vars.insert((id, k), Var { k, of, function: function.to_string(), name: name.to_string(), param, arg });
+                        t.vars.insert((id, k), Var { of, function: function.to_string(), name: name.to_string(), param, arg });
                     }
                 }
                 ["R", words] => t.ring_words = words.parse().unwrap_or(0),

@@ -94,12 +94,7 @@ Hover
 a name in the source for its value at the cursor (a name with one is
 underlined, dotted: the arguments and locals of the calls on the Stack; a
 struct's value opens, field by field, on a click on its name), and a value in the Stack
-for who last wrote it; its row's 📌 (at its end, on hover) pins it: a
-row under the timeline, its value over time, a segment per write with the
-value written in it, under the call that wrote it (hover: what wrote it;
-click: that moment; × unpins; a local's while its frame lives, another
-value's in the whole recording; a variable the code keeps in a wasm
-local, the values its call set it to: a loop's counter, turn by turn). The Stack shows the selected call's
+for who last wrote it. The Stack shows the selected call's
 values (the innermost's, unless another is selected: a click on it, ▲ ▼,
 a bar in the timeline), the others a row each, as a debugger's variables
 are the selected frame's (every call's, on asking); its locals are all
@@ -116,8 +111,10 @@ and frames, memory nothing names by its address) as the objects they
 changed, at the cursor: a box per object, in the order the call first
 wrote them,
 each member the call writes as it is then, in the Stack's value rows (a
-field inside another open to it; its writes on asking; one
-written only later dim), the one the cursor last wrote marked (stepping
+field inside another open to it; the others folded, `▸ 5 other fields`;
+one written only later dim), with a strip for when: a tick a write across
+the call, the cursor a line (hover a tick: from what to what, by which
+function; click: that moment), the one the cursor last wrote marked (stepping
 shows each change as it is made); its pointers to the others, each a
 link to it (`f_inode → atime_needs_update's inode`: a kiocb's file, the
 file's inode, the inode's page); all its fields on asking. An object on the stack is there while its call

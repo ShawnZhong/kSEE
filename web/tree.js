@@ -3,13 +3,10 @@
 // click on the name), read
 // from memory as it was at the cursor (Machine.memory_at). Values that
 // changed since the cursor last moved are highlighted; hover one in memory
-// for who last wrote it; its row's 📌 pins it: its value over time, under
-// the timeline (a local's while its frame lives, another's in the whole
-// recording; a variable in a wasm local, the values its call set it to).
+// for who last wrote it (a value's changes over time: the Objects', a
+// strip on each member the selected call writes).
 import { el, taskName } from "./dom.js";
 
-// The most writes of a value pinned (the newest).
-const WRITES = 4096;
 
 // `st`: a tree's state: { open (paths open), last, now (values shown
 // before and now, by path) }; `redraw()`: draw it again (a value opened or
@@ -30,13 +27,10 @@ export function tree(app, st, redraw) {
   }
 
   // Rows for `list` under `path`, `depth` deep, into `out`; `pre`: their C
-  // expressions' start ("file->", "file->f_path."); `life`: their
-  // object's lifetime, for its history ({ from, to, what }: a local's
-  // frame, from its call to its return; null: the whole recording);
-  // `keep`, if given: the paths to show (what changed, and the way to it),
+  // expressions' start ("file->", "file->f_path."); `keep`, if given: the paths to show (what changed, and the way to it),
   // the others of each level folded into a row of their own ("▸ 5 other
   // fields"), open on asking.
-  function rows(list, path, depth, out, life = null, pre = "", keep = null) {
+  function rows(list, path, depth, out, pre = "", keep = null) {
     const others = keep ? list.filter((o) => !keep.has(`${path}.${o.name}`)) : [];
     const all = !others.length || st.open.has(`${path}/others`);
     for (const o of all ? list : list.filter((o) => keep.has(`${path}.${o.name}`))) {
@@ -52,35 +46,17 @@ export function tree(app, st, redraw) {
         el("td", { className: `fname${can ? " opens" : ""}`, style: `padding-left:${10 + depth * 14}px`,
                    onclick: can ? () => toggle(st.open, p) : null },
           el("span", { className: "tw", textContent: can ? (open ? "▾" : "▸") : "" }), o.name),
-        // (Hover a value: who last wrote it, and what it was before; the
-        // row's "writes": its writes. Only a value in memory: not an
-        // argument, which is in its call's record, at 0.)
+        // (Hover a value: who last wrote it, and what it was before. Only a
+        // value in memory: not an argument, which is in its call's record.)
         o.addr && o.size
           ? el("td", { className: "fval mem", title: value, onmouseenter: (ev) => (ev.target.title = `${value}\n${wroteIt(o)}`) }, value)
           : el("td", { className: "fval", title: value }, value),
-        el("td", { className: "ftype" }, o.ty, hasWrites(o, life)
-          ? el("a", { className: "hist", textContent: "📌", title: "pin it: its value over time, under the timeline", onclick: () => pin(o, e, life) }) : null)));
-      // (A pointer's target is another object: its own lifetime.)
-      if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? null : life, o.target != null ? `${e}->` : `${e}.`, keep);
+        el("td", { className: "ftype" }, o.ty)));
+      if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? `${e}->` : `${e}.`, keep);
     }
     if (others.length) out.push(el("tr", { className: "sub" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
       el("a", { textContent: all ? "▾ only what changed" : `▸ ${others.length} other field${others.length === 1 ? "" : "s"}`, onclick: () => toggle(st.open, `${path}/others`) }))));
   }
-  // Whether value `o` has writes to pin: one in memory; a variable kept
-  // in a wasm local, its call's (`life`).
-  const hasWrites = (o, life) => (o.addr && o.size) || (o.var != null && life);
-  // Pin value `o` (C expression `e`) under the timeline: its writes (a
-  // local's while its frame lives, `life`; another's in the whole
-  // recording; a variable in a wasm local, the values its call set it to).
-  function pin(o, e, life) {
-    const id = o.var != null ? `var:${life.from}:${o.var}` : `mem:${o.addr}:${o.id}:${life?.from ?? ""}`;
-    app.time.pin({ id, label: e, fetch: () => {
-      if (o.var != null) return { initial: "(uninitialized)", writes: m.var_writes(life.from, o.var).map(([i, value]) => ({ i, value })) };
-      const w = m.writes(o.addr, o.id, life?.from, life?.to, WRITES);
-      return { initial: w[0]?.before ?? o.value, writes: w.map((x) => ({ i: x.i, value: x.after, where: x.at?.func })) };
-    } });
-  }
-
   // Who last wrote value `o`, and where from: back through the copies
   // that brought it there (Machine.origin), a line each.
   function wroteIt(o) {

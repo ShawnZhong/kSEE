@@ -53,7 +53,7 @@ export function tasks(app) {
       if (!open) continue;
       // (Its key fields; the others folded, as a tree's are.)
       const key = new Set(m.task_fields(t.task.addr, false).fields.map((f) => `${p}.${f.name}`));
-      rows(m.task_fields(t.task.addr, true).fields, p, 1, all, null, "", key);
+      rows(m.task_fields(t.task.addr, true).fields, p, 1, all, "", key);
     }
     body.replaceChildren(el("table", { className: "objs stack" }, el("tbody", {}, ...all)));
   }

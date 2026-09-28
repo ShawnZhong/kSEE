@@ -191,57 +191,6 @@ export function timeline(app) {
   function draw() {
     drawOverview();
     drawChart();
-    drawPins();
-  }
-
-  // ---- Pinned values: each a row under the task strip, its value over
-  // the window as a signal's trace (a segment per write, the value written
-  // inside it: where it changes, under the call that changed it); hover a
-  // segment for its value and what wrote it, click it to go to that write;
-  // × unpins. A pin: { id, label, fetch() → { initial, writes: [{ i,
-  // value, where }] } }, fetched again for each snapshot.
-  const pins = [];
-  function pin(p) {
-    if (!pins.some((q) => q.id === p.id)) pins.push(p);
-    drawPins();
-  }
-  function drawPins() {
-    const box = $("pins");
-    if (!t.win || !pins.length) return box.replaceChildren();
-    const key = m.record_id(m.records() - 1), w = W();
-    box.replaceChildren(...pins.map((p, k) => {
-      if (p.key !== key) Object.assign(p, p.fetch(), { key });
-      // (Its segments in the window: from each write in it to the next.)
-      const segs = [];
-      let from = 0, value = p.initial, at = null;
-      for (const x2 of p.writes) {
-        if (x2.i > t.win.b) break;
-        if (x2.i >= t.win.a) {
-          const px = x(x2.i);
-          segs.push({ from, to: px, value, at });
-          from = px;
-        }
-        (value = x2.value), (at = x2);
-      }
-      segs.push({ from, to: w, value, at });
-      // (Numbers as a step plot: each segment's level its value's place
-      // between the least and the most; other values, a color each, so a
-      // value coming back reads as the same.)
-      const num = (v) => (/^-?(0x[0-9a-f]+|\d+)$/i.test(v) ? Number(v) : null);
-      const nums = p.writes.map((x2) => num(x2.value));
-      const plot = nums.length && nums.every((v) => v != null);
-      const [lo, hi] = plot ? [Math.min(...nums), Math.max(...nums)] : [0, 0];
-      const look = (v) => plot ? `--level: ${hi > lo ? 15 + 85 * ((num(v) ?? lo) - lo) / (hi - lo) : 50}%`
-        : `--hue: ${[...String(v)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)}`;
-      return el("div", { className: `pin${plot ? " plot" : ""}` },
-        ...segs.filter((s) => s.to - s.from >= 1).map((s) => el("span", { className: `seg mono${s.at ? "" : " before"}`,
-          style: `left: ${s.from}px; width: ${s.to - s.from}px; ${s.at ? look(s.value) : ""}`, textContent: s.at && s.to - s.from > 28 ? s.value : "", // (the value before: under the label, on hover)
-          title: `${p.label} = ${s.value}${s.at ? `\nwritten in ${s.at.where ?? "?"}: click to go there` : ""}`,
-          onclick: () => s.at && go(s.at.i) })),
-        el("span", { className: "plabel mono", textContent: p.label }),
-        el("a", { className: "unpin", textContent: "×", title: "unpin", onclick: () => (pins.splice(k, 1), drawPins()) }),
-        t.cursor != null && t.cursor >= t.win.a && t.cursor <= t.win.b ? el("span", { className: "pcur", style: `left: ${x(t.cursor) - 1}px` }) : null);
-    }));
   }
 
   // ---- The window ---- (set in steps)
@@ -541,6 +490,6 @@ export function timeline(app) {
     }
     return null;
   }
-  return { refresh, clear, go, mark, select, selectCall, pin, hilite, selected, boxOf, focusFind: () => finder.input.focus(),
+  return { refresh, clear, go, mark, select, selectCall, hilite, selected, boxOf, focusFind: () => finder.input.focus(),
            home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }

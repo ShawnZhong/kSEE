@@ -293,7 +293,8 @@ export function app(m) {
     const at = m.at(i), s = calls[at?.syscall] ?? null;
     if (s) time.select(s);
     time.mark(i);
-    const st = steps(), k = st.findIndex((x) => x.i === i && x.line === line && x.file === file);
+    // (Its step: at or after the block that runs it, which may run it after a call returns into it.)
+    const st = steps(), k = st.findIndex((x) => x.i >= i && x.line === line && x.file === file);
     return k >= 0 ? showStep(k) : time.go(i);
   };
   // (The four buttons are the four keys: ◀ ▶ in time, the selected call's

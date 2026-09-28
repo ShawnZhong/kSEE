@@ -129,15 +129,12 @@ const buf = (i) => (m.memory_at(i), m.call_stack(inRead)[0].args.find((a) => a.n
 check("the user's buffer, before the read and after", !/hello/.test(buf(read.first)) && /"hello from the page cache/.test(buf(read.last)));
 const who = (m.memory_at(read.last), m.origin(fpos(read.last).addr, 8)[0]);
 check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
-// An object's history: f_pos's writes, the read's among them (0 to 26, by ksys_read);
-// the struct file's writes name their member.
+// The read's writes to its file (Objects): f_pos's once, 0 to 26, by ksys_read.
 {
-  const p = fpos(read.last), h = m.writes(p.addr, p.id), w = h.find((x) => x.i >= read.first && x.i <= read.last);
-  check("... and within the read alone, its write only", m.writes(p.addr, p.id, read.first, read.last).length === 1);
-  check(`f_pos's history: ${h.length} writes, the read's ${w?.before} → ${w?.after} by ${w?.at?.func}`,
-        w?.before === "0" && w?.after === "26" && w?.at?.func === "ksys_read" && h.every((x, k) => k === 0 || h[k - 1].i < x.i));
-  const f = m.writes(Number(file.value), file.target, read.first, read.last);
-  check(`the struct file's writes in the read: ${f.map((x) => x.member).join(", ")}`, f.some((x) => x.member === "f_pos"));
+  const obj = m.objects(read.first, read.last, read.last).find((n) => n.addr === Number(file.value) && n.id === file.target);
+  const w = obj?.writes.filter((x) => x.member === "f_pos") ?? [];
+  check(`the read's writes to its file: ${obj?.writes.map((x) => x.member).join(", ")}; f_pos ${w[0]?.before} → ${w[0]?.after} by ${w[0]?.at?.func}`,
+        w.length === 1 && w[0].before === "0" && w[0].after === "26" && w[0].at?.func === "ksys_read");
   // The read's stores, named as the code names what they hit: a call's file, a local of a call in it (at its frame base's offset), a callee's frame; in order.
   const st = m.stores(read.first, read.last);
   check(`the read's stores: ${st.length}, ${[...new Set(st.map((s) => s.what))].slice(0, 5).join("; ")}…`,
@@ -216,14 +213,11 @@ const pos = (i) => (m.memory_at(i), m.call_stack(i).find((c) => c.func === "ksys
 check("a local on the stack, as it was: ksys_read's pos, 0 then 26",
       pos(inRead) === "0" && pos(readSteps.findLast((x) => x.func === "ksys_read").i) === "26");
 // A variable the code keeps in a wasm local: in the Stack as it is by the
-// cursor (ksys_read's ret, set to what vfs_read returned), and its values
-// over time (Machine.var_writes).
+// cursor (ksys_read's ret, set to what vfs_read returned).
 {
   const last = readSteps.findLast((x) => x.func === "ksys_read").i;
   const ret = m.call_stack(last).find((c) => c.func === "ksys_read")?.locals?.find((l) => l.name === "ret");
-  const first = m.call_stack(last).find((c) => c.func === "ksys_read")?.first;
-  const values = ret?.var != null ? m.var_writes(first, ret.var).map(([, v]) => v) : [];
-  check(`a local in a wasm local: ksys_read's ret = ${ret?.value}, its values ${values.join(", ")}`, ret?.value === "26" && values.at(-1) === "26");
+  check(`a local in a wasm local: ksys_read's ret = ${ret?.value}`, ret?.value === "26");
 }
 m.memory_at(null);
 await call("close", [rfd]);

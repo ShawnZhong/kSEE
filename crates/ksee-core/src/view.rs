@@ -320,9 +320,6 @@ pub struct Object {
     pub expand: Option<u32>,
     /// For a pointer to a struct or union: the target's type id.
     pub target: Option<u32>,
-    /// A variable kept in a wasm local: its number among its call's
-    /// (Machine.var_writes: its values over time).
-    pub var: Option<u32>,
 }
 
 /// A task's fields: the key ones (arch::TASK_FIELDS, in that order), or
@@ -683,18 +680,9 @@ impl View<'_> {
             0 => types.locals.get(&v.of)?.iter().find(|l| l.0 == v.name)?.1,
             k => types.params.get(&v.of)?.get(k as usize - 1)?.1,
         };
-        Some(Object { var: Some(v.k), ..types.object(&Arg(&value.to_le_bytes(), mem), &v.name, 0, ty, 0) })
+        Some(types.object(&Arg(&value.to_le_bytes(), mem), &v.name, 0, ty, 0))
     }
 
-    /// The values variable `var` of the call from record `first` took, in
-    /// order (its Var records): (record, the value as its type says).
-    pub fn var_writes(&self, first: usize, var: u32) -> Vec<(usize, String)> {
-        let Some(v) = self.rec.calls.func_at(first).and_then(|f| self.tables.vars.get(&(f, var))) else { return Vec::new() };
-        self.rec.calls.vars_of(first, usize::MAX).filter_map(|j| match self.rec.records[j] {
-            Record::Var { var: k, value, .. } if k == var => Some((j, self.var_object(v, value, self.now)?.value?)),
-            _ => None,
-        }).collect()
-    }
 
     /// The syscall entry's arguments (the number, then the syscall's): the
     /// syscall's name, and its arguments as its parameters have them (with
@@ -806,15 +794,6 @@ impl View<'_> {
             (addr, at) = (src, before);
         }
         out
-    }
-
-    /// An object's history: the newest `limit` stores to the value of type
-    /// `ty` at `addr` in records `span` (its lifetime), oldest first, each
-    /// with the member it wrote (the one its first byte is in: see
-    /// Types::leaf), as it was before and after.
-    pub fn writes(&self, addr: u32, ty: u32, span: core::ops::RangeInclusive<usize>, limit: usize) -> Vec<Change> {
-        let all = self.rec.writes(addr, self.tables.types.size_of(ty).max(1), span);
-        all[all.len().saturating_sub(limit)..].iter().map(|&i| self.change(addr, ty, i)).collect()
     }
 
     /// What the store at record `i` wrote: memory there just after it.
@@ -1151,7 +1130,7 @@ impl Types {
         let t = self.get(id);
         let mut o = Object {
             name: name.to_string(), ty: self.name(ty), addr, id: ty, size: self.size_of(ty),
-            value: None, children: None, expand: None, target: None, var: None,
+            value: None, children: None, expand: None, target: None,
         };
         match &t.kind {
             Kind::Struct(_) | Kind::Union(_) => {
@@ -1265,8 +1244,6 @@ mod tests {
         let v = View { tables: &t, rec: &rec, now: &mem };
         let x = |i| v.call_stack(i, None, &mem, i)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
         assert_eq!((x(0), x(2), x(3)), (Some("(uninitialized)".into()), Some("5".into()), Some("7".into())));
-        // (And its values over time, each at its record.)
-        assert_eq!(v.var_writes(0, 0), [(1, "5".into()), (3, "7".into())]);
     }
 
     #[test]
@@ -1286,9 +1263,9 @@ mod tests {
     }
 
     #[test]
-    fn an_object_has_a_history() {
+    fn a_store_is_a_change_to_its_member() {
         // struct s { int a; int b; } at 4: record 1 stores b (2, was 1),
-        // record 3 a byte of a (5); in the span from record 2, the second only.
+        // record 3 a byte of a (5): each a change to its member.
         let t = Tables::parse("", "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\n");
         let r = [Record::Block { func: 9, n: 1 }, Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None },
                  Record::Block { func: 9, n: 1 }, Record::Store { addr: 5, size: 1, old: 0, line: 0, from: None }];
@@ -1296,9 +1273,8 @@ mod tests {
         let mut m = alloc::vec![0u8; 16];
         (m[8], m[5]) = (2, 5);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let got: Vec<_> = v.writes(4, 2, 0..=3, 8).into_iter().map(|c| (c.i, c.member, c.before, c.after)).collect();
+        let got: Vec<_> = [1, 3].map(|i| v.change(4, 2, i)).into_iter().map(|c| (c.i, c.member, c.before, c.after)).collect();
         assert_eq!(got, [(1, "b".into(), "1".into(), "2".into()), (3, "a".into(), "0".into(), "1280".into())]);
-        assert_eq!(v.writes(4, 2, 2..=3, 8).len(), 1);
     }
 
     #[test]

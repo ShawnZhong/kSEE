@@ -230,16 +230,6 @@ impl Recording {
         self.calls.line_at(t, i, &self.records)
     }
 
-    /// The stores to `addr..addr + len` in records `span` (an object's
-    /// lifetime: a local's frame, say; its address is another object's
-    /// before and after), oldest first: an object's history (see
-    /// View::writes).
-    pub fn writes(&self, addr: u32, len: u32, span: core::ops::RangeInclusive<usize>) -> Vec<usize> {
-        let mut all = self.stores().writes(addr, len);
-        all.retain(|i| span.contains(i));
-        all
-    }
-
     /// The stores in records `from..=to`, oldest first.
     pub fn stores_between(&self, from: usize, to: usize) -> &[usize] {
         self.stores().between(from, to.min(self.len().saturating_sub(1)))

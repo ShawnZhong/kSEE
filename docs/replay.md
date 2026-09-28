@@ -110,13 +110,9 @@ runs until the next call: so memory now is memory as the recording ends.
 
 The same index answers "who last wrote this?": the newest store to a range
 at or before the cursor, and the line it was on (where `lines` says the
-task was then); an object's history (`writes`): every store to a value
-of a type at an address in a span of records, its lifetime (the page
-gives a local's frame, from its call to its return: the slot is another
-call's before and after; heap objects' lifetimes are not known yet, so
-theirs is the whole recording), each as the member it wrote (the one its
-first byte is in: `Types::leaf`), printed as its type before and after
-(memory as it was); and the stores of a span of records (`stores`), in
+task was then); and the stores of a span of records (`stores`), each
+as the member it wrote (the one its first byte is in: `Types::leaf`),
+printed as its type before and after (memory as it was), in
 order, each named as the code names what it hit (a call's pointer
 argument to a struct, a local and what a pointer local points to as the
 call ends, the task running and what its pointer members point to, a

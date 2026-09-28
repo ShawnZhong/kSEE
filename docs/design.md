@@ -40,8 +40,8 @@ SMP, no fork (threads and vfork, though): see Limits).
    - *code*: the source line at the cursor, the lines that ran;
    - *values*: the call stack with each call's arguments and locals,
      the task running, and a name's value on hover (who last wrote it);
-     memory as it was at the cursor; a value's writes, and what a call
-     changed by object, on asking.
+     memory as it was at the cursor; what a call changed, by object,
+     each change's moment on a strip, on asking.
    An example's explanation is prose with links into the recording: a
    function one of its calls ran, or a call.
 

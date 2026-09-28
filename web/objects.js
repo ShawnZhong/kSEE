@@ -5,9 +5,9 @@
 // the calls that name them, the outer first, each in its place at every
 // moment (one not written yet, dim; one on the stack of a call not running
 // then, dashed). Each member it writes as it is then, in the Stack's value
-// rows (tree.js), the one last written marked; its pointers to the other
-// objects, each a link to it ("f_inode → atime_needs_update's inode"); all
-// of its fields on asking. As a tree: each box under the first that points
+// rows (tree.js), the one last written marked, a strip of when (a tick a
+// write); its pointers to the other objects, each a link to it ("f_inode →
+// atime_needs_update's inode"). As a tree: each box under the first that points
 // to it as the call ends (a file's inode under the file).
 import { $, el } from "./dom.js";
 import { tree } from "./tree.js";
@@ -16,8 +16,7 @@ export function objects(app) {
   const { m } = app;
   const body = $("objects");
   let shown = null, selected = null, last = null, drawnAt = null;
-  // (The values' state, as the Stack's: tree.js; a box's path in `open`:
-  // all of its fields.)
+  // (The values' state, as the Stack's: tree.js; the boxes drawn once.)
   const st = {}, seen = new Set();
   const redraw = () => last && render(...last);
   const { rows: fields, moved } = tree(app, st, redraw);
@@ -36,11 +35,11 @@ export function objects(app) {
     $("objects-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): the objects it wrote, and how they point to each other.";
     if (!w) return body.replaceChildren();
     moved(); // (another moment: what changed since, marked; not on a redraw)
-    render(m.objects(w.a, w.b, cur ?? w.b), cur ?? w.b);
+    render(m.objects(w.a, w.b, cur ?? w.b), cur ?? w.b, [w.a, w.b]);
   }
 
-  function render(nodes, cur) {
-    last = [nodes, cur];
+  function render(nodes, cur, span) {
+    last = [nodes, cur, span];
     // (All of them, in Machine.objects' order (the calls that name them,
     // outer first), each in its place at every moment: one on the stack of
     // a call not running then, dashed; one not written yet, dim.)
@@ -58,7 +57,7 @@ export function objects(app) {
     const visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.under === k && visit(c, depth + 1)));
     nodes.forEach((n, k) => n.under == null && visit(k, 0));
     body.replaceChildren(el("div", { className: "dim head" }, `${nodes.length} object${nodes.length === 1 ? "" : "s"} written, ${soFar} so far`),
-      ...order.map(([k, depth]) => Object.assign(box(nodes[k], nodes, k, cur, now, live(nodes[k])), { style: `margin-left: ${Math.min(depth, 6) * 14}px` })));
+      ...order.map(([k, depth]) => Object.assign(box(nodes[k], nodes, k, cur, now, live(nodes[k]), span), { style: `margin-left: ${Math.min(depth, 6) * 14}px` })));
     body.scrollTop = top;
     const on = body.querySelector("tr.on")?.getBoundingClientRect(), view = body.getBoundingClientRect();
     if (moment && on && (on.top < view.top || on.bottom > view.bottom)) body.querySelector("tr.on").scrollIntoView({ block: "nearest" });
@@ -67,7 +66,7 @@ export function objects(app) {
   // An object's box: its name and type; the members it writes, down to
   // each field written, as they are at the cursor (the others of each
   // level folded: tree.js's keep); its pointers to the others.
-  function box(n, nodes, k, cur, now, alive) {
+  function box(n, nodes, k, cur, now, alive, span) {
     const path = `obj/${n.addr}/${n.id}`;
     const obj = m.object_by_id(n.what, n.id, n.addr, 1);
     // (Each write's member as a path in the tree: "f_path.dentry", and
@@ -84,8 +83,8 @@ export function objects(app) {
       seen.add(path);
       for (const p of keep) st.open.add(p);
     }
-    const life = n.life ? { from: n.life[0], to: n.life[1], what: "while its frame lives" } : null, rows = [];
-    fields(obj?.children ?? (obj ? [obj] : []), path, 0, rows, life, "", obj?.children ? keep : null);
+    const rows = [];
+    fields(obj?.children ?? (obj ? [obj] : []), path, 0, rows, "", obj?.children ? keep : null);
     // (A member written only after the cursor: dim; the one last written: marked.)
     const at = new Map(rows.map((r) => [r.dataset.p, r]));
     const writes = new Map();
@@ -94,6 +93,7 @@ export function objects(app) {
       const r = at.get(p) ?? (obj?.children ? null : rows[0]);
       if (xs.every((x) => x.i > cur)) r?.classList.add("later");
       if (now && xs.includes(now)) r?.classList.add("on");
+      r?.cells[2]?.append(when(xs, span, cur));
     }
     // (Its pointers to the others: each a link to it.)
     const links = n.links.map((l) => el("div", { className: "row link" },
@@ -105,6 +105,17 @@ export function objects(app) {
                        title: alive ? "" : "on the stack of a call not running at the cursor: its memory is not its own then" },
       el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty}${note}` })),
       el("table", { className: "objs" }, el("tbody", {}, ...rows)), ...links);
+  }
+
+  // When the call wrote a member (its writes `xs`, in the selected call's
+  // `span`): a strip, a tick a write, the cursor a line; hover a tick for
+  // the change, click it to go there.
+  function when(xs, [a, b], cur) {
+    const at = (i) => `${(100 * (i - a)) / Math.max(1, b - a)}%`;
+    return el("span", { className: "when" },
+      ...xs.map((x) => el("i", { className: x.i <= cur ? "done" : "", style: `left: ${at(x.i)}`,
+                                   title: `${x.before} → ${x.after}${x.at ? `, in ${x.at.func}` : ""}: click to go there`, onclick: () => app.time.go(x.i) })),
+      cur >= a && cur <= b ? el("b", { style: `left: ${at(cur)}` }) : null);
   }
 
   // Go to object `k`'s box: in view, a flash.

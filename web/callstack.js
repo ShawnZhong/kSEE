@@ -43,11 +43,10 @@ export function callstack(app) {
       // (Only the selected call's values, as a debugger's variables are
       // the selected frame's: the others a row each, a click to select.)
       if (!on && !s.all) return;
-      // (Its values' lives: its call's. Then its locals: one list, as the
-      // source has them all as names.)
-      const life = { from: f.first, to: m.call_end(f.first) ?? undefined, what: `while ${f.func}'s frame lives` };
-      if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body, life);
-      if (f.locals) rows(f.locals, `${n - k}/${f.func}/locals`, 1, body, life);
+      // (Its arguments, then its locals: one list, as the source has them
+      // all as names.)
+      if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body);
+      if (f.locals) rows(f.locals, `${n - k}/${f.func}/locals`, 1, body);
     });
     // At the bottom: the task running then, a link to it in the Tasks.
     if (s.task && s.frames.length)

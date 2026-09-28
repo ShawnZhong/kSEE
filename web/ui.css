@@ -45,16 +45,6 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 #chart { display: block; width: 100%; cursor: crosshair; }
 #chart:focus { outline: none; }
 #strip { display: block; width: 100%; cursor: pointer; }
-/* Pinned values: a row each, its value over the window (timeline.js) */
-#pins .pin { position: relative; height: 16px; border-top: 1px solid var(--line); overflow: hidden; }
-#pins .seg { position: absolute; top: 1px; bottom: 1px; box-sizing: border-box; border-left: 1px solid var(--accent); background: var(--sel);
-             font-size: 10px; line-height: 14px; padding-left: 3px; white-space: nowrap; overflow: hidden; cursor: pointer; }
-#pins .pin:not(.plot) .seg:not(.before) { background: hsl(var(--hue) 55% 85%); }
-#pins .pin.plot .seg:not(.before) { background: linear-gradient(to top, var(--sel) var(--level), transparent var(--level)); }
-#pins .seg.before { background: transparent; border-left: none; color: var(--dim); }
-#pins .plabel { position: absolute; left: 0; top: 1px; z-index: 1; background: var(--panel); color: var(--dim); font-size: 10px; line-height: 14px; padding: 0 4px; }
-#pins .unpin { position: absolute; right: 4px; top: 0; z-index: 1; font-size: 11px; }
-#pins .pcur { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg); z-index: 2; pointer-events: none; }
 .flamehead { display: flex; gap: 12px; font-size: 11.5px; padding: 4px 0 2px; }
 .flamescroll { height: 190px; overflow: hidden auto; overscroll-behavior: contain; }
 #legend { margin-left: auto; display: flex; gap: 8px; color: var(--dim); }
@@ -105,8 +95,6 @@ table.objs tr.changed td { background: var(--chg); }
 table.objs tr.none td { color: var(--dim); }
 table.objs td.fname.opens { cursor: pointer; }
 /* (A value's writes: a link at its row's end, on hover, or while open.) */
-table.objs a.hist { margin-left: 8px; font-family: system-ui, sans-serif; font-size: 10.5px; visibility: hidden; }
-table.objs tr:hover a.hist { visibility: visible; }
 .tw { color: var(--dim); display: inline-block; width: 1.2em; }
 table.stack tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); background: var(--panel); }
 table.stack tr.frame.on td { background: var(--sel); }
@@ -136,6 +124,12 @@ h2.tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
 tr.later { opacity: 0.45; }
 #objects .obj.ended { border-style: dashed; opacity: 0.75; }
 #objects .obj.later { opacity: 0.5; }
+/* When a member was written, in the selected call: a tick a write, the cursor a line (objects.js) */
+#objects .when { position: relative; display: inline-block; width: 90px; height: 10px; margin-left: 8px; vertical-align: middle;
+                 border-bottom: 1px solid var(--line); }
+#objects .when i { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; background: var(--dim); cursor: pointer; }
+#objects .when i.done { background: var(--accent); }
+#objects .when b { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--fg); pointer-events: none; }
 #objects .obj .row.link span { color: var(--dim); }
 #objects .obj .row.more a { color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
 #objects .obj.flash { animation: flash 1s; }

@@ -223,18 +223,7 @@ impl Machine {
         self.view(|v| to_js(&v.objects(first, last, at)))
     }
 
-    /// An object's history: the newest `limit` writes (or all) to the value
-    /// of type `ty` at `addr` in records `from..=to` (its lifetime: a local's
-    /// frame; else the whole recording), oldest first (view::Change).
-    pub fn writes(&self, addr: u32, ty: u32, from: Option<usize>, to: Option<usize>, limit: Option<usize>) -> JsValue {
-        self.view(|v| to_js(&v.writes(addr, ty, from.unwrap_or(0)..=to.unwrap_or(usize::MAX), limit.unwrap_or(usize::MAX))))
-    }
 
-    /// The values variable `var` (an Object's) of the call from record
-    /// `first` took, in order: [[record, value], …] (view::var_writes).
-    pub fn var_writes(&self, first: usize, var: u32) -> JsValue {
-        self.view(|v| to_js(&v.var_writes(first, var)))
-    }
 
     /// The task running at the start of each of `n` buckets of the
     /// recording, for its overview (view::TaskRef).
