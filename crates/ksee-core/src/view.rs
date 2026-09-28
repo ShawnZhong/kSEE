@@ -1033,6 +1033,19 @@ impl View<'_> {
         // call tree reads; within one call, the first written first. The
         // task first; globals, and memory nothing names, last.)
         nodes.sort_by_key(|n| n.depth);
+        // (One name for two (a local of two calls of one function): the
+        // later numbered, in the order they are written: "current_time's
+        // now #2".)
+        let mut firsts: Vec<usize> = (0..nodes.len()).collect();
+        firsts.sort_by_key(|&k| nodes[k].writes[0].i);
+        let mut seen: BTreeMap<String, u32> = BTreeMap::new();
+        for k in firsts {
+            let n = seen.entry(nodes[k].what.clone()).or_default();
+            *n += 1;
+            if *n > 1 {
+                nodes[k].what = format!("{} #{n}", nodes[k].what);
+            }
+        }
         let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
         // (Each node's pointers to the others, as memory was after record
         // `at`, or its call's end for one on the stack.)
@@ -1366,6 +1379,22 @@ mod tests {
         assert_eq!(got, [("f's p".into(), 1, alloc::vec![]), ("f's y".into(), 1, alloc::vec![("link".into(), 0)])]);
         // (Shown as a tree: p under y, which points to it.)
         assert_eq!(nodes.iter().map(|n| n.under).collect::<Vec<_>>(), [Some(1), None]);
+    }
+
+    #[test]
+    fn two_objects_of_one_name_are_numbered() {
+        // f (1) called twice, each call storing its local int x (at frame
+        // 32 + 4): two objects, "f's x" and "f's x #2".
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:4\n");
+        let st = Record::Store { addr: 36, size: 4, old: 0, line: 0, from: None };
+        let r = [Record::Block { func: 1, n: 0 }, st, Record::Return { func: 1, value: 0 }, Record::Block { func: 1, n: 0 }, st, Record::Return { func: 1, value: 0 }];
+        let mut args = Args::default();
+        args.push(0, &[32]);
+        args.push(3, &[32]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 6], args);
+        let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 64]) };
+        let got: Vec<_> = v.objects(0, 5, 5).into_iter().map(|n| n.what).collect();
+        assert_eq!(got, ["f's x", "f's x #2"]);
     }
 
     #[test]
