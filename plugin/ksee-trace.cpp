@@ -350,9 +350,10 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       }
       // (Every instruction's line, a call's too: the line calling.)
       lineOf[&I] = cur;
+      // (One stretch per call, empty ones too: the host counts a stretch
+      // at each return into the block.)
       if (auto *CB = dyn_cast<CallBase>(&I); CB && runsProbes(*CB)) {
-        if (!items.empty() && items.back() != "|")
-          items.push_back("|");
+        items.push_back("|");
         seen.clear();
       }
     }

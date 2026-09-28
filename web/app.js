@@ -164,7 +164,8 @@ export function app(m) {
       const step = i == null && !chosen && L.pos != null ? steps()[L.pos] : null;
       if (step) showLine(step);
       else if (at) view(at, i == null ? chosen : frame);
-      // (The tabs follow too; back to the cursor's with null.)
+      // (The Trace follows too, back to the cursor's with null; the other
+      // tabs stay at the cursor.)
       marks(to);
     });
   };
@@ -196,9 +197,13 @@ export function app(m) {
     const task = w.task ?? m.at(time.cursor() ?? w.a)?.task.addr ?? 0;
     const key = `${w.key}:${task}`;
     if (key !== L.key) {
+      // (A new snapshot of the same selection: the step it was at, found
+      // again by its record and which of its lines.)
+      const was = L.pos != null ? L.steps[L.pos] : null;
       L.key = key;
       L.steps = m.line_steps(w.a, w.b, task);
-      L.pos = null;
+      const k = was ? L.steps.findIndex((s) => s.i === was.i && s.nth === was.nth) : -1;
+      L.pos = k >= 0 ? k : null;
     }
     return L.steps;
   }
