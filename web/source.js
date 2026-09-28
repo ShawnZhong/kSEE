@@ -132,15 +132,15 @@ export function source(app) {
     return out.length ? out.join("   ") : null;
   }
   // What a line stored, at its end, within the selected call up to the
-  // cursor: its last store (Machine.stores by line, cached per selection),
-  // and how many it made; a link to that store.
+  // cursor: its last store (the selection's stores by line, once per
+  // selection), and how many it made; a link to that store.
   function stored(file) {
-    const w = app.time.home(), cur = app.time.cursor();
+    const w = app.selection(), cur = app.time.cursor();
     if (!w || cur == null) return new Map();
-    const key = `${w.a}:${w.b}:${w.task}:${m.record_id(m.records() - 1)}`;
+    const key = w.key;
     if (v.stores?.key !== key) {
       const byLine = new Map();
-      for (const s of m.stores(w.a, w.b)) {
+      for (const s of app.selectionStores()) {
         if (!s.write.at) continue;
         const k = `${s.write.at.file}:${s.write.at.line}`;
         (byLine.get(k) ?? byLine.set(k, []).get(k)).push(s);

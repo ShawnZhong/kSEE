@@ -13,17 +13,15 @@ const TAG = { local: "local", frame: "frame", regs: "registers", machine: "the m
 export const storeText = ({ what, kind, write: x }) => `${what}${x.member ? (kind === "object" || kind === "regs" ? "->" : ".") + x.member : ""}: ${x.before} → ${x.after}`;
 
 export function stores(app) {
-  const { m } = app;
   const body = $("stores");
   let shown = null, rows = [];
 
   // Draw for the selection (again only if it, or the snapshot, changed).
   function draw() {
-    const w = app.time.home();
-    const key = w ? `${w.a}:${w.b}:${w.task}:${m.record_id(m.records() - 1)}` : null;
+    const w = app.selection(), key = w?.key ?? null;
     if (key === shown) return;
     shown = key;
-    rows = w ? m.stores(w.a, w.b) : [];
+    rows = app.selectionStores();
     $("stores-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): its stores, in order.";
     render();
   }

@@ -96,6 +96,21 @@ export function app(m) {
     if (f) a.selectFrame(f);
   };
   a.calls = () => calls;
+  // The selection (time.home(): its records and task), with a key that
+  // changes with it or with the snapshot (the newest record's id: indexes
+  // move): what a panel made of it holds until the key changes.
+  a.selection = () => {
+    const w = time.home();
+    return w && { ...w, key: `${w.a}:${w.b}:${w.task}:${m.record_id(time.records() - 1)}` };
+  };
+  // Its stores (Machine.stores), for the Stores and the source's notes
+  // alike: asked once per key.
+  let sel = { key: null, stores: [] };
+  a.selectionStores = () => {
+    const w = a.selection();
+    if (w && w.key !== sel.key) sel = { key: w.key, stores: m.stores(w.a, w.b) };
+    return w ? sel.stores : [];
+  };
   // Show the moment `at` (see Machine.at): the source there, the Stack,
   // memory as it was, where it is. `frame` ({ first, inlined }, a call on
   // the stack then): that call selected on the Stack, the source at the
@@ -152,12 +167,11 @@ export function app(m) {
   // (Machine.line_steps: every source line it ran, within blocks too.)
   const L = { key: null, steps: [], pos: null };
   function steps() {
-    const w = time.home();
+    const w = a.selection();
     if (!w) return (L.steps = []);
     // (A selection of any task, as the boot: the cursor's task's lines.)
     const task = w.task ?? m.at(time.cursor() ?? w.a)?.task.addr ?? 0;
-    // (A new snapshot moves the indexes: the newest record's id tells it.)
-    const key = `${w.a}:${w.b}:${task}:${m.record_id(time.records() - 1)}`;
+    const key = `${w.key}:${task}`;
     if (key !== L.key) {
       L.key = key;
       L.steps = m.line_steps(w.a, w.b, task);

@@ -26,8 +26,7 @@ export function trace(app) {
 
   // Draw for the selection (again only if it, or the snapshot, changed).
   function draw() {
-    const w = app.time.home();
-    const key = w ? `${w.a}:${w.b}:${w.task}:${m.record_id(m.records() - 1)}` : null;
+    const w = app.selection(), key = w?.key ?? null;
     if (key === shown) return;
     shown = key;
     funcs.clear();
