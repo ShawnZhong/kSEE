@@ -74,8 +74,9 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   writes into its memory; the doorbell interrupt wakes it).
 - **The recording** ([recording.md](recording.md)): an LLVM pass
   instruments every function the same way (blocks, calls with their
-  arguments and frame base, returns, stores with old values, where a
-  copy came from, the comparisons deciding branches) into one
+  arguments and frame base, returns, stores with old values and where a
+  copy came from, the named variables kept in wasm locals as they are
+  set, the comparisons deciding branches) into one
   ring, in full while a runner makes the syscall it was asked, stores
   only in between (so memory as it was stays exact, but for bulk writes
   past a page).
