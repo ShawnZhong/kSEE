@@ -27,7 +27,9 @@ const c = (v) => v === null || v === undefined ? "NULL"
   : typeof v === "object" ? `{${Object.entries(v).map(([k, x]) => `.${k} = ${c(x)}`).join(", ")}}`
   : String(v);
 
-export function kernel(m) {
+// `snapshot`: after each quiet, a new snapshot of the recording (the page's
+// refresh: it redraws; else Machine.snapshot).
+export function kernel(m, { snapshot = () => m.snapshot() } = {}) {
   // (The calls not finished yet, by id: their promises' resolves.)
   const waiting = new Map();
   // (Each call's quiet: the kernel run until it waits for the page again,
@@ -36,7 +38,7 @@ export function kernel(m) {
   let last = Promise.resolve();
   const settle = () => (last = last.catch(() => {}).then(async () => {
     const news = await m.quiet();
-    m.snapshot();
+    snapshot();
     for (const f of news.finished) {
       waiting.get(f.id)?.(f);
       waiting.delete(f.id);

@@ -322,7 +322,6 @@ export async function examples(app) {
       v.shown = now;
     }
     if (changed.length) q.vars = changed.join("   ");
-    app.refresh();
     draw();
     return true;
   }
