@@ -158,7 +158,10 @@ export function app(m) {
       if (key === peek.key) return;
       peek.key = i == null ? null : key;
       const at = to != null ? m.at(to) : null;
-      if (at) view(at, i == null ? chosen : frame);
+      // (Back to the cursor at a line step, no call chosen: that step, its note too.)
+      const step = i == null && !chosen && L.pos != null ? steps()[L.pos] : null;
+      if (step) showLine(step);
+      else if (at) view(at, i == null ? chosen : frame);
       // (The tabs follow too; back to the cursor's with null.)
       marks(to);
     });
@@ -243,7 +246,7 @@ export function app(m) {
                   step.tests.length && step.tests.join(", "),
                   step.ret != null && `returns ${a.kernel.result(step.ret)}`];
     src.view.cursor = { file: step.file, line: step.line, note: note.filter(Boolean).join("   ") || null };
-    src.showFunction(step.func, undefined, step.line, step.file);
+    src.showFunction(step.func, at?.syscall ?? undefined, step.line, step.file); // (the lines that ran: in its syscall, as elsewhere)
     // (The stack as it runs: see Machine.call_stack's nth.)
     stack.show(step.i, step, at?.task);
     // (A line after a return: what returned, as a debugger's finish says it.)
