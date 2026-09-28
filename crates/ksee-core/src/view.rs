@@ -126,9 +126,9 @@ pub struct Frame {
     pub locals: Option<Vec<Object>>,
 }
 
-/// A write to an object, in its history: at record `i`, to its `member`
-/// (a path: "f_path.dentry"; "" the object itself), from `before` to
-/// `after` (the member's value, printed), on `task`, by the code at `at`.
+/// A write to an object: at record `i`, to its `member` (a path:
+/// "f_path.dentry"; "" the object itself), from `before` to `after` (the
+/// member's value, printed), by the code at `at`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Change {
@@ -136,7 +136,6 @@ pub struct Change {
     pub member: String,
     pub before: String,
     pub after: String,
-    pub task: TaskRef,
     pub at: Option<Line>,
 }
 
@@ -825,12 +824,11 @@ impl View<'_> {
     fn change(&self, addr: u32, ty: u32, i: usize) -> Change {
         let types = &self.tables.types;
         let Record::Store { addr: a, old, .. } = self.rec.records[i] else { unreachable!() };
-        let task = self.task(self.rec.tasks[i]);
         let at = self.rec.line_at(self.tables, i).map(|s| self.line_only(&s));
         // (No type, a frame's bytes: the store as it is, at its offset.)
         if ty == 0 {
             let member = if a == addr { String::new() } else { format!("+{}", a.wrapping_sub(addr)) };
-            return Change { i, member, before: num(old), after: num(self.wrote(i)), task, at };
+            return Change { i, member, before: num(old), after: num(self.wrote(i)), at };
         }
         let (member, leaf, off, bits) = types.leaf(ty, a.max(addr) - addr);
         let (b0, bn) = bits.unwrap_or((0, 0));
@@ -839,7 +837,7 @@ impl View<'_> {
             types.print(&self.rec.memory_at(self.now, at), addr + off, leaf, b0, bn, &mut v);
             v
         };
-        Change { i, member, before: value(i.saturating_sub(1)), after: value(i), task, at }
+        Change { i, member, before: value(i.saturating_sub(1)), after: value(i), at }
     }
 
     /// The stores in records `first..=last` (a call's), in order, each as
@@ -1024,7 +1022,7 @@ impl View<'_> {
             let was = before.insert((c, var), after.clone()).unwrap_or_else(|| "(uninitialized)".into());
             let at = self.rec.line_at(t, i).map(|s| self.line_only(&s));
             out.push(Stored { what: format!("{}'s {}", v.function, v.name), kind: "var", ty: o.ty, id: 0, addr: 0, size: 0,
-                              write: Change { i, member: String::new(), before: was, after, task: self.task(self.rec.tasks[i]), at }, life: None, depth });
+                              write: Change { i, member: String::new(), before: was, after, at }, life: None, depth });
         }
         out.sort_by_key(|s| s.write.i);
         out

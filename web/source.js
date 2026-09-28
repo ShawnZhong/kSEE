@@ -150,35 +150,22 @@ export function source(app) {
     }
     return out;
   }
+  // A note at a line's end: `text`; with `i`, a link to that record
+  // (`title` says what it is).
   class Note extends CM.WidgetType {
-    constructor(text) {
+    constructor(text, i, title) {
       super();
-      this.text = text;
+      Object.assign(this, { text, i, title });
     }
     eq(other) {
-      return other.text === this.text;
-    }
-    toDOM() {
-      return el("span", { className: "note", textContent: this.text });
-    }
-  }
-  class Stored extends CM.WidgetType {
-    constructor(note) {
-      super();
-      this.note = note;
-    }
-    eq(other) {
-      return other.note.i === this.note.i && other.note.n === this.note.n;
+      return other.text === this.text && other.i === this.i;
     }
     ignoreEvent() {
-      return true;
+      return this.i != null;
     }
     toDOM() {
-      // (Short: the member, or the variable, and the change; the line says
-      // the rest. In full on hover.)
-      const x = this.note;
-      return el("a", { className: "stored", textContent: `${x.short}${x.n > 1 ? ` ×${x.n}` : ""}`,
-                       title: `${x.full}: what this line stored, last; click: go to that store`, onclick: () => app.time.go(x.i) });
+      return this.i == null ? el("span", { className: "note", textContent: this.text })
+        : el("a", { className: "stored", textContent: this.text, title: this.title, onclick: () => app.time.go(this.i) });
     }
   }
   // The cursor line's notes, a line of their own under it, as indented as
@@ -267,8 +254,11 @@ export function source(app) {
     }
     // (What each line stored so far, at its end; and what the calls it
     // made returned.)
-    for (const [n, note] of stored(file)) {
-      if (at(n) !== false) d.push(CM.Decoration.widget({ widget: new Stored(note), side: 2 }).range(doc.line(n).to));
+    // (Short: the member, or the variable, and the change; the line says
+    // the rest. In full on hover.)
+    for (const [n, x] of stored(file)) {
+      const widget = new Note(`${x.short}${x.n > 1 ? ` ×${x.n}` : ""}`, x.i, `${x.full}: what this line stored, last; click: go to that store`);
+      if (at(n) !== false) d.push(CM.Decoration.widget({ widget, side: 2 }).range(doc.line(n).to));
     }
     for (const [n, text] of called(file)) {
       if (at(n) !== false) d.push(CM.Decoration.widget({ widget: new Note(text), side: 3 }).range(doc.line(n).to));
