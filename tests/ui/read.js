@@ -16,6 +16,9 @@
     a.click();
     await sleep(300);
     r.notes.push([a.textContent, $("where").textContent.slice(0, 60), document.querySelector("#stack tr.frame")?.innerText.trim().split(/\s/)[0]]);
+    // (The first, ksys_read's call site: its caller's line, its names the caller's, not a global's.)
+    if (k === 0) r.site = document.querySelector(".cm-editor .values")?.textContent;
+    if (k === 0 && !/count = 64/.test(r.site ?? "")) throw new Error("the call site's values: " + JSON.stringify(r.site));
     if (k === 1) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
     if (k === 1) r.args = [...document.querySelectorAll("#stack tr")].slice(1, 4).map((f) => f.innerText.replace(/\s+/g, " ").trim());
     if (a.textContent === "vfs_read") {

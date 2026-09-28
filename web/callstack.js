@@ -92,7 +92,7 @@ export function callstack(app) {
   function resolve(expr, only) {
     const path = expr.split(/\s*(?:->|\.)\s*/).filter(Boolean);
     if (!path.length) return null;
-    const frames = only === undefined ? s.frames : s.frames.filter((f) => f.func === only);
+    const frames = only == null ? s.frames : s.frames.filter((f) => f.func === only);
     let o = null;
     for (const f of frames) if ((o = f.args?.find((x) => x.name === path[0]) ?? f.locals?.find((x) => x.name === path[0]))) break;
     o ??= m.global(path[0], 1);

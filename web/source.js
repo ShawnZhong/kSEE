@@ -130,6 +130,10 @@ export function source(app) {
     return states.get(file);
   }
 
+  // Whose names line `n` of the shown file uses: the call on the Stack at
+  // that line (inlined code: its function's), else the shown function if
+  // the line is in it; else none (null: any call's, or a global).
+  const owner = (n) => app.stack.frames().find((f) => f.file === v.file && f.line === n)?.func ?? (inFunction(n) ? v.fn.name : null);
   // Whether line `n` of the shown file is in the shown function.
   function inFunction(n) {
     const fn = v.fn?.file === v.file ? v.fn : null;
@@ -146,7 +150,7 @@ export function source(app) {
       k = e.end - 1;
       if (seen.has(e.expr)) continue;
       seen.add(e.expr);
-      const o = app.stack.resolve(e.expr, inFunction(line) ? v.fn.name : null);
+      const o = app.stack.resolve(e.expr, owner(line));
       if (o && o.value != null && o.value !== "(optimized out)") out.push(`${e.expr} = ${o.value}`);
     }
     return out.length ? out.join("   ") : null;
@@ -245,7 +249,7 @@ export function source(app) {
   function hover(line, text, k) {
     const e = exprAt(text, k);
     // (Arguments only in the shown function's own lines; elsewhere, globals.)
-    const o = e && app.stack.resolve(e.expr, inFunction(line) ? v.fn.name : null);
+    const o = e && app.stack.resolve(e.expr, owner(line));
     if (!o) return null;
     // (The value, and to open: its fields, and what it points to, a tree.)
     return { start: e.start, end: e.end, text: `${e.expr} = ${o.value ?? "{…}"}  // ${o.ty}`, o, expr: e.expr };

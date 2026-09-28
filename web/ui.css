@@ -37,7 +37,6 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .vsplit { cursor: col-resize; background: var(--line); width: 5px; opacity: .5; }
 .hsplit { cursor: row-resize; height: 4px; background: var(--line); opacity: .5; }
 .vsplit:hover, .hsplit:hover { background: var(--accent); opacity: .6; }
-@media (max-width: 1000px) { body { height: auto; } #app, main { grid-template-columns: 1fr; } .col { min-height: 50vh; } }
 
 
 /* The timeline: the overview, the stack chart, the task strip, the transport */
