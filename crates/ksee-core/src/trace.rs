@@ -6,14 +6,10 @@ use crate::Memory;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Record {
-    /// Block `n` of `func` (block 0: a call; its arguments follow).
+    /// Block `n` of `func` (block 0: a call; its arguments are in Args).
     Block { func: u32, n: u32 },
     /// A return from `func`, with `value` (truncated to 32 bits).
     Return { func: u32, value: u32 },
-    /// The arguments of the call whose entry block (Block n 0) is just
-    /// before: the first `n` of `args`; and its frame base (its locals in
-    /// memory are at their offsets from it: Types::locals).
-    Args { args: [u32; 6], n: u8, frame: u32 },
     /// A store of `size` bytes at `addr`, which held `old` (size 0: a range
     /// of `old` bytes whose old contents are not logged), on `line`: which
     /// of its block's lines (Tables::segments, "|" apart, from 0).
@@ -40,10 +36,35 @@ pub const RING: u32 = 16;
 /// Offset of the `on` word (probes record only while it is nonzero).
 pub const ON: u32 = 8;
 
+/// The calls' words, by their block 0's record: the arguments' (Tables::values
+/// splits them), then the frame base (its locals in memory are at their
+/// offsets from it: Types::locals).
+#[derive(Debug, Default)]
+pub struct Args {
+    /// (record, where its words start), in order.
+    at: Vec<(u32, u32)>,
+    words: Vec<u32>,
+}
+
+impl Args {
+    pub fn push(&mut self, record: usize, words: &[u32]) {
+        self.at.push((record as u32, self.words.len() as u32));
+        self.words.extend_from_slice(words);
+    }
+
+    /// The call at record `first`'s argument words and its frame base.
+    pub fn get(&self, first: usize) -> Option<(&[u32], u32)> {
+        let k = self.at.binary_search_by_key(&(first as u32), |a| a.0).ok()?;
+        let end = self.at.get(k + 1).map_or(self.words.len(), |a| a.1 as usize);
+        let (&frame, args) = self.words[self.at[k].1 as usize..end].split_last()?;
+        Some((args, frame))
+    }
+}
+
 /// The ring at `trace`, decoded, with each record's id: the number of the
 /// pair it starts at, counting every pair ever written (so an id stays the
-/// same while the ring goes on; indexes do not).
-pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> (Vec<Record>, Vec<u32>) {
+/// same while the ring goes on; indexes do not); and the calls' arguments.
+pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> (Vec<Record>, Vec<u32>, Args) {
     // The ring's current contents: `len` pairs from pair `first`.
     let pos = mem.read_u32(trace) & !1;
     let len = pos.min(words) / 2;
@@ -53,12 +74,15 @@ pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> (Vec<Record>, Vec<u32>)
         let a = trace + RING + (first + i) % pairs * 8;
         (mem.read_u32(a), mem.read_u32(a + 4))
     });
-    let (mut records, mut ids) = (Vec::new(), Vec::new());
+    let (mut records, mut ids, mut args) = (Vec::new(), Vec::new(), Args::default());
     while let Some(r) = d.next() {
+        if matches!(r, Record::Block { n: 0, .. }) {
+            args.push(records.len(), &d.values);
+        }
         records.push(r);
         ids.push(first + d.head);
     }
-    (records, ids)
+    (records, ids, args)
 }
 
 /// Decodes `len` pairs obtained from `pair(i)`.
@@ -68,30 +92,30 @@ pub struct Decoder<F> {
     len: u32,
     /// The pair the last record returned starts at.
     pub head: u32,
-    /// A record to return next (a call's arguments, after its block).
-    pending: Option<Record>,
+    /// The last record's values (a call's: its arguments' words, then its
+    /// frame base).
+    pub values: Vec<u32>,
 }
 
 impl<F: FnMut(u32) -> (u32, u32)> Decoder<F> {
     pub fn new(len: u32, pair: F) -> Self {
-        Decoder { pair, next: 0, len, head: 0, pending: None }
+        Decoder { pair, next: 0, len, head: 0, values: Vec::new() }
     }
 }
 
 impl<F: FnMut(u32) -> (u32, u32)> Decoder<F> {
-    /// Up to `max` continuation pairs from the next one, into `v`: how many.
-    fn values(&mut self, v: &mut [u32], max: usize) -> usize {
-        let mut got = 0;
-        while got < max && self.next < self.len {
+    /// The continuation pairs from the next one, into `values`: how many.
+    fn read_values(&mut self) -> usize {
+        self.values.clear();
+        while self.next < self.len {
             let (value, t) = (self.pair)(self.next);
             if t >> 28 != VALUE {
                 break; // the next head
             }
-            v[got] = value;
-            got += 1;
+            self.values.push(value);
             self.next += 1;
         }
-        got
+        self.values.len()
     }
 }
 
@@ -99,42 +123,27 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
     type Item = Record;
 
     fn next(&mut self) -> Option<Record> {
-        if let Some(r) = self.pending.take() {
-            return Some(r);
-        }
         while self.next < self.len {
             let (func, tag) = (self.pair)(self.next);
             self.head = self.next;
             self.next += 1;
             let kind = tag >> 28;
-            let mut v = [0u32; 2];
+            let got = self.read_values();
+            let v = [self.values.first().copied().unwrap_or(0), self.values.get(1).copied().unwrap_or(0)];
             match kind {
-                BLOCK => {
-                    let n = tag & 0x0fff_ffff;
-                    // An entry block: the call's arguments follow (as many as
-                    // it has), then its frame base.
-                    if n == 0 {
-                        let mut v = [0u32; 7];
-                        let k = self.values(&mut v, 7);
-                        if k > 0 {
-                            let mut args = [0u32; 6];
-                            args[..k - 1].copy_from_slice(&v[..k - 1]);
-                            self.pending = Some(Record::Args { args, n: (k - 1) as u8, frame: v[k - 1] });
-                        }
-                    }
-                    return Some(Record::Block { func, n });
-                }
+                // (An entry block: the call's arguments, as many words as
+                // they take, then its frame base.)
+                BLOCK => return Some(Record::Block { func, n: tag & 0x0fff_ffff }),
                 TASK => return Some(Record::Task { task: func }),
                 RETURN => {
-                    if self.values(&mut v, 1) < 1 {
+                    if got < 1 {
                         continue; // truncated
                     }
                     return Some(Record::Return { func, value: v[0] });
                 }
                 STORE => {
                     let (class, line) = (tag & 0xf, tag >> 4 & 0xff_ffff);
-                    let want = if class == 3 { 2 } else { 1 };
-                    if self.values(&mut v, want) < want {
+                    if got < if class == 3 { 2 } else { 1 } {
                         continue;
                     }
                     return Some(if class == UNKNOWN {
@@ -158,8 +167,13 @@ pub(crate) mod tests {
 /// continuations (of a record the ring has overwritten) and truncated
 /// records are skipped.
 fn decode(words: &[u32]) -> Vec<Record> {
-    Decoder::new(words.len() as u32 / 2, |i| (words[2 * i as usize], words[2 * i as usize + 1]))
-        .collect()
+    decode_values(words).into_iter().map(|(r, _)| r).collect()
+}
+
+/// The same, with each record's values.
+fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
+    let mut d = Decoder::new(words.len() as u32 / 2, |i| (words[2 * i as usize], words[2 * i as usize + 1]));
+    core::iter::from_fn(|| d.next().map(|r| (r, d.values.clone()))).collect()
 }
 
     pub fn block(func: u32, n: u32) -> Vec<u32> {
@@ -178,7 +192,7 @@ fn decode(words: &[u32]) -> Vec<Record> {
         w.extend(ret(5, 42));
         // Drop the head of the first record, as a wrapped ring would.
         assert_eq!(decode(&w[2..]), [Record::Block { func: 5, n: 3 }, Record::Return { func: 5, value: 42 }]);
-        assert_eq!(decode(&w)[..2], [Record::Block { func: 5, n: 0 }, Record::Args { args: [1, 2, 0, 0, 0, 0], n: 2, frame: 0x900 }]);
+        assert_eq!(decode_values(&w)[0], (Record::Block { func: 5, n: 0 }, alloc::vec![1, 2, 0x900]));
     }
 
     struct Ring(Vec<u8>);
@@ -193,7 +207,8 @@ fn decode(words: &[u32]) -> Vec<Record> {
         // (The store of 4 at 0x100 is on its block's line 3.)
         let w = [9, BLOCK << 28, 7, VALUE << 28, 8, VALUE << 28 | 1, 0x80, VALUE << 28 | 2, 0x100, STORE << 28 | 3 << 4 | 2, 5, VALUE << 28,
                  0x200, STORE << 28 | UNKNOWN, 64, VALUE << 28, 9, BLOCK << 28 | 1];
-        assert_eq!(decode(&w), [Record::Block { func: 9, n: 0 }, Record::Args { args: [7, 8, 0, 0, 0, 0], n: 2, frame: 0x80 },
+        assert_eq!(decode_values(&w)[0].1, [7, 8, 0x80]);
+        assert_eq!(decode(&w), [Record::Block { func: 9, n: 0 },
                                 Record::Store { addr: 0x100, size: 4, old: 5, line: 3 }, Record::Store { addr: 0x200, size: 0, old: 64, line: 0 },
                                 Record::Block { func: 9, n: 1 }]);
     }
@@ -208,7 +223,7 @@ fn decode(words: &[u32]) -> Vec<Record> {
             let at = RING as usize + slot * 4;
             m[at..at + 4].copy_from_slice(&w.to_le_bytes());
         }
-        let (got, ids) = ring(&Ring(m), 0, 4);
+        let (got, ids, _) = ring(&Ring(m), 0, 4);
         assert_eq!(got, [Record::Block { func: 9, n: 1 }, Record::Block { func: 9, n: 2 }]);
         assert_eq!(ids, [1, 2]);
     }

@@ -36,9 +36,10 @@
 // (the ring may have overwritten the start of a record) and skip
 // continuations until the next head:
 //   [fn, 1 << 28 | n]     block n of fn; block 0 (a call) is followed by its
-//                         arguments: the source's parameters, up to six,
-//                         truncated to 32 bits (0 for any the optimizer took
-//                         away: see F lines), then its frame base (the
+//                         arguments: the source's parameters, up to six, a
+//                         word each, two (low, high) for one wider than 32
+//                         bits (see F lines; 0 for any the optimizer took
+//                         away), then its frame base (the
 //                         stack pointer after its prologue: its locals in
 //                         memory are at their DWARF offsets from it)
 //   [fn, 4 << 28]         a return from fn, followed by the value
@@ -63,10 +64,11 @@
 //                I \t k \t function \t FILE:line
 //                                     inline site k: function, inlined at FILE:line
 //                R \t ring words
-//                F \t fn \t name \t FILE:line \t known \t sealed
+//                F \t fn \t name \t FILE:line \t known \t sealed \t wide
 //                  (known: a bit mask of the source's parameters that call
 //                  records carry; the others were optimized away. sealed:
-//                  1 if only its call and returns are recorded: see below)
+//                  1 if only its call and returns are recorded: see below.
+//                  wide: a bit mask of those that take two words)
 //                B \t fn \t n \t FILE:line:column (block 0: the function's
 //                  signature, where a call begins)
 //                L \t fn \t n \t lines: the source lines the block runs, in
@@ -103,7 +105,7 @@ namespace {
 
 constexpr unsigned RingWords = 1u << 21;
 constexpr unsigned CallArgs = 6;
-constexpr unsigned Values = CallArgs + 1; // a record's at most: a call's arguments and its frame base
+constexpr unsigned Values = 2 * CallArgs + 1; // a record's at most: a call's arguments (wide ones two words) and its frame base
 enum Kind { KindBlock = 1, KindReturn = 4, KindStore = 7, KindValue = 8 };
 
 uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
@@ -335,6 +337,18 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     return out;
   }
 
+  // The words of argument `V`: one, or two (low, high) if it is wider than
+  // 32 bits.
+  void words(IRBuilder<> &B, Value *V, SmallVectorImpl<Value *> &out) {
+    if (V->getType()->isIntegerTy() && V->getType()->getIntegerBitWidth() > 32) {
+      Value *v = B.CreateZExtOrTrunc(V, i64);
+      out.push_back(B.CreateTrunc(v, i32));
+      out.push_back(B.CreateTrunc(B.CreateLShr(v, 32), i32));
+    } else {
+      out.push_back(toI32(B, V));
+    }
+  }
+
   Value *toI32(IRBuilder<> &B, Value *V) {
     Type *T = V->getType();
     if (T->isPointerTy())
@@ -423,9 +437,9 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         break;
       IRBuilder<> B(&*BB->getFirstInsertionPt());
       // (The entry block's is the call: its arguments follow.)
-      SmallVector<Value *, CallArgs + 1> args;
+      SmallVector<Value *, Values> args;
       for (Value *p : n == 0 ? params : SmallVector<Value *, CallArgs>{})
-        args.push_back(p ? toI32(B, p) : B.getInt32(0));
+        p ? words(B, p, args) : args.push_back(B.getInt32(0));
       // (Then the frame base, where its locals are: see the Q lines.)
       if (n == 0) {
         Function *fa = Intrinsic::getOrInsertDeclaration(M, Intrinsic::frameaddress, {PointerType::getUnqual(M->getContext())});
@@ -462,8 +476,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     for (Instruction *I : writes)
       logStore(I);
 
+    unsigned wide = 0;
+    for (auto [k, p] : enumerate(params))
+      if (p && p->getType()->isIntegerTy() && p->getType()->getIntegerBitWidth() > 32)
+        wide |= 1 << k;
     std::string where = SP ? fileRef(sourcePath(SP)) + ":" + std::to_string(SP->getLine()) : "?";
-    probes += ("F\t" + Twine(id) + "\t" + F.getName() + "\t" + where + "\t" + Twine(known) + "\t" + Twine(seal) + "\n").str();
+    probes += ("F\t" + Twine(id) + "\t" + F.getName() + "\t" + where + "\t" + Twine(known) + "\t" + Twine(seal) + "\t" +
+               Twine(wide) + "\n").str();
   }
 
 public:

@@ -138,6 +138,13 @@ check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
         && st.some((s) => s.what.endsWith("'s frame")) && st.every((s, k) => k === 0 || st[k - 1].write.i < s.write.i));
 }
 m.memory_at(null);
+// A 64-bit argument, whole: llseek's offset (high 1, low 0) is vfs_llseek's loff_t 1 << 32.
+{
+  const ls = (await call("llseek", [rfd, 1, 0, { size: 8 }, 0])).s;
+  const at = ls && m.first_call("vfs_llseek", ls.first, ls.last, ls.task.addr);
+  const off = at != null && m.call_stack(at).find((f) => f.func === "vfs_llseek")?.args?.find((a) => a.name === "offset")?.value;
+  check(`a 64-bit argument whole: vfs_llseek's offset ${off}`, off === "4294967296");
+}
 const readSteps = m.line_steps(read.first, read.last, read.task.addr);
 check("line steps sit at their first store: some line is at a record past its block's, none before it, and a store is on its line",
       readSteps.some((s) => s.at > s.i) && readSteps.every((s) => s.at >= s.i) && readSteps.some((s) => s.at > s.i && m.at(s.at)?.line === s.line));

@@ -103,8 +103,8 @@ The choices that shape it:
 - No MMU: no page tables, faults, copy-on-write or demand paging; no
   fork (threads and vfork, which share memory; one program: /init).
 - One CPU; no preemption (the kernel reschedules at its usual points).
-- Arguments are 32 bits (wider ones lose their high half); locals are only
-  those in memory; values in wasm locals are not recorded.
+- Return values are 32 bits (wider ones lose their high half); locals are
+  only those in memory; values in wasm locals are not recorded.
 - A recording is a ring: the oldest records go when it is full.
 - No console input; no user signal handlers (a caught signal kills the
   task).

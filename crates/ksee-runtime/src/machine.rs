@@ -168,8 +168,8 @@ impl Machine {
     /// Decode the trace ring (again). The views use the last snapshot.
     pub fn snapshot(&self) {
         let t = tables();
-        let (records, ids) = trace::ring(&Direct, k(|k| k.trace.get()), t.ring_words);
-        *self.rec.borrow_mut() = Recording::new(t, records, ids);
+        let (records, ids, args) = trace::ring(&Direct, k(|k| k.trace.get()), t.ring_words);
+        *self.rec.borrow_mut() = Recording::new(t, records, ids, args);
     }
 
     // ---- Syscalls, made by the runners ----

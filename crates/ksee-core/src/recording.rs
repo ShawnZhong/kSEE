@@ -9,7 +9,7 @@ use core::cell::OnceCell;
 use crate::stack::{self, LineStep};
 use crate::syscalls::{self, Syscall};
 use crate::tables::Tables;
-use crate::trace::Record;
+use crate::trace::{Args, Record};
 use crate::{arch, mem, Memory};
 
 #[derive(Debug, Default)]
@@ -18,6 +18,8 @@ pub struct Recording {
     /// Each record's id (trace::ring): it names the record in later
     /// recordings of the same ring too, where its index has moved on.
     pub ids: Vec<u32>,
+    /// The calls' arguments, by their first record.
+    pub args: Args,
     /// The task_struct address running at each record.
     pub tasks: Vec<u32>,
     /// In the order they began.
@@ -35,26 +37,23 @@ pub struct Recording {
 }
 
 impl Recording {
-    pub fn new(t: &Tables, records: Vec<Record>, ids: Vec<u32>) -> Recording {
+    pub fn new(t: &Tables, records: Vec<Record>, ids: Vec<u32>, args: Args) -> Recording {
         // The task running at each record: it changes when __switch_to(prev,
         // next) returns (in next), when a new task starts
         // (wasm_task_entry(p)), and where the runtime says which runs (a
         // Task record, where a recording begins).
         let (switch, start) = (t.find(arch::SWITCH), t.find(arch::TASK_ENTRY));
-        let args = |i: usize| match records.get(i + 1) {
-            Some(&Record::Args { args, .. }) => Some(args),
-            _ => None,
-        };
+        let arg = |i: usize, k: usize| args.get(i).and_then(|(a, _)| a.get(k).copied());
         let (mut task, mut next, mut first_prev) = (0, None, None);
         let mut tasks = Vec::with_capacity(records.len());
         for (i, r) in records.iter().enumerate() {
             match *r {
                 Record::Block { func, n: 0 } if Some(func) == switch => {
-                    first_prev = first_prev.or(args(i).map(|a| a[0]));
-                    next = args(i).map(|a| a[1]);
+                    first_prev = first_prev.or(arg(i, 0));
+                    next = arg(i, 1);
                 }
                 Record::Block { func, n: 0 } if Some(func) == start => {
-                    task = args(i).map_or(task, |a| a[0]);
+                    task = arg(i, 0).unwrap_or(task);
                     next = None;
                 }
                 Record::Return { func, .. } if Some(func) == switch => task = next.take().unwrap_or(task),
@@ -73,7 +72,7 @@ impl Recording {
                 *t = prev;
             }
         }
-        let syscalls = syscalls::split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks);
+        let syscalls = syscalls::split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args);
         let blocks: Vec<usize> = records.iter().enumerate().filter(|(_, r)| matches!(r, Record::Block { .. })).map(|(i, _)| i).collect();
         let mut step = Vec::with_capacity(records.len());
         let mut n = 0;
@@ -82,7 +81,7 @@ impl Recording {
             step.push(n);
         }
         let calls = stack::Calls::new(t, &records, &tasks);
-        Recording { records, ids, tasks, syscalls, blocks, step, calls, stores: OnceCell::new() }
+        Recording { records, ids, args, tasks, syscalls, blocks, step, calls, stores: OnceCell::new() }
     }
 
     /// How many steps (blocks) the recording has.
@@ -279,10 +278,11 @@ mod tests {
     fn tasks_switch_where_switch_to_returns() {
         let t = Tables::parse("F\t1\t__switch_to\t0:1\t3\n", "");
         let switch = t.find("__switch_to").unwrap();
-        let r = [b(9, 1), b(switch, 0), Record::Args { args: [0x100, 0x200, 0, 0, 0, 0], n: 2, frame: 0 },
-                 Record::Return { func: switch, value: 0 }, b(9, 1)];
-        let rec = Recording::new(&t, r.to_vec(), (0..5).collect());
-        assert_eq!(rec.tasks, [0x100, 0x100, 0x100, 0x200, 0x200]);
+        let r = [b(9, 1), b(switch, 0), Record::Return { func: switch, value: 0 }, b(9, 1)];
+        let mut args = Args::default();
+        args.push(1, &[0x100, 0x200, 0]);
+        let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
+        assert_eq!(rec.tasks, [0x100, 0x100, 0x200, 0x200]);
     }
 
     #[test]
@@ -290,7 +290,7 @@ mod tests {
         // f (1): block 1 runs h's line 20 (h inlined into f).
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nB\t1\t0\t0:1:1\nB\t1\t1\t0:5:1\n\
                                I\t0\th\t0:6\nL\t1\t1\t0:5;:20@0\n", "");
-        let rec = Recording::new(&t, alloc::vec![b(1, 0), b(1, 1)], alloc::vec![0, 1]);
+        let rec = Recording::new(&t, alloc::vec![b(1, 0), b(1, 1)], alloc::vec![0, 1], Args::default());
         assert_eq!((rec.first_call(&t, "f", 0, 1, None), rec.first_call(&t, "h", 0, 1, None)), (Some(0), Some(1)));
     }
 

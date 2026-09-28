@@ -29,8 +29,10 @@ record pops its function's frame. A block of a function not on the stack
 task starts (`wasm_task_entry`) with an empty stack: a task that exited
 never returned from its last calls, and a new one may get its address.
 
-A frame's arguments and its frame base are the Args record after its
-block 0; its locals are at their offsets from the base (`Types::locals`).
+A frame's arguments and its frame base are the words after its block 0
+(`trace::Args`, by the call's record; `Tables::values` joins a wide
+argument's two); its locals are at their offsets from the base
+(`Types::locals`).
 The stacks are rebuilt once per snapshot, in one pass (`Calls`): every
 call (its function, first record, the record that ends it, the call it
 was made from and where that one was then), and per record where its

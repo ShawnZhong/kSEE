@@ -23,6 +23,8 @@ pub struct Function {
     /// Which of the source's parameters call records carry (a bit each);
     /// the others were optimized away.
     pub known: u32,
+    /// Which take two words (a bit each: 64 bits wide); the others one.
+    pub wide: u32,
     /// Only its call and returns are recorded, not its blocks (it loops,
     /// writes nothing the host undoes, calls nothing: see the plugin).
     pub sealed: bool,
@@ -141,7 +143,8 @@ impl Tables {
                     let Ok(id) = id.parse() else { continue };
                     let loc = unit.loc(location, false);
                     let sealed = rest.first() == Some(&"1");
-                    t.functions.insert(id, Function { name: name.to_string(), loc, known: known.parse().unwrap_or(0), sealed });
+                    let wide = rest.get(1).and_then(|w| w.parse().ok()).unwrap_or(0);
+                    t.functions.insert(id, Function { name: name.to_string(), loc, known: known.parse().unwrap_or(0), wide, sealed });
                 }
                 ["B", id, n, where_] => {
                     if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {
@@ -252,6 +255,18 @@ impl Tables {
         }
     }
 
+    /// Function `func`'s argument values, from a call's words (trace::Args):
+    /// a word each, two (low, high) for a wide one.
+    pub fn values(&self, func: u32, words: &[u32]) -> Vec<u64> {
+        let wide = self.functions.get(&func).map_or(0, |f| f.wide);
+        let (mut out, mut w) = (Vec::new(), words.iter().copied());
+        while let Some(lo) = w.next() {
+            let hi = if wide >> out.len() & 1 == 1 { w.next().unwrap_or(0) } else { 0 };
+            out.push(lo as u64 | (hi as u64) << 32);
+        }
+        out
+    }
+
     /// The blocks of `func`, in order.
     pub fn blocks_of(&self, func: u32) -> impl Iterator<Item = (u32, Loc)> + '_ {
         self.blocks.range((func, 0)..=(func, u32::MAX)).map(|(&(_, n), &l)| (n, l))
@@ -311,6 +326,13 @@ mod tests {
         // The block's own location was get_current's: now its first line's.
         let b = t.blocks[&(1, 0)];
         assert_eq!((t.file(b), b.line), ("include/linux/spinlock.h", 9));
+    }
+
+    #[test]
+    fn wide_arguments_take_two_words() {
+        // f(int a, loff_t b, int c): b is wide (bit 1).
+        let t = Tables::parse("F\t7\tf\t0:1\t7\t0\t2\n", "");
+        assert_eq!(t.values(7, &[1, 2, 3, 4]), [1, 3 << 32 | 2, 4]);
     }
 
     #[test]

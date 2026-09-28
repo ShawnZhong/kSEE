@@ -296,9 +296,9 @@ impl View<'_> {
         }).collect()
     }
 
-    /// Where the kernel was at record `i`: a block's line; for a store or a
-    /// call's arguments, the line its task was at; for a return, the line
-    /// its frame was at, the record before (where it returned from).
+    /// Where the kernel was at record `i`: a block's line; for a store, its
+    /// line; for a return, the line its frame was at, the record before
+    /// (where it returned from); else the line its task was at.
     pub fn at(&self, i: usize) -> Option<At> {
         let t = self.tables;
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
@@ -319,9 +319,9 @@ impl View<'_> {
                 Some(l) => ("store", l.func, (Some(l.loc), l.inlined)),
                 None => ("store", 0, (None, None)),
             },
-            r => {
+            Record::Task { .. } => {
                 let (func, step) = top(i).unwrap_or((0, None));
-                (if matches!(r, Record::Args { .. }) { "args" } else { "task" }, func, located(func, step))
+                ("task", func, located(func, step))
             }
         };
         Some(At {
@@ -351,14 +351,14 @@ impl View<'_> {
                 let task = self.task(rec.tasks[i]);
                 out.push((i, "task", format!("── {}({}) runs", task.comm.unwrap_or_default(), task.pid.unwrap_or(0))));
             }
-            let num = |v: u32| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
+            let num = |v: u64| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
             let (kind, text) = match rec.records[i] {
                 Record::Block { func, n } => {
                     let loc = t.blocks.get(&(func, n)).map_or(String::new(), |l| format!(" {}:{}", t.file(*l), l.line));
                     // (A call: with its arguments, the record after.)
-                    if let (0, Some(&Record::Args { args, n, frame })) = (n, rec.records.get(i + 1)) {
+                    if let (0, Some((words, frame))) = (n, rec.args.get(i)) {
                         let params = t.functions.get(&func).and_then(|f| t.types.params.get(&f.name));
-                        let each = args[..n as usize].iter().enumerate().map(|(k, &v)| {
+                        let each = t.values(func, words).into_iter().enumerate().map(|(k, v)| {
                             let name = params.and_then(|p| p.get(k)).map_or(format!("{k}"), |p| p.0.clone());
                             format!("{name}={}", num(v))
                         });
@@ -368,13 +368,12 @@ impl View<'_> {
                     }
                 }
                 Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value as i32)),
-                Record::Args { .. } | Record::Task { .. } => continue, // (on its call's line; the task's line above)
+                Record::Task { .. } => continue, // (the task's line is above)
                 Record::Store { addr, size: 0, old, .. } => ("store", format!("store {addr:#x} [{old} bytes] (old contents not kept)")),
                 Record::Store { addr, size, old, .. } => {
                     let mut new = [0u8; 8];
                     rec.memory_at(self.now, i).read(addr, &mut new[..size.min(8) as usize]);
                     let new = new.iter().rev().fold(0u64, |v, &x| v << 8 | x as u64);
-                    let num = |v: u64| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
                     ("store", format!("store {addr:#x} [{size}] {} → {}", num(old), num(new)))
                 }
             };
@@ -405,16 +404,14 @@ impl View<'_> {
         let mut out = Vec::new();
         let entry = t.find(arch::SYSCALL);
         let calls = self.rec.calls.stack_at(t, i, nth);
+        let args_of = |c: &stack::ChartCall| self.rec.args.get(c.first).map(|(w, frame)| (t.values(c.func, w), frame));
         // (The entry's arguments, the syscall's: a wrapper's parameters are
         // those, as its SYSCALL_DEFINE line has them; its own DWARF one is regs.)
-        let entry_raw = calls.iter().find(|c| Some(c.func) == entry).and_then(|c| stack::args_frame(records, c.first)).map(|(a, _)| a);
+        let entry_raw = calls.iter().find(|c| Some(c.func) == entry).and_then(args_of).map(|(a, _)| a);
         for (depth, c) in calls.into_iter().enumerate().rev() {
             let depth = depth as u32;
             let name = self.name(c.func);
-            let (raw, frame) = match stack::args_frame(records, c.first) {
-                Some((a, f)) => (Some(a), Some(f)),
-                None => (None, None),
-            };
+            let (raw, frame) = args_of(&c).unzip();
             let locals = frame.map(|f| self.locals(&name, f, mem));
             // (The syscall entry: its arguments are the syscall's.)
             let at_entry = matches!(records.get(c.first), Some(&Record::Block { func, n: 0 }) if Some(func) == entry);
@@ -442,9 +439,9 @@ impl View<'_> {
     /// The syscall entry's arguments (the number, then the syscall's): the
     /// syscall's name, and its arguments as its parameters have them (with
     /// the constants that name them).
-    fn syscall_args(&self, entry: &[u32], mem: &dyn Memory) -> Option<(String, Vec<Object>)> {
+    fn syscall_args(&self, entry: &[u64], mem: &dyn Memory) -> Option<(String, Vec<Object>)> {
         let types = &self.tables.types;
-        let name = types.syscalls.get(entry.first()?)?;
+        let name = types.syscalls.get(&(*entry.first()? as u32))?;
         let params = types.syscall_params(name)?;
         let args = params.iter().zip(entry.iter().skip(1).copied()).map(|((pname, ty), v)| {
             let mut o = types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
@@ -457,7 +454,7 @@ impl View<'_> {
 
     /// Function `func`'s (called `name`) arguments, their values `args`: the
     /// source's parameters, as values of their types.
-    fn args(&self, func: u32, name: &str, args: Vec<u32>, mem: &dyn Memory) -> Vec<Object> {
+    fn args(&self, func: u32, name: &str, args: Vec<u64>, mem: &dyn Memory) -> Vec<Object> {
         let t = self.tables;
         let known = t.functions.get(&func).map_or(u32::MAX, |f| f.known);
         t.types.params.get(name).into_iter().flatten().zip(args).enumerate().map(|(k, ((pname, ty), v))| {
@@ -591,25 +588,18 @@ impl View<'_> {
                 }
             }
         }
-        let records = &self.rec.records;
-        // (The calls open on each task: (function, frame base).)
-        let mut open: alloc::collections::BTreeMap<u32, Vec<(u32, u32)>> = alloc::collections::BTreeMap::new();
+        let (records, calls, args) = (&self.rec.records, &self.rec.calls, &self.rec.args);
         for i in first..=last.min(records.len().saturating_sub(1)) {
             match records[i] {
-                Record::Return { func, .. } => {
-                    if let Some(stack) = open.get_mut(&self.rec.tasks[i]) && stack.last().is_some_and(|c| c.0 == func) {
-                        stack.pop();
-                    }
-                }
                 Record::Block { func, n: 0 } => {
-                    let Some((f, &Record::Args { args, frame, .. })) = t.functions.get(&func).zip(records.get(i + 1)) else { continue };
+                    let Some((f, (words, frame))) = t.functions.get(&func).zip(args.get(i)) else { continue };
                     // (Its frame: up to its caller's, if the caller is known.)
-                    let stack = open.entry(self.rec.tasks[i]).or_default();
-                    if let Some(&(_, caller)) = stack.last() && caller > frame {
+                    let caller = calls.call_from(i).and_then(|c| c.parent).and_then(|p| args.get(calls.calls[p as usize].first));
+                    if let Some((_, caller)) = caller && caller > frame {
                         add(format!("{}'s frame", f.name), "frame", 0, frame, Some(caller - frame), Some(i));
                     }
-                    stack.push((func, frame));
-                    for ((pname, ty), &v) in types.params.get(&f.name).into_iter().flatten().zip(&args) {
+                    for ((pname, ty), v) in types.params.get(&f.name).into_iter().flatten().zip(t.values(func, words)) {
+                        let v = v as u32;
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
                             let kind = if types.name(types.resolve(to)) == "struct pt_regs" { "regs" } else { "object" };
@@ -821,6 +811,7 @@ fn c_string(mem: &dyn Memory, p: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::trace::Args;
 
     struct Mem(Vec<u8>);
     impl Memory for Mem {
@@ -836,7 +827,7 @@ mod tests {
         let t = Tables::parse("", "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\n");
         let r = [Record::Block { func: 9, n: 1 }, Record::Store { addr: 8, size: 4, old: 1, line: 0 },
                  Record::Block { func: 9, n: 1 }, Record::Store { addr: 5, size: 1, old: 0, line: 0 }];
-        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], Args::default());
         let mut m = alloc::vec![0u8; 16];
         (m[8], m[5]) = (2, 5);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
@@ -854,16 +845,19 @@ mod tests {
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
                                P\tf\tp:3\nQ\tf\tx:1:4\n");
-        let r = [Record::Block { func: 1, n: 0 }, Record::Args { args: [4, 0, 0, 0, 0, 0], n: 1, frame: 32 },
+        let r = [Record::Block { func: 1, n: 0 },
                  Record::Store { addr: 8, size: 4, old: 1, line: 0 }, Record::Store { addr: 36, size: 4, old: 0, line: 0 },
-                 Record::Block { func: 2, n: 0 }, Record::Args { args: [0; 6], n: 0, frame: 16 },
+                 Record::Block { func: 2, n: 0 },
                  Record::Store { addr: 20, size: 1, old: 0, line: 0 }, Record::Return { func: 2, value: 0 },
                  Record::Store { addr: 100, size: 1, old: 0, line: 0 }];
-        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 9]);
+        let mut args = Args::default();
+        args.push(0, &[4, 32]);
+        args.push(3, &[16]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 7], args);
         let mut m = alloc::vec![0u8; 128];
         (m[8], m[36], m[20], m[100]) = (2, 7, 9, 5);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let got: Vec<_> = v.stores(0, 8).into_iter().map(|s| (s.what, s.kind, s.write.member, s.write.after)).collect();
+        let got: Vec<_> = v.stores(0, 6).into_iter().map(|s| (s.what, s.kind, s.write.member, s.write.after)).collect();
         assert_eq!(got, [("f's p".into(), "object", "b".into(), "2".into()), ("f's x".into(), "local", "".into(), "7".into()),
                          ("g's frame".into(), "frame", "+4".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into())]);
     }
@@ -874,7 +868,7 @@ mod tests {
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\nB\t1\t0\t0:1:1\n\
                                L\t1\t0\t0:1;:2;|;:3\nB\t2\t0\t0:10:1\n", "");
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
-        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
         let lines: Vec<_> = v.call_stack(1, None, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
         assert_eq!(lines, [("g".into(), Some(10)), ("f".into(), Some(2))]);
@@ -887,7 +881,7 @@ mod tests {
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\nB\t1\t0\t0:1:1\n\
                                I\t0\th\t0:2\nL\t1\t0\t0:1;:20@0;|\nB\t2\t0\t0:10:1\n", "");
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
-        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
         let frames: Vec<_> = v.call_stack(1, None, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
         assert_eq!(frames, [("g".into(), Some(10), false), ("h".into(), Some(20), true), ("f".into(), Some(2), false)]);

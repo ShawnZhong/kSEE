@@ -237,7 +237,6 @@ impl Calls {
                 }
                 match *r {
                     Record::Store { line, .. } => { first_store.entry(line).or_insert(j); }
-                    Record::Args { .. } => {}
                     _ => break,
                 }
             }
@@ -359,14 +358,6 @@ pub struct CallNode {
     pub calls: Vec<CallNode>,
 }
 
-/// Call `first`'s arguments and its frame base (the Args record after its
-/// entry block), if the trace has them.
-pub fn args_frame(records: &[Record], first: usize) -> Option<(Vec<u32>, u32)> {
-    match records.get(first + 1) {
-        Some(&Record::Args { args, n, frame }) if matches!(records[first], Record::Block { n: 0, .. }) => Some((args[..n as usize].to_vec(), frame)),
-        _ => None,
-    }
-}
 
 #[cfg(test)]
 mod tests {

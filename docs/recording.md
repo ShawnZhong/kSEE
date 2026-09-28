@@ -23,7 +23,8 @@ Every function gets:
 - at the start of each **basic block**, a block record. The entry block's
   is the **call**, followed by its **arguments**: the source's parameters,
   mapped through the debug records (so an argument the optimizer removed
-  is known to be missing, not misread), and its **frame base** (the stack
+  is known to be missing, not misread), a word each, two for one wider
+  than 32 bits (a `loff_t`), and its **frame base** (the stack
   pointer after its prologue, `__builtin_frame_address(0)`): its locals in
   memory are at their offsets from it, which DWARF knows (`ksee pack`
   writes them, see below), so a stack address is a frame's, and a local's
@@ -57,7 +58,7 @@ overwritten the start of a record) and skip to the next head:
 
 | Pair | Record |
 |---|---|
-| `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments, then its frame base |
+| `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments (a word each, two for a wide one), then its frame base |
 | `[task, 3<<28]` | the runtime's: task (a task_struct) is running (where a recording begins: no switch says so) |
 | `[fn, 4<<28]` | a return from fn; the value follows |
 | `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows (k = 7: a range of unknown old contents; its length follows) |
@@ -84,8 +85,9 @@ Otherwise each probe costs a load and a branch.
 The instrumented kernel describes its probes in a custom section,
 `ksee.probes` (lines of text, one part per compilation unit):
 
-- `F fn name FILE:line known sealed`: a function, which of its parameters
-  call records carry, and whether it is sealed (see above);
+- `F fn name FILE:line known sealed wide`: a function, which of its
+  parameters call records carry, whether it is sealed (see above), and
+  which parameters take two words;
 - `B fn n FILE:line:column`: where block n starts;
 - `L fn n …`: the source lines block n runs, in order, in stretches between
   the calls it makes; a line of inlined code carries its inline chain:
