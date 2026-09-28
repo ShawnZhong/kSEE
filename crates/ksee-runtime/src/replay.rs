@@ -106,12 +106,9 @@ impl Machine {
     /// first of its number its runner made since it was asked, if the
     /// snapshot has it.
     pub fn syscall_of(&self, id: u32) -> Option<usize> {
-        let (tid, nr, from) = k(|k| k.calls.borrow().get(&id).map(|c| (c.tid, c.nr, c.from)))?;
+        let (task, nr, from) = k(|k| k.calls.borrow().get(&id).map(|c| (c.task, c.nr, c.from)))?;
         let rec = self.rec.borrow();
-        rec.syscalls.iter().position(|s| {
-            s.nr == nr && rec.ids[s.first] >= from
-                && ksee_core::task::read_task(tables(), &Direct, s.task).is_some_and(|t| t.pid as u32 == tid)
-        })
+        rec.syscalls.iter().position(|s| s.nr == nr && s.task == task && rec.ids[s.first] >= from)
     }
 
     /// Where the kernel was at record `i` (view::At).
@@ -240,7 +237,7 @@ impl Machine {
 
     /// Argument `text` (written as in C: see ksee_core::program) of syscall
     /// `syscall`'s parameter `k`, as Machine::call takes it: a number, a
-    /// string, { bytes }, { size } or { strings }; or an error. `known`: {
+    /// string, { bytes } or { strings }; or an error. `known`: {
     /// name: value }, the results so far ($1, fd).
     pub fn arg(&self, syscall: &str, k: usize, text: &str, known: JsValue) -> Result<JsValue, JsValue> {
         use ksee_core::program::Arg;

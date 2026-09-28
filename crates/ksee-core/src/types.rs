@@ -10,9 +10,13 @@
 //! V id name value                        an enumerator of enum id
 //! G name address type                    a variable with a fixed address
 //! W name file line                       where a function, type or variable is declared
-//! S nr name params                       a syscall; params: comma-separated
-//!                                        name:type:C type, "?" if unknown,
-//!                                        "!" if not built
+//! S nr name                              a syscall (its parameters: its
+//!                                        entry's P line)
+//! C name value                           a constant of the UAPI headers
+//! P fn name param:type,…                 a function's parameters (fn: its
+//!                                        id, as the probes have it)
+//! Q fn var:type:offset,…                 its locals (the offset, from the
+//!                                        frame base, if in memory)
 //! ```
 
 use alloc::collections::BTreeMap;

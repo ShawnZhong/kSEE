@@ -148,12 +148,10 @@ uint32_t fnId(const Function &F) {
   return fnv(F.getName(), fnv(":", fnv(F.getParent()->getSourceFileName())));
 }
 
-// The file, relative to the compilation directory (the kernel tree) when it
-// is inside it.
+// A scope's file, as the debug info names it (relative to the kernel
+// tree, for its own), without a leading "./".
 std::string sourcePath(const DIScope *S) {
   StringRef file = S->getFilename();
-  if (sys::path::is_absolute(file))
-    return file.str();
   file.consume_front("./");
   return file.str();
 }

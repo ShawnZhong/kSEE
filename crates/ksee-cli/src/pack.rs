@@ -503,10 +503,6 @@ impl Builder {
                     };
                     if !name.is_empty() {
                         self.by_name.entry(named.clone()).or_insert((id, true)).1 = true;
-                        if let Some(v) = self.by_name.get_mut(&named)
-                            && v.0 == id {
-                                v.1 = true;
-                            }
                     }
                     self.ids.insert(key, id);
                     self.locate(&name, &file, line);

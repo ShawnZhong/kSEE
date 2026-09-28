@@ -80,7 +80,7 @@ overwritten the start of a record) and skip to the next head:
 | `[fn, 4<<28]` | a return from fn; the value follows |
 | `[lhs, 6<<28 \| line<<4 \| p]` | a comparison that decides a branch (or a select), on its block's line `line`: lhs, then rhs follows (32 bits each); p its predicate (LLVM's icmp's, from eq) |
 | `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows (k = 7: a range of unknown old contents; its length follows); then, if it copies (a value loaded and stored as it is, a memcpy), where its bytes come from |
-| `[value, 9<<28 \| k]` | variable k of the function running (its V line) takes value (its high word follows, for a wide one) |
+| `[value, 9<<28 \| line<<16 \| k]` | variable k of the function running (its V line) takes value, on its block's line `line` (12 bits); its high word follows, for a wide one |
 | `[value, 8<<28 \| i]` | continuation i |
 
 `fn` is a hash of the function's name. `pos` counts words ever written and

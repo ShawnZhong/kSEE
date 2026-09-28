@@ -108,7 +108,6 @@ impl Files {
     }
 }
 
-/// A unit's files: its numbers (P lines) -> file ids.
 /// A compilation unit's own numbering: its files (P lines) and its inline
 /// sites (I lines: the function inlined, and where).
 #[derive(Default)]

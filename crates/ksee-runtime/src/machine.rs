@@ -207,10 +207,8 @@ impl Machine {
                 at
             }
         };
-        let (mut c, data) = pack(id, &args, scratch)?;
-        (c.tid, c.nr) = (tid, nr);
-        let head_args = c.args;
-        let trace = k(|k| k.trace.get());
+        let (words, data) = pack(&args, scratch)?;
+        let c = Call { id, tid, nr, task, ..Default::default() };
         k(|k| {
             k.asked.set(id);
             k.calls.borrow_mut().insert(id, c);
@@ -220,22 +218,10 @@ impl Machine {
             k.doorbell.borrow_mut().push_back(task);
         });
         // (The call into the runner's request, in its memory, which is
-        // kernel memory: recorded; its number last, the word waited on.)
-        let mut head = [0u8; REQUEST as usize];
-        head[0..4].copy_from_slice(&nr.to_le_bytes());
-        for (i, a) in head_args.iter().enumerate() {
-            head[4 + 4 * i..8 + 4 * i].copy_from_slice(&a.to_le_bytes());
-        }
-        if Direct.read_u32(trace + trace::ON) == 0 {
-            Direct.write_u32(trace + trace::ON, 2);
-        }
-        imports::log(req, REQUEST, 0, 0);
-        imports::log(scratch, data.len() as u32, 0, 0);
-        unsafe {
-            core::ptr::copy_nonoverlapping(head[4..].as_ptr(), (req + 4) as *mut u8, head.len() - 4);
-            core::ptr::copy_nonoverlapping(data.as_ptr(), scratch as *mut u8, data.len());
-        }
-        Direct.write_u32(req, nr);
+        // kernel memory: recorded, as its strings are.)
+        let head: Vec<u8> = core::iter::once(nr).chain(words).flat_map(u32::to_le_bytes).collect();
+        write_logged(scratch, &data);
+        write_logged(req, &head);
 
         sched::interrupt(IRQ_DOORBELL);
         Ok(id)
@@ -384,12 +370,15 @@ fn alloc(tid: u32, len: u32) -> Result<u32, String> {
     })
 }
 
-/// Call `id` with `args` (see Machine::call): each a number, or a buffer
-/// (a string, { bytes }, { strings }) packed into the data (its
-/// bytes, to go at `base` in the runner's request: a buffer argument is
-/// its address there).
-fn pack(id: u32, args: &[JsValue], base: u32) -> Result<(Call, Vec<u8>), JsValue> {
-    let mut c = Call { id, ..Default::default() };
+/// A call's `args` (see Machine::call), each a number, or a buffer (a
+/// string, { bytes }, { strings }) packed into the data (its bytes, to go
+/// at `base`, the runner's room: a buffer argument is its address there):
+/// the argument words, and the data.
+fn pack(args: &[JsValue], base: u32) -> Result<([u32; 6], Vec<u8>), JsValue> {
+    if args.len() > 6 {
+        return Err("a syscall takes 6 arguments at most".into());
+    }
+    let mut words = [0u32; 6];
     let mut data = Vec::new();
     // (Bytes `b` into the data, 8-byte aligned: their address.)
     let mut put = |b: &[u8]| -> Result<u32, JsValue> {
@@ -401,7 +390,7 @@ fn pack(id: u32, args: &[JsValue], base: u32) -> Result<(Call, Vec<u8>), JsValue
         data.resize((data.len() + 7) & !7, 0);
         Ok(at)
     };
-    for (i, a) in args.iter().take(6).enumerate() {
+    for (i, a) in args.iter().enumerate() {
         // { strings: [s, …, null] }: an array of char * (null: NULL), as argv.
         if let Ok(list) = js::get(a, "strings").dyn_into::<js_sys::Array>() {
             let mut words = Vec::new();
@@ -412,7 +401,7 @@ fn pack(id: u32, args: &[JsValue], base: u32) -> Result<(Call, Vec<u8>), JsValue
                 });
             }
             let array: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
-            c.args[i] = put(&array)?;
+            words[i] = put(&array)?;
             continue;
         }
         let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
@@ -422,12 +411,12 @@ fn pack(id: u32, args: &[JsValue], base: u32) -> Result<(Call, Vec<u8>), JsValue
         } else {
             None
         };
-        c.args[i] = match buffer {
+        words[i] = match buffer {
             Some(b) => put(&b)?,
             None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { strings }")? as i64 as u32,
         };
     }
-    Ok((c, data))
+    Ok((words, data))
 }
 
 /// The kernel is quiet: settle what waits for it (see Machine::quiet).

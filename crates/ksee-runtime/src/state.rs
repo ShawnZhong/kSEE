@@ -86,6 +86,22 @@ impl Kernel {
     pub fn in_flight(&self, tid: u32) -> Option<u32> {
         self.calls.borrow().values().find(|c| c.tid == tid && !c.done).map(|c| c.id)
     }
+
+    /// Runner `tid` is one no more (its task exited, or it ran another
+    /// program): its request, room and heap forgotten (a heap no runner has
+    /// left, its process's gone: another's may come to the same address).
+    pub fn forget(&self, tid: u32) {
+        self.runners.borrow_mut().remove(&tid);
+        self.requests.borrow_mut().remove(&tid);
+        self.scratch.borrow_mut().remove(&tid);
+        let mut heap_of = self.heap_of.borrow_mut();
+        if let Some(heap) = heap_of.remove(&tid) && !heap_of.values().any(|&h| h == heap) {
+            self.heaps.borrow_mut().remove(&heap);
+        }
+        if self.main.get() == Some(tid) {
+            self.main.set(None); // (the program exited: /init starts it again)
+        }
+    }
 }
 
 /// A call finished: returned (its result), or ended by an execve (the new
@@ -113,18 +129,14 @@ pub fn k<T>(f: impl FnOnce(&Kernel) -> T) -> T {
 pub struct Call {
     pub id: u32,
     pub tid: u32,
+    /// Its runner's task (its task_struct): as the recording names it.
+    pub task: u32,
     pub nr: u32,
     pub from: u32,
     pub begun: bool,
     pub done: bool,
-    /// Each an integer, or the address of its string or bytes in the
-    /// runner's room (SCRATCH).
-    pub args: [u32; 6],
 }
 
-/// A runner's request (user/prog.c): `struct { i32 nr; i32 args[6]; }`,
-/// the call (nr -1 while none is asked: the runner waits on it).
-pub const REQUEST: u32 = 28;
 /// Each runner's room, in its program's memory, for its call's strings and
 /// compound literals (one call at a time).
 pub const SCRATCH: u32 = 4096;

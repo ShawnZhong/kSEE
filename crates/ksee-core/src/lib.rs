@@ -7,7 +7,7 @@
 //!   syscalls ([`syscalls`]), calls and lines ([`stack`]), memory as it was
 //!   ([`mem`]).
 //! * [`view`]: what the page shows of it.
-//! * [`args`]: a syscall's arguments as the page writes them (C, with the
+//! * [`program`]: a syscall's arguments as the page writes them (C, with the
 //!   kernel's types).
 //!
 //! `no_std`, so that the same code runs in the wasm runtime

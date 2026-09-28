@@ -64,17 +64,8 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
     });
     if dead {
         let gone = k(|k| {
-            let mut runners = k.runners.borrow_mut();
-            let tid = runners.iter().find(|(_, task)| **task == prev).map(|(&t, _)| t);
-            tid.inspect(|t| {
-                runners.remove(t);
-                k.requests.borrow_mut().remove(t);
-                k.heap_of.borrow_mut().remove(t);
-                if k.main.get() == Some(*t) {
-                    k.main.set(None); // (the program exited: /init starts it again)
-                }
-                k.scratch.borrow_mut().remove(t);
-            })
+            let tid = k.runners.borrow().iter().find(|(_, task)| **task == prev).map(|(&t, _)| t);
+            tid.inspect(|&t| k.forget(t))
         });
         if let Some(tid) = gone {
             finish(tid, "exited", 0);
@@ -189,7 +180,7 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
         // runs. A runner again only if it says so: ksee.ready.)
         let tid = tid();
         finish(tid, "exec", 0);
-        k(|k| k.runners.borrow_mut().remove(&tid));
+        k(|k| k.forget(tid));
         Ok(start)
     };
     start().unwrap_or_else(|e| {
@@ -229,7 +220,7 @@ fn on_off() {
 /// The imports of a runner (user/prog.c), module ksee. ready(req, heap,
 /// size, main): the current thread is a runner (the program's own, its
 /// main thread, if `main`: see Machine::main), waiting for calls in a futex on
-/// the number in its request at `req` (state::REQUEST: the host puts a
+/// the number in its request at `req` (user/prog.c's struct request, { nr, args[6] }: the host puts a
 /// call there, and rings); its program's own memory at `heap` (its
 /// variables, see Machine::declare; its calls' buffers, state::SCRATCH). begin(), end(ret): around the call it makes: recorded from the
 /// one to the other; the result.
