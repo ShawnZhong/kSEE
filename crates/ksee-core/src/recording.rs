@@ -291,7 +291,7 @@ mod tests {
     fn a_function_inlined_is_found_as_a_call() {
         // f (1): block 1 runs h's line 20 (h inlined into f).
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nB\t1\t0\t0:1:1\nB\t1\t1\t0:5:1\n\
-                               L\t1\t1\t0:5;:20@h^0:6\n", "");
+                               I\t0\th\t0:6\nL\t1\t1\t0:5;:20@0\n", "");
         let rec = Recording::new(&t, alloc::vec![b(1, 0), b(1, 1)], alloc::vec![0, 1]);
         assert_eq!((rec.first_call(&t, "f", 0, 1, None), rec.first_call(&t, "h", 0, 1, None)), (Some(0), Some(1)));
     }

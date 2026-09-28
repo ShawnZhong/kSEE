@@ -89,9 +89,11 @@ The instrumented kernel describes its probes in a custom section,
 - `B fn n FILE:line:column`: where block n starts;
 - `L fn n …`: the source lines block n runs, in order, in stretches between
   the calls it makes; a line of inlined code carries its inline chain:
-  each function it is inlined from, innermost first, with the line where
-  that function is inlined into the next one out;
-- `U`, `P k path`: a unit's files; `R words`: the ring's size.
+  each function it is inlined from, innermost first, as an inline site
+  (`I k function FILE:line`: the function, and the line where it is
+  inlined into the next one out);
+- `U`, `P k path`, `I k …`: a unit's files and inline sites; `R words`:
+  the ring's size.
 
 `ksee pack` (crates/ksee-cli) reads the kernel's DWARF and adds
 `ksee.types`: the types (deduplicated across units, as pahole does for

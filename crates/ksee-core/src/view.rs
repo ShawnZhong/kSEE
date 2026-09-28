@@ -885,7 +885,7 @@ mod tests {
         // f (1) runs line 1, then h's line 20 (h inlined into f at line 2),
         // which calls g (2).
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\nB\t1\t0\t0:1:1\n\
-                               L\t1\t0\t0:1;:20@h^0:2;|\nB\t2\t0\t0:10:1\n", "");
+                               I\t0\th\t0:2\nL\t1\t0\t0:1;:20@0;|\nB\t2\t0\t0:10:1\n", "");
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1]);
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };

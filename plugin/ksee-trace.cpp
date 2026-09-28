@@ -60,6 +60,8 @@
 // number (FILE below):
 //   ksee.probes  U
 //                P \t k \t path       file k
+//                I \t k \t function \t FILE:line
+//                                     inline site k: function, inlined at FILE:line
 //                R \t ring words
 //                F \t fn \t name \t FILE:line \t known \t sealed
 //                  (known: a bit mask of the source's parameters that call
@@ -70,9 +72,9 @@
 //                L \t fn \t n \t lines: the source lines the block runs, in
 //                  order (each once per stretch between calls), separated
 //                  by ';': FILE:line (:line in the same file as the one
-//                  before), then, if it is inlined, @function^FILE:line
-//                  per function it is inlined from, innermost first (the
-//                  line: where that function is inlined, in the next one
+//                  before), then, if it is inlined, @k per function it is
+//                  inlined from, innermost first (k: an I line's: the
+//                  function, and where it is inlined, in the next one
 //                  out); "|" where the block calls a function (which runs
 //                  in between). Only for blocks with more than their first
 //                  line, or whose first line is inlined.
@@ -166,6 +168,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   DenseMap<const Instruction *, unsigned> lineOf;
   std::string probes;
   std::map<std::string, unsigned> files; // this object's, numbered
+  std::map<std::string, unsigned> sites; // its inline sites ("function\tFILE:line"), numbered
 
   std::string fileRef(const std::string &path) {
     return std::to_string(files.try_emplace(path, files.size()).first->second);
@@ -306,8 +309,9 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         // it is inlined (a line of the next one out).
         for (DILocation *At = L; DILocation *Site = At->getInlinedAt(); At = Site) {
           DISubprogram *SP = At->getScope()->getSubprogram();
-          item += "@" + (SP ? SP->getName().str() : std::string("?")) + "^" +
-                  fileRef(sourcePath(Site->getScope())) + ":" + std::to_string(Site->getLine());
+          std::string site = (SP ? SP->getName().str() : std::string("?")) + "\t" +
+                             fileRef(sourcePath(Site->getScope())) + ":" + std::to_string(Site->getLine());
+          item += "@" + std::to_string(sites.try_emplace(site, sites.size()).first->second);
         }
         auto [it, fresh] = seen.try_emplace(item, lines);
         if (fresh) {
@@ -478,6 +482,8 @@ public:
     std::string head = "U\n";
     for (auto &[path, k] : files)
       head += "P\t" + std::to_string(k) + "\t" + path + "\n";
+    for (auto &[site, k] : sites)
+      head += "I\t" + std::to_string(k) + "\t" + site + "\n";
     emitCustomSection(Mod, "ksee.probes", head + probes);
     return PreservedAnalyses::none();
   }

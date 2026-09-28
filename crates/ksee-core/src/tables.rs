@@ -90,14 +90,19 @@ impl Files {
 }
 
 /// A unit's files: its numbers (P lines) -> file ids.
+/// A compilation unit's own numbering: its files (P lines) and its inline
+/// sites (I lines: the function inlined, and where).
 #[derive(Default)]
-struct Unit(BTreeMap<u32, u32>);
+struct Unit {
+    files: BTreeMap<u32, u32>,
+    sites: BTreeMap<u32, (u32, Loc)>,
+}
 
 impl Unit {
     /// Parse "k:line" or, with `column`, "k:line:column" (k: a P line's).
     fn loc(&self, s: &str, column: bool) -> Loc {
         let mut parts = s.split(':');
-        let file = parts.next().and_then(|k| k.parse().ok()).and_then(|k| self.0.get(&k).copied()).unwrap_or(u32::MAX);
+        let file = parts.next().and_then(|k| k.parse().ok()).and_then(|k| self.files.get(&k).copied()).unwrap_or(u32::MAX);
         let line = parts.next().and_then(|l| l.parse().ok()).unwrap_or(0);
         let column = if column { parts.next().and_then(|c| c.parse().ok()).unwrap_or(0) } else { 0 };
         Loc { file, line, column }
@@ -119,7 +124,16 @@ impl Tables {
                 ["U"] => unit = Unit::default(),
                 ["P", k, path] => {
                     if let Ok(k) = k.parse() {
-                        unit.0.insert(k, files.intern(path));
+                        unit.files.insert(k, files.intern(path));
+                    }
+                }
+                ["I", k, name, site] => {
+                    if let Ok(k) = k.parse() {
+                        let name = *names.entry(name.to_string()).or_insert_with(|| {
+                            t.names.push(name.to_string());
+                            t.names.len() as u32 - 1
+                        });
+                        unit.sites.insert(k, (name, unit.loc(site, false)));
                     }
                 }
                 ["R", words] => t.ring_words = words.parse().unwrap_or(0),
@@ -144,15 +158,9 @@ impl Tables {
                                 continue;
                             }
                             let (at, inl) = item.split_once('@').map_or((item, None), |(a, f)| (a, Some(f)));
-                            // The functions it is inlined from: name^FILE:line each.
-                            let chain: Vec<(u32, Loc)> = inl.into_iter().flat_map(|c| c.split('@')).map(|level| {
-                                let (name, site) = level.split_once('^').unwrap_or((level, ""));
-                                let k = *names.entry(name.to_string()).or_insert_with(|| {
-                                    t.names.push(name.to_string());
-                                    t.names.len() as u32 - 1
-                                });
-                                (k, unit.loc(site, false))
-                            }).collect();
+                            // The functions it is inlined from: an I line's site each.
+                            let chain: Vec<(u32, Loc)> = inl.into_iter().flat_map(|c| c.split('@'))
+                                .filter_map(|k| unit.sites.get(&k.parse::<u32>().ok()?).copied()).collect();
                             let full;
                             let at = match at.strip_prefix(':') {
                                 Some(line) => {
@@ -283,7 +291,8 @@ mod tests {
         // spin_lock at its line 9, inlined into f at line 2), then line 4 of
         // f: the get_current step is spin_lock's line 9.
         let probes = "U\nP\t0\tf.c\nP\t1\tinclude/linux/spinlock.h\nP\t2\tarch/wasm/include/asm/current.h\n\
-                      F\t1\tf\t0:1\t0\nB\t1\t0\t2:3:1\nL\t1\t0\t2:3@get_current^1:9@spin_lock^0:2;0:4\n";
+                      I\t0\tget_current\t1:9\nI\t1\tspin_lock\t0:2\n\
+                      F\t1\tf\t0:1\t0\nB\t1\t0\t2:3:1\nL\t1\t0\t2:3@0@1;0:4\n";
         let t = Tables::parse(probes, "W\tget_current\tarch/wasm/include/asm/current.h\t12\nW\tspin_lock\tinclude/linux/spinlock.h\t7\n");
         let steps = &t.lines[&(1, 0)][0];
         let chain = |s: &Step| s.inlined.map(|k| t.inlines[k as usize].iter().map(|&(n, _)| t.names[n as usize].clone()).collect::<Vec<_>>());

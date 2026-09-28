@@ -405,7 +405,7 @@ mod tests {
         // f (1) runs line 1, then h's line 20 (h inlined into f at line 2), which calls g (2):
         // h is a node of its own, inlined, and g is its call.
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\nB\t1\t0\t0:1:1\n\
-                               L\t1\t0\t0:1;:20@h^0:2;|\nB\t2\t0\t0:10:1\n", "");
+                               I\t0\th\t0:2\nL\t1\t0\t0:1;:20@0;|\nB\t2\t0\t0:10:1\n", "");
         let r = [b(1, 0), b(2, 0), ret(2), ret(1)];
         let tree = call_tree(&t, &r, &[7; 4], 0, 3, 7);
         let h = &tree[0].calls[0];
