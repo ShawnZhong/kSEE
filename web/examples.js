@@ -273,7 +273,7 @@ export async function examples(app) {
     // (A variable: made, in /init's memory, as it starts.)
     if (s.decl) {
       try {
-        const v = m.declare(1, s.decl, known());
+        const v = app.kernel.declare(s.decl, 1, known());
         const shown = m.show(v.ty, v.addr, v.count ?? undefined);
         t.vars.push({ ...v, j, shown, initial: shown });
         t.done[j] = { decl: true, how: "declared" };
@@ -287,10 +287,10 @@ export async function examples(app) {
     let q, news;
     try {
       const args = s.args.map((a, k) => m.arg(s.call, k, a, known())), tid = tidOf(s);
-      q = { id: m.call(s.call, args, tid), tid, args };
+      const before = new Set(m.runners()), made = app.kernel.call(s.call, args, tid);
+      q = { id: made.id, tid, args };
       t.done[j] = q;
-      const before = new Set(m.runners());
-      news = await m.quiet();
+      news = await made.quiet;
       if (t.list !== mine) return false;
       t.started[j] = [...news.runners].find((r) => !before.has(r));
     } catch (e) {

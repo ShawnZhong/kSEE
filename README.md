@@ -67,7 +67,10 @@ buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0, 30000000}`,
 memory of its own in /init's process; its name then stands for its
 address (`read(fd, buf, 64)`, `&ts`), `fds[1]` for an element as it is
 when the call is made, and each call's line says the variables it changed,
-as C writes them (`fds = {3, 4}`, `buf = "hello from memory\n"`).
+as C writes them (`fds = {3, 4}`, `buf = "hello from memory\n"`). The same calls can be made from JavaScript, in the browser's console:
+`await ksee.kernel.sys.read(fd, buf, 64)` (web/kernel.js: JS values as
+C's, a struct as an object; a call that blocks stays pending while others
+go on), each recorded as the page's are.
 
 The timeline shows the recording: the call stacks over time (its unit is
 a step, a basic block run: a store takes no room), and which

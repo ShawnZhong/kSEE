@@ -14,6 +14,7 @@ import { result } from "./args.js";
 import { trace } from "./trace.js";
 import { stores } from "./stores.js";
 import { objects } from "./objects.js";
+import { kernel } from "./kernel.js";
 
 
 // 1st, 2nd, 3rd, 4th, …, 11th, 12th, 13th, 21st.
@@ -32,6 +33,9 @@ export function app(m) {
   a.iname = memo((k) => m.inline_name(k));
   let constants = null;
   a.consts = () => (constants ??= m.constants());
+  // The kernel's syscalls, from JavaScript (kernel.js): the program's
+  // lines are made through it, and the console may use it (ksee.kernel).
+  a.kernel = kernel(m);
   const src = source(a), time = timeline(a), stack = callstack(a);
   // (The panels, for each other and for tests.)
   Object.assign(a, { src, time, stack });

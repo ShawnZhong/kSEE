@@ -4,6 +4,7 @@
 //   deno run --allow-read tests/web.js
 import { start } from "../target/site/ksee.js";
 import { parseCall } from "../target/site/args.js";
+import { kernel } from "../target/site/kernel.js";
 
 const root = new URL("..", import.meta.url);
 const m = await start({
@@ -25,15 +26,16 @@ async function until(pred, ms = 10000) {
     if (v) return v;
   }
 }
+// The syscalls, from JavaScript (web/kernel.js), as the page makes them.
+const kern = kernel(m);
 // Calls finished (Machine.quiet's news), by id.
 const fin = new Map();
 // Ask runner `tid` to make syscall `name`, recorded, and wait until the
 // kernel is quiet: the call's id (it may not have finished: blocked).
 async function ask(name, args, tid = 1) {
-  const id = m.call(name, args, tid);
-  for (const f of (await m.quiet()).finished) fin.set(f.id, f);
-  m.snapshot();
-  return id;
+  const made = kern.call(name, args, tid);
+  for (const f of (await made.quiet).finished) fin.set(f.id, f);
+  return made.id;
 }
 // Its syscall summary.
 const syscallOf = (id) => m.syscalls()[m.syscall_of(id)];
@@ -169,6 +171,22 @@ m.memory_at(null);
   await call("write", [w, "hi", 2]);
   const n = (await call("read", [r, buf.addr, 16])).ret;
   check(`variables: fds = ${m.show(fds.ty, fds.addr, 2)}, buf = ${m.show(buf.ty, buf.addr, 16)}`, n === 2 && m.show(buf.ty, buf.addr, 16) === '"hi"');
+}
+// Syscalls from JavaScript (kernel.js): JS values as C's (a struct as an
+// object, a variable as its address); a blocked read goes on as a later
+// write wakes it.
+{
+  const buf = kern.declare("char buf[8]"), fds = kern.declare("int fds[2]");
+  const slept = await kern.sys.clock_nanosleep_time64(kern.C.CLOCK_MONOTONIC, 0, { tv_sec: 0, tv_nsec: 1000000 }, null);
+  await kern.sys.pipe2(fds, 0);
+  const [r, w] = fds.show().slice(1, -1).split(", ").map(Number);
+  // (A thread, a runner of its own, reads: it blocks, nothing written yet;
+  // /init writes, and wakes it.)
+  const C = kern.C, mem = await kern.sys.mmap2(null, 65536, C.PROT_READ | C.PROT_WRITE, C.MAP_PRIVATE | C.MAP_ANONYMOUS, -1, 0);
+  const thread = await kern.sys.clone(C.CLONE_VM | C.CLONE_FS | C.CLONE_FILES | C.CLONE_SIGHAND | C.CLONE_THREAD | C.CLONE_SYSVSEM, mem + 65536, null, null, 0);
+  const reading = kern.sys.on(thread).read(r, buf, 8);
+  const wrote = await kern.sys.write(w, "ok", 2);
+  check(`syscalls from JS: slept ${slept}, wrote ${wrote}, read ${await reading}: buf = ${buf.show()}`, slept === 0 && wrote === 2 && buf.show() === '"ok"');
 }
 // A 64-bit argument, whole: llseek's offset (high 1, low 0) is vfs_llseek's loff_t 1 << 32.
 {
