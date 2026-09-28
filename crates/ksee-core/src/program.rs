@@ -237,6 +237,9 @@ pub fn statement(text: &str) -> Result<Statement, String> {
     let b = s.as_bytes();
     let open = (0..b.len()).find(|&i| b[i] == b'(' && n[i].is_some());
     let close = open.and_then(|o| (o + 1..b.len()).find(|&i| b[i] == b')' && n[i] == n[o]));
+    if open.is_some() && close.is_none() {
+        return Err("a ) missing".into());
+    }
     let (Some(open), Some(close)) = (open, close) else { return Ok(Statement::Decl { tid, text: s.to_string() }) };
     if close + 1 != s.len() {
         return Ok(Statement::Decl { tid, text: s.to_string() });
@@ -605,6 +608,7 @@ mod tests {
         assert_eq!(call("child: void *mem = mmap2(NULL, {1, 2}, 3)"), (o("child"), o("void *"), o("mem"), "mmap2".into(), alloc::vec!["NULL".into(), "{1, 2}".into(), "3".into()]));
         assert_eq!(call("fd = getpid()"), (None, None, o("fd"), "getpid".into(), alloc::vec![]));
         assert_eq!(statement("char buf[64]").unwrap(), Statement::Decl { tid: None, text: "char buf[64]".into() });
+        assert_eq!(statement("write(1, \"hi)\", 2").unwrap_err(), "a ) missing");
         assert_eq!(statement("19: struct __kernel_timespec ts = {0, 1}").unwrap(), Statement::Decl { tid: o("19"), text: "struct __kernel_timespec ts = {0, 1}".into() });
     }
 

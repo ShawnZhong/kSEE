@@ -24,6 +24,11 @@ const PREFIX = /^\s*(?:[$A-Za-z_]\w*\s*:\s*)?(?:[A-Za-z_]\w*\s*=(?!=)\s*)?/;
 
 export function callEditor({ m, consts, known, text = "", placeholder = "", done, cancel, focus, inline = false, common = [], history }) {
   const names = m.syscall_names();
+  // (No syscall `name`: those whose names start with it, if any: openat for open.)
+  const noSyscall = (name) => {
+    const like = names.filter((n) => n.startsWith(name)).slice(0, 3);
+    return `no syscall ${name}${like.length ? `: ${like.join(", ")}?` : ""}`;
+  };
   const constNames = [...Object.keys(consts), "NULL"];
   // (A text area of one line, as tall as its text wraps to.)
   const input = el("textarea", { className: "mono", value: text, placeholder, spellcheck: false, autocomplete: "off", rows: 1 });
@@ -104,7 +109,7 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
       el("span", { className: "mono", textContent: it.label }), " ",
       el("span", { className: "dim", textContent: it.detail ?? "" }))));
     const sig = c.name && signature(c.name, c.param ?? -1);
-    hint.replaceChildren(...(sig ? sig : c.name && c.param != null ? [`no syscall ${c.name}`] : []));
+    hint.replaceChildren(...(sig ? sig : c.name && c.param != null ? [noSyscall(c.name)] : []));
   }
 
   // Take suggestion `k`: it replaces the word at the cursor (or the name).
@@ -131,7 +136,7 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
       return `${e.message ?? e}: write a call, name(arg, …) or int fd = name(…); or a variable, char buf[64]`;
     }
     const s = m.syscall(c.call);
-    if (!s) return `no syscall ${c.call}`;
+    if (!s) return noSyscall(c.call);
     if (c.args.length > s.params.length) return `${c.call}: ${s.params.length} arguments, not ${c.args.length}`;
     try {
       // (Checked now, with the results so far.)
