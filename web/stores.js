@@ -10,10 +10,10 @@
 import { $, el } from "./dom.js";
 import { place } from "./tree.js";
 
-const TAG = { local: "local", frame: "frame", regs: "registers", machine: "the machine's" };
+const TAG = { local: "local", frame: "frame", machine: "the machine's" };
 // A store said: "vfs_read's file->f_pos: 0 → 26".
 // (A frame's bytes by their offset: "f's frame+8".)
-const joint = (kind, member) => (member.startsWith("+") ? "" : kind === "object" || kind === "regs" ? "->" : ".");
+const joint = (kind, member) => (member.startsWith("+") ? "" : kind === "object" ? "->" : ".");
 export const storeText = ({ what, kind, write: x }) => `${what}${x.member ? joint(kind, x.member) + x.member : ""}: ${x.before} → ${x.after}`;
 
 export function stores(app) {

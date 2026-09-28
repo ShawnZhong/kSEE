@@ -27,8 +27,6 @@ pub const SWITCH: &str = "__switch_to";
 /// Stack shows first.
 pub const TASK: &str = "task_struct";
 pub const TASK_FIELDS: [&str; 12] = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
-/// The registers a syscall entry saves (its wrappers point at them).
-pub const REGS: &str = "struct pt_regs";
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
 /// are the syscall's; a `_time64` syscall's is the plain one's.
 pub const SYSCALL_BODY: &str = "__do_sys_";

@@ -143,7 +143,7 @@ pub struct Change {
 /// ("vfs_read's file", "f's x", "nr_inodes", "current"; the address when
 /// nothing names it), its `kind` ("task", "object": a struct a call's
 /// argument points to, "global", "machine": one of the machine's
-/// variables (arch::MACHINE), "regs": the syscall entry's registers,
+/// variables (arch::MACHINE),
 /// "frame": the stack a call used, "local", or "other": memory nothing
 /// names), the object's type `ty` ("" for none; `id` its id), where it is
 /// (`addr`, `size`), and the `write` itself (the member, from what to
@@ -734,8 +734,7 @@ impl View<'_> {
                         let v = v as u32;
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
-                            let kind = if types.name(types.resolve(to)) == arch::REGS { "regs" } else { "object" };
-                            add(format!("{}'s {pname}", f.name), kind, to, v, None, frame_of(i, v));
+                            add(format!("{}'s {pname}", f.name), "object", to, v, None, frame_of(i, v));
                         }
                     }
                     for (var, ty, off) in types.locals.get(&func).into_iter().flatten() {
@@ -785,7 +784,7 @@ impl View<'_> {
     /// and its pointers to the others as memory was after record `at`
     /// (the cursor; an object on the stack, when its call ended if that
     /// was before): what the call changed in the kernel's data, and how it
-    /// hangs together. (Not the frames, the registers or the machine's own
+    /// hangs together. (Not the frames or the machine's own
     /// variables: the call's plumbing.)
     pub fn objects(&self, first: usize, last: usize, at: usize) -> Vec<Node> {
         let types = &self.tables.types;

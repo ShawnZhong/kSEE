@@ -138,22 +138,18 @@ export function source(app) {
   // Stack has (see hover), each once: "fd = 3  count = 64", or null.
   function values(line, text) {
     const out = [], seen = new Set();
-    // (Not a parameter the function has assigned to by this line: what the
-    // recording has of it is what was passed; its new value is in a
-    // register.)
+    // (Not a parameter itself: the recording has it as it was passed, not
+    // after the function assigns to it, in a register; the Stack has it.
+    // What it points to is memory, as it was: that, yes.)
     const params = new Set(app.stack.frames().filter((f) => f.func === v.fn?.name && !f.inlined).flatMap((f) => f.args ?? []).map((a) => a.name));
-    const doc = ed.state.doc, fnLine = v.fn?.line ?? line;
-    const assigned = (name) => [...Array(Math.max(0, line - fnLine)).keys()].some((k) =>
-      new RegExp(`(^|[^\\w.>])${name}\\s*=[^=]`).test(doc.line(fnLine + 1 + k).text));
     for (let k = 0; k < text.length; k++) {
       const e = exprAt(text, k);
       if (!e) continue;
       k = e.end - 1;
       if (seen.has(e.expr)) continue;
       seen.add(e.expr);
-      const root = e.expr.split(/->|\./)[0];
-      if (inFunction(line) && params.has(root) && assigned(root)) continue;
       const o = app.stack.resolve(e.expr, inFunction(line) ? v.fn.name : null);
+      if (inFunction(line) && params.has(e.expr)) continue;
       if (o && o.value != null && o.value !== "(optimized out)") out.push(`${e.expr} = ${o.value}`);
     }
     return out.length ? out.join("   ") : null;
@@ -222,8 +218,11 @@ export function source(app) {
       return true;
     }
     toDOM() {
-      return el("a", { className: "stored", textContent: `${storeText(this.s)}${this.n > 1 ? ` ×${this.n}` : ""}`,
-                       title: "what this line stored, last; click: go to that store", onclick: () => app.time.go(this.s.write.i) });
+      // (Short: the member, or the variable, and the change; the line says
+      // the rest. In full on hover, and in the Stores.)
+      const x = this.s.write, what = x.member || this.s.what.split(/\W/).pop();
+      return el("a", { className: "stored", textContent: `${what}: ${x.before} → ${x.after}${this.n > 1 ? ` ×${this.n}` : ""}`,
+                       title: `${storeText(this.s)}: what this line stored, last; click: go to that store`, onclick: () => app.time.go(x.i) });
     }
   }
   // The cursor line's notes, a line of their own under it, as indented as
