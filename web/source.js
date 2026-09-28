@@ -337,6 +337,9 @@ export function source(app) {
   const definitionAtLine = (line, column) => definitionAt(ed.state.doc.line(line).from + column - 1);
 
   // (`editor`: CodeMirror's view, for tests: a real hover.)
-  return { view: v, showFunction, hoverAt, text, find, definitionAt: definitionAtLine,
+  // File `file` at line `line`, not as a function's (a global's declaration).
+  const show = (file, line) => ((v.fn = null), showFile(file, line));
+
+  return { view: v, showFunction, show, hoverAt, text, find, definitionAt: definitionAtLine,
            lineAt: () => ed.state.doc.lineAt(ed.state.selection.main.head).number };
 }

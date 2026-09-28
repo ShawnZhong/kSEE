@@ -2,7 +2,7 @@
 // in the timeline: the zoom) did to the kernel's data (Machine.objects):
 // a box per object it changed that is still there when it returns (named
 // as the code names them: "file in vfs_read", "prog(19)->files"; and by
-// its address, which it is), each
+// its address, which it is; a global, where it is declared), each
 // member it changed, a line a function that changed it in turn, from
 // what to what ("f_mode  0 → 0x4000001  init_file", then "0x4000001 →
 // 0x40a801d  do_dentry_open"; one left as it was, a count one took and
@@ -65,8 +65,13 @@ export function objects(app) {
       if (list.length < runs.length) rows.push(el("tr", {}, el("td"), el("td", { colSpan: 2 },
         el("a", { textContent: `▸ ${runs.length - list.length} more`, onclick: () => (open.add(p), (shown = null), draw()) }))));
     });
+    // (A global: where it is declared, a link to it in the source.)
+    const decl = n.kind === "global" ? m.definition(n.what) : null;
+    // (The member it hangs from, unless its name says it: prog(19)->real_cred.)
+    const via = n.under && !n.what.endsWith(`->${n.under[1]}`) ? `  ← ${n.under[1]}` : "";
     return el("div", { className: `obj ${n.kind}`, dataset: { k } },
-      el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty} at 0x${n.addr.toString(16)}${n.under ? `  ← ${n.under[1]}` : ""}` })),
+      el("div", { className: "title" }, el("b", { textContent: n.what }), el("span", { className: "dim", textContent: ` ${n.ty} at 0x${n.addr.toString(16)}${via}` }),
+        decl ? el("a", { className: "decl", textContent: `  ${decl.file}:${decl.line}`, title: "where it is declared", onclick: () => app.src.show(decl.file, decl.line) }) : null),
       el("table", { className: "objs" }, el("tbody", {}, ...rows)));
   }
 
