@@ -12,9 +12,12 @@ use crate::Memory;
 /// of its records.
 #[derive(Debug, Default)]
 pub struct History {
-    /// Start address -> [(record, size, old)], oldest first. (A range of
-    /// unknown old contents, size 0, is not here: nothing to undo.)
+    /// Start address -> [(record, size, old)], oldest first: the stores of
+    /// 1 to 8 bytes.
     by_addr: BTreeMap<u32, Vec<(usize, u32, u64)>>,
+    /// The ranges of unknown old contents (nothing to undo; rare, and
+    /// long): (record, address, length), oldest first.
+    ranges: Vec<(usize, u32, u32)>,
     /// The Store records, oldest first.
     stores: Vec<usize>,
 }
@@ -25,8 +28,9 @@ impl History {
         for (i, r) in records.iter().enumerate() {
             if let Record::Store { addr, size, old, .. } = *r {
                 h.stores.push(i);
-                if size != 0 {
-                    h.by_addr.entry(addr).or_default().push((i, size, old));
+                match size {
+                    0 => h.ranges.push((i, addr, old as u32)),
+                    _ => h.by_addr.entry(addr).or_default().push((i, size, old)),
                 }
             }
         }
@@ -67,30 +71,23 @@ impl History {
         })
     }
 
-    /// The newest store to any of `addr..addr + len` at or before record
-    /// `at`: (its record, the old value).
-    pub fn last_write(&self, records: &[Record], addr: u32, len: u32, at: usize) -> Option<(usize, u64)> {
-        let end = self.stores.partition_point(|&i| i <= at);
-        self.stores[..end].iter().rev().find_map(|&i| overlaps(records[i], addr, len).then(|| match records[i] {
-            Record::Store { old, .. } => (i, old),
-            _ => unreachable!(),
-        }))
-    }
-
     /// The stores to any of `addr..addr + len`, oldest first: their records.
-    pub fn writes(&self, records: &[Record], addr: u32, len: u32) -> Vec<usize> {
-        self.stores.iter().copied().filter(|&i| overlaps(records[i], addr, len)).collect()
+    pub fn writes(&self, addr: u32, len: u32) -> Vec<usize> {
+        let end = addr.saturating_add(len);
+        let mut out: Vec<usize> = self.by_addr.range(addr.saturating_sub(7)..end)
+            .flat_map(|(&start, list)| list.iter().filter(move |&&(_, size, _)| start.saturating_add(size) > addr).map(|&(i, _, _)| i))
+            .chain(self.ranges.iter().filter(|&&(_, a, n)| a < end && addr < a.saturating_add(n)).map(|&(i, _, _)| i))
+            .collect();
+        out.sort_unstable();
+        out
     }
-}
 
-/// Whether store `r` writes any of `addr..addr + len`.
-fn overlaps(r: Record, addr: u32, len: u32) -> bool {
-    match r {
-        Record::Store { addr: a, size, old, .. } => {
-            let n = if size == 0 { old as u32 } else { size };
-            a < addr.saturating_add(len) && addr < a.saturating_add(n)
-        }
-        _ => false,
+    /// The newest store to any of `addr..addr + len` at or before record
+    /// `at`: (its record, the old value: a range's, its length).
+    pub fn last_write(&self, records: &[Record], addr: u32, len: u32, at: usize) -> Option<(usize, u64)> {
+        let i = self.writes(addr, len).into_iter().take_while(|&i| i <= at).last()?;
+        let Record::Store { old, .. } = records[i] else { return None };
+        Some((i, old))
     }
 }
 

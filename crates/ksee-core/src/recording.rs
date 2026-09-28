@@ -238,7 +238,7 @@ impl Recording {
     /// before and after), oldest first: an object's history (see
     /// View::writes).
     pub fn writes(&self, addr: u32, len: u32, span: core::ops::RangeInclusive<usize>) -> Vec<usize> {
-        let mut all = self.stores().writes(&self.records, addr, len);
+        let mut all = self.stores().writes(addr, len);
         all.retain(|i| span.contains(i));
         all
     }
