@@ -84,6 +84,8 @@ pub struct Line {
     /// code is inlined from): a stepper's level.
     pub depth: u32,
     pub inl: u32,
+    /// Which turn of a loop it is (see LineStep::run).
+    pub run: u32,
     /// The call returns after it: what it returned (32 bits).
     pub ret: Option<i32>,
 }
@@ -401,7 +403,7 @@ impl View<'_> {
     fn line(&self, s: &LineStep) -> Line {
         let t = self.tables;
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
-               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, ret: s.ret.map(|v| v as i32) }
+               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, ret: s.ret.map(|v| v as i32) }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.

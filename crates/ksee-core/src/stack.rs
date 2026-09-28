@@ -202,7 +202,7 @@ impl Calls {
             }
         };
         let nth = nth as u32;
-        Some(LineStep { record: p.record as usize, at: i, nth, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, ret: None })
+        Some(LineStep { record: p.record as usize, at: i, nth, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run: 0, ret: None })
     }
 
     /// A stack chart: for each column (its first record, in `columns`, in
@@ -219,6 +219,9 @@ impl Calls {
     pub fn lines(&self, t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
                  task: Option<u32>) -> Vec<LineStep> {
         let mut out: Vec<LineStep> = Vec::new();
+        // (How often each call entered each block so far: in a call, a block
+        // runs again only in a loop, so its lines' turn.)
+        let mut runs: BTreeMap<(u32, u32), u32> = BTreeMap::new();
         for i in from..=to.min(records.len().saturating_sub(1)) {
             let tk = tasks[i];
             if task.is_some_and(|x| x != tk) {
@@ -226,6 +229,11 @@ impl Calls {
             }
             let Some((p, steps)) = self.stretch(t, i) else { continue };
             let c = &self.calls[p.call as usize];
+            let run = runs.entry((p.call, p.n)).or_default();
+            if p.seg == 0 {
+                *run += 1;
+            }
+            let run = *run;
             // (The stretch's lines are numbered on from the block's earlier
             // ones: a store says which it is on; the first store of each line,
             // among the records up to the task's next block or return.)
@@ -251,7 +259,7 @@ impl Calls {
                     continue;
                 }
                 let at = if nth == 0 { i } else { first_store.get(&((base + nth) as u32)).copied().unwrap_or(i) };
-                out.push(LineStep { record: i, at, nth: nth as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, ret: None });
+                out.push(LineStep { record: i, at, nth: nth as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run, ret: None });
             }
             if let Some(l) = out.last_mut().filter(|l| l.record == i) {
                 l.ret = ret;
@@ -327,8 +335,11 @@ pub struct ChartCall {
 /// `func` (`inlined` from other functions, maybe: see Tables::inlines),
 /// `depth` calls deep. The line is `at` the record of its first store
 /// (Record::Store's line), or, with no store or the first of its stretch,
-/// the block's: where the cursor goes, and memory as it was there. `ret`:
-/// the last line before the call returns, what it returned.
+/// the block's: where the cursor goes, and memory as it was there. `run`:
+/// the how-manieth time its call enters its block (in the lines asked
+/// for; 0 if not counted): a block runs again in a call only in a loop,
+/// so a loop's turn. `ret`: the last line before the call returns,
+/// what it returned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineStep {
     pub record: usize,
@@ -338,6 +349,7 @@ pub struct LineStep {
     pub depth: u32,
     pub loc: crate::tables::Loc,
     pub inlined: Option<u32>,
+    pub run: u32,
     pub ret: Option<u32>,
 }
 
@@ -416,6 +428,11 @@ mod tests {
         let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 7 }, Record::Return { func: 1, value: 9 }];
         let rets: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| s.ret).collect();
         assert_eq!(rets, [None, None, Some(7), Some(9)]);
+        // A loop: f's block 1 (lines 5, 6) three times; each turn counted.
+        let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nB\t1\t0\t0:1:1\nB\t1\t1\t0:5:1\nL\t1\t1\t0:5;:6\n", "");
+        let r = [b(1, 0), b(1, 1), b(1, 1), b(1, 1)];
+        let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| (s.loc.line, s.run)).collect();
+        assert_eq!(got, [(1, 1), (5, 1), (6, 1), (5, 2), (6, 2), (5, 3), (6, 3)]);
     }
 
     #[test]

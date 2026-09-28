@@ -15,6 +15,9 @@ import { records } from "./records.js";
 import { stores } from "./stores.js";
 
 
+// 1st, 2nd, 3rd, 4th, …, 11th, 12th, 13th, 21st.
+const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+
 export function app(m) {
   const a = { m };
   const src = source(a), time = timeline(a), stack = callstack(a);
@@ -217,9 +220,11 @@ export function app(m) {
     a.records?.mark();
     memoryAt(step.at);
     const at = m.at(step.i);
-    // (The call's last line: what it returns, the optimizer's `return x;`
-    // being no line of its own.)
-    src.view.cursor = { file: step.file, line: step.line, note: step.ret != null ? `returns ${result(step.ret, consts())}` : null };
+    // (Its note: which turn of a loop it is, the call running it again;
+    // and at the call's last line, what it returns, the optimizer's
+    // `return x;` being no line of its own.)
+    const note = [step.run > 1 && `${ordinal(step.run)} time here`, step.ret != null && `returns ${result(step.ret, consts())}`];
+    src.view.cursor = { file: step.file, line: step.line, note: note.filter(Boolean).join("   ") || null };
     src.showFunction(step.func, undefined, step.line, step.file);
     // (The stack as it runs: see Machine.call_stack's nth.)
     stack.show(step.i, step, at?.task);
@@ -281,9 +286,11 @@ export function app(m) {
   // selected call (every line, at any depth, with "into calls" on); ↑ ↓
   // in depth, the row above or below on the Stack (the callee, the
   // caller: the innermost is on top), ↑ with nothing above into the next
-  // call made. Home: the first line; /: find a function.
+  // call made. Home: the first line; /: find a function. Anywhere on the
+  // page but where text is typed (a program's call, the find box): after
+  // a click on "into calls", or in the source, too.
   addEventListener("keydown", (e) => {
-    if (e.target.closest?.("input, select, textarea, .cm-editor")) return;
+    if (e.target.closest?.("input:not([type=checkbox]), select, textarea")) return;
     const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key], updown = { ArrowUp: -1, ArrowDown: 1 }[e.key];
     if (arrow) step(by(), arrow);
     else if (updown) climb(updown);

@@ -173,18 +173,23 @@ export function source(app) {
                        title: "what this line stored, last; click: go to that store", onclick: () => app.time.go(this.s.write.i) });
     }
   }
+  // The cursor line's notes, a line of their own under it, as indented as
+  // its code (`indent`, in columns): room for all of them.
   class Values extends CM.WidgetType {
-    constructor(text) {
+    constructor(text, indent) {
       super();
       this.text = text;
+      this.indent = indent;
     }
     eq(other) {
-      return other.text === this.text;
+      return other.text === this.text && other.indent === this.indent;
     }
     toDOM() {
-      return el("span", { className: "values", textContent: this.text });
+      return el("div", { className: "values", textContent: this.text, style: `padding-left: ${this.indent}ch` });
     }
   }
+  // The columns `text`'s leading white space takes.
+  const indentOf = (text, tab) => [...text.match(/^\s*/)[0]].reduce((c, ch) => (ch === "\t" ? c + tab - (c % tab) : c + 1), 0);
   // hover: { start, end, text }, or null.
   function hover(line, text, k) {
     const e = exprAt(text, k);
@@ -237,10 +242,10 @@ export function source(app) {
     }
     if (v.cursor?.file === file && at(v.cursor.line) !== false) {
       d.push(CM.Decoration.line({ class: "ln-cursor" }).range(at(v.cursor.line)));
-      // (The line's values, at its end: as a debugger shows them; and a
-      // note, what the call returns there.)
+      // (The line's values, under it: as a debugger shows them; and a note,
+      // what the call returns there.)
       const line = doc.line(v.cursor.line), text = [v.cursor.note, values(v.cursor.line, line.text)].filter(Boolean).join("   ");
-      if (text) d.push(CM.Decoration.widget({ widget: new Values(text), side: 1 }).range(line.to));
+      if (text) d.push(CM.Decoration.widget({ widget: new Values(text, indentOf(line.text, ed.state.tabSize)), block: true, side: 1 }).range(line.to));
     }
     // (What each line stored so far, at its end.)
     for (const [n, { s, n: count }] of stored(file)) {
