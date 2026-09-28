@@ -90,11 +90,11 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 /* The Stack: calls (frames), their values as trees; the current task */
 .stackhead { padding: 4px 12px; font-size: 11.5px; border-bottom: 1px solid var(--line); }
 .stackhead:empty { display: none; }
-table.objs { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12px; table-layout: fixed; }
-table.objs td { padding: 1px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* (Values in full: the pane scrolls sideways, not cut.) */
+table.objs { border-collapse: collapse; width: max-content; min-width: 100%; font-family: var(--mono); font-size: 12px; }
+table.objs td { padding: 1px 8px; white-space: nowrap; }
 table.objs tr:hover { background: var(--sel); }
-table.objs td.fname { width: 36%; }
-table.objs td.fval { color: var(--accent); width: 40%; }
+table.objs td.fval { color: var(--accent); }
 table.objs td.ftype { color: var(--dim); }
 table.objs tr.changed td { background: var(--chg); }
 table.objs td.fval.mem { cursor: pointer; }
