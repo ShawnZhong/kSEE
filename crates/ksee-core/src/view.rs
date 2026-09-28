@@ -1117,7 +1117,7 @@ mod tests {
     fn a_variable_in_a_wasm_local_has_its_last_value() {
         // f (1) keeps int x (variable 0, a local: no offset) in a wasm
         // local: it takes 5, then 7.
-        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\t0\t1\tf\tx\t0\t0\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:\n");
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\t0\t1\tf\tx\t0\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:\n");
         let r = [Record::Block { func: 1, n: 0 }, Record::Var { var: 0, line: 0, value: 5 }, Record::Block { func: 1, n: 1 }, Record::Var { var: 0, line: 0, value: 7 }];
         let mut args = Args::default();
         args.push(0, &[64]);

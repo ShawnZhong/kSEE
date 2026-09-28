@@ -147,7 +147,7 @@ impl Tables {
                         unit.sites.insert(k, (name, unit.loc(site, false)));
                     }
                 }
-                ["V", id, k, of, function, name, param, _wide, arg] => {
+                ["V", id, k, of, function, name, param, arg] => {
                     if let (Ok(id), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) {
                         let (param, arg) = (param.parse().unwrap_or(0), arg.parse().unwrap_or(0));
                         t.vars.insert((id, k), Var { of, function: function.to_string(), name: name.to_string(), param, arg });

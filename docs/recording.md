@@ -115,9 +115,9 @@ The instrumented kernel describes its probes in a custom section,
   each function it is inlined from, innermost first, as an inline site
   (`I k function FILE:line`: the function, and the line where it is
   inlined into the next one out);
-- `V fn k of function name param wide arg`: variable k of fn, as its var
+- `V fn k of function name param arg`: variable k of fn, as its var
   records have it: `name` of `function` (fn, or one inlined into it; `of`
-  its id), its parameter number (0: a local), whether it takes two words;
+  its id), its parameter number (0: a local);
   `arg`, if nonzero: it is fn's parameter arg throughout (an inlined
   call's parameter passed one of fn's), with no records;
 - `U`, `P k path`, `I k …`: a unit's files and inline sites; `R words`:

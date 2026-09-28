@@ -88,13 +88,12 @@
 //                  wide: a bit mask of those that take two words)
 //                B \t fn \t n \t FILE:line:column (block 0: the function's
 //                  signature, where a call begins)
-//                V \t fn \t k \t of \t function \t name \t param \t wide \t arg
+//                V \t fn \t k \t of \t function \t name \t param \t arg
 //                                     variable k of fn (its records'): a
 //                                     variable of `function` (fn, or one
 //                                     inlined into it; `of` its id, as
 //                                     fn's), `name`, its parameter number
-//                                     (0: a local), whether its values take
-//                                     two words; arg: if nonzero, it is
+//                                     (0: a local); arg: if nonzero, it is
 //                                     fn's parameter arg (a word of the
 //                                     call record) throughout, with no
 //                                     records (an inlined call's parameter
@@ -375,18 +374,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       Value *v = B.CreateZExtOrTrunc(V, i64);
       out.push_back(B.CreateTrunc(v, i32));
       out.push_back(B.CreateTrunc(B.CreateLShr(v, 32), i32));
+    } else if (V->getType()->isPointerTy()) {
+      out.push_back(B.CreatePtrToInt(V, i32));
     } else {
-      out.push_back(toI32(B, V));
+      out.push_back(V->getType()->isIntegerTy() ? B.CreateZExtOrTrunc(V, i32) : B.getInt32(0));
     }
-  }
-
-  Value *toI32(IRBuilder<> &B, Value *V) {
-    Type *T = V->getType();
-    if (T->isPointerTy())
-      return B.CreatePtrToInt(V, i32);
-    if (T->isIntegerTy())
-      return B.CreateZExtOrTrunc(V, i32);
-    return B.getInt32(0);
   }
 
   // Whether `F` is sealed (see the top): it loops (a block reaches one that
@@ -487,6 +479,86 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     return false;
   }
 
+  // Each named variable, as the code sets it (`sets`: its debug records,
+  // and the instructions before which it has their values): see the top.
+  // Not a parameter as it is at the call, which the call record has.
+  void recordSets(Function &F, uint32_t id, DISubprogram *SP, ArrayRef<Value *> params,
+                  ArrayRef<std::pair<DbgVariableRecord *, Instruction *>> sets) {
+    // (A debug record's value need not dominate it, as a use must: only one
+    // that does.)
+    std::map<std::pair<uint32_t, std::string>, unsigned> vars;
+    DominatorTree DT(F);
+    // (A variable that only ever takes one value, where a set of it follows
+    // another, surely: nothing new; only the sets no other dominates. Each
+    // inline site's copy of a variable is a variable of its own.)
+    std::map<std::pair<DILocalVariable *, DILocation *>, SmallVector<unsigned>> same;
+    for (auto [k, s] : enumerate(sets))
+      same[{s.first->getVariable(), s.first->getDebugLoc()->getInlinedAt()}].push_back(k);
+    std::vector<bool> redundant(sets.size());
+    for (auto &[_, ks] : same) {
+      Value *v = sets[ks[0]].first->getVariableLocationOp(0);
+      if (any_of(ks, [&](unsigned k) { return sets[k].first->getVariableLocationOp(0) != v; }))
+        continue;
+      for (unsigned k : ks)
+        redundant[k] = any_of(ks, [&](unsigned j) {
+          Instruction *a = sets[j].second, *b = sets[k].second;
+          return a == b ? j < k : DT.dominates(a, b);
+        });
+    }
+    // (Each set's variable: its function's id, as fnId's (one local to its
+    // file by the file), and name; or none.)
+    struct Set { DbgVariableRecord *R; Instruction *I; uint32_t of; StringRef function; int arg; };
+    SmallVector<Set> todo;
+    for (auto [n, set] : enumerate(sets)) {
+      auto [R, I] = set;
+      DILocalVariable *V = R->getVariable();
+      DISubprogram *VS = V ? V->getScope()->getSubprogram() : nullptr;
+      Value *v = R->getVariableLocationOp(0);
+      if (redundant[n] || !VS || (VS == SP && V->getArg() && isa<Argument>(v)))
+        continue;
+      if (auto *D = dyn_cast<Instruction>(v); D && !DT.dominates(D, I))
+        continue;
+      StringRef fname = VS == SP ? F.getName() : VS->getName();
+      uint32_t of = VS == SP ? id : VS->isLocalToUnit() ? fnv(fname, fnv(":", fnv(M->getSourceFileName()))) : fnv(fname);
+      // (A parameter of an inlined call that is one of the call's own
+      // arguments, which the call record has: its value, for the whole
+      // inlined call, is that; no record.)
+      int arg = -1;
+      if (VS != SP && V->getArg())
+        for (auto [k, p] : enumerate(params))
+          if (p == v)
+            arg = k;
+      todo.push_back({R, I, of, fname, arg});
+    }
+    // (A variable is the call's argument k if every set of it is.)
+    std::map<std::pair<uint32_t, std::string>, int> argOf;
+    for (Set &t : todo) {
+      auto [it, fresh] = argOf.try_emplace({t.of, t.R->getVariable()->getName().str()}, t.arg);
+      if (!fresh && it->second != t.arg)
+        it->second = -1;
+    }
+    for (Set &t : todo) {
+      DILocalVariable *V = t.R->getVariable();
+      Value *v = t.R->getVariableLocationOp(0);
+      int arg = argOf[{t.of, V->getName().str()}];
+      auto [it, fresh] = vars.try_emplace({t.of, V->getName().str()}, vars.size());
+      if (it->second >= 1u << 16)
+        continue;
+      if (fresh)
+        probes += ("V\t" + Twine(id) + "\t" + Twine(it->second) + "\t" + Twine(t.of) + "\t" + t.function + "\t" + V->getName() + "\t" +
+                   Twine(V->getArg()) + "\t" + Twine(arg + 1) + "\n").str();
+      if (arg >= 0)
+        continue;
+      IRBuilder<> B(t.I);
+      SmallVector<Value *, 2> w;
+      words(B, v, w);
+      Value *low = w[0];
+      w.erase(w.begin());
+      record(B, low, KindVar << 28 | std::min(lineOf.lookup(t.I), (1u << 12) - 1) << 16 | it->second, w);
+    }
+
+  }
+
   void instrument(Function &F) {
     uint32_t id = fnId(F);
     DISubprogram *SP = F.getSubprogram();
@@ -579,82 +651,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     for (Instruction *I : writes)
       logStore(I);
 
-    // (Each named variable, as the code sets it: see the top. Not a
-    // parameter as it is at the call, which the call record has; not in a
-    // sealed function, a box.)
-    // (A debug record's value need not dominate it, as a use must: only one
-    // that does.)
-    std::map<std::pair<uint32_t, std::string>, unsigned> vars;
-    DominatorTree DT(F);
-    // (A variable that only ever takes one value, where a set of it follows
-    // another, surely: nothing new; only the sets no other dominates. Each
-    // inline site's copy of a variable is a variable of its own.)
-    std::map<std::pair<DILocalVariable *, DILocation *>, SmallVector<unsigned>> same;
-    for (auto [k, s] : enumerate(sets))
-      same[{s.first->getVariable(), s.first->getDebugLoc()->getInlinedAt()}].push_back(k);
-    std::vector<bool> redundant(sets.size());
-    for (auto &[_, ks] : same) {
-      Value *v = sets[ks[0]].first->getVariableLocationOp(0);
-      if (any_of(ks, [&](unsigned k) { return sets[k].first->getVariableLocationOp(0) != v; }))
-        continue;
-      for (unsigned k : ks)
-        redundant[k] = any_of(ks, [&](unsigned j) {
-          Instruction *a = sets[j].second, *b = sets[k].second;
-          return a == b ? j < k : DT.dominates(a, b);
-        });
-    }
-    // (Each set's variable: its function's id, as fnId's (one local to its
-    // file by the file), and name; or none.)
-    struct Set { DbgVariableRecord *R; Instruction *I; uint32_t of; StringRef function; int arg; };
-    SmallVector<Set> todo;
-    for (auto [n, set] : enumerate(seal ? decltype(sets){} : sets)) {
-      auto [R, I] = set;
-      DILocalVariable *V = R->getVariable();
-      DISubprogram *VS = V ? V->getScope()->getSubprogram() : nullptr;
-      Value *v = R->getVariableLocationOp(0);
-      if (redundant[n] || !VS || (VS == SP && V->getArg() && isa<Argument>(v)))
-        continue;
-      if (auto *D = dyn_cast<Instruction>(v); D && !DT.dominates(D, I))
-        continue;
-      StringRef fname = VS == SP ? F.getName() : VS->getName();
-      uint32_t of = VS == SP ? id : VS->isLocalToUnit() ? fnv(fname, fnv(":", fnv(M->getSourceFileName()))) : fnv(fname);
-      // (A parameter of an inlined call that is one of the call's own
-      // arguments, which the call record has: its value, for the whole
-      // inlined call, is that; no record.)
-      int arg = -1;
-      if (VS != SP && V->getArg())
-        for (auto [k, p] : enumerate(params))
-          if (p == v)
-            arg = k;
-      todo.push_back({R, I, of, fname, arg});
-    }
-    // (A variable is the call's argument k if every set of it is.)
-    std::map<std::pair<uint32_t, std::string>, int> argOf;
-    for (Set &t : todo) {
-      auto [it, fresh] = argOf.try_emplace({t.of, t.R->getVariable()->getName().str()}, t.arg);
-      if (!fresh && it->second != t.arg)
-        it->second = -1;
-    }
-    for (Set &t : todo) {
-      DILocalVariable *V = t.R->getVariable();
-      Value *v = t.R->getVariableLocationOp(0);
-      bool wide = v->getType()->isIntegerTy() && v->getType()->getIntegerBitWidth() > 32;
-      int arg = argOf[{t.of, V->getName().str()}];
-      auto [it, fresh] = vars.try_emplace({t.of, V->getName().str()}, vars.size());
-      if (it->second >= 1u << 16)
-        continue;
-      if (fresh)
-        probes += ("V\t" + Twine(id) + "\t" + Twine(it->second) + "\t" + Twine(t.of) + "\t" + t.function + "\t" + V->getName() + "\t" +
-                   Twine(V->getArg()) + "\t" + Twine(wide) + "\t" + Twine(arg + 1) + "\n").str();
-      if (arg >= 0)
-        continue;
-      IRBuilder<> B(t.I);
-      SmallVector<Value *, 2> w;
-      words(B, v, w);
-      Value *low = w[0];
-      w.erase(w.begin());
-      record(B, low, KindVar << 28 | std::min(lineOf.lookup(t.I), (1u << 12) - 1) << 16 | it->second, w);
-    }
+    if (!seal)
+      recordSets(F, id, SP, params, sets);
 
     // (A comparison deciding a branch: its operands, after it; its
     // predicate and line in its tag. Not in a sealed function: its inside
