@@ -38,7 +38,7 @@ export function tasks(app) {
         el("a", { className: "tw", textContent: open ? "▾ " : "▸ ", title: open ? "fold it" : "its task_struct, as it was at the cursor", onclick: toggle(folded, p) }),
         el("a", { className: "mono", textContent: taskName(t.task), title: t.running ? "" : "go to its last moment (its first, if it runs later)",
                   onclick: () => app.time.go(t.last ?? t.first) }),
-        el("span", { className: "dim", textContent: t.last == null ? "" : `  in ${t.syscall ?? t.func ?? "?"}` }))));
+        el("span", { className: "dim", textContent: t.last == null || !(t.syscall ?? t.func) ? "" : `  in ${t.syscall ?? t.func}` }))));
       if (!open) continue;
       const full = st.open.has(`${p}/all`), { fields, total } = m.task_fields(t.task.addr, full);
       rows(fields, p, 1, all);
