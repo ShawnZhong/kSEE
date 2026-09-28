@@ -31,7 +31,7 @@
 // Machine.declare), memory of its own in the program's process; its name then
 // stands for its address (`read(fd, buf, 64)`, `&ts`), and each call's
 // line says the variables it changed, as C writes them (`fds = {3, 4}`).
-import { $, el } from "./dom.js";
+import { $, el, taskName } from "./dom.js";
 import { callEditor } from "./calledit.js";
 import { runner } from "./kernel.js";
 
@@ -219,8 +219,11 @@ export async function examples(app) {
       if (f) f.querySelector("textarea").placeholder = many ? `add a call, by ${tidOf(lane) ?? lane}…` : "add a call…";
     }
     t.lanes.style.setProperty("--lanes", lanes.length);
+    // (A lane's name: its task's, as the timeline has it, from its last
+    // call recorded; else its tid.)
+    const task = (lane) => t.steps.map((s, j) => laneOf(s) === lane && syscall(j)?.task).filter(Boolean).at(-1);
     t.lanes.replaceChildren(...(many ? lanes.map((lane) => el("div", { className: "lane mono", style: `--hue: ${hue(tidOf(lane))}`,
-      textContent: tidOf(lane) != null ? `tid ${tidOf(lane)}` : lane })) : []));
+      textContent: task(lane) ? taskName(task(lane)) : String(tidOf(lane) ?? lane) })) : []));
     // (The calls still waiting at each line: their lanes, marked.)
     const waiting = (r) => t.steps.map((s, j) => [s, j]).filter(([s, j]) => {
       const d = t.done[j];

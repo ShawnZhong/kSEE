@@ -120,12 +120,11 @@ thread-local storage. Futexes are the kernel's own
 
 ## /init, the program, and the runners
 
-There are three programs (C on nolibc). **/init** (user/init.c) sets up:
+There are two programs (C on nolibc). **/init** (user/init.c) sets up:
 it mounts devtmpfs and the disk, then starts **/bin/prog** (user/prog.c)
 as its vfork child, waits for it, and starts it again when it exits. The
 program is the page's: a process as any (not pid 1), it makes the
-syscalls the page asks for, one at a time. **/bin/cat** (user/cat.c: its
-input to its output) is for the pipe example's child to exec.
+syscalls the page asks for, one at a time.
 
 The program waits for a call in a `futex` on the first word of its
 request (`struct request`: the number, -1 while none is asked; the
@@ -146,11 +145,12 @@ signal, or a device: those would put a worker, a signal's delivery or the
 VFS at the start of every call's recording; and no syscall of this port's
 own.)
 
-A clone child of the program (a thread, a vfork child) is a **runner**
+A clone child of the program (a thread, a child process: it shares the
+program's memory, `CLONE_VM`) is a **runner**
 too, and so is the program exec'd again (the doorbell rings one task). A
 runner's `execve` call is over once the new program is loaded
 (`user_start`): a runner again only if it says so (`ksee.ready`), as
-/bin/prog does and cat does not. So the page can make calls as several
+/bin/prog does. So the page can make calls as several
 threads and processes: one blocks (a futex's wait, a pipe's read),
 another wakes it.
 
