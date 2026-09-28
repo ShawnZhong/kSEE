@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn a_slot_is_written_in_a_span_or_not() {
-        let r = [Record::Store { addr: 0x10, size: 4, old: 0, line: 0 }, Record::Block { func: 1, n: 1 }, Record::Store { addr: 0x20, size: 8, old: 0, line: 0 }];
+        let r = [Record::Store { addr: 0x10, size: 4, old: 0, line: 0, from: None }, Record::Block { func: 1, n: 1 }, Record::Store { addr: 0x20, size: 8, old: 0, line: 0, from: None }];
         let h = History::new(&r);
         assert!(h.written(0x10, 4, 0, 2) && !h.written(0x10, 4, 1, 2));
         assert!(h.written(0x24, 4, 1, 2) && !h.written(0x28, 4, 0, 2));
@@ -136,7 +136,7 @@ mod tests {
     fn undoes_later_stores() {
         // A u32 at 4 was 1; record 1 stores 2 there, record 3 stores 3.
         let b = Record::Block { func: 1, n: 1 };
-        let r = [b, Record::Store { addr: 4, size: 4, old: 1, line: 0 }, b, Record::Store { addr: 4, size: 4, old: 2, line: 0 }, b];
+        let r = [b, Record::Store { addr: 4, size: 4, old: 1, line: 0, from: None }, b, Record::Store { addr: 4, size: 4, old: 2, line: 0, from: None }, b];
         let mut m = alloc::vec![0u8; 16];
         m[4] = 3;
         let live = Mem(m);

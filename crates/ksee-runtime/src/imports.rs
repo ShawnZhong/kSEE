@@ -60,11 +60,12 @@ pub extern "C" fn time_ns() -> u64 {
 }
 
 /// ksee.bulk, for the kernel (memcpy, memset, wide stores): Store records
-/// with the old contents of `addr..addr + len`, while recording.
+/// with the old contents of `addr..addr + len`, while recording; `from`:
+/// where a copy (a memcpy) takes them from, else 0.
 #[unsafe(no_mangle)]
-pub extern "C" fn bulk(addr: u32, len: u32, line: u32) {
+pub extern "C" fn bulk(addr: u32, len: u32, line: u32, from: u32) {
     if recording() {
-        log(addr, len, line);
+        log(addr, len, line, from);
     }
 }
 
@@ -72,8 +73,9 @@ pub extern "C" fn bulk(addr: u32, len: u32, line: u32) {
 /// a runner's word): Store records with the old contents of `addr..addr +
 /// len`, in 8-byte stores, up to 256 bytes (the rest as a range of
 /// unknown old contents); `line`: the kernel's store's line (see the
-/// plugin), 0 for the runtime's own.
-pub fn log(addr: u32, len: u32, line: u32) {
+/// plugin), 0 for the runtime's own; `from`: where the bytes are copied
+/// from (each store then says where its own come from), else 0.
+pub fn log(addr: u32, len: u32, line: u32, from: u32) {
     use ksee_core::trace::{STORE, UNKNOWN, VALUE};
     if len == 0 {
         return;
@@ -86,16 +88,25 @@ pub fn log(addr: u32, len: u32, line: u32) {
         let mut old = [0u8; 8];
         Direct.read(addr + off, &mut old[..size as usize]);
         let v = u64::from_le_bytes(old);
-        if class == 3 {
-            ring_put(&[addr + off, STORE << 28 | line << 4 | class, v as u32, VALUE << 28, (v >> 32) as u32, VALUE << 28 | 1]);
-        } else {
-            ring_put(&[addr + off, STORE << 28 | line << 4 | class, v as u32, VALUE << 28]);
-        }
+        let w = [addr + off, STORE << 28 | line << 4 | class, v as u32, VALUE << 28, (v >> 32) as u32, VALUE << 28 | 1, 0, 0];
+        store(w, if class == 3 { 6 } else { 4 }, from, off);
         off += size;
     }
     if len > logged {
-        ring_put(&[addr + logged, STORE << 28 | line << 4 | UNKNOWN, len - logged, VALUE << 28]);
+        store([addr + logged, STORE << 28 | line << 4 | UNKNOWN, len - logged, VALUE << 28, 0, 0, 0, 0], 4, from, logged);
     }
+}
+
+/// Put the first `n` words of store record `w`, and, for a copy (`from`),
+/// where its bytes (`off` into the copy) come from.
+fn store(mut w: [u32; 8], n: usize, from: u32, off: u32) {
+    use ksee_core::trace::VALUE;
+    if from == 0 {
+        return ring_put(&w[..n]);
+    }
+    w[n] = from + off;
+    w[n + 1] = VALUE << 28 | (n as u32 / 2 - 1);
+    ring_put(&w[..n + 2]);
 }
 
 /// A Task record: `task` (a task_struct) runs; where a recording begins.

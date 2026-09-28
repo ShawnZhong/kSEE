@@ -12,14 +12,13 @@ pub enum Record {
     Return { func: u32, value: u32 },
     /// A store of `size` bytes at `addr`, which held `old` (size 0: a range
     /// of `old` bytes whose old contents are not logged), on `line`: which
-    /// of its block's lines (Tables::segments, "|" apart, from 0).
-    Store { addr: u32, size: u32, old: u64, line: u32 },
+    /// of its block's lines (Tables::segments, "|" apart, from 0); `from`:
+    /// if it copies (a value loaded and stored as it is, a memcpy), where
+    /// its bytes come from.
+    Store { addr: u32, size: u32, old: u64, line: u32, from: Option<u32> },
     /// The task running (its task_struct): the runtime's, where a recording
     /// begins (no switch says so).
     Task { task: u32 },
-    /// The store (or bulk write) after it writes `dst..dst + len` with what
-    /// was at `src`: a copy.
-    Copy { dst: u32, src: u32, len: u32 },
     /// A comparison that decides a branch (or a select): `lhs` with `rhs`
     /// (truncated to 32 bits), by `pred` (an LLVM icmp predicate, from
     /// eq: see Pred), on `line` (as a Store's).
@@ -48,7 +47,6 @@ const BLOCK: u32 = 1;
 /// The tag of a Task record (the runtime's).
 pub const TASK: u32 = 3;
 const RETURN: u32 = 4;
-const COPY: u32 = 5;
 const COMPARE: u32 = 6;
 /// The tag of a Store record's head (the plugin's, and the runtime's).
 pub const STORE: u32 = 7;
@@ -169,12 +167,6 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                     }
                     return Some(Record::Return { func, value: v[0] });
                 }
-                COPY => {
-                    if got < 2 {
-                        continue;
-                    }
-                    return Some(Record::Copy { dst: func, src: v[0], len: v[1] });
-                }
                 COMPARE => {
                     if got < 1 {
                         continue;
@@ -182,14 +174,17 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                     return Some(Record::Compare { lhs: func, rhs: v[0], pred: (tag & 0xf) as u8, line: tag >> 4 & 0xff_ffff });
                 }
                 STORE => {
+                    // (The old value, or a range's length; then, a copy's, where from.)
                     let (class, line) = (tag & 0xf, tag >> 4 & 0xff_ffff);
-                    if got < if class == 3 { 2 } else { 1 } {
+                    let words = if class == 3 { 2 } else { 1 };
+                    if got < words {
                         continue;
                     }
+                    let from = self.values.get(words).copied();
                     return Some(if class == UNKNOWN {
-                        Record::Store { addr: func, size: 0, old: v[0] as u64, line }
+                        Record::Store { addr: func, size: 0, old: v[0] as u64, line, from }
                     } else {
-                        Record::Store { addr: func, size: 1 << class, old: v[0] as u64 | (v[1] as u64) << 32, line }
+                        Record::Store { addr: func, size: 1 << class, old: v[0] as u64 | if class == 3 { (v[1] as u64) << 32 } else { 0 }, line, from }
                     });
                 }
                 // (A wide one's high word after it.)
@@ -258,16 +253,16 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
                  0x200, STORE << 28 | UNKNOWN, 64, VALUE << 28, 9, BLOCK << 28 | 1];
         assert_eq!(decode_values(&w)[0].1, [7, 8, 0x80]);
         assert_eq!(decode(&w), [Record::Block { func: 9, n: 0 },
-                                Record::Store { addr: 0x100, size: 4, old: 5, line: 3 }, Record::Store { addr: 0x200, size: 0, old: 64, line: 0 },
+                                Record::Store { addr: 0x100, size: 4, old: 5, line: 3, from: None }, Record::Store { addr: 0x200, size: 0, old: 64, line: 0, from: None },
                                 Record::Block { func: 9, n: 1 }]);
     }
 
     #[test]
     fn copies_and_comparisons() {
-        // A copy of 4 bytes from 0x300 to 0x100; then 18 >= 0 (sge, 7), on line 2.
-        let w = [0x100, COPY << 28, 0x300, VALUE << 28, 4, VALUE << 28 | 1, 18, COMPARE << 28 | 2 << 4 | 7, 0, VALUE << 28];
+        // A store of 4 bytes at 0x100 (it held 5) copied from 0x300; then 18 >= 0 (sge, 7), on line 2.
+        let w = [0x100, STORE << 28 | 2, 5, VALUE << 28, 0x300, VALUE << 28 | 1, 18, COMPARE << 28 | 2 << 4 | 7, 0, VALUE << 28];
         let got = decode(&w);
-        assert_eq!(got, [Record::Copy { dst: 0x100, src: 0x300, len: 4 }, Record::Compare { lhs: 18, rhs: 0, pred: 7, line: 2 }]);
+        assert_eq!(got, [Record::Store { addr: 0x100, size: 4, old: 5, line: 0, from: Some(0x300) }, Record::Compare { lhs: 18, rhs: 0, pred: 7, line: 2 }]);
         assert_eq!(got[1].compare(), Some((">=", true, true)));
         assert_eq!(Record::Compare { lhs: -1i32 as u32, rhs: 0, pred: 3, line: 0 }.compare(), Some((">=", false, true)));
         assert_eq!(Record::Compare { lhs: 5, rhs: 5, pred: 1, line: 0 }.compare(), Some(("!=", false, false)));

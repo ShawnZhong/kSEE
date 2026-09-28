@@ -132,8 +132,8 @@ returned, as it was when it did (it is gone).
 
 ## Where a value came from, and why a branch went
 
-A store that copies (a value loaded and stored as it is, a memcpy) has a
-Copy record before it: where from. So a value's way through memory can be
+A store that copies (a value loaded and stored as it is, a memcpy) says
+where its bytes come from (each store of a memcpy its own). So a value's way through memory can be
 followed back (`origin`): its last write, and while that was a copy, the
 last write of what it copied, and so on: the bytes a read returns, from
 the page cache, which a write filled from its caller's buffer. It ends

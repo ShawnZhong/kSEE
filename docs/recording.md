@@ -45,7 +45,7 @@ Every function gets:
   store record with the **old value** and the **line** it is on (which of
   its block's lines: so a line step stops just before its first, and a store
   is attributed to its line). Bulk writes (memcpy, memset, wider stores)
-  call the `ksee.bulk(addr, len, line)` import, which logs their old
+  call the `ksee.bulk(addr, len, line, from)` import, which logs their old
   contents the same way. A struct passed by value (`byval`) is copied by
   the pass itself, a memcpy into a slot of the caller's (recorded as
   any), passed as a plain pointer (wasm's calling convention for it
@@ -74,9 +74,8 @@ overwritten the start of a record) and skip to the next head:
 | `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments (a word each, two for a wide one), then its frame base |
 | `[task, 3<<28]` | the runtime's: task (a task_struct) is running (where a recording begins: no switch says so) |
 | `[fn, 4<<28]` | a return from fn; the value follows |
-| `[dst, 5<<28]` | a copy: the store (or bulk write) after it writes dst..dst+len with what was at src (a value loaded and stored as it is, a memcpy); src and len follow |
 | `[lhs, 6<<28 \| line<<4 \| p]` | a comparison that decides a branch (or a select), on its block's line `line`: lhs, then rhs follows (32 bits each); p its predicate (LLVM's icmp's, from eq) |
-| `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows (k = 7: a range of unknown old contents; its length follows) |
+| `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows (k = 7: a range of unknown old contents; its length follows); then, if it copies (a value loaded and stored as it is, a memcpy), where its bytes come from |
 | `[value, 9<<28 \| k]` | variable k of the function running (its V line) takes value (its high word follows, for a wide one) |
 | `[value, 8<<28 \| i]` | continuation i |
 

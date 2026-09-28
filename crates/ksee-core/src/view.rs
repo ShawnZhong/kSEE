@@ -434,9 +434,9 @@ impl View<'_> {
                     None => (kind, 0, (None, None)),
                 }
             }
-            r @ (Record::Task { .. } | Record::Copy { .. } | Record::Var { .. }) => {
+            r @ (Record::Task { .. } | Record::Var { .. }) => {
                 let (func, step) = top(i).unwrap_or((0, None));
-                let kind = match r { Record::Task { .. } => "task", Record::Copy { .. } => "copy", _ => "var" };
+                let kind = if matches!(r, Record::Task { .. }) { "task" } else { "var" };
                 (kind, func, located(func, step))
             }
         };
@@ -484,11 +484,13 @@ impl View<'_> {
                 }
                 Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value as i32)),
                 Record::Task { .. } => continue, // (the task's line is above)
-                Record::Copy { dst, src, len } => ("copy", format!("copy {dst:#x} ← {src:#x} [{len}]")),
                 Record::Var { var, value, .. } => ("var", format!("var {} = {}", self.var_at(i, var).map_or("?", |v| v.name.as_str()), num(value))),
                 r @ Record::Compare { .. } => ("compare", format!("compare {}", compared(&r).unwrap_or_default())),
-                Record::Store { addr, size: 0, old, .. } => ("store", format!("store {addr:#x} [{old} bytes] (old contents not kept)")),
-                Record::Store { addr, size, old, .. } => ("store", format!("store {addr:#x} [{size}] {} → {}", num(old), num(self.wrote(i)))),
+                Record::Store { addr, size, old, from, .. } => {
+                    let from = from.map_or(String::new(), |f| format!(" ← {f:#x}"));
+                    ("store", if size == 0 { format!("store {addr:#x} [{old} bytes] (old contents not kept){from}") }
+                              else { format!("store {addr:#x} [{size}] {} → {}{from}", num(old), num(self.wrote(i))) })
+                }
             };
             out.push((i, kind, text));
         }
@@ -501,7 +503,7 @@ impl View<'_> {
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         let task = tasks.get(s.record).copied();
         let tests = (s.record + 1..records.len()).filter(|&j| Some(tasks[j]) == task)
-            .map(|j| records[j]).take_while(|r| matches!(r, Record::Store { .. } | Record::Copy { .. } | Record::Compare { .. }))
+            .map(|j| records[j]).take_while(|r| matches!(r, Record::Store { .. } | Record::Compare { .. }))
             .filter(|r| matches!(r, Record::Compare { line, .. } if *line == s.index))
             .filter_map(|r| compared(&r)).collect();
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
@@ -1118,8 +1120,8 @@ mod tests {
         // struct s { int a; int b; } at 4: record 1 stores b (2, was 1),
         // record 3 a byte of a (5); in the span from record 2, the second only.
         let t = Tables::parse("", "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\n");
-        let r = [Record::Block { func: 9, n: 1 }, Record::Store { addr: 8, size: 4, old: 1, line: 0 },
-                 Record::Block { func: 9, n: 1 }, Record::Store { addr: 5, size: 1, old: 0, line: 0 }];
+        let r = [Record::Block { func: 9, n: 1 }, Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None },
+                 Record::Block { func: 9, n: 1 }, Record::Store { addr: 5, size: 1, old: 0, line: 0, from: None }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], Args::default());
         let mut m = alloc::vec![0u8; 16];
         (m[8], m[5]) = (2, 5);
@@ -1139,10 +1141,10 @@ mod tests {
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
                                P\t1\tf\tp:3\nQ\t1\tx:1:4\n");
         let r = [Record::Block { func: 1, n: 0 },
-                 Record::Store { addr: 8, size: 4, old: 1, line: 0 }, Record::Store { addr: 36, size: 4, old: 0, line: 0 },
+                 Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None }, Record::Store { addr: 36, size: 4, old: 0, line: 0, from: None },
                  Record::Block { func: 2, n: 0 },
-                 Record::Store { addr: 20, size: 1, old: 0, line: 0 }, Record::Return { func: 2, value: 0 },
-                 Record::Store { addr: 100, size: 1, old: 0, line: 0 }, Record::Store { addr: 21, size: 1, old: 0, line: 0 }];
+                 Record::Store { addr: 20, size: 1, old: 0, line: 0, from: None }, Record::Return { func: 2, value: 0 },
+                 Record::Store { addr: 100, size: 1, old: 0, line: 0, from: None }, Record::Store { addr: 21, size: 1, old: 0, line: 0, from: None }];
         let mut args = Args::default();
         args.push(0, &[4, 32]);
         args.push(3, &[16]);
@@ -1165,7 +1167,7 @@ mod tests {
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
                                T\t4\tstruct\tt\t8\nM\t4\tc\t0\t0\t1\nM\t4\tlink\t32\t0\t3\nP\t1\tf\tp:3\nQ\t1\ty:4:8\n");
-        let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 8, size: 4, old: 1, line: 0 }, Record::Store { addr: 40, size: 4, old: 0, line: 0 }];
+        let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None }, Record::Store { addr: 40, size: 4, old: 0, line: 0, from: None }];
         let mut args = Args::default();
         args.push(0, &[4, 32]);
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
@@ -1183,14 +1185,13 @@ mod tests {
         // then to 0x20 by a memcpy of 8 (two stores): 0x24's way back is
         // 0x24 <- 0x14 <- ... 0x14 was never written; 0x20's is 0x20 <- 0x10 <- 0x30.
         let t = Tables::default();
-        let st = |addr| Record::Store { addr, size: 4, old: 0, line: 0 };
-        let r = [st(0x30), Record::Copy { dst: 0x10, src: 0x30, len: 4 }, st(0x10),
-                 Record::Copy { dst: 0x20, src: 0x10, len: 8 }, st(0x20), st(0x24)];
-        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 6], Args::default());
+        let st = |addr, from| Record::Store { addr, size: 4, old: 0, line: 0, from };
+        let r = [st(0x30, None), st(0x10, Some(0x30)), st(0x20, Some(0x10)), st(0x24, Some(0x14))];
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], Args::default());
         let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 64]) };
-        let way = |a| v.origin(a, 4, 5, 8).iter().map(|w| (w.i, w.addr, w.from)).collect::<Vec<_>>();
-        assert_eq!(way(0x20), [(4, 0x20, Some(0x10)), (2, 0x10, Some(0x30)), (0, 0x30, None)]);
-        assert_eq!(way(0x24), [(5, 0x24, Some(0x14))]);
+        let way = |a| v.origin(a, 4, 3, 8).iter().map(|w| (w.i, w.addr, w.from)).collect::<Vec<_>>();
+        assert_eq!(way(0x20), [(2, 0x20, Some(0x10)), (1, 0x10, Some(0x30)), (0, 0x30, None)]);
+        assert_eq!(way(0x24), [(3, 0x24, Some(0x14))]);
     }
 
     #[test]

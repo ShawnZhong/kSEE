@@ -278,7 +278,6 @@ impl Calls {
                     // instruction that does what it says, its assignment or
                     // its test, as the debug info's key instructions have it.)
                     Record::Store { line, .. } | Record::Compare { line, .. } | Record::Var { line, .. } => { first_at.entry(line).or_insert(j); }
-                    Record::Copy { .. } => {}
                     Record::Return { func, value } => {
                         ret = (func == c.func).then_some(value);
                         break;
@@ -415,7 +414,7 @@ mod tests {
         // at the block, or the return, itself.
         let t = crate::tables::Tables::parse(
             "U\nP\t0\tf.c\nP\t1\tg.c\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1;:2;:3;|;:4\nB\t2\t0\t1:10:1\n", "");
-        let st = |line| Record::Store { addr: 8, size: 4, old: 0, line };
+        let st = |line| Record::Store { addr: 8, size: 4, old: 0, line, from: None };
         let r = [b(1, 0), st(1), st(1), b(2, 0), Record::Return { func: 2, value: 0 }, st(3), Record::Return { func: 1, value: 0 }];
         let got: Vec<_> = lines(&t, &r, &[7; 7], 0, 6, None).iter().map(|s| (s.loc.line, s.record, s.at)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (3, 0, 2), (10, 3, 3), (4, 4, 4)]);

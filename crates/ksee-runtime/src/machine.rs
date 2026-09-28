@@ -230,8 +230,8 @@ impl Machine {
         if Direct.read_u32(trace + trace::ON) == 0 {
             Direct.write_u32(trace + trace::ON, 2);
         }
-        imports::log(req, REQUEST, 0);
-        imports::log(scratch, data.len() as u32, 0);
+        imports::log(req, REQUEST, 0, 0);
+        imports::log(scratch, data.len() as u32, 0, 0);
         unsafe {
             core::ptr::copy_nonoverlapping(head[4..].as_ptr(), (req + 4) as *mut u8, head.len() - 4);
             core::ptr::copy_nonoverlapping(data.as_ptr(), scratch as *mut u8, data.len());
@@ -344,7 +344,7 @@ fn write_logged(addr: u32, bytes: &[u8]) {
     if Direct.read_u32(trace + trace::ON) == 0 {
         Direct.write_u32(trace + trace::ON, 2);
     }
-    imports::log(addr, bytes.len() as u32, 0);
+    imports::log(addr, bytes.len() as u32, 0, 0);
     unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), addr as *mut u8, bytes.len()) };
 }
 

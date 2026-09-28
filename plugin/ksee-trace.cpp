@@ -13,8 +13,9 @@
 //     were), a store record, with the old value (the host undoes stores to
 //     see memory as it was) and the line it is on (so that stepping a line
 //     lands where its first store is). Bulk writes (memcpy, memset, wider
-//     stores) go to the ksee.bulk(address, length, line) import, which logs
-//     them.
+//     stores) go to the ksee.bulk(address, length, line, from) import,
+//     which logs them. A store that copies (a value loaded and stored as
+//     it is, a memcpy) says where from.
 // A function that loops, but writes no memory the host must undo and calls
 // nothing (a checksum, a search: crc32c, find_next_bit) is sealed: only
 // its call and its returns are recorded, not each block of each turn. (Its
@@ -47,12 +48,11 @@
 //                         a store of 1 << k bytes at addr (k < 4), followed
 //                         by the old value (low, then for 8 bytes high); k =
 //                         7: a range whose old contents are not logged,
-//                         followed by its length. line: which of its
+//                         followed by its length. Then, if it copies (a
+//                         value loaded and stored as it is, a memcpy),
+//                         where its bytes come from. line: which of its
 //                         block's lines (the L line's items, "|" apart,
 //                         counted from 0) the store is on
-//   [dst, 5 << 28]        a copy: the store (or memcpy) after it writes
-//                         dst..dst + len with what was at src, followed by
-//                         src and len (a value loaded and stored as it is)
 //   [lhs, 6 << 28 | line << 4 | p]
 //                         a comparison deciding a branch (or a select),
 //                         of lhs with the value after it, truncated to 32
@@ -129,7 +129,7 @@ namespace {
 constexpr unsigned RingWords = 1u << 21;
 constexpr unsigned CallArgs = 6;
 constexpr unsigned Values = 2 * CallArgs + 1; // a record's at most: a call's arguments (wide ones two words) and its frame base
-enum Kind { KindBlock = 1, KindReturn = 4, KindCopy = 5, KindCompare = 6, KindStore = 7, KindValue = 8, KindVar = 9 };
+enum Kind { KindBlock = 1, KindReturn = 4, KindCompare = 6, KindStore = 7, KindValue = 8, KindVar = 9 };
 
 uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
   for (unsigned char c : s)
@@ -185,9 +185,9 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   Type *i32 = nullptr, *i64 = nullptr;
   // The writers: a record's head pair [a, tag] and k values after it; a
   // store of 1, 2, 4 or 8 bytes at an address (the old value, read while
-  // recording only).
+  // recording only), and one that copies (where from, after).
   Function *put[Values + 1] = {};
-  Function *putStore[4] = {};
+  Function *putStore[4] = {}, *putCopy[4] = {};
   FunctionCallee bulk;
   // Each write's line: the index of its line among its block's (see blockLines).
   DenseMap<const Instruction *, unsigned> lineOf;
@@ -237,7 +237,9 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       put[k] = function("__ksee_put" + std::to_string(k), 2 + k);
     for (unsigned k = 0; k < 4; k++)
       putStore[k] = function("__ksee_put_store" + std::to_string(1 << k), 2);
-    bulk = import("__ksee_bulk", "bulk", FunctionType::get(vd, {i32, i32, i32}, false));
+    for (unsigned k = 0; k < 4; k++)
+      putCopy[k] = function("__ksee_put_copy" + std::to_string(1 << k), 3);
+    bulk = import("__ksee_bulk", "bulk", FunctionType::get(vd, {i32, i32, i32, i32}, false));
     if (!define)
       return;
 
@@ -287,16 +289,19 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
           value(F->getArg(i));
       });
     for (unsigned k = 0; k < 4; k++)
-      body(putStore[k], true, [&](IRBuilder<> &B, auto &w, auto value) {
-        Value *addr = putStore[k]->getArg(0);
-        Value *old = B.CreateZExt(B.CreateAlignedLoad(IntegerType::get(C, 8 << k),
-                                                      B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1)), i64);
-        w.push_back(addr);
-        w.push_back(B.CreateOr(B.getInt32(KindStore << 28 | k), B.CreateShl(putStore[k]->getArg(1), 4)));
-        value(B.CreateTrunc(old, i32));
-        if (k == 3)
-          value(B.CreateTrunc(B.CreateLShr(old, 32), i32));
-      });
+      for (Function *F : {putStore[k], putCopy[k]})
+        body(F, true, [&, F](IRBuilder<> &B, auto &w, auto value) {
+          Value *addr = F->getArg(0);
+          Value *old = B.CreateZExt(B.CreateAlignedLoad(IntegerType::get(C, 8 << k),
+                                                        B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1)), i64);
+          w.push_back(addr);
+          w.push_back(B.CreateOr(B.getInt32(KindStore << 28 | k), B.CreateShl(F->getArg(1), 4)));
+          value(B.CreateTrunc(old, i32));
+          if (k == 3)
+            value(B.CreateTrunc(B.CreateLShr(old, 32), i32));
+          if (F == putCopy[k])
+            value(F->getArg(2));
+        });
     probes += "R\t" + std::to_string(RingWords) + "\n";
   }
 
@@ -415,9 +420,9 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     Value *addr = B.CreatePtrToInt(ptr, i32);
     int k = size == 1 ? 0 : size == 2 ? 1 : size == 4 ? 2 : size == 8 ? 3 : -1;
     Value *line = B.getInt32(std::min(lineOf.lookup(I), (1u << 24) - 1));
-    // (A copy, a value loaded and stored as it is, or a memcpy: where from,
-    // first. See the top. Not a value stored back where it was loaded
-    // from: that says nothing of where it came from.)
+    // (A copy, a value loaded and stored as it is, or a memcpy: where from.
+    // Not a value stored back where it was loaded from: that says nothing
+    // of where it came from.)
     Value *from = nullptr;
     if (auto *S = dyn_cast<StoreInst>(I); S && isa<LoadInst>(S->getValueOperand()))
       from = cast<LoadInst>(S->getValueOperand())->getPointerOperand();
@@ -425,12 +430,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       from = nullptr;
     else if (auto *MT = dyn_cast<MemTransferInst>(I))
       from = MT->getRawSource();
-    if (from)
-      record(B, addr, KindCopy << 28, {B.CreatePtrToInt(from, i32), len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size)});
-    if (!len && k >= 0)
+    Value *src = from ? B.CreatePtrToInt(from, i32) : nullptr;
+    if (!len && k >= 0 && src)
+      B.CreateCall(putCopy[k], {addr, line, src});
+    else if (!len && k >= 0)
       B.CreateCall(putStore[k], {addr, line});
     else
-      B.CreateCall(bulk, {addr, len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size), line});
+      B.CreateCall(bulk, {addr, len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size), line, src ? src : B.getInt32(0)});
   }
 
   // A struct passed by value (byval) is copied by the backend, after this
