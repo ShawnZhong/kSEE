@@ -90,7 +90,7 @@ for that moment); a step that lands after a call says what it returned.
 Hover
 a name in the source for its value at the cursor (a name with one is
 underlined, dotted: the arguments and locals of the calls on the Stack; a
-struct's value opens, field by field), and a value in the Stack
+struct's value opens, field by field, on a click on its name), and a value in the Stack
 for who last wrote it; click it for its writes, a row under it: the
 member, from what to what, in which function, each a link to that moment,
 the one in effect at the cursor marked (a local's while its frame lives,
@@ -106,13 +106,12 @@ nothing names by its address), each a link, the one in effect at the
 cursor marked and the later ones dim; three or more in a row to one
 object (a frame zeroed, a struct set up) are one row, open on asking. The Objects tab draws the same
 stores as the objects they changed, at the cursor: a box per object,
-each member the call writes as it is then (`f_pos = 18   was 0`; one
-written only later dim, with what it will be), the one the cursor last
-wrote marked (stepping shows each change as it is made), a member's
-writes on asking; its pointers to the others, each a link to it
-(`f_inode → atime_needs_update's inode`: a kiocb's file, the file's
-inode, the inode's page); all its fields on asking, as the Stack's
-values are. An object on the stack is there while its call
+each member the call writes as it is then, in the Stack's value rows (a
+field inside another open to it; a click on a value for its writes; one
+written only later dim), the one the cursor last wrote marked (stepping
+shows each change as it is made); its pointers to the others, each a
+link to it (`f_inode → atime_needs_update's inode`: a kiocb's file, the
+file's inode, the inode's page); all its fields on asking. An object on the stack is there while its call
 runs; the others on asking. The line the cursor is on shows its values at
 its end, as a debugger does (`fd = 3   count = 64`). Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by

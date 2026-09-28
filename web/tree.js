@@ -1,5 +1,6 @@
 // Values as trees (the Stack's): a row a value, its name, value and type;
-// pointers open into what they point to, structs into their fields, read
+// pointers open into what they point to, structs into their fields (a
+// click on the name), read
 // from memory as it was at the cursor (Machine.memory_at). Values that
 // changed since the cursor last moved are highlighted; hover one in memory
 // for who last wrote it; click it for its writes (Machine.writes), a row
@@ -39,11 +40,10 @@ export function tree(app, st, redraw) {
       st.now.set(p, value);
       const changed = st.last.has(p) && st.last.get(p) !== value;
       out.push(el("tr", { className: changed ? "changed" : "" },
-        el("td", { className: "fname", style: `padding-left:${10 + depth * 14}px` },
-          el(can ? "a" : "span", { className: "tw", textContent: can ? (open ? "▾" : "▸") : "", onclick: () => {
-            open ? st.open.delete(p) : st.open.add(p);
-            redraw();
-          } }), o.name),
+        // (Its name, or ▸: open it, or fold it.)
+        el("td", { className: `fname${can ? " opens" : ""}`, style: `padding-left:${10 + depth * 14}px`,
+                   onclick: can ? () => toggle(st.open, p) : null },
+          el("span", { className: "tw", textContent: can ? (open ? "▾" : "▸") : "" }), o.name),
         // (Hover a value: who last wrote it, and what it was before; click:
         // its writes. Only a value in memory: not an argument, which is in
         // its call's record, at 0.)

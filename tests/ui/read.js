@@ -133,6 +133,17 @@
   await sleep(100);
   r.stores = [$("stores").querySelector(".head")?.textContent, $("stores").innerText.slice(0, 200)];
   if (!/^\d+ stores?/.test(r.stores[0] ?? "") || !$("stores").innerText.includes("file->f_pos: 0 → ") || !document.querySelector("#stores li.on")) throw new Error("the read's stores: " + JSON.stringify(r.stores));
+  // The Objects (the explanation's link): each object the call wrote, its
+  // members as they are at the cursor (the kiocb's ki_pos), a value's writes on a click.
+  const before = ksee.time.cursor();
+  [...document.querySelectorAll(".explain a.place")].find((x) => /changed/.test(x.textContent))?.click();
+  await until(() => $("right").dataset.tab === "objects" && document.querySelector("#objects .obj"));
+  const kipos = [...document.querySelectorAll("#objects tr")].find((tr) => tr.querySelector(".fname")?.textContent.trim() === "ki_pos");
+  kipos?.querySelector(".fval.mem")?.click(); await sleep(100);
+  r.objects = [kipos && [...kipos.cells].map((c) => c.textContent.trim()).join(" "), document.querySelector("#objects tr.history")?.innerText.replace(/\s+/g, " ").slice(0, 80)];
+  if (!/^ki_pos \d+ loff_t$/.test(r.objects[0] ?? "") || !/^\d+ writes? /.test(r.objects[1] ?? "")) throw new Error("objects: " + JSON.stringify(r.objects));
+  $("right").dataset.tab = "stack";
+  ksee.select(read); ksee.time.go(before); // (as it was)
   // (At a store: its line in the source says what it stored, at its end.)
   const lastStore = ksee.m.stores(read.first, read.last).at(-1);
   ksee.time.go(lastStore.write.i);

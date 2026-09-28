@@ -97,7 +97,7 @@ table.objs tr:hover { background: var(--sel); }
 table.objs td.fval { color: var(--accent); }
 table.objs td.ftype { color: var(--dim); }
 table.objs tr.changed td { background: var(--chg); }
-table.objs td.fval.mem { cursor: pointer; }
+table.objs td.fval.mem, table.objs td.fname.opens { cursor: pointer; }
 .tw { color: var(--dim); display: inline-block; width: 1.2em; }
 table.stack tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); background: var(--panel); }
 table.stack tr.frame.on td { background: var(--sel); }
@@ -130,17 +130,10 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #objects .obj .title { padding: 3px 8px; border-bottom: 1px solid var(--line); background: var(--sel); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #objects .obj.task .title, #objects .obj.global .title { background: var(--at); }
 #objects .obj .row { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#objects .obj .row.later { opacity: 0.45; }
-#objects .obj .row.on { background: var(--at); }
-#objects .obj .row a.count { color: var(--dim); }
-#objects .obj ol.writes { margin: 0; padding: 0 8px 2px 28px; }
-#objects .obj ol.writes li.later { opacity: 0.45; }
+#objects .obj tr.later { opacity: 0.45; }
+#objects .obj tr.on td { background: var(--at); }
 #tasks tr.later { opacity: 0.45; }
-#objects .obj ol.writes li.on { background: var(--at); }
 #objects .obj.ended { border-style: dashed; opacity: 0.75; }
-#objects .obj .title { cursor: pointer; }
-#objects .obj table.objs { width: 100%; border-top: 1px solid var(--line); }
-#objects .obj .row.same a { color: var(--dim); }
 #objects .obj .row.link span { color: var(--dim); }
 #objects .obj .row.more a { color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
 #objects .obj.flash { animation: flash 1s; }
