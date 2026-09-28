@@ -105,7 +105,8 @@ a bar in the timeline), the others a row each, as a debugger's variables
 are the selected frame's (every call's, on asking); its locals are all
 of them, in the order it declares them, those in memory and those the
 code keeps in wasm locals, as the recording has them set. The Tasks tab lists every task the
-recording has, at the cursor: the one running marked, each where it is
+recording has, at the cursor, as a tree (a thread under its process's
+leader, a process under its parent): the one running marked, each where it is
 (`prog(20)  in read`: its syscall, else its outermost call), its name a
 link to its last moment (the Stack then shows its stack), its task_struct
 as it was on asking; the Stack's `current task` is a link to it. The

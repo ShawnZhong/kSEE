@@ -1,5 +1,6 @@
 // The Tasks: every task the recording has, at the cursor (Machine.tasks),
-// in the order they first run: the one running marked, each where it is
+// as a tree (a thread under its process's leader, a process under its
+// parent): the one running marked, each where it is
 // (the syscall it is in, else its outermost call, as it last ran); its
 // name a link to that moment (the Stack then shows its stack). Open (as
 // each is, to begin with): its task_struct as it was at the cursor, its key fields, all of them on
@@ -32,11 +33,19 @@ export function tasks(app) {
     $("tasks-note").textContent = cur == null ? "Nothing recorded yet: the tasks come from the recording. Make a call." : "";
     if (cur == null) return body.replaceChildren();
     const all = [];
-    for (const t of m.tasks(cur)) {
+    // (As a tree: each under the task it sits under (a thread, its leader; a
+    // process, its parent), siblings by pid; the ones whose parent the
+    // recording does not have, at the top.)
+    const list = m.tasks(cur), known = new Set(list.map((t) => t.task.addr));
+    const under = (up) => list.filter((t) => (known.has(t.up) ? t.up : null) === up).sort((a, b) => (a.task.pid ?? 0) - (b.task.pid ?? 0));
+    const order = [];
+    const visit = (t, depth) => (order.push([t, depth]), under(t.task.addr).forEach((c) => visit(c, depth + 1)));
+    under(null).forEach((t) => visit(t, 0));
+    for (const [t, depth] of order) {
       const p = `task/${t.task.addr}`, open = !folded.has(p);
       // (The one running, marked; one not run yet by the cursor, dim.)
       all.push(el("tr", { className: `frame task${t.running ? " on" : ""}${t.last == null ? " later" : ""}`,
-                          title: t.running ? "running at the cursor" : t.last == null ? "runs only after the cursor" : "" }, el("td", { colSpan: 3 },
+                          title: t.running ? "running at the cursor" : t.last == null ? "runs only after the cursor" : "" }, el("td", { colSpan: 3, style: `padding-left: ${8 + depth * 16}px` },
         el("a", { className: "tw", textContent: open ? "▾ " : "▸ ", title: open ? "fold it" : "its task_struct, as it was at the cursor", onclick: toggle(folded, p) }),
         el("a", { className: "mono", textContent: taskName(t.task), title: t.running ? "" : "go to its last moment (its first, if it runs later)",
                   onclick: () => app.time.go(t.last ?? t.first) }),

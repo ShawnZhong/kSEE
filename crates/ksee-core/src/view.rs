@@ -327,6 +327,9 @@ pub struct TaskFields {
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct TaskAt {
     pub task: TaskRef,
+    /// The task it sits under (its task_struct's address): a thread, its
+    /// thread group's leader; a process, its parent.
+    pub up: Option<u32>,
     pub running: bool,
     pub first: usize,
     pub last: Option<usize>,
@@ -401,8 +404,10 @@ impl View<'_> {
                 seen[k].2 = Some(j);
             }
         }
+        let field = |addr: u32, f: &str| t.types.field(arch::TASK, f).map(|(off, _)| self.now.read_u32(addr + off)).filter(|&p| p != 0);
         seen.into_iter().map(|(addr, first, last)| TaskAt {
             task: self.task(addr),
+            up: field(addr, arch::TASK_LEADER).filter(|&l| l != addr).or_else(|| field(addr, arch::TASK_PARENT)).filter(|&p| p != addr),
             running: self.rec.tasks.get(i) == Some(&addr),
             first, last,
             syscall: last.and_then(|j| self.rec.syscall_at(j)).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr).cloned()),
