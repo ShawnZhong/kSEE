@@ -4,10 +4,11 @@
 // file", "current->files"), each member it writes as it is at the cursor
 // ("f_pos = 18", and what it was before the call: "was 0"; one the call
 // writes only later, dim, with what it will be), and its pointers to the
-// other objects as arrows (a kiocb's file, the file's inode, the inode's
-// page). The member the cursor last wrote is marked, and in view: stepping
-// shows each change as it is made. A member's writes on asking (each a
-// link to its moment); a box's title opens all of its object. An object
+// other objects, each a link to it ("f_inode → atime_needs_update's
+// inode": a kiocb's file, the file's inode, the inode's page). The member
+// the cursor last wrote is marked, and in view: stepping shows each change
+// as it is made. A member's writes on asking (each a link to its moment);
+// all of its object's fields on asking, as the Stack's values are. An object
 // on the stack is there while its call runs, as on the Stack; the ones
 // gone (or not yet made) on asking.
 import { $, el } from "./dom.js";
@@ -59,19 +60,16 @@ export function objects(app) {
     nodes.forEach((_, k) => visit(k));
     // (The write the cursor is at, or last passed: marked.)
     const now = nodes.flatMap((n) => n.writes).filter((x) => x.i <= cur).reduce((a, x) => (!a || x.i > a.i ? x : a), null);
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.classList.add("arrows");
     body.replaceChildren(el("div", { className: "dim head" }, `${order.length} object${order.length === 1 ? "" : "s"} written`,
       away ? el("a", { textContent: gone ? ` · hide the ${away} not alive at the cursor` : ` · ${away} more on the stack, not alive at the cursor`,
                        title: "objects on the stack of a call not running at the cursor (returned, or not called yet)", onclick: () => ((gone = !gone), redraw()) }) : ""),
-      ...order.map((k) => box(nodes[k], k, cur, now, live(nodes[k]), shownAt)), svg);
-    arrows(svg);
+      ...order.map((k) => box(nodes[k], nodes, k, cur, now, live(nodes[k]), shownAt)));
     body.querySelector(".row.on")?.scrollIntoView({ block: "nearest" });
   }
 
   // An object's box: its name and type; each member it writes, as it is at
   // the cursor; its pointers to the others.
-  function box(n, k, cur, now, alive, shownAt) {
+  function box(n, nodes, k, cur, now, alive, shownAt) {
     const byMember = new Map();
     for (const x of n.writes) (byMember.get(x.member) ?? byMember.set(x.member, []).get(x.member)).push(x);
     // (Not a whole aggregate's write, a memset: its members' say it.)
@@ -95,40 +93,34 @@ export function objects(app) {
         el("a", { textContent: `${x.before} → ${x.after}`, title: "go to this write", onclick: () => app.time.go(x.i) }),
         el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` }))))];
     });
-    const links = n.links.filter((l) => shownAt(l.to)).map((l) => el("div", { className: "row link", dataset: { to: l.to } }, el("span", { textContent: `${l.member} →` })));
-    // (Its title opens it: all of it, as memory was at the cursor.)
+    // (Its pointers to the others: each a link to it.)
+    const links = n.links.filter((l) => shownAt(l.to)).map((l) => el("div", { className: "row link" },
+      el("span", { textContent: `${l.member} → ` }),
+      el("a", { textContent: nodes[l.to].what, title: `${nodes[l.to].ty} at 0x${l.value.toString(16)}: go to it`, onclick: () => flash(l.to) })));
+    // (All of it, as memory was at the cursor, on asking: its title, or
+    // the line at its end.)
     const path = `obj/${n.addr}/${n.id}`, open = st.open.has(path), all = [];
-    if (open) fields(m.object_by_id(n.what, n.id, n.addr, 1)?.children ?? [], path, 0, all);
+    const children = open ? m.object_by_id(n.what, n.id, n.addr, 1)?.children ?? [] : [];
+    if (open) fields(children, path, 0, all);
     const toggle = () => (open ? st.open.delete(path) : st.open.add(path), redraw());
+    const more = el("div", { className: "row more" }, el("a", { textContent: open ? `▾ only what it wrote` : "▸ all its fields", onclick: toggle }));
     const note = alive ? "" : n.life && cur < n.life[0] ? " · not made yet" : " · gone";
     return el("div", { className: `obj ${n.kind}${alive ? "" : " ended"}`, dataset: { k },
                        title: alive ? "" : "on the stack of a call not running at the cursor: as it was while it did" },
       el("div", { className: "title", onclick: toggle, title: open ? "fold it" : "all of it, as it was at the cursor" },
         el("span", { className: "tw", textContent: open ? "▾" : "▸" }), el("b", { textContent: n.what }),
         el("span", { className: "dim", textContent: ` ${n.ty}${note}` })),
-      ...rows, ...links, open ? el("table", { className: "objs" }, el("tbody", {}, ...all)) : null);
+      ...rows, ...links, open ? el("table", { className: "objs" }, el("tbody", {}, ...all)) : null, more);
   }
 
-  // The pointers, as arrows from a member's row to its object's title, in
-  // the margin on the right (each further out, to be told apart).
-  function arrows(svg) {
-    const top = body.getBoundingClientRect(), at = (e) => e.getBoundingClientRect();
-    svg.setAttribute("width", body.scrollWidth);
-    svg.setAttribute("height", body.scrollHeight);
-    const path = (d) => {
-      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      p.setAttribute("d", d);
-      svg.append(p);
-    };
-    [...body.querySelectorAll(".row.link")].forEach((row, j) => {
-      const to = body.querySelector(`.obj[data-k="${row.dataset.to}"] .title`);
-      if (!to) return;
-      const a = at(row), b = at(to), y = (r) => r.top - top.top + body.scrollTop + r.height / 2;
-      const x0 = a.right - top.left, x1 = b.right - top.left, out = 12 + (j % 5) * 7;
-      const [y0, y1] = [y(a), y(b)];
-      path(`M${x0},${y0} C${x0 + out},${y0} ${x1 + out},${y1} ${x1 + 2},${y1}`);
-      path(`M${x1 + 7},${y1 - 4} L${x1 + 2},${y1} L${x1 + 7},${y1 + 4}`);
-    });
+  // Go to object `k`'s box: in view, a flash.
+  function flash(k) {
+    const b = body.querySelector(`.obj[data-k="${k}"]`);
+    if (!b) return;
+    b.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    b.classList.remove("flash");
+    void b.offsetWidth; // (again, if it was flashing)
+    b.classList.add("flash");
   }
 
   const mark = () => draw();

@@ -90,9 +90,10 @@ stores as the objects they changed, at the cursor: a box per object,
 each member the call writes as it is then (`f_pos = 18   was 0`; one
 written only later dim, with what it will be), the one the cursor last
 wrote marked (stepping shows each change as it is made), a member's
-writes on asking; its pointers to the others as arrows (a kiocb's file,
-the file's inode, the inode's page); a box's title opens all of it, as
-the Stack's values are. An object on the stack is there while its call
+writes on asking; its pointers to the others, each a link to it
+(`f_inode → atime_needs_update's inode`: a kiocb's file, the file's
+inode, the inode's page); all its fields on asking, as the Stack's
+values are. An object on the stack is there while its call
 runs; the others on asking. The
 Calls tab shows the calls the selected call made, in the order they were
 made, each with what it returned (`ksys_read = 26`, `lookup_fast = -2
