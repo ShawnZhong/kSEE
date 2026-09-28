@@ -93,6 +93,9 @@ pub struct Line {
     pub ret: Option<i32>,
     /// It made a call: the function, and what it returned.
     pub called: Option<(String, i32)>,
+    /// Inlined: the line of its function's own where the code is inlined
+    /// (the outermost inline site: `CLASS(fd_pos, f)(fd)`'s line).
+    pub site: Option<u32>,
 }
 
 /// A call on a stack, with its arguments (32 bits each: wider ones lose
@@ -475,7 +478,7 @@ impl View<'_> {
             }).collect();
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
                inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests, ret: s.ret.map(|v| v as i32),
-               called: s.callee.map(|(f, v)| (self.name(f), v as i32)) }
+               called: s.callee.map(|(f, v)| (self.name(f), v as i32)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line) }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.

@@ -158,14 +158,17 @@ export function source(app) {
     return out;
   }
   // What the calls a line made returned, by the cursor (the selection's
-  // line steps of the function shown): "vfs_read → 18", its last.
+  // line steps of the function shown): "vfs_read → 18", its last; a call
+  // made by code inlined into it, at the line it is inlined at.
   function called(file) {
     const cur = app.time.cursor(), out = new Map();
     if (cur == null || !v.fn) return out;
     const consts = (v.consts ??= m.constants());
     for (const s of app.lineSteps?.() ?? []) {
       if (s.i > cur) break;
-      if (s.called && s.file === file && s.func === v.fn.name) out.set(s.line, `${s.called[0]} → ${result(s.called[1], consts)}`);
+      if (!s.called || s.func !== v.fn.name) continue;
+      const [at, where] = s.inlined ? [s.site, v.fn.file] : [s.line, s.file];
+      if (where === file && at != null) out.set(at, `${s.called[0]} → ${result(s.called[1], consts)}`);
     }
     return out;
   }
