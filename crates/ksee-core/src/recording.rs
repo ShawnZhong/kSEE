@@ -72,7 +72,8 @@ impl Recording {
                 *t = prev;
             }
         }
-        let syscalls = syscalls::split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args);
+        let calls = stack::Calls::new(t, &records, &tasks);
+        let syscalls = syscalls::split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args, &calls);
         let blocks: Vec<usize> = records.iter().enumerate().filter(|(_, r)| matches!(r, Record::Block { .. })).map(|(i, _)| i).collect();
         let mut step = Vec::with_capacity(records.len());
         let mut n = 0;
@@ -80,7 +81,6 @@ impl Recording {
             n += matches!(r, Record::Block { .. }) as u32;
             step.push(n);
         }
-        let calls = stack::Calls::new(t, &records, &tasks);
         Recording { records, ids, args, tasks, syscalls, blocks, step, calls, stores: OnceCell::new() }
     }
 
@@ -134,10 +134,6 @@ impl Recording {
         self.syscalls.iter().position(|s| s.task == task && s.first <= i && s.last.is_none_or(|l| i <= l))
     }
 
-    /// The position of the next (dir > 0) or previous block record from `i`
-    /// that starts a new `unit`: "block", "line" (another source line, on
-    /// the task running at `i`), or "function" (another function than at
-    /// `i`). `i` if none.
     /// The next (dir > 0) or previous block record from `i` whose block
     /// runs line `line` of `file` (its own code or code inlined into it).
     pub fn run_of(&self, t: &Tables, file: &str, line: u32, i: usize, dir: i32) -> Option<usize> {
@@ -154,6 +150,10 @@ impl Recording {
         if dir > 0 { (i + 1..self.records.len()).find(|&j| hit(j)) } else { (0..i.min(self.records.len())).rev().find(|&j| hit(j)) }
     }
 
+    /// The position of the next (dir > 0) or previous block record from `i`
+    /// that starts a new `unit`: "block", "line" (another source line, on
+    /// the task running at `i`), or "function" (another function than at
+    /// `i`). `i` if none.
     pub fn seek(&self, t: &Tables, i: usize, dir: i32, unit: &str) -> usize {
         let func_at = |j: usize| match self.records.get(j) {
             Some(Record::Block { func, .. }) => Some(*func),
@@ -164,29 +164,13 @@ impl Recording {
             _ => None,
         };
         let (here, here_line, task) = (func_at(i), line_at(i), self.tasks.get(i).copied());
-        let mut j = i;
-        loop {
-            if dir > 0 {
-                if j + 1 >= self.len() {
-                    return i;
-                }
-                j += 1;
-            } else {
-                if j == 0 {
-                    return i;
-                }
-                j -= 1;
-            }
-            let Some(f) = func_at(j) else { continue };
-            let new = match unit {
-                "function" => Some(f) != here,
-                "line" => self.tasks.get(j).copied() == task && line_at(j).is_some() && line_at(j) != here_line,
-                _ => true,
-            };
-            if new {
-                return j;
-            }
-        }
+        let new = |j: usize| func_at(j).is_some_and(|f| match unit {
+            "function" => Some(f) != here,
+            "line" => self.tasks.get(j).copied() == task && line_at(j).is_some() && line_at(j) != here_line,
+            _ => true,
+        });
+        let found = if dir > 0 { (i + 1..self.len()).find(|&j| new(j)) } else { (0..i.min(self.len())).rev().find(|&j| new(j)) };
+        found.unwrap_or(i)
     }
 
     /// The first call of function `name` in records `first..=last` (of the

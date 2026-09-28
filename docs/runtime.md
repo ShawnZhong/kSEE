@@ -95,9 +95,8 @@ type (a struct, positional or by member; an array; argv for a `char **`).
 ksee pack evaluates the UAPI headers' constants with the same evaluator.
 
 Every view asks the Machine for the moment at the cursor: `at(i)` (every
-record located: a store at the line its task was on, a return at the line
-it returned from), `call_stack(i, nth)`,
-`call_line` (a call's own first line), `line_steps`, `chart`,
+record located: a store at its line, a return at the line it returned
+from), `call_stack(i, nth)`, `line_steps`, `chart`,
 `memory_at(i)` then `object` /
 `global` (memory as it was), `last_write`, `writes` (an object's history:
 every store to it in its lifetime, a local's frame or the whole

@@ -126,13 +126,13 @@ impl Machine {
         self.view(|v| to_js(&v.task(task)))
     }
 
-    /// See ksee_core::recording::Recording::seek.
     /// The next (dir > 0) or previous record from `i` that runs line `line`
     /// of `file` (see Recording::run_of): "run to" a line.
     pub fn run_of(&self, file: &str, line: u32, i: usize, dir: i32) -> Option<usize> {
         self.rec.borrow().run_of(tables(), file, line, i, dir)
     }
 
+    /// See ksee_core::recording::Recording::seek.
     pub fn seek(&self, i: usize, dir: i32, unit: &str) -> usize {
         self.rec.borrow().seek(tables(), i, dir, unit)
     }
@@ -188,12 +188,6 @@ impl Machine {
     pub fn call_stack(&self, i: Option<usize>, nth: Option<usize>) -> JsValue {
         let Some(i) = i.or(self.records().checked_sub(1)) else { return js_sys::Array::new().into() };
         self.with_memory(|mem| self.view(|v| to_js(&v.call_stack(i, nth, mem))))
-    }
-
-    /// The call from record `first`: the first line of its function's own
-    /// that it runs (view::Line), or null (see View::call_line).
-    pub fn call_line(&self, first: usize) -> JsValue {
-        self.view(|v| to_js(&v.call_line(first)))
     }
 
     /// The newest write to `addr..addr + len` at or before the moment

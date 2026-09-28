@@ -489,16 +489,6 @@ impl View<'_> {
         out
     }
 
-    /// The call from record `first`: the first line of its function's own
-    /// that it runs (its first record often runs inlined code first:
-    /// `current->files`), as stepping shows it; None if it runs none soon.
-    pub fn call_line(&self, first: usize) -> Option<Line> {
-        let &Record::Block { func, n: 0 } = self.rec.records.get(first)? else { return None };
-        let name = self.name(func);
-        let last = (first + 400).min(records_len(self.rec));
-        self.lines(first, last, *self.rec.tasks.get(first)?).into_iter().find(|l| l.func == name && l.inlined.is_none())
-    }
-
     /// Inline chain `k` (Tables::inlines), or none.
     pub fn chain(&self, k: Option<u32>) -> &[(u32, Loc)] {
         k.and_then(|k| self.tables.inlines.get(k as usize)).map_or(&[], Vec::as_slice)

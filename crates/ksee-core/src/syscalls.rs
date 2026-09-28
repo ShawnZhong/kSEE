@@ -1,10 +1,10 @@
 //! Syscalls in the trace: the calls of the syscall entry (wasm_syscall: its
 //! call record's arguments are the number and the syscall's arguments; its
-//! return's value is the result), per task.
+//! return's value is the result).
 
-use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use crate::stack::Calls;
 use crate::trace::{Args, Record};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,45 +12,28 @@ pub struct Syscall {
     pub task: u32,
     pub nr: u32,
     pub args: [u32; 5],
-    /// The result (None: still running at the end of the trace).
+    /// The result (None: still running at the end of the trace, or it
+    /// never returned).
     pub ret: Option<i32>,
-    /// Its first and last records.
+    /// Its first and last records (its return's).
     pub first: usize,
     pub last: Option<usize>,
 }
 
-/// The syscalls in `records` (`entry`: the syscall entry's function id;
+/// The syscalls among `calls` (`entry`: the syscall entry's function id;
 /// `tasks[i]`: the task running at record `i`), in the order they began.
-pub fn split(entry: u32, records: &[Record], tasks: &[u32], args: &Args) -> Vec<Syscall> {
-    let mut done = Vec::new();
-    let mut open: BTreeMap<u32, Syscall> = BTreeMap::new();
-    for (i, r) in records.iter().enumerate() {
-        let task = tasks[i];
-        match *r {
-            Record::Block { func, n: 0 } if func == entry => {
-                let mut a = [0; 6];
-                if let Some((w, _)) = args.get(i) {
-                    a.iter_mut().zip(w).for_each(|(a, &w)| *a = w);
-                }
-                let s = Syscall { task, nr: a[0], args: [a[1], a[2], a[3], a[4], a[5]], ret: None,
-                                  first: i, last: None };
-                if let Some(old) = open.insert(task, s) {
-                    done.push(old); // (it never returned)
-                }
-            }
-            Record::Return { func, value } if func == entry => {
-                if let Some(mut s) = open.remove(&task) {
-                    s.ret = Some(value as i32);
-                    s.last = Some(i);
-                    done.push(s);
-                }
-            }
-            _ => {}
+pub fn split(entry: u32, records: &[Record], tasks: &[u32], args: &Args, calls: &Calls) -> Vec<Syscall> {
+    calls.calls.iter().filter(|c| c.func == entry && matches!(records[c.first], Record::Block { n: 0, .. })).map(|c| {
+        let mut a = [0; 6];
+        if let Some((w, _)) = args.get(c.first) {
+            a.iter_mut().zip(w).for_each(|(a, &w)| *a = w);
         }
-    }
-    done.extend(open.into_values());
-    done.sort_by_key(|s| s.first);
-    done
+        let ret = c.last.and_then(|l| match records[l] {
+            Record::Return { func, value } if func == entry => Some(value as i32),
+            _ => None,
+        });
+        Syscall { task: tasks[c.first], nr: a[0], args: [a[1], a[2], a[3], a[4], a[5]], ret, first: c.first, last: ret.and(c.last) }
+    }).collect()
 }
 
 #[cfg(test)]
@@ -65,7 +48,8 @@ mod tests {
         let tasks = [7, 7, 8, 7];
         let mut args = Args::default();
         args.push(0, &[64, 1, 2, 3, 0]);
-        let s = split(1, &r, &tasks, &args);
+        let calls = Calls::new(&crate::tables::Tables::default(), &r, &tasks);
+        let s = split(1, &r, &tasks, &args, &calls);
         assert_eq!(s.len(), 1);
         assert_eq!((s[0].task, s[0].nr, s[0].args[0], s[0].ret, s[0].first, s[0].last), (7, 64, 1, Some(3), 0, Some(3)));
     }
