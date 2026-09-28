@@ -188,12 +188,16 @@ impl Calls {
     }
 
     /// The call stack of the task running at record `i`, outermost first,
-    /// each call at its last line; the innermost, if `nth`, at the nth of the
-    /// lines record `i` runs (a LineStep's).
+    /// each call at its last line; the innermost at the first of the lines
+    /// record `i` runs if it starts them (a block, a return into one), or,
+    /// if `nth`, at the nth (a LineStep's).
     pub fn stack_at(&self, t: &Tables, i: usize, nth: Option<usize>) -> Vec<StackCall> {
         let Some(p) = self.place_at(i) else { return Vec::new() };
+        // (At the record that starts a stretch, its task is at the
+        // stretch's first line, or the `nth`; after, at its last.)
         let mut step = match (nth, self.stretch(t, i)) {
             (Some(k), Some((_, steps))) if k < steps.len() => Some(steps[k]),
+            (None, Some((_, steps))) if !steps.is_empty() => Some(steps[0]),
             _ => self.line(t, p),
         };
         let mut out = Vec::new();
@@ -207,10 +211,10 @@ impl Calls {
         out
     }
 
-    /// The line the store (or comparison) at record `i` is on (its record's
+    /// The line the store (or comparison, or variable set) at record `i` is on (its record's
     /// line: which of its block's lines), in the call running it.
     pub fn line_at(&self, t: &Tables, i: usize, records: &[Record]) -> Option<LineStep> {
-        let (&Record::Store { line, .. } | &Record::Compare { line, .. }) = records.get(i)? else { return None };
+        let (&Record::Store { line, .. } | &Record::Compare { line, .. } | &Record::Var { line, .. }) = records.get(i)? else { return None };
         let p = self.place_at(i)?;
         let c = &self.calls[p.call as usize];
         // (Which stretch it is in, and where in it.)
@@ -425,6 +429,8 @@ mod tests {
         assert_eq!((at(1), at(5), at(0)), (Some((2, 1, 0)), Some((4, 0, 4)), None));
         let lines_of = |i| c.stack_at(&t, i, None).iter().map(|c| c.step.map(|s| s.loc.line)).collect::<Vec<_>>();
         assert_eq!((lines_of(3), lines_of(5)), (alloc::vec![Some(3), Some(10)], alloc::vec![Some(4)]));
+        // (At the block's own record, f is at its first line, about to run it; after, at its last.)
+        assert_eq!((lines_of(0), lines_of(2)), (alloc::vec![Some(1)], alloc::vec![Some(3)]));
     }
 
     #[test]

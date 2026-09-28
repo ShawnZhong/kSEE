@@ -539,7 +539,12 @@ impl View<'_> {
         let records = &self.rec.records;
         let mut out = Vec::new();
         let entry = t.find(arch::SYSCALL);
-        let calls = self.rec.calls.stack_at(t, i, nth);
+        // (At a record on a line of its own, a store, a comparison, a
+        // variable set: on that line, as `at` says it.)
+        let calls = match nth.is_none().then(|| self.rec.line_at(t, i)).flatten() {
+            Some(s) => self.rec.calls.stack_at(t, s.record, Some(s.nth as usize)),
+            None => self.rec.calls.stack_at(t, i, nth),
+        };
         let args_of = |c: &stack::StackCall| self.rec.args.get(c.first).map(|(w, frame)| (t.values(c.func, w), frame));
         // (The entry's arguments, the syscall's: a wrapper's parameters are
         // those, as its SYSCALL_DEFINE line has them; its own DWARF one is regs.)

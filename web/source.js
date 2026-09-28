@@ -136,10 +136,6 @@ export function source(app) {
   // Stack has (see hover), each once: "fd = 3  count = 64", or null.
   function values(line, text) {
     const out = [], seen = new Set();
-    // (Not a parameter itself: the recording has it as it was passed, not
-    // after the function assigns to it, in a register; the Stack has it.
-    // What it points to is memory, as it was: that, yes.)
-    const params = new Set(app.stack.frames().filter((f) => f.func === v.fn?.name && !f.inlined).flatMap((f) => f.args ?? []).map((a) => a.name));
     for (let k = 0; k < text.length; k++) {
       const e = exprAt(text, k);
       if (!e) continue;
@@ -147,7 +143,6 @@ export function source(app) {
       if (seen.has(e.expr)) continue;
       seen.add(e.expr);
       const o = app.stack.resolve(e.expr, inFunction(line) ? v.fn.name : null);
-      if (inFunction(line) && params.has(e.expr)) continue;
       if (o && o.value != null && o.value !== "(optimized out)") out.push(`${e.expr} = ${o.value}`);
     }
     return out.length ? out.join("   ") : null;
