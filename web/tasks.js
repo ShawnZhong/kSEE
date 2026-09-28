@@ -13,9 +13,9 @@ export function tasks(app) {
   let shown = null;
   // (The tasks folded, by address: "task/<addr>" (each is open to begin
   // with); open, "…/all" for all of its fields; the values' paths open.)
-  const folded = new Set(), st = { open: new Set(), last: new Map(), now: new Map() };
+  const folded = new Set(), st = {};
   const redraw = () => ((shown = null), draw());
-  const { rows } = tree(app, st, redraw);
+  const { rows, moved } = tree(app, st, redraw);
   const toggle = (set, p) => () => (set.has(p) ? set.delete(p) : set.add(p), redraw());
 
   // Draw at the cursor (only while the tab is shown: again as it moves).
@@ -27,8 +27,7 @@ export function tasks(app) {
     shown = key;
     $("tasks-note").textContent = cur == null ? "Nothing recorded yet: the tasks come from the recording. Make a call." : "";
     if (cur == null) return body.replaceChildren();
-    st.last = st.now;
-    st.now = new Map();
+    moved();
     const all = [];
     for (const t of m.tasks(cur)) {
       const p = `task/${t.task.addr}`, open = !folded.has(p);

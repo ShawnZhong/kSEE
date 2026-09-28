@@ -19,9 +19,9 @@ export function objects(app) {
   let shown = null, selected = null, last = null, gone = false;
   // (The values' state, as the Stack's: tree.js; a box's path in `open`:
   // all of its fields.)
-  const st = { open: new Set(), last: new Map(), now: new Map() }, seen = new Set();
+  const st = {}, seen = new Set();
   const redraw = () => last && render(...last);
-  const { rows: fields } = tree(app, st, redraw);
+  const { rows: fields, moved } = tree(app, st, redraw);
 
   // Draw for the selection at the cursor (only while the tab is shown:
   // again as the cursor moves).
@@ -40,8 +40,7 @@ export function objects(app) {
 
   function render(nodes, cur) {
     last = [nodes, cur];
-    st.last = st.now;
-    st.now = new Map();
+    moved();
     // (On the stack: there while its call runs; and written by the
     // cursor. The others on asking.)
     const live = (n) => !n.life || (n.life[0] <= cur && cur <= n.life[1]);

@@ -18,7 +18,11 @@ const WRITES = 256;
 // (a value opened or closed).
 export function tree(app, st, redraw) {
   const { m } = app;
+  st.open ??= new Set();
   st.history ??= new Set();
+  (st.last ??= new Map()), (st.now ??= new Map());
+  // (Another moment: the values shown so far are the ones to compare with.)
+  const moved = () => ((st.last = st.now), (st.now = new Map()));
   const toggle = (set, p) => (set.has(p) ? set.delete(p) : set.add(p), redraw());
   // The children of value `o` (an Object, see ksee_core::view), if it has any.
   function kids(o) {
@@ -82,7 +86,7 @@ export function tree(app, st, redraw) {
       ...back.map((x) => `  ← copied from 0x${x.addr.toString(16)}, written at ${place(x.at)}`),
       ...(last.from != null ? [`  ← copied from 0x${last.from.toString(16)}, not written in the recording`] : [])].join("\n");
   }
-  return { rows, kids };
+  return { rows, kids, moved };
 }
 
 // Whether value `o` opens: into its fields, or what it points to.

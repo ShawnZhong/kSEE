@@ -81,11 +81,10 @@ export function source(app) {
   // tree, each opening, as memory was at the cursor; the hover stays while
   // the pointer is in it.
   function valueTip(h) {
-    const st = { open: new Set(), last: new Map(), now: new Map() }, body = el("tbody");
-    const { rows, kids } = tree(app, st, draw);
+    const st = {}, body = el("tbody");
+    const { rows, kids, moved } = tree(app, st, draw);
     function draw() {
-      st.last = st.now;
-      st.now = new Map();
+      moved();
       const out = [], k = openable(h.o) ? kids(h.o) : null;
       if (k) rows(k, "tip", 0, out, null, `${h.expr}${h.o.target != null ? "->" : "."}`);
       body.replaceChildren(...out);

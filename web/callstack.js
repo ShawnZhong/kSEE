@@ -17,9 +17,9 @@ import { tree, place } from "./tree.js";
 export function callstack(app) {
   const { m } = app;
   // Open paths, and the values shown before (to highlight changes).
-  const s = { open: new Set(), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
+  const s = { frames: [], task: null, sel: null };
 
-  const { rows, kids } = tree(app, s, () => draw());
+  const { rows, kids, moved } = tree(app, s, () => draw());
   const head = (text, where, onclick, cls = "") => el("tr", { className: "frame " + cls },
     el("td", { colSpan: 3 }, el("a", { className: "mono", textContent: text, onclick }),
       el("span", { className: "dim", textContent: where ? `  ${where}` : "" })));
@@ -27,7 +27,6 @@ export function callstack(app) {
   // Draw the stack; `moved`: for another moment or another call selected
   // (not a value opened, or its writes: those leave the view where it is).
   function draw(moved = false) {
-    s.now = new Map();
     const n = s.frames.length, body = [];
     // (Every call's values, or only the selected one's: on asking.)
     if (n > 1) body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3 },
@@ -72,7 +71,7 @@ export function callstack(app) {
   // the task there.
   // The frames shown.
   function show(i, step, task) {
-    s.last = s.now;
+    moved();
     s.task = task ?? null;
     // (At a line step: the stack as that line runs; see Machine.call_stack.)
     const frames = i === undefined ? [] : m.call_stack(i ?? undefined, step?.nth);
