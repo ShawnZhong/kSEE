@@ -30,6 +30,9 @@ pub struct Recording {
     pub blocks: Vec<usize>,
     /// The calls, and where each record's task is in them.
     pub calls: stack::Calls,
+    /// Who each task is (by its task_struct's address), read once per
+    /// snapshot (View::task).
+    pub names: core::cell::RefCell<alloc::collections::BTreeMap<u32, crate::task::Task>>,
     /// The stores, indexed (once asked for).
     stores: OnceCell<mem::History>,
 }
@@ -73,7 +76,7 @@ impl Recording {
         let calls = stack::Calls::new(t, &records, &tasks);
         let syscalls = syscalls::split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args, &calls);
         let blocks: Vec<usize> = records.iter().enumerate().filter(|(_, r)| matches!(r, Record::Block { .. })).map(|(i, _)| i).collect();
-        Recording { records, ids, args, tasks, syscalls, blocks, calls, stores: OnceCell::new() }
+        Recording { records, ids, args, tasks, syscalls, blocks, calls, stores: OnceCell::new(), names: Default::default() }
     }
 
     /// How many steps (blocks) the recording has.

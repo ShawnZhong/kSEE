@@ -364,7 +364,13 @@ impl View<'_> {
 
     /// Who the task at `addr` is (as memory says now).
     pub fn task(&self, addr: u32) -> TaskRef {
-        let t = read_task(self.tables, self.now, addr);
+        // (Read once per snapshot: every store names its task.)
+        let known = self.rec.names.borrow().get(&addr).cloned();
+        let t = known.or_else(|| {
+            let t = read_task(self.tables, self.now, addr)?;
+            self.rec.names.borrow_mut().insert(addr, t.clone());
+            Some(t)
+        });
         TaskRef { addr, pid: t.as_ref().map(|t| t.pid), comm: t.map(|t| t.comm) }
     }
 
@@ -512,8 +518,8 @@ impl View<'_> {
         out
     }
 
+    /// Line step `s` as the page has it, with the comparisons it made.
     fn line(&self, s: &LineStep) -> Line {
-        let t = self.tables;
         // (Its comparisons: among its stretch's records, those on it.)
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         let task = tasks.get(s.record).copied();
@@ -521,8 +527,14 @@ impl View<'_> {
             .map(|j| records[j]).take_while(|r| matches!(r, Record::Store { .. } | Record::Compare { .. } | Record::Var { .. }))
             .filter(|r| matches!(r, Record::Compare { line, .. } if *line == s.index))
             .filter_map(|r| compared(&r)).collect();
-        Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
-               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests, ret: s.ret,
+        Line { tests, ..self.line_only(s) }
+    }
+
+    /// Where line step `s` is (a store's, a write's place): the line, not
+    /// what it compared.
+    fn line_only(&self, s: &LineStep) -> Line {
+        Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
+               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests: Vec::new(), ret: s.ret,
                called: s.callee.map(|(f, v, at)| (self.name(f), v, at)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line), leaf: false }
     }
 
@@ -755,7 +767,7 @@ impl View<'_> {
         let from = self.rec.copied_from(i, addr);
         // (A range whose old contents are not kept: its record has its length.)
         let old = if matches!(self.rec.records[i], Record::Store { size: 0, .. }) { "(not kept)".into() } else { num(old) };
-        Some(Write { i, addr, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)), from })
+        Some(Write { i, addr, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line_only(&s)), from })
     }
 
     /// Where the value at `addr..addr + len` after record `at` came from:
@@ -798,7 +810,7 @@ impl View<'_> {
         let types = &self.tables.types;
         let Record::Store { addr: a, old, .. } = self.rec.records[i] else { unreachable!() };
         let task = self.task(self.rec.tasks[i]);
-        let at = self.rec.line_at(self.tables, i).map(|s| self.line(&s));
+        let at = self.rec.line_at(self.tables, i).map(|s| self.line_only(&s));
         // (No type, a frame's bytes: the store as it is, at its offset.)
         if ty == 0 {
             let member = if a == addr { String::new() } else { format!("+{}", a.wrapping_sub(addr)) };
@@ -907,10 +919,18 @@ impl View<'_> {
         };
         // (Each store to the smallest object holding its first byte.)
         let mut out = Vec::new();
+        // (The regions by address: a store's are those starting at most the
+        // largest one's size below it.)
+        let mut by_start: Vec<usize> = (0..regions.len()).collect();
+        by_start.sort_unstable_by_key(|&k| regions[k].3);
+        let widest = regions.iter().map(|r| r.4).max().unwrap_or(0);
         for &i in self.rec.stores_between(first, last) {
             let Record::Store { addr, .. } = records[i] else { continue };
-            let hit = regions.iter().filter(|r| r.3 <= addr && addr < r.3.saturating_add(r.4) && r.5.is_none_or(|(a, b)| a <= i && i <= b))
-                .min_by_key(|r| r.4).cloned()
+            let end = by_start.partition_point(|&k| regions[k].3 <= addr);
+            // (The smallest; of equal ones, the first named.)
+            let hit = by_start[..end].iter().rev().take_while(|&&k| addr - regions[k].3 < widest.max(1))
+                .filter(|&&k| addr < regions[k].3.saturating_add(regions[k].4) && regions[k].5.is_none_or(|(a, b)| a <= i && i <= b))
+                .min_by_key(|&&k| (regions[k].4, k)).map(|&k| regions[k].clone())
                 .or_else(|| global_at(addr).map(|(gaddr, size, name, ty)| {
                     let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
                     (name.into(), if machine { "machine" } else { "global" }, types.resolve(ty), gaddr, size, None, u32::MAX)
@@ -929,7 +949,7 @@ impl View<'_> {
             let Some(o) = self.var_object(v, value, self.now) else { continue };
             let after = o.value.clone().unwrap_or_default();
             let was = before.insert((c, var), after.clone()).unwrap_or_else(|| "(not set)".into());
-            let at = self.rec.line_at(t, i).map(|s| self.line(&s));
+            let at = self.rec.line_at(t, i).map(|s| self.line_only(&s));
             out.push(Stored { what: format!("{}'s {}", v.function, v.name), kind: "var", ty: o.ty, id: 0, addr: 0, size: 0,
                               write: Change { i, member: String::new(), before: was, after, task: self.task(self.rec.tasks[i]), at }, life: None, depth });
         }

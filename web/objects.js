@@ -14,7 +14,7 @@ import { tree } from "./tree.js";
 export function objects(app) {
   const { m } = app;
   const body = $("objects");
-  let shown = null, selected = null, last = null;
+  let shown = null, selected = null, last = null, drawnAt = null;
   // (The values' state, as the Stack's: tree.js; a box's path in `open`:
   // all of its fields.)
   const st = {}, seen = new Set();
@@ -47,9 +47,15 @@ export function objects(app) {
     const soFar = nodes.filter((n) => live(n) && n.writes[0].i <= cur).length;
     // (The write the cursor is at, or last passed: marked.)
     const now = nodes.flatMap((n) => n.writes).filter((x) => x.i <= cur).reduce((a, x) => (!a || x.i > a.i ? x : a), null);
+    // (Redrawn where it was: the rows do not move; at another moment, the
+    // member last written brought into view if it is out of it.)
+    const top = body.scrollTop, moment = cur !== drawnAt;
+    drawnAt = cur;
     body.replaceChildren(el("div", { className: "dim head" }, `${nodes.length} object${nodes.length === 1 ? "" : "s"} written, ${soFar} so far`),
       ...nodes.map((n, k) => box(n, nodes, k, cur, now, live(n))));
-    body.querySelector("tr.on")?.scrollIntoView({ block: "nearest" });
+    body.scrollTop = top;
+    const on = body.querySelector("tr.on")?.getBoundingClientRect(), view = body.getBoundingClientRect();
+    if (moment && on && (on.top < view.top || on.bottom > view.bottom)) body.querySelector("tr.on").scrollIntoView({ block: "nearest" });
   }
 
   // An object's box: its name and type; the members it writes (or, on
