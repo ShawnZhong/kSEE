@@ -209,11 +209,11 @@ impl Machine {
         self.view(|v| to_js(&v.stores(first, last)))
     }
 
-    /// An object's history: the newest writes to the value of type `ty`
-    /// at `addr` in records `from..=to` (its lifetime: a local's frame;
-    /// else the whole recording), oldest first (view::Change).
-    pub fn writes(&self, addr: u32, ty: u32, from: Option<usize>, to: Option<usize>) -> JsValue {
-        self.view(|v| to_js(&v.writes(addr, ty, from.unwrap_or(0)..=to.unwrap_or(usize::MAX), 256)))
+    /// An object's history: the newest `limit` writes (or all) to the value
+    /// of type `ty` at `addr` in records `from..=to` (its lifetime: a local's
+    /// frame; else the whole recording), oldest first (view::Change).
+    pub fn writes(&self, addr: u32, ty: u32, from: Option<usize>, to: Option<usize>, limit: Option<usize>) -> JsValue {
+        self.view(|v| to_js(&v.writes(addr, ty, from.unwrap_or(0)..=to.unwrap_or(usize::MAX), limit.unwrap_or(usize::MAX))))
     }
 
     /// The task running at the start of each of `n` buckets of the
@@ -296,6 +296,12 @@ impl Machine {
             Some(ty) => self.object_by_id(name, ty, addr, depth),
             None => JsValue::NULL,
         }
+    }
+
+    /// The fields of the task at `addr` as memory_at shows them
+    /// (view::TaskFields): the key ones, or `all`.
+    pub fn task_fields(&self, addr: u32, all: bool) -> JsValue {
+        self.with_memory(|mem| self.view(|v| to_js(&v.task_fields(mem, addr, all))))
     }
 
     /// Like `object`, by type id (an Object's `expand` or `target`).

@@ -193,19 +193,12 @@ pub struct Param {
     pub consts: Vec<String>,
 }
 
-/// The constants that fit a syscall's parameter, by the starts of their
-/// names: for "syscall.param", else any syscall's parameter of that name.
-const CONSTS: &[(&str, &[&str])] = &[
-    ("mmap2.flags", &["MAP_"]), ("openat.flags", &["O_"]), ("unlinkat.flag", &["AT_"]), ("renameat2.flags", &["RENAME_"]),
-    ("waitid.which", &["P_"]), ("waitid.options", &["W"]), ("clone.clone_flags", &["CLONE_", "SIG"]),
-    ("futex_time64.op", &["FUTEX_"]), ("clock_nanosleep_time64.which_clock", &["CLOCK_"]), ("clock_nanosleep_time64.flags", &["TIMER_"]),
-    ("dfd", &["AT_"]), ("olddfd", &["AT_"]), ("newdfd", &["AT_"]), ("flags", &["O_"]), ("prot", &["PROT_"]),
-    ("which_clock", &["CLOCK_"]), ("op", &["FUTEX_"]),
-];
-
+/// The starts of the names of the constants that fit syscall `syscall`'s
+/// parameter `param` (arch::SYSCALL_CONSTS).
 fn consts_of(syscall: &str, param: &str) -> &'static [&'static str] {
     let key = format!("{syscall}.{param}");
-    CONSTS.iter().find(|(k, _)| *k == key).or_else(|| CONSTS.iter().find(|(k, _)| *k == param)).map_or(&[], |(_, c)| c)
+    let consts = arch::SYSCALL_CONSTS;
+    consts.iter().find(|(k, _)| *k == key).or_else(|| consts.iter().find(|(k, _)| *k == param)).map_or(&[], |(_, c)| c)
 }
 
 /// Value `v` as the constants whose names start with one of `prefixes`
@@ -250,6 +243,15 @@ pub struct Object {
     pub target: Option<u32>,
 }
 
+/// A task's fields: the key ones (arch::TASK_FIELDS, in that order), or
+/// all; `total`: how many it has.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct TaskFields {
+    pub fields: Vec<Object>,
+    pub total: usize,
+}
+
 /// Views of a recording. `now`: memory as it is (for tasks the recording
 /// does not name).
 pub struct View<'a> {
@@ -282,6 +284,18 @@ impl View<'_> {
     pub fn task(&self, addr: u32) -> TaskRef {
         let t = read_task(self.tables, self.now, addr);
         TaskRef { addr, pid: t.as_ref().map(|t| t.pid), comm: t.map(|t| t.comm) }
+    }
+
+    /// The fields of the task at `addr`, in `mem` (memory as it was): the
+    /// key ones, or `all`.
+    pub fn task_fields(&self, mem: &dyn Memory, addr: u32, all: bool) -> TaskFields {
+        let types = &self.tables.types;
+        let every = types.find(arch::TASK).and_then(|ty| types.object(mem, "current", addr, ty, 1).children).unwrap_or_default();
+        let total = every.len();
+        let fields = if all { every } else {
+            arch::TASK_FIELDS.iter().filter_map(|&k| every.iter().find(|o| o.name == k).cloned()).collect()
+        };
+        TaskFields { fields, total }
     }
 
     pub fn syscalls(&self) -> Vec<SyscallSummary> {
@@ -565,7 +579,7 @@ impl View<'_> {
                 regions.push((what, kind, ty, addr, size.unwrap_or_else(|| types.size_of(ty)), call));
             }
         };
-        if let Some(ty) = types.find("task_struct") {
+        if let Some(ty) = types.find(arch::TASK) {
             add("current".into(), "task", ty, task, None, None);
             // (And what its pointer members point to, as the span ends:
             // current->files, ->fs, ->mm: "files->next_fd" through a local
@@ -594,7 +608,7 @@ impl View<'_> {
                         let v = v as u32;
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
-                            let kind = if types.name(types.resolve(to)) == "struct pt_regs" { "regs" } else { "object" };
+                            let kind = if types.name(types.resolve(to)) == arch::REGS { "regs" } else { "object" };
                             add(format!("{}'s {pname}", f.name), kind, to, v, None, None);
                         }
                     }

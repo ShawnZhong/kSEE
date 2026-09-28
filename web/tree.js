@@ -9,6 +9,9 @@
 // for the whole recording); click the value again to close.
 import { el } from "./dom.js";
 
+// The most writes of a value shown (the newest).
+const WRITES = 256;
+
 // `st`: a tree's state: { open (paths open), history (paths whose writes
 // are shown), wide (of those, the ones over the whole recording), last,
 // now (values shown before and now, by path) }; `redraw()`: draw it again
@@ -64,14 +67,14 @@ export function tree(app, st, redraw) {
     const cur = app.time.cursor() ?? Infinity, wide = st.wide.has(p);
     const home = app.time.home();
     const span = wide ? null : life ?? (home ? { from: home.a, to: home.b, what: "in this call" } : null);
-    const writes = m.writes(o.addr, o.id, span?.from, span?.to);
+    const writes = m.writes(o.addr, o.id, span?.from, span?.to, WRITES);
     const now = writes.findLastIndex((x) => x.i <= cur);
     const items = writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
       el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: "go to this write", onclick: () => app.time.go(x.i) }),
       el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` })));
     const scope = span ? span.what : "in the recording";
     return el("tr", { className: "history" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
-      el("div", { className: "dim" }, `${writes.length}${writes.length >= 256 ? "+" : ""} write${writes.length === 1 ? "" : "s"} ${scope}`,
+      el("div", { className: "dim" }, `${writes.length}${writes.length >= WRITES ? "+" : ""} write${writes.length === 1 ? "" : "s"} ${scope}`,
         span ? el("a", { textContent: " · all", title: "in the whole recording", onclick: () => toggle(st.wide, p) })
           : life || home ? el("a", { textContent: " · fewer", title: span ? "" : "within the frame, or the call", onclick: () => toggle(st.wide, p) }) : null),
       items.length ? el("ol", {}, ...items) : null));

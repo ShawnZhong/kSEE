@@ -17,8 +17,6 @@ export function callstack(app) {
   // Open paths, and the values shown before (to highlight changes).
   // (The current task open to begin with.)
   const s = { open: new Set(["task"]), last: new Map(), now: new Map(), frames: [], task: null, sel: null };
-  // The current task's fields shown first.
-  const KEY = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 
   const { rows, kids } = tree(app, s, draw);
   // (The tabs: the pane chosen.)
@@ -53,10 +51,10 @@ export function callstack(app) {
       };
       body.push(head(`current task: ${s.task.comm ?? "?"}(${s.task.pid ?? "?"})`, "current: the task running", toggle("task"), "task"));
       if (s.open.has("task")) {
-        const all = m.object("task_struct", s.task.addr, 1)?.children ?? [], full = s.open.has("task/all");
-        rows(full ? all : KEY.map((k) => all.find((o) => o.name === k)).filter(Boolean), "task", 1, body);
+        const full = s.open.has("task/all"), { fields, total } = m.task_fields(s.task.addr, full);
+        rows(fields, "task", 1, body);
         body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3 },
-          el("a", { textContent: full ? "▾ the key fields only" : `▸ all ${all.length} fields`, onclick: toggle("task/all") }))));
+          el("a", { textContent: full ? "▾ the key fields only" : `▸ all ${total} fields`, onclick: toggle("task/all") }))));
       }
     }
     $("stack").replaceChildren(el("div", { className: "spacer" }), el("table", { className: "objs stack" }, el("tbody", {}, ...body)));

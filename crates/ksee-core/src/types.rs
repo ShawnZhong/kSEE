@@ -183,11 +183,11 @@ impl Types {
         self.types.get(id as usize).unwrap_or(&VOID)
     }
 
-    /// Syscall `name`'s parameters (its body's, `__do_sys_NAME`; a
+    /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY; a
     /// `_time64` syscall's body is the plain one's: clock_nanosleep).
     pub fn syscall_params(&self, name: &str) -> Option<&Vec<(String, u32)>> {
-        self.params.get(&format!("__do_sys_{name}"))
-            .or_else(|| self.params.get(&format!("__do_sys_{}", name.strip_suffix("_time64")?)))
+        let body = |n: &str| self.params.get(&format!("{}{n}", crate::arch::SYSCALL_BODY));
+        body(name).or_else(|| body(name.strip_suffix(crate::arch::TIME64)?))
     }
 
     /// A struct, union, enum or typedef by name ("task_struct").

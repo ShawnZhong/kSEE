@@ -1,5 +1,6 @@
-//! The kernel functions the host rebuilds a recording by (arch/wasm's, and
-//! the scheduler's): the only kernel names ksee-core knows.
+//! The kernel's names the host rebuilds and shows a recording by (arch/wasm's
+//! functions, the scheduler's, and a few of its types and conventions): the
+//! only kernel names ksee-core knows.
 
 /// A syscall (arch/wasm/kernel/syscall.c): its call's arguments are the
 /// number and the syscall's; its return's value is the result.
@@ -22,3 +23,22 @@ pub const MACHINE: &str = "arch/wasm/";
 pub const TASK_ENTRY: &str = "wasm_task_entry";
 /// The context switch: switch(prev, next) returns on next's stack.
 pub const SWITCH: &str = "__switch_to";
+/// A task (what the task running points at), and the fields of it the
+/// Stack shows first.
+pub const TASK: &str = "task_struct";
+pub const TASK_FIELDS: [&str; 12] = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
+/// The registers a syscall entry saves (its wrappers point at them).
+pub const REGS: &str = "struct pt_regs";
+/// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
+/// are the syscall's; a `_time64` syscall's is the plain one's.
+pub const SYSCALL_BODY: &str = "__do_sys_";
+pub const TIME64: &str = "_time64";
+/// The constants that fit a syscall's parameter, by the starts of their
+/// names: for "syscall.param", else any syscall's parameter of that name.
+pub const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
+    ("mmap2.flags", &["MAP_"]), ("openat.flags", &["O_"]), ("unlinkat.flag", &["AT_"]), ("renameat2.flags", &["RENAME_"]),
+    ("waitid.which", &["P_"]), ("waitid.options", &["W"]), ("clone.clone_flags", &["CLONE_", "SIG"]),
+    ("futex_time64.op", &["FUTEX_"]), ("clock_nanosleep_time64.which_clock", &["CLOCK_"]), ("clock_nanosleep_time64.flags", &["TIMER_"]),
+    ("dfd", &["AT_"]), ("olddfd", &["AT_"]), ("newdfd", &["AT_"]), ("flags", &["O_"]), ("prot", &["PROT_"]),
+    ("which_clock", &["CLOCK_"]), ("op", &["FUTEX_"]),
+];
