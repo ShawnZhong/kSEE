@@ -423,7 +423,6 @@ impl View<'_> {
                 let task = self.task(rec.tasks[i]);
                 out.push((i, "task", format!("── {}({}) runs", task.comm.unwrap_or_default(), task.pid.unwrap_or(0))));
             }
-            let num = |v: u64| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
             let (kind, text) = match rec.records[i] {
                 Record::Block { func, n } => {
                     let loc = t.blocks.get(&(func, n)).map_or(String::new(), |l| format!(" {}:{}", t.file(*l), l.line));
@@ -442,18 +441,9 @@ impl View<'_> {
                 Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value as i32)),
                 Record::Task { .. } => continue, // (the task's line is above)
                 Record::Copy { dst, src, len } => ("copy", format!("copy {dst:#x} ← {src:#x} [{len}]")),
-                r @ Record::Compare { lhs, rhs, .. } => {
-                    let (op, signed, held) = r.compare().unwrap_or(("?", false, false));
-                    let v = |x: u32| if signed { (x as i32).to_string() } else { num(x as u64) };
-                    ("compare", format!("compare {} {op} {} {}", v(lhs), v(rhs), if held { "✓" } else { "✗" }))
-                }
+                r @ Record::Compare { .. } => ("compare", format!("compare {}", compared(&r).unwrap_or_default())),
                 Record::Store { addr, size: 0, old, .. } => ("store", format!("store {addr:#x} [{old} bytes] (old contents not kept)")),
-                Record::Store { addr, size, old, .. } => {
-                    let mut new = [0u8; 8];
-                    rec.memory_at(self.now, i).read(addr, &mut new[..size.min(8) as usize]);
-                    let new = new.iter().rev().fold(0u64, |v, &x| v << 8 | x as u64);
-                    ("store", format!("store {addr:#x} [{size}] {} → {}", num(old), num(new)))
-                }
+                Record::Store { addr, size, old, .. } => ("store", format!("store {addr:#x} [{size}] {} → {}", num(old), num(self.wrote(i)))),
             };
             out.push((i, kind, text));
         }
@@ -468,12 +458,7 @@ impl View<'_> {
         let tests = (s.record + 1..records.len()).filter(|&j| Some(tasks[j]) == task)
             .map(|j| records[j]).take_while(|r| matches!(r, Record::Store { .. } | Record::Copy { .. } | Record::Compare { .. }))
             .filter(|r| matches!(r, Record::Compare { line, .. } if *line == s.index))
-            .filter_map(|r| {
-                let (op, signed, held) = r.compare()?;
-                let Record::Compare { lhs, rhs, .. } = r else { return None };
-                let v = |x: u32| if signed || x <= 0xffff { (x as i32).to_string() } else { format!("{x:#x}") };
-                Some(format!("{} {op} {} {}", v(lhs), v(rhs), if held { "✓" } else { "✗" }))
-            }).collect();
+            .filter_map(|r| compared(&r)).collect();
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: t.file(s.loc).to_string(), line: s.loc.line,
                inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests, ret: s.ret.map(|v| v as i32),
                called: s.callee.map(|(f, v)| (self.name(f), v as i32)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line) }
@@ -600,8 +585,7 @@ impl View<'_> {
     pub fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
         let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
         let from = self.rec.copied_from(i, addr);
-        let old = if old > 0xffff { format!("{old:#x}") } else { old.to_string() };
-        Some(Write { i, addr, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)), from })
+        Some(Write { i, addr, old: num(old), task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line(&s)), from })
     }
 
     /// Where the value at `addr..addr + len` after record `at` came from:
@@ -631,20 +615,24 @@ impl View<'_> {
         all[all.len().saturating_sub(limit)..].iter().map(|&i| self.change(addr, ty, i)).collect()
     }
 
+    /// What the store at record `i` wrote: memory there just after it.
+    fn wrote(&self, i: usize) -> u64 {
+        let Record::Store { addr, size, .. } = self.rec.records[i] else { return 0 };
+        let mut new = [0u8; 8];
+        self.rec.memory_at(self.now, i).read(addr, &mut new[..size.min(8) as usize]);
+        u64::from_le_bytes(new)
+    }
+
     /// Store `i` as a change to the object of type `ty` at `addr`.
     fn change(&self, addr: u32, ty: u32, i: usize) -> Change {
         let types = &self.tables.types;
-        let Record::Store { addr: a, size, old, .. } = self.rec.records[i] else { unreachable!() };
+        let Record::Store { addr: a, old, .. } = self.rec.records[i] else { unreachable!() };
         let task = self.task(self.rec.tasks[i]);
         let at = self.rec.line_at(self.tables, i).map(|s| self.line(&s));
         // (No type, a frame's bytes: the store as it is, at its offset.)
         if ty == 0 {
-            let num = |v: u64| if v > 0xffff { format!("{v:#x}") } else { v.to_string() };
-            let mut new = [0u8; 8];
-            self.rec.memory_at(self.now, i).read(a, &mut new[..size.min(8) as usize]);
-            let new = new.iter().rev().fold(0u64, |v, &x| v << 8 | x as u64);
             let member = if a == addr { String::new() } else { format!("+{}", a.wrapping_sub(addr)) };
-            return Change { i, member, before: num(old), after: num(new), task, at };
+            return Change { i, member, before: num(old), after: num(self.wrote(i)), task, at };
         }
         let (member, leaf, off, bits) = types.leaf(ty, a.max(addr) - addr);
         let (b0, bn) = bits.unwrap_or((0, 0));
@@ -932,6 +920,21 @@ impl Types {
         }
         o
     }
+}
+
+/// A number as the page shows one: in hex past 0xffff (an address, a flag
+/// word).
+fn num(v: u64) -> String {
+    if v > 0xffff { format!("{v:#x}") } else { v.to_string() }
+}
+
+/// A comparison, its operands and whether it held: "18 >= 0 ✓" (signed
+/// ones as such, else as numbers are).
+fn compared(r: &Record) -> Option<String> {
+    let (op, signed, held) = r.compare()?;
+    let &Record::Compare { lhs, rhs, .. } = r else { return None };
+    let v = |x: u32| if signed { (x as i32).to_string() } else { num(x as u64) };
+    Some(format!("{} {op} {} {}", v(lhs), v(rhs), if held { "✓" } else { "✗" }))
 }
 
 /// The last record's index (0 if none).
