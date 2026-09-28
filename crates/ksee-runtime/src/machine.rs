@@ -181,8 +181,7 @@ impl Machine {
     /// Have runner `tid` (none: the program's own, Machine::main; see user/prog.c) make syscall `name`
     /// (e.g. "openat") with `args`: each a number, a string (as a
     /// NUL-terminated buffer), { bytes } (a buffer of them: an array or a
-    /// Uint8Array), { size } (a buffer of that many zero bytes, for the
-    /// call to fill), or { strings } (an array of char *, null for NULL:
+    /// Uint8Array), or { strings } (an array of char *, null for NULL:
     /// argv). The call's id: it finishes when it returns; or, when
     /// it blocks, later, as another call wakes it (see quiet). Recorded
     /// from the runner's begin to its end (user/prog.c): the syscall,
@@ -245,8 +244,7 @@ impl Machine {
     /// A promise of the kernel quiet (now, or once it is): { finished: [the
     /// calls finished since the last time: { id, tid, how ("returned",
     /// "exec": an execve, the new program running; "exited": its task),
-    /// ret, buffers: [the bytes of each buffer argument, as the call left
-    /// them (null for the others)] }], runners: [the runners' tids] }.
+    /// ret }], runners: [the runners' tids] }.
     pub fn quiet(&self) -> Promise {
         Promise::new(&mut |ok, fail| {
             k(|k| k.quiet_waiters.borrow_mut().push((ok, fail)));
@@ -387,7 +385,7 @@ fn alloc(tid: u32, len: u32) -> Result<u32, String> {
 }
 
 /// Call `id` with `args` (see Machine::call): each a number, or a buffer
-/// (a string, { bytes }, { size }, { strings }) packed into the data (its
+/// (a string, { bytes }, { strings }) packed into the data (its
 /// bytes, to go at `base` in the runner's request: a buffer argument is
 /// its address there).
 fn pack(id: u32, args: &[JsValue], base: u32) -> Result<(Call, Vec<u8>), JsValue> {
@@ -415,8 +413,6 @@ fn pack(id: u32, args: &[JsValue], base: u32) -> Result<(Call, Vec<u8>), JsValue
             }
             let array: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
             c.args[i] = put(&array)?;
-            c.buffers |= 1 << i;
-            c.lens[i] = array.len() as u32;
             continue;
         }
         let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
@@ -424,15 +420,11 @@ fn pack(id: u32, args: &[JsValue], base: u32) -> Result<(Call, Vec<u8>), JsValue
         } else if !js::get(a, "bytes").is_undefined() {
             Some(Uint8Array::new(&js::get(a, "bytes")).to_vec())
         } else {
-            js::get(a, "size").as_f64().map(|n| vec![0; n as usize])
+            None
         };
         c.args[i] = match buffer {
-            Some(b) => {
-                c.buffers |= 1 << i;
-                c.lens[i] = b.len() as u32;
-                put(&b)?
-            }
-            None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { size }")? as i64 as u32,
+            Some(b) => put(&b)?,
+            None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { strings }")? as i64 as u32,
         };
     }
     Ok((c, data))
@@ -451,11 +443,6 @@ pub(crate) fn settle() {
         js::set(&o, "tid", f.tid);
         js::set(&o, "how", f.how);
         js::set(&o, "ret", f.ret as f64);
-        let buffers = js_sys::Array::new();
-        for b in &f.buffers {
-            buffers.push(&b.as_deref().map_or(JsValue::NULL, |b| Uint8Array::from(b).into()));
-        }
-        js::set(&o, "buffers", buffers);
         finished.push(&o);
     }
     let news = Object::new();

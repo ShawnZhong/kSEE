@@ -5,7 +5,6 @@
 //! 0644, 0x41, -100        numbers (0: octal, 0x: hex)
 //! O_CREAT | O_WRONLY      constants (the kernel's own: Types::constants),
 //!                         NULL, names of results (fd, $2), with | << + -
-//! [64]                    a buffer of 64 bytes, for the kernel to fill
 //! {0, 30000000}           a compound literal, laid out as the parameter's
 //! {.tv_nsec = 30000000}   type says (a struct, positional or by name;
 //! {"init", NULL}          an array; for a char **, an array of strings)
@@ -24,8 +23,6 @@ pub enum Arg {
     Number(i64),
     /// A buffer with these bytes (a string: with its NUL).
     Bytes(Vec<u8>),
-    /// A buffer of this many zero bytes, for the kernel to fill.
-    Size(u32),
     /// An array of char * (None: NULL).
     Strings(Vec<Option<String>>),
 }
@@ -554,9 +551,6 @@ impl Types {
             b.push(0);
             return Ok(Arg::Bytes(b));
         }
-        if let Some(n) = s.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
-            return Ok(Arg::Size(eval(n, known)? as u32));
-        }
         if let Some(inner) = s.strip_prefix('{').and_then(|r| r.strip_suffix('}')) {
             let list = items(inner)?;
             // (The parameter's type: what the braces make.)
@@ -737,10 +731,9 @@ mod tests {
     }
 
     #[test]
-    fn strings_buffers_and_argv() {
+    fn strings_and_argv() {
         let t = Types::parse(TYPES);
         assert_eq!(t.arg("\"a\\n\"", 5, &known), Ok(Arg::Bytes(b"a\n\0".to_vec())));
-        assert_eq!(t.arg("[64]", 5, &known), Ok(Arg::Size(64)));
         assert_eq!(t.arg("{\"init\", NULL}", 6, &known), Ok(Arg::Strings(vec![Some("init".into()), None])));
         assert_eq!(t.arg("fd", 7, &known), Ok(Arg::Number(3)));
         // (No type known: 64-bit values.)

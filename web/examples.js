@@ -106,7 +106,6 @@ export async function examples(app) {
 
   function open(ex, steps = ex.steps) {
     t.ex = ex;
-    // (The form adds to them. `as: k`, an older spelling: the runner call k started, $k.)
     t.steps = steps.map((s) => ({ ...s }));
     // (Made by a runner, kernel.js's: its steps, how each went, the runners
     // they started, the variables.)
@@ -245,7 +244,6 @@ export async function examples(app) {
           d ? el("span", { className: "mono ret", textContent: how(d, s) }) : null,
           el("a", { className: "rm", textContent: "✕", title: "remove the call (the program runs again without it)", onclick: () => remove(j) })),
         later,
-        d?.text ? el("div", { className: "mono dim more", textContent: d.text }) : null,
         d?.vars ? el("div", { className: "mono more vars", textContent: d.vars }) : null);
       const waits = many ? waiting(j).filter((k) => k !== lane).map((k) => el("div", { className: "wait", style: `grid-column: ${k + 1}; --hue: ${hue(tidOf(lanes[k]))}`, title: "a call of this lane's, waiting (blocked)" })) : [];
       return el("li", { className: [d ? "done" : "", d && d.how == null ? "blocked" : ""].join(" ").trim() }, ...waits, cell);
@@ -314,8 +312,6 @@ export async function examples(app) {
       return true;
     }
     const q = r.q;
-    // (What the calls finished left in their buffers: it, or ones it woke.)
-    for (const [i, d] of t.done.entries()) if (d?.buffers && d.text == null) d.text = outputs(t.steps[i].call, d.args, d.buffers);
     // (And the variables it changed, as they are now; one it was passed as
     // records of a variable length, as its parameter's type reads them:
     // Machine.as_records, a directory's entries.)
@@ -346,16 +342,6 @@ export async function examples(app) {
   }
   // (Call `j`'s line marked, the others not.)
   const mark = (j) => [...t.list.children].forEach((li, k) => li.classList.toggle("on", k === j));
-
-  // What a call left in the buffers it was to fill (`[64]`, as older
-  // programs have them: a variable says it better).
-  function outputs(call, args, buffers) {
-    return args.map((a, i) => (a?.size != null && buffers?.[i] ? bytes(buffers[i]) : null)).filter(Boolean).join("  ");
-  }
-  function bytes(b) {
-    const n = b.indexOf(0) < 0 ? b.length : b.indexOf(0), s = new TextDecoder().decode(b.subarray(0, n));
-    return /^[\x20-\x7e\n\t]*$/.test(s) ? JSON.stringify(s) : [...b.subarray(0, 32)].map((x) => x.toString(16).padStart(2, "0")).join(" ");
-  }
 
   // The syscalls the examples make: to list first.
   const common = [...new Set(list.flatMap((x) => x.steps.map((s) => s.call)).filter(Boolean))];

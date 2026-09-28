@@ -7,7 +7,9 @@ shape everything; then the doc for the part you touch ([docs/](docs/README.md)).
   change sprawls, step back to the goal. No ad hoc checks or special
   cases (for one syscall, one function, one struct, one example): find the
   rule the data already says (the types, the recording, the debug info),
-  or ask. Ask before a new mode, language or
+  or ask. No compatibility code: nothing outside this repository depends
+  on its formats or APIs (records, tables, Machine, example files, URLs);
+  change them all together, and drop the old. Ask before a new mode, language or
   dependency. Earlier decisions are not fences: propose again what seems
   right, with the reason.
 - Rust does the work, in ksee-core (unit-tested on made-up records); web/

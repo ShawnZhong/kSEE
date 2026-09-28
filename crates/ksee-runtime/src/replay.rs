@@ -249,7 +249,6 @@ impl Machine {
         let lookup = lookup(&known);
         Ok(match types.arg(text, ty, &lookup)? {
             Arg::Number(v) => JsValue::from_f64(v as f64),
-            Arg::Size(n) => obj("size", n.into()),
             Arg::Bytes(b) => obj("bytes", js_sys::Uint8Array::from(&b[..]).into()),
             Arg::Strings(v) => obj("strings", v.into_iter().map(|s| s.map_or(JsValue::NULL, JsValue::from)).collect::<js_sys::Array>().into()),
         })

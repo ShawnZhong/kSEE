@@ -91,14 +91,14 @@ Rust does the work: JS only lays it out.
 A program is a small language, parsed and laid out in the core
 (crates/ksee-core/src/program.rs, `Machine.arg`, `Machine.value`,
 `Machine.declare`): a call's arguments are numbers, the kernel's constants
-with `| << + -`, strings, buffers to fill (`[64]`), results by name or `$n`,
+with `| << + -`, strings, results by name or `$n`,
 and compound literals laid out by the parameter's type (a struct,
 positional or by member; an array; argv for a `char **`); and a line can
 declare a variable of the program's as in C (`char buf[64]`, `struct
 __kernel_timespec ts = {0, 30000000}`: a type of the kernel's), which
 `Machine.declare` puts in the program's own memory (user/prog.c's heap, in
 its process), its name then its address (`&ts` too; `fds[1]` an element),
-`Machine.show` printing it as C writes it. A call's strings and buffers go
+`Machine.show` printing it as C writes it. A call's strings and compound literals go
 in the same memory, in the runner's room for them (`SCRATCH`).
 ksee pack evaluates the UAPI headers' constants with the same evaluator.
 

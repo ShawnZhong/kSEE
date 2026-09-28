@@ -77,7 +77,7 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
             })
         });
         if let Some(tid) = gone {
-            finish(tid, "exited", 0, Vec::new());
+            finish(tid, "exited", 0);
         }
     }
 }
@@ -188,7 +188,7 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
         // (A runner's call that was this execve is over: the new program
         // runs. A runner again only if it says so: ksee.ready.)
         let tid = tid();
-        finish(tid, "exec", 0, Vec::new());
+        finish(tid, "exec", 0);
         k(|k| k.runners.borrow_mut().remove(&tid));
         Ok(start)
     };
@@ -202,11 +202,11 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
 
 /// Finish runner `tid`'s call, if it has one (for Machine::quiet); the
 /// page waits no more once none is left.
-pub(crate) fn finish(tid: u32, how: &'static str, ret: i64, buffers: Vec<Option<Vec<u8>>>) {
+pub(crate) fn finish(tid: u32, how: &'static str, ret: i64) {
     let done = k(|k| {
         let Some(id) = k.in_flight(tid) else { return false };
         k.calls.borrow_mut().get_mut(&id).unwrap().done = true;
-        k.finished.borrow_mut().push(Finished { id, tid, how, ret, buffers });
+        k.finished.borrow_mut().push(Finished { id, tid, how, ret });
         if k.calls.borrow().values().all(|c| c.done) {
             k.waiting.set(None);
         }
@@ -275,20 +275,9 @@ fn runner_imports() -> Object {
     })));
     js::set(&ksee, "end", func(Closure::<dyn FnMut(i64)>::new(|ret: i64| {
         let tid = tid();
-        let buffers = k(|k| {
-            let calls = k.calls.borrow();
-            let c = calls.get(&k.in_flight(tid)?)?;
-            if !c.begun {
-                return None;
-            }
-            Some((0..6).map(|i| (c.buffers >> i & 1 != 0).then(|| {
-                let mut b = vec![0; c.lens[i] as usize];
-                Direct.read(c.args[i], &mut b);
-                b
-            })).collect())
-        });
-        if let Some(buffers) = buffers {
-            finish(tid, "returned", ret, buffers);
+        let begun = k(|k| k.in_flight(tid).and_then(|id| k.calls.borrow().get(&id).map(|c| c.begun)));
+        if begun == Some(true) {
+            finish(tid, "returned", ret);
         }
     })));
     ksee

@@ -131,7 +131,7 @@ request (`struct request`: the number, -1 while none is asked; the
 arguments), in its own memory, which is kernel memory; `ksee.ready(&req,
 heap, size, main)` tells the host where it is, and where its own memory
 is (a static array: the page's variables, and each call's strings and
-buffers, which the host puts there); `main`: it is the program itself, the
+compound literals, which the host puts there); `main`: it is the program itself, the
 runner the page's calls go to unless they name another (`Machine.main`).
 The page writes the call into the request (recorded, as any write to
 kernel memory), the number last, and rings the runner's task

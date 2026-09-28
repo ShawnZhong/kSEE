@@ -88,15 +88,13 @@ impl Kernel {
     }
 }
 
-/// A call finished: returned (its result, and its buffers as it left them),
-/// or ended by an execve (the new program is running) or by its task's
-/// exit.
+/// A call finished: returned (its result), or ended by an execve (the new
+/// program is running) or by its task's exit.
 pub struct Finished {
     pub id: u32,
     pub tid: u32,
     pub how: &'static str,
     pub ret: i64,
-    pub buffers: Vec<Option<Vec<u8>>>,
 }
 
 thread_local! {
@@ -119,18 +117,16 @@ pub struct Call {
     pub from: u32,
     pub begun: bool,
     pub done: bool,
-    /// Each an integer, or (bit i of `buffers`) the address of a buffer
-    /// in the request's data (its length: `lens`).
+    /// Each an integer, or the address of its string or bytes in the
+    /// runner's room (SCRATCH).
     pub args: [u32; 6],
-    pub buffers: u32,
-    pub lens: [u32; 6],
 }
 
 /// A runner's request (user/prog.c): `struct { i32 nr; i32 args[6]; }`,
 /// the call (nr -1 while none is asked: the runner waits on it).
 pub const REQUEST: u32 = 28;
 /// Each runner's room, in its program's memory, for its call's strings and
-/// buffers (one call at a time).
+/// compound literals (one call at a time).
 pub const SCRATCH: u32 = 4096;
 
 /// The kernel's memory is this module's memory.

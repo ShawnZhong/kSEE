@@ -112,8 +112,9 @@ const fd = (await call("openat", [-100, "/tmp/note", 0o1101, 0o644])).ret; // O_
 await call("write", [fd, "hello from the page cache\n", 26]);
 await call("close", [fd]);
 const rfd = (await call("openat", [-100, "/tmp/note", 0, 0])).ret;
-const { s: read, buffers } = await call("read", [rfd, { size: 64 }, 64]);
-check("read 26 bytes back", read?.ret === 26 && new TextDecoder().decode(buffers[1]).startsWith("hello from the page cache"));
+const got = m.declare(undefined, "char got[64]", {});
+const { s: read } = await call("read", [rfd, got.addr, 64]);
+check("read 26 bytes back", read?.ret === 26 && m.show(got.ty, got.addr, 64).startsWith('"hello from the page cache'));
 const inRead = m.line_steps(read.first, read.last, read.task.addr).find((x) => x.func === "vfs_read").i;
 {
   // (Its last line, the closing brace: `return ret;` compiles to no line of its own.)
@@ -193,7 +194,8 @@ m.memory_at(null);
 }
 // A 64-bit argument, whole: llseek's offset (high 1, low 0) is vfs_llseek's loff_t 1 << 32.
 {
-  const ls = (await call("llseek", [rfd, 1, 0, { size: 8 }, 0])).s;
+  const res = m.declare(undefined, "long long res", {});
+  const ls = (await call("llseek", [rfd, 1, 0, res.addr, 0])).s;
   const at = ls && m.first_call("vfs_llseek", ls.first, ls.last, ls.task.addr);
   const off = at != null && m.call_stack(at).find((f) => f.func === "vfs_llseek")?.args?.find((a) => a.name === "offset")?.value;
   check(`a 64-bit argument whole: vfs_llseek's offset ${off}`, off === "4294967296");
@@ -254,7 +256,7 @@ check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
       consts.O_CREAT === 64 && consts.AT_FDCWD === -100 && consts.AT_REMOVEDIR === 0x200 && consts.ENOTEMPTY === 39);
 const a = (call, k, text, known = {}) => m.arg(call, k, text, known);
 check("arguments as in C", a("openat", 2, "O_CREAT | O_WRONLY | O_TRUNC") === 577 && a("openat", 3, "0644") === 420
-      && a("read", 0, "$2", { $2: 7 }) === 7 && a("read", 0, "fd + 1", { fd: 3 }) === 4 && a("read", 1, "[64]").size === 64
+      && a("read", 0, "$2", { $2: 7 }) === 7 && a("read", 0, "fd + 1", { fd: 3 }) === 4
       && new TextDecoder().decode(a("openat", 1, '"a\\n"').bytes) === "a\n\0");
 check("an array of strings as in C (argv)", JSON.stringify(a("execve", 1, '{"init", "-x", NULL}')) === '{"strings":["init","-x",null]}');
 // A struct, laid out as the parameter's type says (a __kernel_timespec: two s64).
@@ -267,7 +269,7 @@ const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/example
 for (const ex of examples) ex.steps = ex.steps.map((line) => m.statement(line));
 // (Each on a fresh kernel, as the page runs them; a call may block, and
 // finish as a later one wakes it.)
-// (A step's runner, `as`: the one call `as` started; else /init.)
+// (A step's runner, `tid`: a thread id or a result's name; else the program.)
 async function runExample(ex) {
   await m.restart();
   const p = runner(kern, m, ex.steps.map((s) => ({ ...s })));

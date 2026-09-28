@@ -53,7 +53,7 @@ export function kernel(m, { changed } = {}) {
     if (v === null || v === undefined) return 0;
     if (v instanceof Uint8Array) return { bytes: v };
     if (v.addr != null && v.ty != null) return v.addr; // (a variable)
-    if (v.bytes != null || v.size != null || v.strings != null) return v; // (as Machine.call takes it already)
+    if (v.bytes != null || v.strings != null) return v; // (as Machine.call takes it already)
     if (Array.isArray(v) && v.every((x) => typeof x === "string" || x === null)) return { strings: v };
     return m.arg(name, k, c(v), {});
   }
@@ -65,8 +65,8 @@ export function kernel(m, { changed } = {}) {
 
   // Make syscall `name` with `args` (JS values: see the top) on runner
   // `tid` (none: the program's own, Machine.main): a promise of how it finished ({ id, tid, how:
-  // "returned" | "exec" | "exited", ret, errno (its name, if it failed),
-  // buffers }), with its `id`, and
+  // "returned" | "exec" | "exited", ret, errno (its name, if it failed) }),
+  // with its `id`, and
   // `quiet`: a promise of the kernel quiet after it ({ finished, runners }:
   // Machine.quiet's), whether or not it finished.
   function call(name, args = [], tid) {
@@ -110,9 +110,7 @@ export function kernel(m, { changed } = {}) {
 //   const p = runner(k, m, steps);
 //   while (await p.next());          // each: { j, decl } or { j, q, news }
 export function runner(k, m, steps) {
-  // (`as: n`, an older spelling of a step's runner: the one call n started.)
-  steps.forEach((s) => s.as && ((s.tid ??= `$${s.as}`), delete s.as));
-  // (Per step: how it went ({ id, tid, args, how?, ret?, buffers? }, or {
+  // (Per step: how it went ({ id, tid, args, how?, ret? }, or {
   // decl }); the runner it started, if any. The variables: { name, addr,
   // ty, count, size, j, get(), … }.)
   const done = [], started = [], vars = [];
@@ -163,7 +161,7 @@ export function runner(k, m, steps) {
     started[j] = [...news.runners].find((r) => !before.has(r));
     for (const f of news.finished) {
       const d = done.find((x) => x?.id === f.id);
-      if (d) Object.assign(d, { how: f.how, ret: f.ret, buffers: f.buffers, at: j }); // (at: during which step it finished)
+      if (d) Object.assign(d, { how: f.how, ret: f.ret, at: j }); // (at: during which step it finished)
     }
     return { j, q, news };
   }
