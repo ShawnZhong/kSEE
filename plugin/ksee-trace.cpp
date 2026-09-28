@@ -348,13 +348,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         }
         cur = it->second;
       }
+      // (Every instruction's line, a call's too: the line calling.)
+      lineOf[&I] = cur;
       if (auto *CB = dyn_cast<CallBase>(&I); CB && runsProbes(*CB)) {
         if (!items.empty() && items.back() != "|")
           items.push_back("|");
         seen.clear();
-        continue;
       }
-      lineOf[&I] = cur;
     }
     while (!items.empty() && items.back() == "|")
       items.pop_back();
@@ -549,7 +549,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
                    Twine(V->getArg()) + "\t" + Twine(arg + 1) + "\n").str();
       if (arg >= 0)
         continue;
-      IRBuilder<> B(t.I);
+      // (Before a musttail call, which must stay right before its return.)
+      Instruction *at = t.I;
+      if (auto *C = dyn_cast_or_null<CallInst>(at->getPrevNode()); isa<ReturnInst>(at) && C && C->isMustTailCall())
+        at = C;
+      IRBuilder<> B(at);
       SmallVector<Value *, 2> w;
       words(B, v, w);
       Value *low = w[0];
@@ -635,6 +639,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         probes += ("L\t" + Twine(id) + "\t" + Twine(n) + "\t" + lines + "\n").str();
     }
 
+    // (The variables first: one set just before a return is recorded
+    // before the return's record, in its call.)
+    if (!seal)
+      recordSets(F, id, SP, params, sets);
+
     for (BasicBlock *BB : blocks)
       if (auto *R = dyn_cast<ReturnInst>(BB->getTerminator())) {
         // (A musttail call must stay right before its return.)
@@ -651,9 +660,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     for (Instruction *I : writes)
       logStore(I);
 
-    if (!seal)
-      recordSets(F, id, SP, params, sets);
-
     // (A comparison deciding a branch: its operands, after it; its
     // predicate and line in its tag. Not in a sealed function: its inside
     // is a box.)
@@ -661,9 +667,15 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       IRBuilder<> B(C->getNextNode());
       unsigned line = std::min(lineOf.lookup(C), (1u << 24) - 1), pred = C->getPredicate() - CmpInst::FIRST_ICMP_PREDICATE;
       // (Its operands, 32 bits each; wider, their high words after.)
+      // (A signed one's narrow operands sign-extended: -1 as -1, not 255.)
+      auto operand = [&](unsigned k) {
+        Value *v = C->getOperand(k);
+        bool narrow = v->getType()->isIntegerTy() && v->getType()->getIntegerBitWidth() < 32;
+        return C->isSigned() && narrow ? B.CreateSExt(v, i32) : v;
+      };
       SmallVector<Value *, 2> l, r;
-      words(B, C->getOperand(0), l);
-      words(B, C->getOperand(1), r);
+      words(B, operand(0), l);
+      words(B, operand(1), r);
       SmallVector<Value *, 3> rest{r[0]};
       if (l.size() > 1)
         rest.append({l[1], r[1]});
