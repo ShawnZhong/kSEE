@@ -94,12 +94,12 @@ Hover
 a name in the source for its value at the cursor (a name with one is
 underlined, dotted: the arguments and locals of the calls on the Stack; a
 struct's value opens, field by field, on a click on its name), and a value in the Stack
-for who last wrote it; its row's "writes" (at its end, on hover) for its
-writes, a row under it: the member, from what to what, in which
-function, each a link to that moment, the one in effect at the cursor
-marked (a local's while its frame lives, another value's in the whole
-recording; a variable the code keeps in a wasm local, the values its call
-set it to: a loop's counter, turn by turn); "writes" again to close. The Stack shows the selected call's
+for who last wrote it; its row's 📌 (at its end, on hover) pins it: a
+row under the timeline, its value over time, a segment per write with the
+value written in it, under the call that wrote it (hover: what wrote it;
+click: that moment; × unpins; a local's while its frame lives, another
+value's in the whole recording; a variable the code keeps in a wasm
+local, the values its call set it to: a loop's counter, turn by turn). The Stack shows the selected call's
 values (the innermost's, unless another is selected: a click on it, ▲ ▼,
 a bar in the timeline), the others a row each, as a debugger's variables
 are the selected frame's (every call's, on asking); its locals are all

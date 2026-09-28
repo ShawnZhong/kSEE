@@ -35,20 +35,22 @@
   }
   if (!r.decl?.startsWith("include/linux/fs.h:") || !r.decl.includes("struct kiocb {")) throw new Error("no declaration on hover: " + JSON.stringify(r.decl));
   if (r.notes.length < 3 || !r.notes.some(([n, w, top]) => n === "vfs_read" && top === "vfs_read" && w.includes("ksys_read")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
-  // A value's writes: its row's "writes" in the Stack (one in memory: a local's, a task's field); a row
-  // under it lists them (a local's while its frame lives); "writes" again to close.
+  // A value pinned: its row's 📌 in the Stack (one in memory: a local's, a task's field) gives it a row
+  // under the timeline, its value over time, a segment per write; clicking one goes to that write; × unpins.
   // (The selected call's values only: the first call with one in memory, selected.)
   for (const h of document.querySelectorAll("#stack tr.frame a.mono")) {
     if (document.querySelector("#stack td.fval.mem")) break;
     h.click();
   }
   const v = document.querySelector("#stack td.fval.mem");
-  v?.closest("tr").querySelector("a.hist")?.click();
-  r.history = [v?.textContent, document.querySelectorAll("#stack tr.history li").length, document.querySelector("#stack tr.history")?.innerText.slice(0, 120)];
-  if (!/writes? (while \w+'s frame lives|in this call|in the recording)/.test(r.history[2] ?? "")) throw new Error("no writes: " + JSON.stringify(r.history));
-  document.querySelector("#stack tr.history li a")?.click();
-  document.querySelector("#stack a.hist.on")?.click();
-  if (document.querySelector("#stack tr.history")) throw new Error("the writes row stays");
+  v?.closest("tr").querySelector("a.hist")?.click(); await sleep(100);
+  const segs = () => [...document.querySelectorAll("#pins .pin .seg")];
+  r.history = [v?.textContent, document.querySelector("#pins .plabel")?.textContent, segs().length];
+  if (!r.history[1] || !segs().length) throw new Error("no pin: " + JSON.stringify(r.history));
+  const written = segs().find((x) => !x.classList.contains("before"));
+  if (written) { written.click(); await sleep(100); }
+  document.querySelector("#pins .unpin")?.click(); await sleep(50);
+  if (document.querySelector("#pins .pin")) throw new Error("the pin stays");
   // Run to a line (the source's F4): the line where the cursor is, its next run
   // (stepping on until a line that does run again).
   let here, file, ln;
@@ -143,8 +145,9 @@
   await until(() => $("right").dataset.tab === "objects" && document.querySelector("#objects .obj"));
   const kipos = [...document.querySelectorAll("#objects tr")].find((tr) => tr.querySelector(".fname")?.textContent.trim() === "ki_pos");
   kipos?.querySelector("a.hist")?.click(); await sleep(100);
-  r.objects = [kipos && [...kipos.cells].map((c) => c.textContent.trim()).join(" "), document.querySelector("#objects tr.history")?.innerText.replace(/\s+/g, " ").slice(0, 80)];
-  if (!/^ki_pos \d+ loff_t/.test(r.objects[0] ?? "") || !/^\d+ writes? /.test(r.objects[1] ?? "")) throw new Error("objects: " + JSON.stringify(r.objects));
+  r.objects = [kipos && [...kipos.cells].map((c) => c.textContent.trim()).join(" "), [...document.querySelectorAll("#pins .seg")].map((x) => x.title.split("\n")[0])];
+  if (!/^ki_pos \d+ loff_t/.test(r.objects[0] ?? "") || !r.objects[1].some((t) => /^ki_pos = \d+/.test(t))) throw new Error("objects: " + JSON.stringify(r.objects));
+  document.querySelector("#pins .unpin")?.click();
   // (And they follow the timeline's pointer as the Stack does: another moment, others written so far; back on leaving.)
   const head = () => document.querySelector("#objects .head")?.textContent, chartBox = $("chart").getBoundingClientRect();
   const still = head();

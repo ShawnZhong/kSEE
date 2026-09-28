@@ -3,23 +3,20 @@
 // click on the name), read
 // from memory as it was at the cursor (Machine.memory_at). Values that
 // changed since the cursor last moved are highlighted; hover one in memory
-// for who last wrote it; its row's "writes" for its writes (Machine.writes), a row
-// under it: each the member, from what to what, in which function, a link
-// to that moment, the one in effect at the cursor marked; a local's writes
-// while its frame lives, another value's in the whole recording; "writes"
-// again to close.
+// for who last wrote it; its row's 📌 pins it: its value over time, under
+// the timeline (a local's while its frame lives, another's in the whole
+// recording; a variable in a wasm local, the values its call set it to).
 import { el, taskName } from "./dom.js";
 
-// The most writes of a value shown (the newest).
-const WRITES = 256;
+// The most writes of a value pinned (the newest).
+const WRITES = 4096;
 
-// `st`: a tree's state: { open (paths open), history (paths whose writes
-// are shown), last, now (values shown before and now, by path) }; `redraw()`: draw it again
-// (a value opened or closed).
+// `st`: a tree's state: { open (paths open), last, now (values shown
+// before and now, by path) }; `redraw()`: draw it again (a value opened or
+// closed).
 export function tree(app, st, redraw) {
   const { m } = app;
   st.open ??= new Set();
-  st.history ??= new Set();
   (st.last ??= new Map()), (st.now ??= new Map());
   // (Another moment: the values shown so far are the ones to compare with.)
   const moved = () => ((st.last = st.now), (st.now = new Map()));
@@ -57,32 +54,24 @@ export function tree(app, st, redraw) {
           ? el("td", { className: "fval mem", title: value, onmouseenter: (ev) => (ev.target.title = `${value}\n${wroteIt(o)}`) }, value)
           : el("td", { className: "fval", title: value }, value),
         el("td", { className: "ftype" }, o.ty, hasWrites(o, life)
-          ? el("a", { className: `hist${st.history.has(p) ? " on" : ""}`, textContent: "writes", title: st.history.has(p) ? "fold its writes" : "its writes, each a link to its moment",
-                      onclick: () => toggle(st.history, p) }) : null)));
-      if (st.history.has(p) && hasWrites(o, life)) out.push(history(o, p, life, depth));
+          ? el("a", { className: "hist", textContent: "📌", title: "pin it: its value over time, under the timeline", onclick: () => pin(o, e, life) }) : null)));
       // (A pointer's target is another object: its own lifetime.)
       if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? null : life, o.target != null ? `${e}->` : `${e}.`);
     }
   }
-  // Whether value `o` has writes to list: one in memory; a variable kept
+  // Whether value `o` has writes to pin: one in memory; a variable kept
   // in a wasm local, its call's (`life`).
   const hasWrites = (o, life) => (o.addr && o.size) || (o.var != null && life);
-  // Value `o`'s writes (Machine.writes), a row: a local's while its frame
-  // lives (`life`), another's in the whole recording; a variable in a wasm
-  // local, the values its call set it to (Machine.var_writes); the write
-  // in effect at the cursor marked.
-  function history(o, p, life, depth) {
-    const cur = app.time.cursor() ?? Infinity;
-    const writes = o.var != null
-      ? m.var_writes(life.from, o.var).map(([i, after], k, all) => ({ i, before: k ? all[k - 1][1] : "(uninitialized)", after }))
-      : m.writes(o.addr, o.id, life?.from, life?.to, WRITES);
-    const now = writes.findLastIndex((x) => x.i <= cur);
-    const items = writes.map((x, j) => el("li", { className: j === now ? "on" : "" },
-      el("a", { textContent: `${x.member ? `${x.member}: ` : ""}${x.before} → ${x.after}`, title: "go to this write", onclick: () => app.time.go(x.i) }),
-      x.at ? el("span", { className: "dim", textContent: ` in ${x.at.func}` }) : null));
-    return el("tr", { className: "history" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
-      el("div", { className: "dim" }, writes.length ? `${writes.length}${writes.length >= WRITES ? "+" : ""} write${writes.length === 1 ? "" : "s"} ${life?.what ?? "in the recording"}` : `not written ${life?.what ?? "in the recording"}`),
-      items.length ? el("ol", {}, ...items) : null));
+  // Pin value `o` (C expression `e`) under the timeline: its writes (a
+  // local's while its frame lives, `life`; another's in the whole
+  // recording; a variable in a wasm local, the values its call set it to).
+  function pin(o, e, life) {
+    const id = o.var != null ? `var:${life.from}:${o.var}` : `mem:${o.addr}:${o.id}:${life?.from ?? ""}`;
+    app.time.pin({ id, label: e, fetch: () => {
+      if (o.var != null) return { initial: "(uninitialized)", writes: m.var_writes(life.from, o.var).map(([i, value]) => ({ i, value })) };
+      const w = m.writes(o.addr, o.id, life?.from, life?.to, WRITES);
+      return { initial: w[0]?.before ?? o.value, writes: w.map((x) => ({ i: x.i, value: x.after, where: x.at?.func })) };
+    } });
   }
 
   // Who last wrote value `o`, and where from: back through the copies
