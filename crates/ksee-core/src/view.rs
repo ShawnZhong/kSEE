@@ -133,15 +133,53 @@ pub struct Change {
 /// argument points to, "global", "machine": one of the machine's
 /// variables (arch::MACHINE), "regs": the syscall entry's registers,
 /// "frame": the stack a call used, "local", or "other": memory nothing
-/// names), the object's type `ty` ("" for none), and the `write` itself
-/// (the member, from what to what, where).
+/// names), the object's type `ty` ("" for none; `id` its id), where it is
+/// (`addr`, `size`), and the `write` itself (the member, from what to
+/// what, where).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Stored {
     pub what: String,
     pub kind: &'static str,
     pub ty: String,
+    pub id: u32,
+    pub addr: u32,
+    pub size: u32,
     pub write: Change,
+    /// For a call's local or frame (or an object in one): the call's
+    /// records, its life.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub life: Option<(usize, usize)>,
+}
+
+/// An object a span of records wrote (see View::objects): as the Stores
+/// name it (`what`, `kind`, `ty`, `id`, `addr`, `size`), its writes in
+/// order, and its pointers to the others (as memory is at the cursor, or
+/// for an object on the stack whose call has ended by then, as it ended:
+/// `ended`, that record).
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Node {
+    pub what: String,
+    pub kind: &'static str,
+    pub ty: String,
+    pub id: u32,
+    pub addr: u32,
+    pub size: u32,
+    pub writes: Vec<Change>,
+    pub links: Vec<Link>,
+    pub ended: Option<usize>,
+}
+
+/// A pointer from a node's `member` to node `to` (an index), `off` bytes
+/// into it; its value `value`.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Link {
+    pub member: String,
+    pub to: usize,
+    pub off: u32,
+    pub value: u32,
 }
 
 /// The newest write to a value: at record `i`, on `task`, by the code at
@@ -571,14 +609,17 @@ impl View<'_> {
     pub fn stores(&self, first: usize, last: usize) -> Vec<Stored> {
         let (t, types) = (self.tables, &self.tables.types);
         // (The objects: what (as the code names it: "vfs_read's file"),
-        // type, address, size. The task first.)
+        // type, address, size, and for a call's local or frame its life (the
+        // call's records: its slots are other calls' before and after). The
+        // task first.)
         let task = self.rec.tasks.get(first).copied().unwrap_or(0);
-        let mut regions: Vec<(String, &'static str, u32, u32, u32, Option<usize>)> = Vec::new();
+        let mut regions: Vec<(String, &'static str, u32, u32, u32, Option<(usize, usize)>)> = Vec::new();
         let mut seen = alloc::collections::BTreeSet::new();
         let mut add = |what: String, kind: &'static str, ty: u32, addr: u32, size: Option<u32>, call: Option<usize>| {
             let ty = types.resolve(ty);
-            if addr != 0 && seen.insert((addr, ty)) {
-                regions.push((what, kind, ty, addr, size.unwrap_or_else(|| types.size_of(ty)), call));
+            if addr != 0 && seen.insert((addr, ty, call)) {
+                let life = call.map(|c| (c, self.rec.calls.call_end(c).unwrap_or(usize::MAX)));
+                regions.push((what, kind, ty, addr, size.unwrap_or_else(|| types.size_of(ty)), life));
             }
         };
         if let Some(ty) = types.find(arch::TASK) {
@@ -597,6 +638,21 @@ impl View<'_> {
             }
         }
         let (records, calls, args) = (&self.rec.records, &self.rec.calls, &self.rec.args);
+        // (The call whose frame holds address `p`, seen from the call at
+        // record `i`: an object a pointer reaches on the stack lives as long
+        // as that call, the slot another's before and after; None: not on
+        // the stack.)
+        let frame_of = |i: usize, p: u32| {
+            let mut c = calls.call_from(i)?;
+            loop {
+                let parent = &calls.calls[c.parent? as usize];
+                let (below, above) = (args.get(c.first)?.1, args.get(parent.first)?.1);
+                if below <= p && p < above {
+                    return Some(c.first);
+                }
+                c = parent;
+            }
+        };
         for i in first..=last.min(records.len().saturating_sub(1)) {
             match records[i] {
                 Record::Block { func, n: 0 } => {
@@ -611,7 +667,7 @@ impl View<'_> {
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
                             let kind = if types.name(types.resolve(to)) == arch::REGS { "regs" } else { "object" };
-                            add(format!("{}'s {pname}", f.name), kind, to, v, None, None);
+                            add(format!("{}'s {pname}", f.name), kind, to, v, None, frame_of(i, v));
                         }
                     }
                     for (var, ty, off) in types.locals.get(&f.name).into_iter().flatten() {
@@ -623,7 +679,7 @@ impl View<'_> {
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
                             let end = self.rec.calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
                             let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(*off));
-                            add(format!("{}'s {var}", f.name), "object", to, v, None, None);
+                            add(format!("{}'s {var}", f.name), "object", to, v, None, frame_of(i, v));
                         }
                     }
                 }
@@ -642,17 +698,52 @@ impl View<'_> {
         let mut out = Vec::new();
         for &i in self.rec.stores_between(first, last) {
             let Record::Store { addr, .. } = records[i] else { continue };
-            let hit = regions.iter().filter(|r| r.3 <= addr && addr < r.3.saturating_add(r.4)).min_by_key(|r| r.4).cloned()
+            let hit = regions.iter().filter(|r| r.3 <= addr && addr < r.3.saturating_add(r.4) && r.5.is_none_or(|(a, b)| a <= i && i <= b))
+                .min_by_key(|r| r.4).cloned()
                 .or_else(|| global_at(addr).map(|(gaddr, size, name, ty)| {
                     let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
                     (name.into(), if machine { "machine" } else { "global" }, types.resolve(ty), gaddr, size, None)
                 }));
             out.push(match hit {
-                Some((what, kind, ty, base, _, _)) => Stored { what, kind, ty: types.name(ty), write: self.change(base, ty, i) },
-                None => Stored { what: format!("{addr:#x}"), kind: "other", ty: String::new(), write: self.change(addr, 0, i) },
+                Some((what, kind, ty, base, size, life)) => Stored { what, kind, ty: types.name(ty), id: ty, addr: base, size, write: self.change(base, ty, i), life },
+                None => Stored { what: format!("{addr:#x}"), kind: "other", ty: String::new(), id: 0, addr, size: 0, write: self.change(addr, 0, i), life: None },
             });
         }
         out
+    }
+
+    /// The objects records `first..=last` (a call's) wrote, as a graph: each
+    /// with its writes (the Stores', by object, in the order first written),
+    /// and its pointers to the others as memory was after record `at`
+    /// (the cursor; an object on the stack, when its call ended if that
+    /// was before): what the call changed in the kernel's data, and how it
+    /// hangs together. (Not the frames, the registers or the machine's own
+    /// variables: the call's plumbing.)
+    pub fn objects(&self, first: usize, last: usize, at: usize) -> Vec<Node> {
+        let types = &self.tables.types;
+        let mut nodes: Vec<Node> = Vec::new();
+        for s in self.stores(first, last).into_iter().filter(|s| matches!(s.kind, "object" | "task" | "local" | "global") && s.size > 0) {
+            match nodes.iter_mut().find(|n| n.addr == s.addr && n.id == s.id && n.writes[0].i >= s.life.map_or(0, |l| l.0)) {
+                Some(n) => n.writes.push(s.write),
+                None => {
+                    let ended = s.life.map(|l| l.1).filter(|&end| end < at);
+                    nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(), ended });
+                }
+            }
+        }
+        let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
+        let links: Vec<Vec<Link>> = nodes.iter().enumerate().map(|(k, n)| {
+            let mem = self.rec.memory_at(self.now, n.ended.unwrap_or(at).min(at));
+            types.pointers(n.id, 3).into_iter().filter_map(|(member, off)| {
+            let value = mem.read_u32(n.addr.wrapping_add(off));
+            let to = within(value).filter(|&to| to != k)?;
+            Some(Link { member, to, off: value - nodes[to].addr, value })
+            }).collect()
+        }).collect();
+        for (n, l) in nodes.iter_mut().zip(links) {
+            n.links = l;
+        }
+        nodes
     }
 
     /// The task running at the start of each of `n` buckets of the recording.
@@ -858,17 +949,39 @@ mod tests {
                  Record::Store { addr: 8, size: 4, old: 1, line: 0 }, Record::Store { addr: 36, size: 4, old: 0, line: 0 },
                  Record::Block { func: 2, n: 0 },
                  Record::Store { addr: 20, size: 1, old: 0, line: 0 }, Record::Return { func: 2, value: 0 },
-                 Record::Store { addr: 100, size: 1, old: 0, line: 0 }];
+                 Record::Store { addr: 100, size: 1, old: 0, line: 0 }, Record::Store { addr: 21, size: 1, old: 0, line: 0 }];
         let mut args = Args::default();
         args.push(0, &[4, 32]);
         args.push(3, &[16]);
-        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 7], args);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 8], args);
         let mut m = alloc::vec![0u8; 128];
         (m[8], m[36], m[20], m[100]) = (2, 7, 9, 5);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let got: Vec<_> = v.stores(0, 6).into_iter().map(|s| (s.what, s.kind, s.write.member, s.write.after)).collect();
+        // (The last, to g's frame after g returned: g's no more.)
+        let got: Vec<_> = v.stores(0, 7).into_iter().map(|s| (s.what, s.kind, s.write.member, s.write.after)).collect();
         assert_eq!(got, [("f's p".into(), "object", "b".into(), "2".into()), ("f's x".into(), "local", "".into(), "7".into()),
-                         ("g's frame".into(), "frame", "+4".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into())]);
+                         ("g's frame".into(), "frame", "+4".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into()),
+                         ("0x15".into(), "other", "".into(), "0".into())]);
+    }
+
+    #[test]
+    fn the_objects_a_call_wrote_are_a_graph() {
+        // f (1) takes struct s *p (at 4) and has a local struct t y (at frame
+        // 32 + 8: int c, then struct s *link): it stores p->b and y.c, and
+        // y.link points at *p: two nodes, y linked to p's.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
+                              "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
+                               T\t4\tstruct\tt\t8\nM\t4\tc\t0\t0\t1\nM\t4\tlink\t32\t0\t3\nP\tf\tp:3\nQ\tf\ty:4:8\n");
+        let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 8, size: 4, old: 1, line: 0 }, Record::Store { addr: 40, size: 4, old: 0, line: 0 }];
+        let mut args = Args::default();
+        args.push(0, &[4, 32]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
+        let mut m = alloc::vec![0u8; 64];
+        (m[8], m[40], m[44]) = (2, 7, 4);
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        let nodes = v.objects(0, 2, 2);
+        let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.writes.len(), n.links.iter().map(|l| (l.member.clone(), l.to)).collect::<Vec<_>>())).collect();
+        assert_eq!(got, [("f's p".into(), 1, alloc::vec![]), ("f's y".into(), 1, alloc::vec![("link".into(), 0)])]);
     }
 
     #[test]

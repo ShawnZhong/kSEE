@@ -190,6 +190,22 @@ impl Types {
         body(name).or_else(|| body(name.strip_suffix(crate::arch::TIME64)?))
     }
 
+    /// The pointers in a value of type `ty` (in the structs and unions it
+    /// holds too, `depth` levels down): each member's path ("f_path.dentry")
+    /// and offset.
+    pub fn pointers(&self, ty: u32, depth: u32) -> Vec<(String, u32)> {
+        let mut out = Vec::new();
+        for m in self.members(&self.get(self.resolve(ty)).kind).iter().filter(|m| m.bit_size == 0) {
+            match self.get(self.resolve(m.ty)).kind {
+                Kind::Pointer(_) => out.push((m.name.clone(), m.bit_offset / 8)),
+                Kind::Struct(_) | Kind::Union(_) if depth > 0 => out.extend(self.pointers(m.ty, depth - 1).into_iter()
+                    .map(|(p, off)| (alloc::format!("{}.{p}", m.name), m.bit_offset / 8 + off))),
+                _ => {}
+            }
+        }
+        out
+    }
+
     /// A struct, union, enum or typedef by name ("task_struct").
     pub fn find(&self, name: &str) -> Option<u32> {
         self.names.get(name).copied()

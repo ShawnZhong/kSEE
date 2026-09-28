@@ -106,11 +106,11 @@ table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-famil
 
 /* The right column's tabs (Stack, Trace): the pane chosen */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
-#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="trace"] .pane[data-tab="trace"], #right[data-tab="stores"] .pane[data-tab="stores"], #right[data-tab="records"] .pane[data-tab="records"] { display: flex; }
+#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="trace"] .pane[data-tab="trace"], #right[data-tab="stores"] .pane[data-tab="stores"], #right[data-tab="objects"] .pane[data-tab="objects"], #right[data-tab="records"] .pane[data-tab="records"] { display: flex; }
 h2.tabs { gap: 0; padding: 0 4px; }
 h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
-#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="stores"] a[data-tab="stores"], #right[data-tab="records"] a[data-tab="records"] { color: var(--fg); border-bottom-color: var(--accent); }
+#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="stores"] a[data-tab="stores"], #right[data-tab="objects"] a[data-tab="objects"], #right[data-tab="records"] a[data-tab="records"] { color: var(--fg); border-bottom-color: var(--accent); }
 
 /* The Trace: the tree of calls, the one the cursor is in marked */
 /* The Stack: room above a selected call for what it calls (callstack.js focus) */
@@ -123,6 +123,19 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #stores li.on { background: var(--at); }
 #stores li.later { opacity: 0.45; }
 #stores li.same a { color: var(--dim); }
+/* The Objects: a box per object the selected call wrote, its pointers to the others as arrows in the margin on the right */
+#objects { position: relative; padding: 0 64px 12px 10px; }
+#objects .head { padding: 6px 2px 2px; font-size: 11.5px; }
+#objects .obj { margin: 8px 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font: 11px/1.5 var(--mono); }
+#objects .obj .title { padding: 3px 8px; border-bottom: 1px solid var(--line); background: var(--sel); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#objects .obj.task .title, #objects .obj.global .title { background: var(--at); }
+#objects .obj .row { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#objects .obj .row.later { opacity: 0.45; }
+#objects .obj.ended { border-style: dashed; opacity: 0.75; }
+#objects .obj .row.same a { color: var(--dim); }
+#objects .obj .row.link { color: var(--accent); text-align: right; }
+#objects svg.arrows { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+#objects svg.arrows path { fill: none; stroke: var(--accent); stroke-width: 1.2; opacity: 0.8; }
 #stores .note { padding: 6px 12px; font-size: 11px; }
 #trace a.inl { font-style: italic; }
 #trace ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }

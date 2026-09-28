@@ -13,6 +13,7 @@ import { trace } from "./trace.js";
 import { result } from "./args.js";
 import { records } from "./records.js";
 import { stores } from "./stores.js";
+import { objects } from "./objects.js";
 
 
 // 1st, 2nd, 3rd, 4th, …, 11th, 12th, 13th, 21st.
@@ -136,6 +137,7 @@ export function app(m) {
     view(at);
     a.trace?.mark();
     a.stores?.mark();
+    a.objects?.mark();
     a.records?.mark();
     badge();
   };
@@ -162,9 +164,11 @@ export function app(m) {
   a.trace = trace(a);
   a.records = records(a);
   a.stores = stores(a);
-  a.outlined = () => (a.trace.draw(), a.stores.draw(), a.records.draw());
+  a.objects = objects(a);
+  a.outlined = () => (a.trace.draw(), a.stores.draw(), a.objects.draw(), a.records.draw());
   // (The Records follow the cursor, drawn when the tab is looked at.)
   document.querySelector('h2.tabs a[data-tab="records"]').addEventListener("click", () => a.records.draw());
+  document.querySelector('h2.tabs a[data-tab="objects"]').addEventListener("click", () => a.objects.draw());
   examples(a);
 
   // ---- Lines: the line steps of the selection (a syscall) ----
@@ -217,6 +221,7 @@ export function app(m) {
     time.mark(step.at);
     a.trace?.mark();
     a.stores?.mark();
+    a.objects?.mark();
     a.records?.mark();
     memoryAt(step.at);
     const at = m.at(step.i);

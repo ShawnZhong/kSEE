@@ -115,7 +115,14 @@ order, each named as the code names what it hit (a call's pointer
 argument to a struct, a local and what a pointer local points to as the
 call ends, the task running and what its pointer members point to, a
 global: "vfs_read's file->f_pos", "current->files->next_fd"; what the
-code did not name, by its address).
+code did not name, by its address). A call's local, its frame, and an
+object a pointer reaches in a frame on the stack, are theirs only while
+that call runs (the slot is another's before and after). The same
+stores by object are a graph (`objects`): each object the span wrote,
+its members written, and its pointers to the others (the members of
+pointer type, `Types::pointers`, whose value is inside another), as
+memory was at the cursor, or for an object on the stack whose call has
+returned, as it was when it did (it is gone).
 
 What it cannot show: values only in wasm locals (registers, in effect),
 and old contents of bulk writes beyond 256 bytes (their record says

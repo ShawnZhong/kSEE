@@ -85,7 +85,12 @@ click the value again to close. The Stores tab lists every store the
 selected call made, a row each, in order (`vfs_read's file->f_pos: 0 →
 26`, `nr_inodes: 11 → 12`, its own locals and frames said so, memory
 nothing names by its address), each a link, the one in effect at the
-cursor marked and the later ones dim. The
+cursor marked and the later ones dim. The Objects tab draws the same
+stores as the objects they changed: a box per object (its members
+written, from what to what), its pointers to the others as arrows (a
+kiocb's file, the file's inode, the inode's page), as memory was at the
+cursor; an object on the stack whose call has returned is gone
+(dashed). The
 Calls tab shows the calls the selected call made, in the order they were
 made, each with what it returned (`ksys_read = 26`, `lookup_fast = -2
 (ENOENT)`), inlined code among them (in italics, as the timeline and the

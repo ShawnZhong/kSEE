@@ -143,6 +143,13 @@ check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
         && st.some((s) => s.what.endsWith("'s frame")) && st.every((s, k) => k === 0 || st[k - 1].write.i < s.write.i));
 }
 m.memory_at(null);
+// The objects the read wrote, as a graph: its kiocb (on the stack, gone
+// when the read ends) points to its file (ki_filp).
+{
+  const g = m.objects(read.first, read.last, read.last), iocb = g.find((n) => n.ty === "struct kiocb");
+  const filp = iocb?.links.find((l) => l.member === "ki_filp");
+  check(`the read's objects: ${g.length}, its kiocb's ki_filp → ${filp && g[filp.to].what}`, filp && g[filp.to].ty === "struct file" && iocb.ended != null);
+}
 // A 64-bit argument, whole: llseek's offset (high 1, low 0) is vfs_llseek's loff_t 1 << 32.
 {
   const ls = (await call("llseek", [rfd, 1, 0, { size: 8 }, 0])).s;

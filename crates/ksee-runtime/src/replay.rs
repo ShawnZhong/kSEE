@@ -209,6 +209,12 @@ impl Machine {
         self.view(|v| to_js(&v.stores(first, last)))
     }
 
+    /// The objects records `first..=last` (a call's) wrote, and their
+    /// pointers to each other as memory was at record `at` (view::Node).
+    pub fn objects(&self, first: usize, last: usize, at: usize) -> JsValue {
+        self.view(|v| to_js(&v.objects(first, last, at)))
+    }
+
     /// An object's history: the newest `limit` writes (or all) to the value
     /// of type `ty` at `addr` in records `from..=to` (its lifetime: a local's
     /// frame; else the whole recording), oldest first (view::Change).
