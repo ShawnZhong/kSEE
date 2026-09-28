@@ -59,11 +59,13 @@
 //                         bits; p: its predicate (LLVM's icmp's, from eq:
 //                         eq ne ugt uge ult ule sgt sge slt sle); line as
 //                         a store's
-//   [value, 9 << 28 | k]  variable k of the function (its V line) takes
+//   [value, 9 << 28 | line << 16 | k]
+//                         variable k of the function (its V line) takes
 //                         `value` here (the low word; the high one after
 //                         it, for a wide one): a named variable the code
 //                         keeps in a wasm local, not memory, as the debug
-//                         info says it changes (a #dbg_value)
+//                         info says it changes (a #dbg_value); line as a
+//                         store's (12 bits)
 //   [value, 8 << 28 | i]  continuation i of the head before
 // (The host's runtime writes records too: stores, for its own writes into
 // kernel memory.) fn is a hash of the function's name (for a
@@ -345,8 +347,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         seen.clear();
         continue;
       }
-      if (isa<StoreInst, AtomicRMWInst, AtomicCmpXchgInst, MemIntrinsic, ICmpInst>(I))
-        lineOf[&I] = cur;
+      lineOf[&I] = cur;
     }
     while (!items.empty() && items.back() == "|")
       items.pop_back();
@@ -587,6 +588,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       uint32_t of = VS == SP ? id : VS->isLocalToUnit() ? fnv(fname, fnv(":", fnv(M->getSourceFileName()))) : fnv(fname);
       bool wide = v->getType()->isIntegerTy() && v->getType()->getIntegerBitWidth() > 32;
       auto [it, fresh] = vars.try_emplace({of, V->getName().str()}, vars.size());
+      if (it->second >= 1u << 16)
+        continue;
       if (fresh)
         probes += ("V\t" + Twine(id) + "\t" + Twine(it->second) + "\t" + Twine(of) + "\t" + fname + "\t" + V->getName() + "\t" +
                    Twine(V->getArg()) + "\t" + Twine(wide) + "\n").str();
@@ -595,7 +598,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       words(B, v, w);
       Value *low = w[0];
       w.erase(w.begin());
-      record(B, low, KindVar << 28 | it->second, w);
+      record(B, low, KindVar << 28 | std::min(lineOf.lookup(I), (1u << 12) - 1) << 16 | it->second, w);
     }
 
     // (A comparison deciding a branch: its operands, after it; its

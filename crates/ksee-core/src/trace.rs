@@ -25,8 +25,8 @@ pub enum Record {
     /// eq: see Pred), on `line` (as a Store's).
     Compare { lhs: u32, rhs: u32, pred: u8, line: u32 },
     /// Variable `var` of the function running (Tables::vars: a named one
-    /// kept in a wasm local) takes `value` here.
-    Var { var: u32, value: u64 },
+    /// kept in a wasm local) takes `value` here, on `line` (as a Store's).
+    Var { var: u32, line: u32, value: u64 },
 }
 
 /// A Compare's predicate, as LLVM numbers them from eq.
@@ -193,7 +193,7 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
                     });
                 }
                 // (A wide one's high word after it.)
-                VAR => return Some(Record::Var { var: tag & 0x0fff_ffff, value: func as u64 | (v[0] as u64) << 32 }),
+                VAR => return Some(Record::Var { var: tag & 0xffff, line: tag >> 16 & 0xfff, value: func as u64 | (v[0] as u64) << 32 }),
                 _ => continue, // a continuation without its head
             }
         }
@@ -221,8 +221,8 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
     #[test]
     fn a_variable_takes_a_value() {
         // (A wide one: its high word after it.)
-        let w = [5, VAR << 28 | 2, 9, VAR << 28 | 3, 1, VALUE << 28];
-        assert_eq!(decode(&w), [Record::Var { var: 2, value: 5 }, Record::Var { var: 3, value: 9 | 1 << 32 }]);
+        let w = [5, VAR << 28 | 2, 9, VAR << 28 | 4 << 16 | 3, 1, VALUE << 28];
+        assert_eq!(decode(&w), [Record::Var { var: 2, line: 0, value: 5 }, Record::Var { var: 3, line: 4, value: 9 | 1 << 32 }]);
     }
 
     pub fn block(func: u32, n: u32) -> Vec<u32> {

@@ -268,7 +268,7 @@ impl Calls {
             let base: usize = (0..p.seg).map(|k| t.stretch(c.func, p.n, k).len()).sum();
             // (And if the call returns there, its value: its last line's.)
             let mut first_at: BTreeMap<u32, usize> = BTreeMap::new();
-            let mut ret = None;
+            let (mut ret, mut last) = (None, i);
             for (j, r) in records.iter().enumerate().skip(i + 1) {
                 if tasks[j] != tk {
                     continue;
@@ -277,7 +277,7 @@ impl Calls {
                     // (A line is at its first store, or comparison: the
                     // instruction that does what it says, its assignment or
                     // its test, as the debug info's key instructions have it.)
-                    Record::Store { line, .. } | Record::Compare { line, .. } => { first_at.entry(line).or_insert(j); }
+                    Record::Store { line, .. } | Record::Compare { line, .. } | Record::Var { line, .. } => { first_at.entry(line).or_insert(j); }
                     Record::Copy { .. } => {}
                     Record::Return { func, value } => {
                         ret = (func == c.func).then_some(value);
@@ -285,6 +285,7 @@ impl Calls {
                     }
                     _ => break,
                 }
+                last = j;
             }
             for (nth, s) in steps.iter().enumerate() {
                 // (Code with no line, the compiler's own: no step.)
@@ -294,7 +295,10 @@ impl Calls {
                 if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
                     continue;
                 }
-                let at = if nth == 0 { i } else { first_at.get(&((base + nth) as u32)).copied().unwrap_or(i) };
+                // (Where it is: just before it runs, memory as the lines
+                // before it left it: the record before the first on it or a
+                // later one; with none, after the stretch's last.)
+                let at = first_at.range((base + nth) as u32..).map(|(_, &j)| j).min().map_or(last, |j| j - 1).max(i);
                 out.push(LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run, ret: None, callee: None });
             }
             if let Some(l) = out.last_mut().filter(|l| l.record == i) {
@@ -317,9 +321,11 @@ pub struct StackCall {
 /// A source line the kernel ran: at `record` (the block's, or the return
 /// after which the block goes on), the `nth` of the lines it runs there, in
 /// `func` (`inlined` from other functions, maybe: see Tables::inlines),
-/// `depth` calls deep. The line is `at` the record of its first store
-/// (Record::Store's line), or, with no store or the first of its stretch,
-/// the block's: where the cursor goes, and memory as it was there. `run`:
+/// `depth` calls deep. The line is `at` the record just before it runs
+/// (before the first record on it or on a later line of its stretch, a
+/// store, a comparison, a variable set: Record::Store's line; with none,
+/// the stretch's last): where the cursor goes, and memory as it was there,
+/// as a debugger stops before a line. `run`:
 /// the how-manieth time its call enters its block (in the lines asked
 /// for; 0 if not counted): a block runs again in a call only in a loop,
 /// so a loop's turn. `ret`: the last line before the call returns,
@@ -401,16 +407,18 @@ mod tests {
     }
 
     #[test]
-    fn lines_are_at_their_first_at() {
+    fn lines_are_just_before_they_run() {
         // f's block 0 runs lines 1, 2, 3, then calls g (line 10), then line 4;
-        // line 2 stores twice, line 4 once: a line is at its first store,
-        // but a stretch's first line at the block, or the return, itself.
+        // line 2 stores twice, line 4 once: a line is at the record before
+        // its first (line 2: the block), one with none after the lines
+        // before it (line 3: after line 2's stores), a stretch's first line
+        // at the block, or the return, itself.
         let t = crate::tables::Tables::parse(
             "U\nP\t0\tf.c\nP\t1\tg.c\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1;:2;:3;|;:4\nB\t2\t0\t1:10:1\n", "");
         let st = |line| Record::Store { addr: 8, size: 4, old: 0, line };
         let r = [b(1, 0), st(1), st(1), b(2, 0), Record::Return { func: 2, value: 0 }, st(3), Record::Return { func: 1, value: 0 }];
         let got: Vec<_> = lines(&t, &r, &[7; 7], 0, 6, None).iter().map(|s| (s.loc.line, s.record, s.at)).collect();
-        assert_eq!(got, [(1, 0, 0), (2, 0, 1), (3, 0, 0), (10, 3, 3), (4, 4, 4)]);
+        assert_eq!(got, [(1, 0, 0), (2, 0, 0), (3, 0, 2), (10, 3, 3), (4, 4, 4)]);
         // A store is on its line (the block's third item, line 4, after the call); the
         // stack there has f at line 4, and at g, f where it calls g (line 3).
         let c = Calls::new(&t, &r, &[7; 7]);

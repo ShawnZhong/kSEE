@@ -43,7 +43,7 @@ Every function gets:
 - before each **store** (its stack slots' too: a slot is reused by later
   calls, and a frame's locals must be undone to be seen as they were), a
   store record with the **old value** and the **line** it is on (which of
-  its block's lines: so a line step lands at its first store, and a store
+  its block's lines: so a line step stops just before its first, and a store
   is attributed to its line). Bulk writes (memcpy, memset, wider stores)
   call the `ksee.bulk(addr, len, line)` import, which logs their old
   contents the same way. A struct passed by value (`byval`) is copied by

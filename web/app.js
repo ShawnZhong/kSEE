@@ -222,8 +222,8 @@ export function app(m) {
     if (caller) a.selectFrame(caller);
   };
   // Show line `step` (see Machine.line_steps): the cursor at its record.
-  // (The cursor, and memory, at the line's first store, `at`; the Stack at
-  // its record, where its block's lines are.)
+  // (The cursor, and memory, just before it runs, `at`; the Stack at its
+  // record, where its block's lines are.)
   function showLine(step) {
     chosen = null;
     time.mark(step.at);

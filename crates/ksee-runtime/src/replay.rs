@@ -190,7 +190,8 @@ impl Machine {
     /// (memory_at).
     pub fn call_stack(&self, i: Option<usize>, nth: Option<usize>) -> JsValue {
         let Some(i) = i.or(self.records().checked_sub(1)) else { return js_sys::Array::new().into() };
-        self.with_memory(|mem| self.view(|v| to_js(&v.call_stack(i, nth, mem))))
+        let at = self.past.borrow().unwrap_or(i);
+        self.with_memory(|mem| self.view(|v| to_js(&v.call_stack(i, nth, mem, at))))
     }
 
     /// Where the value at `addr..addr + len` came from, as memory_at shows

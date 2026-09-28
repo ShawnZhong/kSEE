@@ -485,7 +485,7 @@ impl View<'_> {
                 Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value as i32)),
                 Record::Task { .. } => continue, // (the task's line is above)
                 Record::Copy { dst, src, len } => ("copy", format!("copy {dst:#x} ← {src:#x} [{len}]")),
-                Record::Var { var, value } => ("var", format!("var {} = {}", self.var_at(i, var).map_or("?", |v| v.name.as_str()), num(value))),
+                Record::Var { var, value, .. } => ("var", format!("var {} = {}", self.var_at(i, var).map_or("?", |v| v.name.as_str()), num(value))),
                 r @ Record::Compare { .. } => ("compare", format!("compare {}", compared(&r).unwrap_or_default())),
                 Record::Store { addr, size: 0, old, .. } => ("store", format!("store {addr:#x} [{old} bytes] (old contents not kept)")),
                 Record::Store { addr, size, old, .. } => ("store", format!("store {addr:#x} [{size}] {} → {}", num(old), num(self.wrote(i)))),
@@ -530,7 +530,9 @@ impl View<'_> {
     /// the `nth` line that record runs (see lines), or its last. Code
     /// inlined there is a frame of its own for each function it is inlined
     /// from (`inlined`, with no arguments: there was no call).
-    pub fn call_stack(&self, i: usize, nth: Option<usize>, mem: &dyn Memory) -> Vec<Frame> {
+    /// (`at`: the moment `mem` is memory as it was at, for the variables'
+    /// values too: a line step's.)
+    pub fn call_stack(&self, i: usize, nth: Option<usize>, mem: &dyn Memory, at: usize) -> Vec<Frame> {
         let t = self.tables;
         let records = &self.rec.records;
         let mut out = Vec::new();
@@ -559,7 +561,7 @@ impl View<'_> {
             // (The variables it keeps in wasm locals, as they are by now: a
             // parameter it changed, as it is; the other locals after those
             // in memory. And the code inlined into it: its own.)
-            let vars = self.var_values(&c, i);
+            let vars = self.var_values(&c, at);
             let mine = |function: &str, param: bool| vars.iter().filter(move |((f, _, _), (v, _))| *f == function && (v.param > 0) == param)
                 .filter_map(|(_, (v, value))| self.var_object(v, *value, mem)).collect::<Vec<_>>();
             let changed = mine(&name, true);
@@ -595,7 +597,7 @@ impl View<'_> {
     fn var_values(&self, c: &stack::StackCall, at: usize) -> BTreeMap<(&str, u32, &str), (&Var, u64)> {
         let mut out = BTreeMap::new();
         for j in self.rec.calls.vars_of(c.first, at) {
-            if let Record::Var { var, value } = self.rec.records[j]
+            if let Record::Var { var, value, .. } = self.rec.records[j]
                 && let Some(v) = self.tables.vars.get(&(c.func, var)) {
                 out.insert((v.function.as_str(), v.param, v.name.as_str()), (v, value));
             }
@@ -1085,13 +1087,13 @@ mod tests {
         // f (1) keeps int x (variable 0, a local: no offset) in a wasm
         // local: it takes 5, then 7.
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\t0\t1\tf\tx\t0\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:\n");
-        let r = [Record::Block { func: 1, n: 0 }, Record::Var { var: 0, value: 5 }, Record::Block { func: 1, n: 1 }, Record::Var { var: 0, value: 7 }];
+        let r = [Record::Block { func: 1, n: 0 }, Record::Var { var: 0, line: 0, value: 5 }, Record::Block { func: 1, n: 1 }, Record::Var { var: 0, line: 0, value: 7 }];
         let mut args = Args::default();
         args.push(0, &[64]);
         let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
         let mem = Mem(alloc::vec![0; 128]);
         let v = View { tables: &t, rec: &rec, now: &mem };
-        let x = |i| v.call_stack(i, None, &mem)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
+        let x = |i| v.call_stack(i, None, &mem, i)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
         assert_eq!((x(0), x(2), x(3)), (None, Some("5".into()), Some("7".into())));
     }
 
@@ -1199,7 +1201,7 @@ mod tests {
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
-        let lines: Vec<_> = v.call_stack(1, None, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
+        let lines: Vec<_> = v.call_stack(1, None, &Mem(Vec::new()), 1).iter().map(|f| (f.func.clone(), f.line)).collect();
         assert_eq!(lines, [("g".into(), Some(10)), ("f".into(), Some(2))]);
     }
 
@@ -1212,12 +1214,12 @@ mod tests {
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
-        let frames: Vec<_> = v.call_stack(1, None, &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
+        let frames: Vec<_> = v.call_stack(1, None, &Mem(Vec::new()), 1).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
         assert_eq!(frames, [("g".into(), Some(10), false), ("h".into(), Some(20), true), ("f".into(), Some(2), false)]);
         // (Line 2, where h is inlined, ran too: h's line 20 ran for it.)
         assert!(v.coverage("f.c", None).iter().any(|l| l.line == 2));
         // At record 0, its first line (nth 0): f at line 1, nothing inlined.
-        let first: Vec<_> = v.call_stack(0, Some(0), &Mem(Vec::new())).iter().map(|f| (f.func.clone(), f.line)).collect();
+        let first: Vec<_> = v.call_stack(0, Some(0), &Mem(Vec::new()), 0).iter().map(|f| (f.func.clone(), f.line)).collect();
         assert_eq!(first, [("f".into(), Some(1))]);
     }
 
