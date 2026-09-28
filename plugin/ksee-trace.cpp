@@ -403,10 +403,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     int k = size == 1 ? 0 : size == 2 ? 1 : size == 4 ? 2 : size == 8 ? 3 : -1;
     Value *line = B.getInt32(std::min(lineOf.lookup(I), (1u << 24) - 1));
     // (A copy, a value loaded and stored as it is, or a memcpy: where from,
-    // first. See the top.)
+    // first. See the top. Not a value stored back where it was loaded
+    // from: that says nothing of where it came from.)
     Value *from = nullptr;
     if (auto *S = dyn_cast<StoreInst>(I); S && isa<LoadInst>(S->getValueOperand()))
       from = cast<LoadInst>(S->getValueOperand())->getPointerOperand();
+    if (from == ptr)
+      from = nullptr;
     else if (auto *MT = dyn_cast<MemTransferInst>(I))
       from = MT->getRawSource();
     if (from)
