@@ -1005,11 +1005,11 @@ impl Types {
             }
             Kind::Pointer(to) => {
                 let p = mem.read_u32(addr);
-                // (A char *: and the string it points to, if it looks like one.)
+                // (A char *: and the string it points to, if it looks like one: "0x1d40130 → \"/sub\"", as any pointer's target.)
                 let text = if p != 0 && self.is_string(*to) { c_string(mem, p) } else { None };
                 o.value = Some(match text {
                     _ if p == 0 => "NULL".into(),
-                    Some(t) => format!("{p:#x} {t}"),
+                    Some(t) => format!("{p:#x} → {t}"),
                     None => format!("{p:#x}"),
                 });
                 let target = self.resolve(*to);
@@ -1232,7 +1232,7 @@ mod tests {
         m[4..8].copy_from_slice(&16u32.to_le_bytes()); // (to bytes that are no string)
         m[16] = 0xff;
         let value = |at| t.object(&Mem(m.clone()), "p", at, 2, 0).value.unwrap();
-        assert_eq!((value(0).as_str(), value(4).as_str()), ("0x8 \"tmp\"", "0x10"));
+        assert_eq!((value(0).as_str(), value(4).as_str()), ("0x8 → \"tmp\"", "0x10"));
     }
 
     #[test]
