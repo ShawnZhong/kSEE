@@ -86,11 +86,14 @@ selected call made, a row each, in order (`vfs_read's file->f_pos: 0 →
 26`, `nr_inodes: 11 → 12`, its own locals and frames said so, memory
 nothing names by its address), each a link, the one in effect at the
 cursor marked and the later ones dim. The Objects tab draws the same
-stores as the objects they changed: a box per object (its members
-written, from what to what), its pointers to the others as arrows (a
-kiocb's file, the file's inode, the inode's page), as memory was at the
-cursor; an object on the stack whose call has returned is gone
-(dashed); a box's title opens all of it, as the Stack's values are. The
+stores as the objects they changed, at the cursor: a box per object,
+each member the call writes as it is then (`f_pos = 18   was 0`; one
+written only later dim, with what it will be), the one the cursor last
+wrote marked (stepping shows each change as it is made), a member's
+writes on asking; its pointers to the others as arrows (a kiocb's file,
+the file's inode, the inode's page); a box's title opens all of it, as
+the Stack's values are. An object on the stack is there while its call
+runs; the others on asking. The
 Calls tab shows the calls the selected call made, in the order they were
 made, each with what it returned (`ksys_read = 26`, `lookup_fast = -2
 (ENOENT)`), inlined code among them (in italics, as the timeline and the

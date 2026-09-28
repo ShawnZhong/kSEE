@@ -159,7 +159,8 @@ pub struct Stored {
 /// name it (`what`, `kind`, `ty`, `id`, `addr`, `size`), its writes in
 /// order, and its pointers to the others (as memory is at the cursor, or
 /// for an object on the stack whose call has ended by then, as it ended:
-/// `ended`, that record).
+/// `ended`, that record). `life`: an object on the stack lives while its
+/// call runs (these records); None: all the recording (as far as it knows).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Node {
@@ -172,6 +173,7 @@ pub struct Node {
     pub writes: Vec<Change>,
     pub links: Vec<Link>,
     pub ended: Option<usize>,
+    pub life: Option<(usize, usize)>,
 }
 
 /// A pointer from a node's `member` to node `to` (an index), `off` bytes
@@ -776,7 +778,7 @@ impl View<'_> {
                 Some(n) => n.writes.push(s.write),
                 None => {
                     let ended = s.life.map(|l| l.1).filter(|&end| end < at);
-                    nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(), ended });
+                    nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(), ended, life: s.life });
                 }
             }
         }

@@ -1,26 +1,31 @@
 // The Objects: what the selected call (a syscall, or a call clicked in the
-// timeline) changed in the kernel's data, as a diagram (Machine.objects):
+// timeline) changed in the kernel's data, at the cursor (Machine.objects):
 // a box per object it wrote (named as the Stores name them: "vfs_read's
-// file", "current->files"), its members written, from what to what (the
-// write in effect at the cursor; later ones dim; each a link to that
-// moment), and its pointers to the other objects as arrows, as memory was
-// at the cursor. The Stores list the writes; this shows how the objects
-// hang together (a kiocb's file, the file's inode, the inode's page). An
-// object on the stack whose call has returned by the cursor is gone (its
-// slot another's): shown as it was then.
+// file", "current->files"), each member it writes as it is at the cursor
+// ("f_pos = 18", and what it was before the call: "was 0"; one the call
+// writes only later, dim, with what it will be), and its pointers to the
+// other objects as arrows (a kiocb's file, the file's inode, the inode's
+// page). The member the cursor last wrote is marked, and in view: stepping
+// shows each change as it is made. A member's writes on asking (each a
+// link to its moment); a box's title opens all of its object. An object
+// on the stack is there while its call runs, as on the Stack; the ones
+// gone (or not yet made) on asking.
 import { $, el } from "./dom.js";
 import { tree } from "./tree.js";
 
 export function objects(app) {
   const { m } = app;
   const body = $("objects");
-  let shown = null, last = null;
-  // (A box opened: all of its object, as the Stack's values are, a tree.)
+  let shown = null, last = null, gone = false;
+  // (Members whose writes are shown; a box opened: all of its object, as
+  // the Stack's values are, a tree.)
+  const writes = new Set();
   const st = { open: new Set(), last: new Map(), now: new Map() };
-  const { rows: fields } = tree(app, st, () => last && render(...last));
+  const redraw = () => last && render(...last);
+  const { rows: fields } = tree(app, st, redraw);
 
   // Draw for the selection at the cursor (only while the tab is shown:
-  // again as the cursor moves, the pointers being memory's then).
+  // again as the cursor moves).
   function draw() {
     if ($("right").dataset.tab !== "objects") return;
     const w = app.selection(), cur = app.time.cursor();
@@ -29,63 +34,84 @@ export function objects(app) {
     shown = key;
     $("objects-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): the objects it wrote, and how they point to each other.";
     if (!w) return body.replaceChildren();
-    render(m.objects(w.a, w.b, cur ?? w.b), cur ?? Infinity);
+    render(m.objects(w.a, w.b, cur ?? w.b), cur ?? w.b);
   }
 
   function render(nodes, cur) {
     last = [nodes, cur];
     st.last = st.now;
     st.now = new Map();
+    // (On the stack: there while its call runs.)
+    const live = (n) => !n.life || (n.life[0] <= cur && cur <= n.life[1]);
+    const away = nodes.filter((n) => !live(n)).length;
+    const shownAt = (k) => gone || live(nodes[k]);
     // (In the order the pointers lead: from each object nothing points to,
     // depth first; then any left.)
     const pointed = new Set(nodes.flatMap((n) => n.links.map((l) => l.to)));
     const order = [], seen = new Set();
     const visit = (k) => {
-      if (seen.has(k)) return;
+      if (seen.has(k) || !shownAt(k)) return;
       seen.add(k);
       order.push(k);
       nodes[k].links.forEach((l) => visit(l.to));
     };
     nodes.forEach((_, k) => pointed.has(k) || visit(k));
     nodes.forEach((_, k) => visit(k));
-    const boxes = order.map((k) => box(nodes[k], k, cur));
+    // (The write the cursor is at, or last passed: marked.)
+    const now = nodes.flatMap((n) => n.writes).filter((x) => x.i <= cur).reduce((a, x) => (!a || x.i > a.i ? x : a), null);
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.classList.add("arrows");
-    body.replaceChildren(el("div", { className: "dim head" }, `${nodes.length} object${nodes.length === 1 ? "" : "s"} written`), ...boxes, svg);
-    arrows(svg, nodes);
+    body.replaceChildren(el("div", { className: "dim head" }, `${order.length} object${order.length === 1 ? "" : "s"} written`,
+      away ? el("a", { textContent: gone ? ` · hide the ${away} not alive at the cursor` : ` · ${away} more on the stack, not alive at the cursor`,
+                       title: "objects on the stack of a call not running at the cursor (returned, or not called yet)", onclick: () => ((gone = !gone), redraw()) }) : ""),
+      ...order.map((k) => box(nodes[k], k, cur, now, live(nodes[k]), shownAt)), svg);
+    arrows(svg);
+    body.querySelector(".row.on")?.scrollIntoView({ block: "nearest" });
   }
 
-  // An object's box: its name and type, its members written (the write in
-  // effect at the cursor, else the first), its pointers to the others.
-  function box(n, k, cur) {
+  // An object's box: its name and type; each member it writes, as it is at
+  // the cursor; its pointers to the others.
+  function box(n, k, cur, now, alive, shownAt) {
     const byMember = new Map();
     for (const x of n.writes) (byMember.get(x.member) ?? byMember.set(x.member, []).get(x.member)).push(x);
     // (Not a whole aggregate's write, a memset: its members' say it.)
-    const rows = [...byMember].filter(([, xs]) => xs.some((x) => x.before !== "{...}" || x.after !== "{...}")).map(([member, xs]) => {
-      const done = xs.filter((x) => x.i <= cur), x = done.at(-1) ?? xs[0];
-      return el("div", { className: `row${done.length ? "" : " later"}${x.before === x.after ? " same" : ""}` },
-        el("a", { textContent: `${member || "(all of it)"}: ${x.before} → ${x.after}`, title: `go to this write${xs.length > 1 ? ` (${done.length} of ${xs.length} by the cursor)` : ""}`, onclick: () => app.time.go(x.i) }),
-        xs.length > 1 ? el("span", { className: "dim", textContent: ` ×${xs.length}` }) : null);
+    const members = [...byMember].filter(([, xs]) => xs.some((x) => x.before !== "{...}" || x.after !== "{...}"));
+    const rows = members.flatMap(([member, xs]) => {
+      const done = xs.filter((x) => x.i <= cur), key = `${n.addr}:${n.id}:${member}`, open = writes.has(key);
+      // (A scalar's own value: by its name, "pos".)
+      const name = member || n.what.split(/\W/).pop();
+      // (Written by the cursor: its value then, and what it was before;
+      // not yet: as it is, and what it will be.)
+      const text = done.length
+        ? [`${name} = ${done.at(-1).after}`, xs[0].before !== done.at(-1).after ? `was ${xs[0].before}` : ""]
+        : [`${name} = ${xs[0].before}`, `→ ${xs.at(-1).after} later`];
+      const row = el("div", { className: `row${done.length ? "" : " later"}${done.includes(now) ? " on" : ""}` },
+        el("a", { textContent: text[0], title: "go to its last write by the cursor (its first, if none yet)", onclick: () => app.time.go((done.at(-1) ?? xs[0]).i) }),
+        text[1] ? el("span", { className: "dim", textContent: `  ${text[1]}` }) : null,
+        el("a", { className: "count", textContent: `  ${xs.length} write${xs.length === 1 ? "" : "s"}`, title: open ? "fold its writes" : "its writes, each a link to its moment",
+                  onclick: () => (open ? writes.delete(key) : writes.add(key), redraw()) }));
+      if (!open) return [row];
+      return [row, el("ol", { className: "writes" }, ...xs.map((x) => el("li", { className: `${x.i > cur ? "later" : ""}${x === done.at(-1) ? " on" : ""}` },
+        el("a", { textContent: `${x.before} → ${x.after}`, title: "go to this write", onclick: () => app.time.go(x.i) }),
+        el("span", { className: "dim", textContent: ` in ${x.at?.func ?? "?"}` }))))];
     });
-    const links = n.links.map((l) => el("div", { className: "row link", dataset: { to: l.to } },
-      el("span", { textContent: `${l.member} →` })));
-    // (An object on the stack whose call has returned: gone, its slot
-    // another's; as it was when it went.)
+    const links = n.links.filter((l) => shownAt(l.to)).map((l) => el("div", { className: "row link", dataset: { to: l.to } }, el("span", { textContent: `${l.member} →` })));
     // (Its title opens it: all of it, as memory was at the cursor.)
     const path = `obj/${n.addr}/${n.id}`, open = st.open.has(path), all = [];
     if (open) fields(m.object_by_id(n.what, n.id, n.addr, 1)?.children ?? [], path, 0, all);
-    const toggle = () => (open ? st.open.delete(path) : st.open.add(path), render(...last));
-    return el("div", { className: `obj ${n.kind}${n.ended != null ? " ended" : ""}`, dataset: { k },
-                       title: n.ended != null ? "on the stack of a call that has returned by the cursor: as it was then" : "" },
+    const toggle = () => (open ? st.open.delete(path) : st.open.add(path), redraw());
+    const note = alive ? "" : n.life && cur < n.life[0] ? " · not made yet" : " · gone";
+    return el("div", { className: `obj ${n.kind}${alive ? "" : " ended"}`, dataset: { k },
+                       title: alive ? "" : "on the stack of a call not running at the cursor: as it was while it did" },
       el("div", { className: "title", onclick: toggle, title: open ? "fold it" : "all of it, as it was at the cursor" },
         el("span", { className: "tw", textContent: open ? "▾" : "▸" }), el("b", { textContent: n.what }),
-        el("span", { className: "dim", textContent: ` ${n.ty}${n.ended != null ? " · gone" : ""}` })),
+        el("span", { className: "dim", textContent: ` ${n.ty}${note}` })),
       ...rows, ...links, open ? el("table", { className: "objs" }, el("tbody", {}, ...all)) : null);
   }
 
   // The pointers, as arrows from a member's row to its object's title, in
   // the margin on the right (each further out, to be told apart).
-  function arrows(svg, nodes) {
+  function arrows(svg) {
     const top = body.getBoundingClientRect(), at = (e) => e.getBoundingClientRect();
     svg.setAttribute("width", body.scrollWidth);
     svg.setAttribute("height", body.scrollHeight);
