@@ -125,6 +125,7 @@ h2.tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
 /* (What comes only after the cursor: dim.) */
 tr.later { opacity: 0.45; }
 #objects .obj.ended { border-style: dashed; opacity: 0.75; }
+#objects .obj.later { opacity: 0.5; }
 #objects .obj .row.link span { color: var(--dim); }
 #objects .obj .row.more a { color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
 #objects .obj.flash { animation: flash 1s; }

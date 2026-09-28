@@ -163,6 +163,10 @@ pub struct Stored {
     /// records, its life.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub life: Option<(usize, usize)>,
+    /// How deep the call that names it is (the task's, 0; a global's, or
+    /// memory nothing names, u32::MAX): Objects comes in that order.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub depth: u32,
 }
 
 /// An object a span of records wrote (see View::objects): as the Stores
@@ -183,6 +187,8 @@ pub struct Node {
     pub writes: Vec<Change>,
     pub links: Vec<Link>,
     pub life: Option<(usize, usize)>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub depth: u32,
 }
 
 /// A pointer from a node's `member` to node `to` (an index); its value
@@ -820,17 +826,19 @@ impl View<'_> {
         // call's records: its slots are other calls' before and after). The
         // task first.)
         let task = self.rec.tasks.get(first).copied().unwrap_or(0);
-        let mut regions: Vec<(String, &'static str, u32, u32, u32, Option<(usize, usize)>)> = Vec::new();
+        let mut regions: Vec<(String, &'static str, u32, u32, u32, Option<(usize, usize)>, u32)> = Vec::new();
         let mut seen = alloc::collections::BTreeSet::new();
-        let mut add = |what: String, kind: &'static str, ty: u32, addr: u32, size: Option<u32>, call: Option<usize>| {
+        // (Named at record `by`: by the call there, its depth.)
+        let mut add = |what: String, kind: &'static str, ty: u32, addr: u32, size: Option<u32>, call: Option<usize>, by: Option<usize>| {
             let ty = types.resolve(ty);
             if addr != 0 && seen.insert((addr, ty, call)) {
                 let life = call.map(|c| (c, self.rec.calls.call_end(c).unwrap_or(usize::MAX)));
-                regions.push((what, kind, ty, addr, size.unwrap_or_else(|| types.size_of(ty)), life));
+                let depth = by.and_then(|i| self.rec.calls.call_at(i)).map_or(0, |c| c.depth);
+                regions.push((what, kind, ty, addr, size.unwrap_or_else(|| types.size_of(ty)), life, depth));
             }
         };
         if let Some(ty) = types.find(arch::TASK) {
-            add(arch::CURRENT.into(), "task", ty, task, None, None);
+            add(arch::CURRENT.into(), "task", ty, task, None, None, None);
             // (And what its pointer members point to, as the span ends:
             // current->files, ->fs, ->mm: "files->next_fd" through a local
             // the optimizer kept in a register is reached this way.)
@@ -838,7 +846,7 @@ impl View<'_> {
             if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
                 for mb in members.iter().filter(|mb| mb.bit_size == 0) {
                     if let Some(to) = types.struct_target(mb.ty) {
-                        add(format!("{}->{}", arch::CURRENT, mb.name), "object", to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None);
+                        add(format!("{}->{}", arch::CURRENT, mb.name), "object", to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None, None);
                     }
                 }
             }
@@ -866,23 +874,23 @@ impl View<'_> {
                     // (Its frame: up to its caller's, if the caller is known.)
                     let caller = calls.call_from(i).and_then(|c| c.parent).and_then(|p| args.get(calls.calls[p as usize].first));
                     if let Some((_, caller)) = caller && caller > frame {
-                        add(format!("{}'s frame", f.name), "frame", 0, frame, Some(caller - frame), Some(i));
+                        add(format!("{}'s frame", f.name), "frame", 0, frame, Some(caller - frame), Some(i), Some(i));
                     }
                     for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
                         let v = v as u32;
                         if let Some(to) = types.struct_target(*ty) {
-                            add(format!("{}'s {pname}", f.name), "object", to, v, None, frame_of(i, v));
+                            add(format!("{}'s {pname}", f.name), "object", to, v, None, frame_of(i, v), Some(i));
                         }
                     }
                     for (var, ty, off) in types.locals.get(&func).into_iter().flatten().filter_map(|(v, t, o)| Some((v, t, (*o)?))) {
-                        add(format!("{}'s {var}", f.name), "local", *ty, frame.wrapping_add(off), None, Some(i));
+                        add(format!("{}'s {var}", f.name), "local", *ty, frame.wrapping_add(off), None, Some(i), Some(i));
                         // (A local pointing at a struct: that too ("files->next_fd"
                         // through `struct files_struct *files = current->files`),
                         // where it points as the call ends.)
                         if let Some(to) = types.struct_target(*ty) {
                             let end = self.rec.calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
                             let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
-                            add(format!("{}'s {var}", f.name), "object", to, v, None, frame_of(i, v));
+                            add(format!("{}'s {var}", f.name), "object", to, v, None, frame_of(i, v), Some(i));
                         }
                     }
                 }
@@ -905,11 +913,11 @@ impl View<'_> {
                 .min_by_key(|r| r.4).cloned()
                 .or_else(|| global_at(addr).map(|(gaddr, size, name, ty)| {
                     let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
-                    (name.into(), if machine { "machine" } else { "global" }, types.resolve(ty), gaddr, size, None)
+                    (name.into(), if machine { "machine" } else { "global" }, types.resolve(ty), gaddr, size, None, u32::MAX)
                 }));
             out.push(match hit {
-                Some((what, kind, ty, base, size, life)) => Stored { what, kind, ty: types.name(ty), id: ty, addr: base, size, write: self.change(base, ty, i), life },
-                None => Stored { what: format!("{addr:#x}"), kind: "other", ty: String::new(), id: 0, addr, size: 0, write: self.change(addr, 0, i), life: None },
+                Some((what, kind, ty, base, size, life, depth)) => Stored { what, kind, ty: types.name(ty), id: ty, addr: base, size, write: self.change(base, ty, i), life, depth },
+                None => Stored { what: format!("{addr:#x}"), kind: "other", ty: String::new(), id: 0, addr, size: 0, write: self.change(addr, 0, i), life: None, depth: u32::MAX },
             });
         }
         // (And each variable kept in a wasm local, as the code sets it:
@@ -917,20 +925,21 @@ impl View<'_> {
         let mut before: BTreeMap<(usize, u32), String> = BTreeMap::new();
         for i in first..=last.min(records.len().saturating_sub(1)) {
             let Record::Var { var, value, .. } = records[i] else { continue };
-            let Some((c, v)) = calls.call_at(i).and_then(|c| Some((c.first, t.vars.get(&(c.func, var))?))) else { continue };
+            let Some((c, depth, v)) = calls.call_at(i).and_then(|c| Some((c.first, c.depth, t.vars.get(&(c.func, var))?))) else { continue };
             let Some(o) = self.var_object(v, value, self.now) else { continue };
             let after = o.value.clone().unwrap_or_default();
             let was = before.insert((c, var), after.clone()).unwrap_or_else(|| "(not set)".into());
             let at = self.rec.line_at(t, i).map(|s| self.line(&s));
             out.push(Stored { what: format!("{}'s {}", v.function, v.name), kind: "var", ty: o.ty, id: 0, addr: 0, size: 0,
-                              write: Change { i, member: String::new(), before: was, after, task: self.task(self.rec.tasks[i]), at }, life: None });
+                              write: Change { i, member: String::new(), before: was, after, task: self.task(self.rec.tasks[i]), at }, life: None, depth });
         }
         out.sort_by_key(|s| s.write.i);
         out
     }
 
     /// The objects records `first..=last` (a call's) wrote, as a graph: each
-    /// with its writes (the Stores', by object, in the order first written),
+    /// with its writes (the Stores', by object), in the order of the calls
+    /// that name them, the outer first (then the first written first),
     /// and its pointers to the others as memory was after record `at`
     /// (the cursor; an object on the stack, when its call ended if that
     /// was before): what the call changed in the kernel's data, and how it
@@ -942,9 +951,13 @@ impl View<'_> {
         for s in self.stores(first, last).into_iter().filter(|s| matches!(s.kind, "object" | "task" | "local" | "global") && s.size > 0) {
             match nodes.iter_mut().find(|n| n.addr == s.addr && n.id == s.id && n.writes[0].i >= s.life.map_or(0, |l| l.0)) {
                 Some(n) => n.writes.push(s.write),
-                None => nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(), life: s.life }),
+                None => nodes.push(Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, writes: alloc::vec![s.write], links: Vec::new(), life: s.life, depth: s.depth }),
             }
         }
+        // (In the order of the calls that name them, the outer first, as a
+        // call tree reads; within one call, the first written first. The
+        // task first; globals, and memory nothing names, last.)
+        nodes.sort_by_key(|n| n.depth);
         let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
         let links: Vec<Vec<Link>> = nodes.iter().enumerate().map(|(k, n)| {
             let mem = self.rec.memory_at(self.now, n.life.map_or(at, |l| l.1.min(at)));
