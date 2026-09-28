@@ -124,6 +124,7 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #stores li.on { background: var(--at); }
 #stores li.later { opacity: 0.45; }
 #stores li.same a { color: var(--dim); }
+#stores li.run { list-style: none; margin-left: -1.2em; }
 /* The Objects: a box per object the selected call wrote, at the cursor; its pointers to the others, links */
 #objects { padding: 0 10px 12px; }
 #objects .head { padding: 6px 2px 2px; font-size: 11.5px; }

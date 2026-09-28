@@ -85,7 +85,8 @@ click the value again to close. The Stores tab lists every store the
 selected call made, a row each, in order (`vfs_read's file->f_pos: 0 →
 26`, `nr_inodes: 11 → 12`, its own locals and frames said so, memory
 nothing names by its address), each a link, the one in effect at the
-cursor marked and the later ones dim. The Objects tab draws the same
+cursor marked and the later ones dim; three or more in a row to one
+object (a frame zeroed, a struct set up) are one row, open on asking. The Objects tab draws the same
 stores as the objects they changed, at the cursor: a box per object,
 each member the call writes as it is then (`f_pos = 18   was 0`; one
 written only later dim, with what it will be), the one the cursor last
