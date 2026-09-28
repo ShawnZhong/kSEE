@@ -485,7 +485,12 @@ impl View<'_> {
                 }
                 Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value)),
                 Record::Task { .. } => continue, // (the task's line is above)
-                Record::Var { var, value, .. } => ("var", format!("var {} = {}", self.var_at(i, var).map_or("?", |v| v.name.as_str()), num(value))),
+                // (As its type says: a pointer in hex, a string's text, an enumerator.)
+                Record::Var { var, value, .. } => {
+                    let v = self.var_at(i, var);
+                    let shown = v.and_then(|v| self.var_object(v, value, self.now)).and_then(|o| o.value).unwrap_or_else(|| num(value));
+                    ("var", format!("var {} = {shown}", v.map_or("?", |v| v.name.as_str())))
+                }
                 r @ Record::Compare { .. } => ("compare", format!("compare {}", compared(&r).unwrap_or_default())),
                 Record::Store { addr, size, old, from, .. } => {
                     let from = from.map_or(String::new(), |f| format!(" ← {f:#x}"));
