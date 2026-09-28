@@ -10,7 +10,7 @@
 // lead into the recording: `[label](2)` is call 2 (its recording
 // selected), `[label](2:vfs_read)` the first call of vfs_read in it (on
 // the call's task; `:any` on any task), the cursor there, and `:calls`
-// (or `:stores`, `:objects`, `:stack`, `:records`) shows that tab
+// (or `:stores`, `:objects`, `:stack`, `:trace`) shows that tab
 // (`:objects`: the function's call selected, as a double click on it in
 // the timeline does, at its return: what it changed); the first such
 // link is where the cursor starts; `[label](try:1)` runs the example's
@@ -229,9 +229,9 @@ export async function examples(app) {
       const tr = part.match(/^\[([^\]]*)\]\(try:(\d+)\)$/), prog = tr && t.ex.tries?.[Number(tr[2]) - 1];
       if (tr) return el("a", { className: "try", textContent: tr[1], title: prog ? `run this program instead:\n${prog}` : "no such try",
         onclick: prog ? () => go(t.ex, program(prog), true) : null });
-      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|calls|stores|objects|records))?\)$/);
+      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|calls|stores|objects|trace))?\)$/);
       if (link) {
-        const l = { j: Number(link[2]) - 1, func: link[3], any: !!link[4], tab: { calls: "trace" }[link[5]] ?? link[5] };
+        const l = { j: Number(link[2]) - 1, func: link[3], any: !!link[4], tab: link[5] };
         l.c = syscall(l.j);
         l.at = l.c && l.func ? m.first_call(l.func, l.c.first, l.c.last ?? m.records() - 1, l.any ? undefined : l.c.task.addr) : null;
         const found = l.c && (!l.func || l.at != null);
@@ -308,7 +308,7 @@ export async function examples(app) {
     return true;
   }
   // Step `j`'s syscall summary, if the recording still has it.
-  const syscall = (j) => t.done[j] && app.calls()[m.syscall_of(t.done[j].id)];
+  const syscall = (j) => t.done[j] && app.syscalls()[m.syscall_of(t.done[j].id)];
   // Call `j` picked: its recording selected.
   function pick(j) {
     if (t.steps[j]?.decl) return mark(j);

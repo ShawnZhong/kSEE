@@ -480,7 +480,7 @@ impl View<'_> {
         let mut out = Vec::new();
         let entry = t.find(arch::SYSCALL);
         let calls = self.rec.calls.stack_at(t, i, nth);
-        let args_of = |c: &stack::ChartCall| self.rec.args.get(c.first).map(|(w, frame)| (t.values(c.func, w), frame));
+        let args_of = |c: &stack::StackCall| self.rec.args.get(c.first).map(|(w, frame)| (t.values(c.func, w), frame));
         // (The entry's arguments, the syscall's: a wrapper's parameters are
         // those, as its SYSCALL_DEFINE line has them; its own DWARF one is regs.)
         let entry_raw = calls.iter().find(|c| Some(c.func) == entry).and_then(args_of).map(|(a, _)| a);
@@ -554,7 +554,7 @@ impl View<'_> {
     /// each inlined function (Some: its index, see inline_name) at its line
     /// there, then the call (None) at its own line (where the outermost
     /// inlined code is inlined, or the line it is at).
-    pub fn nest(&self, c: &stack::ChartCall) -> Vec<(Option<u32>, Option<Loc>)> {
+    pub fn nest(&self, c: &stack::StackCall) -> Vec<(Option<u32>, Option<Loc>)> {
         let mut at = c.step.map(|s| s.loc).or(self.tables.functions.get(&c.func).map(|f| f.loc));
         let mut out = Vec::new();
         for &(k, site) in self.chain(c.step.and_then(|s| s.inlined)) {

@@ -168,7 +168,7 @@ impl Calls {
     /// The call stack of the task running at record `i`, outermost first,
     /// each call at its last line; the innermost, if `nth`, at the nth of the
     /// lines record `i` runs (a LineStep's).
-    pub fn stack_at(&self, t: &Tables, i: usize, nth: Option<usize>) -> Vec<ChartCall> {
+    pub fn stack_at(&self, t: &Tables, i: usize, nth: Option<usize>) -> Vec<StackCall> {
         let Some(p) = self.place_at(i) else { return Vec::new() };
         let mut step = match (nth, self.stretch(t, i)) {
             (Some(k), Some((_, steps))) if k < steps.len() => Some(steps[k]),
@@ -177,7 +177,7 @@ impl Calls {
         let mut out = Vec::new();
         let mut k = Some(p.call);
         while let Some(c) = k.map(|k| &self.calls[k as usize]) {
-            out.push(ChartCall { func: c.func, first: c.first, step });
+            out.push(StackCall { func: c.func, first: c.first, step });
             step = self.places.get(c.site as usize).and_then(|p| self.line(t, p));
             k = c.parent;
         }
@@ -208,7 +208,7 @@ impl Calls {
     /// A stack chart: for each column (its first record, in `columns`, in
     /// order: see Recording::columns), the task running there and that
     /// task's call stack then, outermost first.
-    pub fn chart(&self, t: &Tables, tasks: &[u32], columns: &[usize]) -> Vec<(u32, Vec<ChartCall>)> {
+    pub fn chart(&self, t: &Tables, tasks: &[u32], columns: &[usize]) -> Vec<(u32, Vec<StackCall>)> {
         columns.iter().filter(|&&i| i < tasks.len()).map(|&i| (tasks[i], self.stack_at(t, i, None))).collect()
     }
 
@@ -245,7 +245,7 @@ impl Calls {
             // among the records up to the task's next block or return.)
             let base: usize = (0..p.seg).map(|k| t.stretch(c.func, p.n, k).len()).sum();
             // (And if the call returns there, its value: its last line's.)
-            let mut first_store: BTreeMap<u32, usize> = BTreeMap::new();
+            let mut first_at: BTreeMap<u32, usize> = BTreeMap::new();
             let mut ret = None;
             for (j, r) in records.iter().enumerate().skip(i + 1) {
                 if tasks[j] != tk {
@@ -255,7 +255,7 @@ impl Calls {
                     // (A line is at its first store, or comparison: the
                     // instruction that does what it says, its assignment or
                     // its test, as the debug info's key instructions have it.)
-                    Record::Store { line, .. } | Record::Compare { line, .. } => { first_store.entry(line).or_insert(j); }
+                    Record::Store { line, .. } | Record::Compare { line, .. } => { first_at.entry(line).or_insert(j); }
                     Record::Copy { .. } => {}
                     Record::Return { func, value } => {
                         ret = (func == c.func).then_some(value);
@@ -272,7 +272,7 @@ impl Calls {
                 if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
                     continue;
                 }
-                let at = if nth == 0 { i } else { first_store.get(&((base + nth) as u32)).copied().unwrap_or(i) };
+                let at = if nth == 0 { i } else { first_at.get(&((base + nth) as u32)).copied().unwrap_or(i) };
                 out.push(LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run, ret: None, callee: None });
             }
             if let Some(l) = out.last_mut().filter(|l| l.record == i) {
@@ -335,10 +335,10 @@ impl Calls {
     }
 }
 
-/// A call in a stack chart: `func` from record `first`, at `step` (its last
+/// A call on a stack (the Stack's, the chart's): `func` from record `first`, at `step` (its last
 /// line then, if known: with the functions it is inlined from).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ChartCall {
+pub struct StackCall {
     pub func: u32,
     pub first: usize,
     pub step: Option<Step>,
@@ -456,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn lines_are_at_their_first_store() {
+    fn lines_are_at_their_first_at() {
         // f's block 0 runs lines 1, 2, 3, then calls g (line 10), then line 4;
         // line 2 stores twice, line 4 once: a line is at its first store,
         // but a stretch's first line at the block, or the return, itself.

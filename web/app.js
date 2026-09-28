@@ -9,9 +9,9 @@ import { source } from "./source.js";
 import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
-import { trace } from "./trace.js";
+import { callTree } from "./calls.js";
 import { result } from "./args.js";
-import { records } from "./records.js";
+import { trace } from "./trace.js";
 import { stores } from "./stores.js";
 import { objects } from "./objects.js";
 
@@ -109,7 +109,7 @@ export function app(m) {
     const f = stack.select(first, inlined);
     if (f) a.selectFrame(f);
   };
-  a.calls = () => calls;
+  a.syscalls = () => calls;
   // The selection (time.home(): its records and task), with a key that
   // changes with it or with the snapshot (the newest record's id: indexes
   // move): what a panel made of it holds until the key changes.
@@ -145,10 +145,10 @@ export function app(m) {
     L.pos = null;
     chosen = null;
     view(at);
-    a.trace?.mark();
+    a.callTree?.mark();
     a.stores?.mark();
     a.objects?.mark();
-    a.records?.mark();
+    a.trace?.mark();
     badge();
   };
   // The view follows the pointer over the timeline: record `i` shown as if
@@ -166,18 +166,18 @@ export function app(m) {
       stack.peeking(i != null);
       if (at) view(at, i == null ? chosen : frame);
       // (The Calls, Stores and Trace tabs follow too; back to the cursor's with null.)
-      a.trace?.mark(to);
+      a.callTree?.mark(to);
       a.stores?.mark(to);
-      a.records?.mark(to);
+      a.trace?.mark(to);
     });
   };
+  a.callTree = callTree(a);
   a.trace = trace(a);
-  a.records = records(a);
   a.stores = stores(a);
   a.objects = objects(a);
-  a.outlined = () => (a.trace.draw(), a.stores.draw(), a.objects.draw(), a.records.draw());
+  a.outlined = () => (a.callTree.draw(), a.stores.draw(), a.objects.draw(), a.trace.draw());
   // (The Records follow the cursor, drawn when the tab is looked at.)
-  document.querySelector('h2.tabs a[data-tab="records"]').addEventListener("click", () => a.records.draw());
+  document.querySelector('h2.tabs a[data-tab="trace"]').addEventListener("click", () => a.trace.draw());
   document.querySelector('h2.tabs a[data-tab="objects"]').addEventListener("click", () => a.objects.draw());
   examples(a);
 
@@ -230,10 +230,10 @@ export function app(m) {
   function showLine(step) {
     chosen = null;
     time.mark(step.at);
-    a.trace?.mark();
+    a.callTree?.mark();
     a.stores?.mark();
     a.objects?.mark();
-    a.records?.mark();
+    a.trace?.mark();
     memoryAt(step.at);
     const at = m.at(step.i);
     // (Its note: which turn of a loop it is, the call running it again;

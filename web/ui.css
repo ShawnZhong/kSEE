@@ -79,7 +79,7 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .cm-editor a.stored { cursor: pointer; }
 .cm-editor .note { color: var(--dim); font-style: italic; margin-left: 3ch; white-space: nowrap; }
 .cm-editor a.stored:hover { color: var(--accent); }
-#trace .ret { color: var(--dim); }
+#calls .ret { color: var(--dim); }
 .cm-cursorGutter { width: 14px; }
 .gl-cursor { display: block; text-align: center; font-size: 11px; color: var(--run); }
 .gl-cursor::before { content: "▶"; }
@@ -107,16 +107,16 @@ table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-famil
 
 /* The right column's tabs (Stack, Trace): the pane chosen */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
-#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="trace"] .pane[data-tab="trace"], #right[data-tab="stores"] .pane[data-tab="stores"], #right[data-tab="objects"] .pane[data-tab="objects"], #right[data-tab="records"] .pane[data-tab="records"] { display: flex; }
+#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="calls"] .pane[data-tab="calls"], #right[data-tab="stores"] .pane[data-tab="stores"], #right[data-tab="objects"] .pane[data-tab="objects"], #right[data-tab="trace"] .pane[data-tab="trace"] { display: flex; }
 h2.tabs { gap: 0; padding: 0 4px; }
 h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
-#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="stores"] a[data-tab="stores"], #right[data-tab="objects"] a[data-tab="objects"], #right[data-tab="records"] a[data-tab="records"] { color: var(--fg); border-bottom-color: var(--accent); }
+#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="calls"] a[data-tab="calls"], #right[data-tab="stores"] a[data-tab="stores"], #right[data-tab="objects"] a[data-tab="objects"], #right[data-tab="trace"] a[data-tab="trace"] { color: var(--fg); border-bottom-color: var(--accent); }
 
 /* The Trace: the tree of calls, the one the cursor is in marked */
 /* The Stack: room above a selected call for what it calls (callstack.js focus) */
 #stack .spacer { display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; color: var(--dim); font-size: 11px; font-style: italic; box-sizing: border-box; }
-#trace .head { padding: 6px 12px 2px; font-size: 11.5px; }
+#calls .head { padding: 6px 12px 2px; font-size: 11.5px; }
 /* The Stores: every store the selected call made, a row each, in order; the write in effect at the cursor marked, later ones dim */
 #stores .head { padding: 6px 12px 2px; font-size: 11.5px; }
 #stores ol { margin: 2px 0; padding: 0 12px 4px 30px; font: 11px/1.5 var(--mono); }
@@ -147,25 +147,25 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #objects .obj.flash { animation: flash 1s; }
 @keyframes flash { from { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: 0 0 0 3px transparent; } }
 #stores .note { padding: 6px 12px; font-size: 11px; }
-#trace a.inl { font-style: italic; }
-#trace ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }
-#trace ul.tree { padding: 0 12px 8px; }
-#trace li { margin: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#trace li.on > a.mono { background: var(--at); border-radius: 2px; }
-#trace a.tw { color: var(--dim); display: inline-block; width: 1.1em; }
-#trace ul.tree > li > ul, #trace li > ul { padding-left: 16px; }
+#calls a.inl { font-style: italic; }
+#calls ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }
+#calls ul.tree { padding: 0 12px 8px; }
+#calls li { margin: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#calls li.on > a.mono { background: var(--at); border-radius: 2px; }
+#calls a.tw { color: var(--dim); display: inline-block; width: 1.1em; }
+#calls ul.tree > li > ul, #calls li > ul { padding-left: 16px; }
 /* The Records: the raw trace, a virtual list, a row a record */
-#records { position: relative; overflow-y: auto; }
-#records .raw { position: relative; font-size: 11px; }
-#records .rows { position: absolute; left: 0; right: 0; }
-#records .row { height: 18px; line-height: 18px; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-#records .row > span:first-child { display: inline-block; width: 5em; text-align: right; margin-right: 8px; }
-#records .row:hover { background: var(--sel); }
-#records .row.on { background: var(--at); }
-#records .row.call > span:last-child { color: var(--fg); font-weight: 600; }
-#records .row.store > span:last-child { color: var(--accent); }
-#records .row.return > span:last-child { color: var(--kw); }
-#records .row.task > span:last-child { color: var(--run); }
+#trace { position: relative; overflow-y: auto; }
+#trace .raw { position: relative; font-size: 11px; }
+#trace .rows { position: absolute; left: 0; right: 0; }
+#trace .row { height: 18px; line-height: 18px; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+#trace .row > span:first-child { display: inline-block; width: 5em; text-align: right; margin-right: 8px; }
+#trace .row:hover { background: var(--sel); }
+#trace .row.on { background: var(--at); }
+#trace .row.call > span:last-child { color: var(--fg); font-weight: 600; }
+#trace .row.store > span:last-child { color: var(--accent); }
+#trace .row.return > span:last-child { color: var(--kw); }
+#trace .row.task > span:last-child { color: var(--run); }
 
 /* A value's writes, and what a call changed: rows under the value, the call */
 table.objs tr.history td { white-space: normal; font-size: 11px; background: var(--bg); padding: 2px 8px 4px; }

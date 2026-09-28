@@ -79,10 +79,10 @@ Rust does the work: JS only lays it out.
 | source.js | the source at the cursor (CodeMirror): lines that ran, the function, the cursor's line's values at its end, what each line stored so far at its end (a link to the store), hover values, definitions |
 | callstack.js | the Stack: calls with arguments and locals, the task (current); the right column's tabs |
 | tree.js | values as trees (the Stack's): pointers open into what they point to, structs into their fields; who last wrote a value; a value's writes, a row under it |
-| records.js | the Trace tab: the raw trace, a line a record (what the views are built from) |
+| trace.js | the Trace tab: the raw trace, a line a record (what the views are built from) |
 | stores.js | the Stores: every store the selected call made, a row each in order, each a link; the store at the cursor marked |
 | objects.js | the Objects: the objects the selected call wrote as boxes, at the cursor (each member it writes as it is then, the one last written marked; its writes on asking), their pointers to each other as links (`Machine.objects`), all their fields on asking; those on the stack while their call runs |
-| trace.js | the Calls: the calls the selected call made, in order, each with what it returned, inlined code among them (a chain of single inlined calls on one row); ▸ opens a call's own calls |
+| calls.js | the Calls: the calls the selected call made, in order, each with what it returned, inlined code among them (a chain of single inlined calls on one row); ▸ opens a call's own calls |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature |
 | args.js | a program's line: `name = call(args)`, `tid: call(args)` (the arguments themselves are ksee-core's program.rs: `Machine.arg`); or a variable's declaration (`Machine.declare`) |

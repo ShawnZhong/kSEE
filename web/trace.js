@@ -1,97 +1,66 @@
-// The Calls: the selected call (a syscall, or a call clicked in the
-// timeline) as a tree of every call it made, in the order they were made,
-// with the code inlined into a call as calls of its own, as the timeline
-// and the Stack show it (Machine.call_tree). Its direct calls to begin
-// with (and on down a chain of single calls); ▸ opens a call's own calls,
-// for the detail; the head opens all, closes all, or opens the way to the
-// call the cursor is in ("here"). Each call is a link to
-// its first record (hover: how many records it took), and the call the
-// cursor is in is marked. Inlined code that only inlines one more
-// function is one row with it (set_bit → arch_set_bit → …: the kernel's
-// layers of helpers). What a syscall did, readable.
+// The Trace tab: the whole raw trace, a line a record, as the recording has
+// them (a call with its arguments, a block, a store, a return, a task
+// switch): what every other view is built from, for checking them and
+// for seeing what the compiler recorded. A virtual list: the rows in view
+// are built (Machine.raw), the rest is height. The cursor's row is marked
+// in place, and scrolled to only when it is out of view; click a row to
+// go there.
 import { $, el } from "./dom.js";
-import { result } from "./args.js";
+
+const ROW = 18, OVER = 30; // px a row; rows built beyond the view
 
 export function trace(app) {
   const { m } = app;
-  const { fn, iname } = app;
   const body = $("trace");
-  // The calls opened (by their first record): their calls shown. (A chain
-  // of single calls opens by itself: the spine of a syscall shows at once.)
-  const opened = new Set();
-  let shown = null, tree = [], total = 1, count = 0;
+  const list = el("div", { className: "raw mono" }), rows = el("div", { className: "rows" });
+  list.append(rows);
+  body.replaceChildren(list);
+  body.onscroll = () => fill();
+  let built = [-1, -1], n = 0, snapshot = null, marked = null;
 
-  // Draw for the selection (again only if it, or the snapshot, changed).
+  // Redraw for the recording (its count changed: a new one, or grown).
   function draw() {
-    const w = app.selection(), key = w?.key ?? null;
-    if (key === shown) return;
-    shown = key;
-    opened.clear();
-    $("trace-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): the calls it made, in order.";
-    if (!w) return body.replaceChildren();
-    const task = w.task ?? m.at(w.a)?.task.addr ?? 0;
-    tree = m.call_tree(w.a, w.b, task);
-    total = w.b - w.a + 1;
-    const n = (nodes) => nodes.reduce((a, x) => a + 1 + n(x.calls), 0);
-    count = n(tree);
-    for (let nodes = tree; nodes.length === 1 && nodes[0].calls.length; nodes = nodes[0].calls) opened.add(nodes[0].first);
-    render();
-  }
-
-  // Every call with calls, and the ones on the way to record `i`.
-  const withCalls = (nodes, out = []) => (nodes.forEach((n) => n.calls.length && (out.push(n.first), withCalls(n.calls, out))), out);
-  const wayTo = (nodes, i, out = []) => {
-    const n = nodes.find((n) => i >= n.first && i <= n.last);
-    return n ? (n.calls.length && out.push(n.first), wayTo(n.calls, i, out)) : out;
-  };
-  function render() {
-    const verb = (text, title, act) => el("a", { textContent: text, title, onclick: () => (act(), render()) });
-    body.replaceChildren(el("div", { className: "dim head" }, `${count} call${count === 1 ? "" : "s"} · `,
-      verb("open all", "every call's calls shown", () => withCalls(tree).forEach((f) => opened.add(f))), " · ",
-      verb("close all", "the direct calls only", () => opened.clear()), " · ",
-      verb("here", "the way to the call the cursor is in, and no more", () => (opened.clear(), wayTo(tree, app.time.cursor() ?? -1).forEach((f) => opened.add(f))))),
-      el("ul", { className: "tree" }, ...tree.map(item)));
-    mark();
-  }
-
-  // A call: ▸ for its calls, its name (a link; inlined code in italics),
-  // and, inlined code with one inlined call and nothing else, that call
-  // on the same row (→), down the chain.
-  function item(n) {
-    const names = [...name(n)];
-    let last = n;
-    while (last.inlined && last.calls.length === 1 && last.calls[0].inlined) {
-      last = last.calls[0];
-      names.push(" → ", ...name(last));
+    const k = m.records(), id = k ? m.record_id(k - 1) : null;
+    if (id !== snapshot) {
+      snapshot = id;
+      n = k;
+      list.style.height = `${n * ROW}px`;
+      built = [-1, -1];
+      $("trace-note").textContent = n ? `the trace: ${n} records` : "The raw trace: no recording yet.";
     }
-    const open = opened.has(last.first);
-    return el("li", { dataset: { first: n.first, last: n.last } },
-      el("a", { className: "tw", textContent: last.calls.length ? (open ? "▾" : "▸") : "", title: open ? "fold its calls away" : "its calls",
-                onclick: () => (open ? opened.delete(last.first) : opened.add(last.first), render()) }),
-      ...names, last.calls.length && open ? el("ul", {}, ...last.calls.map(item)) : null);
-  }
-  // (The name, a link; and what it returned: "= 26", "= -2 (ENOENT)".)
-  function name(n) {
-    const f = n.inlined ? null : fn(n.func), pct = Math.round((100 * n.records) / total);
-    const a = el("a", { className: n.inlined ? "mono inl" : "mono", textContent: n.inlined ? iname(n.func) : f?.name ?? "?", onclick: () => app.goCall(n.first),
-      title: `${n.inlined ? "inlined code (no call): " : `${f?.file ?? ""}:${f?.line ?? ""}: `}${n.records} record${n.records === 1 ? "" : "s"}${pct >= 1 ? ` (${pct}% of the selection)` : ""}, ${n.calls.length} call${n.calls.length === 1 ? "" : "s"}; go there` });
-    return n.ret == null ? [a] : [a, el("span", { className: "ret mono", textContent: ` = ${result(n.ret, app.consts())}` })];
+    if ($("right").dataset.tab !== "trace") return;
+    fill();
+    mark(undefined, true);
   }
 
-  // The cursor moved: the innermost call shown that it is in, marked.
-  function mark(i) {
+  // Build the rows for the records in view (and a margin), if not built.
+  function fill() {
+    if (!n) return rows.replaceChildren();
+    const from = Math.max(0, Math.floor(body.scrollTop / ROW) - OVER);
+    const to = Math.min(n - 1, Math.ceil((body.scrollTop + body.clientHeight) / ROW) + OVER);
+    if (from >= built[0] && to <= built[1]) return;
+    built = [from, to];
+    const cur = app.time.cursor();
+    rows.style.top = `${from * ROW}px`;
+    rows.replaceChildren(...m.raw(from, to).map(([i, kind, text]) => el("div", {
+      className: `row ${kind}${i === cur ? " on" : ""}`, dataset: { i },
+      onclick: () => app.time.go(i) },
+      el("span", { className: "dim", textContent: i }), el("span", { textContent: text }))));
+    marked = cur;
+  }
+
+  // The cursor moved: its row marked; scrolled into view if out of it.
+  function mark(i, force = false) {
     const cur = i ?? app.time.cursor();
-    body.querySelector("li.on")?.classList.remove("on");
-    if (cur == null) return;
-    let best = null;
-    for (const li of body.querySelectorAll("li[data-first]")) {
-      const first = Number(li.dataset.first), last = Number(li.dataset.last);
-      if (cur >= first && cur <= last && (!best || first >= Number(best.dataset.first))) best = li;
+    if ($("right").dataset.tab !== "trace" || !n) return;
+    if (cur != null && (cur * ROW < body.scrollTop || (cur + 1) * ROW > body.scrollTop + body.clientHeight)) {
+      body.scrollTop = cur * ROW - body.clientHeight / 2;
+      fill();
     }
-    if (best) {
-      best.classList.add("on");
-      if ($("right").dataset.tab === "trace") best.scrollIntoView({ block: "nearest" });
-    }
+    if (cur === marked && !force) return;
+    rows.querySelector(".row.on")?.classList.remove("on");
+    rows.querySelector(`.row[data-i="${cur}"]`)?.classList.add("on");
+    marked = cur;
   }
   return { draw, mark };
 }

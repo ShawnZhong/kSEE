@@ -91,7 +91,7 @@ export function callstack(app) {
   function show(i, step, task) {
     s.last = s.now;
     s.task = task ?? null;
-    app.trace?.mark();
+    app.callTree?.mark();
     // (At a line step: the stack as that line runs; see Machine.call_stack.)
     const frames = i === undefined ? [] : m.call_stack(i ?? undefined, step?.nth);
     s.frames = frames;
