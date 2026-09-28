@@ -850,29 +850,18 @@ impl View<'_> {
     }
 
     /// The lines of `file` that code ran, in syscall `n` (or the whole
-    /// recording), with how often (the most of the blocks running it).
-    /// Lines inlined into a block are its too, and so are the lines they
-    /// are inlined at (`x = helper();` with helper inlined runs no code of
-    /// its own line's: its callee's lines run in its place).
+    /// recording), with how often (the most of the blocks running it): the
+    /// lines each block runs (Tables::runs: inlined code's, and where it is
+    /// inlined, too).
     pub fn coverage(&self, file: &str, n: Option<usize>) -> Vec<LineCount> {
         let t = self.tables;
         let counts = self.rec.block_counts(n);
         let files: Vec<u32> = (0..t.files.len() as u32).filter(|&k| t.files[k as usize] == file).collect();
         let mut lines: BTreeMap<u32, u64> = BTreeMap::new();
         for (&(f, b), &c) in counts.iter().filter(|(_, c)| **c > 0) {
-            let Some(&l) = t.blocks.get(&(f, b)) else { continue };
-            let mut mark = |loc: Loc| {
-                if files.contains(&loc.file) {
-                    let e = lines.entry(loc.line).or_default();
-                    *e = (*e).max(c);
-                }
-            };
-            match t.lines.get(&(f, b)) {
-                Some(segs) => segs.iter().flatten().for_each(|s| {
-                    mark(s.loc);
-                    self.chain(s.inlined).iter().for_each(|&(_, site)| mark(site));
-                }),
-                None => mark(l),
+            for loc in t.runs(f, b).filter(|l| files.contains(&l.file)) {
+                let e = lines.entry(loc.line).or_default();
+                *e = (*e).max(c);
             }
         }
         lines.into_iter().map(|(line, count)| LineCount { line, count }).collect()

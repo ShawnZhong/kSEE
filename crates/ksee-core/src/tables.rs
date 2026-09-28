@@ -245,6 +245,22 @@ impl Tables {
         }
     }
 
+    /// Every line block `n` of `func` runs: its lines' own, and the lines
+    /// the code of each is inlined at (`x = helper();`, helper inlined, runs
+    /// no code of its own line's: the helper's lines run in its place; the
+    /// debug info's inline sites say where). What coverage counts, and what
+    /// "run to a line" looks for.
+    pub fn runs(&self, func: u32, n: u32) -> impl Iterator<Item = Loc> + '_ {
+        let own = match self.lines.get(&(func, n)) {
+            Some(segs) => segs.iter().flatten().copied().collect(),
+            None => self.blocks.get(&(func, n)).map(|&loc| Step { loc, inlined: None }).into_iter().collect::<Vec<_>>(),
+        };
+        own.into_iter().flat_map(move |s| {
+            let sites = s.inlined.and_then(|k| self.inlines.get(k as usize)).map_or(&[][..], Vec::as_slice);
+            core::iter::once(s.loc).chain(sites.iter().map(|&(_, site)| site))
+        })
+    }
+
     /// Stretch `seg` of those lines (none past the last).
     pub fn stretch(&self, func: u32, n: u32, seg: u32) -> alloc::borrow::Cow<'_, [Step]> {
         use alloc::borrow::Cow;

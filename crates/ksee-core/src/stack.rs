@@ -262,6 +262,10 @@ impl Calls {
                 }
             }
             for (nth, s) in steps.iter().enumerate() {
+                // (Code with no line, the compiler's own: no step.)
+                if s.loc.line == 0 {
+                    continue;
+                }
                 if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
                     continue;
                 }
