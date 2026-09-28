@@ -43,7 +43,9 @@ export function tree(app, st, redraw) {
       const e = o.name.startsWith("[") ? pre.replace(/(\.|->)$/, "") + o.name : pre + o.name;
       st.now.set(p, value);
       const changed = st.last.has(p) && st.last.get(p) !== value;
-      out.push(el("tr", { className: changed ? "changed" : "" },
+      // (One with no value yet, or none the recording has: dim.)
+      const none = /^\((not |optimized out)/.test(value);
+      out.push(el("tr", { className: [changed ? "changed" : "", none ? "none" : ""].join(" ").trim() },
         // (Its name, or ▸: open it, or fold it.)
         el("td", { className: `fname${can ? " opens" : ""}`, style: `padding-left:${10 + depth * 14}px`,
                    onclick: can ? () => toggle(st.open, p) : null },

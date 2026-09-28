@@ -92,6 +92,7 @@ table.objs tr:hover { background: var(--sel); }
 table.objs td.fval { color: var(--accent); }
 table.objs td.ftype { color: var(--dim); }
 table.objs tr.changed td { background: var(--chg); }
+table.objs tr.none td { color: var(--dim); }
 table.objs td.fname.opens { cursor: pointer; }
 /* (A value's writes: a link at its row's end, on hover, or while open.) */
 table.objs a.hist { margin-left: 8px; font-family: system-ui, sans-serif; font-size: 10.5px; visibility: hidden; }
