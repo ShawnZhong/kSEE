@@ -116,7 +116,7 @@ h2.tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
 #objects { padding: 0 10px 12px; }
 #objects .head { padding: 6px 2px 2px; font-size: 11.5px; }
 #objects .obj { margin: 8px 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font: 11px/1.5 var(--mono); }
-#objects .obj .title { padding: 3px 8px; border-bottom: 1px solid var(--line); background: var(--sel); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#objects .obj .title { padding: 3px 8px; border-bottom: 1px solid var(--line); background: var(--sel); overflow-wrap: anywhere; }
 #objects .obj.task .title, #objects .obj.global .title { background: var(--at); }
 #objects .obj tr { cursor: pointer; }
 #objects .obj tr:hover td { background: var(--sel); }
