@@ -339,7 +339,7 @@ impl Types {
                 let mut buf = alloc::vec![0u8; (*count).min(256) as usize];
                 mem.read(addr, &mut buf);
                 let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-                let _ = write!(out, "{:?}", String::from_utf8_lossy(&buf[..len]));
+                out.push_str(&quote(&buf[..len]));
             }
             Kind::Array { .. } | Kind::Struct(_) | Kind::Union(_) => out.push_str("{...}"),
             Kind::Func => out.push_str("<function>"),
@@ -442,6 +442,28 @@ impl Types {
 
 fn or_anon(name: &str) -> &str {
     if name.is_empty() { "<anon>" } else { name }
+}
+
+/// Bytes as a C string literal: text as text, the rest escaped (\n, \t,
+/// \", \\, \0, \xHH); past 64, "…".
+pub fn quote(b: &[u8]) -> String {
+    let mut s = String::from("\"");
+    for &c in b.iter().take(64) {
+        match c {
+            b'\n' => s.push_str("\\n"),
+            b'\t' => s.push_str("\\t"),
+            b'"' => s.push_str("\\\""),
+            b'\\' => s.push_str("\\\\"),
+            0 => s.push_str("\\0"),
+            0x20..0x7f => s.push(c as char),
+            _ => s.push_str(&format!("\\x{c:02x}")),
+        }
+    }
+    s.push('"');
+    if b.len() > 64 {
+        s.push('…');
+    }
+    s
 }
 
 #[cfg(test)]

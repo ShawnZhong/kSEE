@@ -145,6 +145,13 @@
   kipos?.querySelector("a.hist")?.click(); await sleep(100);
   r.objects = [kipos && [...kipos.cells].map((c) => c.textContent.trim()).join(" "), document.querySelector("#objects tr.history")?.innerText.replace(/\s+/g, " ").slice(0, 80)];
   if (!/^ki_pos \d+ loff_t/.test(r.objects[0] ?? "") || !/^\d+ writes? /.test(r.objects[1] ?? "")) throw new Error("objects: " + JSON.stringify(r.objects));
+  // (And they follow the timeline's pointer as the Stack does: another moment, others written so far; back on leaving.)
+  const head = () => document.querySelector("#objects .head")?.textContent, chartBox = $("chart").getBoundingClientRect();
+  const still = head();
+  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: chartBox.left + 2, clientY: chartBox.bottom - 5 })); await sleep(300);
+  r.objects.push(head());
+  $("chart").dispatchEvent(new PointerEvent("pointerleave")); await sleep(300);
+  if (r.objects.at(-1) === still || head() !== still) throw new Error("objects follow the pointer: " + JSON.stringify([still, r.objects.at(-1), head()]));
   ksee.tab("stack");
   ksee.select(read); ksee.time.go(before); // (as it was)
   // (At a store: its line in the source says what it stored, at its end.)

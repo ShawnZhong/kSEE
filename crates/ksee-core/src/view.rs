@@ -1124,8 +1124,7 @@ fn c_string(mem: &dyn Memory, p: u32) -> Option<String> {
     if text.is_empty() || !text.iter().all(|&c| (0x20..0x7f).contains(&c) || c == b'\n' || c == b'\t') {
         return None;
     }
-    let s = format!("{:?}", String::from_utf8_lossy(text));
-    Some(if n > 64 { s + "…" } else { s })
+    Some(crate::types::quote(&buf[..n]))
 }
 
 #[cfg(test)]

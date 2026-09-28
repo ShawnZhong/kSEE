@@ -18,11 +18,13 @@ export function tasks(app) {
   const { rows, moved } = tree(app, st, redraw);
   const toggle = (set, p) => () => (set.has(p) ? set.delete(p) : set.add(p), redraw());
 
-  // Draw at the cursor (only while the tab is shown: again as it moves).
-  function draw() {
+  // Draw at record `cur`: the moment the page shows (the cursor, or the
+  // pointer's over the timeline; only while the tab is shown: again as it
+  // moves).
+  function draw(cur = app.time.cursor()) {
     if ($("right").dataset.tab !== "tasks") return;
     // (Again for another moment, or another recording: a snapshot.)
-    const cur = app.time.cursor(), n = m.records(), key = `${cur}:${n ? m.record_id(n - 1) : ""}`;
+    const n = m.records(), key = `${cur}:${n ? m.record_id(n - 1) : ""}`;
     if (key === shown) return;
     // (Another moment: what changed since, marked; not on a redraw.)
     if (key !== moment) (moved(), (moment = key));
@@ -55,5 +57,5 @@ export function tasks(app) {
     redraw();
   }
 
-  return { draw, mark: draw, open };
+  return { draw: () => draw(), mark: (i) => draw(i ?? app.time.cursor()), open };
 }

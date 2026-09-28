@@ -164,8 +164,7 @@ export function app(m) {
       const step = i == null && !chosen && L.pos != null ? steps()[L.pos] : null;
       if (step) showLine(step);
       else if (at) view(at, i == null ? chosen : frame);
-      // (The Trace follows too, back to the cursor's with null; the other
-      // tabs stay at the cursor.)
+      // (The tabs follow too, back to the cursor's with null.)
       marks(to);
     });
   };

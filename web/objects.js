@@ -23,11 +23,12 @@ export function objects(app) {
   const redraw = () => last && render(...last);
   const { rows: fields, moved } = tree(app, st, redraw);
 
-  // Draw for the selection at the cursor (only while the tab is shown:
-  // again as the cursor moves).
-  function draw() {
+  // Draw for the selection at record `cur`: the moment the page shows (the
+  // cursor, or the pointer's over the timeline; only while the tab is
+  // shown: again as it moves).
+  function draw(cur = app.time.cursor()) {
     if ($("right").dataset.tab !== "objects") return;
-    const w = app.selection(), cur = app.time.cursor();
+    const w = app.selection();
     const key = w ? `${w.key}:${cur}` : null;
     if (key === shown) return;
     // (Another selection, or recording: its boxes open to what it wrote again.)
@@ -53,7 +54,7 @@ export function objects(app) {
     // (The write the cursor is at, or last passed: marked.)
     const now = nodes.flatMap((n) => n.writes).filter((x) => x.i <= cur).reduce((a, x) => (!a || x.i > a.i ? x : a), null);
     body.replaceChildren(el("div", { className: "dim head" }, `${order.length} object${order.length === 1 ? "" : "s"} written${gone ? "" : " so far"}`,
-      away ? el("a", { textContent: gone ? ` · only those written so far` : ` · ${away} more, written later or not alive at the cursor`,
+      away ? el("a", { textContent: gone ? ` · only those written so far` : ` · ${away} more, written later or not alive then`,
                        title: "objects the call writes after the cursor, and objects on the stack of a call not running at the cursor (returned, or not called yet)",
                        onclick: () => ((gone = !gone), redraw()) }) : ""),
       ...order.map((k) => box(nodes[k], nodes, k, cur, now, live(nodes[k]), shownAt)));
@@ -113,6 +114,5 @@ export function objects(app) {
     b.classList.add("flash");
   }
 
-  const mark = () => draw();
-  return { draw, mark };
+  return { draw: () => draw(), mark: (i) => draw(i ?? app.time.cursor()) };
 }

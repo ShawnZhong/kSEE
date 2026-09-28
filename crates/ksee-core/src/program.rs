@@ -460,24 +460,7 @@ impl Types {
                 let mut b = vec![0u8; n.min(4096) as usize];
                 mem.read(addr, &mut b);
                 let len = b.iter().rposition(|&c| c != 0).map_or(0, |k| k + 1);
-                let mut s = String::from("\"");
-                for (k, &c) in b[..len].iter().enumerate() {
-                    if k == 64 {
-                        s.push_str("\"…");
-                        return s;
-                    }
-                    match c {
-                        b'\n' => s.push_str("\\n"),
-                        b'\t' => s.push_str("\\t"),
-                        b'"' => s.push_str("\\\""),
-                        b'\\' => s.push_str("\\\\"),
-                        0 => s.push_str("\\0"),
-                        0x20..0x7f => s.push(c as char),
-                        _ => s.push_str(&format!("\\x{c:02x}")),
-                    }
-                }
-                s.push('"');
-                s
+                crate::types::quote(&b[..len])
             }
             Some(n) => format!("{{{}}}", (0..n.min(16)).map(|i| self.show(mem, addr + i * esize, ty, None)).collect::<Vec<_>>().join(", ")),
             None => match &self.get(self.resolve(ty)).kind {
