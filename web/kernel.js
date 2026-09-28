@@ -70,13 +70,17 @@ export function kernel(m, { changed } = {}) {
 
   // A variable of the program's (see Machine.declare): `text` as in C
   // ("char buf[64]", "struct __kernel_timespec ts = {0, 30000000}"), in
-  // runner `tid`'s process: { name, addr, ty, count, size, show() (as C
-  // writes it, now), bytes(n) (its first n bytes, now) }; passed to a call,
-  // its address. `known`: the names its initializer may use.
+  // runner `tid`'s process: { name, addr, ty, count, size, get() (a JS
+  // value, as it is now: "ok", [3, 4], { tv_sec: 0, tv_nsec: 30000000 }),
+  // set(x) (x a JS value, laid out as its type says; recorded), show() (as
+  // C writes it), bytes(n) (its first n bytes) }; passed to a call, its
+  // address. `known`: the names its initializer may use.
   function declare(text, tid = 1, known = {}) {
-    const v = m.declare(tid, text, known);
+    const v = m.declare(tid, text, known), count = v.count ?? undefined;
     return Object.assign(v, {
-      show: () => m.show(v.ty, v.addr, v.count ?? undefined),
+      get: () => m.get(v.ty, v.addr, count),
+      set: (x) => m.set(v.ty, v.addr, count, c(x), {}),
+      show: () => m.show(v.ty, v.addr, count),
       bytes: (n = (v.count ?? 1) * v.size) => m.memory(v.addr, n),
     });
   }

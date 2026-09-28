@@ -163,10 +163,8 @@ export async function examples(app) {
     for (const v of t.vars ?? []) {
       if (v.j >= j) continue;
       o[v.name] = v.addr;
-      for (let i = 0; i < Math.min(v.count ?? 0, 64); i++) {
-        const x = Number(m.show(v.ty, v.addr + i * v.size));
-        if (!Number.isNaN(x)) o[`${v.name}[${i}]`] = x;
-      }
+      const now = v.count != null ? v.get() : null;
+      if (Array.isArray(now)) now.forEach((x, i) => typeof x === "number" && (o[`${v.name}[${i}]`] = x));
     }
     // (The results: $n for call n, counting calls only.)
     t.done.slice(0, j).forEach((d, i) => {

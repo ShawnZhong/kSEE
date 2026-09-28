@@ -196,6 +196,27 @@ fn unquote(s: &str) -> Result<String, String> {
     Ok(out)
 }
 
+/// A value of the kernel's types as data (Types::value): a number, a
+/// string (chars), a list (an array), the members of a struct.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
+    Int(i64),
+    Uint(u64),
+    Float(f64),
+    Text(String),
+    List(Vec<Value>),
+    Fields(Vec<(String, Value)>),
+}
+
+/// A C literal's item: a string, {…}, or an expression.
+fn literal(v: &str) -> Result<Item, String> {
+    Ok(match v.strip_prefix('{').and_then(|r| r.strip_suffix('}')) {
+        Some(inner) => Item::List(items(inner)?),
+        None if v.starts_with('"') => Item::Str(unquote(v)?),
+        None => Item::Expr(v.to_string()),
+    })
+}
+
 /// A program's variable, declared as in C (see Types::declare): its name,
 /// its type (of each element, for an array of `count`), its size, and the
 /// bytes it starts with.
@@ -238,14 +259,7 @@ impl Types {
         if esize == 0 {
             return Err(format!("{tyname}: no size"));
         }
-        let item = match init {
-            None => None,
-            Some(v) => Some(match v.strip_prefix('{').and_then(|r| r.strip_suffix('}')) {
-                Some(inner) => Item::List(items(inner)?),
-                None if v.starts_with('"') => Item::Str(unquote(v)?),
-                None => Item::Expr(v.to_string()),
-            }),
-        };
+        let item = init.map(literal).transpose()?;
         // (An array's count: as written, or, `[]`, as many as it starts with.)
         let count = match count {
             None => None,
@@ -256,8 +270,22 @@ impl Types {
             }),
             Some(c) => Some(u32::try_from(eval(c, known)?).map_err(|_| format!("{name}[{c}]: not a size"))?),
         };
+        let bytes = self.lay(ty, count, item.as_ref(), known).map_err(|e| format!("{name}: {e}"))?;
+        Ok(Decl { name: name.to_string(), ty, count, bytes })
+    }
+
+    /// A variable's bytes (of type `ty`, an array of `count` of them) as
+    /// `text` makes them: a C literal ("hi", {3, 4}, {.tv_sec = 1}, 7).
+    pub fn assign(&self, ty: u32, count: Option<u32>, text: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<Vec<u8>, String> {
+        self.lay(ty, count, Some(&literal(text.trim())?), known)
+    }
+
+    /// The bytes of a variable of type `ty` (an array of `count`) that
+    /// `item` makes (none: zeros).
+    fn lay(&self, ty: u32, count: Option<u32>, item: Option<&Item>, known: &dyn Fn(&str) -> Option<i64>) -> Result<Vec<u8>, String> {
+        let esize = self.size_of(ty) as usize;
         let mut bytes = vec![0u8; esize * count.unwrap_or(1) as usize];
-        match (&item, count) {
+        match (item, count) {
             (None, _) => {}
             (Some(Item::Str(s)), Some(n)) if self.is_string(ty) => {
                 if s.len() + 1 > n as usize {
@@ -267,16 +295,52 @@ impl Types {
             }
             (Some(Item::List(list)), Some(n)) => {
                 if list.len() > n as usize {
-                    return Err(format!("{name}: too many values"));
+                    return Err("too many values".into());
                 }
                 for (i, (_, it)) in list.iter().enumerate() {
                     self.fill(&mut bytes, i * esize, ty, it, known)?;
                 }
             }
             (Some(it), None) => self.fill(&mut bytes, 0, ty, it, known)?,
-            (Some(_), Some(_)) => return Err(format!("{name}: an array starts with {{…}} (or a string, for chars)")),
+            (Some(_), Some(_)) => return Err("an array is {…} (or a string, for chars)".into()),
         }
-        Ok(Decl { name: name.to_string(), ty, count, bytes })
+        Ok(bytes)
+    }
+
+    /// A value of type `ty` at `addr` (an array of `count`) as data: what a
+    /// JavaScript program reads it as.
+    pub fn value(&self, mem: &dyn Memory, addr: u32, ty: u32, count: Option<u32>) -> Value {
+        let esize = self.size_of(ty);
+        if let Some(n) = count {
+            if self.is_string(ty) {
+                let mut b = vec![0u8; n.min(4096) as usize];
+                mem.read(addr, &mut b);
+                let len = b.iter().position(|&c| c == 0).unwrap_or(b.len());
+                return Value::Text(String::from_utf8_lossy(&b[..len]).into_owned());
+            }
+            return Value::List((0..n.min(4096)).map(|i| self.value(mem, addr + i * esize, ty, None)).collect());
+        }
+        let id = self.resolve(ty);
+        match &self.get(id).kind {
+            k @ (Kind::Struct(_) | Kind::Union(_)) => Value::Fields(self.members(k).iter().filter(|m| !m.name.is_empty()).map(|m| {
+                let v = if m.bit_size > 0 {
+                    Value::Int(self.read_int(mem, addr + m.bit_offset / 8, 0, m.bit_offset % 8, m.bit_size) as i64)
+                } else {
+                    self.value(mem, addr + m.bit_offset / 8, m.ty, None)
+                };
+                (m.name.clone(), v)
+            }).collect()),
+            Kind::Array { elem, count } => self.value(mem, addr, *elem, Some(*count)),
+            Kind::Pointer(_) => Value::Int(mem.read_u32(addr) as i64),
+            Kind::Base(Base::Float) if esize == 4 => Value::Float(f32::from_bits(mem.read_u32(addr)) as f64),
+            Kind::Base(Base::Float) => Value::Float(f64::from_bits(self.read_int(mem, addr, 8, 0, 0))),
+            Kind::Base(Base::Signed | Base::Char) | Kind::Enum(_) => {
+                let bits = esize.clamp(1, 8) * 8;
+                Value::Int(((self.read_int(mem, addr, esize.min(8), 0, 0) << (64 - bits)) as i64) >> (64 - bits))
+            }
+            Kind::Base(_) => Value::Uint(self.read_int(mem, addr, esize.min(8), 0, 0)),
+            _ => Value::Int(0),
+        }
     }
 
     /// The type named `name` as C writes it: "struct timespec", a typedef
@@ -475,6 +539,11 @@ mod tests {
         assert_eq!(t.show(&mem, 0, 7, Some(2)), "{3, 4}");
         assert_eq!(t.show(&mem, 8, 2, None), "{tv_sec = 0, tv_nsec = 30000000}");
         assert_eq!(t.show(&mem, 24, 4, Some(3)), "\"hi\"");
+        // As data (for JavaScript), and assigned from a literal.
+        assert_eq!(t.value(&mem, 0, 7, Some(2)), Value::List(alloc::vec![Value::Int(3), Value::Int(4)]));
+        assert_eq!(t.value(&mem, 8, 2, None), Value::Fields(alloc::vec![("tv_sec".into(), Value::Int(0)), ("tv_nsec".into(), Value::Int(30000000))]));
+        assert_eq!(t.value(&mem, 24, 4, Some(3)), Value::Text("hi".into()));
+        assert_eq!(t.assign(7, Some(2), "{5, 6}", &known).unwrap(), [5, 0, 0, 0, 6, 0, 0, 0]);
         // (Past a NUL too, escaped, as C writes it.)
         assert_eq!(t.show(&M(b"a\0b\x05\0\0".to_vec()), 0, 4, Some(6)), "\"a\\0b\\x05\"");
     }

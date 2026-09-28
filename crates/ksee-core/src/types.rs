@@ -400,7 +400,7 @@ impl Types {
         out
     }
 
-    fn read_int(&self, mem: &dyn Memory, addr: u32, size: u32, bit_off: u32, bit_size: u32) -> u64 {
+    pub(crate) fn read_int(&self, mem: &dyn Memory, addr: u32, size: u32, bit_off: u32, bit_size: u32) -> u64 {
         let bytes = if bit_size > 0 { (bit_off + bit_size).div_ceil(8) } else { size }.min(8);
         let mut buf = [0u8; 8];
         mem.read(addr, &mut buf[..bytes as usize]);

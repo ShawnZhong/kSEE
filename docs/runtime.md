@@ -87,7 +87,7 @@ Rust does the work: JS only lays it out.
 | calledit.js | a call written as in C: completions, the signature |
 | args.js | a program's line: `name = call(args)`, `tid: call(args)` (the arguments themselves are ksee-core's program.rs: `Machine.arg`); or a variable's declaration (`Machine.declare`) |
 | ksee.js | booting |
-| kernel.js | syscalls from JavaScript: `sys.read(fd, buf, 64)` (a promise of its result: a blocked call pending while others go on), `declare("char buf[64]")` (the program's memory), JS values as C's (a string, bytes, argv, a variable's address, an object laid out as the parameter's struct); what the page's program lines, the tests and the console (`ksee.kernel`) make their calls through |
+| kernel.js | syscalls from JavaScript: `sys.read(fd, buf, 64)` (a promise of its result: a blocked call pending while others go on), `declare("char buf[64]")` (the program's memory: a variable's `get()`, a JS value, and `set(x)`), JS values as C's (a string, bytes, argv, a variable's address, an object laid out as the parameter's struct); what the page's program lines, the tests and the console (`ksee.kernel`) make their calls through |
 
 A program is a small language, parsed and laid out in the core
 (crates/ksee-core/src/program.rs, `Machine.arg`, `Machine.value`,

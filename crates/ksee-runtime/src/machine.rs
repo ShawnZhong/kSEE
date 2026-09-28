@@ -265,12 +265,7 @@ impl Machine {
     pub fn declare(&self, tid: u32, text: &str, known: JsValue) -> Result<JsValue, JsValue> {
         let d = tables().types.declare(text, &crate::replay::lookup(&known))?;
         let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
-        let trace = k(|k| k.trace.get());
-        if Direct.read_u32(trace + trace::ON) == 0 {
-            Direct.write_u32(trace + trace::ON, 2);
-        }
-        imports::log(addr, d.bytes.len() as u32, 0);
-        unsafe { core::ptr::copy_nonoverlapping(d.bytes.as_ptr(), addr as *mut u8, d.bytes.len()) };
+        write_logged(addr, &d.bytes);
         let o = Object::new();
         js::set(&o, "name", d.name.as_str());
         js::set(&o, "addr", addr);
@@ -293,6 +288,22 @@ impl Machine {
         tables().types.show(&Direct, addr, ty, count)
     }
 
+    /// A program's variable (see declare) as a JavaScript value, as it is
+    /// now: a number (a BigInt past 2^53), a string (chars), an array, an
+    /// object (a struct's members).
+    pub fn get(&self, ty: u32, addr: u32, count: Option<u32>) -> JsValue {
+        js_value(&tables().types.value(&Direct, addr, ty, count))
+    }
+
+    /// Set a program's variable (of type `ty`, an array of `count`, at
+    /// `addr`: see declare) to `text`, a C literal ("hi", {3, 4},
+    /// {.tv_sec = 1}); the host's writes there recorded, as a call's are.
+    pub fn set(&self, ty: u32, addr: u32, count: Option<u32>, text: &str, known: JsValue) -> Result<(), JsValue> {
+        let b = tables().types.assign(ty, count, text, &crate::replay::lookup(&known))?;
+        write_logged(addr, &b);
+        Ok(())
+    }
+
     /// `len` bytes of memory at `addr`, as it is now (a variable's: see
     /// declare).
     pub fn memory(&self, addr: u32, len: u32) -> Uint8Array {
@@ -304,6 +315,39 @@ impl Machine {
     /// The runners' thread ids.
     pub fn runners(&self) -> Vec<u32> {
         k(|k| k.runners.borrow().keys().copied().collect())
+    }
+}
+
+/// Write `bytes` at `addr` into kernel memory, as the host: recorded (as a
+/// call's writes into its request are), so memory as it was stays exact.
+fn write_logged(addr: u32, bytes: &[u8]) {
+    let trace = k(|k| k.trace.get());
+    if Direct.read_u32(trace + trace::ON) == 0 {
+        Direct.write_u32(trace + trace::ON, 2);
+    }
+    imports::log(addr, bytes.len() as u32, 0);
+    unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), addr as *mut u8, bytes.len()) };
+}
+
+/// A value of the kernel's types (ksee_core::program::Value) as JavaScript's.
+fn js_value(v: &ksee_core::program::Value) -> JsValue {
+    use ksee_core::program::Value;
+    const SAFE: u64 = 1 << 53;
+    match v {
+        Value::Int(x) if x.unsigned_abs() < SAFE => JsValue::from_f64(*x as f64),
+        Value::Int(x) => js_sys::BigInt::from(*x).into(),
+        Value::Uint(x) if *x < SAFE => JsValue::from_f64(*x as f64),
+        Value::Uint(x) => js_sys::BigInt::from(*x).into(),
+        Value::Float(x) => JsValue::from_f64(*x),
+        Value::Text(s) => JsValue::from_str(s),
+        Value::List(l) => l.iter().map(js_value).collect::<js_sys::Array>().into(),
+        Value::Fields(f) => {
+            let o = Object::new();
+            for (name, x) in f {
+                js::set(&o, name, js_value(x));
+            }
+            o.into()
+        }
     }
 }
 

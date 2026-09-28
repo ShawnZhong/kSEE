@@ -179,14 +179,18 @@ m.memory_at(null);
   const buf = kern.declare("char buf[8]"), fds = kern.declare("int fds[2]");
   const slept = await kern.sys.clock_nanosleep_time64(kern.C.CLOCK_MONOTONIC, 0, { tv_sec: 0, tv_nsec: 1000000 }, null);
   await kern.sys.pipe2(fds, 0);
-  const [r, w] = fds.show().slice(1, -1).split(", ").map(Number);
+  const [r, w] = fds.get();
   // (A thread, a runner of its own, reads: it blocks, nothing written yet;
   // /init writes, and wakes it.)
   const C = kern.C, mem = await kern.sys.mmap2(null, 65536, C.PROT_READ | C.PROT_WRITE, C.MAP_PRIVATE | C.MAP_ANONYMOUS, -1, 0);
   const thread = await kern.sys.clone(C.CLONE_VM | C.CLONE_FS | C.CLONE_FILES | C.CLONE_SIGHAND | C.CLONE_THREAD | C.CLONE_SYSVSEM, mem + 65536, null, null, 0);
   const reading = kern.sys.on(thread).read(r, buf, 8);
   const wrote = await kern.sys.write(w, "ok", 2);
-  check(`syscalls from JS: slept ${slept}, wrote ${wrote}, read ${await reading}: buf = ${buf.show()}`, slept === 0 && wrote === 2 && buf.show() === '"ok"');
+  check(`syscalls from JS: slept ${slept}, wrote ${wrote}, read ${await reading}: buf = ${buf.show()}`, slept === 0 && wrote === 2 && buf.get() === "ok");
+  // (Its variables as JS values, both ways.)
+  const ts = kern.declare("struct __kernel_timespec ts");
+  ts.set({ tv_sec: 1, tv_nsec: 5 });
+  check(`a variable as a JS value, and set from one: ${JSON.stringify(ts.get())}`, ts.get().tv_sec === 1 && ts.get().tv_nsec === 5);
 }
 // A 64-bit argument, whole: llseek's offset (high 1, low 0) is vfs_llseek's loff_t 1 << 32.
 {
@@ -281,7 +285,8 @@ async function runExample(ex) {
     });
     for (const v of vars) {
       o[v.name] = v.addr;
-      for (let i = 0; i < (v.count ?? 0) && i < 64; i++) o[`${v.name}[${i}]`] = Number(m.show(v.ty, v.addr + i * v.size));
+      const now = v.count != null ? m.get(v.ty, v.addr, v.count) : null;
+      if (Array.isArray(now)) now.forEach((x, i) => (o[`${v.name}[${i}]`] = x));
     }
     return o;
   };
