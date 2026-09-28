@@ -9,7 +9,6 @@ import { source } from "./source.js";
 import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
 import { examples } from "./examples.js";
-import { callTree } from "./calls.js";
 import { trace } from "./trace.js";
 import { stores } from "./stores.js";
 import { objects } from "./objects.js";
@@ -172,7 +171,7 @@ export function app(m) {
   // The right column's tabs but the Stack, by name: each draws for the
   // selection (`draw`; a tab not shown waits until it is looked at) and
   // follows the cursor (`mark(i)`: record `i`, or the cursor's).
-  const tabs = { tasks: tasks(a), calls: callTree(a), stores: stores(a), objects: objects(a), trace: trace(a) };
+  const tabs = { tasks: tasks(a), stores: stores(a), objects: objects(a), trace: trace(a) };
   a.tasks = tabs.tasks;
   const marks = (i) => Object.values(tabs).forEach((x) => x.mark(i));
   a.outlined = () => Object.values(tabs).forEach((x) => x.draw());

@@ -79,7 +79,6 @@ h2 { margin: 0; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var
 .cm-editor a.stored { cursor: pointer; }
 .cm-editor .note { color: var(--dim); font-style: italic; margin-left: 3ch; white-space: nowrap; }
 .cm-editor a.stored:hover { color: var(--accent); }
-#calls .ret { color: var(--dim); }
 .cm-cursorGutter { width: 14px; }
 .gl-cursor { display: block; text-align: center; font-size: 11px; color: var(--run); }
 .gl-cursor::before { content: "▶"; }
@@ -107,16 +106,15 @@ table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-famil
 
 /* The right column's tabs (Stack, Trace): the pane chosen */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
-#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="calls"] .pane[data-tab="calls"], #right[data-tab="stores"] .pane[data-tab="stores"], #right[data-tab="objects"] .pane[data-tab="objects"], #right[data-tab="trace"] .pane[data-tab="trace"], #right[data-tab="tasks"] .pane[data-tab="tasks"] { display: flex; }
+#right[data-tab="stack"] .pane[data-tab="stack"], #right[data-tab="stores"] .pane[data-tab="stores"], #right[data-tab="objects"] .pane[data-tab="objects"], #right[data-tab="trace"] .pane[data-tab="trace"], #right[data-tab="tasks"] .pane[data-tab="tasks"] { display: flex; }
 h2.tabs { gap: 0; padding: 0 4px; }
 h2.tabs a { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
 h2.tabs a:hover { text-decoration: none; color: var(--fg); }
-#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="calls"] a[data-tab="calls"], #right[data-tab="stores"] a[data-tab="stores"], #right[data-tab="objects"] a[data-tab="objects"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="tasks"] a[data-tab="tasks"] { color: var(--fg); border-bottom-color: var(--accent); }
+#right[data-tab="stack"] a[data-tab="stack"], #right[data-tab="stores"] a[data-tab="stores"], #right[data-tab="objects"] a[data-tab="objects"], #right[data-tab="trace"] a[data-tab="trace"], #right[data-tab="tasks"] a[data-tab="tasks"] { color: var(--fg); border-bottom-color: var(--accent); }
 
-/* The Trace: the tree of calls, the one the cursor is in marked */
-/* The Stack: room above a selected call for what it calls (callstack.js focus) */
-#stack .spacer { display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; color: var(--dim); font-size: 11px; font-style: italic; box-sizing: border-box; }
-#calls .head { padding: 6px 12px 2px; font-size: 11.5px; }
+/* The Stack: at the bottom of its pane (callstack.js) */
+#stack { display: flex; flex-direction: column; }
+#stack > table { margin-top: auto; } /* (at the bottom: see callstack.js) */
 /* The Stores: every store the selected call made, a row each, in order; the write in effect at the cursor marked, later ones dim */
 #stores .head { padding: 6px 12px 2px; font-size: 11.5px; }
 #stores ol { margin: 2px 0; padding: 0 12px 4px 30px; font: 11px/1.5 var(--mono); }
@@ -148,13 +146,6 @@ h2.tabs a:hover { text-decoration: none; color: var(--fg); }
 #objects .obj.flash { animation: flash 1s; }
 @keyframes flash { from { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: 0 0 0 3px transparent; } }
 #stores .note { padding: 6px 12px; font-size: 11px; }
-#calls a.inl { font-style: italic; }
-#calls ul { margin: 0; padding-left: 14px; list-style: none; font-size: 12px; }
-#calls ul.tree { padding: 0 12px 8px; }
-#calls li { margin: 1px 0; white-space: nowrap; }
-#calls li.on > a.mono { background: var(--at); border-radius: 2px; }
-#calls a.tw { color: var(--dim); display: inline-block; width: 1.1em; }
-#calls ul.tree > li > ul, #calls li > ul { padding-left: 16px; }
 /* The Records: the raw trace, a virtual list, a row a record */
 #trace { position: relative; overflow-y: auto; }
 #trace .raw { position: relative; font-size: 11px; }

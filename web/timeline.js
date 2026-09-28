@@ -246,6 +246,11 @@ export function timeline(app) {
   // arguments and result; a function: where, and its arguments).
   const tip = document.body.appendChild(Object.assign(document.createElement("div"), { className: "tip", hidden: true }));
   const args = new Map(); // first record -> the call's arguments
+  // (What it returned, if it did in the recording: " = 26".)
+  const retOf = (first) => {
+    const end = m.call_end(first), at = end == null ? null : m.at(end);
+    return at?.kind === "return" && at.value != null ? ` = ${app.kernel.result(at.value)}` : "";
+  };
   const argsOf = (first) => args.get(first) ?? args.set(first, m.call_stack(first)?.find((f) => !f.inlined)?.args ?? []).get(first);
   // The call under the pointer: its column `k` and depth `d` (above a
   // column's stack: its top, the call running then; -1: none).
@@ -275,7 +280,7 @@ export function timeline(app) {
       : s
       ? [line(`${s.name ?? s.nr}(${argsOf(first).map((a) => a.value ?? "{…}").join(", ")}) = ${s.ret ?? "…"}`, ""),
          line(`a syscall by ${taskName(s.task)}`, "dim")]
-      : [line(f?.name ?? "?", ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f"))]);
+      : [line(`${f?.name ?? "?"}${retOf(first)}`, ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f"))]);
     tip.replaceChildren(...tipLines);
     tip.hidden = false;
     const r = tip.getBoundingClientRect();
@@ -461,16 +466,6 @@ export function timeline(app) {
     k.innerHTML = `<i style="background:${color(p, false)}"></i>${name}`;
     return k;
   }));
-  // How many calls can be on the stack above the call from record `first`
-  // at once, over its bar (the deepest column it is in); 0 if not shown.
-  function deepest(first) {
-    let d = 0;
-    for (const c of t.cols) {
-      const k = c.frames.findIndex((f) => f[1] === first && !f[2]);
-      if (k >= 0) d = Math.max(d, c.frames.length - 1 - k);
-    }
-    return d;
-  }
   // Where the box of the call from record `first` is, on the page: its
   // middle ({ x, y }, client coordinates), or null if it is not shown.
   function boxOf(first) {
@@ -482,6 +477,6 @@ export function timeline(app) {
     }
     return null;
   }
-  return { refresh, go, mark, select, selectCall, hilite, selected, boxOf, deepest, find, focusFind: () => finder.input.focus(),
+  return { refresh, go, mark, select, selectCall, hilite, selected, boxOf, find, focusFind: () => finder.input.focus(),
            home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }

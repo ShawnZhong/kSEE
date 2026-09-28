@@ -76,15 +76,6 @@ impl Machine {
         (ids.get(i) == Some(&id)).then_some(i)
     }
 
-    /// The calls of `task` in records `first..=last` (a call's: its
-    /// callees) as a tree (ksee_core::stack::call_tree: in order, inlined
-    /// code as calls of its own; a syscall's wrappers are not nodes), as JS
-    /// values.
-    pub fn call_tree(&self, first: usize, last: usize, task: u32) -> JsValue {
-        let rec = self.rec.borrow();
-        to_js(&rec.calls.call_tree(tables(), &rec.records, &rec.tasks, first + 1, last, task))
-    }
-
     /// The calls of function `name` in records `first..=last`: each call's
     /// first record.
     pub fn calls_of(&self, name: &str, first: usize, last: usize) -> Vec<u32> {

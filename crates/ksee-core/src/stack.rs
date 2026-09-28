@@ -281,58 +281,6 @@ impl Calls {
         }
         out
     }
-
-    /// The calls of task `task` in records `from..=to` as a tree, in order:
-    /// what a syscall did, with the code inlined into each call as calls of
-    /// its own (see CallNode::inlined). Calls on the stack before `from` are
-    /// not in it (a syscall's entry, say: its callees are the roots).
-    pub fn call_tree(&self, t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: u32) -> Vec<CallNode> {
-        let to = to.min(records.len().saturating_sub(1));
-        // (The nodes open, outermost first, each by what it is: a call's first
-        // record, or an inlined function; and the finished ones at the top.)
-        let mut open: Vec<((bool, usize), CallNode)> = Vec::new();
-        let mut roots: Vec<CallNode> = Vec::new();
-        let close = |open: &mut Vec<((bool, usize), CallNode)>, roots: &mut Vec<CallNode>, i: usize| {
-            let (_, mut c) = open.pop().expect("an open call");
-            c.last = i;
-            c.records = (i - c.first + 1) as u32;
-            if let Some(&Record::Return { func, value }) = records.get(i) && !c.inlined && func == c.func {
-                c.ret = Some(value as i32);
-            }
-            match open.last_mut() {
-                Some((_, p)) => p.calls.push(c),
-                None => roots.push(c),
-            }
-        };
-        for i in from..=to {
-            if tasks[i] != task || self.stretch(t, i).is_none() {
-                continue;
-            }
-            // What is on the stack since `from`: each call, then the code
-            // inlined at the line it is at (outermost first), as the chart nests
-            // them; against the nodes open: the ones gone close, new ones open.
-            let mut want: Vec<(bool, usize, u32)> = Vec::new();
-            for c in self.stack_at(t, i, None).iter().filter(|c| c.first >= from) {
-                want.push((false, c.first, c.func));
-                let chain = c.step.and_then(|s| s.inlined).and_then(|k| t.inlines.get(k as usize)).map_or(&[][..], Vec::as_slice);
-                want.extend(chain.iter().rev().map(|&(k, _)| (true, k as usize, k)));
-            }
-            let mut k = 0;
-            while k < open.len() && k < want.len() && open[k].0 == (want[k].0, want[k].1) {
-                k += 1;
-            }
-            while open.len() > k {
-                close(&mut open, &mut roots, i);
-            }
-            for &(inlined, id, func) in &want[k..] {
-                open.push(((inlined, id), CallNode { func, inlined, first: i, last: i, records: 1, ret: None, calls: Vec::new() }));
-            }
-        }
-        while !open.is_empty() {
-            close(&mut open, &mut roots, to);
-        }
-        roots
-    }
 }
 
 /// A call on a stack (the Stack's, the chart's): `func` from record `first`, at `step` (its last
@@ -379,27 +327,6 @@ pub fn calls_of(records: &[Record], from: usize, to: usize, funcs: &[u32]) -> Ve
     (from..=to).filter(|&i| matches!(records[i], Record::Block { func, n: 0 } if funcs.contains(&func))).collect()
 }
 
-/// A call in a call tree: `func` from record `first` to `last` (its
-/// return, or where the records end), with the calls it made (`calls`, in
-/// order); `records`: how many records are its, its callees' included.
-/// `inlined`: not a call but code inlined into the call before it, from
-/// function `func` (an index into Tables::names), as the stack chart and
-/// the call stack show it.
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct CallNode {
-    pub func: u32,
-    pub inlined: bool,
-    pub first: usize,
-    pub last: usize,
-    pub records: u32,
-    /// What the call returned (its Return record's value), if it did
-    /// within the span (not for inlined code, which does not return).
-    pub ret: Option<i32>,
-    pub calls: Vec<CallNode>,
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,10 +342,6 @@ mod tests {
 
     fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: Option<u32>) -> Vec<LineStep> {
         Calls::new(t, records, tasks).lines(t, records, tasks, from, to, task)
-    }
-
-    fn call_tree(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: u32) -> Vec<CallNode> {
-        Calls::new(t, records, tasks).call_tree(t, records, tasks, from, to, task)
     }
 
     fn call_end(records: &[Record], tasks: &[u32], first: usize) -> Option<usize> {
@@ -481,31 +404,6 @@ mod tests {
         let entry = Tables::id(crate::arch::TASK_ENTRY);
         let r = [b(entry, 0), b(1, 0), b(entry, 0), b(2, 0)];
         assert_eq!(stack_at(&r, &[7; 4], 3), [entry, 2]);
-    }
-
-    #[test]
-    fn a_call_tree_nests_calls_and_inlined_code() {
-        // 1 calls 2 (which calls 3, then returns) and then 4; task 8 runs between.
-        let t = Tables::default();
-        let ret = |f| Record::Return { func: f, value: 0 };
-        let r = [b(1, 0), b(2, 0), b(3, 0), b(9, 0), ret(3), ret(2), b(1, 1), b(4, 0), ret(4), ret(1)];
-        let tk = [7, 7, 7, 8, 7, 7, 7, 7, 7, 7];
-        let tree = call_tree(&t, &r, &tk, 0, 9, 7);
-        let shape: Vec<_> = tree.iter().map(|c| (c.func, c.calls.iter().map(|d| (d.func, d.calls.len(), d.records)).collect::<Vec<_>>())).collect();
-        assert_eq!(shape, [(1, alloc::vec![(2, 1, 5), (4, 0, 2)])]);
-        // (What each returned: 2 and 4 did, 0; 1 too, at the span's end.)
-        assert_eq!((tree[0].ret, tree[0].calls[0].ret, tree[0].calls[1].ret), (Some(0), Some(0), Some(0)));
-        // From record 1 on: 1 is an ancestor, not in the tree.
-        let tree = call_tree(&t, &r, &tk, 1, 9, 7);
-        assert_eq!(tree.iter().map(|c| (c.func, c.calls.len())).collect::<Vec<_>>(), [(2, 1), (4, 0)]);
-        // f (1) runs line 1, then h's line 20 (h inlined into f at line 2), which calls g (2):
-        // h is a node of its own, inlined, and g is its call.
-        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\nB\t1\t0\t0:1:1\n\
-                               I\t0\th\t0:2\nL\t1\t0\t0:1;:20@0;|\nB\t2\t0\t0:10:1\n", "");
-        let r = [b(1, 0), b(2, 0), ret(2), ret(1)];
-        let tree = call_tree(&t, &r, &[7; 4], 0, 3, 7);
-        let h = &tree[0].calls[0];
-        assert_eq!((tree[0].func, tree[0].inlined, h.inlined, t.names[h.func as usize].as_str(), h.calls[0].func), (1, false, true, "h", 2));
     }
 
     #[test]

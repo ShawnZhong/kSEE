@@ -264,7 +264,7 @@ export async function examples(app) {
       const tr = part.match(/^\[([^\]]*)\]\(try:(\d+)\)$/), prog = tr && t.ex.tries?.[Number(tr[2]) - 1];
       if (tr) return el("a", { className: "try", textContent: tr[1], title: prog ? `run this program instead:\n${prog}` : "no such try",
         onclick: prog ? () => go(t.ex, program(prog), true) : null });
-      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|calls|stores|objects|trace))?\)$/);
+      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|tasks|stores|objects|trace))?\)$/);
       if (link) {
         const n = Number(link[2]), l = { n, j: stepOf(n), func: link[3], any: !!link[4], tab: link[5] };
         l.c = syscall(l.j);

@@ -42,31 +42,19 @@ export function callstack(app) {
     // At the bottom: the task running then, a link to it in the Tasks.
     if (s.task && s.frames.length)
       body.push(head(`current task: ${taskName(s.task)}`, "current: the task running; its task_struct in the Tasks", () => app.tasks.open(s.task.addr), "task"));
-    $("stack").replaceChildren(el("div", { className: "spacer" }), el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
-    focus();
+    // (At the bottom of the pane, as the timeline's stacks: the calls that
+    // come and go as the cursor moves are on top, the rows under them stay
+    // put; scrolled, as far from the bottom as it was.)
+    const pane = $("stack"), fromBottom = pane.scrollHeight - pane.scrollTop;
+    pane.replaceChildren(el("table", { className: "objs stack" }, el("tbody", {}, ...body)));
+    pane.scrollTop = pane.scrollHeight - fromBottom;
+    const on = pane.querySelector("tr.frame.on");
+    if (on && !s.peeking) scrollTo(pane, on);
   }
-  // While the pointer is over the timeline (`peeking`), above a selected
-  // call, room for the calls that can still appear there (the deepest
-  // stack over its bar, less those shown), each about a frame's height
-  // now: as the pointer moves along the bar and its callees come and go,
-  // the selected row stays put. (At rest, none: nothing comes and goes.)
-  // A row that would be low in the pane is scrolled to a third of the way
-  // down.
-  function focus() {
-    const pane = $("stack"), on = pane.querySelector("tr.frame.on"), table = pane.querySelector("table"), spacer = pane.querySelector(".spacer");
-    const rows = [...pane.querySelectorAll("tr.frame")], k = on ? rows.indexOf(on) : 0;
-    spacer.style.height = "0px";
-    spacer.textContent = "";
-    if (!on) return;
-    if (!s.sel || !s.peeking) return scrollTo(pane, on);
-    const need = Math.max(0, app.time.deepest(s.sel.first) - k), each = table.offsetHeight / Math.max(1, rows.length);
-    spacer.style.height = `${Math.round(need * each)}px`;
-    spacer.textContent = need ? "what it calls shows here" : "";
-    scrollTo(pane, on);
-  }
+  // (Row `on` in view, if it is not.)
   function scrollTo(pane, on) {
-    const top = on.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
-    if (top > pane.clientHeight * 0.66) pane.scrollTop = top - pane.clientHeight / 3;
+    const top = on.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+    if (top < 0 || top + on.offsetHeight > pane.clientHeight) pane.scrollTop += top - pane.clientHeight / 3;
   }
 
   // The stack at record `i` (null: the last; undefined: none), `step` the

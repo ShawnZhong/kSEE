@@ -80,7 +80,7 @@ The timeline shows the recording: the call stacks over time (its unit is
 a step, a basic block run: a store takes no room), and which
 task ran; the whole recording at first (scroll to zoom, drag to pan;
 "zoom" or z: the window at the selection, "whole" or x, or a double-click
-on empty chart: all of it again; hover a call for what it was: the
+on empty chart: all of it again; hover a call for what it was (its arguments, what it returned: `ksys_read = 26`): the
 source and the Stack show that moment while the pointer is there; click it to fix the cursor there; click a syscall, or double-click
 any call, to select it: its records from its start to its end, with
 whatever else ran in between). The
@@ -113,12 +113,7 @@ writes on asking; its pointers to the others, each a link to it
 (`f_inode → atime_needs_update's inode`: a kiocb's file, the file's
 inode, the inode's page); all its fields on asking, as the Stack's
 values are. An object on the stack is there while its call
-runs; the others on asking. The
-Calls tab shows the calls the selected call made, in the order they were
-made, each with what it returned (`ksys_read = 26`, `lookup_fast = -2
-(ENOENT)`), inlined code among them (in italics, as the timeline and the
-Stack show it); ▸ opens a call's own calls; each is a link, and the call
-the cursor is in is marked. The line the cursor is on shows its values at
+runs; the others on asking. The line the cursor is on shows its values at
 its end, as a debugger does (`fd = 3   count = 64`). Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by
 its number and filesystem, a task by its comm and pid. The Trace tab is
