@@ -103,11 +103,17 @@ The instrumented kernel describes its probes in a custom section,
 - `U`, `P k path`, `I k …`: a unit's files and inline sites; `R words`:
   the ring's size.
 
+The plugin cannot say these itself: a local's frame offset is the
+backend's (after the pass), a global's address the linker's, and a type is
+one across all the units (each unit the plugin sees has its own copy).
 `ksee pack` (crates/ksee-cli) reads the kernel's DWARF and adds
 `ksee.types`: the types (deduplicated across units, as pahole does for
-BTF), globals, each function's parameters with their types and its locals
-in memory with their types and offsets from the frame base (`Q name
-var:type:offset,…`, from the variables' DWARF locations: `DW_OP_fbreg`, or
+BTF), globals, each function's parameters with their types (`P fn name
+param:type,…`) and its locals in memory with their types and offsets
+from the frame base (`Q fn var:type:offset,…`; `fn` the function's id as
+the probes have it: its name's hash, or for a function local to its file
+the unit's "file:name"'s, so that the functions of one name in several
+files each have their own; from the variables' DWARF locations: `DW_OP_fbreg`, or
 `DW_OP_WASM_location 0 <the frame base's local>` plus a constant, in
 pieces for a struct's members; the locals of calls inlined into it too;
 a function inlined elsewhere has them on its out-of-line copy), the

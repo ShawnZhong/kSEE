@@ -428,7 +428,7 @@ impl View<'_> {
                     let loc = t.blocks.get(&(func, n)).map_or(String::new(), |l| format!(" {}:{}", t.file(*l), l.line));
                     // (A call: with its arguments, the record after.)
                     if let (0, Some((words, frame))) = (n, rec.args.get(i)) {
-                        let params = t.functions.get(&func).and_then(|f| t.types.params.get(&f.name));
+                        let params = t.types.params.get(&func);
                         let each = t.values(func, words).into_iter().enumerate().map(|(k, v)| {
                             let name = params.and_then(|p| p.get(k)).map_or(format!("{k}"), |p| p.0.clone());
                             format!("{name}={}", num(v))
@@ -502,15 +502,15 @@ impl View<'_> {
             let depth = depth as u32;
             let name = self.name(c.func);
             let (raw, frame) = args_of(&c).unzip();
-            let locals = frame.map(|f| self.locals(&name, f, mem));
+            let locals = frame.map(|f| self.locals(c.func, f, mem));
             // (The syscall entry: its arguments are the syscall's.)
             let at_entry = matches!(records.get(c.first), Some(&Record::Block { func, n: 0 }) if Some(func) == entry);
             let wrapper = name.starts_with(arch::SYSCALL_WRAPPER);
             let (syscall, args) = match raw {
                 Some(raw) => match at_entry.then(|| self.syscall_args(&raw, mem)).flatten() {
                     Some((n, a)) => (Some(n), Some(a)),
-                    None if wrapper => (None, Some(entry_raw.as_ref().and_then(|e| self.syscall_args(e, mem)).map_or_else(|| self.args(c.func, &name, raw, mem), |(_, a)| a))),
-                    None => (None, Some(self.args(c.func, &name, raw, mem))),
+                    None if wrapper => (None, Some(entry_raw.as_ref().and_then(|e| self.syscall_args(e, mem)).map_or_else(|| self.args(c.func, raw, mem), |(_, a)| a))),
+                    None => (None, Some(self.args(c.func, raw, mem))),
                 },
                 None => (None, None),
             };
@@ -542,12 +542,12 @@ impl View<'_> {
         Some((name.clone(), args))
     }
 
-    /// Function `func`'s (called `name`) arguments, their values `args`: the
-    /// source's parameters, as values of their types.
-    fn args(&self, func: u32, name: &str, args: Vec<u64>, mem: &dyn Memory) -> Vec<Object> {
+    /// Function `func`'s arguments, their values `args`: the source's
+    /// parameters, as values of their types.
+    fn args(&self, func: u32, args: Vec<u64>, mem: &dyn Memory) -> Vec<Object> {
         let t = self.tables;
         let known = t.functions.get(&func).map_or(u32::MAX, |f| f.known);
-        t.types.params.get(name).into_iter().flatten().zip(args).enumerate().map(|(k, ((pname, ty), v))| {
+        t.types.params.get(&func).into_iter().flatten().zip(args).enumerate().map(|(k, ((pname, ty), v))| {
             let arg = t.types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
             // (Not passed any more: the optimizer took it away.)
             if known >> k & 1 == 0 {
@@ -557,10 +557,10 @@ impl View<'_> {
         }).collect()
     }
 
-    /// Function `name`'s locals in memory, at their offsets from `frame`.
-    fn locals(&self, name: &str, frame: u32, mem: &dyn Memory) -> Vec<Object> {
+    /// Function `func`'s locals in memory, at their offsets from `frame`.
+    fn locals(&self, func: u32, frame: u32, mem: &dyn Memory) -> Vec<Object> {
         let types = &self.tables.types;
-        types.locals.get(name).into_iter().flatten()
+        types.locals.get(&func).into_iter().flatten()
             .map(|(var, ty, off)| types.object(mem, var, frame.wrapping_add(*off), *ty, 0)).collect()
     }
 
@@ -716,7 +716,7 @@ impl View<'_> {
                     if let Some((_, caller)) = caller && caller > frame {
                         add(format!("{}'s frame", f.name), "frame", 0, frame, Some(caller - frame), Some(i));
                     }
-                    for ((pname, ty), v) in types.params.get(&f.name).into_iter().flatten().zip(t.values(func, words)) {
+                    for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
                         let v = v as u32;
                         if let Kind::Pointer(to) = types.get(types.resolve(*ty)).kind
                             && matches!(types.get(types.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)) {
@@ -724,7 +724,7 @@ impl View<'_> {
                             add(format!("{}'s {pname}", f.name), kind, to, v, None, frame_of(i, v));
                         }
                     }
-                    for (var, ty, off) in types.locals.get(&f.name).into_iter().flatten() {
+                    for (var, ty, off) in types.locals.get(&func).into_iter().flatten() {
                         add(format!("{}'s {var}", f.name), "local", *ty, frame.wrapping_add(*off), None, Some(i));
                         // (A local pointing at a struct: that too ("files->next_fd"
                         // through `struct files_struct *files = current->files`),
@@ -992,7 +992,7 @@ mod tests {
         // names.
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
-                               P\tf\tp:3\nQ\tf\tx:1:4\n");
+                               P\t1\tf\tp:3\nQ\t1\tx:1:4\n");
         let r = [Record::Block { func: 1, n: 0 },
                  Record::Store { addr: 8, size: 4, old: 1, line: 0 }, Record::Store { addr: 36, size: 4, old: 0, line: 0 },
                  Record::Block { func: 2, n: 0 },
@@ -1019,7 +1019,7 @@ mod tests {
         // y.link points at *p: two nodes, y linked to p's.
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
-                               T\t4\tstruct\tt\t8\nM\t4\tc\t0\t0\t1\nM\t4\tlink\t32\t0\t3\nP\tf\tp:3\nQ\tf\ty:4:8\n");
+                               T\t4\tstruct\tt\t8\nM\t4\tc\t0\t0\t1\nM\t4\tlink\t32\t0\t3\nP\t1\tf\tp:3\nQ\t1\ty:4:8\n");
         let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 8, size: 4, old: 1, line: 0 }, Record::Store { addr: 40, size: 4, old: 0, line: 0 }];
         let mut args = Args::default();
         args.push(0, &[4, 32]);

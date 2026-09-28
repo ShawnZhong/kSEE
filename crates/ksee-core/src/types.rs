@@ -70,11 +70,14 @@ pub struct Types {
     pub globals: BTreeMap<String, (u32, u32)>,
     /// Syscall names, by number.
     pub syscalls: BTreeMap<u32, String>,
-    /// Functions' parameters: name -> [(parameter, type)].
-    pub params: BTreeMap<String, Vec<(String, u32)>>,
-    /// Functions' local variables in memory: name -> [(variable, type,
-    /// offset from the frame base)].
-    pub locals: BTreeMap<String, Vec<(String, u32, u32)>>,
+    /// Functions' parameters, by function id (the probes' F lines'): [(parameter, type)].
+    pub params: BTreeMap<u32, Vec<(String, u32)>>,
+    /// The function ids of the names (the first of a name: for the
+    /// syscalls' bodies, looked for by name).
+    by_name: BTreeMap<String, u32>,
+    /// Functions' local variables in memory, by function id: [(variable,
+    /// type, offset from the frame base)].
+    pub locals: BTreeMap<u32, Vec<(String, u32, u32)>>,
     /// Constants from the UAPI headers (flags, errno names): name -> value.
     pub constants: BTreeMap<String, i64>,
     /// Where a function (the inline ones too, which have no probe), a type
@@ -92,6 +95,7 @@ impl Types {
         let mut globals = BTreeMap::new();
         let mut syscalls = BTreeMap::new();
         let mut params = BTreeMap::new();
+        let mut by_name = BTreeMap::new();
         let mut locals = BTreeMap::new();
         let mut constants = BTreeMap::new();
         let mut declared = BTreeMap::new();
@@ -120,12 +124,14 @@ impl Types {
                         constants.insert(c[1].to_string(), v);
                     }
                 }
-                Some(&"P") if c.len() == 3 => {
-                    let list = c[2].split(',').filter(|p| !p.is_empty()).map(|p| {
+                // (P: id, name, then name:type for each parameter.)
+                Some(&"P") if c.len() == 4 => {
+                    let list = c[3].split(',').filter(|p| !p.is_empty()).map(|p| {
                         let (n, t) = p.rsplit_once(':').unwrap_or((p, "0"));
                         (n.to_string(), t.parse().unwrap_or(0))
                     }).collect();
-                    params.insert(c[1].to_string(), list);
+                    params.insert(num(1), list);
+                    by_name.entry(c[2].to_string()).or_insert(num(1));
                 }
                 // (Q: name:type:offset for each local in memory.)
                 Some(&"Q") if c.len() == 3 => {
@@ -134,7 +140,7 @@ impl Types {
                         let (n, t, o) = (f.next()?, f.next()?, f.next()?);
                         Some((n.to_string(), t.parse().ok()?, o.parse().ok()?))
                     }).collect();
-                    locals.insert(c[1].to_string(), list);
+                    locals.insert(num(1), list);
                 }
                 Some(&"W") if c.len() == 4 => {
                     declared.entry(c[1].to_string()).or_insert((c[2].to_string(), num(3)));
@@ -175,7 +181,7 @@ impl Types {
                 names.entry(t.name.clone()).or_insert(id as u32);
             }
         }
-        Types { types, names, globals, syscalls, params, locals, constants, declared }
+        Types { types, names, globals, syscalls, params, by_name, locals, constants, declared }
     }
 
     pub fn get(&self, id: u32) -> &Type {
@@ -186,7 +192,7 @@ impl Types {
     /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY; a
     /// `_time64` syscall's body is the plain one's: clock_nanosleep).
     pub fn syscall_params(&self, name: &str) -> Option<&Vec<(String, u32)>> {
-        let body = |n: &str| self.params.get(&format!("{}{n}", crate::arch::SYSCALL_BODY));
+        let body = |n: &str| self.params.get(self.by_name.get(&format!("{}{n}", crate::arch::SYSCALL_BODY))?);
         body(name).or_else(|| body(name.strip_suffix(crate::arch::TIME64)?))
     }
 

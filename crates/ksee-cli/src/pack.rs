@@ -28,10 +28,14 @@ pub fn pack(kernel: &Path, out: &Path) {
 
     // The sources, for the page's source view.
     let probes = String::from_utf8_lossy(&module::custom_section(&image, "ksee.probes")).into_owned();
+    let tables = Tables::parse(&probes, &types);
+    // (The functions the trace has whose parameters DWARF gave, by id: the
+    // two agree on what a function is.)
+    let known = tables.functions.keys().filter(|id| tables.types.params.contains_key(id)).count();
     let src = out.join("src");
     let _ = std::fs::remove_dir_all(&src);
     let (mut files, mut bytes) = (0, 0);
-    for file in &Tables::parse(&probes, "").files {
+    for file in &tables.files {
         if file.starts_with('/') || file.contains("..") {
             continue; // outside the tree
         }
@@ -43,8 +47,8 @@ pub fn pack(kernel: &Path, out: &Path) {
             bytes += data.len();
         }
     }
-    eprintln!("{}: {} types, {} syscalls, {} -> {} KiB; {files} sources, {} KiB",
-              out.display(), types.lines().filter(|l| l.starts_with('T')).count(), calls.len(),
+    eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} -> {} KiB; {files} sources, {} KiB",
+              out.display(), types.lines().filter(|l| l.starts_with('T')).count(), calls.len(), tables.functions.len(),
               image.len() >> 10, packed.len() >> 10, bytes >> 10);
 }
 
@@ -118,6 +122,10 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
     let mut units = dwarf.units();
     while let Some(header) = units.next()? {
         let unit = dwarf.unit(header)?;
+        // (A function's id, as the plugin has it: its name's hash, or, local
+        // to its file, "file:name"'s, the file the unit's own.)
+        let file = unit.name.map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let id = |name: &str, external: bool| if external { Tables::id(name) } else { Tables::id(&format!("{file}:{name}")) };
         let mut cu = Cu { dwarf: &dwarf, unit: &unit, memo: HashMap::new(), files: HashMap::new() };
         // Every type in the unit, so that unused ones are listed too, and
         // every variable with a fixed address.
@@ -139,17 +147,19 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
                         // (A function inlined somewhere is abstract here, with
                         // no locations: its out-of-line copy, if any, has
                         // them, and comes first.)
+                        let fid = id(&name, e.attr(dw::DW_AT_external).is_some());
                         if e.attr(dw::DW_AT_inline).is_none() {
-                            funcs.push((name, e.offset()));
+                            funcs.push((name, fid, e.offset()));
                         } else {
-                            abstract_funcs.push((name, e.offset()));
+                            abstract_funcs.push((name, fid, e.offset()));
                         }
                     } else if name.is_empty() && e.attr(dw::DW_AT_low_pc).is_some()
                         && let Some(AttributeValue::UnitRef(origin)) = e.attr_value(dw::DW_AT_abstract_origin) {
                         let origin = unit.entry(origin)?;
                         let name = attr_string(&cu, &origin, dw::DW_AT_name)?;
                         if !name.is_empty() {
-                            funcs.push((name, e.offset()));
+                            let fid = id(&name, origin.attr(dw::DW_AT_external).is_some());
+                            funcs.push((name, fid, e.offset()));
                         }
                     }
                 }
@@ -167,8 +177,8 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
         for off in offsets {
             b.canon(&mut cu, off)?;
         }
-        for (name, off) in funcs.into_iter().chain(abstract_funcs) {
-            if !b.functions.insert(name.clone()) {
+        for (name, fid, off) in funcs.into_iter().chain(abstract_funcs) {
+            if !b.functions.insert(fid) {
                 continue;
             }
             let mut sig = Vec::new();
@@ -179,7 +189,7 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
                 };
                 sig.push(format!("{pname}:{t}"));
             }
-            b.extra.push(format!("P\t{name}\t{}", sig.join(",")));
+            b.extra.push(format!("P\t{fid}\t{name}\t{}", sig.join(",")));
             let mut vars = Vec::new();
             for (vname, ty, at) in locals(&dwarf, &unit, off, &cu)? {
                 if let (Some(t), Some(at)) = (ty, at) {
@@ -187,7 +197,7 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
                 }
             }
             if !vars.is_empty() {
-                b.extra.push(format!("Q\t{name}\t{}", vars.join(",")));
+                b.extra.push(format!("Q\t{fid}\t{}", vars.join(",")));
             }
         }
         for (name, addr, ty, (file, line)) in vars {
@@ -343,7 +353,8 @@ struct Builder {
     /// Names of globals listed (the first of several statics wins).
     globals: std::collections::HashSet<String>,
     /// Functions given a P line.
-    functions: std::collections::HashSet<String>,
+    /// (By id: see types.)
+    functions: std::collections::HashSet<u32>,
     /// Names given a W line (the first declaration of a name wins).
     located: std::collections::HashSet<String>,
 
