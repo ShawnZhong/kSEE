@@ -94,3 +94,69 @@ export function kernel(m, { changed } = {}) {
 
   return { call, declare, sys, C: m.constants(), arg };
 }
+
+// A program (the page's: its lines, `steps`), made one step after another:
+// a call ({ call, args (as written, in C: Machine.arg), name?, tid? }) or a
+// variable's declaration ({ decl }). What the page's program and the tests
+// share: the results so far by name and by number, the variables, whose
+// runner makes a call.
+//   const p = runner(k, m, steps);
+//   while (await p.next());          // each: { j, decl } or { j, q, news }
+export function runner(k, m, steps) {
+  // (`as: n`, an older spelling of a step's runner: the one call n started.)
+  steps.forEach((s) => s.as && ((s.tid ??= `$${s.as}`), delete s.as));
+  // (Per step: how it went ({ id, tid, args, how?, ret?, buffers? }, or {
+  // decl }); the runner it started, if any. The variables: { name, addr,
+  // ty, count, size, j, get(), … }.)
+  const done = [], started = [], vars = [];
+  // Calls are numbered from 1, as $n and the explanations have them: the
+  // declarations are not calls. Step `i`'s number; call `n`'s step.
+  const callNumber = (i) => steps.slice(0, i + 1).filter((s) => !s.decl).length;
+  const stepOf = (n) => steps.findIndex((s, i) => !s.decl && callNumber(i) === n);
+  // The names the first `j` steps make: $n and the name of each call's
+  // result; each variable's address, an array's elements as they are now.
+  // (`runners`: a call not returned yet is, as a runner, the one it started:
+  // a vfork's child, before the clone returns.)
+  function known(j = done.length, runners = false) {
+    const o = {};
+    for (const v of vars) {
+      if (v.j >= j) continue;
+      o[v.name] = v.addr;
+      const now = v.count != null ? v.get() : null;
+      if (Array.isArray(now)) now.forEach((x, i) => typeof x === "number" && (o[`${v.name}[${i}]`] = x));
+    }
+    done.slice(0, j).forEach((d, i) => {
+      const r = d?.ret ?? (runners ? started[i] : null);
+      if (steps[i].decl || r == null) return;
+      o[`$${callNumber(i)}`] = r;
+      if (steps[i].name) o[steps[i].name] = r;
+    });
+    return o;
+  }
+  // Step `s`'s runner (a thread id): as written, a number or a result; else /init.
+  const tidOf = (s) => (s.tid == null ? 1 : typeof s.tid === "number" ? s.tid : m.value(String(s.tid), known(done.length, true)));
+  // Make the next step (null if none): a variable declared, or a call made
+  // and the kernel run until it is quiet ({ j, q, news }; q gets how it
+  // went, and so do the calls before it finished meanwhile).
+  async function next() {
+    const j = done.length, s = steps[j];
+    if (!s) return null;
+    if (s.decl) {
+      const v = Object.assign(k.declare(s.decl, 1, known()), { j });
+      vars.push(v);
+      done[j] = { decl: v, how: "declared" };
+      return { j, decl: v };
+    }
+    const args = s.args.map((a, i) => m.arg(s.call, i, a, known())), tid = tidOf(s);
+    const before = new Set(m.runners()), made = k.call(s.call, args, tid);
+    const q = (done[j] = { id: made.id, tid, args });
+    const news = await made.quiet;
+    started[j] = [...news.runners].find((r) => !before.has(r));
+    for (const f of news.finished) {
+      const d = done.find((x) => x?.id === f.id);
+      if (d) Object.assign(d, { how: f.how, ret: f.ret, buffers: f.buffers });
+    }
+    return { j, q, news };
+  }
+  return { steps, done, started, vars, known, tidOf, callNumber, stepOf, next };
+}

@@ -33,6 +33,7 @@
 import { $, el } from "./dom.js";
 import { made, parseCall, result } from "./args.js";
 import { callEditor } from "./calledit.js";
+import { runner } from "./kernel.js";
 
 export async function examples(app) {
   const { m } = app;
@@ -96,10 +97,11 @@ export async function examples(app) {
   function open(ex, steps = ex.steps) {
     t.ex = ex;
     // (The form adds to them. `as: k`, an older spelling: the runner call k started, $k.)
-    t.steps = steps.map(({ as, ...s }) => (as ? { ...s, tid: `$${as}` } : { ...s }));
-    t.done = [];
-    t.started = [];
-    t.vars = [];
+    t.steps = steps.map((s) => ({ ...s }));
+    // (Made by a runner, kernel.js's: its steps, how each went, the runners
+    // they started, the variables.)
+    t.run = runner(app.kernel, m, t.steps);
+    ({ done: t.done, started: t.started, vars: t.vars } = t.run);
     t.links = [];
     t.changed = false;
     t.status = el("div", { className: "tstatus dim" });
@@ -152,33 +154,9 @@ export async function examples(app) {
     go(t.ex, t.steps.filter((_, k) => k !== j), true);
   }
 
-  // The results so far, by name: $n for call n, and the name its step
-  // gives it (of the first `j` calls).
-  // (`runners`: for a runner, a call's result while it has not returned
-  // is the runner it started: a vfork's child, before the clone returns.)
-  const known = (j = t.done.length, runners = false) => {
-    const o = {};
-    // (The variables declared before: their addresses; an array's
-    // elements, `fds[1]`, as they are now.)
-    for (const v of t.vars ?? []) {
-      if (v.j >= j) continue;
-      o[v.name] = v.addr;
-      const now = v.count != null ? v.get() : null;
-      if (Array.isArray(now)) now.forEach((x, i) => typeof x === "number" && (o[`${v.name}[${i}]`] = x));
-    }
-    // (The results: $n for call n, counting calls only.)
-    t.done.slice(0, j).forEach((d, i) => {
-      const v = d?.ret ?? (runners ? t.started[i] : null);
-      if (t.steps[i].decl || v == null) return;
-      o[`$${callNumber(i)}`] = v;
-      if (t.steps[i].name) o[t.steps[i].name] = v;
-    });
-    return o;
-  };
-  // Calls are numbered, from 1, as the explanations and $n have them: the
-  // declarations are not calls. Step `i`'s number; call `n`'s step.
-  const callNumber = (i) => t.steps.slice(0, i + 1).filter((s) => !s.decl).length;
-  const stepOf = (n) => t.steps.findIndex((s, i) => !s.decl && callNumber(i) === n);
+  // The program's names, numbers and runners: its runner's (kernel.js).
+  const known = (...a) => t.run.known(...a);
+  const stepOf = (n) => t.run.stepOf(n);
   // (For "as made": the results and the elements, not the variables: a
   // variable is clearer by its name than by its address.)
   const made_ = () => {
@@ -186,8 +164,7 @@ export async function examples(app) {
     for (const v of t.vars) delete o[v.name];
     return o;
   };
-  // A step's runner (a thread id): as written, a number or a result.
-  const tidOf = (s) => (s.tid == null ? 1 : typeof s.tid === "number" ? s.tid : m.value(String(s.tid), known(t.done.length, true)));
+  const tidOf = (s) => t.run.tidOf(s);
   // A step's call, as written (or with `values` for the results: as made):
   // `tid: name = call(args)`.
   const text = (s, values) => s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.map((a) => (values ? made(a, values) : a)).join(", ")})`;
@@ -268,39 +245,23 @@ export async function examples(app) {
     const j = t.done.length, s = t.steps[j];
     if (!s) return false;
     const mine = t.list;
-    // (A variable: made, in /init's memory, as it starts.)
-    if (s.decl) {
-      try {
-        const v = app.kernel.declare(s.decl, 1, known());
-        const shown = m.show(v.ty, v.addr, v.count ?? undefined);
-        t.vars.push({ ...v, j, shown, initial: shown });
-        t.done[j] = { decl: true, how: "declared" };
-      } catch (e) {
-        t.status.textContent = `Line ${j + 1}: ${e.message ?? e}`;
-        return false;
-      }
+    let r;
+    try {
+      r = await t.run.next();
+    } catch (e) {
+      if (t.list === mine) t.status.textContent = `${s.decl ? "Line" : "Call"} ${j + 1}: ${e.message ?? e}`;
+      return false;
+    }
+    if (t.list !== mine) return false;
+    // (A variable: as it starts.)
+    if (r.decl) {
+      r.decl.shown = r.decl.initial = r.decl.show();
       draw();
       return true;
     }
-    let q, news;
-    try {
-      const args = s.args.map((a, k) => m.arg(s.call, k, a, known())), tid = tidOf(s);
-      const before = new Set(m.runners()), made = app.kernel.call(s.call, args, tid);
-      q = { id: made.id, tid, args };
-      t.done[j] = q;
-      news = await made.quiet;
-      if (t.list !== mine) return false;
-      t.started[j] = [...news.runners].find((r) => !before.has(r));
-    } catch (e) {
-      if (t.list === mine) t.status.textContent = `Call ${j + 1}: ${e.message ?? e}`;
-      return false;
-    }
-    // (The calls it finished: it, or ones it woke.)
-    for (const f of news.finished) {
-      const d = t.done.find((x) => x?.id === f.id);
-      if (d) Object.assign(d, { how: f.how, ret: f.ret, text: outputs(t.steps[t.done.indexOf(d)].call, d.args, f.buffers) });
-    }
-    q.ret ??= t.done[j].ret;
+    const q = r.q;
+    // (What the calls finished left in their buffers: it, or ones it woke.)
+    for (const [i, d] of t.done.entries()) if (d?.buffers && d.text == null) d.text = outputs(t.steps[i].call, d.args, d.buffers);
     // (And the variables it changed, as they are now; a directory's
     // entries, getdents64's records, by their names.)
     const changed = [];

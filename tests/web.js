@@ -4,7 +4,7 @@
 //   deno run --allow-read tests/web.js
 import { start } from "../target/site/ksee.js";
 import { parseCall } from "../target/site/args.js";
-import { kernel } from "../target/site/kernel.js";
+import { kernel, runner } from "../target/site/kernel.js";
 
 const root = new URL("..", import.meta.url);
 const m = await start({
@@ -269,43 +269,11 @@ const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/example
 // (A step's runner, `as`: the one call `as` started; else /init.)
 async function runExample(ex) {
   await m.restart();
-  const rets = [], asked = [], started = [], vars = [], seen = new Set(m.runners());
-  // (The results so far, by $n (calls counted, not declarations) and by
-  // name, and the variables (their addresses, an array's elements), as the
-  // page has them; for a runner, a call not returned yet is the runner it
-  // started: vfork's child.)
-  const known = (runners) => {
-    const o = {};
-    let n = 0;
-    ex.steps.slice(0, asked.length).forEach((st, i) => {
-      if (st.decl) return;
-      n++;
-      const v = rets[i] ?? (runners ? started[i] : null);
-      if (v != null) Object.assign(o, { [`$${n}`]: v }, st.name ? { [st.name]: v } : {});
-    });
-    for (const v of vars) {
-      o[v.name] = v.addr;
-      const now = v.count != null ? m.get(v.ty, v.addr, v.count) : null;
-      if (Array.isArray(now)) now.forEach((x, i) => (o[`${v.name}[${i}]`] = x));
-    }
-    return o;
-  };
-  for (const st of ex.steps) {
-    if (st.decl) {
-      vars.push(m.declare(1, st.decl, known(false)));
-      asked.push(null);
-      started.push(undefined);
-      continue;
-    }
-    const args = st.args.map((x, k) => m.arg(st.call, k, x, known(false)));
-    const tid = st.tid == null ? (st.as ? started[st.as - 1] : 1) : typeof st.tid === "number" ? st.tid : m.value(String(st.tid), known(true));
-    const q = await ask(st.call, args, tid);
-    asked.push(q);
-    started.push(m.runners().find((t) => !seen.has(t)));
-    m.runners().forEach((t) => seen.add(t));
-    asked.forEach((a, j) => (rets[j] = fin.get(a)?.ret));
-  }
-  return asked;
+  const p = runner(kern, m, ex.steps.map((s) => ({ ...s })));
+  while (await p.next());
+  // (Each call's id, as asked; null for a declaration; how each finished.)
+  p.done.forEach((d) => d.id != null && d.how != null && fin.set(d.id, d));
+  return p.done.map((d) => d.id ?? null);
 }
 for (const ex of examples) {
   const asked = await runExample(ex), missing = [], blocked = [];
