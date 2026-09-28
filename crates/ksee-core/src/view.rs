@@ -675,12 +675,16 @@ impl View<'_> {
     /// Variable `v` with `value`, as a value of its type (its function's
     /// parameter's, or local's).
     fn var_object(&self, v: &Var, value: u64, mem: &dyn Memory) -> Option<Object> {
+        Some(self.tables.types.object(&Arg(&value.to_le_bytes(), mem), &v.name, 0, self.var_ty(v)?, 0))
+    }
+
+    /// Variable `v`'s type: its function's parameter's, or local's.
+    fn var_ty(&self, v: &Var) -> Option<u32> {
         let types = &self.tables.types;
-        let ty = match v.param {
+        Some(match v.param {
             0 => types.locals.get(&v.of)?.iter().find(|l| l.0 == v.name)?.1,
             k => types.params.get(&v.of)?.get(k as usize - 1)?.1,
-        };
-        Some(types.object(&Arg(&value.to_le_bytes(), mem), &v.name, 0, ty, 0))
+        })
     }
 
 
@@ -934,6 +938,26 @@ impl View<'_> {
                             let end = self.rec.calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
                             let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
                             add(format!("{}'s {var}", f.name), "object", to, v, None, frame_of(i, v), Some(i));
+                        }
+                    }
+                    // (One the code keeps in a wasm local, pointing at a
+                    // struct (Record::Var): where it points as the call
+                    // ends, its last value; in the order the code first
+                    // sets them: the call's own filp names the file before
+                    // an inlined callee's file.)
+                    let end = calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
+                    let mut values: Vec<(&Var, u32)> = Vec::new();
+                    for j in calls.vars_of(i, end) {
+                        if let Record::Var { var, value, .. } = records[j] && let Some(v) = t.vars.get(&(func, var)) {
+                            match values.iter_mut().find(|(w, _)| w.function == v.function && w.name == v.name) {
+                                Some(w) => w.1 = value as u32,
+                                None => values.push((v, value as u32)),
+                            }
+                        }
+                    }
+                    for (v, value) in values {
+                        if let Some(to) = self.var_ty(v).and_then(|ty| types.struct_target(ty)) {
+                            add(format!("{}'s {}", v.function, v.name), "object", to, value, None, frame_of(i, value), Some(i));
                         }
                     }
                 }
@@ -1303,6 +1327,23 @@ mod tests {
         assert_eq!(got, [("f's p".into(), "object", "b".into(), "2".into()), ("f's x".into(), "local", "".into(), "7".into()),
                          ("g's frame".into(), "frame", "+4".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into()),
                          ("0x15".into(), "other", "".into(), "0".into())]);
+    }
+
+    #[test]
+    fn a_store_through_a_pointer_in_a_wasm_local_is_named_by_it() {
+        // f (1) keeps struct s *q (variable 0) in a wasm local, 4 (a set,
+        // itself one of the call's stores); it stores q->b.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\t0\t1\tf\tq\t0\t0\n",
+                              "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nQ\t1\tq:3:\n");
+        let r = [Record::Block { func: 1, n: 0 }, Record::Var { var: 0, line: 0, value: 4 }, Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None }];
+        let mut args = Args::default();
+        args.push(0, &[64]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
+        let mut m = alloc::vec![0u8; 128];
+        m[8] = 2;
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        let got: Vec<_> = v.stores(0, 2).iter().map(|s| (s.what.clone(), s.write.member.clone(), s.write.after.clone())).collect();
+        assert_eq!(got, [("f's q".into(), "".into(), "0x4".into()), ("f's q".into(), "b".into(), "2".into())]);
     }
 
     #[test]

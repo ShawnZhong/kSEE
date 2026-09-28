@@ -124,8 +124,8 @@ h2.tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
 tr.later { opacity: 0.45; }
 #objects .obj.ended { border-style: dashed; opacity: 0.75; }
 #objects .obj.later { opacity: 0.5; }
-/* When a member was written, in the selected call: a tick a write, the cursor a line (objects.js) */
-#objects .when { position: relative; display: inline-block; width: 90px; height: 10px; margin-left: 8px; vertical-align: middle;
+/* When a member was written, in the selected call: a tick a write, the cursor a line (objects.js); at the row's right, the strips of a box in line */
+#objects .when { position: relative; float: right; width: 90px; height: 10px; margin: 3px 0 0 12px;
                  border-bottom: 1px solid var(--line); }
 #objects .when i { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; background: var(--dim); cursor: pointer; }
 #objects .when i.done { background: var(--accent); }
