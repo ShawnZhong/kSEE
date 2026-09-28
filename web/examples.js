@@ -192,12 +192,6 @@ export async function examples(app) {
     : d.how == null ? "… blocked"
     : d.how === "exec" ? "(no return: the new program runs)"
     : d.how === "exited" ? "(no return: it exited)" : `= ${app.kernel.result(d.ret)}`;
-  // Who makes step `j`'s call, if not /init.
-  const who = (j) => {
-    const tid = t.done[j]?.tid ?? (typeof t.steps[j].tid === "number" ? t.steps[j].tid : null);
-    return tid === 1 || tid == null ? null : el("span", { className: "mono tid", textContent: `tid ${tid}`,
-      title: "the runner with this thread id (a thread or a child of /init)" });
-  };
   // The program: a call a line, each its own editor; then a line to add one.
   function draw() {
     t.list.replaceChildren(...t.steps.map((s, j) => {
@@ -209,7 +203,7 @@ export async function examples(app) {
       // (Hover: the names it uses, at the cursor.)
       e.input.onmouseenter = () => (e.input.title = names(s, j));
       return el("li", { className: [d ? "done" : "", d && d.how == null ? "blocked" : ""].join(" ").trim() },
-        el("div", { className: "line" }, typeof s.tid === "number" ? null : who(j), e.el,
+        el("div", { className: "line" }, e.el,
           d ? el("span", { className: "mono ret", textContent: how(d, s) }) : null,
           el("a", { className: "rm", textContent: "✕", title: "remove the call (the program runs again without it)", onclick: () => remove(j) })),
         t.started[j] ? el("div", { className: "dim more", textContent: `→ tid ${t.started[j]}, a runner` }) : null,

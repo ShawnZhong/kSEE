@@ -8,7 +8,7 @@
   const bad = (k, want) => !r.calls[k]?.includes(want);
   // (Its lines: int fds[2], pipe2, clone, the child's four, /init's three,
   // siginfo_t info, waitid.)
-  if (document.querySelector("ol.steps > li.blocked") || bad(1, "= 0") || bad(2, "= 19") || bad(3, "tid ") || bad(6, "tid ") || bad(6, "new program")
+  if (document.querySelector("ol.steps > li.blocked") || bad(1, "= 0") || bad(2, "= 19") || bad(3, "child:") || bad(6, "child:") || bad(6, "new program")
       || bad(8, "= 6") || bad(9, "= 0") || bad(11, "= 0") || !r.stop.includes("create_pipe_files") || !r.console.includes("hello"))
     throw new Error("the pipe: " + JSON.stringify(r));
   return r;

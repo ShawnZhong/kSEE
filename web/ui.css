@@ -205,7 +205,6 @@ ol.steps > li:hover .line .rm { visibility: visible; }
 .ptitle a { margin-left: auto; text-transform: none; letter-spacing: 0; }
 ol.steps .ret { color: var(--accent); margin-left: auto; white-space: nowrap; }
 ol.steps > li.blocked .ret { color: var(--pp); font-style: italic; }
-ol.steps .tid { font-size: 11px; color: var(--kw); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; white-space: nowrap; }
 ol.steps .more { font-size: 11px; padding-left: 2px; }
 
 /* A call's editor (calledit.js): completions, the signature */
