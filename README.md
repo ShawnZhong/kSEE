@@ -83,7 +83,8 @@ task ran; the whole recording at first (scroll to zoom, drag to pan;
 "zoom" or z: the window at the selection, "whole" or x, or a double-click
 on empty chart: all of it again; hover a call for what it was (its arguments, what it returned: `ksys_read = 26`): the
 source and the Stack show that moment while the pointer is there; click it to fix the cursor there, and for
-what it did (the Objects, the source's notes; a syscall: selected too,
+what it did (the Objects, the source's notes, until another is clicked;
+their head links back to the whole syscall; a syscall: selected too,
 its records from its entry to its exit, with whatever else ran in
 between, the lines to step through); double-click a call: the window at
 it). The

@@ -32,20 +32,27 @@ export function objects(app) {
       shown = key;
       $("objects-note").textContent = w ? "" : "Select a call (click one in the program, or a syscall in the timeline): what it did to the kernel's data.";
       const top = body.scrollTop;
-      body.replaceChildren(...(w ? render(m.objects(w.a, w.b), w.title).filter(Boolean) : []));
+      body.replaceChildren(...(w ? render(m.objects(w.a, w.b), w).filter(Boolean) : []));
       body.scrollTop = top;
     }
     mark(app.time.cursor());
   }
 
-  function render(nodes, title) {
-    if (!nodes.length) return [el("div", { className: "dim head" }, `${title} changed nothing that is still there when it returns (its own locals: the Stack).`)];
+  // (A call in the syscall in focus: a way back to the whole syscall.)
+  function whole(w) {
+    const h = app.time.home();
+    return h && (h.a !== w.a || h.b !== w.b) ? ["  · ", el("a", { textContent: `the whole ${h.title}`, onclick: () => app.time.unfocus() })] : [];
+  }
+
+  function render(nodes, w) {
+    const title = w.title;
+    if (!nodes.length) return [el("div", { className: "dim head" }, `${title} changed nothing that outlives it`, ...whole(w))];
     // (As a tree: each box under the one that points to it (Node.under),
     // from the ones nothing points to; siblings in order.)
     const order = [];
     const visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.under?.[0] === k && visit(c, depth + 1)));
     nodes.forEach((n, k) => n.under == null && visit(k, 0));
-    return [el("div", { className: "dim head" }, `What ${title} did: ${nodes.length} object${nodes.length === 1 ? "" : "s"}`),
+    return [el("div", { className: "dim head" }, `What ${title} did: ${nodes.length} object${nodes.length === 1 ? "" : "s"}`, ...whole(w)),
       // (One under another: indented, a guide line down its left.)
       ...order.map(([k, depth]) => {
         const b = box(nodes[k], nodes, k);

@@ -156,6 +156,10 @@
   ksee.tab("objects");
   r.focused = document.querySelector("#objects .head")?.textContent;
   if (!/^What ksys_read did/.test(r.focused ?? "")) throw new Error("the Objects of the call clicked: " + r.focused);
+  // (And back to the whole syscall, by the link in its head.)
+  document.querySelector("#objects .head a")?.click();
+  r.unfocused = document.querySelector("#objects .head")?.textContent;
+  if (!/^What read by prog\(\d+\) did/.test(r.unfocused ?? "")) throw new Error("the whole syscall again: " + r.unfocused);
   ksee.tab("stack");
   // Your own call: type it, Tab completes the name, Enter makes it.
   const input = document.querySelector(".callform textarea"), key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k }));

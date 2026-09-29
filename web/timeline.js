@@ -361,6 +361,12 @@ export function timeline(app) {
     t.focus = t.focusAt();
     app.outlined?.();
   }
+  // The focus back on the selection (the syscall selected).
+  function unfocus() {
+    t.focusAt = t.where;
+    t.focus = t.home;
+    app.outlined?.();
+  }
   let overDrag = false;
   const overMove = (e) => {
     if (!t.win) return;
@@ -499,6 +505,6 @@ export function timeline(app) {
     }
     return null;
   }
-  return { refresh, clear, go, mark, select, focusCall, hilite, selected, boxOf, focusFind: () => finder.input.focus(),
+  return { refresh, clear, go, mark, select, focusCall, unfocus, hilite, selected, boxOf, focusFind: () => finder.input.focus(),
            home: () => t.home, focus: () => t.focus, cursor: () => t.cursor, records: () => t.n };
 }
