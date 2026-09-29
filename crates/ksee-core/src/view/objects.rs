@@ -23,6 +23,9 @@ pub struct Node {
     /// what the call did), or "same" (every change undone by the end: a
     /// lock taken and released, a count taken and dropped).
     pub group: &'static str,
+    /// Another task than the span's, if one made its first write (one the
+    /// span woke, or that ran while it waited: a journal's thread).
+    pub by: Option<TaskRef>,
     /// The node it is shown under (of its group), and by which of its
     /// members: the first that points to it as the span ends ("f_inode"),
     /// if any.
@@ -74,6 +77,7 @@ impl View<'_> {
         // address and type), by member, in order; with the member's leaf.)
         let mut nodes: Vec<(Node, Vec<(String, Leaf, Vec<Wrote>)>)> = Vec::new();
         let mut leaves: BTreeMap<(u32, u32, u32), Vec<(String, Option<Leaf>)>> = BTreeMap::new();
+        let own = self.rec.tasks.get(first).copied();
         for w in &named.writes {
             let r = &named.regions[w.region as usize];
             // (The kernel's data, not a stack's: a call's locals, and what a
@@ -85,8 +89,10 @@ impl View<'_> {
             let k = match nodes.iter().position(|(n, _)| n.addr == r.addr && n.id == r.ty) {
                 Some(k) => k,
                 None => {
+                    let task = self.rec.tasks[w.i];
+                    let by = (Some(task) != own).then(|| self.task(task));
                     nodes.push((Node { what: r.what.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size, changes: Vec::new(),
-                                       depth: r.depth, group, under: None }, Vec::new()));
+                                       depth: r.depth, group, by, under: None }, Vec::new()));
                     nodes.len() - 1
                 }
             };
@@ -144,10 +150,19 @@ impl View<'_> {
             (n.changes, points) = both.into_iter().unzip();
             Some((n, points))
         }).collect();
-        // (What changed, then what was left as it was; in each, in the order of the calls that name them, the outer first,
-        // as a call tree reads; within one call, the first written first.
-        // The task first; globals last.)
-        nodes.sort_by_key(|n| (n.0.group == "same", n.0.depth));
+        // (What changed, then what was left as it was; in each, the span's
+        // task's, then each other's in the order they first wrote; in each,
+        // in the order of the calls that name them, the outer first, as a
+        // call tree reads; within one call, the first written first. The
+        // task first; globals last.)
+        let mut tasks: Vec<Option<u32>> = alloc::vec![None];
+        for (n, _) in &nodes {
+            let t = n.by.as_ref().map(|t| t.addr);
+            if !tasks.contains(&t) {
+                tasks.push(t);
+            }
+        }
+        nodes.sort_by_key(|n| (n.0.group == "same", tasks.iter().position(|&t| t == n.0.by.as_ref().map(|t| t.addr)), n.0.depth));
         let (mut nodes, points): (Vec<Node>, Vec<Vec<Option<u32>>>) = nodes.into_iter().unzip();
         // (One name for two (the slabs of two caches a callee named by one
         // parameter): the later numbered: "slab in pfmemalloc_match #2".)
@@ -160,11 +175,11 @@ impl View<'_> {
             }
         }
         let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
-        // (Each node's pointers to the others of its group, as memory is as
-        // the span ends: the tree each group is shown as.)
+        // (Each node's pointers to the others of its group and task, as
+        // memory is as the span ends: the tree each is shown as.)
         let links: Vec<Vec<(String, usize)>> = nodes.iter().enumerate().map(|(k, n)| {
             types.pointers(n.id, 3).into_iter().filter_map(|(member, off)| Some((member, within(mem.read_u32(n.addr.wrapping_add(off)))
-                .filter(|&to| to != k && nodes[to].group == n.group)?))).collect()
+                .filter(|&to| to != k && nodes[to].group == n.group && nodes[to].by == n.by)?))).collect()
         }).collect();
         let tos: Vec<Vec<Option<usize>>> = points.iter().enumerate().map(|(k, p)| p.iter().map(|p| p.and_then(within).filter(|&to| to != k)).collect()).collect();
         // (The tree they are shown in, from the ones nothing points to (then

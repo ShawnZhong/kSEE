@@ -130,7 +130,9 @@ a pointer, to another object: that one, `fd_array[3]  NULL → f in
 create_pipe_files`, a link to it; a count one took and another dropped,
 dim); a line goes to its write. As a tree: each object under
 the first that points to it (`← f_inode`), the one holding the task
-first; the head names them, once each (`folio ×23`). The moment shown (the
+first; the head names them, once each (`folio ×23`). What other tasks
+changed while it ran (one it woke, or waited for: fsync's journal
+thread) comes after its own, by task, a head each. The moment shown (the
 pointer's over the timeline, else the cursor's) only colors it: the
 writes not made by then are gray, those it is among marked. One store may change several members (a struct
 copied at once: `f_path.mnt` and `f_path.dentry`): each is a change of

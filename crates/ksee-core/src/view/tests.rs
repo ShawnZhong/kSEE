@@ -180,6 +180,26 @@ fn the_objects_a_call_wrote_are_a_graph() {
 }
 
 #[test]
+fn another_tasks_objects_come_after_the_spans_own() {
+    // Task 0's f (1) takes struct s *p (at 4) and stores p->b; while it
+    // runs, task 40's g (2) takes struct s *q (at 16) and stores q->b
+    // first: f's p first, then g's q, by task 40.
+    let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:2\t0\n",
+                          "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\nP\t2\tg\tq:3\n");
+    let st = |addr, old| Record::Store { addr, size: 4, old: Some(old), line: 0, from: None };
+    let r = [Record::Block { func: 1, n: 0 }, Record::Task { task: 40 }, Record::Block { func: 2, n: 0 }, st(20, 3), Record::Task { task: 0 }, st(8, 1)];
+    let mut args = Args::default();
+    args.push(0, &[4, 64]);
+    args.push(2, &[16, 64]);
+    let rec = Recording::new(&t, r.to_vec(), (0..6).collect(), args);
+    let mut m = alloc::vec![0u8; 64];
+    (m[8], m[20]) = (2, 4);
+    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let got: Vec<_> = v.objects(0, 5).into_iter().map(|n| (n.what, n.by.map(|t| t.addr))).collect();
+    assert_eq!(got, [("p in f".into(), None), ("q in g".into(), Some(40))]);
+}
+
+#[test]
 fn a_calls_locals_are_not_objects() {
     // f (1) stores its local int x (at frame 32 + 4): the Stack's, not
     // an object, before it returns as after.

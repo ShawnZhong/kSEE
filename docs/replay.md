@@ -131,7 +131,9 @@ that left it as it was, not; a member no run changed, not); a pointer, the
 object it points to as it ends; and each object under the first that
 points to it then (the members of pointer type, `Types::pointers`, whose
 value is inside another, of its group: those left changed, and those left
-as they were, every change undone); the trees in the order of their
+as they were, every change undone), and of its task: the one that
+made its first write (`Node::by`: another than the span's, one that ran
+while it waited, its objects after the span's own); the trees in the order of their
 first objects (the task, then what the outer calls name, then the first
 written), each object followed by those under it.
 

@@ -2,7 +2,9 @@
 // (Machine.objects), all of it, always: a head saying it in a line ("write
 // changed 2 objects: file, inode"), then a box per object it changed, the
 // kernel's data, not a stack's (a call's locals: the Stack), first those
-// it left changed, then those it left as they were (a lock taken and
+// it left changed (its own task's, then each other task's that ran
+// meanwhile, a head each: "By jbd2/loop0-8(16), while it ran"), then
+// those it left as they were (a lock taken and
 // released, a count taken and dropped) (declared as the code names them:
 // "struct file *file in vfs_read", "struct files_struct *prog(19)->files";
 // and by its address, which it is; a global, where it is declared), each
@@ -14,7 +16,7 @@
 // members it left changed first. The moment shown (the pointer's over
 // the timeline, else the cursor's) only colors it: the writes not made by
 // then gray, the run of writes it is in marked.
-import { $, el } from "./dom.js";
+import { $, el, taskName } from "./dom.js";
 
 export function objects(app) {
   const { m } = app;
@@ -45,8 +47,13 @@ export function objects(app) {
     const count = (list) => `${list.length} object${list.length === 1 ? "" : "s"}`;
     // (Their names, once each: "folio ×23".)
     const names = (list) => [...Map.groupBy(list, short)].map(([s, of]) => (of.length > 1 ? `${s} ×${of.length}` : s)).join(", ");
-    // (The head: what it changed, in a line; what it left as it was.)
-    const head = [changed.length ? `${title} changed ${count(changed)}: ${names(changed)}` : `${title} left the kernel's data as it was`,
+    // (Its own, then each other task's that first wrote them while it ran,
+    // by task: Node.by.)
+    const own = changed.filter((n) => !n.by), others = [...Map.groupBy(changed.filter((n) => n.by), (n) => taskName(n.by))];
+    // (The head: what it changed, in a line; what the others did; what it
+    // left as it was.)
+    const head = [own.length ? `${title} changed ${count(own)}: ${names(own)}` : `${title} itself changed nothing of the kernel's data`,
+                  others.length ? `; while it ran, ${others.length === 1 ? "another task" : `${others.length} other tasks`} changed ${count(others.flatMap(([, l]) => l))} more (${others.map(([t, l]) => `${t}: ${l.length}`).join(", ")})` : "",
                   same.length && changed.length ? `; left ${count(same)} as it was` : ""].join("");
     const out = [el("div", { className: "head" }, head)];
     // (Each group as a tree, in order (each box followed by those under
@@ -54,18 +61,24 @@ export function objects(app) {
     // left.)
     const depth = [];
     nodes.forEach((n, k) => (depth[k] = n.under ? depth[n.under[0]] + 1 : 0));
-    const tree = (group) => nodes.flatMap((n, k) => {
-      if (n.group !== group) return [];
+    const tree = (list) => nodes.flatMap((n, k) => {
+      if (!list.includes(n)) return [];
       const b = box(n, nodes, k);
       if (depth[k]) (b.classList.add("under"), (b.style.marginLeft = `${Math.min(depth[k], 6) * 18}px`));
       return [b];
     });
-    out.push(...tree("changed"));
+    out.push(...tree(own));
+    // (Each other task's, under a head of its own.)
+    for (const [t, list] of others) {
+      out.push(el("div", { className: "head", title: "a task that ran while it did (one it woke, or waited for), and first wrote these" },
+        `By ${t}, while it ran: ${count(list)}: ${names(list)}`));
+      out.push(...tree(list));
+    }
     // (Then those left as they were, under a head of their own.)
     if (same.length) {
       out.push(el("div", { className: "dim head", title: "changed, then changed back by the end (a lock taken and released, a count taken and dropped)" },
-        `Left as it was, changed and changed back: ${same.map(short).join(", ")}`));
-      out.push(...tree("same"));
+        `Left as it was, changed and changed back: ${names(same)}`));
+      out.push(...tree(same));
     }
     return out;
   }
