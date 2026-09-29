@@ -6,21 +6,19 @@
 //
 // Opening an example makes all its calls, each recorded (a runner makes
 // each: the program (/bin/prog), or a thread or child of it; see
-// Machine.call). A call may
-// block, and finish as a later one wakes it. Then the explanation's links
-// lead into the recording: `[label](2)` is call 2 (its recording
-// selected), `[label](2:vfs_read)` the first call of vfs_read in it (on
-// the call's task; `:any` on any task), the cursor there, and `:objects`
-// (or `:stack`, `:tasks`, `:trace`) shows that tab
-// (`:objects`: the function's call in focus, as a click on it in the
-// timeline puts it, at its return: what it did); the first such
-// link is where the cursor starts; `[label](try:1)` runs the example's
-// `tries[0]`, another program (calls separated by ";"), instead: to see
-// what changes. `code` in backticks. The program is
-// below, a call a line: click one for its recording; type in it to change
-// it (Enter: the program runs again, on a fresh kernel), empty it (or ✕)
-// to remove it; add a call at the end; ↺ for the example's own program
-// again.
+// Machine.call). A call may block, and finish as a later one wakes it.
+// Then the explanation's links lead into the recording: `[label](2)` is
+// call 2 (its recording selected), `[label](2:vfs_read)` the first call
+// of vfs_read in it (on the call's task; `:any` on any task), the cursor
+// there, and `:objects` (or `:stack`, `:tasks`, `:trace`) shows that tab
+// (`:objects`: the cursor at the function's return, so that what it did
+// is in color); the first such link is where the cursor starts;
+// `[label](try:1)` runs the example's `tries[0]`, another program (calls
+// separated by ";"), instead: to see what changes. `code` in backticks.
+// The program is below, a call a line: click one for its recording; type
+// in it to change it (Enter: the program runs again, on a fresh kernel),
+// empty it (or ✕) to remove it; add a call at the end; ↺ for the
+// example's own program again.
 //
 // A step: a line of the program (Machine.statement), a call { call, args,
 // type?, name?, tid? }, its arguments written as in C (Machine.arg): "a
