@@ -191,14 +191,14 @@ struct Change {
     after: String,
 }
 
-/// What a source line stored (or set) by a moment (View::notes): its
-/// last store at record `i`, `n` of them, said `short` and in `full`.
+/// What a source line stored (or set) by a moment (View::notes): each
+/// thing it wrote, said `short` and in `full`; its last write at record
+/// `i`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Note {
     pub line: u32,
     pub i: usize,
-    pub n: usize,
     pub short: String,
     pub full: String,
 }
@@ -833,17 +833,19 @@ impl View<'_> {
         u64::from_le_bytes(new)
     }
 
-    /// The member of `r` the store at record `i` wrote (none for a variable
-    /// set): its path and, for a typed region, the leaf there (types::leaf:
-    /// its type, offset, bits).
-    fn member(&self, r: &Region, i: usize) -> (String, Option<Leaf>) {
-        let Record::Store { addr, .. } = self.rec.records[i] else { return (String::new(), None) };
+    /// The members of `r` the store at record `i` wrote (none for a
+    /// variable set): each its path and, for a typed region, the leaf there
+    /// (types::leaves: one store may copy several members, a struct path's
+    /// mnt and dentry at once).
+    fn members(&self, r: &Region, i: usize) -> Vec<(String, Option<Leaf>)> {
+        let Record::Store { addr, size, .. } = self.rec.records[i] else { return Vec::new() };
         // (No type, a frame's bytes: the store as it is, at its offset.)
         if r.ty == 0 {
-            return (if addr == r.addr { String::new() } else { format!("+{}", addr.wrapping_sub(r.addr)) }, None);
+            return alloc::vec![(if addr == r.addr { String::new() } else { format!("+{}", addr.wrapping_sub(r.addr)) }, None)];
         }
-        let (path, leaf, off, bits) = self.tables.types.leaf(r.ty, addr.max(r.addr) - r.addr);
-        (path, Some((leaf, off, bits)))
+        let off = addr.max(r.addr) - r.addr;
+        let len = size.min(r.size.saturating_sub(off));
+        self.tables.types.leaves(r.ty, off, len).into_iter().map(|(path, leaf, off, bits)| (path, Some((leaf, off, bits)))).collect()
     }
 
     /// Leaf `leaf` of region `r` (see member) as it was after record `at`,
@@ -862,22 +864,23 @@ impl View<'_> {
         v.and_then(|v| self.var_object(v, value, self.now)?.value).unwrap_or_default()
     }
 
-    /// Write `w` of `named`, printed: the member, from what to what.
-    fn change(&self, named: &Named, w: &Wrote) -> Change {
+    /// Write `w` of `named`, printed: each member it wrote, from what to what.
+    fn changes(&self, named: &Named, w: &Wrote) -> Vec<Change> {
         let r = &named.regions[w.region as usize];
         if r.kind == "var" {
             let before = w.prev.map_or_else(|| "(uninitialized)".into(), |p| self.var_value(p));
-            return Change { member: String::new(), before, after: self.var_value(w.i) };
+            return alloc::vec![Change { member: String::new(), before, after: self.var_value(w.i) }];
         }
-        let (member, leaf) = self.member(r, w.i);
-        let (before, after) = match leaf {
-            Some(leaf) => (self.value(r, leaf, w.i.saturating_sub(1)), self.value(r, leaf, w.i)),
-            None => {
-                let Record::Store { old, .. } = self.rec.records[w.i] else { unreachable!() };
-                (old.map_or_else(|| "(not kept)".into(), num), num(self.wrote(w.i)))
-            }
-        };
-        Change { member, before, after }
+        self.members(r, w.i).into_iter().map(|(member, leaf)| {
+            let (before, after) = match leaf {
+                Some(leaf) => (self.value(r, leaf, w.i.saturating_sub(1)), self.value(r, leaf, w.i)),
+                None => {
+                    let Record::Store { old, .. } = self.rec.records[w.i] else { unreachable!() };
+                    (old.map_or_else(|| "(not kept)".into(), num), num(self.wrote(w.i)))
+                }
+            };
+            Change { member, before, after }
+        }).collect()
     }
 
     /// The stores in records `first..=last` (a call's), and the variables
@@ -901,32 +904,57 @@ impl View<'_> {
         let named = self.stores(first, last);
         named.writes.iter().map(|w| {
             let r = &named.regions[w.region as usize];
-            Stored { i: w.i, what: r.what.clone(), kind: r.kind, member: self.member(r, w.i).0 }
+            let member = self.members(r, w.i).into_iter().map(|(m, _)| m).collect::<Vec<_>>().join(", ");
+            Stored { i: w.i, what: r.what.clone(), kind: r.kind, member }
         }).collect()
     }
 
     /// What each line of `file` stored (or set) in records `first..=last`
-    /// by record `cur`: its last, and how many (the source's notes), each
-    /// said short (the member, or the variable, and the change: the line
-    /// says the rest) and in full.
+    /// by record `cur` (the source's notes): each thing it wrote (a
+    /// member, a variable), its last change and how many times, said short
+    /// (the member, or the variable, and the change: the line says the
+    /// rest) and in full; at the line's last write.
     pub fn notes(&self, first: usize, last: usize, file: &str, cur: usize) -> Vec<Note> {
         let named = self.stores(first, last);
-        // (Each line's last write, and how many.)
         let files: Vec<u32> = (0..self.tables.files.len() as u32).filter(|&k| self.tables.files[k as usize] == file).collect();
-        let mut by: BTreeMap<u32, (&Wrote, usize)> = BTreeMap::new();
+        // (Each line's things written, in the order first written: (region,
+        // member) -> its last write, how many; and the line's last write.)
+        let mut by: BTreeMap<u32, (Vec<((u32, String), (&Wrote, usize))>, usize)> = BTreeMap::new();
         for w in named.writes.iter().take_while(|w| w.i <= cur) {
             let Some(at) = w.at.filter(|at| files.contains(&at.loc.file)) else { continue };
-            let n = by.get(&at.loc.line).map_or(0, |b| b.1) + 1;
-            by.insert(at.loc.line, (w, n));
+            let r = &named.regions[w.region as usize];
+            let members = if r.kind == "var" { alloc::vec![String::new()] } else { self.members(r, w.i).into_iter().map(|(m, _)| m).collect() };
+            let (things, i) = by.entry(at.loc.line).or_default();
+            *i = w.i;
+            for m in members {
+                let key = (w.region, m);
+                match things.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, x)) => *x = (w, x.1 + 1),
+                    None => things.push((key, (w, 1))),
+                }
+            }
         }
-        by.into_iter().map(|(line, (w, n))| {
-            let (r, x) = (&named.regions[w.region as usize], self.change(&named, w));
-            let join = if x.member.starts_with('+') { "" } else if r.kind == "object" { "->" } else { "." };
-            // (The member after the name, the function it is in last: "filp->f_pos in vfs_read".)
-            let (expr, within) = r.what.split_once(" in ").map_or((r.what.as_str(), String::new()), |(e, f)| (e, format!(" in {f}")));
-            let full = format!("{expr}{}{within}: {} → {}", if x.member.is_empty() { String::new() } else { format!("{join}{}", x.member) }, x.before, x.after);
-            let name = if x.member.is_empty() { expr.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(expr) } else { &x.member };
-            Note { line, i: w.i, n, short: format!("{name}: {} → {}", x.before, x.after), full }
+        by.into_iter().map(|(line, (things, i))| {
+            // (Short, the same said once, the times added: two inlined
+            // helpers' `regs` set alike.)
+            let (mut short, mut full): (Vec<(String, usize)>, Vec<String>) = (Vec::new(), Vec::new());
+            for ((region, member), (w, n)) in things {
+                let r = &named.regions[region as usize];
+                let Some(x) = self.changes(&named, w).into_iter().find(|x| x.member == member) else { continue };
+                let join = if x.member.starts_with('+') { "" } else if r.kind == "object" { "->" } else { "." };
+                // (The member after the name, the function it is in last: "filp->f_pos in vfs_read".)
+                let (expr, within) = r.what.split_once(" in ").map_or((r.what.as_str(), String::new()), |(e, f)| (e, format!(" in {f}")));
+                let times = |n: usize| if n > 1 { format!(" ×{n}") } else { String::new() };
+                full.push(format!("{expr}{}{within}: {} → {}{}", if x.member.is_empty() { String::new() } else { format!("{join}{}", x.member) }, x.before, x.after, times(n)));
+                let name = if x.member.is_empty() { expr.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(expr) } else { &x.member };
+                let said = format!("{name}: {} → {}", x.before, x.after);
+                match short.iter_mut().find(|(s, _)| *s == said) {
+                    Some((_, k)) => *k += n,
+                    None => short.push((said, n)),
+                }
+            }
+            let short = short.into_iter().map(|(s, n)| if n > 1 { format!("{s} ×{n}") } else { s }).collect::<Vec<_>>().join("   ");
+            Note { line, i, short, full: full.join("; ") }
         }).collect()
     }
 
@@ -1108,7 +1136,7 @@ impl View<'_> {
         // (Each object's writes (its region's, and any other's of its
         // address and type), by member, in order; with the member's leaf.)
         let mut nodes: Vec<(Node, Vec<(String, Leaf, Vec<Wrote>)>)> = Vec::new();
-        let mut leaves: BTreeMap<(u32, u32), (String, Option<Leaf>)> = BTreeMap::new();
+        let mut leaves: BTreeMap<(u32, u32, u32), Vec<(String, Option<Leaf>)>> = BTreeMap::new();
         for w in &named.writes {
             let r = &named.regions[w.region as usize];
             if !matches!(r.kind, "object" | "task" | "local" | "global") || r.size == 0 || scratch(r) {
@@ -1122,15 +1150,17 @@ impl View<'_> {
                     nodes.len() - 1
                 }
             };
-            // (A store's member, once per address.)
-            let Record::Store { addr, .. } = self.rec.records[w.i] else { continue };
-            let (member, leaf) = leaves.entry((w.region, addr)).or_insert_with(|| self.member(r, w.i)).clone();
+            // (A store's members (one may copy several), once per place.)
+            let Record::Store { addr, size, .. } = self.rec.records[w.i] else { continue };
+            let wrote = leaves.entry((w.region, addr, size)).or_insert_with(|| self.members(r, w.i)).clone();
             let members = &mut nodes[k].1;
-            match members.iter_mut().find(|(m, _, _)| *m == member) {
-                Some((_, _, ws)) => ws.push(*w),
-                None => {
-                    let Some(leaf) = leaf else { continue };
-                    members.push((member, leaf, alloc::vec![*w]));
+            for (member, leaf) in wrote {
+                match members.iter_mut().find(|(m, _, _)| *m == member) {
+                    Some((_, _, ws)) => ws.push(*w),
+                    None => {
+                        let Some(leaf) = leaf else { continue };
+                        members.push((member, leaf, alloc::vec![*w]));
+                    }
                 }
             }
         }
@@ -1398,12 +1428,12 @@ mod tests {
         }
     }
 
-    /// Records `first..=last`'s writes: (record, what, kind, member, before, after).
+    /// Records `first..=last`'s writes, a member each: (record, what, kind, member, before, after).
     fn writes(v: &View, first: usize, last: usize) -> Vec<(usize, String, &'static str, String, String, String)> {
         let n = v.stores(first, last);
-        n.writes.iter().map(|w| {
-            let (r, c) = (&n.regions[w.region as usize], v.change(&n, w));
-            (w.i, r.what.clone(), r.kind, c.member, c.before, c.after)
+        n.writes.iter().flat_map(|w| {
+            let r = &n.regions[w.region as usize];
+            v.changes(&n, w).into_iter().map(|c| (w.i, r.what.clone(), r.kind, c.member, c.before, c.after))
         }).collect()
     }
 
@@ -1454,6 +1484,27 @@ mod tests {
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
         let got: Vec<_> = writes(&v, 0, 3).into_iter().map(|(i, _, _, member, before, after)| (i, member, before, after)).collect();
         assert_eq!(got, [(1, "b".into(), "1".into(), "2".into()), (3, "a".into(), "0".into(), "1280".into())]);
+    }
+
+    #[test]
+    fn one_store_copying_a_struct_changes_each_member() {
+        // f (1) takes struct path { void *mnt; void *dentry; } *p (at 8) and
+        // copies one into it with one 8-byte store, on line 3 (its block's
+        // second): mnt 0 → 5, dentry 0 → 6, in the Objects and the line's note.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nL\t1\t0\t0:1;:3\n",
+                              "T\t1\tptr\t\t4\t0\nT\t2\tstruct\tpath\t8\nM\t2\tmnt\t0\t0\t1\nM\t2\tdentry\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\n");
+        let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 8, size: 8, old: Some(0), line: 1, from: None }];
+        let mut args = Args::default();
+        args.push(0, &[8, 64]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 2], args);
+        let mut m = alloc::vec![0u8; 32];
+        (m[8], m[12]) = (5, 6);
+        let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+        let nodes = v.objects(0, 1);
+        let got: Vec<_> = nodes[0].changes.iter().map(|d| (d.member.clone(), d.after.clone())).collect();
+        assert_eq!(got, [("mnt".into(), "0x5".into()), ("dentry".into(), "0x6".into())]);
+        let notes = v.notes(0, 1, "f.c", 1);
+        assert_eq!((notes[0].line, notes[0].short.as_str()), (3, "mnt: NULL → 0x5   dentry: NULL → 0x6"));
     }
 
     #[test]

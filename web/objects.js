@@ -8,9 +8,9 @@
 // what to what ("f_mode  0 → 0x4000001  init_file", then "0x4000001 →
 // 0x40a801d  do_dentry_open"; one left as it was, a count one took and
 // another dropped, dim; click: that write). As a tree: each box under the first that
-// points to it, by that member ("← f_inode"). At the cursor (a step, the
-// pointer over the timeline): what the call has not done yet, faint; the
-// run of writes the cursor is in, marked; how far it is, in the head.
+// points to it, by that member ("← f_inode"). The whole call, at every
+// moment; at the cursor (a step, the pointer over the timeline), the writes
+// not made yet gray, the run of writes it is in marked.
 import { $, el } from "./dom.js";
 
 export function objects(app) {
@@ -45,8 +45,7 @@ export function objects(app) {
     const order = [];
     const visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.under?.[0] === k && visit(c, depth + 1)));
     nodes.forEach((n, k) => n.under == null && visit(k, 0));
-    return [el("div", { className: "dim head" }, `What ${title} did: ${nodes.length} object${nodes.length === 1 ? "" : "s"}`,
-      el("span", { className: "progress" })),
+    return [el("div", { className: "dim head" }, `What ${title} did: ${nodes.length} object${nodes.length === 1 ? "" : "s"}`),
       // (One under another: indented, a guide line down its left.)
       ...order.map(([k, depth]) => {
         const b = box(nodes[k], nodes, k);
@@ -85,21 +84,14 @@ export function objects(app) {
       el("table", { className: "objs" }, el("tbody", {}, ...rows)));
   }
 
-  // The moment `cur` (a record): each run of writes not begun by then
-  // faint, the one it is in (from its first write to its last) marked; an
-  // object none of whose runs has begun, faint; how many runs are done.
+  // The moment `cur` (a record): the runs of writes not begun by then
+  // gray, the one it is in (from its first write to its last) marked.
   function mark(cur) {
-    const rows = [...body.querySelectorAll("tr[data-last]")];
-    let done = 0;
-    for (const r of rows) {
+    for (const r of body.querySelectorAll("tr[data-last]")) {
       const first = Number(r.dataset.first), last = Number(r.dataset.last);
       r.classList.toggle("later", cur != null && first > cur);
       r.classList.toggle("on", cur != null && first <= cur && cur <= last);
-      done += cur != null && last <= cur;
     }
-    for (const b of body.querySelectorAll(".obj")) b.classList.toggle("later", !b.querySelector("tr[data-last]:not(.later)"));
-    const p = body.querySelector(".progress");
-    if (p) p.textContent = rows.length && cur != null ? ` · by the cursor, ${done} of ${rows.length} changes done` : "";
   }
 
   // Go to object `k`'s box: in view, a flash.

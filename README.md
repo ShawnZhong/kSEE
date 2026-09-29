@@ -89,9 +89,11 @@ between, the lines to step through); double-click a call: the window at
 it). The
 cursor's line carries its values as it is about to run (as a debugger
 stops before a line: memory and the variables as the lines before it left
-them), and each line what it last
-stored or set so far in the call clicked (`file->f_pos: 0 → 26 ×2`, a
-variable's `last_pos: (uninitialized) → -1`: click it for that moment; not the
+them), and each line what it
+stored or set so far in the call clicked, each thing it wrote its last
+change and how many times (`f_pos: 0 → 26 ×2`, a
+variable's `last_pos: (uninitialized) → -1`; a struct copied at once,
+each member: `mnt: NULL → 0x1c07910   dentry: NULL → 0x1c11dd00`): click it for its last write; not the
 temporaries the kernel's macros make up, `__UNIQUE_ID_…`); a step that lands after a call says what it returned.
 Hover
 a name in the source for its value at the cursor (a name with one is
@@ -119,10 +121,11 @@ a line a function that changed it in turn, from what to what (`f_mode
 a pointer, to another object: that one, `fd_array[3]  NULL → f in
 create_pipe_files`, a link to it; a count one took and another dropped,
 dim); a line goes to its write. As a tree: each object under
-the first that points to it (`← f_inode`). It follows the cursor (a
-step, the pointer over the timeline): what the call has not done by then
-is faint, the writes the cursor is among are marked, and its head says
-how many of the changes are done. The line the cursor is on shows its values at
+the first that points to it (`← f_inode`). It is the whole call, at
+every moment; at the cursor (a step, the pointer over the timeline), the
+writes not made yet are gray, and those it is among marked. One store may change several members (a struct
+copied at once: `f_path.mnt` and `f_path.dentry`): each is a change of
+its own. The line the cursor is on shows its values at
 its end, as a debugger does (`fd = 3   count = 64`). Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by
 its number and filesystem, a task by its comm and pid. The Trace tab is

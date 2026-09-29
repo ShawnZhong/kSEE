@@ -394,6 +394,24 @@ impl Types {
         (path, ty, at, bits)
     }
 
+    /// The scalars (or strings) bytes `off..off + len` of a value of type
+    /// `ty` are in, in order (see leaf; padding between them skipped; up to
+    /// 16): a struct copied by one wide store writes each of its members.
+    pub fn leaves(&self, ty: u32, off: u32, len: u32) -> Vec<(String, u32, u32, Option<(u32, u32)>)> {
+        let (mut out, mut o, end) = (Vec::new(), off, off.saturating_add(len.max(1)));
+        while o < end && out.len() < 16 {
+            let l @ (_, leaf, at, _) = self.leaf(ty, o);
+            // (A byte no scalar holds: padding, an empty member.)
+            if matches!(self.get(self.resolve(leaf)).kind, Kind::Struct(_) | Kind::Union(_)) || at + self.size_of(leaf) <= o {
+                o += 1;
+                continue;
+            }
+            o = at + self.size_of(leaf);
+            out.push(l);
+        }
+        out
+    }
+
     /// Size in bytes of type `ty` (arrays: count * element).
     pub fn size_of(&self, ty: u32) -> u32 {
         let t = self.get(self.resolve(ty));
@@ -509,6 +527,15 @@ mod tests {
         // An empty struct (a lock on one CPU) at 4, and int next_fd at 4 too: the int.
         let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t2\tstruct\tlock\t0\nT\t3\tstruct\tfiles\t8\nM\t3\tcount\t0\t0\t1\nM\t3\tlock\t32\t0\t2\nM\t3\tnext_fd\t32\t0\t1\n");
         assert_eq!(t.leaf(3, 4), ("next_fd".into(), 1, 4, None));
+    }
+
+    #[test]
+    fn a_wide_store_writes_each_member_it_covers() {
+        // struct path { void *mnt; void *dentry; } copied by one 8-byte store.
+        let t = Types::parse("T\t1\tptr\t\t4\t0\nT\t2\tstruct\tpath\t8\nM\t2\tmnt\t0\t0\t1\nM\t2\tdentry\t32\t0\t1\n");
+        let got: Vec<_> = t.leaves(2, 0, 8).into_iter().map(|(p, _, off, _)| (p, off)).collect();
+        assert_eq!(got, [("mnt".into(), 0), ("dentry".into(), 4)]);
+        assert_eq!(t.leaves(2, 4, 4).len(), 1);
     }
 
     #[test]

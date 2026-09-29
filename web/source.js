@@ -257,7 +257,7 @@ export function source(app) {
     // (Short: the member, or the variable, and the change; the line says
     // the rest. In full on hover.)
     for (const [n, x] of stored(file)) {
-      const widget = new Note(`${x.short}${x.n > 1 ? ` ×${x.n}` : ""}`, x.i, `${x.full}: what this line stored, last; click: go to that store`);
+      const widget = new Note(x.short, x.i, `${x.full}: what this line stored, each its last change (×: how many times); click: go to its last store`);
       if (at(n) !== false) d.push(CM.Decoration.widget({ widget, side: 2 }).range(doc.line(n).to));
     }
     for (const [n, text] of called(file)) {
