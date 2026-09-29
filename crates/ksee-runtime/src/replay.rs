@@ -151,8 +151,8 @@ impl Machine {
 
     /// A stack chart of records `first..=last` in `n` columns of equal
     /// steps (see ksee_core::stack::Calls::chart, Recording::columns), flattened:
-    /// per column, the task, the
-    /// depth, then per call, outermost first, (function, first record,
+    /// per column, the task, the record the column is (the stack drawn is
+    /// the one there), the depth, then per call, outermost first, (function, first record,
     /// inlined): inlined 0 for a call; for code inlined into the call
     /// before, 1 + the inlined function (see inline_name), and the
     /// function it is inlined into.
@@ -164,12 +164,12 @@ impl Machine {
         }
         let columns = rec.columns(first, last.min(rec.len() - 1), n);
         self.view(|v| {
-            for (task, calls) in rec.calls.chart(v.tables, &rec.tasks, &columns) {
+            for (i, task, calls) in rec.calls.chart(v.tables, &rec.tasks, &columns) {
                 // (Each call, then the code inlined into it: outermost first.)
                 let rows: Vec<[u32; 3]> = calls.iter().flat_map(|c| {
                     v.nest(c).into_iter().rev().map(|(k, _)| [c.func, c.first as u32, k.map_or(0, |k| k + 1)])
                 }).collect();
-                out.extend([task, rows.len() as u32]);
+                out.extend([task, i as u32, rows.len() as u32]);
                 out.extend(rows.into_iter().flatten());
             }
         });

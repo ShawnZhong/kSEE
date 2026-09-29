@@ -227,10 +227,10 @@ impl Calls {
     }
 
     /// A stack chart: for each column (its first record, in `columns`, in
-    /// order: see Recording::columns), the task running there and that
-    /// task's call stack then, outermost first.
-    pub fn chart(&self, t: &Tables, tasks: &[u32], columns: &[usize]) -> Vec<(u32, Vec<StackCall>)> {
-        columns.iter().filter(|&&i| i < tasks.len()).map(|&i| (tasks[i], self.stack_at(t, i, None))).collect()
+    /// order: see Recording::columns), that record, the task running there
+    /// and that task's call stack then, outermost first.
+    pub fn chart(&self, t: &Tables, tasks: &[u32], columns: &[usize]) -> Vec<(usize, u32, Vec<StackCall>)> {
+        columns.iter().filter(|&&i| i < tasks.len()).map(|&i| (i, tasks[i], self.stack_at(t, i, None))).collect()
     }
 
     /// The source lines run in records `from..=to` (of task `task`, or

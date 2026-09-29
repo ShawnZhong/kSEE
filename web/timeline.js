@@ -182,10 +182,10 @@ export function timeline(app) {
     const cols = Math.max(1, Math.min(W(), span()));
     const flat = m.chart(t.win.a, t.win.b, cols), out = [];
     for (let k = 0; k < flat.length;) {
-      const task = flat[k], depth = flat[k + 1], frames = [];
-      for (let d = 0; d < depth; d++) frames.push(flat.slice(k + 2 + 3 * d, k + 5 + 3 * d));
-      out.push({ task, frames });
-      k += 2 + 3 * depth;
+      const task = flat[k], i = flat[k + 1], depth = flat[k + 2], frames = [];
+      for (let d = 0; d < depth; d++) frames.push(flat.slice(k + 3 + 3 * d, k + 6 + 3 * d));
+      out.push({ task, i, frames });
+      k += 3 + 3 * depth;
     }
     t.cols = out;
   }
@@ -269,8 +269,9 @@ export function timeline(app) {
     hilite(first ?? null);
     // (The view follows the pointer: the moment under it, with the call
     // under it selected: the source shows where that call was, the Stack
-    // marks it. Along one bar, the view stays in that function.)
-    app.peek(first == null ? at(e.offsetX) : Math.max(first, at(e.offsetX)), first == null ? null : { first, inlined: inl ? iname(inl - 1) : null });
+    // marks it. Over a call, the column's own moment: the stack drawn is
+    // the one there, code inlined for a moment too.)
+    app.peek(first == null ? at(e.offsetX) : c.i, first == null ? null : { first, inlined: inl ? iname(inl - 1) : null });
     if (first == null) {
       tip.hidden = true;
       chart.title = c && d < 0 ? taskName(who(c.task)) : "";
@@ -339,7 +340,9 @@ export function timeline(app) {
     const [id] = c.frames[d], s = !inl && t.syscallAt.get(first);
     if (s) select(s);
     else if (!inl) focusCall(first, fn(id)?.name ?? "a call");
-    go(Math.max(first, at(e.offsetX)));
+    // (The column's moment, whose stack is the one drawn: the call, or the
+    // code inlined into it, is on it.)
+    go(c.i);
     app.selectCall(first, inl ? iname(inl - 1) : null);
   };
   chart.ondblclick = (e) => {

@@ -57,7 +57,7 @@ check("mkdirat ran vfs_mkdir", ran((await call("mkdirat", [-100, "/tmp", 0o755])
 // (The tasks of a stack chart's columns: see Machine.chart.)
 const chartTasks = (flat) => {
   const out = [];
-  for (let j = 0; j < flat.length; j += 2 + 3 * flat[j + 1]) out.push(flat[j]);
+  for (let j = 0; j < flat.length; j += 3 + 3 * flat[j + 2]) out.push(flat[j]);
   return out;
 };
 const ts = { bytes: new Uint8Array(new BigInt64Array([0n, 30000000n]).buffer) };
@@ -90,8 +90,22 @@ const inl = m.call_stack(steps[k].i, steps[k].nth);
 check(`inlined code is a frame of its own (${steps[k].inlined} in ${steps[k].func})`,
       inl[0]?.inlined && inl[0].func === steps[k].inlined && inl[0].line === steps[k].line && inl.some((f) => f.func === steps[k].func && !f.inlined));
 let inlinedRows = 0;
-for (let j = 0; j < chart.length; j += 2 + 3 * chart[j + 1]) for (let d = 0; d < chart[j + 1]; d++) if (chart[j + 4 + 3 * d]) inlinedRows++;
+for (let j = 0; j < chart.length; j += 3 + 3 * chart[j + 2]) for (let d = 0; d < chart[j + 2]; d++) if (chart[j + 5 + 3 * d]) inlinedRows++;
 check("and a row of its own in the chart", inlinedRows > 0);
+// (Each column is a moment, its record: the Stack there has every call
+// it draws, the code inlined for a moment too: a click goes there.)
+{
+  let drawn = 0, missing = [];
+  for (let j = 0; j < chart.length; j += 3 + 3 * chart[j + 2]) {
+    const frames = m.call_stack(chart[j + 1]);
+    for (let d = 0; d < chart[j + 2]; d++) {
+      const [id, first, inl] = chart.slice(j + 3 + 3 * d, j + 6 + 3 * d), name = inl ? m.inline_name(inl - 1) : m.function(id)?.name;
+      drawn++;
+      if (!frames.some((f) => f.first === first && f.func === name && !!f.inlined === !!inl)) missing.push(name);
+    }
+  }
+  check(`a chart's column is its record's stack: ${drawn} calls drawn, ${missing.length} not there (${missing.slice(0, 3)})`, drawn > 0 && !missing.length);
+}
 const mid = steps.find((x) => x.func === "vfs_write").i;
 const stack = m.call_stack(mid);
 const kw = stack.find((f) => f.func === "ksys_write"), kwDef = m.functions("ksys_write")[0];
