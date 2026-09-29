@@ -388,7 +388,7 @@ mod tests {
     fn lines_go_on_after_calls() {
         // f's block 0: lines 1, 2, a call (g: line 10), then line 3.
         let t = crate::tables::Tables::parse(
-            "U\nP\t0\tf.c\nP\t1\tg.c\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1;:2;|;:3\nB\t2\t0\t1:10:1\n", "");
+            "U\nP\t0\tf.c\nP\t1\tg.c\nL\t1\t0\t0:1;:2;|;:3\nL\t2\t0\t1:10\n", "");
         let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 0 }, Record::Return { func: 1, value: 0 }];
         let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| (s.loc.line, s.record, s.depth)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (10, 1, 1), (3, 2, 0)]);
@@ -399,7 +399,7 @@ mod tests {
         // f's line 2 made the call to g: it says g returned 7.
         assert_eq!(got.iter().map(|s| s.callee.map(|(f, v, _)| (f, v))).collect::<Vec<_>>(), [None, Some((2, 7)), None, None]);
         // A loop: f's block 1 (lines 5, 6) three times; each turn counted.
-        let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nB\t1\t0\t0:1:1\nB\t1\t1\t0:5:1\nL\t1\t1\t0:5;:6\n", "");
+        let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nL\t1\t0\t0:1\nL\t1\t1\t0:5;:6\n", "");
         let r = [b(1, 0), b(1, 1), b(1, 1), b(1, 1)];
         let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| (s.loc.line, s.run)).collect();
         assert_eq!(got, [(1, 1), (5, 1), (6, 1), (5, 2), (6, 2), (5, 3), (6, 3)]);
@@ -413,7 +413,7 @@ mod tests {
         // before it (line 3: after line 2's stores), a stretch's first line
         // at the block, or the return, itself.
         let t = crate::tables::Tables::parse(
-            "U\nP\t0\tf.c\nP\t1\tg.c\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1;:2;:3;|;:4\nB\t2\t0\t1:10:1\n", "");
+            "U\nP\t0\tf.c\nP\t1\tg.c\nL\t1\t0\t0:1;:2;:3;|;:4\nL\t2\t0\t1:10\n", "");
         let st = |line| Record::Store { addr: 8, size: 4, old: Some(0), line, from: None };
         let r = [b(1, 0), st(1), st(1), b(2, 0), Record::Return { func: 2, value: 0 }, st(3), Record::Return { func: 1, value: 0 }];
         let got: Vec<_> = lines(&t, &r, &[7; 7], 0, 6, None).iter().map(|s| (s.loc.line, s.record, s.at)).collect();
@@ -434,7 +434,7 @@ mod tests {
         // f's block 0 runs lines 1, 2, 3, then calls g, then line 4: a store
         // before the call whose line is past its stretch (4, after the call;
         // or none the block has) is where the stretch ends, line 3.
-        let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1;:2;:3;|;:4\n", "");
+        let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nL\t1\t0\t0:1;:2;:3;|;:4\n", "");
         let st = |line| Record::Store { addr: 8, size: 4, old: Some(0), line, from: None };
         let r = [b(1, 0), st(3), st(9)];
         let c = Calls::new(&t, &r, &[7; 3]);

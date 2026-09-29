@@ -67,7 +67,7 @@
 //                         keeps in a wasm local, not memory, as the debug
 //                         info says it changes (a #dbg_value); line as a
 //                         store's (12 bits)
-//   [value, 8 << 28 | i]  continuation i of the head before
+//   [value, 8 << 28]      a continuation of the head before
 // (The host's runtime writes records too: stores, for its own writes into
 // kernel memory.) fn is a hash of the function's name (for a
 // function local to its file, of "file:name").
@@ -86,8 +86,6 @@
 //                  records carry; the others were optimized away. sealed:
 //                  1 if only its call and returns are recorded: see below.
 //                  wide: a bit mask of those that take two words)
-//                B \t fn \t n \t FILE:line:column (block 0: the function's
-//                  signature, where a call begins)
 //                V \t fn \t k \t of \t function \t name \t param \t arg
 //                                     variable k of fn (its records'): a
 //                                     variable of `function` (fn, or one
@@ -98,17 +96,16 @@
 //                                     call record) throughout, with no
 //                                     records (an inlined call's parameter
 //                                     passed one of fn's)
-//                L \t fn \t n \t lines: the source lines the block runs, in
+//                L \t fn \t n \t lines: block n, the source lines it runs, in
 //                  order (each once per stretch between calls), separated
 //                  by ';': FILE:line (:line in the same file as the one
 //                  before), then, if it is inlined, @k per function it is
 //                  inlined from, innermost first (k: an I line's: the
 //                  function, and where it is inlined, in the next one
 //                  out); "|" where the block calls a function (which runs
-//                  in between). Only for blocks with more than their first
-//                  line, or whose first line is inlined.
+//                  in between). Block 0's first line is the function's
+//                  signature, where a call begins.
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugProgramInstruction.h"
 #include "llvm/IR/Dominators.h"
@@ -119,7 +116,6 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Plugins/PassPlugin.h"
-#include "llvm/Support/Path.h"
 
 #include <algorithm>
 #include <map>
@@ -141,11 +137,10 @@ uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
   return h;
 }
 
-// Functions local to a file are told apart by the file's name.
-uint32_t fnId(const Function &F) {
-  if (!F.hasLocalLinkage())
-    return fnv(F.getName());
-  return fnv(F.getName(), fnv(":", fnv(F.getParent()->getSourceFileName())));
+// A function's id: its name's hash; one local to a file is told apart by
+// the file's name.
+uint32_t fnId(StringRef name, bool local, const Module &M) {
+  return local ? fnv(name, fnv(":", fnv(M.getSourceFileName()))) : fnv(name);
 }
 
 // A scope's file, as the debug info names it (relative to the kernel
@@ -265,11 +260,10 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       B.CreateCondBr(store ? B.CreateICmpNE(on, B.getInt32(0)) : B.CreateICmpEQ(on, B.getInt32(1)), write, done);
       B.SetInsertPoint(write);
       SmallVector<Value *> w;
-      // Continuation pairs: [value, KindValue << 28 | index].
+      // Continuation pairs: [value, KindValue << 28].
       auto value = [&](Value *v) {
-        unsigned index = w.size() / 2 - 1;
         w.push_back(v);
-        w.push_back(B.getInt32(KindValue << 28 | index));
+        w.push_back(B.getInt32(KindValue << 28));
       };
       words(B, w, value);
       Value *p = B.CreateLoad(i32, field(B, 0));
@@ -307,14 +301,10 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     probes += "R\t" + std::to_string(RingWords) + "\n";
   }
 
-  std::string location(const DILocation *L) {
-    return (fileRef(sourcePath(L->getScope())) + ":" + Twine(L->getLine()) + ":" + Twine(L->getColumn())).str();
-  }
-
-  // The block's lines, as for an L line; empty if just its first line.
-  // (And each write's line, for logStore: its index among the items, "|"
-  // apart; a write with no location is on the line before it. `sig`: the
-  // function, for its entry block: its signature's line comes first.)
+  // The block's lines, as for an L line. (And each write's line, for
+  // logStore: its index among the items, "|" apart; a write with no
+  // location is on the line before it. `sig`: the function, for its entry
+  // block: its signature's line comes first.)
   std::string blockLines(BasicBlock &BB, DISubprogram *sig) {
     std::vector<std::string> items;
     std::map<std::string, unsigned> seen; // (since the last call: item -> its index)
@@ -359,9 +349,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     }
     while (!items.empty() && items.back() == "|")
       items.pop_back();
-    // (Its first line is on the B line, unless it is inlined.)
-    if (items.empty() || (items.size() == 1 && items[0].find('@') == std::string::npos))
-      return "";
     std::string out;
     for (auto &i : items)
       out += (out.empty() ? "" : ";") + i;
@@ -468,7 +455,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   // through the and, or and xor that combine conditions.
   static bool decides(Value *V, unsigned depth = 3) {
     for (User *U : V->users()) {
-      if (auto *Br = dyn_cast<BranchInst>(U); Br && Br->isConditional())
+      if (isa<CondBrInst>(U))
         return true;
       if (auto *S = dyn_cast<SelectInst>(U); S && S->getCondition() == V)
         return true;
@@ -520,7 +507,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       if (auto *D = dyn_cast<Instruction>(v); D && !DT.dominates(D, I))
         continue;
       StringRef fname = VS == SP ? F.getName() : VS->getName();
-      uint32_t of = VS == SP ? id : VS->isLocalToUnit() ? fnv(fname, fnv(":", fnv(M->getSourceFileName()))) : fnv(fname);
+      uint32_t of = VS == SP ? id : fnId(fname, VS->isLocalToUnit(), *M);
       // (A parameter of an inlined call that is one of the call's own
       // arguments, which the call record has: its value, for the whole
       // inlined call, is that; no record.)
@@ -565,7 +552,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   }
 
   void instrument(Function &F) {
-    uint32_t id = fnId(F);
+    uint32_t id = fnId(F.getName(), F.hasLocalLinkage(), *M);
     DISubprogram *SP = F.getSubprogram();
     SmallVector<BasicBlock *> blocks;
     for (BasicBlock &BB : F)
@@ -626,18 +613,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       record(B, B.getInt32(id), KindBlock << 28 | n, args);
       // (The entry block starts at the function's signature: entering a
       // call stops there, with its arguments, before its first statement.)
-      std::string loc = "?";
-      if (n == 0 && SP)
-        loc = fileRef(sourcePath(SP)) + ":" + std::to_string(SP->getLine()) + ":1";
-      else
-        for (Instruction &I : *BB)
-          if (DILocation *L = I.getDebugLoc().get(); L && L->getLine()) {
-            loc = location(L);
-            break;
-          }
-      probes += ("B\t" + Twine(id) + "\t" + Twine(n) + "\t" + loc + "\n").str();
-      if (std::string lines = blockLines(*BB, n == 0 ? SP : nullptr); !lines.empty())
-        probes += ("L\t" + Twine(id) + "\t" + Twine(n) + "\t" + lines + "\n").str();
+      probes += ("L\t" + Twine(id) + "\t" + Twine(n) + "\t" + blockLines(*BB, n == 0 ? SP : nullptr) + "\n").str();
     }
 
     // (The variables first: one set just before a return is recorded

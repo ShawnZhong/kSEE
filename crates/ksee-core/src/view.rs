@@ -475,7 +475,7 @@ impl View<'_> {
         let (kind, func, (loc, inlined)) = match *records.get(i)? {
             Record::Block { func, n } => {
                 let b = t.block(func, n);
-                ("block", func, (b.map(|b| b.loc), b.and_then(|b| b.steps.first()?.inlined)))
+                ("block", func, (b.map(|b| b.loc()), b.and_then(|b| b.steps.first()?.inlined)))
             }
             Record::Return { func, .. } => {
                 let prev = (0..i).rev().find(|&j| tasks[j] == tasks[i]);
@@ -524,7 +524,7 @@ impl View<'_> {
             }
             let (kind, text) = match rec.records[i] {
                 Record::Block { func, n } => {
-                    let loc = t.block(func, n).map_or(String::new(), |b| format!(" {}:{}", t.file(b.loc), b.loc.line));
+                    let loc = t.block(func, n).map_or(String::new(), |b| format!(" {}:{}", t.file(b.loc()), b.loc().line));
                     // (A call: with its arguments, the record after.)
                     if let (0, Some((words, frame))) = (n, rec.args.get(i)) {
                         let params = t.types.params.get(&func);
@@ -1585,7 +1585,7 @@ mod tests {
         // f (1) takes struct s *p (at 4) and stores p->b 2 (was 1); g (2),
         // which it calls with p, stores it back to 1: b left as it was, f's
         // run 1 → 2, then g's 2 → 1.
-        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:5\t0\nB\t1\t0\t0:1:1\nL\t1\t0\t0:1\nB\t2\t0\t0:5:1\nL\t2\t0\t0:5\n",
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:5\t0\nL\t1\t0\t0:1\nL\t2\t0\t0:5\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\nP\t2\tg\tp:3\n");
         let st = |old| Record::Store { addr: 8, size: 4, old: Some(old), line: 0, from: None };
         let r = [Record::Block { func: 1, n: 0 }, st(1), Record::Block { func: 2, n: 0 }, st(2), Record::Return { func: 2, value: 0 }];
@@ -1638,8 +1638,8 @@ mod tests {
     #[test]
     fn frames_are_where_their_calls_are() {
         // f (1) runs lines 1 and 2, calls g (2) at 2, then runs 3.
-        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\nB\t1\t0\t0:1:1\n\
-                               L\t1\t0\t0:1;:2;|;:3\nB\t2\t0\t0:10:1\n", "");
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\n\
+                               L\t1\t0\t0:1;:2;|;:3\nL\t2\t0\t0:10\n", "");
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
@@ -1651,8 +1651,8 @@ mod tests {
     fn inlined_code_is_a_frame_of_its_own() {
         // f (1) runs line 1, then h's line 20 (h inlined into f at line 2),
         // which calls g (2).
-        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\nB\t1\t0\t0:1:1\n\
-                               I\t0\th\t0:2\nL\t1\t0\t0:1;:20@0;|\nB\t2\t0\t0:10:1\n", "");
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\n\
+                               I\t0\th\t0:2\nL\t1\t0\t0:1;:20@0;|\nL\t2\t0\t0:10\n", "");
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
         let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };

@@ -81,7 +81,7 @@ overwritten the start of a record) and skip to the next head:
 | `[lhs, 6<<28 \| line<<4 \| p]` | a comparison that decides a branch (or a select), on its block's line `line`: lhs, then rhs follows (for 64-bit ones, then lhs's high word, rhs's); p its predicate (LLVM's icmp's, from eq) |
 | `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows (k = 7: a range of unknown old contents; its length follows); then, if it copies (a value loaded and stored as it is, a memcpy), where its bytes come from |
 | `[value, 9<<28 \| line<<16 \| k]` | variable k of the function running (its V line) takes value, on its block's line `line` (12 bits); its high word follows, for a wide one |
-| `[value, 8<<28 \| i]` | continuation i |
+| `[value, 8<<28]` | a continuation |
 
 `fn` is a hash of the function's name. `pos` counts words ever written and
 is stored with release order after each record, so a reader sees whole
@@ -109,9 +109,9 @@ The instrumented kernel describes its probes in a custom section,
 - `F fn name FILE:line known sealed wide`: a function, which of its
   parameters call records carry, whether it is sealed (see above), and
   which parameters take two words;
-- `B fn n FILE:line:column`: where block n starts;
 - `L fn n …`: the source lines block n runs, in order, in stretches between
-  the calls it makes; a line of inlined code carries its inline chain:
+  the calls it makes (block 0's first: the function's signature); a line
+  of inlined code carries its inline chain:
   each function it is inlined from, innermost first, as an inline site
   (`I k function FILE:line`: the function, and the line where it is
   inlined into the next one out);

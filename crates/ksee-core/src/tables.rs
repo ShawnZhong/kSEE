@@ -11,14 +11,13 @@ use alloc::vec::Vec;
 pub struct Loc {
     pub file: u32,
     pub line: u32,
-    pub column: u32,
 }
 
 /// An instrumented function.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: String,
-    /// Where it is defined (column 0).
+    /// Where it is defined.
     pub loc: Loc,
     /// Which of the source's parameters call records carry (a bit each);
     /// the others were optimized away.
@@ -56,19 +55,24 @@ pub struct Step {
 
 use crate::types::Types;
 
-/// A basic block: where its first instruction is, and the source lines it
-/// runs, in order, in stretches between the calls it makes (a stretch runs
-/// at the block's record, the next at each return into it). A Store's,
-/// Compare's or Var's `line` indexes `steps`.
+/// A basic block: the source lines it runs, in order, in stretches between
+/// the calls it makes (a stretch runs at the block's record, the next at
+/// each return into it). A Store's, Compare's or Var's `line` indexes
+/// `steps`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block {
-    pub loc: Loc,
     pub steps: Vec<Step>,
     /// Where each stretch begins in `steps` (the first at 0).
     cuts: Vec<u32>,
 }
 
 impl Block {
+    /// Where it begins: its first line (the function's signature, for its
+    /// entry block).
+    pub fn loc(&self) -> Loc {
+        self.steps.first().map_or(Loc { file: u32::MAX, line: 0 }, |s| s.loc)
+    }
+
     /// Stretch `seg` (none past the last).
     pub fn stretch(&self, seg: u32) -> &[Step] {
         let Some(&a) = self.cuts.get(seg as usize) else { return &[] };
@@ -145,13 +149,11 @@ struct Unit {
 }
 
 impl Unit {
-    /// Parse "k:line" or, with `column`, "k:line:column" (k: a P line's).
-    fn loc(&self, s: &str, column: bool) -> Loc {
-        let mut parts = s.split(':');
-        let file = parts.next().and_then(|k| k.parse().ok()).and_then(|k| self.files.get(&k).copied()).unwrap_or(u32::MAX);
-        let line = parts.next().and_then(|l| l.parse().ok()).unwrap_or(0);
-        let column = if column { parts.next().and_then(|c| c.parse().ok()).unwrap_or(0) } else { 0 };
-        Loc { file, line, column }
+    /// Parse "k:line" (k: a P line's).
+    fn loc(&self, s: &str) -> Loc {
+        let (k, line) = s.split_once(':').unwrap_or((s, ""));
+        let file = k.parse().ok().and_then(|k| self.files.get(&k).copied()).unwrap_or(u32::MAX);
+        Loc { file, line: line.parse().unwrap_or(0) }
     }
 }
 
@@ -164,10 +166,6 @@ impl Tables {
         let mut unit = Unit::default();
         let mut names: BTreeMap<String, u32> = BTreeMap::new();
         let mut chains: BTreeMap<Vec<(u32, Loc)>, u32> = BTreeMap::new();
-        // (Each block's first line (B), and its lines (L: only for a block
-        // with more than its first, or whose first is inlined).)
-        let mut firsts: BTreeMap<(u32, u32), Loc> = BTreeMap::new();
-        let mut lines: BTreeMap<(u32, u32), (Vec<Step>, Vec<u32>)> = BTreeMap::new();
         for line in probes.lines() {
             let cols: Vec<&str> = line.split('\t').collect();
             match cols.as_slice() {
@@ -183,7 +181,7 @@ impl Tables {
                             t.names.push(name.to_string());
                             t.names.len() as u32 - 1
                         });
-                        unit.sites.insert(k, (name, unit.loc(site, false)));
+                        unit.sites.insert(k, (name, unit.loc(site)));
                     }
                 }
                 ["V", id, k, of, function, name, param, arg] => {
@@ -195,15 +193,10 @@ impl Tables {
                 ["R", words] => t.ring_words = words.parse().unwrap_or(0),
                 ["F", id, name, location, known, rest @ ..] => {
                     let Ok(id) = id.parse() else { continue };
-                    let loc = unit.loc(location, false);
+                    let loc = unit.loc(location);
                     let sealed = rest.first() == Some(&"1");
                     let wide = rest.get(1).and_then(|w| w.parse().ok()).unwrap_or(0);
                     t.functions.insert(id, Function { name: name.to_string(), loc, known: known.parse().unwrap_or(0), wide, sealed });
-                }
-                ["B", id, n, where_] => {
-                    if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {
-                        firsts.insert((id, n), unit.loc(where_, true));
-                    }
                 }
                 ["L", id, n, items] => {
                     if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {
@@ -233,18 +226,14 @@ impl Tables {
                                 t.inlines.push(chain);
                                 t.inlines.len() as u32 - 1
                             }));
-                            steps.push(Step { loc: unit.loc(at, false), inlined });
+                            steps.push(Step { loc: unit.loc(at), inlined });
                         }
-                        lines.insert((id, n), (steps, cuts));
+                        t.blocks.insert((id, n), Block { steps, cuts });
                     }
                 }
                 _ => {}
             }
         }
-        t.blocks = firsts.into_iter().map(|(k, loc)| {
-            let (steps, cuts) = lines.remove(&k).unwrap_or_else(|| (alloc::vec![Step { loc, inlined: None }], alloc::vec![0]));
-            (k, Block { loc, steps, cuts })
-        }).collect();
         t.files = files.paths;
         t.types = Types::parse(types);
         t.fold_primitives();
@@ -285,12 +274,6 @@ impl Tables {
                 (s.loc, s.inlined) = (loc, inlined);
             }
         }
-        // (A block whose first instruction is a primitive's: its first line's.)
-        for b in self.blocks.values_mut() {
-            if arch::PRIMITIVES.iter().any(|p| self.files.get(b.loc.file as usize).is_some_and(|f| f.starts_with(p))) {
-                b.loc = b.steps[0].loc;
-            }
-        }
     }
 
     /// Block `n` of `func`.
@@ -329,7 +312,7 @@ impl Tables {
 
     /// The blocks of `func`, in order.
     pub fn blocks_of(&self, func: u32) -> impl Iterator<Item = (u32, Loc)> + '_ {
-        self.blocks.range((func, 0)..=(func, u32::MAX)).map(|(&(_, n), b)| (n, b.loc))
+        self.blocks.range((func, 0)..=(func, u32::MAX)).map(|(&(_, n), b)| (n, b.loc()))
     }
 
     pub fn file(&self, loc: Loc) -> &str {
@@ -354,14 +337,14 @@ mod tests {
 
     #[test]
     fn parses_probes_and_types() {
-        let probes = "U\nP\t0\t/s/p.c\nP\t1\t/s/q.h\nR\t64\nF\t7\tpick\t0:2\t3\t0\nB\t7\t0\t1:2:39\nU\nP\t0\t/s/p.c\nF\t7\tpick\t0:2\t3\t0\nF\t8\tcrc\t0:9\t1\t1\n";
+        let probes = "U\nP\t0\t/s/p.c\nP\t1\t/s/q.h\nR\t64\nF\t7\tpick\t0:2\t3\t0\nL\t7\t0\t1:2\nU\nP\t0\t/s/p.c\nF\t7\tpick\t0:2\t3\t0\nF\t8\tcrc\t0:9\t1\t1\n";
         let t = Tables::parse(probes, "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ttask_struct\t740\nM\t2\tpid\t5888\t0\t1\n");
         assert_eq!(t.ring_words, 64);
         let f = &t.functions[&7];
         assert_eq!((f.known, f.sealed, t.functions[&8].sealed), (3, false, true));
         assert_eq!((t.file(f.loc), f.loc.line), ("/s/p.c", 2));
-        let b = t.blocks[&(7, 0)].loc;
-        assert_eq!((t.file(b), b.line, b.column), ("/s/q.h", 2, 39));
+        let b = t.blocks[&(7, 0)].loc();
+        assert_eq!((t.file(b), b.line), ("/s/q.h", 2));
         assert_eq!(t.types.field("task_struct", "pid"), Some((736, 4)));
     }
 
@@ -372,14 +355,14 @@ mod tests {
         // f: the get_current step is spin_lock's line 9.
         let probes = "U\nP\t0\tf.c\nP\t1\tinclude/linux/spinlock.h\nP\t2\tarch/wasm/include/asm/current.h\n\
                       I\t0\tget_current\t1:9\nI\t1\tspin_lock\t0:2\n\
-                      F\t1\tf\t0:1\t0\nB\t1\t0\t2:3:1\nL\t1\t0\t2:3@0@1;0:4\n";
+                      F\t1\tf\t0:1\t0\nL\t1\t0\t2:3@0@1;0:4\n";
         let t = Tables::parse(probes, "W\tget_current\tarch/wasm/include/asm/current.h\t12\nW\tspin_lock\tinclude/linux/spinlock.h\t7\n");
         let steps = &t.blocks[&(1, 0)].steps;
         let chain = |s: &Step| s.inlined.map(|k| t.inlines[k as usize].iter().map(|&(n, _)| t.names[n as usize].clone()).collect::<Vec<_>>());
         assert_eq!((t.file(steps[0].loc), steps[0].loc.line, chain(&steps[0])), ("include/linux/spinlock.h", 9, Some(alloc::vec!["spin_lock".into()])));
         assert_eq!((steps[1].loc.line, steps[1].inlined), (4, None));
         // The block's own location was get_current's: now its first line's.
-        let b = t.blocks[&(1, 0)].loc;
+        let b = t.blocks[&(1, 0)].loc();
         assert_eq!((t.file(b), b.line), ("include/linux/spinlock.h", 9));
     }
 

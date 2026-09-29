@@ -167,8 +167,8 @@ pub fn current() -> u32 {
     Direct.read_u32(k(|k| k.current.get()))
 }
 
-/// Whether the trace records (its `on` word; probes check it).
-/// Whether the probes record now (at either level: see programs::on_off).
+/// Whether the probes record now (the trace's `on` word, at either level:
+/// see programs::on_off).
 pub fn recording() -> bool {
     let trace = k(|k| k.trace.get());
     trace != 0 && Direct.read_u32(trace + ksee_core::trace::ON) != 0

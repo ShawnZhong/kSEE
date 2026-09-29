@@ -242,7 +242,7 @@ impl Machine {
 
     /// Declare a variable of the program runner `tid` makes calls for:
     /// `text` as in C (`char buf[64]`, `struct __kernel_timespec ts = {0,
-    /// 30000000}`: see ksee_core::args's Types::declare; `known` as for
+    /// 30000000}`: see ksee_core::program's Types::declare; `known` as for
     /// arg), in its process's own memory, as it starts (the host's writes
     /// there recorded, as a call's are). { name, addr, ty, count, size (an
     /// element's) }: its name

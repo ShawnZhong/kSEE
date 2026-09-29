@@ -234,7 +234,7 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
 
     #[test]
     fn a_wide_return_has_its_high_word() {
-        let w = [5, RETURN << 28, 1, VALUE << 28, 2, VALUE << 28 | 1, 6, RETURN << 28, -2i32 as u32, VALUE << 28];
+        let w = [5, RETURN << 28, 1, VALUE << 28, 2, VALUE << 28, 6, RETURN << 28, -2i32 as u32, VALUE << 28];
         assert_eq!(decode(&w), [Record::Return { func: 5, value: 1 | 2 << 32 }, Record::Return { func: 6, value: -2 }]);
     }
 
@@ -256,7 +256,7 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
     #[test]
     fn decodes_and_resyncs() {
         // (A call: block 0, arguments 1 and 2, the frame base 0x900.)
-        let mut w = alloc::vec![5, BLOCK << 28, 1, VALUE << 28, 2, VALUE << 28 | 1, 0x900, VALUE << 28 | 2];
+        let mut w = alloc::vec![5, BLOCK << 28, 1, VALUE << 28, 2, VALUE << 28, 0x900, VALUE << 28];
         w.extend(block(5, 3));
         w.extend(ret(5, 42));
         // Drop the head of the first record, as a wrapped ring would.
@@ -274,7 +274,7 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
     #[test]
     fn calls_carry_arguments_and_stores_old_values() {
         // (The store of 4 at 0x100 is on its block's line 3.)
-        let w = [9, BLOCK << 28, 7, VALUE << 28, 8, VALUE << 28 | 1, 0x80, VALUE << 28 | 2, 0x100, STORE << 28 | 3 << 4 | 2, 5, VALUE << 28,
+        let w = [9, BLOCK << 28, 7, VALUE << 28, 8, VALUE << 28, 0x80, VALUE << 28, 0x100, STORE << 28 | 3 << 4 | 2, 5, VALUE << 28,
                  0x200, STORE << 28 | UNKNOWN, 64, VALUE << 28, 9, BLOCK << 28 | 1];
         assert_eq!(decode_values(&w)[0].1, [7, 8, 0x80]);
         assert_eq!(decode(&w), [Record::Block { func: 9, n: 0 },
@@ -285,13 +285,13 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
     #[test]
     fn copies_and_comparisons() {
         // A store of 4 bytes at 0x100 (it held 5) copied from 0x300; then 18 >= 0 (sge, 7), on line 2.
-        let w = [0x100, STORE << 28 | 2, 5, VALUE << 28, 0x300, VALUE << 28 | 1, 18, COMPARE << 28 | 2 << 4 | 7, 0, VALUE << 28];
+        let w = [0x100, STORE << 28 | 2, 5, VALUE << 28, 0x300, VALUE << 28, 18, COMPARE << 28 | 2 << 4 | 7, 0, VALUE << 28];
         let got = decode(&w);
         assert_eq!(got, [Record::Store { addr: 0x100, size: 4, old: Some(5), line: 0, from: Some(0x300) }, Record::Compare { lhs: 18, rhs: 0, wide: false, pred: 7, line: 2 }]);
         assert_eq!(got[1].compare(), Some((">=", true, true)));
         assert_eq!(Record::Compare { lhs: -1i32 as u32 as u64, rhs: 0, wide: false, pred: 3, line: 0 }.compare(), Some((">=", false, true)));
         // (Wide: 2^32 > 1 (sgt, 6) holds; their low halves, 0 > 1, would not.)
-        let w = [0, COMPARE << 28 | 6, 1, VALUE << 28, 1, VALUE << 28 | 1, 0, VALUE << 28 | 2];
+        let w = [0, COMPARE << 28 | 6, 1, VALUE << 28, 1, VALUE << 28, 0, VALUE << 28];
         assert_eq!(decode(&w)[0].compare(), Some((">", true, true)));
         assert_eq!(Record::Compare { lhs: 5, rhs: 5, wide: false, pred: 1, line: 0 }.compare(), Some(("!=", false, false)));
     }

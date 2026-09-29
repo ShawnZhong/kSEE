@@ -88,7 +88,7 @@ pub fn log(addr: u32, len: u32, line: u32, from: u32) {
         let mut old = [0u8; 8];
         Direct.read(addr + off, &mut old[..size as usize]);
         let v = u64::from_le_bytes(old);
-        let w = [addr + off, STORE << 28 | line << 4 | class, v as u32, VALUE << 28, (v >> 32) as u32, VALUE << 28 | 1, 0, 0];
+        let w = [addr + off, STORE << 28 | line << 4 | class, v as u32, VALUE << 28, (v >> 32) as u32, VALUE << 28, 0, 0];
         store(w, if class == 3 { 6 } else { 4 }, from, off);
         off += size;
     }
@@ -105,7 +105,7 @@ fn store(mut w: [u32; 8], n: usize, from: u32, off: u32) {
         return ring_put(&w[..n]);
     }
     w[n] = from + off;
-    w[n + 1] = VALUE << 28 | (n as u32 / 2 - 1);
+    w[n + 1] = VALUE << 28;
     ring_put(&w[..n + 2]);
 }
 
