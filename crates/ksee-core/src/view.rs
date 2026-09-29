@@ -848,12 +848,12 @@ impl View<'_> {
         self.tables.types.leaves(r.ty, off, len).into_iter().map(|(path, leaf, off, bits)| (path, Some((leaf, off, bits)))).collect()
     }
 
-    /// Leaf `leaf` of region `r` (see member) as it was after record `at`,
-    /// printed.
-    fn value(&self, r: &Region, (leaf, off, bits): Leaf, at: usize) -> String {
+    /// Leaf `leaf` of the object at `base` (see members) as it was after
+    /// record `at`, printed.
+    fn value(&self, base: u32, (leaf, off, bits): Leaf, at: usize) -> String {
         let (b0, bn) = bits.unwrap_or((0, 0));
         let mut v = String::new();
-        self.tables.types.print(&self.rec.memory_at(self.now, at), r.addr + off, leaf, b0, bn, &mut v);
+        self.tables.types.print(&self.rec.memory_at(self.now, at), base + off, leaf, b0, bn, &mut v);
         v
     }
 
@@ -873,7 +873,7 @@ impl View<'_> {
         }
         self.members(r, w.i).into_iter().map(|(member, leaf)| {
             let (before, after) = match leaf {
-                Some(leaf) => (self.value(r, leaf, w.i.saturating_sub(1)), self.value(r, leaf, w.i)),
+                Some(leaf) => (self.value(r.addr, leaf, w.i.saturating_sub(1)), self.value(r.addr, leaf, w.i)),
                 None => {
                     let Record::Store { old, .. } = self.rec.records[w.i] else { unreachable!() };
                     (old.map_or_else(|| "(not kept)".into(), num), num(self.wrote(w.i)))
@@ -1169,11 +1169,10 @@ impl View<'_> {
         // where it points as the span ends.)
         let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
         let mut nodes: Vec<(Node, Vec<Option<u32>>)> = nodes.into_iter().filter_map(|(mut n, members)| {
-            let r = Region { what: String::new(), kind: n.kind, ty: n.id, addr: n.addr, size: n.size, life: None, depth: n.depth };
             let mut points = Vec::new();
             for (member, leaf, writes) in members {
-                let before = |i: usize| self.value(&r, leaf, i.saturating_sub(1));
-                let after = |i: usize| self.value(&r, leaf, i);
+                let before = |i: usize| self.value(n.addr, leaf, i.saturating_sub(1));
+                let after = |i: usize| self.value(n.addr, leaf, i);
                 // (A run: one function's writes in a row; one that left it
                 // as it was, not.)
                 let func = |w: &Wrote| w.at.and_then(|s| self.tables.functions.get(&s.func)).map(|f| f.name.as_str());
