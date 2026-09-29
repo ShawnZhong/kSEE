@@ -178,6 +178,10 @@ pub struct Stored {
     pub member: String,
 }
 
+/// A member's scalar, as Types::leaf finds it: its type, its offset in the
+/// object, and its bits if a bitfield.
+type Leaf = (u32, u32, Option<(u32, u32)>);
+
 /// A write, printed: the member it wrote (see Stored), from `before` to
 /// `after`.
 #[derive(Debug, Clone, PartialEq)]
@@ -830,7 +834,7 @@ impl View<'_> {
     /// The member of `r` the store at record `i` wrote (none for a variable
     /// set): its path and, for a typed region, the leaf there (types::leaf:
     /// its type, offset, bits).
-    fn member(&self, r: &Region, i: usize) -> (String, Option<(u32, u32, Option<(u32, u32)>)>) {
+    fn member(&self, r: &Region, i: usize) -> (String, Option<Leaf>) {
         let Record::Store { addr, .. } = self.rec.records[i] else { return (String::new(), None) };
         // (No type, a frame's bytes: the store as it is, at its offset.)
         if r.ty == 0 {
@@ -842,7 +846,7 @@ impl View<'_> {
 
     /// Leaf `leaf` of region `r` (see member) as it was after record `at`,
     /// printed.
-    fn value(&self, r: &Region, (leaf, off, bits): (u32, u32, Option<(u32, u32)>), at: usize) -> String {
+    fn value(&self, r: &Region, (leaf, off, bits): Leaf, at: usize) -> String {
         let (b0, bn) = bits.unwrap_or((0, 0));
         let mut v = String::new();
         self.tables.types.print(&self.rec.memory_at(self.now, at), r.addr + off, leaf, b0, bn, &mut v);
@@ -1101,8 +1105,8 @@ impl View<'_> {
         let scratch = |r: &Region| r.life.is_some_and(|(a, b)| first <= a && b <= last);
         // (Each object's writes (its region's, and any other's of its
         // address and type), by member, in order; with the member's leaf.)
-        let mut nodes: Vec<(Node, Vec<(String, (u32, u32, Option<(u32, u32)>), Vec<Wrote>)>)> = Vec::new();
-        let mut leaves: BTreeMap<(u32, u32), (String, Option<(u32, u32, Option<(u32, u32)>)>)> = BTreeMap::new();
+        let mut nodes: Vec<(Node, Vec<(String, Leaf, Vec<Wrote>)>)> = Vec::new();
+        let mut leaves: BTreeMap<(u32, u32), (String, Option<Leaf>)> = BTreeMap::new();
         for w in &named.writes {
             let r = &named.regions[w.region as usize];
             if !matches!(r.kind, "object" | "task" | "local" | "global") || r.size == 0 || scratch(r) {
