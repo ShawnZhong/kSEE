@@ -1,0 +1,424 @@
+//! A span's stores, named as the code names what they hit (View::stores),
+//! printed where shown: the source's notes (View::notes), and who wrote a
+//! value, back through its copies (View::origin).
+
+use super::*;
+
+/// What a span's stores hit, as the code names it (see View::stores):
+/// `what` ("file in vfs_read", "x in f", "nr_inodes", "prog(19)"; the
+/// address when nothing names it), its `kind` ("task", "object": a struct
+/// a call's argument points to, "global", "machine": one of the machine's
+/// variables, or what its functions name (arch::MACHINE), "frame": the
+/// stack a call used, "local", "var": a variable kept in a wasm local, or
+/// "other": memory nothing names), its type `ty` (0 for none: a frame's
+/// bytes; a var's, the variable's), where it is (`addr`, `size`), for a
+/// call's local or frame (or an object in one) the call's records, its
+/// `life`, and how deep the call that names it is (the task's, 0; a
+/// global's, or memory nothing names, u32::MAX): Objects comes in that
+/// order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Region {
+    pub what: String,
+    pub kind: &'static str,
+    pub ty: u32,
+    pub addr: u32,
+    pub size: u32,
+    pub life: Option<(usize, usize)>,
+    pub depth: u32,
+}
+
+/// A span's stores and variable sets, in order, by the regions they hit.
+#[derive(Debug, Default)]
+pub struct Named {
+    pub regions: Vec<Region>,
+    pub writes: Vec<Wrote>,
+}
+
+/// A store or a variable set: at record `i`, to `region`, on line `at`
+/// (Recording::line_at); a variable set's `prev`, the set of the same
+/// variable before it in the span.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Wrote {
+    pub i: usize,
+    pub region: u32,
+    pub at: Option<LineStep>,
+    pub prev: Option<usize>,
+}
+
+/// A store in a span (Machine.stores): at record `i`, to the `member` (a
+/// path: "f_path.dentry"; "" the object itself; "+8" a frame's byte 8) of
+/// `what`, of `kind` (see Region).
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Stored {
+    pub i: usize,
+    pub what: String,
+    pub kind: &'static str,
+    pub member: String,
+}
+
+/// A member's scalar, as Types::leaf finds it: its type, its offset in the
+/// object, and its bits if a bitfield.
+pub(super) type Leaf = (u32, u32, Option<(u32, u32)>);
+
+/// A write, printed: the member it wrote (see Stored), from `before` to
+/// `after`.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct Change {
+    pub(super) member: String,
+    pub(super) before: String,
+    pub(super) after: String,
+}
+
+/// What a source line stored (or set) by a moment (View::notes): each
+/// thing it wrote, said `short` and in `full`; its last write at record
+/// `i`.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Note {
+    pub line: u32,
+    pub i: usize,
+    pub short: String,
+    pub full: String,
+}
+
+/// A write to a value (`addr`): at record `i`, on `task`, by the code at
+/// `at` (the line, if known); `old` what it overwrote (printed: a number,
+/// in hex past 0xffff); `from`: if it
+/// copied what was at another address (a value loaded and stored as it
+/// is, a memcpy), that address.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Write {
+    pub i: usize,
+    pub addr: u32,
+    pub old: String,
+    pub task: TaskRef,
+    pub at: Option<Line>,
+    pub from: Option<u32>,
+}
+
+impl View<'_> {
+    /// The newest write to `addr..addr + len` at or before record `at`.
+    pub fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
+        let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
+        let from = self.rec.copied_from(i, addr);
+        let old = old.map_or_else(|| "(not kept)".into(), num);
+        Some(Write { i, addr, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line_only(&s)), from })
+    }
+
+    /// Where the value at `addr..addr + len` after record `at` came from:
+    /// its newest write, and while that copied it from elsewhere, the
+    /// newest write there before it, and so on (up to `max`): the value's
+    /// way through memory, newest first. (The last one computed it, or
+    /// copied it from memory the recording did not see written.)
+    pub fn origin(&self, addr: u32, len: u32, at: usize, max: usize) -> Vec<Write> {
+        let mut out: Vec<Write> = Vec::new();
+        let (mut addr, mut at) = (addr, at);
+        while out.len() < max {
+            let Some(w) = self.last_write(addr, len, at) else { break };
+            let (i, from) = (w.i, w.from);
+            out.push(w);
+            let (Some(src), Some(before)) = (from, i.checked_sub(1)) else { break };
+            (addr, at) = (src, before);
+        }
+        out
+    }
+
+    /// What the store at record `i` wrote: memory there just after it.
+    pub(super) fn wrote(&self, i: usize) -> u64 {
+        let Record::Store { addr, size, .. } = self.rec.records[i] else { return 0 };
+        let mut new = [0u8; 8];
+        self.rec.memory_at(self.now, i).read(addr, &mut new[..size.min(8) as usize]);
+        u64::from_le_bytes(new)
+    }
+
+    /// The members of `r` the store at record `i` wrote (none for a
+    /// variable set): each its path and, for a typed region, the leaf there
+    /// (types::leaves: one store may copy several members, a struct path's
+    /// mnt and dentry at once).
+    pub(super) fn members(&self, r: &Region, i: usize) -> Vec<(String, Option<Leaf>)> {
+        let Record::Store { addr, size, .. } = self.rec.records[i] else { return Vec::new() };
+        // (No type, a frame's bytes: the store as it is, at its offset.)
+        if r.ty == 0 {
+            return alloc::vec![(if addr == r.addr { String::new() } else { format!("+{}", addr.wrapping_sub(r.addr)) }, None)];
+        }
+        let off = addr.max(r.addr) - r.addr;
+        let len = size.min(r.size.saturating_sub(off));
+        self.tables.types.leaves(r.ty, off, len).into_iter().map(|(path, leaf, off, bits)| (path, Some((leaf, off, bits)))).collect()
+    }
+
+    /// Leaf `leaf` of the object at `base` (see members) as it was after
+    /// record `at`, printed.
+    pub(super) fn value(&self, base: u32, (leaf, off, bits): Leaf, at: usize) -> String {
+        let (b0, bn) = bits.unwrap_or((0, 0));
+        let mut v = String::new();
+        self.tables.types.print(&self.rec.memory_at(self.now, at), base + off, leaf, b0, bn, &mut v);
+        v
+    }
+
+    /// Variable set `i` (a Var record)'s value, printed.
+    fn var_value(&self, i: usize) -> String {
+        let Record::Var { var, value, .. } = self.rec.records[i] else { return String::new() };
+        let v = self.rec.calls.func_at(i).and_then(|f| self.tables.vars.get(&(f, var)));
+        v.and_then(|v| self.var_object(v, value, self.now)?.value).unwrap_or_default()
+    }
+
+    /// Write `w` of `named`, printed: each member it wrote, from what to what.
+    pub(super) fn changes(&self, named: &Named, w: &Wrote) -> Vec<Change> {
+        let r = &named.regions[w.region as usize];
+        if r.kind == "var" {
+            let before = w.prev.map_or_else(|| "(uninitialized)".into(), |p| self.var_value(p));
+            return alloc::vec![Change { member: String::new(), before, after: self.var_value(w.i) }];
+        }
+        self.members(r, w.i).into_iter().map(|(member, leaf)| {
+            let (before, after) = match leaf {
+                Some(leaf) => (self.value(r.addr, leaf, w.i.saturating_sub(1)), self.value(r.addr, leaf, w.i)),
+                None => {
+                    let Record::Store { old, .. } = self.rec.records[w.i] else { unreachable!() };
+                    (old.map_or_else(|| "(not kept)".into(), num), num(self.wrote(w.i)))
+                }
+            };
+            Change { member, before, after }
+        }).collect()
+    }
+
+    /// The stores in records `first..=last` (a call's), and the variables
+    /// set there, in order, each by what the code names that it hit (see
+    /// Region): a call's pointer argument to a struct, a local, the task
+    /// running, a callee's frame (from its frame base up to its caller's:
+    /// the stack it used beyond its named locals; no type), a global of
+    /// the kernel's; else by its address.
+    pub fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Named> {
+        if let Some((span, got)) = &*self.rec.named.borrow() && *span == (first, last) {
+            return got.clone();
+        }
+        let got = alloc::rc::Rc::new(self.name_stores(first, last));
+        *self.rec.named.borrow_mut() = Some(((first, last), got.clone()));
+        got
+    }
+
+    /// The stores in records `first..=last` (see stores), each with what it
+    /// hit and the member.
+    pub fn stored(&self, first: usize, last: usize) -> Vec<Stored> {
+        let named = self.stores(first, last);
+        named.writes.iter().map(|w| {
+            let r = &named.regions[w.region as usize];
+            let member = self.members(r, w.i).into_iter().map(|(m, _)| m).collect::<Vec<_>>().join(", ");
+            Stored { i: w.i, what: r.what.clone(), kind: r.kind, member }
+        }).collect()
+    }
+
+    /// What each line of `file` stored (or set) in records `first..=last`
+    /// by record `cur` (the source's notes): each thing it wrote (a
+    /// member, a variable), its last change and how many times, said short
+    /// (the member, or the variable, and the change: the line says the
+    /// rest) and in full; at the line's last write.
+    pub fn notes(&self, first: usize, last: usize, file: &str, cur: usize) -> Vec<Note> {
+        let named = self.stores(first, last);
+        let files: Vec<u32> = (0..self.tables.files.len() as u32).filter(|&k| self.tables.files[k as usize] == file).collect();
+        // (Each line's things written, in the order first written: (region,
+        // member) -> its last write, how many; and the line's last write.)
+        let mut by: BTreeMap<u32, (Vec<((u32, String), (&Wrote, usize))>, usize)> = BTreeMap::new();
+        for w in named.writes.iter().take_while(|w| w.i <= cur) {
+            let Some(at) = w.at.filter(|at| files.contains(&at.loc.file)) else { continue };
+            let r = &named.regions[w.region as usize];
+            let members = if r.kind == "var" { alloc::vec![String::new()] } else { self.members(r, w.i).into_iter().map(|(m, _)| m).collect() };
+            let (things, i) = by.entry(at.loc.line).or_default();
+            *i = w.i;
+            for m in members {
+                let key = (w.region, m);
+                match things.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, x)) => *x = (w, x.1 + 1),
+                    None => things.push((key, (w, 1))),
+                }
+            }
+        }
+        by.into_iter().map(|(line, (things, i))| {
+            // (Short, the same said once, the times added: two inlined
+            // helpers' `regs` set alike.)
+            let (mut short, mut full): (Vec<(String, usize)>, Vec<String>) = (Vec::new(), Vec::new());
+            for ((region, member), (w, n)) in things {
+                let r = &named.regions[region as usize];
+                let Some(x) = self.changes(&named, w).into_iter().find(|x| x.member == member) else { continue };
+                let join = if x.member.starts_with('+') { "" } else if r.kind == "object" { "->" } else { "." };
+                // (The member after the name, the function it is in last: "filp->f_pos in vfs_read".)
+                let (expr, within) = r.what.split_once(" in ").map_or((r.what.as_str(), String::new()), |(e, f)| (e, format!(" in {f}")));
+                let times = |n: usize| if n > 1 { format!(" ×{n}") } else { String::new() };
+                full.push(format!("{expr}{}{within}: {} → {}{}", if x.member.is_empty() { String::new() } else { format!("{join}{}", x.member) }, x.before, x.after, times(n)));
+                let name = if x.member.is_empty() { expr.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(expr) } else { &x.member };
+                let said = format!("{name}: {} → {}", x.before, x.after);
+                match short.iter_mut().find(|(s, _)| *s == said) {
+                    Some((_, k)) => *k += n,
+                    None => short.push((said, n)),
+                }
+            }
+            let short = short.into_iter().map(|(s, n)| if n > 1 { format!("{s} ×{n}") } else { s }).collect::<Vec<_>>().join("   ");
+            Note { line, i, short, full: full.join("; ") }
+        }).collect()
+    }
+
+    /// (The work of stores: see it.)
+    fn name_stores(&self, first: usize, last: usize) -> Named {
+        let (t, types) = (self.tables, &self.tables.types);
+        // (The objects: what (as the code names it: "file in vfs_read"),
+        // type, address, size, and for a call's local or frame its life (the
+        // call's records: its slots are other calls' before and after). The
+        // task first.)
+        let task = self.rec.tasks.get(first).copied().unwrap_or(0);
+        let mut regions: Vec<Region> = Vec::new();
+        let mut seen = alloc::collections::BTreeSet::new();
+        // (Named at record `by`: by the call there, its depth.)
+        let mut add = |what: String, kind: &'static str, ty: u32, addr: u32, size: Option<u32>, call: Option<usize>, by: Option<usize>| {
+            let ty = types.resolve(ty);
+            if addr != 0 && seen.insert((addr, ty, call)) {
+                let life = call.map(|c| (c, self.rec.calls.call_end(c).unwrap_or(usize::MAX)));
+                let depth = by.and_then(|i| self.rec.calls.call_at(i)).map_or(0, |c| c.depth);
+                regions.push(Region { what, kind, ty, addr, size: size.unwrap_or_else(|| types.size_of(ty)), life, depth });
+            }
+        };
+        if let Some(ty) = types.find(arch::TASK) {
+            // (By its name, "prog(19)": the task running as the span begins,
+            // which another may follow in it; not "current".)
+            let who = self.task(task);
+            let who = format!("{}({})", who.comm.unwrap_or_default(), who.pid.unwrap_or(0));
+            add(who.clone(), "task", ty, task, None, None, None);
+            // (And what its pointer members point to, as the span ends:
+            // current->files, ->fs, ->mm: "files->next_fd" through a local
+            // the optimizer kept in a register is reached this way.)
+            let end = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
+            if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
+                for mb in members.iter().filter(|mb| mb.bit_size == 0) {
+                    if let Some(to) = types.struct_target(mb.ty) {
+                        add(format!("{who}->{}", mb.name), "object", to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None, None);
+                    }
+                }
+            }
+        }
+        let (records, calls, args) = (&self.rec.records, &self.rec.calls, &self.rec.args);
+        // (The call whose frame holds address `p`, seen from the call at
+        // record `i`: an object a pointer reaches on the stack lives as long
+        // as that call, the slot another's before and after; None: not on
+        // the stack.)
+        let frame_of = |i: usize, p: u32| {
+            let mut c = calls.call_from(i)?;
+            loop {
+                let parent = &calls.calls[c.parent? as usize];
+                let (below, above) = (args.get(c.first)?.1, args.get(parent.first)?.1);
+                if below <= p && p < above {
+                    return Some(c.first);
+                }
+                c = parent;
+            }
+        };
+        let last = last.min(last_record(self.rec));
+        for i in first..=last {
+            let Record::Block { func, n: 0 } = records[i] else { continue };
+            let Some((f, (words, frame))) = t.functions.get(&func).zip(args.get(i)) else { continue };
+            // (What the machine's own functions name, its: the call's plumbing.)
+            let machine = t.file(f.loc).starts_with(arch::MACHINE);
+            let kind = |k: &'static str| if machine { "machine" } else { k };
+            // (Its frame: up to its caller's, if the caller is known.)
+            let caller = calls.call_from(i).and_then(|c| c.parent).and_then(|p| args.get(calls.calls[p as usize].first));
+            if let Some((_, caller)) = caller && caller > frame {
+                add(format!("frame of {}", f.name), "frame", 0, frame, Some(caller - frame), Some(i), Some(i));
+            }
+            for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
+                let v = v as u32;
+                if let Some(to) = types.struct_target(*ty) {
+                    add(format!("{pname} in {}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
+                }
+            }
+            // (Where its pointers point as the call ends.)
+            let end = calls.call_end(i).unwrap_or(last).min(last);
+            for (var, ty, off) in types.locals.get(&func).into_iter().flatten().filter_map(|(v, t, o)| Some((v, t, (*o)?))) {
+                add(format!("{var} in {}", f.name), kind("local"), *ty, frame.wrapping_add(off), None, Some(i), Some(i));
+                // (A local pointing at a struct: that too ("files->next_fd"
+                // through `struct files_struct *files = current->files`).)
+                if let Some(to) = types.struct_target(*ty) {
+                    let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
+                    add(format!("{var} in {}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
+                }
+            }
+            // (One the code keeps in a wasm local, pointing at a struct
+            // (Record::Var): its last value; in the order the code first
+            // sets them: the call's own filp names the file before an
+            // inlined callee's file.)
+            let mut values: Vec<(&Var, u32)> = Vec::new();
+            for j in calls.vars_of(i, end) {
+                if let Record::Var { var, value, .. } = records[j] && let Some(v) = t.vars.get(&(func, var)) {
+                    match values.iter_mut().find(|(w, _)| w.function == v.function && w.name == v.name) {
+                        Some(w) => w.1 = value as u32,
+                        None => values.push((v, value as u32)),
+                    }
+                }
+            }
+            for (v, value) in values {
+                if let Some(to) = self.var_ty(v).and_then(|ty| types.struct_target(ty)) {
+                    add(format!("{} in {}", v.name, v.function), kind("object"), to, value, None, frame_of(i, value), Some(i));
+                }
+            }
+        }
+        // (The kernel's globals, by address, for the stores nothing else holds.)
+        let mut globals: Vec<(u32, u32, &str, u32)> = types.globals.iter()
+            .map(|(name, &(addr, ty))| (addr, types.size_of(ty), name.as_str(), ty)).filter(|g| g.1 > 0).collect();
+        globals.sort_unstable();
+        let global_at = |addr: u32| {
+            let k = globals.partition_point(|g| g.0 <= addr);
+            globals[..k].iter().rev().take(8).find(|g| addr < g.0.saturating_add(g.1)).copied()
+        };
+        // (Each store to the outermost region holding its first byte. The
+        // regions by address: a store's are those starting at most the
+        // largest one's size below it.)
+        let mut by_start: Vec<usize> = (0..regions.len()).collect();
+        by_start.sort_unstable_by_key(|&k| regions[k].addr);
+        let widest = regions.iter().map(|r| r.size).max().unwrap_or(0).max(1);
+        // (Regions of their own, once each: a global, an address nothing names.)
+        let mut own: BTreeMap<u32, u32> = BTreeMap::new();
+        let mut writes = Vec::new();
+        for &i in self.rec.stores_between(first, last) {
+            let Record::Store { addr, .. } = records[i] else { continue };
+            let end = by_start.partition_point(|&k| regions[k].addr <= addr);
+            // (The outermost: an object inside another (a page's refcount,
+            // the atomic_t a callee names) is the other's member; a frame
+            // only if nothing else holds it; of equal ones, the first named.)
+            let hit = by_start[..end].iter().rev().take_while(|&&k| addr - regions[k].addr < widest).copied()
+                .filter(|&k| addr < regions[k].addr.saturating_add(regions[k].size) && regions[k].life.is_none_or(|(a, b)| a <= i && i <= b))
+                .min_by_key(|&k| (regions[k].kind == "frame", core::cmp::Reverse(regions[k].size), k));
+            let region = match hit {
+                Some(k) => k as u32,
+                None => {
+                    let r = match global_at(addr) {
+                        Some((gaddr, size, name, ty)) => {
+                            let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
+                            Region { what: name.into(), kind: if machine { "machine" } else { "global" }, ty: types.resolve(ty), addr: gaddr, size, life: None, depth: u32::MAX }
+                        }
+                        None => Region { what: format!("{addr:#x}"), kind: "other", ty: 0, addr, size: 0, life: None, depth: u32::MAX },
+                    };
+                    *own.entry(r.addr).or_insert_with(|| {
+                        regions.push(r);
+                        regions.len() as u32 - 1
+                    })
+                }
+            };
+            writes.push(Wrote { i, region, at: self.rec.line_at(t, i), prev: None });
+        }
+        // (And each variable kept in a wasm local, as the code sets it: from
+        // its value before, in its call, to its value then.)
+        // (Each call's variable's region (none: of no type known), and its last set.)
+        let mut vars: BTreeMap<(usize, u32), (Option<u32>, Option<usize>)> = BTreeMap::new();
+        for i in first..=last {
+            let Record::Var { var, .. } = records[i] else { continue };
+            let Some(c) = calls.call_at(i) else { continue };
+            let (region, prev) = vars.entry((c.first, var)).or_insert_with(|| {
+                let v = t.vars.get(&(c.func, var));
+                let r = v.and_then(|v| Some(Region { what: format!("{} in {}", v.name, v.function), kind: "var", ty: self.var_ty(v)?, addr: 0, size: 0, life: None, depth: c.depth }));
+                (r.map(|r| (regions.push(r), regions.len() as u32 - 1).1), None)
+            });
+            let Some(region) = *region else { continue };
+            writes.push(Wrote { i, region, at: self.rec.line_at(t, i), prev: prev.replace(i) });
+        }
+        writes.sort_by_key(|w| w.i);
+        Named { regions, writes }
+    }
+}

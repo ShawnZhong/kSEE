@@ -3,7 +3,7 @@
 The host rebuilds everything the page shows from the records alone
 (crates/ksee-core: `recording.rs`, `stack.rs`, `mem.rs`, `syscalls.rs`),
 with no help from the kernel. Each snapshot decodes the ring into a
-`Recording`; `view.rs` turns it into what the page shows.
+`Recording`; `view/` turns it into what the page shows (`frames.rs`: lines and the Stack; `stores.rs`: stores named, the notes, who wrote a value; `objects.rs`: what a call did; `value.rs`: a value as the page shows it).
 
 ## Which task ran
 
