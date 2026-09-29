@@ -47,19 +47,27 @@ impl History {
         self.stores.len() - self.stores.partition_point(|&i| i <= at)
     }
 
-    /// Byte `b` after record `at`, if a later store changed it: the old byte
-    /// of the first such store.
-    fn byte(&self, b: u32, at: usize) -> Option<u8> {
-        let mut first: Option<(usize, u8)> = None;
-        for (&start, list) in self.by_addr.range(b.saturating_sub(7)..=b) {
-            // (Oldest first: the first after `at` that covers b.)
-            let later = &list[list.partition_point(|&(i, _, _)| i <= at)..];
-            if let Some(&(i, _, old)) = later.iter().find(|&&(_, size, _)| b - start < size)
-                && first.is_none_or(|(fi, _)| i < fi) {
-                    first = Some((i, (old >> (8 * (b - start))) as u8));
+    /// Undo in `buf` (memory at `addr`, as the trace ended) the stores after
+    /// record `at`: each byte as the oldest later store covering it found it.
+    fn undo(&self, addr: u32, buf: &mut [u8], at: usize) {
+        let end = addr.saturating_add(buf.len() as u32);
+        // (Each byte's undoing store so far: the oldest wins.)
+        let mut by = alloc::vec![usize::MAX; buf.len()];
+        for (&start, list) in self.by_addr.range(addr.saturating_sub(7)..end) {
+            // (Oldest first: once one covers every byte a store here can, no later one matters.)
+            let most = end.min(start.saturating_add(8));
+            for &(i, size, old) in &list[list.partition_point(|&(i, _, _)| i <= at)..] {
+                for b in start.max(addr)..end.min(start.saturating_add(size)) {
+                    let k = (b - addr) as usize;
+                    if i < by[k] {
+                        (by[k], buf[k]) = (i, (old >> (8 * (b - start))) as u8);
+                    }
                 }
+                if start.saturating_add(size) >= most {
+                    break;
+                }
+            }
         }
-        first.map(|(_, v)| v)
     }
 
     /// Whether a store in records `from..=to` wrote any of `addr..addr +
@@ -102,11 +110,7 @@ pub struct PastMemory<'a> {
 impl Memory for PastMemory<'_> {
     fn read(&self, addr: u32, buf: &mut [u8]) {
         self.base.read(addr, buf);
-        for (k, b) in buf.iter_mut().enumerate() {
-            if let Some(v) = self.history.byte(addr.wrapping_add(k as u32), self.at) {
-                *b = v;
-            }
-        }
+        self.history.undo(addr, buf, self.at);
     }
 }
 
@@ -141,6 +145,11 @@ mod tests {
         let at = |i: usize| PastMemory { base: &live, history: &h, at: i }.read_u32(4);
         assert_eq!((at(0), at(2), at(4)), (1, 2, 3));
         assert_eq!((h.after(0), h.after(2), h.after(4)), (2, 1, 0));
+        // (Bytes of one store undone by an older, narrower one at another start.)
+        let r2 = [b, Record::Store { addr: 5, size: 1, old: 9, line: 0, from: None }, Record::Store { addr: 4, size: 4, old: 0x0102_0304, line: 0, from: None }];
+        let h2 = History::new(&r2);
+        assert_eq!(PastMemory { base: &live, history: &h2, at: 0 }.read_u32(4), 0x0102_0904);
+        assert_eq!(PastMemory { base: &live, history: &h2, at: 1 }.read_u32(4), 0x0102_0304);
         assert_eq!(h.last_write(&r, 4, 4, 2), Some((1, 1)));
         assert_eq!(h.last_write(&r, 4, 4, 0), None);
     }
