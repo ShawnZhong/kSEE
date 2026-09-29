@@ -63,9 +63,10 @@ impl View<'_> {
     /// a pointer reaches there, are the Stack's; nor the machine's own
     /// variables: the call's plumbing), each member from what it was to
     /// what it is as the span ends; those that end changed first, then
-    /// those left as they were (Node::group); as a graph, by their pointers
-    /// then. In the order of the calls that name them, the outer first
-    /// (then the first written first).
+    /// those left as they were (Node::group); as a tree, by their pointers
+    /// then (Node::under), in the order shown: each tree where its first
+    /// node is in the order of the calls that name them, the outer first
+    /// (then the first written first), each node followed by those under it.
     pub fn objects(&self, first: usize, last: usize) -> Vec<Node> {
         let types = &self.tables.types;
         let named = self.stores(first, last);
@@ -188,13 +189,40 @@ impl View<'_> {
                 }
             }
         }
-        // (A pointer the call wrote: the node it points to.)
-        for ((n, to), u) in nodes.iter_mut().zip(tos).zip(under) {
-            for (d, to) in n.changes.iter_mut().zip(to) {
-                d.to = to;
+        // (In the order they are shown: a tree where its first node is in
+        // the order above (the task's, which a wait queue's entry may point
+        // to, first), its nodes in turn, each followed by those under it.)
+        let root = |mut k: usize| {
+            while let Some((p, _)) = &under[k] {
+                k = *p;
             }
-            n.under = u;
+            k
+        };
+        let mut roots: Vec<usize> = Vec::new();
+        for k in 0..nodes.len() {
+            if !roots.contains(&root(k)) {
+                roots.push(root(k));
+            }
         }
-        nodes
+        let mut order = Vec::with_capacity(nodes.len());
+        let mut stack: Vec<usize> = roots.into_iter().rev().collect();
+        while let Some(k) = stack.pop() {
+            order.push(k);
+            stack.extend((0..nodes.len()).rev().filter(|&c| under[c].as_ref().is_some_and(|(p, _)| *p == k)));
+        }
+        let mut new = alloc::vec![0; nodes.len()];
+        for (at, &k) in order.iter().enumerate() {
+            new[k] = at;
+        }
+        // (A pointer the call wrote: the node it points to.)
+        let mut nodes: Vec<Option<Node>> = nodes.into_iter().map(Some).collect();
+        order.into_iter().map(|k| {
+            let mut n = nodes[k].take().expect("once");
+            for (d, to) in n.changes.iter_mut().zip(&tos[k]) {
+                d.to = to.map(|to| new[to]);
+            }
+            n.under = under[k].take().map(|(p, m)| (new[p], m));
+            n
+        }).collect()
     }
 }

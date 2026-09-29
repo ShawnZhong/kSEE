@@ -131,7 +131,9 @@ that left it as it was, not; a member no run changed, not); a pointer, the
 object it points to as it ends; and each object under the first that
 points to it then (the members of pointer type, `Types::pointers`, whose
 value is inside another, of its group: those left changed, and those left
-as they were, every change undone).
+as they were, every change undone); the trees in the order of their
+first objects (the task, then what the outer calls name, then the first
+written), each object followed by those under it.
 
 A store with no line of its own (the compiler gave it none, or one past
 its stretch) is on the line its stretch ends on.

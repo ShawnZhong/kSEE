@@ -152,10 +152,10 @@ fn the_objects_a_call_wrote_are_a_graph() {
     let v = View { tables: &t, rec: &rec, now: &Mem(m) };
     let nodes = v.objects(0, 3);
     let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.changes.iter().map(|d| (d.member.clone(), format!("{} → {}", d.before, d.after), d.to)).collect::<Vec<_>>())).collect();
-    assert_eq!(got, [("p in f".into(), alloc::vec![("b".into(), "1 → 2".into(), None)]),
-                     ("q in f".into(), alloc::vec![("c".into(), "0 → 7".into(), None), ("link".into(), "NULL → 0x4".into(), Some(0))])]);
-    // (Shown as a tree: p under q, which points to it.)
-    assert_eq!(nodes.iter().map(|n| n.under.clone()).collect::<Vec<_>>(), [Some((1, "link".into())), None]);
+    // (As a tree, in the order shown: q, then p under it, by its link.)
+    assert_eq!(got, [("q in f".into(), alloc::vec![("c".into(), "0 → 7".into(), None), ("link".into(), "NULL → 0x4".into(), Some(1))]),
+                     ("p in f".into(), alloc::vec![("b".into(), "1 → 2".into(), None)])]);
+    assert_eq!(nodes.iter().map(|n| n.under.clone()).collect::<Vec<_>>(), [None, Some((0, "link".into()))]);
 }
 
 #[test]

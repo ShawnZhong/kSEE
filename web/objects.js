@@ -43,22 +43,23 @@ export function objects(app) {
     if (!nodes.length) return [el("div", { className: "dim head" }, `${title} changed nothing of the kernel's data`)];
     const changed = nodes.filter((n) => n.group === "changed"), same = nodes.filter((n) => n.group === "same");
     const count = (list) => `${list.length} object${list.length === 1 ? "" : "s"}`;
+    // (Their names, once each: "folio ×23".)
+    const names = (list) => [...Map.groupBy(list, short)].map(([s, of]) => (of.length > 1 ? `${s} ×${of.length}` : s)).join(", ");
     // (The head: what it changed, in a line; what it left as it was.)
-    const head = [changed.length ? `${title} changed ${count(changed)}: ${changed.map(short).join(", ")}` : `${title} left the kernel's data as it was`,
+    const head = [changed.length ? `${title} changed ${count(changed)}: ${names(changed)}` : `${title} left the kernel's data as it was`,
                   same.length && changed.length ? `; left ${count(same)} as it was` : ""].join("");
     const out = [el("div", { className: "head" }, head)];
-    // (Each group as a tree: each box under the one that points to it
-    // (Node.under, of its group), from the ones nothing points to.)
-    const tree = (group) => {
-      const order = [], visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.under?.[0] === k && visit(c, depth + 1)));
-      nodes.forEach((n, k) => n.group === group && n.under == null && visit(k, 0));
-      // (One under another: indented, a guide line down its left.)
-      return order.map(([k, depth]) => {
-        const b = box(nodes[k], nodes, k);
-        if (depth) (b.classList.add("under"), (b.style.marginLeft = `${Math.min(depth, 6) * 18}px`));
-        return b;
-      });
-    };
+    // (Each group as a tree, in order (each box followed by those under
+    // it: Node.under); one under another indented, a guide line down its
+    // left.)
+    const depth = [];
+    nodes.forEach((n, k) => (depth[k] = n.under ? depth[n.under[0]] + 1 : 0));
+    const tree = (group) => nodes.flatMap((n, k) => {
+      if (n.group !== group) return [];
+      const b = box(n, nodes, k);
+      if (depth[k]) (b.classList.add("under"), (b.style.marginLeft = `${Math.min(depth[k], 6) * 18}px`));
+      return [b];
+    });
     out.push(...tree("changed"));
     // (Then those left as they were, under a head of their own.)
     if (same.length) {
