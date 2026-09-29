@@ -68,14 +68,6 @@ impl Machine {
         self.rec.borrow().ids.get(i).copied()
     }
 
-    /// The record with id `id` (see record_id), if the snapshot still has
-    /// it. (A call's arguments have its block's id: the block's.)
-    pub fn record_index(&self, id: u32) -> Option<usize> {
-        let ids = &self.rec.borrow().ids;
-        let i = ids.partition_point(|&x| x < id);
-        (ids.get(i) == Some(&id)).then_some(i)
-    }
-
     /// The calls of function `name` in records `first..=last`: each call's
     /// first record.
     pub fn calls_of(&self, name: &str, first: usize, last: usize) -> Vec<u32> {
@@ -224,8 +216,6 @@ impl Machine {
     pub fn objects(&self, first: usize, last: usize) -> JsValue {
         self.view(|v| to_js(&v.objects(first, last)))
     }
-
-
 
     /// The task running at the start of each of `n` buckets of the
     /// recording, for its overview (view::TaskRef).
