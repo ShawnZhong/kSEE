@@ -89,7 +89,7 @@ Rust does the work: JS only lays it out.
 | kernel.js | syscalls from JavaScript: `sys.read(fd, buf, 64)` (a promise of its result: a blocked call pending while others go on), `declare("char buf[64]")` (the program's memory: a variable's `get()`, a JS value, and `set(x)`), JS values as C's (a string, bytes, argv, a variable's address, an object laid out as the parameter's struct); what the page's program lines, the tests and the console (`ksee.kernel`) make their calls through; a call's result with its errno's name (`result`, `errno`: Machine.errno) |
 
 A program is a small language, parsed and laid out in the core
-(crates/ksee-core/src/program.rs, `Machine.arg`, `Machine.value`,
+(crates/ksee-core/src/program/, `Machine.arg`, `Machine.value`,
 `Machine.declare`): a call's arguments are numbers, the kernel's constants
 with `| << + -`, strings, results by name or `$n`,
 and compound literals laid out by the parameter's type (a struct,
