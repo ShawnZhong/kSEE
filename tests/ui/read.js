@@ -53,19 +53,24 @@
   // (The same line, its next run; the where line may say what returned at one of them and not the other.)
   const sameLine = (x) => x.replace(/ · \w+ returned [^·]*/, "").trim();
   if (!file || !(r.ranTo[3] > was) || sameLine(r.ranTo[1]) !== sameLine(here)) throw new Error("run to: " + JSON.stringify(r.ranTo));
-  // Stepping: → with "into calls" on by any line until a call is entered, → within that call, ↓ then → out of it
-  // (the Stack's calls, deep), from the explanation's first link (a known place: ksys_read's call
-  // site), so that the run is the same every time.
+  // Stepping at a level: from the explanation's first link (a known
+  // place: ksys_read's call site; every line), ↑ into ksys_read (the level
+  // its), "every line" and → by any line until a call is entered, the
+  // innermost clicked on the Stack (the level its), → within it, ↓ then →
+  // out of it (the Stack's calls, deep), so that the run is the same every
+  // time.
   document.querySelector(".explain a.place").click();
   await sleep(300);
   const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
   const press = (key) => dispatchEvent(new KeyboardEvent("keydown", { key }));
   const frames = () => [...document.querySelectorAll("#stack tr.frame")].map((f) => f.innerText.trim().split("\n")[0].slice(0, 28));
-  press("ArrowUp"); // (into ksys_read: the innermost, selected)
+  if (ksee.level() != null) throw new Error("a link's call site: a level " + JSON.stringify(ksee.level()));
+  press("ArrowUp"); // (into ksys_read: the innermost, selected: its level)
+  if (ksee.level()?.func !== "ksys_read") throw new Error("↑: the level ksys_read's, not " + JSON.stringify(ksee.level()));
   const d0 = depthNow(), trail = [[$("where").textContent, frames()]];
-  $("into").checked = true;
+  document.querySelector("#level a").click(); // (every line)
   for (let k = 0; k < 200 && depthNow() <= d0; k++) press("ArrowRight");
-  $("into").checked = false;
+  document.querySelector("#stack tr.frame a").click(); // (the innermost: its level)
   const d1 = depthNow();
   trail.push([$("where").textContent, frames()]);
   press("ArrowRight");
@@ -86,6 +91,25 @@
   trail.push([$("where").textContent, frames()]);
   r.stepped = [d0, d1, d2, d3];
   if (!(d1 > d0 && d2 <= d1 && d3 <= d2 && d3 < d1)) throw new Error("stepping: " + JSON.stringify(r.stepped) + " " + JSON.stringify(trail));
+  // (At vfs_read's level, stepping back: its sibling before it, the call
+  // ksys_read made first, at that level too; nothing deeper.)
+  {
+    const rd = ksee.m.syscalls().find((x) => x.name === "read");
+    ksee.select(rd);
+    const vfs = ksee.m.first_call("vfs_read", rd.first, rd.last, rd.task.addr);
+    ksee.time.go(vfs);
+    await sleep(100);
+    [...document.querySelectorAll("#stack tr.frame a")].find((f) => f.textContent.startsWith("vfs_read"))?.click();
+    const lv = ksee.level(), seen = new Set();
+    for (let k = 0; k < 80; k++) {
+      press("ArrowLeft");
+      const s = ksee.stepNow();
+      if (!s || s.depth > lv.depth || (s.depth === lv.depth && s.inl > lv.inl)) throw new Error("deeper than the level: " + JSON.stringify([s, lv]));
+      if (s.depth === lv.depth && s.inl === lv.inl) seen.add(s.inlined ?? s.func);
+    }
+    r.siblings = [lv.func, ...seen];
+    if (![...seen].some((f) => f !== "vfs_read")) throw new Error("no sibling at vfs_read's level: " + JSON.stringify(r.siblings));
+  }
   r.chart = $("chart-title").textContent;
   // (The read's own box: its syscall entry's.)
   const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === ksee.m.main() && x.last != null);

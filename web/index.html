@@ -22,9 +22,9 @@
   <div class="flamescroll" id="chartbox"><canvas id="chart" aria-label="the call stacks over time"></canvas></div>
   <canvas id="strip" aria-label="which task ran"></canvas>
   <div class="transport">
-    <button id="step-back" title="In time: the line before (←): any call's, with into calls on; else the selected call's">◀</button>
-    <button id="step-fwd" title="In time: the next line (→): any call's, with into calls on; else the selected call's">▶</button>
-    <label class="dim" title="◀ ▶ stop at every line, in the calls made too, not just the selected call's"><input type="checkbox" id="into" checked> into calls</label>
+    <button id="step-back" title="In time: the line before (←), at the level: that deep or shallower (with none, any)">◀</button>
+    <button id="step-fwd" title="In time: the next line (→), at the level: that deep or shallower (with none, any)">▶</button>
+    <span id="level" class="dim" title="the level ◀ ▶ step at: set by selecting a call (a click, ▲ ▼)"></span>
     <button id="step-up" title="In depth: the call above on the Stack, the callee (↑); with none above, into the next call made">▲</button>
     <button id="step-down" title="In depth: the call below on the Stack, the caller (↓)">▼</button>
     <span id="where" class="mono dim"></span><span id="status" class="dim">loading the kernel…</span>

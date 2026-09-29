@@ -4,7 +4,7 @@
 // at one cursor: the timeline shows it among the tasks and their calls;
 // the source and the Stack show the code and the values there (memory as
 // it was). ◀ ▶| and Play move it line by line.
-import { $, taskName } from "./dom.js";
+import { $, el, taskName } from "./dom.js";
 import { source } from "./source.js";
 import { timeline } from "./timeline.js";
 import { callstack } from "./callstack.js";
@@ -80,6 +80,7 @@ export function app(m) {
   // Select syscall `s`: its records; the cursor where its own code starts
   // (its handler's first line, past the syscall entry).
   a.select = (s) => {
+    setLevel(null);
     time.select(s);
     time.go(m.seek(s.first, 1, "function"));
     a.outlined?.();
@@ -92,9 +93,22 @@ export function app(m) {
   // resets it to the innermost; the pointer over the timeline shows other
   // positions without touching it, and leaving comes back to both.
   let chosen = null;
-  a.selectFrame = (f) => {
+  // The level ← → step at (calls deep, then inlined deep, as line steps
+  // count them: Machine.line_steps), with the function it was set at: set
+  // by selecting a call (a click on a bar or on the Stack, ↑ ↓), and kept
+  // as the steps go (a call's siblings are at it too); null: every line.
+  let level = null;
+  const showLevel = () => $("level").replaceChildren(...(level
+    ? [`level: ${level.func}`, " · ", el("a", { textContent: "every line", title: "◀ ▶ stop at every line, at any depth", onclick: () => setLevel(null) })]
+    : ["every line"]));
+  const setLevel = (l) => ((level = l), showLevel());
+  a.level = () => level;
+  // (`sticky`: the call's level the one stepped at; not for a link's call
+  // site: see goCall.)
+  a.selectFrame = (f, sticky = true) => {
     chosen = { first: f.first, inlined: f.inlined ? f.func : null };
     stack.select(f.first, f.inlined ? f.func : null);
+    if (sticky) setLevel({ ...stack.level(), func: f.func });
     src.view.cursor = { file: f.file, line: f.line };
     const at = time.cursor() != null ? m.at(time.cursor()) : null, s = calls[at?.syscall] ?? null;
     // (Inlined code: in the function it is inlined into, at its own line.)
@@ -198,6 +212,8 @@ export function app(m) {
     return L.steps;
   }
   a.lineSteps = () => steps();
+  // (The line step the cursor is at, if at one: for tests.)
+  a.stepNow = () => (L.pos != null ? steps()[L.pos] : null);
   // Where in the steps the cursor is (the first step at or after it).
   function position() {
     const st = steps();
@@ -222,7 +238,8 @@ export function app(m) {
     time.go(first);
     const frames = stack.frames(), k = frames.findIndex((f) => f.first === first && !f.inlined);
     const caller = k >= 0 ? frames[k + 1] : null;
-    if (caller) a.selectFrame(caller);
+    setLevel(null);
+    if (caller) a.selectFrame(caller, false);
   };
   // Show line `step` (see Machine.line_steps): the cursor at its record.
   // (The cursor, and memory, just before it runs, `at`; the Stack at its
@@ -250,25 +267,25 @@ export function app(m) {
     const ret = at?.kind === "return" && at.value != null ? `${at.func} returned ${a.kernel.result(at.value)}` : null;
     where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line, ret });
   }
-  // Step, `dir` 1 forward, -1 back: to the next line of the selected
-  // `call` (the Stack's selected one, else the innermost; what it called
-  // is skipped, and its return goes on in its caller), or to the next
-  // `line` run at any depth. Levels: calls deep, then inlined deep
-  // (inlined code is stepped over too). False if there is no such line.
-  function step(kind, dir) {
+  // Step, `dir` 1 forward, -1 back: to the next line at the level
+  // (`level`: that deep, or shallower; deeper code, the calls it makes, is
+  // stepped over; its caller's lines, and a sibling's at it, are not), or,
+  // with none, the next line at any depth (but not a leaf of inlined code,
+  // a helper that calls nothing: its lines pass, the line using it stays;
+  // and the line it is on, after them, goes on). Past the syscall, its
+  // task's next one (across).
+  function step(dir) {
     const st = steps();
     if (!st.length) return false;
-    const k = position(), { depth: d, inl: i } = stack.level() ?? st[k];
-    // (A line's level against this one: -1 shallower, 0 the same, 1 deeper.)
-    const cmp = (s) => Math.sign(s.depth - d || s.inl - i);
-    // (Every line: but not a leaf of inlined code, a helper that calls
-    // nothing: its lines pass, the line using it stays; and the line it is
-    // on, after them, goes on.)
-    const here = st[k], same = (s) => s.file === here.file && s.line === here.line && s.depth === here.depth && s.inl === here.inl;
+    const k = position(), here = st[k];
+    const deeper = (s) => level && (s.depth > level.depth || (s.depth === level.depth && s.inl > level.inl));
+    const same = (s) => s.file === here.file && s.line === here.line && s.depth === here.depth && s.inl === here.inl;
     let passed = false;
     for (let j = k + dir; j >= 0 && j < st.length; j += dir) {
-      if (kind === "line" && st[j].leaf) passed = true;
-      else if (kind === "line" ? !(passed && same(st[j])) : cmp(st[j]) <= 0) return showStep(j);
+      if (level) {
+        if (!deeper(st[j])) return showStep(j);
+      } else if (st[j].leaf) passed = true;
+      else if (!(passed && same(st[j]))) return showStep(j);
     }
     return across(dir);
   }
@@ -293,7 +310,10 @@ export function app(m) {
     const k = position(), { depth: d, inl: i } = stack.level() ?? st[k];
     for (let j = k + 1; j < st.length; j++) {
       if (st[j].depth < d || (st[j].depth === d && st[j].inl < i)) return false; // (it returned first)
-      if (st[j].depth > d || st[j].inl > i) return showStep(j);
+      if (st[j].depth > d || st[j].inl > i) {
+        setLevel({ depth: st[j].depth, inl: st[j].inl, func: st[j].inlined ?? st[j].func });
+        return showStep(j);
+      }
     }
     return false;
   }
@@ -309,11 +329,10 @@ export function app(m) {
     const st = steps(), k = st.findIndex((x) => x.i >= i && x.line === line && x.file === file);
     return k >= 0 ? showStep(k) : time.go(i);
   };
-  // (The four buttons are the four keys: ◀ ▶ in time, the selected call's
-  // lines, or every line with "into calls" on; ▲ ▼ in depth.)
-  const by = () => ($("into").checked ? "line" : "call");
-  $("step-back").onclick = () => step(by(), -1);
-  $("step-fwd").onclick = () => step(by(), 1);
+  // (The four buttons are the four keys: ◀ ▶ in time, at the level; ▲ ▼
+  // in depth, setting it.)
+  $("step-back").onclick = () => step(-1);
+  $("step-fwd").onclick = () => step(1);
   const climb = (dir) => {
     const f = stack.neighbour(dir);
     if (f) a.selectFrame(f);
@@ -321,18 +340,18 @@ export function app(m) {
   };
   $("step-up").onclick = () => climb(-1);
   $("step-down").onclick = () => climb(1);
-  // Two axes, a pair of keys each: ← → in time, the next line of the
-  // selected call (every line, at any depth, with "into calls" on; past
-  // its syscall, into its task's next or last one); ↑ ↓
-  // in depth, the row above or below on the Stack (the callee, the
-  // caller: the innermost is on top), ↑ with nothing above into the next
-  // call made. Home: the first line; /: find a function. Anywhere on the
-  // page but where text is typed (a program's call, the find box): after
-  // a click on "into calls", or in the source, too.
+  // Two axes, a pair of keys each: ← → in time, the next line at the level
+  // (that deep or shallower: a call's siblings too; every line, with no
+  // level; past its syscall, into its task's next or last one); ↑ ↓ in
+  // depth, the row above or below on the Stack (the callee, the caller:
+  // the innermost is on top), setting the level, ↑ with nothing above into
+  // the next call made. Home: the first line; /: find a function.
+  // Anywhere on the page but where text is typed (a program's call, the
+  // find box), in the source too.
   addEventListener("keydown", (e) => {
     if (e.target.closest?.("input:not([type=checkbox]), select, textarea") || e.altKey || e.ctrlKey || e.metaKey) return;
     const arrow = { ArrowRight: 1, ArrowLeft: -1 }[e.key], updown = { ArrowUp: -1, ArrowDown: 1 }[e.key];
-    if (arrow) step(by(), arrow);
+    if (arrow) step(arrow);
     else if (updown) climb(updown);
     else if (e.key === "Home") steps().length && showStep(0);
     else if (e.key === "/") time.focusFind();
@@ -402,6 +421,7 @@ export function app(m) {
     // (Nothing of the old recording: its selection, its step, its call chosen.)
     time.clear();
     (chosen = null), (L.key = null), (L.pos = null), (peek.key = null);
+    setLevel(null);
     consoleText = "";
     showConsole();
     await m.restart();
@@ -424,6 +444,7 @@ export function app(m) {
   }
   refresh();
   stack.show(undefined);
+  showLevel();
   tick();
   return a;
 }

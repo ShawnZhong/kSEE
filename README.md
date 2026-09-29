@@ -41,12 +41,15 @@ the calls as the example opens, each recorded, and the explanation's
 links lead into the recording: a function one of the calls runs (the
 cursor at its call: the source, and the Stack with each call's
 arguments and locals, as they were), or a call. Two pairs of keys
-explore it: ← → step in time, to the next line run, at any depth ("into
-calls", on at first; off: the next line of the Stack's selected call,
-what it called skipped; past the syscall's end, or before its start, into
-its task's next syscall, or the one before); ↑ ↓ move in depth, to the call above or below on
-the Stack (the callee, the caller), and ↑ with none above enters the
-next call made. ◀ ▶ ▲ ▼ under the timeline are the four keys. F4 in the
+explore it: ← → step in time, to the next line run at the level (that
+deep or shallower: what the calls there make is stepped over; the
+caller's lines, and the siblings' at the level, are not; with no level,
+at first, every line; past the syscall's end, or before its start, into
+its task's next syscall, or the one before); ↑ ↓ move in depth, to the
+call above or below on the Stack (the callee, the caller), and ↑ with
+none above enters the next call made: each sets the level, as a click on
+a call does (in the timeline, on the Stack); the level is shown by the
+buttons, with "every line" to leave it. ◀ ▶ ▲ ▼ under the timeline are the four keys. F4 in the
 source runs to the line the cursor is on (its next run; Shift+F4 its
 last).
 

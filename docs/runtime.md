@@ -74,7 +74,7 @@ Rust does the work: JS only lays it out.
 
 | Module | Does |
 |---|---|
-| app.js | wires the panels to the Machine (the right column's tabs: each draws for the selection, follows the cursor); the status (idle, replay, halted); the cursor; stepping (in time: the selected call's lines, or every line, on into its task's next or last syscall; in depth: the calls above and below), run to a line; the keys |
+| app.js | wires the panels to the Machine (the right column's tabs: each draws for the selection, follows the cursor); the status (idle, replay, halted); the cursor; stepping (in time: at the level, that deep or shallower, or every line, on into its task's next or last syscall; in depth: the calls above and below, setting the level), run to a line; the keys |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom), on an axis of steps (blocks run: `Machine.steps`); zoom, pan |
 | source.js | the source at the cursor (CodeMirror): lines that ran, the function, the cursor's line's values as it is about to run, what each line stored so far at its end (a link to the store), hover values, definitions |
 | callstack.js | the Stack: calls with arguments and locals, the task running (a link to it in the Tasks) |
