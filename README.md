@@ -82,9 +82,9 @@ a step, a basic block run: a store takes no room), and which
 task ran; the whole recording at first (scroll to zoom, drag to pan;
 "zoom" or z: the window at the call in focus (below), "whole" or x: all
 of it again; hover a call for what it was (its arguments, what it returned: `ksys_read = 26`): the
-source and the Stack show that moment while the pointer is there; click it to fix the cursor there, and for
-what it did (the source's notes; the Objects offer it, "only
-ksys_read"; a syscall: selected too,
+source and the Stack show that moment while the pointer is there, and the
+Objects what it did; click it to fix the cursor there, and for
+what it did (the Objects, the source's notes; a syscall: selected too,
 its records from its entry to its exit, with whatever else ran in
 between, the lines to step through). The
 cursor's line carries its values as it is about to run (as a debugger
@@ -110,10 +110,10 @@ leader, a process under its parent): the one running marked, each where it is
 (`prog(20)  in read`: its syscall, else its outermost call), its name a
 link to its last moment (the Stack then shows its stack), its task_struct
 as it was on asking; the Stack's `current task` is a link to it. The
-Objects tab says what the selected syscall did to the kernel's data (or,
-narrowed on asking, "only …" in its head, one call in it, the last
-clicked; "the whole …" goes back; an example's "What … changed" link
-narrows it too): its head says it in a line (`read by prog(19) changed
+Objects tab says what the call in focus did to the kernel's data (the
+syscall selected, or a call in it clicked, or an example's "What …
+changed" link: "the whole …" goes back; while the pointer is over a call
+in the timeline, that one's, and back as it leaves): its head says it in a line (`read by prog(19) changed
 3 objects: file, folio, inode`), then a box per object of the kernel's
 data it changed (as the code
 declares it: `struct file *file in vfs_read`, `struct files_struct
@@ -128,9 +128,8 @@ a line a function that changed it in turn, from what to what (`f_mode
 a pointer, to another object: that one, `fd_array[3]  NULL → f in
 create_pipe_files`, a link to it; a count one took and another dropped,
 dim); a line goes to its write. As a tree: each object under
-the first that points to it (`← f_inode`). It changes only when
-asked (another syscall selected, narrowed or back), never as the pointer
-moves; at the cursor (a click, a step), the writes not made yet are gray,
+the first that points to it (`← f_inode`). At the moment
+shown (the cursor's, or the pointer's), the writes not made yet are gray,
 and those it is among marked. One store may change several members (a struct
 copied at once: `f_path.mnt` and `f_path.dentry`): each is a change of
 its own. The line the cursor is on shows its values at

@@ -155,14 +155,19 @@
   const kf = ksee.time.focus();
   if (kf?.a !== ksys.first || kf?.b !== ksee.m.call_end(ksys.first) || ksee.time.home() !== readSel) throw new Error("ksys_read in focus: " + JSON.stringify([kf, ksee.time.home()]) + ", not from " + ksys.first);
   ksee.tab("objects");
-  // (The Objects stay the syscall's, offering the call clicked; narrowed
-  // on asking.)
+  // (The Objects: the call clicked.)
   const head = () => document.querySelector("#objects .head")?.textContent;
-  r.clicked = head();
-  if (!/^(read by prog\(\d+\)|filemap_read) changed .* · only ksys_read$/.test(r.clicked ?? "")) throw new Error("the Objects after a click: " + r.clicked);
-  [...document.querySelectorAll("#objects .head a")].find((a) => a.textContent === "only ksys_read")?.click();
   r.focused = head();
-  if (!/^ksys_read changed /.test(r.focused ?? "")) throw new Error("the Objects narrowed to the call clicked: " + r.focused);
+  if (!/^ksys_read changed .* · the whole read by prog\(\d+\)$/.test(r.focused ?? "")) throw new Error("the Objects of the call clicked: " + r.focused);
+  // (The pointer over another call: its Objects, for as long as it is there.)
+  const vfs = ksee.m.call_stack(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr)).find((f) => f.func === "vfs_read");
+  const vb = ksee.time.boxOf(vfs.first);
+  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: vb.x, clientY: vb.y }));
+  await until(() => /^vfs_read /.test(head() ?? ""));
+  r.hovered_objects = head();
+  if (!/^vfs_read changed .*under the pointer/.test(r.hovered_objects ?? "")) throw new Error("the Objects of the call under the pointer: " + r.hovered_objects);
+  $("chart").dispatchEvent(new PointerEvent("pointerleave"));
+  await until(() => /^ksys_read /.test(head() ?? ""));
   // (Zoom: the window at the call in focus, from the chart's head.)
   const zoomTo = [...document.querySelectorAll("#chart-verbs a")].find((x) => x.textContent.startsWith("zoom"));
   r.zoom = zoomTo?.textContent;

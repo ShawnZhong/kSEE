@@ -158,8 +158,10 @@ export function app(m) {
       const step = i == null && !chosen && L.pos != null ? steps()[L.pos] : null;
       if (step) showLine(step);
       else if (at) view(at, i == null ? chosen : frame);
-      // (The tabs follow too, back to the cursor's with null.)
+      // (The tabs follow too, back to the cursor's with null; the Objects
+      // show the call under the pointer.)
       marks(to);
+      tabs.objects.preview(i == null ? null : frame?.first ?? null);
     });
   };
   // The right column's tabs but the Stack, by name: each draws for the
@@ -167,7 +169,6 @@ export function app(m) {
   // follows the cursor (`mark(i)`: record `i`, or the cursor's).
   const tabs = { tasks: tasks(a), objects: objects(a), trace: trace(a) };
   a.tasks = tabs.tasks;
-  a.objects = tabs.objects;
   const marks = (i) => Object.values(tabs).forEach((x) => x.mark(i));
   a.outlined = () => Object.values(tabs).forEach((x) => x.draw());
   // Show tab `name` (its pane and its link marked; #right's data-tab says
