@@ -238,13 +238,15 @@ pub struct Diff {
 }
 
 /// Writes of one function in a row to a member: from `before` to `after`,
-/// `writes` of them, the last at record `last`, by the code at `at`.
+/// `writes` of them, the first at record `first`, the last at `last`, by
+/// the code at `at`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Run {
     pub before: String,
     pub after: String,
     pub writes: usize,
+    pub first: usize,
     pub last: usize,
     pub at: Option<Line>,
 }
@@ -1148,7 +1150,7 @@ impl View<'_> {
                 let mut runs: Vec<Run> = Vec::new();
                 for run in writes.chunk_by(|a, b| func(a) == func(b)) {
                     let (a, z) = (run[0], run[run.len() - 1]);
-                    runs.push(Run { before: before(a.i), after: after(z.i), writes: run.len(), last: z.i, at: z.at.map(|s| self.line_only(&s)) });
+                    runs.push(Run { before: before(a.i), after: after(z.i), writes: run.len(), first: a.i, last: z.i, at: z.at.map(|s| self.line_only(&s)) });
                 }
                 let (a, z) = (runs[0].before.clone(), runs.last().expect("a run").after.clone());
                 runs.retain(|r| r.before != r.after);

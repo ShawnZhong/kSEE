@@ -273,7 +273,20 @@ export function app(m) {
       if (kind === "line" && st[j].leaf) passed = true;
       else if (kind === "line" ? !(passed && same(st[j])) : cmp(st[j]) <= 0) return showStep(j);
     }
-    return false;
+    return across(dir);
+  }
+  // Past the selected syscall's end (or before its start): its task's next
+  // syscall (or the one before), at its first line (or its last), as a
+  // debugger stepping out of one call goes on to the program's next.
+  function across(dir) {
+    const w = a.selection();
+    if (w?.task == null) return false;
+    const mine = (c) => c.task.addr === w.task;
+    const s = dir > 0 ? calls.find((c) => mine(c) && c.first > w.a) : calls.findLast((c) => mine(c) && c.first < w.a);
+    if (!s) return ($("where").textContent = `no syscall of ${taskName(calls.find(mine)?.task ?? { addr: w.task })} ${dir > 0 ? "after" : "before"} this one in the recording`), false;
+    time.select(s);
+    a.outlined?.();
+    return showStep(dir > 0 ? 0 : steps().length - 1);
   }
   // ↑ with nothing above the selected call: into the next call it makes,
   // at that call's first line (it is the innermost then, so selected).
@@ -312,7 +325,8 @@ export function app(m) {
   $("step-up").onclick = () => climb(-1);
   $("step-down").onclick = () => climb(1);
   // Two axes, a pair of keys each: ← → in time, the next line of the
-  // selected call (every line, at any depth, with "into calls" on); ↑ ↓
+  // selected call (every line, at any depth, with "into calls" on; past
+  // its syscall, into its task's next or last one); ↑ ↓
   // in depth, the row above or below on the Stack (the callee, the
   // caller: the innermost is on top), ↑ with nothing above into the next
   // call made. Home: the first line; /: find a function. Anywhere on the

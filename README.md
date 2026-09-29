@@ -43,7 +43,8 @@ cursor at its call: the source, and the Stack with each call's
 arguments and locals, as they were), or a call. Two pairs of keys
 explore it: ← → step in time, to the next line run, at any depth ("into
 calls", on at first; off: the next line of the Stack's selected call,
-what it called skipped); ↑ ↓ move in depth, to the call above or below on
+what it called skipped; past the syscall's end, or before its start, into
+its task's next syscall, or the one before); ↑ ↓ move in depth, to the call above or below on
 the Stack (the callee, the caller), and ↑ with none above enters the
 next call made. ◀ ▶ ▲ ▼ under the timeline are the four keys. F4 in the
 source runs to the line the cursor is on (its next run; Shift+F4 its
@@ -118,8 +119,10 @@ a line a function that changed it in turn, from what to what (`f_mode
 a pointer, to another object: that one, `fd_array[3]  NULL → f in
 create_pipe_files`, a link to it; a count one took and another dropped,
 dim); a line goes to its write. As a tree: each object under
-the first that points to it (`← f_inode`). It is the same at every moment;
-the moments are the Stack's. The line the cursor is on shows its values at
+the first that points to it (`← f_inode`). It follows the cursor (a
+step, the pointer over the timeline): what the call has not done by then
+is faint, the writes the cursor is among are marked, and its head says
+how many of the changes are done. The line the cursor is on shows its values at
 its end, as a debugger does (`fd = 3   count = 64`). Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by
 its number and filesystem, a task by its comm and pid. The Trace tab is
