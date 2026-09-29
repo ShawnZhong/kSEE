@@ -604,9 +604,7 @@ impl View<'_> {
     /// values too: a line step's.)
     pub fn call_stack(&self, i: usize, nth: Option<usize>, mem: &dyn Memory, at: usize) -> Vec<Frame> {
         let t = self.tables;
-        let records = &self.rec.records;
         let mut out = Vec::new();
-        let entry = t.find(arch::SYSCALL);
         // (At a record on a line of its own, a store, a comparison, a
         // variable set: on that line, as `at` says it.)
         let calls = match nth.is_none().then(|| self.rec.line_at(t, i)).flatten() {
@@ -614,24 +612,22 @@ impl View<'_> {
             None => self.rec.calls.stack_at(t, i, nth),
         };
         let args_of = |c: &stack::StackCall| self.rec.args.get(c.first).map(|(w, frame)| (t.values(c.func, w), frame));
-        // (The entry's arguments, the syscall's: a wrapper's parameters are
-        // those, as its SYSCALL_DEFINE line has them; its own DWARF one is regs.)
-        let entry_raw = calls.iter().find(|c| Some(c.func) == entry).and_then(args_of).map(|(a, _)| a);
+        // (The syscall, by its entry's arguments (arch::SYSCALL): its name,
+        // and its arguments, the entry's and its wrapper's (a wrapper's
+        // parameters are the syscall's, as its SYSCALL_DEFINE line has them;
+        // its own DWARF one is regs).)
+        let entry = t.find(arch::SYSCALL);
+        let syscall = calls.iter().find(|c| Some(c.func) == entry).and_then(args_of).and_then(|(a, _)| self.syscall_args(&a, mem));
         for (depth, c) in calls.into_iter().enumerate().rev() {
             let depth = depth as u32;
             let name = self.name(c.func);
             let (raw, frame) = args_of(&c).unzip();
-            // (The syscall entry: its arguments are the syscall's.)
-            let at_entry = matches!(records.get(c.first), Some(&Record::Block { func, n: 0 }) if Some(func) == entry);
-            let wrapper = name.starts_with(arch::SYSCALL_WRAPPER);
-            let (syscall, args) = match raw {
-                Some(raw) => match at_entry.then(|| self.syscall_args(&raw, mem)).flatten() {
-                    Some((n, a)) => (Some(n), Some(a)),
-                    None if wrapper => (None, Some(entry_raw.as_ref().and_then(|e| self.syscall_args(e, mem)).map_or_else(|| self.args(c.func, raw, mem), |(_, a)| a))),
-                    None => (None, Some(self.args(c.func, raw, mem))),
-                },
-                None => (None, None),
-            };
+            let at_entry = Some(c.func) == entry;
+            let args = raw.map(|raw| match &syscall {
+                Some((_, a)) if at_entry || name.starts_with(arch::SYSCALL_WRAPPER) => a.clone(),
+                _ => self.args(c.func, raw, mem),
+            });
+            let syscall = syscall.as_ref().filter(|_| at_entry && args.is_some()).map(|(n, _)| n.clone());
             // (The variables it keeps in wasm locals, as they are by now: a
             // parameter it changed, as it is; the other locals after those
             // in memory. And the code inlined into it: its own.)
