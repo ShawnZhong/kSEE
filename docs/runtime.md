@@ -75,6 +75,7 @@ Rust does the work: JS only lays it out.
 | Module | Does |
 |---|---|
 | app.js | wires the panels to the Machine (the right column's tabs: each draws for the selection, follows the cursor); the status (idle, replay, halted); the cursor; stepping (in time: at the level, that deep or shallower, or every line, on into its task's next or last syscall; in depth: the calls above and below, setting the level), run to a line; the keys |
+| steps.js | which line ← → go to, from where the cursor is, at a level (that deep or shallower) or at every line (inlined leaves passed): pure, tried on made-up lines by tests/steps.js |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom), on an axis of steps (blocks run: `Machine.steps`); zoom, pan |
 | source.js | the source at the cursor (CodeMirror): lines that ran, the function, the cursor's line's values as it is about to run, what each line stored so far at its end (a link to the store), hover values, definitions |
 | callstack.js | the Stack: calls with arguments and locals, the task running (a link to it in the Tasks) |
@@ -118,13 +119,14 @@ last run), `definition`.
 ## Tests
 
 - `cargo test -p ksee-core`: the rebuilding, on made-up records.
+- tests/steps.js (`deno test`): stepping (web/steps.js), on made-up lines.
 - tests/web.js (Deno, with the page's own ksee.js): boots the kernel, has
   the program make syscalls, recorded (and every example's), and checks what the
   recordings show: stacks with arguments, lines, memory as it was, who
   wrote a value, tasks, the examples' stops.
 - tests/ui.js: the page in headless Chromium over CDP, a script from
   tests/ui/ run in it (after lib.js): read.js, the read example (its
-  stops, stepping, run to a line, the chart, typing and changing calls,
+  stops, stepping at a level and ↑ ↓ moving it, → after a click, run to a line, the chart, typing and changing calls,
   another example); back.js, a changed program from the URL; pipe.js, two
   processes, calls that block. Fails on any exception; saves a screenshot
   in target/.

@@ -110,6 +110,42 @@
     r.siblings = [lv.func, ...seen];
     if (![...seen].some((f) => f !== "vfs_read")) throw new Error("no sibling at vfs_read's level: " + JSON.stringify(r.siblings));
   }
+  // (↑ ↓ by the level: ↓ from ∞ the innermost row, ↓ a row down, ↑ back
+  // up, ↑ past the innermost ∞; and from the level, not the Stack's row,
+  // when the steps went shallower than it.)
+  {
+    const rd = ksee.m.syscalls().find((x) => x.name === "read");
+    ksee.select(rd);
+    ksee.time.go(ksee.m.first_call("filemap_read", rd.first, rd.last, rd.task.addr));
+    await sleep(100);
+    const nframes = () => ksee.stack.frames().length;
+    const rows = nframes(), lvl = () => ksee.level()?.row ?? "∞", seq = [lvl()];
+    for (const key of ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp"]) (press(key), seq.push(lvl()));
+    r.levels = seq;
+    if (JSON.stringify(seq) !== JSON.stringify(["∞", rows, rows - 1, rows, "∞"])) throw new Error("↑ ↓ and the level: " + JSON.stringify([seq, rows]));
+    press("ArrowDown"); press("ArrowDown");
+    const at = ksee.level().row;
+    for (let k = 0; k < 200 && nframes() >= at; k++) press("ArrowRight");
+    if (nframes() >= at) throw new Error("no line shallower than the level " + at);
+    const now = nframes();
+    press("ArrowDown");
+    if (ksee.level()?.row !== Math.min(at - 1, now)) throw new Error("↓ from the level " + at + " (" + now + " rows now): " + JSON.stringify(ksee.level()));
+  }
+  // (→ after a click in the timeline: the line after the one shown, none
+  // skipped (the cursor at a line's moment is at that line, the first of
+  // those at it; between two, just before the next).)
+  {
+    const rd = ksee.m.syscalls().find((x) => x.name === "read");
+    ksee.select(rd);
+    const b = ksee.time.boxOf(ksee.m.first_call("vfs_read", rd.first, rd.last, rd.task.addr));
+    for (const t of ["pointerdown", "pointerup"]) $("chart").dispatchEvent(new PointerEvent(t, { clientX: b.x, clientY: b.y }));
+    document.querySelector("#level a")?.click(); // (every line)
+    const cur = ksee.time.cursor(), st = ksee.lineSteps(), first = st.findIndex((x) => x.at >= cur), want = st[first].at === cur ? first + 1 : first;
+    press("ArrowRight");
+    const got = st.indexOf(ksee.stepNow());
+    r.between = [cur, want, got];
+    if (got !== want) throw new Error("→ after a click: " + JSON.stringify(r.between));
+  }
   r.chart = $("chart-title").textContent;
   // (The read's own box: its syscall entry's.)
   const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === ksee.m.main() && x.last != null);

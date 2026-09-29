@@ -205,6 +205,7 @@ fn site() {
 pub fn test(ui: bool) {
     build();
     run(Command::new("cargo").args(["test", "-q", "-p", "ksee-core"]));
+    run(Command::new("deno").args(["test", "-q", "--allow-read", "tests/steps.js"]));
     run(Command::new("deno").args(["run", "--allow-read", "tests/web.js"]));
     if ui {
         run(Command::new("deno").args(["run", "-A", "tests/ui.js", "target/ui.png"]));

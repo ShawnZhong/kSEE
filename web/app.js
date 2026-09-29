@@ -13,6 +13,7 @@ import { trace } from "./trace.js";
 import { objects } from "./objects.js";
 import { tasks } from "./tasks.js";
 import { kernel } from "./kernel.js";
+import { next } from "./steps.js";
 
 
 // 1st, 2nd, 3rd, 4th, …, 11th, 12th, 13th, 21st.
@@ -94,13 +95,16 @@ export function app(m) {
   // positions without touching it, and leaving comes back to both.
   let chosen = null;
   // The level ← → step at (calls deep, then inlined deep, as line steps
-  // count them: Machine.line_steps), with the function it was set at: set
-  // by selecting a call (a click on a bar or on the Stack, ↑ ↓), and kept
-  // as the steps go (a call's siblings are at it too); null: every line.
+  // count them: Machine.line_steps; said as its row on the Stack, and the
+  // call it was set at): set by selecting a call (a click on a bar or on
+  // the Stack, ↑ ↓), and kept as the steps go (a call's siblings are at it
+  // too); null, ∞: every line, at any depth (at first; ↑ past the
+  // innermost).
   let level = null;
   const showLevel = () => $("level").replaceChildren(...(level
-    ? [`level: ${level.func}`, " · ", el("a", { textContent: "every line", title: "◀ ▶ stop at every line, at any depth", onclick: () => setLevel(null) })]
-    : ["every line"]));
+    ? [el("span", { textContent: `level ${level.row}`, title: `◀ ▶ stop at the lines of the Stack's ${level.row} outermost rows (set at ${level.func}): what the calls there make is stepped over` }),
+       " · ", el("a", { textContent: "∞", title: "every line, at any depth (↑ past the innermost)", onclick: () => setLevel(null) })]
+    : [el("span", { textContent: "level ∞", title: "◀ ▶ stop at every line, at any depth: select a call (a click, ↑ ↓) to step at its level" })]));
   const setLevel = (l) => ((level = l), showLevel());
   a.level = () => level;
   // (`sticky`: the call's level the one stepped at; not for a link's call
@@ -214,12 +218,14 @@ export function app(m) {
   a.lineSteps = () => steps();
   // (The line step the cursor is at, if at one: for tests.)
   a.stepNow = () => (L.pos != null ? steps()[L.pos] : null);
-  // Where in the steps the cursor is (the first step at or after it).
+  // Where in the steps the cursor is: at step `k` (the one shown last), or
+  // `between` two, just before step `k` (the first at or after the cursor;
+  // after a click in the timeline, say).
   function position() {
     const st = steps();
-    if (L.pos != null && L.pos < st.length) return L.pos;
-    const k = st.findIndex((x) => x.at >= (time.cursor() ?? 0));
-    return (L.pos = k < 0 ? st.length - 1 : k);
+    if (L.pos != null && L.pos < st.length) return { k: L.pos, between: false };
+    const cur = time.cursor() ?? 0, k = st.findIndex((x) => x.at >= cur);
+    return k < 0 ? { k: st.length - 1, between: false } : { k, between: st[k].at > cur };
   }
   // Show step `k`: the cursor at its record, its line in the source.
   function showStep(k) {
@@ -267,27 +273,13 @@ export function app(m) {
     const ret = at?.kind === "return" && at.value != null ? `${at.func} returned ${a.kernel.result(at.value)}` : null;
     where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line, ret });
   }
-  // Step, `dir` 1 forward, -1 back: to the next line at the level
-  // (`level`: that deep, or shallower; deeper code, the calls it makes, is
-  // stepped over; its caller's lines, and a sibling's at it, are not), or,
-  // with none, the next line at any depth (but not a leaf of inlined code,
-  // a helper that calls nothing: its lines pass, the line using it stays;
-  // and the line it is on, after them, goes on). Past the syscall, its
-  // task's next one (across).
+  // Step, `dir` 1 forward, -1 back: to the next line at the level (see
+  // steps.js); past the syscall, its task's next one (across).
   function step(dir) {
     const st = steps();
     if (!st.length) return false;
-    const k = position(), here = st[k];
-    const deeper = (s) => level && (s.depth > level.depth || (s.depth === level.depth && s.inl > level.inl));
-    const same = (s) => s.file === here.file && s.line === here.line && s.depth === here.depth && s.inl === here.inl;
-    let passed = false;
-    for (let j = k + dir; j >= 0 && j < st.length; j += dir) {
-      if (level) {
-        if (!deeper(st[j])) return showStep(j);
-      } else if (st[j].leaf) passed = true;
-      else if (!(passed && same(st[j]))) return showStep(j);
-    }
-    return across(dir);
+    const { k, between } = position(), j = next(st, k, dir, level, between);
+    return j >= 0 ? showStep(j) : across(dir);
   }
   // Past the selected syscall's end (or before its start): its task's next
   // syscall (or the one before), at its first line (or its last), as a
@@ -301,21 +293,6 @@ export function app(m) {
     time.select(s);
     a.outlined?.();
     return showStep(dir > 0 ? 0 : steps().length - 1);
-  }
-  // ↑ with nothing above the selected call: into the next call it makes,
-  // at that call's first line (it is the innermost then, so selected).
-  function enter() {
-    const st = steps();
-    if (!st.length) return false;
-    const k = position(), { depth: d, inl: i } = stack.level() ?? st[k];
-    for (let j = k + 1; j < st.length; j++) {
-      if (st[j].depth < d || (st[j].depth === d && st[j].inl < i)) return false; // (it returned first)
-      if (st[j].depth > d || st[j].inl > i) {
-        setLevel({ depth: st[j].depth, inl: st[j].inl, func: st[j].inlined ?? st[j].func });
-        return showStep(j);
-      }
-    }
-    return false;
   }
   // Run to line `line` of `file`: the next (dir 1) or the last (-1) time it
   // runs, from the cursor; its syscall selected (line steps go on from it).
@@ -334,9 +311,15 @@ export function app(m) {
   $("step-back").onclick = () => step(-1);
   $("step-fwd").onclick = () => step(1);
   const climb = (dir) => {
-    const f = stack.neighbour(dir);
-    if (f) a.selectFrame(f);
-    else if (dir < 0) enter();
+    // (A row from the level, else the call selected on the Stack if not the
+    // innermost (a link's call site), else ∞ (one past the innermost): ↓
+    // the one below, as deep as the Stack is now at most; ↑ the one above,
+    // past the innermost ∞, every line.)
+    const frames = stack.frames(), rows = frames.length, sel = stack.level();
+    if (!rows) return;
+    const row = (level?.row ?? (sel && sel.row < rows ? sel.row : rows + 1)) - dir;
+    if (row > rows && dir < 0) return setLevel(null);
+    a.selectFrame(frames[rows - Math.max(1, Math.min(row, rows))]);
   };
   $("step-up").onclick = () => climb(-1);
   $("step-down").onclick = () => climb(1);
@@ -344,8 +327,8 @@ export function app(m) {
   // (that deep or shallower: a call's siblings too; every line, with no
   // level; past its syscall, into its task's next or last one); ↑ ↓ in
   // depth, the row above or below on the Stack (the callee, the caller:
-  // the innermost is on top), setting the level, ↑ with nothing above into
-  // the next call made. Home: the first line; /: find a function.
+  // the innermost is on top), setting the level, ↑ past the innermost: ∞,
+  // every line. Home: the first line; /: find a function.
   // Anywhere on the page but where text is typed (a program's call, the
   // find box), in the source too.
   addEventListener("keydown", (e) => {

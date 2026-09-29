@@ -114,13 +114,14 @@ export function callstack(app) {
     return f ?? null;
   }
   // The selected call's level, as line steps have it (calls deep, inlined
-  // deep: see Machine.line_steps), or null if none is selected.
+  // deep: see Machine.line_steps), and its row on the Stack from the
+  // outermost (1), as the chart's are; null if none is selected.
   function level() {
     const k = s.sel ? s.frames.indexOf(s.sel) : -1;
     if (k < 0) return null;
     let inl = 0;
     while (s.frames[k + inl]?.inlined) inl++;
-    return { depth: s.sel.depth, inl };
+    return { depth: s.sel.depth, inl, row: s.frames.length - k };
   }
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
