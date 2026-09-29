@@ -155,29 +155,28 @@
   const kf = ksee.time.focus();
   if (kf?.a !== ksys.first || kf?.b !== ksee.m.call_end(ksys.first) || ksee.time.home() !== readSel) throw new Error("ksys_read in focus: " + JSON.stringify([kf, ksee.time.home()]) + ", not from " + ksys.first);
   ksee.tab("objects");
-  // (The Objects: the call clicked.)
+  // (The Objects: all the syscall did, always; the call clicked, its
+  // writes in color.)
   const head = () => document.querySelector("#objects .head")?.textContent;
+  const row = (member) => [...document.querySelectorAll("#objects tr")].find((tr) => tr.cells[0]?.textContent === member);
   r.focused = head();
-  if (!/^ksys_read changed .* · the whole read by prog\(\d+\)$/.test(r.focused ?? "")) throw new Error("the Objects of the call clicked: " + r.focused);
-  // (The pointer over another call: its Objects, for as long as it is there.)
-  const vfs = ksee.m.call_stack(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr)).find((f) => f.func === "vfs_read");
-  const vb = ksee.time.boxOf(vfs.first);
-  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: vb.x, clientY: vb.y }));
-  await until(() => /^vfs_read /.test(head() ?? ""));
-  r.hovered_objects = head();
-  if (!/^vfs_read changed .*under the pointer/.test(r.hovered_objects ?? "")) throw new Error("the Objects of the call under the pointer: " + r.hovered_objects);
+  if (!/^read by prog\(\d+\) changed .*in color: what ksys_read wrote$/.test(r.focused ?? "")) throw new Error("the Objects, the call clicked: " + r.focused);
+  // (The pointer over another call: its writes in color, the others gray,
+  // for as long as it is there.)
+  const fm = ksee.m.call_stack(ksee.m.first_call("filemap_read", read.first, read.last, read.task.addr)).find((f) => f.func === "filemap_read");
+  const fb = ksee.time.boxOf(fm.first);
+  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: fb.x, clientY: fb.y }));
+  await until(() => /filemap_read wrote/.test(head() ?? ""));
+  r.hovered_objects = [head(), row("f_pos")?.classList.contains("later"), row("i_atime_nsec")?.classList.contains("later")];
+  if (!/^read by prog/.test(r.hovered_objects[0]) || r.hovered_objects[1] !== true || r.hovered_objects[2] !== false) throw new Error("the Objects colored by the call under the pointer: " + JSON.stringify(r.hovered_objects));
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
-  await until(() => /^ksys_read /.test(head() ?? ""));
+  await until(() => /ksys_read wrote/.test(head() ?? ""));
   // (Zoom: the window at the call in focus, from the chart's head.)
   const zoomTo = [...document.querySelectorAll("#chart-verbs a")].find((x) => x.textContent.startsWith("zoom"));
   r.zoom = zoomTo?.textContent;
   if (r.zoom !== "zoom to ksys_read") throw new Error("zoom to the call in focus: " + r.zoom);
   zoomTo.click();
   if (![...document.querySelectorAll("#chart-verbs a")].some((x) => x.textContent === "whole")) throw new Error("zoomed: no way back to the whole recording");
-  // (And back to the whole syscall, by the link in its head.)
-  document.querySelector("#objects .head a")?.click();
-  r.unfocused = head();
-  if (!/^read by prog\(\d+\) changed /.test(r.unfocused ?? "")) throw new Error("the whole syscall again: " + r.unfocused);
   ksee.tab("stack");
   // Your own call: type it, Tab completes the name, Enter makes it.
   const input = document.querySelector(".callform textarea"), key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k }));

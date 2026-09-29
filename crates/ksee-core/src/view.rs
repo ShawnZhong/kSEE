@@ -895,8 +895,8 @@ impl View<'_> {
     /// the stack it used beyond its named locals; no type), a global of
     /// the kernel's; else by its address.
     pub fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Named> {
-        // (The last few spans asked: the call in focus's, and those the
-        // pointer shows for a moment.)
+        // (The last few spans asked: the syscall's (Objects), the call in
+        // focus's (the source's notes).)
         let mut cache = self.rec.named.borrow_mut();
         if let Some(k) = cache.iter().position(|(span, _)| *span == (first, last)) {
             let hit = cache.remove(k);
