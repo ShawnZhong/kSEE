@@ -56,16 +56,45 @@ pub struct Step {
 
 use crate::types::Types;
 
+/// A basic block: where its first instruction is, and the source lines it
+/// runs, in order, in stretches between the calls it makes (a stretch runs
+/// at the block's record, the next at each return into it). A Store's,
+/// Compare's or Var's `line` indexes `steps`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Block {
+    pub loc: Loc,
+    pub steps: Vec<Step>,
+    /// Where each stretch begins in `steps` (the first at 0).
+    cuts: Vec<u32>,
+}
+
+impl Block {
+    /// Stretch `seg` (none past the last).
+    pub fn stretch(&self, seg: u32) -> &[Step] {
+        let Some(&a) = self.cuts.get(seg as usize) else { return &[] };
+        let b = self.cuts.get(seg as usize + 1).map_or(self.steps.len(), |&b| b as usize);
+        &self.steps[a as usize..b]
+    }
+
+    /// Where stretch `seg` begins in `steps`.
+    pub fn start(&self, seg: u32) -> usize {
+        self.cuts.get(seg as usize).map_or(self.steps.len(), |&a| a as usize)
+    }
+
+    /// The stretch step `index` is in (of stretches beginning at one
+    /// index, the empty ones between two calls, the last), if it has one.
+    pub fn stretch_of(&self, index: u32) -> Option<u32> {
+        ((index as usize) < self.steps.len()).then(|| self.cuts.partition_point(|&a| a <= index) as u32 - 1)
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Tables {
     /// Size of the trace ring in words.
     pub ring_words: u32,
     pub functions: BTreeMap<u32, Function>,
-    /// (function, block) -> where the block's first instruction is.
-    pub blocks: BTreeMap<(u32, u32), Loc>,
-    /// (function, block) -> the lines it runs, in stretches between the
-    /// calls it makes (only for blocks with more than their first line).
-    pub lines: BTreeMap<(u32, u32), Vec<Vec<Step>>>,
+    /// (function, n) -> its block n.
+    pub blocks: BTreeMap<(u32, u32), Block>,
     /// Names of inlined functions.
     pub names: Vec<String>,
     /// Inline chains (see [`Step`]): innermost first, each an inlined
@@ -129,6 +158,10 @@ impl Tables {
         let mut unit = Unit::default();
         let mut names: BTreeMap<String, u32> = BTreeMap::new();
         let mut chains: BTreeMap<Vec<(u32, Loc)>, u32> = BTreeMap::new();
+        // (Each block's first line (B), and its lines (L: only for a block
+        // with more than its first, or whose first is inlined).)
+        let mut firsts: BTreeMap<(u32, u32), Loc> = BTreeMap::new();
+        let mut lines: BTreeMap<(u32, u32), (Vec<Step>, Vec<u32>)> = BTreeMap::new();
         for line in probes.lines() {
             let cols: Vec<&str> = line.split('\t').collect();
             match cols.as_slice() {
@@ -163,16 +196,16 @@ impl Tables {
                 }
                 ["B", id, n, where_] => {
                     if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {
-                        t.blocks.insert((id, n), unit.loc(where_, true));
+                        firsts.insert((id, n), unit.loc(where_, true));
                     }
                 }
                 ["L", id, n, items] => {
                     if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {
-                        let mut segs = alloc::vec![Vec::new()];
+                        let (mut steps, mut cuts) = (Vec::new(), alloc::vec![0]);
                         let mut file = ""; // ":line": the item before's
                         for item in items.split(';') {
                             if item == "|" {
-                                segs.push(Vec::new());
+                                cuts.push(steps.len() as u32);
                                 continue;
                             }
                             let (at, inl) = item.split_once('@').map_or((item, None), |(a, f)| (a, Some(f)));
@@ -194,14 +227,18 @@ impl Tables {
                                 t.inlines.push(chain);
                                 t.inlines.len() as u32 - 1
                             }));
-                            segs.last_mut().unwrap().push(Step { loc: unit.loc(at, false), inlined });
+                            steps.push(Step { loc: unit.loc(at, false), inlined });
                         }
-                        t.lines.insert((id, n), segs);
+                        lines.insert((id, n), (steps, cuts));
                     }
                 }
                 _ => {}
             }
         }
+        t.blocks = firsts.into_iter().map(|(k, loc)| {
+            let (steps, cuts) = lines.remove(&k).unwrap_or_else(|| (alloc::vec![Step { loc, inlined: None }], alloc::vec![0]));
+            (k, Block { loc, steps, cuts })
+        }).collect();
         t.files = files.paths;
         t.types = Types::parse(types);
         t.fold_primitives();
@@ -220,8 +257,8 @@ impl Tables {
         }
         let mut chains: BTreeMap<Vec<(u32, Loc)>, u32> = self.inlines.iter().enumerate().map(|(i, c)| (c.clone(), i as u32)).collect();
         let mut folded: BTreeMap<u32, (Loc, Option<u32>)> = BTreeMap::new();
-        for segs in self.lines.values_mut() {
-            for s in segs.iter_mut().flatten() {
+        for b in self.blocks.values_mut() {
+            for s in b.steps.iter_mut() {
                 let Some(c) = s.inlined else { continue };
                 if let Some(&(loc, inlined)) = folded.get(&c) {
                     (s.loc, s.inlined) = (loc, inlined);
@@ -243,18 +280,16 @@ impl Tables {
             }
         }
         // (A block whose first instruction is a primitive's: its first line's.)
-        let primitive_file = |t: &Tables, loc: Loc| arch::PRIMITIVES.iter().any(|p| t.file(loc).starts_with(p));
-        let firsts: Vec<((u32, u32), Loc)> = self.blocks.iter().filter(|&(_, &l)| primitive_file(self, l))
-            .filter_map(|(&k, _)| self.lines.get(&k).and_then(|segs| segs.first()).and_then(|seg| seg.first()).map(|s| (k, s.loc))).collect();
-        for (k, loc) in firsts {
-            self.blocks.insert(k, loc);
+        for b in self.blocks.values_mut() {
+            if arch::PRIMITIVES.iter().any(|p| self.files.get(b.loc.file as usize).is_some_and(|f| f.starts_with(p))) {
+                b.loc = b.steps[0].loc;
+            }
         }
     }
 
-    /// A block's first line, the one it runs if the plugin said no more
-    /// (no L line).
-    fn first(&self, func: u32, n: u32) -> Option<Step> {
-        self.blocks.get(&(func, n)).map(|&loc| Step { loc, inlined: None })
+    /// Block `n` of `func`.
+    pub fn block(&self, func: u32, n: u32) -> Option<&Block> {
+        self.blocks.get(&(func, n))
     }
 
     /// Every line block `n` of `func` runs: its lines' own, and the lines
@@ -263,24 +298,15 @@ impl Tables {
     /// debug info's inline sites say where). What coverage counts, and what
     /// "run to a line" looks for.
     pub fn runs(&self, func: u32, n: u32) -> impl Iterator<Item = Loc> + '_ {
-        let own = match self.lines.get(&(func, n)) {
-            Some(segs) => segs.iter().flatten().copied().collect(),
-            None => self.first(func, n).into_iter().collect::<Vec<_>>(),
-        };
-        own.into_iter().flat_map(move |s| {
+        self.block(func, n).into_iter().flat_map(|b| &b.steps).flat_map(move |s| {
             let sites = s.inlined.and_then(|k| self.inlines.get(k as usize)).map_or(&[][..], Vec::as_slice);
             core::iter::once(s.loc).chain(sites.iter().map(|&(_, site)| site))
         })
     }
 
-    /// Stretch `seg` of those lines (none past the last).
-    pub fn stretch(&self, func: u32, n: u32, seg: u32) -> alloc::borrow::Cow<'_, [Step]> {
-        use alloc::borrow::Cow;
-        match self.lines.get(&(func, n)) {
-            Some(s) => Cow::Borrowed(s.get(seg as usize).map_or(&[][..], Vec::as_slice)),
-            None if seg == 0 => Cow::Owned(self.first(func, n).into_iter().collect()),
-            None => Cow::Borrowed(&[]),
-        }
+    /// Stretch `seg` of block `n` of `func`'s lines (none past the last).
+    pub fn stretch(&self, func: u32, n: u32, seg: u32) -> &[Step] {
+        self.block(func, n).map_or(&[], |b| b.stretch(seg))
     }
 
     /// Function `func`'s argument values, from a call's words (trace::Args):
@@ -297,7 +323,7 @@ impl Tables {
 
     /// The blocks of `func`, in order.
     pub fn blocks_of(&self, func: u32) -> impl Iterator<Item = (u32, Loc)> + '_ {
-        self.blocks.range((func, 0)..=(func, u32::MAX)).map(|(&(_, n), &l)| (n, l))
+        self.blocks.range((func, 0)..=(func, u32::MAX)).map(|(&(_, n), b)| (n, b.loc))
     }
 
     pub fn file(&self, loc: Loc) -> &str {
@@ -328,7 +354,7 @@ mod tests {
         let f = &t.functions[&7];
         assert_eq!((f.known, f.sealed, t.functions[&8].sealed), (3, false, true));
         assert_eq!((t.file(f.loc), f.loc.line), ("/s/p.c", 2));
-        let b = t.blocks[&(7, 0)];
+        let b = t.blocks[&(7, 0)].loc;
         assert_eq!((t.file(b), b.line, b.column), ("/s/q.h", 2, 39));
         assert_eq!(t.types.field("task_struct", "pid"), Some((736, 4)));
     }
@@ -342,12 +368,12 @@ mod tests {
                       I\t0\tget_current\t1:9\nI\t1\tspin_lock\t0:2\n\
                       F\t1\tf\t0:1\t0\nB\t1\t0\t2:3:1\nL\t1\t0\t2:3@0@1;0:4\n";
         let t = Tables::parse(probes, "W\tget_current\tarch/wasm/include/asm/current.h\t12\nW\tspin_lock\tinclude/linux/spinlock.h\t7\n");
-        let steps = &t.lines[&(1, 0)][0];
+        let steps = &t.blocks[&(1, 0)].steps;
         let chain = |s: &Step| s.inlined.map(|k| t.inlines[k as usize].iter().map(|&(n, _)| t.names[n as usize].clone()).collect::<Vec<_>>());
         assert_eq!((t.file(steps[0].loc), steps[0].loc.line, chain(&steps[0])), ("include/linux/spinlock.h", 9, Some(alloc::vec!["spin_lock".into()])));
         assert_eq!((steps[1].loc.line, steps[1].inlined), (4, None));
         // The block's own location was get_current's: now its first line's.
-        let b = t.blocks[&(1, 0)];
+        let b = t.blocks[&(1, 0)].loc;
         assert_eq!((t.file(b), b.line), ("include/linux/spinlock.h", 9));
     }
 

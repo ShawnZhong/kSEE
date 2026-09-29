@@ -462,8 +462,8 @@ impl View<'_> {
         let located = |func: u32, step: Option<Step>| (step.map(|s| s.loc).or(t.functions.get(&func).map(|f| f.loc)), step.and_then(|s| s.inlined));
         let (kind, func, (loc, inlined)) = match *records.get(i)? {
             Record::Block { func, n } => {
-                let inlined = t.stretch(func, n, 0).first().and_then(|s| s.inlined);
-                ("block", func, (t.blocks.get(&(func, n)).copied(), inlined))
+                let b = t.block(func, n);
+                ("block", func, (b.map(|b| b.loc), b.and_then(|b| b.steps.first()?.inlined)))
             }
             Record::Return { func, .. } => {
                 let prev = (0..i).rev().find(|&j| tasks[j] == tasks[i]);
@@ -512,7 +512,7 @@ impl View<'_> {
             }
             let (kind, text) = match rec.records[i] {
                 Record::Block { func, n } => {
-                    let loc = t.blocks.get(&(func, n)).map_or(String::new(), |l| format!(" {}:{}", t.file(*l), l.line));
+                    let loc = t.block(func, n).map_or(String::new(), |b| format!(" {}:{}", t.file(b.loc), b.loc.line));
                     // (A call: with its arguments, the record after.)
                     if let (0, Some((words, frame))) = (n, rec.args.get(i)) {
                         let params = t.types.params.get(&func);

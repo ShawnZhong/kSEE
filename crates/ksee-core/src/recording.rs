@@ -168,8 +168,8 @@ impl Recording {
         let inl = t.names.iter().position(|n| n == name).map(|k| k as u32);
         let chains: Vec<u32> = t.inlines.iter().enumerate()
             .filter(|(_, c)| c.iter().any(|&(k, _)| Some(k) == inl)).map(|(c, _)| c as u32).collect();
-        let inlined = |func: u32, n: u32| !chains.is_empty() && t.lines.get(&(func, n))
-            .is_some_and(|segs| segs.iter().flatten().any(|s| s.inlined.is_some_and(|c| chains.contains(&c))));
+        let inlined = |func: u32, n: u32| !chains.is_empty() && t.block(func, n)
+            .is_some_and(|b| b.steps.iter().any(|s| s.inlined.is_some_and(|c| chains.contains(&c))));
         (first..=last.min(self.len().checked_sub(1)?)).find(|&i| {
             task.is_none_or(|t| self.tasks[i] == t) && match self.records[i] {
                 Record::Block { func, n: 0 } if ids.contains(&func) => true,

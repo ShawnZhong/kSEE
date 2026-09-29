@@ -10,7 +10,6 @@
 //! last calls (do_exit, do_task_dead, __switch_to), and a new task may get
 //! its task_struct.
 
-use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
@@ -36,7 +35,7 @@ pub struct Call {
 }
 
 /// Where a call is: in block `n`, running stretch `seg` of the block's
-/// lines (Tables::segments) from `record` (the block's, or the return into
+/// lines (tables::Block) from `record` (the block's, or the return into
 /// it); at the last line of stretch `line` (seg, or an earlier one if seg
 /// has none; NONE: no line yet).
 #[derive(Debug, Clone, Copy)]
@@ -156,7 +155,7 @@ impl Calls {
 
     /// The lines record `i` runs, if it runs some (a block, or a return
     /// into the middle of one): (its place, the lines).
-    fn stretch<'t>(&self, t: &'t Tables, i: usize) -> Option<(&Place, Cow<'t, [Step]>)> {
+    fn stretch<'t>(&self, t: &'t Tables, i: usize) -> Option<(&Place, &'t [Step])> {
         let p = self.place_at(i).filter(|p| p.record as usize == i && p.n != NONE)?;
         Some((p, t.stretch(self.calls[p.call as usize].func, p.n, p.seg)))
     }
@@ -222,23 +221,14 @@ impl Calls {
         let (&Record::Store { line, .. } | &Record::Compare { line, .. } | &Record::Var { line, .. }) = records.get(i)? else { return None };
         let p = self.place_at(i)?;
         let c = &self.calls[p.call as usize];
-        // (Which stretch it is in, and where in it.)
-        let (mut seg, mut nth) = (0, line as usize);
-        let own = loop {
-            let steps = t.stretch(c.func, p.n, seg);
-            match steps.get(nth) {
-                Some(&s) => break Some(s),
-                None if steps.is_empty() && seg > p.seg => break None,
-                None => (seg, nth) = (seg + 1, nth - steps.len()),
-            }
-        };
+        let b = t.block(c.func, p.n)?;
         // (None, or a line of another stretch than the one it runs in (one
         // before a call it made): the store has no line of its own (the
         // compiler gave it none), so the line its stretch is on, its last.)
-        let (s, nth) = match own {
-            Some(s) if seg == p.seg => (s, nth as u32),
+        let (s, nth) = match b.stretch_of(line) {
+            Some(seg) if seg == p.seg => (b.steps[line as usize], line - b.start(seg) as u32),
             _ => {
-                let steps = t.stretch(c.func, p.n, p.seg);
+                let steps = b.stretch(p.seg);
                 (*steps.last()?, steps.len() as u32 - 1)
             }
         };
@@ -254,7 +244,7 @@ impl Calls {
 
     /// The source lines run in records `from..=to` (of task `task`, or
     /// any), in order: each block's lines up to its first call, then, as
-    /// each call returns, the lines up to the next (Tables::segments). The
+    /// each call returns, the lines up to the next (tables::Block). The
     /// same line twice in a row counts once.
     pub fn lines(&self, t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
                  task: Option<u32>) -> Vec<LineStep> {
@@ -283,7 +273,7 @@ impl Calls {
             // (The stretch's lines are numbered on from the block's earlier
             // ones: a store says which it is on; the first store of each line,
             // among the records up to the task's next block or return.)
-            let base: usize = (0..p.seg).map(|k| t.stretch(c.func, p.n, k).len()).sum();
+            let base = t.block(c.func, p.n).map_or(0, |b| b.start(p.seg));
             // (And if the call returns there, its value: its last line's.)
             let mut first_at: BTreeMap<u32, usize> = BTreeMap::new();
             let (mut ret, mut last) = (None, i);

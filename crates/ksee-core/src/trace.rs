@@ -12,7 +12,7 @@ pub enum Record {
     Return { func: u32, value: i64 },
     /// A store of `size` bytes at `addr`, which held `old` (size 0: a range
     /// of `old` bytes whose old contents are not logged), on `line`: which
-    /// of its block's lines (Tables::segments, "|" apart, from 0); `from`:
+    /// of its block's lines (tables::Block::steps); `from`:
     /// if it copies (a value loaded and stored as it is, a memcpy), where
     /// its bytes come from.
     Store { addr: u32, size: u32, old: u64, line: u32, from: Option<u32> },
