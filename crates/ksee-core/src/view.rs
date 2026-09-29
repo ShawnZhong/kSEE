@@ -1626,8 +1626,8 @@ mod tests {
         // then to 0x20 by a memcpy of 8 (two stores): 0x24's way back is
         // 0x24 <- 0x14 <- ... 0x14 was never written; 0x20's is 0x20 <- 0x10 <- 0x30.
         let t = Tables::default();
-        let st = |addr, from| Record::Store { addr, size: 4, old: Some(0), line: 0, from };
-        let r = [st(0x30, None), st(0x10, Some(0x30)), st(0x20, Some(0x10)), st(0x24, Some(0x14))];
+        let st = |addr, from| Record::Store { addr, size: 4, old: Some(0), line: 0, from: core::num::NonZeroU32::new(from) };
+        let r = [st(0x30, 0), st(0x10, 0x30), st(0x20, 0x10), st(0x24, 0x14)];
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], Args::default());
         let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 64]) };
         let way = |a| v.origin(a, 4, 3, 8).iter().map(|w| (w.i, w.addr, w.from)).collect::<Vec<_>>();

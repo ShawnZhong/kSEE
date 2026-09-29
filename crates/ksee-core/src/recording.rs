@@ -215,7 +215,7 @@ impl Recording {
     pub fn copied_from(&self, i: usize, addr: u32) -> Option<u32> {
         match self.records.get(i)? {
             // (From where the store and the value overlap.)
-            Record::Store { addr: at, from: Some(from), .. } => Some(from.wrapping_add(addr.max(*at) - at)),
+            Record::Store { addr: at, from: Some(from), .. } => Some(from.get().wrapping_add(addr.max(*at) - at)),
             _ => None,
         }
     }
