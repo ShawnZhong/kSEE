@@ -154,8 +154,14 @@
   const kf = ksee.time.focus();
   if (kf?.a !== ksys.first || kf?.b !== ksee.m.call_end(ksys.first) || ksee.time.home() !== readSel) throw new Error("ksys_read in focus: " + JSON.stringify([kf, ksee.time.home()]) + ", not from " + ksys.first);
   ksee.tab("objects");
-  r.focused = document.querySelector("#objects .head")?.textContent;
-  if (!/^What ksys_read did/.test(r.focused ?? "")) throw new Error("the Objects of the call clicked: " + r.focused);
+  // (The Objects stay the syscall's, offering the call clicked; narrowed
+  // on asking.)
+  const head = () => document.querySelector("#objects .head")?.textContent;
+  r.clicked = head();
+  if (!/^What (read by prog\(\d+\)|filemap_read) did.* · only ksys_read$/.test(r.clicked ?? "")) throw new Error("the Objects after a click: " + r.clicked);
+  [...document.querySelectorAll("#objects .head a")].find((a) => a.textContent === "only ksys_read")?.click();
+  r.focused = head();
+  if (!/^What ksys_read did/.test(r.focused ?? "")) throw new Error("the Objects narrowed to the call clicked: " + r.focused);
   // (Zoom: the window at the call in focus, from the chart's head.)
   const zoomTo = [...document.querySelectorAll("#chart-verbs a")].find((x) => x.textContent.startsWith("zoom"));
   r.zoom = zoomTo?.textContent;
@@ -164,7 +170,7 @@
   if (![...document.querySelectorAll("#chart-verbs a")].some((x) => x.textContent === "whole")) throw new Error("zoomed: no way back to the whole recording");
   // (And back to the whole syscall, by the link in its head.)
   document.querySelector("#objects .head a")?.click();
-  r.unfocused = document.querySelector("#objects .head")?.textContent;
+  r.unfocused = head();
   if (!/^What read by prog\(\d+\) did/.test(r.unfocused ?? "")) throw new Error("the whole syscall again: " + r.unfocused);
   ksee.tab("stack");
   // Your own call: type it, Tab completes the name, Enter makes it.

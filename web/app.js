@@ -167,6 +167,7 @@ export function app(m) {
   // follows the cursor (`mark(i)`: record `i`, or the cursor's).
   const tabs = { tasks: tasks(a), objects: objects(a), trace: trace(a) };
   a.tasks = tabs.tasks;
+  a.objects = tabs.objects;
   const marks = (i) => Object.values(tabs).forEach((x) => x.mark(i));
   a.outlined = () => Object.values(tabs).forEach((x) => x.draw());
   // Show tab `name` (its pane and its link marked; #right's data-tab says

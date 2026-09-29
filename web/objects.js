@@ -1,5 +1,6 @@
-// The Objects: what the call in focus (the syscall selected, or a call
-// clicked in the timeline: app.focus) did to the kernel's data (Machine.objects):
+// The Objects: what the syscall selected did to the kernel's data
+// (Machine.objects), or, narrowed to it on asking (its head's "only …",
+// an example's link), one call in it:
 // a box per object it changed that is still there when it returns
 // (declared as the code names them: "struct file *file in vfs_read",
 // "struct files_struct *prog(19)->files"; and by
@@ -17,6 +18,21 @@ export function objects(app) {
   const { m } = app;
   const body = $("objects");
   let shown = null, selected = null;
+  // (Narrowed: the call's records, found again after a snapshot
+  // (Timeline.focusWhere), for the syscall selected then (its first
+  // record's id); null: the whole syscall.)
+  let only = null;
+  const home = () => {
+    const s = app.selection();
+    return s && m.record_id(s.a);
+  };
+  // The call shown: the one narrowed to, else the selection (keyed, as
+  // app.selection is: see there).
+  function shownCall() {
+    if (only && only.home !== home()) only = null;
+    const w = only ? only.where() : app.selection();
+    return w && { ...w, key: `${w.a}:${w.b}:${w.task}:${m.record_id(m.records() - 1)}` };
+  }
   // (The members whose runs are shown in full, past six, by box and
   // member: "3/0"; for the selection.)
   const open = new Set();
@@ -25,8 +41,9 @@ export function objects(app) {
   // another call or recording).
   function draw() {
     if ($("right").dataset.tab !== "objects") return;
-    const w = app.focus();
-    const n = m.records(), key = w ? `${w.key}:${n ? m.record_id(n - 1) : ""}` : null;
+    const w = shownCall(), f = app.focus();
+    // (The call in focus too: its "only …" offered.)
+    const key = w ? `${w.key}:${f?.a}:${f?.b}` : null;
     if (key !== shown) {
       if (w?.key !== selected) (open.clear(), (selected = w?.key));
       shown = key;
@@ -38,10 +55,20 @@ export function objects(app) {
     mark(app.time.cursor());
   }
 
-  // (A call in the syscall in focus: a way back to the whole syscall.)
+  // (Narrowed: a way back to the whole syscall; and the call in focus
+  // (the one clicked last), if it is another one: a way to narrow to it.)
   function whole(w) {
-    const h = app.time.home();
-    return h && (h.a !== w.a || h.b !== w.b) ? ["  · ", el("a", { textContent: `the whole ${h.title}`, onclick: () => app.time.unfocus() })] : [];
+    const h = app.selection(), f = app.focus(), out = [];
+    if (only) out.push("  · ", el("a", { textContent: `the whole ${h?.title ?? "syscall"}`, onclick: () => ((only = null), draw()) }));
+    if (f && (f.a !== w.a || f.b !== w.b) && !(h && f.a === h.a && f.b === h.b)) {
+      out.push("  · ", el("a", { textContent: `only ${f.title}`, title: "what that call did (the one clicked last)", onclick: narrow }));
+    }
+    return out;
+  }
+  // Narrow to the call in focus (the one clicked last, or an example's).
+  function narrow() {
+    only = { where: app.time.focusWhere(), home: home() };
+    draw();
   }
 
   function render(nodes, w) {
@@ -111,5 +138,6 @@ export function objects(app) {
     b.classList.add("flash");
   }
 
-  return { draw, mark: (i) => $("right").dataset.tab === "objects" && mark(i ?? app.time.cursor()) };
+  // (The cursor's moment, not the pointer's: hovering leaves it as it is.)
+  return { draw, narrow, mark: () => $("right").dataset.tab === "objects" && mark(app.time.cursor()) };
 }
