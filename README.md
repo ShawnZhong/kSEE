@@ -94,7 +94,9 @@ them), and each line what it
 stored or set so far in the syscall selected, each thing it wrote its last
 change and how many times (`f_pos: 0 → 26 ×2`, a
 variable's `last_pos: (uninitialized) → -1`; a struct copied at once,
-each member: `mnt: NULL → 0x1c07910   dentry: NULL → 0x1c11dd00`): click it for its last write; not the
+each member: `mnt: NULL → 0x1c07910   dentry: NULL → 0x1c11dd00`; a name
+once, as the text has it, though two inlined copies' `sb` wrote it: `sb:
+NULL → 0x1c49000, (uninitialized) → 0x1c49000`): click it for its last write; not the
 temporaries the kernel's macros make up, `__UNIQUE_ID_…`); a step that lands after a call says what it returned.
 Hover
 a name in the source for its value at the cursor (a name with one is

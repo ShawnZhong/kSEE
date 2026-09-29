@@ -235,9 +235,10 @@ impl View<'_> {
             }
         }
         by.into_iter().map(|(line, (things, i))| {
-            // (Short, the same said once, the times added: two inlined
-            // helpers' `regs` set alike.)
-            let (mut short, mut full): (Vec<(String, usize)>, Vec<String>) = (Vec::new(), Vec::new());
+            // (Short, a name once (two inlined copies' `sb` are one `sb` in
+            // the text), each change it had once, the times added: "sb: NULL
+            // → 0x1c49000, (uninitialized) → 0x1c49000 ×2".)
+            let (mut short, mut full): (Vec<(String, Vec<(String, usize)>)>, Vec<String>) = (Vec::new(), Vec::new());
             for ((region, member), (w, n)) in things {
                 let r = &named.regions[region as usize];
                 let Some(x) = self.changes(&named, w).into_iter().find(|x| x.member == member) else { continue };
@@ -247,13 +248,17 @@ impl View<'_> {
                 let times = |n: usize| if n > 1 { format!(" ×{n}") } else { String::new() };
                 full.push(format!("{expr}{}{within}: {} → {}{}", if x.member.is_empty() { String::new() } else { format!("{join}{}", x.member) }, x.before, x.after, times(n)));
                 let name = if x.member.is_empty() { expr.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(expr) } else { &x.member };
-                let said = format!("{name}: {} → {}", x.before, x.after);
-                match short.iter_mut().find(|(s, _)| *s == said) {
+                let change = format!("{} → {}", x.before, x.after);
+                let k = short.iter().position(|(s, _)| s == name).unwrap_or_else(|| (short.push((name.to_string(), Vec::new())), short.len() - 1).1);
+                match short[k].1.iter_mut().find(|(c, _)| *c == change) {
                     Some((_, k)) => *k += n,
-                    None => short.push((said, n)),
+                    None => short[k].1.push((change, n)),
                 }
             }
-            let short = short.into_iter().map(|(s, n)| if n > 1 { format!("{s} ×{n}") } else { s }).collect::<Vec<_>>().join("   ");
+            let short = short.into_iter().map(|(name, changes)| {
+                let changes: Vec<String> = changes.into_iter().map(|(c, n)| if n > 1 { format!("{c} ×{n}") } else { c }).collect();
+                format!("{name}: {}", changes.join(", "))
+            }).collect::<Vec<_>>().join("   ");
             Note { line, i, short, full: full.join("; ") }
         }).collect()
     }

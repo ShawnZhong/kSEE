@@ -90,6 +90,27 @@ fn one_store_copying_a_struct_changes_each_member() {
 }
 
 #[test]
+fn a_lines_note_says_a_name_once() {
+    // f (1) calls g (2) twice, each with its own struct s *p (at 4, then
+    // 16), which stores p->b on line 3: 1 → 2, then 3 → 4. The line says
+    // b once, both changes after it.
+    let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:2\t0\nL\t2\t0\t0:2;:3\n",
+                          "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t2\tg\tp:3\n");
+    let st = |addr, old| Record::Store { addr, size: 4, old: Some(old), line: 1, from: None };
+    let ret = Record::Return { func: 2, value: 0 };
+    let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, st(8, 1), ret, Record::Block { func: 2, n: 0 }, st(20, 3), ret];
+    let mut args = Args::default();
+    args.push(1, &[4, 64]);
+    args.push(4, &[16, 64]);
+    let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 7], args);
+    let mut m = alloc::vec![0u8; 32];
+    (m[8], m[20]) = (2, 4);
+    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let notes = v.notes(0, 6, "f.c", 6);
+    assert_eq!((notes[0].line, notes[0].short.as_str()), (3, "b: 1 → 2, 3 → 4"));
+}
+
+#[test]
 fn a_calls_stores_are_named_as_the_code_names_them() {
     // f (1, "f") takes struct s *p (at 4) and has a local int x (at
     // frame 32 + 4): it stores p->b, then x; calls g (2), whose frame is
