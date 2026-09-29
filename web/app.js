@@ -158,10 +158,8 @@ export function app(m) {
       const step = i == null && !chosen && L.pos != null ? steps()[L.pos] : null;
       if (step) showLine(step);
       else if (at) view(at, i == null ? chosen : frame);
-      // (The tabs follow too, back to the cursor's with null; the Objects
-      // show the call under the pointer.)
+      // (The tabs follow too, back to the cursor's with null.)
       marks(to);
-      tabs.objects.preview(i == null ? null : frame?.first ?? null);
     });
   };
   // The right column's tabs but the Stack, by name: each draws for the

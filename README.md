@@ -82,9 +82,8 @@ a step, a basic block run: a store takes no room), and which
 task ran; the whole recording at first (scroll to zoom, drag to pan;
 "zoom" or z: the window at the call in focus (below), "whole" or x: all
 of it again; hover a call for what it was (its arguments, what it returned: `ksys_read = 26`): the
-source and the Stack show that moment while the pointer is there, and the
-Objects color what it wrote; click it to fix the cursor there, and for
-what it did (the Objects' colors, the source's notes; a syscall: selected too,
+source, the Stack and the Objects show that moment while the pointer is there; click it to fix the cursor there, and for
+what it did (the source's notes; a syscall: selected too,
 its records from its entry to its exit, with whatever else ran in
 between, the lines to step through). The
 cursor's line carries its values as it is about to run (as a debugger
@@ -126,11 +125,9 @@ a line a function that changed it in turn, from what to what (`f_mode
 a pointer, to another object: that one, `fd_array[3]  NULL → f in
 create_pipe_files`, a link to it; a count one took and another dropped,
 dim); a line goes to its write. As a tree: each object under
-the first that points to it (`← f_inode`). The timeline only colors it:
-the call under the pointer, else the one clicked (or an example's "What …
-changed" link), its writes in color and the others gray; with neither,
-the writes not made by the cursor gray; the writes the cursor is among
-marked. One store may change several members (a struct
+the first that points to it (`← f_inode`). The moment shown (the
+pointer's over the timeline, else the cursor's) only colors it: the
+writes not made by then are gray, those it is among marked. One store may change several members (a struct
 copied at once: `f_path.mnt` and `f_path.dentry`): each is a change of
 its own. The line the cursor is on shows its values at
 its end, as a debugger does (`fd = 3   count = 64`). Objects are said as

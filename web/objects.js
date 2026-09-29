@@ -11,19 +11,15 @@
 // 0x40a801d  do_dentry_open"; one left as it was, a count one took and
 // another dropped, dim; click: that write). As a tree: each box under the
 // first that points to it, by that member ("← f_inode"); in a box, the
-// members it left changed first. The timeline only colors it: the call
-// under the pointer, or else the one clicked (or an example's), its
-// writes in color, the others gray; with neither, the writes not made by
-// the cursor gray. The run of writes the cursor is in, marked.
+// members it left changed first. The moment shown (the pointer's over
+// the timeline, else the cursor's) only colors it: the writes not made by
+// then gray, the run of writes it is in marked.
 import { $, el } from "./dom.js";
 
 export function objects(app) {
   const { m } = app;
   const body = $("objects");
   let shown = null;
-  // (The call under the pointer in the timeline, by its first record;
-  // null: none.)
-  let over = null;
 
   // Draw for the syscall selected (only while the tab is shown; again for
   // another one, or recording).
@@ -40,22 +36,6 @@ export function objects(app) {
     mark(app.time.cursor());
   }
 
-  // The call whose writes are in color: the one under the pointer, else
-  // the one in focus (clicked, or an example's), if not the syscall
-  // itself: { a, b, title }; null: none.
-  function lit() {
-    const h = app.selection();
-    if (over != null) return { a: over, b: m.call_end(over) ?? m.records() - 1, title: m.at(over)?.func ?? "a call" };
-    const f = app.focus();
-    return f && h && (f.a !== h.a || f.b !== h.b) ? f : null;
-  }
-  // The pointer over call `first` in the timeline (null: over none, or gone).
-  function preview(first) {
-    if (first === over) return;
-    over = first;
-    mark(app.time.cursor());
-  }
-
   // (A box's name, short: its expression, not where it is named.)
   const short = (n) => n.what.split(" in ")[0];
 
@@ -66,7 +46,7 @@ export function objects(app) {
     // (The head: what it changed, in a line; what it left as it was.)
     const head = [changed.length ? `${title} changed ${count(changed)}: ${changed.map(short).join(", ")}` : `${title} left the kernel's data as it was`,
                   same.length && changed.length ? `; left ${count(same)} as it was` : ""].join("");
-    const out = [el("div", { className: "head" }, head, el("span", { className: "dim lit" }))];
+    const out = [el("div", { className: "head" }, head)];
     // (Each group as a tree: each box under the one that points to it
     // (Node.under, of its group), from the ones nothing points to.)
     const tree = (group) => {
@@ -116,19 +96,14 @@ export function objects(app) {
       el("table", { className: "objs" }, el("tbody", {}, ...rows)));
   }
 
-  // The colors: the call lit (see lit), its runs of writes (any write in
-  // its records) in color, the others gray; none, the runs not begun by
-  // the cursor `cur` gray. The run the cursor is in, marked; the head says
-  // whose writes are in color.
+  // The moment `cur` (a record): the runs of writes not begun by then
+  // gray, the one it is in (from its first write to its last) marked.
   function mark(cur) {
-    const l = lit();
     for (const r of body.querySelectorAll("tr[data-last]")) {
       const first = Number(r.dataset.first), last = Number(r.dataset.last);
-      r.classList.toggle("later", l ? last < l.a || first > l.b : cur != null && first > cur);
+      r.classList.toggle("later", cur != null && first > cur);
       r.classList.toggle("on", cur != null && first <= cur && cur <= last);
     }
-    const h = body.querySelector(".head .lit");
-    if (h) h.textContent = l ? `  · in color: what ${l.title} wrote` : "";
   }
 
   // Go to object `k`'s box: in view, a flash.
@@ -141,6 +116,6 @@ export function objects(app) {
     b.classList.add("flash");
   }
 
-  // (The cursor's moment: the pointer colors by its call, not its moment.)
-  return { draw, preview, mark: () => $("right").dataset.tab === "objects" && mark(app.time.cursor()) };
+  // (The moment shown: the pointer's, or the cursor's.)
+  return { draw, mark: (i) => $("right").dataset.tab === "objects" && mark(i ?? app.time.cursor()) };
 }

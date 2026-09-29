@@ -155,22 +155,24 @@
   const kf = ksee.time.focus();
   if (kf?.a !== ksys.first || kf?.b !== ksee.m.call_end(ksys.first) || ksee.time.home() !== readSel) throw new Error("ksys_read in focus: " + JSON.stringify([kf, ksee.time.home()]) + ", not from " + ksys.first);
   ksee.tab("objects");
-  // (The Objects: all the syscall did, always; the call clicked, its
-  // writes in color.)
+  // (The Objects: all the syscall did, always; gray, what has not
+  // happened by the moment shown: the pointer's, over the timeline.)
   const head = () => document.querySelector("#objects .head")?.textContent;
   const row = (member) => [...document.querySelectorAll("#objects tr")].find((tr) => tr.cells[0]?.textContent === member);
   r.focused = head();
-  if (!/^read by prog\(\d+\) changed .*in color: what ksys_read wrote$/.test(r.focused ?? "")) throw new Error("the Objects, the call clicked: " + r.focused);
-  // (The pointer over another call: its writes in color, the others gray,
-  // for as long as it is there.)
+  if (!/^read by prog\(\d+\) changed /.test(r.focused ?? "")) throw new Error("the Objects, a call clicked: " + r.focused);
+  // (Over filemap_read: the file's f_pos, which ksys_read writes after it, not yet.)
   const fm = ksee.m.call_stack(ksee.m.first_call("filemap_read", read.first, read.last, read.task.addr)).find((f) => f.func === "filemap_read");
   const fb = ksee.time.boxOf(fm.first);
   $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: fb.x, clientY: fb.y }));
-  await until(() => /filemap_read wrote/.test(head() ?? ""));
-  r.hovered_objects = [head(), row("f_pos")?.classList.contains("later"), row("i_atime_nsec")?.classList.contains("later")];
-  if (!/^read by prog/.test(r.hovered_objects[0]) || r.hovered_objects[1] !== true || r.hovered_objects[2] !== false) throw new Error("the Objects colored by the call under the pointer: " + JSON.stringify(r.hovered_objects));
+  await until(() => row("f_pos")?.classList.contains("later"));
+  r.hovered_objects = row("f_pos")?.classList.contains("later");
+  if (!r.hovered_objects) throw new Error("the Objects at the pointer's moment: f_pos not gray");
   $("chart").dispatchEvent(new PointerEvent("pointerleave"));
-  await until(() => /ksys_read wrote/.test(head() ?? ""));
+  // (At the syscall's end: all of it done, nothing gray.)
+  ksee.time.go(read.last);
+  await until(() => !document.querySelector("#objects tr.later"));
+  if (document.querySelector("#objects tr.later")) throw new Error("the Objects at the end: still gray");
   // (Zoom: the window at the call in focus, from the chart's head.)
   const zoomTo = [...document.querySelectorAll("#chart-verbs a")].find((x) => x.textContent.startsWith("zoom"));
   r.zoom = zoomTo?.textContent;
