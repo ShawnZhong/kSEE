@@ -452,6 +452,18 @@ mod tests {
     }
 
     #[test]
+    fn a_charts_column_is_the_stack_at_its_record() {
+        // Task 7's f (1) calls g (2); task 8 runs h (3); back on 7, g returns.
+        // Columns at records 1, 2, 4: 7's f and g, 8's h, 7's f.
+        let t = Tables::default();
+        let r = [b(1, 0), b(2, 0), b(3, 0), Record::Return { func: 2, value: 0 }, b(1, 1)];
+        let tasks = [7, 7, 8, 7, 7];
+        let got: Vec<_> = Calls::new(&t, &r, &tasks).chart(&t, &tasks, &[1, 2, 4, 9]).into_iter()
+            .map(|(i, task, calls)| (i, task, calls.iter().map(|c| c.func).collect::<Vec<_>>())).collect();
+        assert_eq!(got, [(1, 7, alloc::vec![1, 2]), (2, 8, alloc::vec![3]), (4, 7, alloc::vec![1])]);
+    }
+
+    #[test]
     fn calls_of_a_function_are_its_entries() {
         let r = [b(1, 0), b(2, 0), b(2, 1), b(1, 1), b(2, 0)];
         assert_eq!(calls_of(&r, 0, 4, &[2]), [1, 4]);
