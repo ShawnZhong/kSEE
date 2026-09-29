@@ -110,8 +110,8 @@
     r.siblings = [lv.func, ...seen];
     if (![...seen].some((f) => f !== "vfs_read")) throw new Error("no sibling at vfs_read's level: " + JSON.stringify(r.siblings));
   }
-  // (↑ ↓ by the level: ↓ from ∞ the innermost row, ↓ a row down, ↑ back
-  // up, ↑ past the innermost ∞; and from the level, not the Stack's row,
+  // (↑ ↓ by the level: ↓ from all the innermost row, ↓ a row down, ↑ back
+  // up, ↑ past the innermost all; and from the level, not the Stack's row,
   // when the steps went shallower than it.)
   {
     const rd = ksee.m.syscalls().find((x) => x.name === "read");
@@ -119,10 +119,10 @@
     ksee.time.go(ksee.m.first_call("filemap_read", rd.first, rd.last, rd.task.addr));
     await sleep(100);
     const nframes = () => ksee.stack.frames().length;
-    const rows = nframes(), lvl = () => ksee.level()?.row ?? "∞", seq = [lvl()];
+    const rows = nframes(), lvl = () => ksee.level()?.row ?? "all", seq = [lvl()];
     for (const key of ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp"]) (press(key), seq.push(lvl()));
     r.levels = seq;
-    if (JSON.stringify(seq) !== JSON.stringify(["∞", rows, rows - 1, rows, "∞"])) throw new Error("↑ ↓ and the level: " + JSON.stringify([seq, rows]));
+    if (JSON.stringify(seq) !== JSON.stringify(["all", rows, rows - 1, rows, "all"])) throw new Error("↑ ↓ and the level: " + JSON.stringify([seq, rows]));
     press("ArrowDown"); press("ArrowDown");
     const at = ksee.level().row;
     for (let k = 0; k < 200 && nframes() >= at; k++) press("ArrowRight");

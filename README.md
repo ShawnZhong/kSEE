@@ -47,9 +47,9 @@ caller's lines, and the siblings' at the level, are not; with no level,
 at first, every line; past the syscall's end, or before its start, into
 its task's next syscall, or the one before); ↑ ↓ move the level, a row
 of the Stack up or down (the callee, the caller; ↓ from every line: the
-innermost; ↑ past the innermost: every line again, "∞"), as a click on a
+innermost; ↑ past the innermost: every line again, "all"), as a click on a
 call sets it (in the timeline, on the Stack); the level is shown by the
-buttons as its row, "level 4", with "∞" to leave it. ◀ ▶ ▲ ▼ under the timeline are the four keys. F4 in the
+buttons as its row, "level 4", with "all" to leave it. ◀ ▶ ▲ ▼ under the timeline are the four keys. F4 in the
 source runs to the line the cursor is on (its next run; Shift+F4 its
 last).
 

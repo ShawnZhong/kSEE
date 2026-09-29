@@ -98,13 +98,13 @@ export function app(m) {
   // count them: Machine.line_steps; said as its row on the Stack, and the
   // call it was set at): set by selecting a call (a click on a bar or on
   // the Stack, ↑ ↓), and kept as the steps go (a call's siblings are at it
-  // too); null, ∞: every line, at any depth (at first; ↑ past the
+  // too); null, all: every line, at any depth (at first; ↑ past the
   // innermost).
   let level = null;
   const showLevel = () => $("level").replaceChildren(...(level
     ? [el("span", { textContent: `level ${level.row}`, title: `◀ ▶ stop at the lines of the Stack's ${level.row} outermost rows (set at ${level.func}): what the calls there make is stepped over` }),
-       " · ", el("a", { textContent: "∞", title: "every line, at any depth (↑ past the innermost)", onclick: () => setLevel(null) })]
-    : [el("span", { textContent: "level ∞", title: "◀ ▶ stop at every line, at any depth: select a call (a click, ↑ ↓) to step at its level" })]));
+       " · ", el("a", { textContent: "all", title: "every line, at any depth (↑ past the innermost)", onclick: () => setLevel(null) })]
+    : [el("span", { textContent: "level: all", title: "◀ ▶ stop at every line, at any depth: select a call (a click, ↑ ↓) to step at its level" })]));
   const setLevel = (l) => ((level = l), showLevel());
   a.level = () => level;
   // (`sticky`: the call's level the one stepped at; not for a link's call
@@ -312,9 +312,9 @@ export function app(m) {
   $("step-fwd").onclick = () => step(1);
   const climb = (dir) => {
     // (A row from the level, else the call selected on the Stack if not the
-    // innermost (a link's call site), else ∞ (one past the innermost): ↓
+    // innermost (a link's call site), else all (one past the innermost): ↓
     // the one below, as deep as the Stack is now at most; ↑ the one above,
-    // past the innermost ∞, every line.)
+    // past the innermost all, every line.)
     const frames = stack.frames(), rows = frames.length, sel = stack.level();
     if (!rows) return;
     const row = (level?.row ?? (sel && sel.row < rows ? sel.row : rows + 1)) - dir;
@@ -327,7 +327,7 @@ export function app(m) {
   // (that deep or shallower: a call's siblings too; every line, with no
   // level; past its syscall, into its task's next or last one); ↑ ↓ in
   // depth, the row above or below on the Stack (the callee, the caller:
-  // the innermost is on top), setting the level, ↑ past the innermost: ∞,
+  // the innermost is on top), setting the level, ↑ past the innermost: all,
   // every line. Home: the first line; /: find a function.
   // Anywhere on the page but where text is typed (a program's call, the
   // find box), in the source too.

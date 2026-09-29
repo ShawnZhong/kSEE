@@ -6,7 +6,7 @@ const eq = (a, b) => {
   if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`);
 };
 // A line: `func` at `line`, `depth` calls deep (inlined `inl` deep).
-const L = (func, line, depth, inl = 0, leaf = false) => ({ func, file: "f.c", line, depth, inl, leaf });
+const L = (func, line, depth, inl = 0) => ({ func, file: "f.c", line, depth, inl });
 // Every stop from `k` going `dir`, at `level`.
 const walk = (st, k, dir, level) => {
   const out = [];
@@ -17,7 +17,7 @@ const walk = (st, k, dir, level) => {
 // f (depth 1) calls g (2), which calls h (3); back in f, it calls g2 (2), g's sibling.
 const st = [L("f", 1, 1), L("g", 10, 2), L("h", 20, 3), L("h", 21, 3), L("g", 11, 2), L("f", 2, 1), L("g2", 30, 2), L("g2", 31, 2), L("f", 3, 1)];
 
-Deno.test("every line: into every call", () => {
+Deno.test("all levels: every line, into every call", () => {
   eq(walk(st, 0, 1, null), ["g:10", "h:20", "h:21", "g:11", "f:2", "g2:30", "g2:31", "f:3"]);
   eq(walk(st, 8, -1, null), ["g2:31", "g2:30", "f:2", "g:11", "h:21", "h:20", "g:10", "f:1"]);
 });
@@ -35,12 +35,6 @@ Deno.test("inlined code is a level too", () => {
   const s = [L("f", 1, 1), L("helper", 5, 1, 1), L("f", 2, 1)];
   eq(walk(s, 0, 1, { depth: 1, inl: 0 }), ["f:2"]);
   eq(walk(s, 0, 1, { depth: 1, inl: 1 }), ["helper:5", "f:2"]);
-});
-
-Deno.test("every line: an inlined leaf passes, the line using it stays", () => {
-  // f's line 1 uses a helper (a leaf: it calls nothing), then goes on on line 1, then line 2.
-  const s = [L("f", 1, 1), L("helper", 5, 1, 1, true), L("f", 1, 1), L("f", 2, 1)];
-  eq(walk(s, 0, 1, null), ["f:2"]);
 });
 
 Deno.test("between two lines (after a click in the timeline): → goes to the one after the cursor, ← to the one before", () => {

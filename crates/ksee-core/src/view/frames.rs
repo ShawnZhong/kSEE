@@ -35,10 +35,6 @@ pub struct Line {
     /// Inlined: the line of its function's own where the code is inlined
     /// (the outermost inline site: `CLASS(fd_pos, f)(fd)`'s line).
     pub site: Option<u32>,
-    /// Inlined code that calls nothing before its function's code goes on
-    /// (a helper's lines: task_pid, read_ti_thread_flags): stepping every
-    /// line passes over it, staying on the line that used it.
-    pub leaf: bool,
 }
 
 /// A call on a stack, with its arguments (32 bits each: wider ones lose
@@ -82,23 +78,12 @@ impl View<'_> {
     pub(super) fn line_only(&self, s: &LineStep) -> Line {
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
                inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests: Vec::new(), ret: s.ret,
-               called: s.callee.map(|(f, v, at)| (self.name(f), v, at)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line), leaf: false }
+               called: s.callee.map(|(f, v, at)| (self.name(f), v, at)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line) }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.
     pub fn lines(&self, first: usize, last: usize, task: u32) -> Vec<Line> {
-        let mut out: Vec<Line> = self.rec.lines(self.tables, first, last, task).iter().map(|s| self.line(s)).collect();
-        // (Inlined code is a leaf if no call is made before its run ends:
-        // before the steps come back out of it, or out of its call.)
-        for k in 0..out.len() {
-            let (d, inl) = (out[k].depth, out[k].inl);
-            if inl == 0 {
-                continue;
-            }
-            let calls = out[k + 1..].iter().take_while(|x| x.depth > d || x.depth == d && x.inl >= inl).any(|x| x.depth > d);
-            out[k].leaf = !calls;
-        }
-        out
+        self.rec.lines(self.tables, first, last, task).iter().map(|s| self.line(s)).collect()
     }
 
     /// The call stack at record `i`, innermost first; locals read from `mem`
