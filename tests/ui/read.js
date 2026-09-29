@@ -126,14 +126,15 @@
   if (!/^ksys_read = \d+$/.test(r.rets[0] ?? "")) throw new Error("no return value in a call's hover: " + JSON.stringify(r.rets));
   ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
   // The Objects (the explanation's link): what the call did, each object
-  // it wrote, member by member (the kiocb's ki_pos, 0 → 18, by
-  // filemap_read); a row goes to the write that left it so.
+  // it wrote, member by member (the inode's access time, by the function
+  // that wrote it), not a stack's (no kiocb: the Stack's); a row goes to
+  // the write that left it so.
   const before = ksee.time.cursor();
   [...document.querySelectorAll(".explain a.place")].find((x) => /changed/.test(x.textContent))?.click();
   await until(() => $("right").dataset.tab === "objects" && document.querySelector("#objects .obj"));
-  const kipos = [...document.querySelectorAll("#objects tr")].find((tr) => tr.cells[0]?.textContent === "ki_pos");
-  r.objects = [kipos?.innerText.replace(/\s+/g, " ")];
-  if (!/^ki_pos 0 → \d+ filemap_read$/.test(r.objects[0] ?? "")) throw new Error("objects: " + JSON.stringify(r.objects));
+  const kipos = [...document.querySelectorAll("#objects tr")].find((tr) => tr.cells[0]?.textContent === "i_atime_nsec");
+  r.objects = [kipos?.innerText.replace(/\s+/g, " "), document.querySelector("#objects .head")?.textContent];
+  if (!/^i_atime_nsec 0 → \d+ \w+$/.test(r.objects[0] ?? "") || /kiocb/.test($("objects").textContent)) throw new Error("objects: " + JSON.stringify(r.objects));
   kipos.click(); await sleep(200);
   if (ksee.time.cursor() !== Number(kipos.dataset.last) || !kipos.classList.contains("on")) throw new Error("a change's row goes to its write: " + JSON.stringify([ksee.time.cursor(), kipos.dataset.last]));
   ksee.tab("stack");
@@ -158,10 +159,10 @@
   // on asking.)
   const head = () => document.querySelector("#objects .head")?.textContent;
   r.clicked = head();
-  if (!/^What (read by prog\(\d+\)|filemap_read) did.* · only ksys_read$/.test(r.clicked ?? "")) throw new Error("the Objects after a click: " + r.clicked);
+  if (!/^(read by prog\(\d+\)|filemap_read) changed .* · only ksys_read$/.test(r.clicked ?? "")) throw new Error("the Objects after a click: " + r.clicked);
   [...document.querySelectorAll("#objects .head a")].find((a) => a.textContent === "only ksys_read")?.click();
   r.focused = head();
-  if (!/^What ksys_read did/.test(r.focused ?? "")) throw new Error("the Objects narrowed to the call clicked: " + r.focused);
+  if (!/^ksys_read changed /.test(r.focused ?? "")) throw new Error("the Objects narrowed to the call clicked: " + r.focused);
   // (Zoom: the window at the call in focus, from the chart's head.)
   const zoomTo = [...document.querySelectorAll("#chart-verbs a")].find((x) => x.textContent.startsWith("zoom"));
   r.zoom = zoomTo?.textContent;
@@ -171,7 +172,7 @@
   // (And back to the whole syscall, by the link in its head.)
   document.querySelector("#objects .head a")?.click();
   r.unfocused = head();
-  if (!/^What read by prog\(\d+\) did/.test(r.unfocused ?? "")) throw new Error("the whole syscall again: " + r.unfocused);
+  if (!/^read by prog\(\d+\) changed /.test(r.unfocused ?? "")) throw new Error("the whole syscall again: " + r.unfocused);
   ksee.tab("stack");
   // Your own call: type it, Tab completes the name, Enter makes it.
   const input = document.querySelector(".callform textarea"), key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k }));

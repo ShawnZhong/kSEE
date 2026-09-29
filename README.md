@@ -113,12 +113,16 @@ as it was on asking; the Stack's `current task` is a link to it. The
 Objects tab says what the selected syscall did to the kernel's data (or,
 narrowed on asking, "only …" in its head, one call in it, the last
 clicked; "the whole …" goes back; an example's "What … changed" link
-narrows it too): each
-object it changed that is still there when it returns (as the code
+narrows it too): its head says it in a line (`read by prog(19) changed
+3 objects: file, folio, inode`), then a box per object of the kernel's
+data it changed (as the code
 declares it: `struct file *file in vfs_read`, `struct files_struct
 *prog(19)->files`, `unsigned long nr_inodes`, and by its
-address; a global, with where it is declared, a link to it; not its own
-locals, gone by then, nor the machine's plumbing), each member it changed,
+address; a global, with where it is declared, a link to it; not a
+stack's: a call's locals are the Stack's; nor the machine's plumbing),
+first those it left changed, then, folded to a line, those it left as they
+were (a lock taken and released, a count taken and dropped); in a box, the
+members it left changed first, each member it changed,
 a line a function that changed it in turn, from what to what (`f_mode
 0 → 0x4000001  init_file`, then `0x4000001 → 0x40a801d  do_dentry_open`;
 a pointer, to another object: that one, `fd_array[3]  NULL → f in

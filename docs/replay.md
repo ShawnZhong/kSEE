@@ -122,14 +122,16 @@ per span, a store is printed only where it is shown: as the member it
 wrote (the one its first byte is in: `Types::leaf`), as its type before
 and after (memory as it was). What a call did
 (`objects`) is its stores by object, each to the outermost object holding
-it (a page's refcount is the page's `_refcount.counter`), those still there
-when it returns (not a local of it or of a call it makes: its scratch):
-each member from what it was as the span began to what it is as it ends,
+it (a page's refcount is the page's `_refcount.counter`), the kernel's
+data, not a stack's (a call's locals, and what a pointer reaches on a
+stack, are the Stack's): each member (a store copying several, each of
+them: `Types::leaves`) from what it was as the span began to what it is as it ends,
 and how: a run a function writing it in turn, from what to what (one
 that left it as it was, not; a member no run changed, not); a pointer, the
 object it points to as it ends; and each object under the first that
 points to it then (the members of pointer type, `Types::pointers`, whose
-value is inside another).
+value is inside another, of its group: those left changed, and those left
+as they were, every change undone).
 
 A store with no line of its own (the compiler gave it none, or one past
 its stretch) is on the line its stretch ends on.

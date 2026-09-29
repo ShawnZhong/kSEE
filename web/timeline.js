@@ -165,7 +165,7 @@ export function timeline(app) {
     }
     $("chart-title").textContent = t.title || "the recording";
     const f = t.focus ?? t.home;
-    $("chart-verbs").replaceChildren(...(f ? [" · ", el("a", { textContent: f === t.home ? "zoom" : `zoom to ${f.title}`, title: `the window at ${f.title}, the call in focus (z)`, onclick: zoomFocus })] : []),
+    $("chart-verbs").replaceChildren(...(f ? [" · ", el("a", { textContent: f.a === t.home?.a && f.b === t.home?.b ? "zoom" : `zoom to ${f.title}`, title: `the window at ${f.title}, the call in focus (z)`, onclick: zoomFocus })] : []),
       ...(t.win && (t.win.sa > 0 || t.win.sb < m.steps() - 1) ? [" · ", el("a", { textContent: "whole", title: "the whole recording (x)", onclick: whole })] : []));
   }
   function label(ctx, text, x1, w, y, fill) {

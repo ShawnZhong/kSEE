@@ -1,17 +1,20 @@
 // The Objects: what the syscall selected did to the kernel's data
 // (Machine.objects), or, narrowed to it on asking (its head's "only …",
-// an example's link), one call in it:
-// a box per object it changed that is still there when it returns
-// (declared as the code names them: "struct file *file in vfs_read",
+// an example's link), one call in it: a head saying it in a line ("write
+// changed 2 objects: file, inode"), then a box per object it changed, the
+// kernel's data, not a stack's (a call's locals: the Stack), first those
+// it left changed, then, folded, those it left as they were (a lock taken
+// and released, a count taken and dropped) (declared as the code names them: "struct file *file in vfs_read",
 // "struct files_struct *prog(19)->files"; and by
 // its address, which it is; a global, where it is declared), each
 // member it changed, a line a function that changed it in turn, from
 // what to what ("f_mode  0 → 0x4000001  init_file", then "0x4000001 →
 // 0x40a801d  do_dentry_open"; one left as it was, a count one took and
 // another dropped, dim; click: that write). As a tree: each box under the first that
-// points to it, by that member ("← f_inode"). The whole call, at every
-// moment; at the cursor (a step, the pointer over the timeline), the writes
-// not made yet gray, the run of writes it is in marked.
+// points to it, by that member ("← f_inode"); in a box, the members it
+// left changed first. The whole call, at every moment; at the cursor (a
+// click, a step: not the pointer), the writes not made yet gray, the run
+// of writes it is in marked.
 import { $, el } from "./dom.js";
 
 export function objects(app) {
@@ -71,21 +74,41 @@ export function objects(app) {
     draw();
   }
 
+  // (A box's name, short: its expression, not where it is named.)
+  const short = (n) => n.what.split(" in ")[0];
+
   function render(nodes, w) {
     const title = w.title;
-    if (!nodes.length) return [el("div", { className: "dim head" }, `${title} changed nothing that outlives it`, ...whole(w))];
-    // (As a tree: each box under the one that points to it (Node.under),
-    // from the ones nothing points to; siblings in order.)
-    const order = [];
-    const visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.under?.[0] === k && visit(c, depth + 1)));
-    nodes.forEach((n, k) => n.under == null && visit(k, 0));
-    return [el("div", { className: "dim head" }, `What ${title} did: ${nodes.length} object${nodes.length === 1 ? "" : "s"}`, ...whole(w)),
+    if (!nodes.length) return [el("div", { className: "dim head" }, `${title} changed nothing of the kernel's data`, ...whole(w))];
+    const changed = nodes.filter((n) => n.group === "changed"), same = nodes.filter((n) => n.group === "same");
+    const count = (list) => `${list.length} object${list.length === 1 ? "" : "s"}`;
+    // (The head: what it changed, in a line; what it left as it was.)
+    const head = [changed.length ? `${title} changed ${count(changed)}: ${changed.map(short).join(", ")}` : `${title} left the kernel's data as it was`,
+                  same.length && changed.length ? `; left ${count(same)} as it was` : ""].join("");
+    const out = [el("div", { className: "head" }, head, ...whole(w))];
+    // (Each group as a tree: each box under the one that points to it
+    // (Node.under, of its group), from the ones nothing points to.)
+    const tree = (group) => {
+      const order = [], visit = (k, depth) => (order.push([k, depth]), nodes.forEach((n, c) => n.under?.[0] === k && visit(c, depth + 1)));
+      nodes.forEach((n, k) => n.group === group && n.under == null && visit(k, 0));
       // (One under another: indented, a guide line down its left.)
-      ...order.map(([k, depth]) => {
+      return order.map(([k, depth]) => {
         const b = box(nodes[k], nodes, k);
         if (depth) (b.classList.add("under"), (b.style.marginLeft = `${Math.min(depth, 6) * 18}px`));
         return b;
-      })];
+      });
+    };
+    out.push(...tree("changed"));
+    // (Those left as they were: folded, a line naming them; on asking, their boxes.)
+    if (same.length) {
+      const unfolded = open.has("same");
+      out.push(el("div", { className: "dim head fold" }, el("a", {
+        textContent: `${unfolded ? "▾" : "▸"} left as it was: ${same.map(short).join(", ")}`,
+        title: "changed, then changed back by the end (a lock taken and released, a count taken and dropped)",
+        onclick: () => (unfolded ? open.delete("same") : open.add("same"), (shown = null), draw()) })));
+      if (unfolded) out.push(...tree("same"));
+    }
+    return out;
   }
 
   // An object's box: its name, its type, the member it hangs from; each

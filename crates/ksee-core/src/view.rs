@@ -218,8 +218,13 @@ pub struct Node {
     pub changes: Vec<Diff>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub depth: u32,
-    /// The node it is shown under, and by which of its members: the first
-    /// that points to it as the span ends ("f_inode"), if any.
+    /// What happened to it: "changed" (it ends otherwise than it began:
+    /// what the call did), or "same" (every change undone by the end: a
+    /// lock taken and released, a count taken and dropped).
+    pub group: &'static str,
+    /// The node it is shown under (of its group), and by which of its
+    /// members: the first that points to it as the span ends ("f_inode"),
+    /// if any.
     pub under: Option<(usize, String)>,
 }
 
@@ -1123,30 +1128,33 @@ impl View<'_> {
     }
 
     /// What records `first..=last` (a call's) did to the kernel's data:
-    /// the objects they changed that are still there when the call returns
-    /// (not its scratch: its locals and its callees', gone by then; nor the
-    /// frames or the machine's own variables: the call's plumbing), each
-    /// member from what it was to what it is as the span ends; as a graph,
-    /// by their pointers then. In the order of the calls that name them,
-    /// the outer first (then the first written first).
+    /// the objects they changed, not on a stack (a call's locals, and what
+    /// a pointer reaches there, are the Stack's; nor the machine's own
+    /// variables: the call's plumbing), each member from what it was to
+    /// what it is as the span ends; those that end changed first, then
+    /// those left as they were (Node::group); as a graph, by their pointers
+    /// then. In the order of the calls that name them, the outer first
+    /// (then the first written first).
     pub fn objects(&self, first: usize, last: usize) -> Vec<Node> {
         let types = &self.tables.types;
         let named = self.stores(first, last);
-        let scratch = |r: &Region| r.life.is_some_and(|(a, b)| first <= a && b <= last);
         // (Each object's writes (its region's, and any other's of its
         // address and type), by member, in order; with the member's leaf.)
         let mut nodes: Vec<(Node, Vec<(String, Leaf, Vec<Wrote>)>)> = Vec::new();
         let mut leaves: BTreeMap<(u32, u32, u32), Vec<(String, Option<Leaf>)>> = BTreeMap::new();
         for w in &named.writes {
             let r = &named.regions[w.region as usize];
-            if !matches!(r.kind, "object" | "task" | "local" | "global") || r.size == 0 || scratch(r) {
+            // (The kernel's data, not a stack's: a call's locals, and what a
+            // pointer reaches on a stack, are the Stack's.)
+            if !matches!(r.kind, "object" | "task" | "global") || r.size == 0 || r.life.is_some() {
                 continue;
             }
+            let group = "changed";
             let k = match nodes.iter().position(|(n, _)| n.addr == r.addr && n.id == r.ty) {
                 Some(k) => k,
                 None => {
                     nodes.push((Node { what: r.what.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size, changes: Vec::new(),
-                                       depth: r.depth, under: None }, Vec::new()));
+                                       depth: r.depth, group, under: None }, Vec::new()));
                     nodes.len() - 1
                 }
             };
@@ -1190,12 +1198,24 @@ impl View<'_> {
                 points.push(matches!(types.get(types.resolve(ty)).kind, Kind::Pointer(_)).then(|| mem.read_u32(n.addr.wrapping_add(off))));
                 n.changes.push(Diff { member, before: a, after: z, to: None, runs });
             }
-            (!n.changes.is_empty()).then_some((n, points))
+            if n.changes.is_empty() {
+                return None;
+            }
+            // (Lasting, but every member as it was: its changes undone.)
+            if n.changes.iter().all(|d| d.before == d.after) {
+                n.group = "same";
+            }
+            // (The members it ends with changed first, then those as they were.)
+            let mut both: Vec<(Diff, Option<u32>)> = n.changes.drain(..).zip(points).collect();
+            both.sort_by_key(|(d, _)| d.before == d.after);
+            let points;
+            (n.changes, points) = both.into_iter().unzip();
+            Some((n, points))
         }).collect();
-        // (In the order of the calls that name them, the outer first, as a
-        // call tree reads; within one call, the first written first. The
-        // task first; globals last.)
-        nodes.sort_by_key(|n| n.0.depth);
+        // (What changed, then what was left as it was; in each, in the order of the calls that name them, the outer first,
+        // as a call tree reads; within one call, the first written first.
+        // The task first; globals last.)
+        nodes.sort_by_key(|n| (n.0.group == "same", n.0.depth));
         let (mut nodes, points): (Vec<Node>, Vec<Vec<Option<u32>>>) = nodes.into_iter().unzip();
         // (One name for two (the slabs of two caches a callee named by one
         // parameter): the later numbered: "slab in pfmemalloc_match #2".)
@@ -1208,9 +1228,11 @@ impl View<'_> {
             }
         }
         let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
-        // (Each node's pointers to the others, as memory is as the span ends.)
+        // (Each node's pointers to the others of its group, as memory is as
+        // the span ends: the tree each group is shown as.)
         let links: Vec<Vec<(String, usize)>> = nodes.iter().enumerate().map(|(k, n)| {
-            types.pointers(n.id, 3).into_iter().filter_map(|(member, off)| Some((member, within(mem.read_u32(n.addr.wrapping_add(off))).filter(|&to| to != k)?))).collect()
+            types.pointers(n.id, 3).into_iter().filter_map(|(member, off)| Some((member, within(mem.read_u32(n.addr.wrapping_add(off)))
+                .filter(|&to| to != k && nodes[to].group == n.group)?))).collect()
         }).collect();
         let tos: Vec<Vec<Option<usize>>> = points.iter().enumerate().map(|(k, p)| p.iter().map(|p| p.and_then(within).filter(|&to| to != k)).collect()).collect();
         // (The tree they are shown in, from the ones nothing points to (then
@@ -1553,33 +1575,32 @@ mod tests {
 
     #[test]
     fn the_objects_a_call_wrote_are_a_graph() {
-        // f (1) takes struct s *p (at 4) and has a local struct t y (at frame
-        // 32 + 8: int c, then struct s *link): it stores p->b, y.c, and
-        // y.link, pointing at *p: two nodes, p under y, by its link.
+        // f (1) takes struct s *p (at 4) and struct t *q (at 32: int c, then
+        // struct s *link): it stores p->b, q->c, and q->link, pointing at
+        // *p: two nodes, p under q, by its link.
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
                               "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
-                               T\t4\tstruct\tt\t8\nM\t4\tc\t0\t0\t1\nM\t4\tlink\t32\t0\t3\nP\t1\tf\tp:3\nQ\t1\ty:4:8\n");
+                               T\t4\tstruct\tt\t8\nM\t4\tc\t0\t0\t1\nM\t4\tlink\t32\t0\t3\nT\t5\tptr\t\t4\t4\nP\t1\tf\tp:3,q:5\n");
         let st = |addr, old| Record::Store { addr, size: 4, old: Some(old), line: 0, from: None };
-        let r = [Record::Block { func: 1, n: 0 }, st(8, 1), st(40, 0), st(44, 0)];
+        let r = [Record::Block { func: 1, n: 0 }, st(8, 1), st(32, 0), st(36, 0)];
         let mut args = Args::default();
-        args.push(0, &[4, 32]);
+        args.push(0, &[4, 32, 64]);
         let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], args);
         let mut m = alloc::vec![0u8; 64];
-        (m[8], m[40], m[44]) = (2, 7, 4);
+        (m[8], m[32], m[36]) = (2, 7, 4);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
         let nodes = v.objects(0, 3);
         let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.changes.iter().map(|d| (d.member.clone(), format!("{} → {}", d.before, d.after), d.to)).collect::<Vec<_>>())).collect();
         assert_eq!(got, [("p in f".into(), alloc::vec![("b".into(), "1 → 2".into(), None)]),
-                         ("y in f".into(), alloc::vec![("c".into(), "0 → 7".into(), None), ("link".into(), "NULL → 0x4".into(), Some(0))])]);
-        // (Shown as a tree: p under y, which points to it.)
+                         ("q in f".into(), alloc::vec![("c".into(), "0 → 7".into(), None), ("link".into(), "NULL → 0x4".into(), Some(0))])]);
+        // (Shown as a tree: p under q, which points to it.)
         assert_eq!(nodes.iter().map(|n| n.under.clone()).collect::<Vec<_>>(), [Some((1, "link".into())), None]);
     }
 
     #[test]
-    fn a_calls_scratch_is_not_what_it_did() {
-        // f (1) stores its local int x (at frame 32 + 4), then returns: in
-        // the span of the whole call, x is gone as it ends; in a span
-        // before it returns, x is changed (0 → 7).
+    fn a_calls_locals_are_not_objects() {
+        // f (1) stores its local int x (at frame 32 + 4): the Stack's, not
+        // an object, before it returns as after.
         let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:4\n");
         let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 36, size: 4, old: Some(0), line: 0, from: None }, Record::Return { func: 1, value: 0 }];
         let mut args = Args::default();
@@ -1588,9 +1609,7 @@ mod tests {
         let mut m = alloc::vec![0u8; 64];
         m[36] = 7;
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        assert!(v.objects(0, 2).is_empty());
-        let got: Vec<_> = v.objects(0, 1).into_iter().map(|n| (n.what, n.changes.len())).collect();
-        assert_eq!(got, [("x in f".into(), 1)]);
+        assert!(v.objects(0, 2).is_empty() && v.objects(0, 1).is_empty());
     }
 
     #[test]
@@ -1652,6 +1671,8 @@ mod tests {
         let d = &nodes[0].changes[0];
         let runs: Vec<_> = d.runs.iter().map(|r| (r.at.as_ref().map(|l| l.func.clone()), r.before.clone(), r.after.clone(), r.last)).collect();
         assert_eq!((nodes[0].what.as_str(), d.member.as_str(), d.before.as_str(), d.after.as_str()), ("p in f", "b", "1", "1"));
+        // (Left as it was, in the end: an object of the "same" group.)
+        assert_eq!(nodes[0].group, "same");
         assert_eq!(runs, [(Some("f".into()), "1".into(), "2".into(), 1), (Some("g".into()), "2".into(), "1".into(), 3)]);
     }
 
