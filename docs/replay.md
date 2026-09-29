@@ -110,16 +110,17 @@ runs until the next call: so memory now is memory as the recording ends.
 
 The same index answers "who last wrote this?": the newest store to a range
 at or before the cursor, and the line it was on (where `lines` says the
-task was then); and the stores of a span of records (`stores`), each
-as the member it wrote (the one its first byte is in: `Types::leaf`),
-printed as its type before and after (memory as it was), in
-order, each named as the code names what it hit (a call's pointer
+task was then); and the stores of a span of records (`stores`), in
+order, each by the region it hit, named as the code names it (a call's pointer
 argument to a struct, a local and what a pointer local points to as the
 call ends, the task running and what its pointer members point to, a
 global: "file->f_pos in vfs_read", "prog(19)->files->next_fd" (the task running as the span begins, by its name); what the
 code did not name, by its address). A call's local, its frame, and an
 object a pointer reaches in a frame on the stack, are theirs only while
-that call runs (the slot is another's before and after). What a call did
+that call runs (the slot is another's before and after). Named once
+per span, a store is printed only where it is shown: as the member it
+wrote (the one its first byte is in: `Types::leaf`), as its type before
+and after (memory as it was). What a call did
 (`objects`) is its stores by object, each to the outermost object holding
 it (a page's refcount is the page's `_refcount.counter`), those still there
 when it returns (not a local of it or of a call it makes: its scratch):

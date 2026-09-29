@@ -138,8 +138,8 @@ check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
   // The read's stores, named as the code names what they hit: a call's file, a local of a call in it (at its frame base's offset), a callee's frame; in order.
   const st = m.stores(read.first, read.last);
   check(`the read's stores: ${st.length}, ${[...new Set(st.map((s) => s.what))].slice(0, 5).join("; ")}…`,
-        st.some((s) => /^file in \w+$/.test(s.what) && s.kind === "object" && s.write.member === "f_pos") && st.some((s) => /^(kiocb|iter) in /.test(s.what))
-        && st.some((s) => s.what.startsWith("frame of ")) && st.every((s, k) => k === 0 || st[k - 1].write.i < s.write.i));
+        st.some((s) => /^file in \w+$/.test(s.what) && s.kind === "object" && s.member === "f_pos") && st.some((s) => /^(kiocb|iter) in /.test(s.what))
+        && st.some((s) => s.what.startsWith("frame of ")) && st.every((s, k) => k === 0 || st[k - 1].i < s.i));
 }
 m.memory_at(null);
 // What the read did: its file changed; not its kiocb (on the stack, gone
@@ -246,8 +246,8 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
   const op = m.syscalls().find((s) => s.name === "openat"), stack = m.call_stack(m.first_call("do_sys_openat2", op.first, op.last)), entry = stack.at(-1);
   // (Memory reached through a pointer local, or the task's pointer members, is named too: files->next_fd, through the task's files.)
   const ops = m.stores(op.first, op.last);
-  check(`a store through the task's files is named: ${[...new Set(ops.filter((s) => s.write.member === "next_fd").map((s) => s.what))].join(", ")}`,
-        ops.some((s) => s.write.member === "next_fd" && s.kind === "object"));
+  check(`a store through the task's files is named: ${[...new Set(ops.filter((s) => s.member === "next_fd").map((s) => s.what))].join(", ")}`,
+        ops.some((s) => s.member === "next_fd" && s.kind === "object"));
   // (A call begins at its function's signature line: the callee's frame there, before its first statement.)
   const dso = m.at(m.first_call("do_sys_openat2", op.first, op.last)), dsoDef = m.definition("do_sys_openat2");
   check(`a call begins at its signature: do_sys_openat2 at ${dso?.file}:${dso?.line}, defined at ${dsoDef?.line}`, dso?.line === dsoDef?.line && dso?.file === dsoDef?.file);

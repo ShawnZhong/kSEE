@@ -35,7 +35,7 @@ pub struct Recording {
     pub names: core::cell::RefCell<alloc::collections::BTreeMap<u32, crate::task::Task>>,
     /// The last span's stores, named (View::stores: what Objects and the
     /// source's notes ask again at each moment), by its first and last.
-    pub named: core::cell::RefCell<Option<((usize, usize), alloc::rc::Rc<Vec<crate::view::Stored>>)>>,
+    pub named: core::cell::RefCell<Option<((usize, usize), alloc::rc::Rc<crate::view::Named>)>>,
     /// The stores, indexed (once asked for).
     stores: OnceCell<mem::History>,
 }

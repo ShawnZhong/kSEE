@@ -125,46 +125,66 @@ pub struct Frame {
     pub locals: Option<Vec<Object>>,
 }
 
-/// A write to an object: at record `i`, to its `member` (a path:
-/// "f_path.dentry"; "" the object itself), from `before` to `after` (the
-/// member's value, printed), by the code at `at`.
+/// What a span's stores hit, as the code names it (see View::stores):
+/// `what` ("file in vfs_read", "x in f", "nr_inodes", "prog(19)"; the
+/// address when nothing names it), its `kind` ("task", "object": a struct
+/// a call's argument points to, "global", "machine": one of the machine's
+/// variables, or what its functions name (arch::MACHINE), "frame": the
+/// stack a call used, "local", "var": a variable kept in a wasm local, or
+/// "other": memory nothing names), its type `ty` (0 for none: a frame's
+/// bytes; a var's, the variable's), where it is (`addr`, `size`), for a
+/// call's local or frame (or an object in one) the call's records, its
+/// `life`, and how deep the call that names it is (the task's, 0; a
+/// global's, or memory nothing names, u32::MAX): Objects comes in that
+/// order.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Change {
-    pub i: usize,
-    pub member: String,
-    pub before: String,
-    pub after: String,
-    pub at: Option<Line>,
+pub struct Region {
+    pub what: String,
+    pub kind: &'static str,
+    pub ty: u32,
+    pub addr: u32,
+    pub size: u32,
+    pub life: Option<(usize, usize)>,
+    pub depth: u32,
 }
 
-/// A store in a span of records, as the code names what it hit: `what`
-/// ("file in vfs_read", "x in f", "nr_inodes", "current"; the address when
-/// nothing names it), its `kind` ("task", "object": a struct a call's
-/// argument points to, "global", "machine": one of the machine's
-/// variables, or what its functions name (arch::MACHINE),
-/// "frame": the stack a call used, "local", or "other": memory nothing
-/// names), the object's type `ty` ("" for none; `id` its id), where it is
-/// (`addr`, `size`), and the `write` itself (the member, from what to
-/// what, where).
+/// A span's stores and variable sets, in order, by the regions they hit.
+#[derive(Debug, Default)]
+pub struct Named {
+    pub regions: Vec<Region>,
+    pub writes: Vec<Wrote>,
+}
+
+/// A store or a variable set: at record `i`, to `region`, on line `at`
+/// (Recording::line_at); a variable set's `prev`, the set of the same
+/// variable before it in the span.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Wrote {
+    pub i: usize,
+    pub region: u32,
+    pub at: Option<LineStep>,
+    pub prev: Option<usize>,
+}
+
+/// A store in a span (Machine.stores): at record `i`, to the `member` (a
+/// path: "f_path.dentry"; "" the object itself; "+8" a frame's byte 8) of
+/// `what`, of `kind` (see Region).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Stored {
+    pub i: usize,
     pub what: String,
     pub kind: &'static str,
-    pub ty: String,
-    pub id: u32,
-    pub addr: u32,
-    pub size: u32,
-    pub write: Change,
-    /// For a call's local or frame (or an object in one): the call's
-    /// records, its life.
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub life: Option<(usize, usize)>,
-    /// How deep the call that names it is (the task's, 0; a global's, or
-    /// memory nothing names, u32::MAX): Objects comes in that order.
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub depth: u32,
+    pub member: String,
+}
+
+/// A write, printed: the member it wrote (see Stored), from `before` to
+/// `after`.
+#[derive(Debug, Clone, PartialEq)]
+struct Change {
+    member: String,
+    before: String,
+    after: String,
 }
 
 /// What a source line stored (or set) by a moment (View::notes): its
@@ -810,32 +830,60 @@ impl View<'_> {
         u64::from_le_bytes(new)
     }
 
-    /// Store `i` as a change to the object of type `ty` at `addr`.
-    fn change(&self, addr: u32, ty: u32, i: usize) -> Change {
-        let types = &self.tables.types;
-        let Record::Store { addr: a, old, .. } = self.rec.records[i] else { unreachable!() };
-        let at = self.rec.line_at(self.tables, i).map(|s| self.line_only(&s));
+    /// The member of `r` the store at record `i` wrote (none for a variable
+    /// set): its path and, for a typed region, the leaf there (types::leaf:
+    /// its type, offset, bits).
+    fn member(&self, r: &Region, i: usize) -> (String, Option<(u32, u32, Option<(u32, u32)>)>) {
+        let Record::Store { addr, .. } = self.rec.records[i] else { return (String::new(), None) };
         // (No type, a frame's bytes: the store as it is, at its offset.)
-        if ty == 0 {
-            let member = if a == addr { String::new() } else { format!("+{}", a.wrapping_sub(addr)) };
-            return Change { i, member, before: num(old), after: num(self.wrote(i)), at };
+        if r.ty == 0 {
+            return (if addr == r.addr { String::new() } else { format!("+{}", addr.wrapping_sub(r.addr)) }, None);
         }
-        let (member, leaf, off, bits) = types.leaf(ty, a.max(addr) - addr);
-        let (b0, bn) = bits.unwrap_or((0, 0));
-        let value = |at: usize| {
-            let mut v = String::new();
-            types.print(&self.rec.memory_at(self.now, at), addr + off, leaf, b0, bn, &mut v);
-            v
-        };
-        Change { i, member, before: value(i.saturating_sub(1)), after: value(i), at }
+        let (path, leaf, off, bits) = self.tables.types.leaf(r.ty, addr.max(r.addr) - r.addr);
+        (path, Some((leaf, off, bits)))
     }
 
-    /// The stores in records `first..=last` (a call's), in order, each as
-    /// the code names what it hit (see Stored): a call's pointer argument
-    /// to a struct, a local, the task running, a callee's frame (from its
-    /// frame base up to its caller's: the stack it used beyond its named
-    /// locals; no type), a global of the kernel's; else by its address.
-    pub fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Vec<Stored>> {
+    /// Leaf `leaf` of region `r` (see member) as it was after record `at`,
+    /// printed.
+    fn value(&self, r: &Region, (leaf, off, bits): (u32, u32, Option<(u32, u32)>), at: usize) -> String {
+        let (b0, bn) = bits.unwrap_or((0, 0));
+        let mut v = String::new();
+        self.tables.types.print(&self.rec.memory_at(self.now, at), r.addr + off, leaf, b0, bn, &mut v);
+        v
+    }
+
+    /// Variable set `i` (a Var record)'s value, printed.
+    fn var_value(&self, i: usize) -> String {
+        let Record::Var { var, value, .. } = self.rec.records[i] else { return String::new() };
+        let v = self.rec.calls.func_at(i).and_then(|f| self.tables.vars.get(&(f, var)));
+        v.and_then(|v| self.var_object(v, value, self.now)?.value).unwrap_or_default()
+    }
+
+    /// Write `w` of `named`, printed: the member, from what to what.
+    fn change(&self, named: &Named, w: &Wrote) -> Change {
+        let r = &named.regions[w.region as usize];
+        if r.kind == "var" {
+            let before = w.prev.map_or_else(|| "(uninitialized)".into(), |p| self.var_value(p));
+            return Change { member: String::new(), before, after: self.var_value(w.i) };
+        }
+        let (member, leaf) = self.member(r, w.i);
+        let (before, after) = match leaf {
+            Some(leaf) => (self.value(r, leaf, w.i.saturating_sub(1)), self.value(r, leaf, w.i)),
+            None => {
+                let Record::Store { old, .. } = self.rec.records[w.i] else { unreachable!() };
+                (num(old), num(self.wrote(w.i)))
+            }
+        };
+        Change { member, before, after }
+    }
+
+    /// The stores in records `first..=last` (a call's), and the variables
+    /// set there, in order, each by what the code names that it hit (see
+    /// Region): a call's pointer argument to a struct, a local, the task
+    /// running, a callee's frame (from its frame base up to its caller's:
+    /// the stack it used beyond its named locals; no type), a global of
+    /// the kernel's; else by its address.
+    pub fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Named> {
         if let Some((span, got)) = &*self.rec.named.borrow() && *span == (first, last) {
             return got.clone();
         }
@@ -844,35 +892,50 @@ impl View<'_> {
         got
     }
 
+    /// The stores in records `first..=last` (see stores), each with what it
+    /// hit and the member.
+    pub fn stored(&self, first: usize, last: usize) -> Vec<Stored> {
+        let named = self.stores(first, last);
+        named.writes.iter().map(|w| {
+            let r = &named.regions[w.region as usize];
+            Stored { i: w.i, what: r.what.clone(), kind: r.kind, member: self.member(r, w.i).0 }
+        }).collect()
+    }
+
     /// What each line of `file` stored (or set) in records `first..=last`
     /// by record `cur`: its last, and how many (the source's notes), each
     /// said short (the member, or the variable, and the change: the line
     /// says the rest) and in full.
     pub fn notes(&self, first: usize, last: usize, file: &str, cur: usize) -> Vec<Note> {
-        let mut by: BTreeMap<u32, Note> = BTreeMap::new();
-        for s in self.stores(first, last).iter().filter(|s| s.write.i <= cur) {
-            let Some(at) = s.write.at.as_ref().filter(|at| at.file == file) else { continue };
-            let x = &s.write;
-            let join = if x.member.starts_with('+') { "" } else if s.kind == "object" { "->" } else { "." };
+        let named = self.stores(first, last);
+        // (Each line's last write, and how many.)
+        let files: Vec<u32> = (0..self.tables.files.len() as u32).filter(|&k| self.tables.files[k as usize] == file).collect();
+        let mut by: BTreeMap<u32, (&Wrote, usize)> = BTreeMap::new();
+        for w in named.writes.iter().take_while(|w| w.i <= cur) {
+            let Some(at) = w.at.filter(|at| files.contains(&at.loc.file)) else { continue };
+            let n = by.get(&at.loc.line).map_or(0, |b| b.1) + 1;
+            by.insert(at.loc.line, (w, n));
+        }
+        by.into_iter().map(|(line, (w, n))| {
+            let (r, x) = (&named.regions[w.region as usize], self.change(&named, w));
+            let join = if x.member.starts_with('+') { "" } else if r.kind == "object" { "->" } else { "." };
             // (The member after the name, the function it is in last: "filp->f_pos in vfs_read".)
-            let (expr, within) = s.what.split_once(" in ").map_or((s.what.as_str(), String::new()), |(e, f)| (e, format!(" in {f}")));
+            let (expr, within) = r.what.split_once(" in ").map_or((r.what.as_str(), String::new()), |(e, f)| (e, format!(" in {f}")));
             let full = format!("{expr}{}{within}: {} → {}", if x.member.is_empty() { String::new() } else { format!("{join}{}", x.member) }, x.before, x.after);
             let name = if x.member.is_empty() { expr.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(expr) } else { &x.member };
-            let n = by.get(&at.line).map_or(0, |b| b.n) + 1;
-            by.insert(at.line, Note { line: at.line, i: x.i, n, short: format!("{name}: {} → {}", x.before, x.after), full });
-        }
-        by.into_values().collect()
+            Note { line, i: w.i, n, short: format!("{name}: {} → {}", x.before, x.after), full }
+        }).collect()
     }
 
     /// (The work of stores: see it.)
-    fn name_stores(&self, first: usize, last: usize) -> Vec<Stored> {
+    fn name_stores(&self, first: usize, last: usize) -> Named {
         let (t, types) = (self.tables, &self.tables.types);
         // (The objects: what (as the code names it: "file in vfs_read"),
         // type, address, size, and for a call's local or frame its life (the
         // call's records: its slots are other calls' before and after). The
         // task first.)
         let task = self.rec.tasks.get(first).copied().unwrap_or(0);
-        let mut regions: Vec<(String, &'static str, u32, u32, u32, Option<(usize, usize)>, u32)> = Vec::new();
+        let mut regions: Vec<Region> = Vec::new();
         let mut seen = alloc::collections::BTreeSet::new();
         // (Named at record `by`: by the call there, its depth.)
         let mut add = |what: String, kind: &'static str, ty: u32, addr: u32, size: Option<u32>, call: Option<usize>, by: Option<usize>| {
@@ -880,7 +943,7 @@ impl View<'_> {
             if addr != 0 && seen.insert((addr, ty, call)) {
                 let life = call.map(|c| (c, self.rec.calls.call_end(c).unwrap_or(usize::MAX)));
                 let depth = by.and_then(|i| self.rec.calls.call_at(i)).map_or(0, |c| c.depth);
-                regions.push((what, kind, ty, addr, size.unwrap_or_else(|| types.size_of(ty)), life, depth));
+                regions.push(Region { what, kind, ty, addr, size: size.unwrap_or_else(|| types.size_of(ty)), life, depth });
             }
         };
         if let Some(ty) = types.find(arch::TASK) {
@@ -917,57 +980,52 @@ impl View<'_> {
                 c = parent;
             }
         };
-        for i in first..=last.min(records.len().saturating_sub(1)) {
-            match records[i] {
-                Record::Block { func, n: 0 } => {
-                    let Some((f, (words, frame))) = t.functions.get(&func).zip(args.get(i)) else { continue };
-                    // (What the machine's own functions name, its: the call's plumbing.)
-                    let machine = t.file(f.loc).starts_with(arch::MACHINE);
-                    let kind = |k: &'static str| if machine { "machine" } else { k };
-                    // (Its frame: up to its caller's, if the caller is known.)
-                    let caller = calls.call_from(i).and_then(|c| c.parent).and_then(|p| args.get(calls.calls[p as usize].first));
-                    if let Some((_, caller)) = caller && caller > frame {
-                        add(format!("frame of {}", f.name), "frame", 0, frame, Some(caller - frame), Some(i), Some(i));
-                    }
-                    for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
-                        let v = v as u32;
-                        if let Some(to) = types.struct_target(*ty) {
-                            add(format!("{pname} in {}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
-                        }
-                    }
-                    for (var, ty, off) in types.locals.get(&func).into_iter().flatten().filter_map(|(v, t, o)| Some((v, t, (*o)?))) {
-                        add(format!("{var} in {}", f.name), kind("local"), *ty, frame.wrapping_add(off), None, Some(i), Some(i));
-                        // (A local pointing at a struct: that too ("files->next_fd"
-                        // through `struct files_struct *files = current->files`),
-                        // where it points as the call ends.)
-                        if let Some(to) = types.struct_target(*ty) {
-                            let end = self.rec.calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
-                            let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
-                            add(format!("{var} in {}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
-                        }
-                    }
-                    // (One the code keeps in a wasm local, pointing at a
-                    // struct (Record::Var): where it points as the call
-                    // ends, its last value; in the order the code first
-                    // sets them: the call's own filp names the file before
-                    // an inlined callee's file.)
-                    let end = calls.call_end(i).unwrap_or(last).min(last_record(self.rec));
-                    let mut values: Vec<(&Var, u32)> = Vec::new();
-                    for j in calls.vars_of(i, end) {
-                        if let Record::Var { var, value, .. } = records[j] && let Some(v) = t.vars.get(&(func, var)) {
-                            match values.iter_mut().find(|(w, _)| w.function == v.function && w.name == v.name) {
-                                Some(w) => w.1 = value as u32,
-                                None => values.push((v, value as u32)),
-                            }
-                        }
-                    }
-                    for (v, value) in values {
-                        if let Some(to) = self.var_ty(v).and_then(|ty| types.struct_target(ty)) {
-                            add(format!("{} in {}", v.name, v.function), kind("object"), to, value, None, frame_of(i, value), Some(i));
-                        }
+        let last = last.min(last_record(self.rec));
+        for i in first..=last {
+            let Record::Block { func, n: 0 } = records[i] else { continue };
+            let Some((f, (words, frame))) = t.functions.get(&func).zip(args.get(i)) else { continue };
+            // (What the machine's own functions name, its: the call's plumbing.)
+            let machine = t.file(f.loc).starts_with(arch::MACHINE);
+            let kind = |k: &'static str| if machine { "machine" } else { k };
+            // (Its frame: up to its caller's, if the caller is known.)
+            let caller = calls.call_from(i).and_then(|c| c.parent).and_then(|p| args.get(calls.calls[p as usize].first));
+            if let Some((_, caller)) = caller && caller > frame {
+                add(format!("frame of {}", f.name), "frame", 0, frame, Some(caller - frame), Some(i), Some(i));
+            }
+            for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
+                let v = v as u32;
+                if let Some(to) = types.struct_target(*ty) {
+                    add(format!("{pname} in {}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
+                }
+            }
+            // (Where its pointers point as the call ends.)
+            let end = calls.call_end(i).unwrap_or(last).min(last);
+            for (var, ty, off) in types.locals.get(&func).into_iter().flatten().filter_map(|(v, t, o)| Some((v, t, (*o)?))) {
+                add(format!("{var} in {}", f.name), kind("local"), *ty, frame.wrapping_add(off), None, Some(i), Some(i));
+                // (A local pointing at a struct: that too ("files->next_fd"
+                // through `struct files_struct *files = current->files`).)
+                if let Some(to) = types.struct_target(*ty) {
+                    let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
+                    add(format!("{var} in {}", f.name), kind("object"), to, v, None, frame_of(i, v), Some(i));
+                }
+            }
+            // (One the code keeps in a wasm local, pointing at a struct
+            // (Record::Var): its last value; in the order the code first
+            // sets them: the call's own filp names the file before an
+            // inlined callee's file.)
+            let mut values: Vec<(&Var, u32)> = Vec::new();
+            for j in calls.vars_of(i, end) {
+                if let Record::Var { var, value, .. } = records[j] && let Some(v) = t.vars.get(&(func, var)) {
+                    match values.iter_mut().find(|(w, _)| w.function == v.function && w.name == v.name) {
+                        Some(w) => w.1 = value as u32,
+                        None => values.push((v, value as u32)),
                     }
                 }
-                _ => {}
+            }
+            for (v, value) in values {
+                if let Some(to) = self.var_ty(v).and_then(|ty| types.struct_target(ty)) {
+                    add(format!("{} in {}", v.name, v.function), kind("object"), to, value, None, frame_of(i, value), Some(i));
+                }
             }
         }
         // (The kernel's globals, by address, for the stores nothing else holds.)
@@ -978,46 +1036,59 @@ impl View<'_> {
             let k = globals.partition_point(|g| g.0 <= addr);
             globals[..k].iter().rev().take(8).find(|g| addr < g.0.saturating_add(g.1)).copied()
         };
-        // (Each store to the outermost object holding its first byte.)
-        let mut out = Vec::new();
-        // (The regions by address: a store's are those starting at most the
+        // (Each store to the outermost region holding its first byte. The
+        // regions by address: a store's are those starting at most the
         // largest one's size below it.)
         let mut by_start: Vec<usize> = (0..regions.len()).collect();
-        by_start.sort_unstable_by_key(|&k| regions[k].3);
-        let widest = regions.iter().map(|r| r.4).max().unwrap_or(0);
+        by_start.sort_unstable_by_key(|&k| regions[k].addr);
+        let widest = regions.iter().map(|r| r.size).max().unwrap_or(0).max(1);
+        // (Regions of their own, once each: a global, an address nothing names.)
+        let mut own: BTreeMap<u32, u32> = BTreeMap::new();
+        let mut writes = Vec::new();
         for &i in self.rec.stores_between(first, last) {
             let Record::Store { addr, .. } = records[i] else { continue };
-            let end = by_start.partition_point(|&k| regions[k].3 <= addr);
-            // (The outermost: an object inside another (a page's refcount, the
-            // atomic_t a callee names) is the other's member; a frame only
-            // if nothing else holds it; of equal ones, the first named.)
-            let hit = by_start[..end].iter().rev().take_while(|&&k| addr - regions[k].3 < widest.max(1))
-                .filter(|&&k| addr < regions[k].3.saturating_add(regions[k].4) && regions[k].5.is_none_or(|(a, b)| a <= i && i <= b))
-                .min_by_key(|&&k| (regions[k].1 == "frame", core::cmp::Reverse(regions[k].4), k)).map(|&k| regions[k].clone())
-                .or_else(|| global_at(addr).map(|(gaddr, size, name, ty)| {
-                    let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
-                    (name.into(), if machine { "machine" } else { "global" }, types.resolve(ty), gaddr, size, None, u32::MAX)
-                }));
-            out.push(match hit {
-                Some((what, kind, ty, base, size, life, depth)) => Stored { what, kind, ty: types.name(ty), id: ty, addr: base, size, write: self.change(base, ty, i), life, depth },
-                None => Stored { what: format!("{addr:#x}"), kind: "other", ty: String::new(), id: 0, addr, size: 0, write: self.change(addr, 0, i), life: None, depth: u32::MAX },
+            let end = by_start.partition_point(|&k| regions[k].addr <= addr);
+            // (The outermost: an object inside another (a page's refcount,
+            // the atomic_t a callee names) is the other's member; a frame
+            // only if nothing else holds it; of equal ones, the first named.)
+            let hit = by_start[..end].iter().rev().take_while(|&&k| addr - regions[k].addr < widest).copied()
+                .filter(|&k| addr < regions[k].addr.saturating_add(regions[k].size) && regions[k].life.is_none_or(|(a, b)| a <= i && i <= b))
+                .min_by_key(|&k| (regions[k].kind == "frame", core::cmp::Reverse(regions[k].size), k));
+            let region = match hit {
+                Some(k) => k as u32,
+                None => {
+                    let r = match global_at(addr) {
+                        Some((gaddr, size, name, ty)) => {
+                            let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
+                            Region { what: name.into(), kind: if machine { "machine" } else { "global" }, ty: types.resolve(ty), addr: gaddr, size, life: None, depth: u32::MAX }
+                        }
+                        None => Region { what: format!("{addr:#x}"), kind: "other", ty: 0, addr, size: 0, life: None, depth: u32::MAX },
+                    };
+                    *own.entry(r.addr).or_insert_with(|| {
+                        regions.push(r);
+                        regions.len() as u32 - 1
+                    })
+                }
+            };
+            writes.push(Wrote { i, region, at: self.rec.line_at(t, i), prev: None });
+        }
+        // (And each variable kept in a wasm local, as the code sets it: from
+        // its value before, in its call, to its value then.)
+        // (Each call's variable's region (none: of no type known), and its last set.)
+        let mut vars: BTreeMap<(usize, u32), (Option<u32>, Option<usize>)> = BTreeMap::new();
+        for i in first..=last {
+            let Record::Var { var, .. } = records[i] else { continue };
+            let Some(c) = calls.call_at(i) else { continue };
+            let (region, prev) = vars.entry((c.first, var)).or_insert_with(|| {
+                let v = t.vars.get(&(c.func, var));
+                let r = v.and_then(|v| Some(Region { what: format!("{} in {}", v.name, v.function), kind: "var", ty: self.var_ty(v)?, addr: 0, size: 0, life: None, depth: c.depth }));
+                (r.map(|r| (regions.push(r), regions.len() as u32 - 1).1), None)
             });
+            let Some(region) = *region else { continue };
+            writes.push(Wrote { i, region, at: self.rec.line_at(t, i), prev: prev.replace(i) });
         }
-        // (And each variable kept in a wasm local, as the code sets it:
-        // from its value before, in its call, to its value then.)
-        let mut before: BTreeMap<(usize, u32), String> = BTreeMap::new();
-        for i in first..=last.min(records.len().saturating_sub(1)) {
-            let Record::Var { var, value, .. } = records[i] else { continue };
-            let Some((c, depth, v)) = calls.call_at(i).and_then(|c| Some((c.first, c.depth, t.vars.get(&(c.func, var))?))) else { continue };
-            let Some(o) = self.var_object(v, value, self.now) else { continue };
-            let after = o.value.clone().unwrap_or_default();
-            let was = before.insert((c, var), after.clone()).unwrap_or_else(|| "(uninitialized)".into());
-            let at = self.rec.line_at(t, i).map(|s| self.line_only(&s));
-            out.push(Stored { what: format!("{} in {}", v.name, v.function), kind: "var", ty: o.ty, id: 0, addr: 0, size: 0,
-                              write: Change { i, member: String::new(), before: was, after, at }, life: None, depth });
-        }
-        out.sort_by_key(|s| s.write.i);
-        out
+        writes.sort_by_key(|w| w.i);
+        Named { regions, writes }
     }
 
     /// What records `first..=last` (a call's) did to the kernel's data:
@@ -1029,24 +1100,35 @@ impl View<'_> {
     /// the outer first (then the first written first).
     pub fn objects(&self, first: usize, last: usize) -> Vec<Node> {
         let types = &self.tables.types;
-        // (Each object's writes, by member, in order.)
-        let mut nodes: Vec<(Node, Vec<(String, Vec<Change>)>)> = Vec::new();
-        let scratch = |s: &Stored| s.life.is_some_and(|(a, b)| first <= a && b <= last);
-        let all = self.stores(first, last);
-        let stores: Vec<&Stored> = all.iter().filter(|s| matches!(s.kind, "object" | "task" | "local" | "global") && s.size > 0 && !scratch(s)).collect();
-        for s in stores.into_iter().cloned() {
-            let k = match nodes.iter().position(|(n, _)| n.addr == s.addr && n.id == s.id) {
+        let named = self.stores(first, last);
+        let scratch = |r: &Region| r.life.is_some_and(|(a, b)| first <= a && b <= last);
+        // (Each object's writes (its region's, and any other's of its
+        // address and type), by member, in order; with the member's leaf.)
+        let mut nodes: Vec<(Node, Vec<(String, (u32, u32, Option<(u32, u32)>), Vec<Wrote>)>)> = Vec::new();
+        let mut leaves: BTreeMap<(u32, u32), (String, Option<(u32, u32, Option<(u32, u32)>)>)> = BTreeMap::new();
+        for w in &named.writes {
+            let r = &named.regions[w.region as usize];
+            if !matches!(r.kind, "object" | "task" | "local" | "global") || r.size == 0 || scratch(r) {
+                continue;
+            }
+            let k = match nodes.iter().position(|(n, _)| n.addr == r.addr && n.id == r.ty) {
                 Some(k) => k,
                 None => {
-                    nodes.push((Node { what: s.what, kind: s.kind, ty: s.ty, id: s.id, addr: s.addr, size: s.size, changes: Vec::new(),
-                                       depth: s.depth, under: None }, Vec::new()));
+                    nodes.push((Node { what: r.what.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size, changes: Vec::new(),
+                                       depth: r.depth, under: None }, Vec::new()));
                     nodes.len() - 1
                 }
             };
+            // (A store's member, once per address.)
+            let Record::Store { addr, .. } = self.rec.records[w.i] else { continue };
+            let (member, leaf) = leaves.entry((w.region, addr)).or_insert_with(|| self.member(r, w.i)).clone();
             let members = &mut nodes[k].1;
-            match members.iter_mut().find(|(m, _)| *m == s.write.member) {
-                Some((_, w)) => w.push(s.write),
-                None => members.push((s.write.member.clone(), alloc::vec![s.write])),
+            match members.iter_mut().find(|(m, _, _)| *m == member) {
+                Some((_, _, ws)) => ws.push(*w),
+                None => {
+                    let Some(leaf) = leaf else { continue };
+                    members.push((member, leaf, alloc::vec![*w]));
+                }
             }
         }
         // (Each member's changes; one only ever written as it was (memory
@@ -1054,29 +1136,27 @@ impl View<'_> {
         // where it points as the span ends.)
         let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
         let mut nodes: Vec<(Node, Vec<Option<u32>>)> = nodes.into_iter().filter_map(|(mut n, members)| {
+            let r = Region { what: String::new(), kind: n.kind, ty: n.id, addr: n.addr, size: n.size, life: None, depth: n.depth };
             let mut points = Vec::new();
-            for (member, w) in members {
-                let (a, z) = (&w[0], &w[w.len() - 1]);
+            for (member, leaf, writes) in members {
+                let before = |i: usize| self.value(&r, leaf, i.saturating_sub(1));
+                let after = |i: usize| self.value(&r, leaf, i);
                 // (A run: one function's writes in a row; one that left it
                 // as it was, not.)
+                let func = |w: &Wrote| w.at.and_then(|s| self.tables.functions.get(&s.func)).map(|f| f.name.as_str());
                 let mut runs: Vec<Run> = Vec::new();
-                for x in &w {
-                    let func = x.at.as_ref().map(|l| l.func.as_str());
-                    match runs.last_mut() {
-                        Some(r) if r.at.as_ref().map(|l| l.func.as_str()) == func => {
-                            (r.after, r.writes, r.last, r.at) = (x.after.clone(), r.writes + 1, x.i, x.at.clone());
-                        }
-                        _ => runs.push(Run { before: x.before.clone(), after: x.after.clone(), writes: 1, last: x.i, at: x.at.clone() }),
-                    }
+                for run in writes.chunk_by(|a, b| func(a) == func(b)) {
+                    let (a, z) = (run[0], run[run.len() - 1]);
+                    runs.push(Run { before: before(a.i), after: after(z.i), writes: run.len(), last: z.i, at: z.at.map(|s| self.line_only(&s)) });
                 }
+                let (a, z) = (runs[0].before.clone(), runs.last().expect("a run").after.clone());
                 runs.retain(|r| r.before != r.after);
                 if runs.is_empty() {
                     continue;
                 }
-                let Record::Store { addr, .. } = self.rec.records[z.i] else { continue };
-                let (_, leaf, off, _) = types.leaf(n.id, addr.wrapping_sub(n.addr));
-                points.push(matches!(types.get(types.resolve(leaf)).kind, Kind::Pointer(_)).then(|| mem.read_u32(n.addr.wrapping_add(off))));
-                n.changes.push(Diff { member, before: a.before.clone(), after: z.after.clone(), to: None, runs });
+                let (ty, off, _) = leaf;
+                points.push(matches!(types.get(types.resolve(ty)).kind, Kind::Pointer(_)).then(|| mem.read_u32(n.addr.wrapping_add(off))));
+                n.changes.push(Diff { member, before: a, after: z, to: None, runs });
             }
             (!n.changes.is_empty()).then_some((n, points))
         }).collect();
@@ -1315,6 +1395,15 @@ mod tests {
         }
     }
 
+    /// Records `first..=last`'s writes: (record, what, kind, member, before, after).
+    fn writes(v: &View, first: usize, last: usize) -> Vec<(usize, String, &'static str, String, String, String)> {
+        let n = v.stores(first, last);
+        n.writes.iter().map(|w| {
+            let (r, c) = (&n.regions[w.region as usize], v.change(&n, w));
+            (w.i, r.what.clone(), r.kind, c.member, c.before, c.after)
+        }).collect()
+    }
+
     #[test]
     fn a_variable_in_a_wasm_local_has_its_last_value() {
         // f (1) keeps int x (variable 0, a local: no offset) in a wasm
@@ -1348,16 +1437,19 @@ mod tests {
 
     #[test]
     fn a_store_is_a_change_to_its_member() {
-        // struct s { int a; int b; } at 4: record 1 stores b (2, was 1),
-        // record 3 a byte of a (5): each a change to its member.
-        let t = Tables::parse("", "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\n");
-        let r = [Record::Block { func: 9, n: 1 }, Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None },
+        // struct s { int a; int b; } at 4 (f's argument p): record 1 stores
+        // b (2, was 1), record 3 a byte of a (5): each a change to its member.
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t9\tf\t0:1\t0\n",
+                              "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t9\tf\tp:3\n");
+        let r = [Record::Block { func: 9, n: 0 }, Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None },
                  Record::Block { func: 9, n: 1 }, Record::Store { addr: 5, size: 1, old: 0, line: 0, from: None }];
-        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], Args::default());
+        let mut args = Args::default();
+        args.push(0, &[4, 64]);
+        let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], args);
         let mut m = alloc::vec![0u8; 16];
         (m[8], m[5]) = (2, 5);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let got: Vec<_> = [1, 3].map(|i| v.change(4, 2, i)).into_iter().map(|c| (c.i, c.member, c.before, c.after)).collect();
+        let got: Vec<_> = writes(&v, 0, 3).into_iter().map(|(i, _, _, member, before, after)| (i, member, before, after)).collect();
         assert_eq!(got, [(1, "b".into(), "1".into(), "2".into()), (3, "a".into(), "0".into(), "1280".into())]);
     }
 
@@ -1383,7 +1475,7 @@ mod tests {
         (m[8], m[36], m[20], m[100]) = (2, 7, 9, 5);
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
         // (The last, to g's frame after g returned: g's no more.)
-        let got: Vec<_> = v.stores(0, 7).iter().map(|s| (s.what.clone(), s.kind, s.write.member.clone(), s.write.after.clone())).collect();
+        let got: Vec<_> = writes(&v, 0, 7).into_iter().map(|(_, what, kind, member, _, after)| (what, kind, member, after)).collect();
         assert_eq!(got, [("p in f".into(), "object", "b".into(), "2".into()), ("x in f".into(), "local", "".into(), "7".into()),
                          ("frame of g".into(), "frame", "+4".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into()),
                          ("0x15".into(), "other", "".into(), "0".into())]);
@@ -1402,7 +1494,7 @@ mod tests {
         let mut m = alloc::vec![0u8; 128];
         m[8] = 2;
         let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-        let got: Vec<_> = v.stores(0, 2).iter().map(|s| (s.what.clone(), s.write.member.clone(), s.write.after.clone())).collect();
+        let got: Vec<_> = writes(&v, 0, 2).into_iter().map(|(_, what, _, member, _, after)| (what, member, after)).collect();
         assert_eq!(got, [("q in f".into(), "".into(), "0x4".into()), ("q in f".into(), "b".into(), "2".into())]);
     }
 
