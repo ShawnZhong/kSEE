@@ -156,6 +156,12 @@
   ksee.tab("objects");
   r.focused = document.querySelector("#objects .head")?.textContent;
   if (!/^What ksys_read did/.test(r.focused ?? "")) throw new Error("the Objects of the call clicked: " + r.focused);
+  // (Zoom: the window at the call in focus, from the chart's head.)
+  const zoomTo = [...document.querySelectorAll("#chart-verbs a")].find((x) => x.textContent.startsWith("zoom"));
+  r.zoom = zoomTo?.textContent;
+  if (r.zoom !== "zoom to ksys_read") throw new Error("zoom to the call in focus: " + r.zoom);
+  zoomTo.click();
+  if (![...document.querySelectorAll("#chart-verbs a")].some((x) => x.textContent === "whole")) throw new Error("zoomed: no way back to the whole recording");
   // (And back to the whole syscall, by the link in its head.)
   document.querySelector("#objects .head a")?.click();
   r.unfocused = document.querySelector("#objects .head")?.textContent;

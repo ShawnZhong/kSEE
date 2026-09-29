@@ -14,7 +14,7 @@
 // show that moment while the pointer is there; click to put the
 // cursor there and for what it did (the focus: Objects; a syscall: selected
 // too, its records, from entry to exit, the lines to step through);
-// double-click a call for the window at it. Click or
+// "zoom" (z) for the window at the call in focus. Click or
 // drag the overview to move the window. Find a function (the box in the
 // header, or /): Enter goes to its next call after the cursor, Shift+Enter
 // to the one before; its calls are marked on the overview.
@@ -164,8 +164,9 @@ export function timeline(app) {
       sctx.fillRect(x(cur) - 1, 0, 2, STRIP);
     }
     $("chart-title").textContent = t.title || "the recording";
-    $("chart-verbs").replaceChildren(...(t.home ? [" · ", el("a", { textContent: "zoom", title: "the window at the selection (z)", onclick: zoomHome })] : []),
-      ...(t.win && (t.win.sa > 0 || t.win.sb < m.steps() - 1) ? [" · ", el("a", { textContent: "whole", title: "the whole recording (x; double-click empty chart)", onclick: whole })] : []));
+    const f = t.focus ?? t.home;
+    $("chart-verbs").replaceChildren(...(f ? [" · ", el("a", { textContent: f === t.home ? "zoom" : `zoom to ${f.title}`, title: `the window at ${f.title}, the call in focus (z)`, onclick: zoomFocus })] : []),
+      ...(t.win && (t.win.sa > 0 || t.win.sb < m.steps() - 1) ? [" · ", el("a", { textContent: "whole", title: "the whole recording (x)", onclick: whole })] : []));
   }
   function label(ctx, text, x1, w, y, fill) {
     if (w < 24) return;
@@ -240,7 +241,7 @@ export function timeline(app) {
   chart.onkeydown = (e) => {
     if (!t.win) return;
     const mid = t.cursor != null && t.cursor >= t.win.a && t.cursor <= t.win.b ? m.step_of(t.cursor) : (t.win.sa + t.win.sb) / 2;
-    const act = { w: () => zoom(mid, -0.25), s: () => zoom(mid, 0.25), a: () => pan(-W() / 8), d: () => pan(W() / 8), z: zoomHome, x: whole }[e.key.toLowerCase()];
+    const act = { w: () => zoom(mid, -0.25), s: () => zoom(mid, 0.25), a: () => pan(-W() / 8), d: () => pan(W() / 8), z: zoomFocus, x: whole }[e.key.toLowerCase()];
     if (!act) return;
     e.preventDefault();
     act();
@@ -345,13 +346,6 @@ export function timeline(app) {
     go(c.i);
     app.selectCall(first, inl ? iname(inl - 1) : null);
   };
-  chart.ondblclick = (e) => {
-    // The window at the call there, from its first record to its return.
-    // (Empty chart: the whole recording again.)
-    const { c, d } = hit(e), [, first] = c?.frames[d] ?? [];
-    if (first == null) return whole();
-    setWindow(...pad({ a: first, b: m.call_end(first) ?? t.n - 1 }));
-  };
   // The call the tabs say what it did (Objects, the source's notes): the
   // one from record `first`, called `title`, its records from its first
   // to where it returns (found again after a snapshot, by id).
@@ -363,12 +357,14 @@ export function timeline(app) {
     };
     t.focus = t.focusAt();
     app.outlined?.();
+    draw();
   }
   // The focus back on the selection (the syscall selected).
   function unfocus() {
     t.focusAt = t.where;
     t.focus = t.home;
     app.outlined?.();
+    draw();
   }
   let overDrag = false;
   const overMove = (e) => {
@@ -415,7 +411,7 @@ export function timeline(app) {
   // Select records `where()` gives ({ a, b, task }: asked again after each
   // snapshot, as records move), called `title`: the window at them.
   // The window stays as it is (the whole recording by default: zooming is
-  // asked for, `z` or "zoom"), unless the selection is not in it.
+  // asked for, `z` or "zoom": see zoomFocus), unless the selection is not in it.
   function selectWindow(where, title) {
     t.depth = 1;
     t.where = where;
@@ -424,8 +420,12 @@ export function timeline(app) {
     if (t.home && t.win && (t.home.a < t.win.a || t.home.b > t.win.b)) whole();
     else draw();
   }
-  // The window at the selection, and at the whole recording.
-  const zoomHome = () => t.home && setWindow(...pad(t.home));
+  // The window at the call in focus (the one last clicked, else the
+  // selection), and at the whole recording.
+  const zoomFocus = () => {
+    const f = t.focus ?? t.home;
+    if (f) setWindow(...pad(f));
+  };
   const whole = () => t.n && setWindow(0, m.steps() - 1);
   // Select syscall `s` (found again in later snapshots by its task and
   // its first record's id: indexes move as the ring goes on).
