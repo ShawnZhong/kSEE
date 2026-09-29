@@ -116,9 +116,6 @@ export function app(m) {
   // it holds until the key changes.
   const keyed = (w) => w && { ...w, key: `${w.a}:${w.b}:${w.task}:${m.record_id(time.records() - 1)}` };
   a.selection = () => keyed(time.home());
-  // The call the tabs say what it did (Objects, the source's notes): the
-  // one last clicked, or the syscall selected (time.focus), keyed alike.
-  a.focus = () => keyed(time.focus());
   // Show the moment `at` (see Machine.at): the source there, the Stack,
   // memory as it was, where it is. `frame` ({ first, inlined }, a call on
   // the stack then): that call selected on the Stack, the source at the

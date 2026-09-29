@@ -147,13 +147,19 @@
   if (!r.stored.length) throw new Error("no stored notes in the source at " + $("where").textContent);
   document.querySelector('h2.tabs a[data-tab="stack"]').click();
   r.selected = $("chart-title").textContent;
-  // (Any call's box, clicked: the call in focus, from its first record to
-  // its return (what the Objects say); the syscall still selected.)
+  // (Any call's box, clicked: that call selected on the Stack, the syscall
+  // still selected; "zoom" goes to it.)
   const ksys = ksee.m.call_stack(ksee.m.first_call("ksys_read", read.first, read.last, read.task.addr)).find((f) => f.func === "ksys_read");
   const kb = ksee.time.boxOf(ksys.first), readSel = ksee.time.home();
   for (const t of ["pointerdown", "pointerup"]) $("chart").dispatchEvent(new PointerEvent(t, { clientX: kb.x, clientY: kb.y }));
-  const kf = ksee.time.focus();
-  if (kf?.a !== ksys.first || kf?.b !== ksee.m.call_end(ksys.first) || ksee.time.home() !== readSel) throw new Error("ksys_read in focus: " + JSON.stringify([kf, ksee.time.home()]) + ", not from " + ksys.first);
+  const on = document.querySelector("#stack .on")?.textContent ?? "";
+  if (!on.startsWith("ksys_read") || ksee.time.home() !== readSel) throw new Error("ksys_read selected: " + JSON.stringify([on, ksee.time.home()]));
+  // (Zoom: the window at the call selected, from the chart's head.)
+  const zoomTo = [...document.querySelectorAll("#chart-verbs a")].find((x) => x.textContent.startsWith("zoom"));
+  r.zoom = zoomTo?.textContent;
+  if (r.zoom !== "zoom to ksys_read") throw new Error("zoom to the call selected: " + r.zoom);
+  zoomTo.click();
+  if (![...document.querySelectorAll("#chart-verbs a")].some((x) => x.textContent === "whole")) throw new Error("zoomed: no way back to the whole recording");
   ksee.tab("objects");
   // (The Objects: all the syscall did, always; gray, what has not
   // happened by the moment shown: the pointer's, over the timeline.)
@@ -173,12 +179,6 @@
   ksee.time.go(read.last);
   await until(() => !document.querySelector("#objects tr.later"));
   if (document.querySelector("#objects tr.later")) throw new Error("the Objects at the end: still gray");
-  // (Zoom: the window at the call in focus, from the chart's head.)
-  const zoomTo = [...document.querySelectorAll("#chart-verbs a")].find((x) => x.textContent.startsWith("zoom"));
-  r.zoom = zoomTo?.textContent;
-  if (r.zoom !== "zoom to ksys_read") throw new Error("zoom to the call in focus: " + r.zoom);
-  zoomTo.click();
-  if (![...document.querySelectorAll("#chart-verbs a")].some((x) => x.textContent === "whole")) throw new Error("zoomed: no way back to the whole recording");
   ksee.tab("stack");
   // Your own call: type it, Tab completes the name, Enter makes it.
   const input = document.querySelector(".callform textarea"), key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k }));

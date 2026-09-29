@@ -80,16 +80,15 @@ go on), each recorded as the page's are.
 The timeline shows the recording: the call stacks over time (its unit is
 a step, a basic block run: a store takes no room), and which
 task ran; the whole recording at first (scroll to zoom, drag to pan;
-"zoom" or z: the window at the call in focus (below), "whole" or x: all
+"zoom" or z: the window at the call selected, else the syscall, "whole" or x: all
 of it again; hover a call for what it was (its arguments, what it returned: `ksys_read = 26`): the
-source, the Stack and the Objects show that moment while the pointer is there; click it to fix the cursor there, and for
-what it did (the source's notes; a syscall: selected too,
+source, the Stack and the Objects show that moment while the pointer is there; click it to fix the cursor there, and select it (on the Stack; a syscall: selected too,
 its records from its entry to its exit, with whatever else ran in
 between, the lines to step through). The
 cursor's line carries its values as it is about to run (as a debugger
 stops before a line: memory and the variables as the lines before it left
 them), and each line what it
-stored or set so far in the call clicked, each thing it wrote its last
+stored or set so far in the syscall selected, each thing it wrote its last
 change and how many times (`f_pos: 0 → 26 ×2`, a
 variable's `last_pos: (uninitialized) → -1`; a struct copied at once,
 each member: `mnt: NULL → 0x1c07910   dentry: NULL → 0x1c11dd00`): click it for its last write; not the

@@ -12,9 +12,9 @@
 // through deep stacks; Shift+scroll, sideways scroll or A/D to pan in time. Hover a call
 // for what it was, and where it is, and the source and the Stack
 // show that moment while the pointer is there; click to put the
-// cursor there and for what it did (the focus: Objects; a syscall: selected
-// too, its records, from entry to exit, the lines to step through);
-// "zoom" (z) for the window at the call in focus. Click or
+// cursor there and select the call (a syscall: selected too, its records,
+// from entry to exit, the lines to step through);
+// "zoom" (z) for the window at the call selected. Click or
 // drag the overview to move the window. Find a function (the box in the
 // header, or /): Enter goes to its next call after the cursor, Shift+Enter
 // to the one before; its calls are marked on the overview.
@@ -164,8 +164,8 @@ export function timeline(app) {
       sctx.fillRect(x(cur) - 1, 0, 2, STRIP);
     }
     $("chart-title").textContent = t.title || "the recording";
-    const f = t.focus ?? t.home;
-    $("chart-verbs").replaceChildren(...(f ? [" · ", el("a", { textContent: f.a === t.home?.a && f.b === t.home?.b ? "zoom" : `zoom to ${f.title}`, title: `the window at ${f.title}, the call in focus (z)`, onclick: zoomFocus })] : []),
+    const f = zoomed();
+    $("chart-verbs").replaceChildren(...(f ? [" · ", el("a", { textContent: f === t.home ? "zoom" : `zoom to ${f.title}`, title: `the window at ${f.title} (z)`, onclick: zoomTo })] : []),
       ...(t.win && (t.win.sa > 0 || t.win.sb < m.steps() - 1) ? [" · ", el("a", { textContent: "whole", title: "the whole recording (x)", onclick: whole })] : []));
   }
   function label(ctx, text, x1, w, y, fill) {
@@ -241,7 +241,7 @@ export function timeline(app) {
   chart.onkeydown = (e) => {
     if (!t.win) return;
     const mid = t.cursor != null && t.cursor >= t.win.a && t.cursor <= t.win.b ? m.step_of(t.cursor) : (t.win.sa + t.win.sb) / 2;
-    const act = { w: () => zoom(mid, -0.25), s: () => zoom(mid, 0.25), a: () => pan(-W() / 8), d: () => pan(W() / 8), z: zoomFocus, x: whole }[e.key.toLowerCase()];
+    const act = { w: () => zoom(mid, -0.25), s: () => zoom(mid, 0.25), a: () => pan(-W() / 8), d: () => pan(W() / 8), z: zoomTo, x: whole }[e.key.toLowerCase()];
     if (!act) return;
     e.preventDefault();
     act();
@@ -336,29 +336,14 @@ export function timeline(app) {
     // where it is then). Elsewhere: the cursor at the next block.
     const { c, d } = hit(e), [, first, inl] = c?.frames[d] ?? [];
     if (first == null) return go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
-    // (A syscall: selected too, its records from its entry to its exit;
-    // any call: the one the tabs say what it did.)
-    const [id] = c.frames[d], s = !inl && t.syscallAt.get(first);
+    // (A syscall: selected too, its records from its entry to its exit.)
+    const s = !inl && t.syscallAt.get(first);
     if (s) select(s);
-    else if (!inl) focusCall(first, fn(id)?.name ?? "a call");
     // (The column's moment, whose stack is the one drawn: the call, or the
     // code inlined into it, is on it.)
     go(c.i);
     app.selectCall(first, inl ? iname(inl - 1) : null);
   };
-  // The call the tabs say what it did (Objects, the source's notes): the
-  // one from record `first`, called `title`, its records from its first
-  // to where it returns (found again after a snapshot, by id).
-  function focusCall(first, title) {
-    const id = m.record_id(first), task = t.cols.find((c) => c.frames.some((f) => f[1] === first))?.task;
-    t.focusAt = () => {
-      const a = m.record_index(id);
-      return a == null ? null : { a, b: m.call_end(a) ?? t.n - 1, task, title };
-    };
-    t.focus = t.focusAt();
-    app.outlined?.();
-    draw();
-  }
   let overDrag = false;
   const overMove = (e) => {
     if (!t.win) return;
@@ -380,7 +365,7 @@ export function timeline(app) {
   // ---- The API ----
   // A fresh kernel: no selection, no cursor.
   function clear() {
-    Object.assign(t, { where: null, home: null, focusAt: null, focus: null, title: "", cursor: null, sel: null, lit: null });
+    Object.assign(t, { where: null, home: null, title: "", cursor: null, sel: null, lit: null });
   }
   // After a snapshot: the new extent; the window at the selection (or all).
   function refresh(calls) {
@@ -392,7 +377,6 @@ export function timeline(app) {
     t.buckets = m.timeline(Math.max(1, over.clientWidth));
     if (t.found.name) t.found.at = [...m.calls_of(t.found.name, 0, Math.max(0, t.n - 1))];
     t.home = t.where?.() ?? null;
-    t.focus = t.focusAt?.() ?? null;
     t.depth = 1;
     if (t.cursor != null && t.cursor >= t.n) t.cursor = null;
     // (A new recording: the whole of it; one grown: the window as it was.)
@@ -404,7 +388,7 @@ export function timeline(app) {
   // Select records `where()` gives ({ a, b, task }: asked again after each
   // snapshot, as records move), called `title`: the window at them.
   // The window stays as it is (the whole recording by default: zooming is
-  // asked for, `z` or "zoom": see zoomFocus), unless the selection is not in it.
+  // asked for, `z` or "zoom": see zoomTo), unless the selection is not in it.
   function selectWindow(where, title) {
     t.depth = 1;
     t.where = where;
@@ -413,10 +397,15 @@ export function timeline(app) {
     if (t.home && t.win && (t.home.a < t.win.a || t.home.b > t.win.b)) whole();
     else draw();
   }
-  // The window at the call in focus (the one last clicked, else the
-  // selection), and at the whole recording.
-  const zoomFocus = () => {
-    const f = t.focus ?? t.home;
+  // What "zoom" (z) goes to: the call selected (the bar outlined: the one
+  // clicked, or the Stack's), else the syscall selected.
+  function zoomed() {
+    if (t.sel == null) return t.home;
+    return { a: t.sel, b: m.call_end(t.sel) ?? t.n - 1, title: m.at(t.sel)?.func ?? "a call" };
+  }
+  // The window at it, and at the whole recording.
+  const zoomTo = () => {
+    const f = zoomed();
     if (f) setWindow(...pad(f));
   };
   const whole = () => t.n && setWindow(0, m.steps() - 1);
@@ -429,8 +418,6 @@ export function timeline(app) {
       const c = t.calls.find((c) => c.id === s.id);
       return c ? { a: c.first, b: c.last ?? t.n - 1, task: c.task.addr, title } : null;
     };
-    t.focusAt = where;
-    t.focus = where();
     selectWindow(where, title);
   }
   // ---- Finding a function ----
@@ -501,6 +488,6 @@ export function timeline(app) {
     }
     return null;
   }
-  return { refresh, clear, go, mark, select, focusCall, hilite, selected, boxOf, focusFind: () => finder.input.focus(),
-           home: () => t.home, focus: () => t.focus, cursor: () => t.cursor, records: () => t.n };
+  return { refresh, clear, go, mark, select, hilite, selected, boxOf, focusFind: () => finder.input.focus(),
+           home: () => t.home, cursor: () => t.cursor, records: () => t.n };
 }

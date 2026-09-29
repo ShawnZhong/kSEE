@@ -279,7 +279,6 @@ export async function examples(app) {
   function goTo(l) {
     app.select(l.c);
     if (l.at != null && l.tab === "objects") {
-      app.time.focusCall(l.at, l.func);
       app.time.go(m.call_end(l.at) ?? l.at);
     } else if (l.at != null) app.goCall(l.at);
     if (l.tab) app.tab(l.tab);

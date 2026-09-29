@@ -895,21 +895,11 @@ impl View<'_> {
     /// the stack it used beyond its named locals; no type), a global of
     /// the kernel's; else by its address.
     pub fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Named> {
-        // (The last few spans asked: the syscall's (Objects), the call in
-        // focus's (the source's notes).)
-        let mut cache = self.rec.named.borrow_mut();
-        if let Some(k) = cache.iter().position(|(span, _)| *span == (first, last)) {
-            let hit = cache.remove(k);
-            cache.push(hit.clone());
-            return hit.1;
+        if let Some((span, got)) = &*self.rec.named.borrow() && *span == (first, last) {
+            return got.clone();
         }
-        drop(cache);
         let got = alloc::rc::Rc::new(self.name_stores(first, last));
-        let mut cache = self.rec.named.borrow_mut();
-        if cache.len() >= 4 {
-            cache.remove(0);
-        }
-        cache.push(((first, last), got.clone()));
+        *self.rec.named.borrow_mut() = Some(((first, last), got.clone()));
         got
     }
 
