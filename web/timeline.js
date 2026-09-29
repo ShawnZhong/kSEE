@@ -235,7 +235,7 @@ export function timeline(app) {
     const c = t.win && t.cols[Math.floor((e.offsetX / W()) * t.cols.length)];
     strip.title = c ? taskName(who(c.task)) : "";
   };
-  strip.onclick = (e) => t.win && go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
+  strip.onclick = (e) => t.win && go(m.next_block(Math.max(0, at(e.offsetX) - 1), false));
   // W/S: zoom (around the cursor, or the middle); A/D: pan.
   chart.tabIndex = 0;
   chart.onkeydown = (e) => {
@@ -335,7 +335,7 @@ export function timeline(app) {
     // A call: the cursor in it, and the call selected (the source shows
     // where it is then). Elsewhere: the cursor at the next block.
     const { c, d } = hit(e), [, first, inl] = c?.frames[d] ?? [];
-    if (first == null) return go(m.seek(Math.max(0, at(e.offsetX) - 1), 1, "block"));
+    if (first == null) return go(m.next_block(Math.max(0, at(e.offsetX) - 1), false));
     // (A syscall: selected too, its records from its entry to its exit.)
     const s = !inl && t.syscallAt.get(first);
     if (s) select(s);

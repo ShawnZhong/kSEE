@@ -84,7 +84,7 @@ export function app(m) {
   a.select = (s) => {
     setLevel(null);
     time.select(s);
-    time.go(m.seek(s.first, 1, "function"));
+    time.go(m.next_block(s.first, true));
     a.outlined?.();
   };
   // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:

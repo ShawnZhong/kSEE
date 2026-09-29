@@ -124,9 +124,9 @@ impl Machine {
         self.rec.borrow().run_of(tables(), file, line, i, dir)
     }
 
-    /// See ksee_core::recording::Recording::seek.
-    pub fn seek(&self, i: usize, dir: i32, unit: &str) -> usize {
-        self.rec.borrow().seek(i, dir, unit)
+    /// See ksee_core::recording::Recording::next_block.
+    pub fn next_block(&self, i: usize, other: bool) -> usize {
+        self.rec.borrow().next_block(i, other)
     }
 
     /// The first call of function `name` in records `first..=last` (of the

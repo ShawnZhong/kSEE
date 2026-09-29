@@ -145,18 +145,15 @@ impl Recording {
         if dir > 0 { (i + 1..self.records.len()).find(|&j| hit(j)) } else { (0..i.min(self.records.len())).rev().find(|&j| hit(j)) }
     }
 
-    /// The position of the next (dir > 0) or previous block record from `i`
-    /// that starts a new `unit`: "block", or "function" (another function
-    /// than at `i`). `i` if none.
-    pub fn seek(&self, i: usize, dir: i32, unit: &str) -> usize {
+    /// The next block record after `i` (`other`: of another function than
+    /// record `i`'s, if it is a block); `i` if none.
+    pub fn next_block(&self, i: usize, other: bool) -> usize {
         let func_at = |j: usize| match self.records.get(j) {
             Some(Record::Block { func, .. }) => Some(*func),
             _ => None,
         };
         let here = func_at(i);
-        let new = |j: usize| func_at(j).is_some_and(|f| unit != "function" || Some(f) != here);
-        let found = if dir > 0 { (i + 1..self.len()).find(|&j| new(j)) } else { (0..i.min(self.len())).rev().find(|&j| new(j)) };
-        found.unwrap_or(i)
+        (i + 1..self.len()).find(|&j| func_at(j).is_some_and(|f| !other || Some(f) != here)).unwrap_or(i)
     }
 
     /// The first call of function `name` in records `first..=last` (of the
