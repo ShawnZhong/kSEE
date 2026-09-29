@@ -11,7 +11,6 @@ use crate::trace::{Args, Record};
 pub struct Syscall {
     pub task: u32,
     pub nr: u32,
-    pub args: [u32; 5],
     /// The result (None: still running at the end of the trace, or it
     /// never returned).
     pub ret: Option<i32>,
@@ -24,15 +23,12 @@ pub struct Syscall {
 /// `tasks[i]`: the task running at record `i`), in the order they began.
 pub fn split(entry: u32, records: &[Record], tasks: &[u32], args: &Args, calls: &Calls) -> Vec<Syscall> {
     calls.calls.iter().filter(|c| c.func == entry && matches!(records[c.first], Record::Block { n: 0, .. })).map(|c| {
-        let mut a = [0; 6];
-        if let Some((w, _)) = args.get(c.first) {
-            a.iter_mut().zip(w).for_each(|(a, &w)| *a = w);
-        }
+        let nr = args.get(c.first).and_then(|(w, _)| w.first().copied()).unwrap_or(0);
         let ret = c.last.and_then(|l| match records[l] {
             Record::Return { func, value } if func == entry => Some(value as i32),
             _ => None,
         });
-        Syscall { task: tasks[c.first], nr: a[0], args: [a[1], a[2], a[3], a[4], a[5]], ret, first: c.first, last: ret.and(c.last) }
+        Syscall { task: tasks[c.first], nr, ret, first: c.first, last: ret.and(c.last) }
     }).collect()
 }
 
@@ -51,6 +47,6 @@ mod tests {
         let calls = Calls::new(&crate::tables::Tables::default(), &r, &tasks);
         let s = split(1, &r, &tasks, &args, &calls);
         assert_eq!(s.len(), 1);
-        assert_eq!((s[0].task, s[0].nr, s[0].args[0], s[0].ret, s[0].first, s[0].last), (7, 64, 1, Some(3), 0, Some(3)));
+        assert_eq!((s[0].task, s[0].nr, s[0].ret, s[0].first, s[0].last), (7, 64, Some(3), 0, Some(3)));
     }
 }

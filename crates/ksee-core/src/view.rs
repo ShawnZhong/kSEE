@@ -39,7 +39,6 @@ pub struct SyscallSummary {
     pub task: TaskRef,
     pub nr: u32,
     pub name: Option<String>,
-    pub args: [u32; 5],
     /// The result (None: still running at the end of the recording).
     pub ret: Option<i32>,
     /// Its span in the records.
@@ -264,12 +263,10 @@ pub struct Place {
     pub line: u32,
 }
 
-/// A syscall: its number, and its parameters (as SYSCALL_DEFINE declares
-/// them).
+/// A syscall: its parameters (as SYSCALL_DEFINE declares them).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SyscallInfo {
-    pub nr: u32,
     pub params: Vec<Param>,
 }
 
@@ -320,8 +317,6 @@ pub struct Object {
     pub name: String,
     pub ty: String,
     pub addr: u32,
-    /// Its type's id (for Machine.object_by_id, Machine.writes).
-    pub id: u32,
     /// Its size in bytes.
     pub size: u32,
     pub value: Option<String>,
@@ -333,12 +328,11 @@ pub struct Object {
 }
 
 /// A task's fields: the key ones (arch::TASK_FIELDS, in that order), or
-/// all; `total`: how many it has.
+/// all.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct TaskFields {
     pub fields: Vec<Object>,
-    pub total: usize,
 }
 
 /// A task the recording has, at a record: whether it is the one running
@@ -404,11 +398,10 @@ impl View<'_> {
     pub fn task_fields(&self, mem: &dyn Memory, addr: u32, all: bool) -> TaskFields {
         let types = &self.tables.types;
         let every = types.find(arch::TASK).and_then(|ty| types.object(mem, arch::CURRENT, addr, ty, 1).children).unwrap_or_default();
-        let total = every.len();
         let fields = if all { every } else {
             arch::TASK_FIELDS.iter().filter_map(|&k| every.iter().find(|o| o.name == k).cloned()).collect()
         };
-        TaskFields { fields, total }
+        TaskFields { fields }
     }
 
     /// The tasks the recording has, in the order they first run, as they
@@ -444,7 +437,6 @@ impl View<'_> {
             task: self.task(s.task),
             nr: s.nr,
             name: self.tables.types.syscalls.get(&s.nr).cloned(),
-            args: s.args,
             ret: s.ret,
             first: s.first,
             last: s.last,
@@ -1172,10 +1164,10 @@ impl View<'_> {
     /// Syscall `name` (e.g. "openat").
     pub fn syscall(&self, name: &str) -> Option<SyscallInfo> {
         let types = &self.tables.types;
-        let (&nr, _) = types.syscalls.iter().find(|(_, n)| n.as_str() == name)?;
+        types.syscalls.values().find(|n| n.as_str() == name)?;
         let params = types.syscall_params(name).into_iter().flatten()
             .map(|(pname, ty)| Param { name: pname.clone(), ty: types.name(*ty), consts: consts_of(name, pname).iter().map(|s| s.to_string()).collect() }).collect();
-        Some(SyscallInfo { nr, params })
+        Some(SyscallInfo { params })
     }
 
     /// The functions called `name` (usually one).
@@ -1221,7 +1213,7 @@ impl Types {
         let id = self.resolve(ty);
         let t = self.get(id);
         let mut o = Object {
-            name: name.to_string(), ty: self.name(ty), addr, id: ty, size: self.size_of(ty),
+            name: name.to_string(), ty: self.name(ty), addr, size: self.size_of(ty),
             value: None, children: None, expand: None, target: None,
         };
         match &t.kind {

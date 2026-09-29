@@ -76,6 +76,12 @@ impl Block {
         &self.steps[a as usize..b]
     }
 
+    /// The last line it has run by stretch `seg` (seg's, or an earlier
+    /// one's if seg has none), if any.
+    pub fn last_by(&self, seg: u32) -> Option<Step> {
+        self.steps[..self.start(seg + 1)].last().copied()
+    }
+
     /// Where stretch `seg` begins in `steps`.
     pub fn start(&self, seg: u32) -> usize {
         self.cuts.get(seg as usize).map_or(self.steps.len(), |&a| a as usize)

@@ -34,16 +34,14 @@ pub struct Call {
     site: u32,
 }
 
-/// Where a call is: in block `n`, running stretch `seg` of the block's
-/// lines (tables::Block) from `record` (the block's, or the return into
-/// it); at the last line of stretch `line` (seg, or an earlier one if seg
-/// has none; NONE: no line yet).
+/// Where a call is: in block `n` (NONE: not known), running stretch `seg`
+/// of the block's lines (tables::Block) from `record` (the block's, or the
+/// return into it).
 #[derive(Debug, Clone, Copy)]
 struct Place {
     call: u32,
     n: u32,
     seg: u32,
-    line: u32,
     record: u32,
 }
 
@@ -93,8 +91,7 @@ impl Calls {
                         }
                     }
                     let call = *frames.last().expect("a frame");
-                    let line = if t.stretch(func, n, 0).is_empty() { NONE } else { 0 };
-                    *place = c.place(Place { call, n, seg: 0, line, record: i as u32 });
+                    *place = c.place(Place { call, n, seg: 0, record: i as u32 });
                 }
                 Record::Return { func, .. } => {
                     if let Some(k) = frames.iter().rposition(|&k| c.calls[k as usize].func == func) {
@@ -104,12 +101,9 @@ impl Calls {
                         *place = match frames.last() {
                             Some(&call) if site != NONE && c.places[site as usize].call == call => {
                                 let p = c.places[site as usize];
-                                let seg = p.seg + 1;
-                                let func = c.calls[call as usize].func;
-                                let line = if t.stretch(func, p.n, seg).is_empty() { p.line } else { seg };
-                                c.place(Place { call, n: p.n, seg, line, record: i as u32 })
+                                c.place(Place { call, n: p.n, seg: p.seg + 1, record: i as u32 })
                             }
-                            Some(&call) => c.place(Place { call, n: NONE, seg: 0, line: NONE, record: i as u32 }),
+                            Some(&call) => c.place(Place { call, n: NONE, seg: 0, record: i as u32 }),
                             None => NONE,
                         };
                     }
@@ -145,12 +139,9 @@ impl Calls {
         self.places.get(*self.at.get(i)? as usize)
     }
 
-    /// The line place `p`'s call is at (the last of its stretch).
+    /// The line place `p`'s call is at (the last it has run in its block).
     fn line(&self, t: &Tables, p: &Place) -> Option<Step> {
-        if p.line == NONE {
-            return None;
-        }
-        t.stretch(self.calls[p.call as usize].func, p.n, p.line).last().copied()
+        t.block(self.calls[p.call as usize].func, p.n)?.last_by(p.seg)
     }
 
     /// The lines record `i` runs, if it runs some (a block, or a return
