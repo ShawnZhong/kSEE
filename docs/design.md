@@ -34,7 +34,8 @@ SMP, no fork (threads and vfork, though): see Limits).
 2. **Explore the recording**, at one cursor, as in a debugger that goes
    both ways:
    - *time*: a timeline of the call stacks (who ran, what they called);
-     step in time (the selected call's lines, or every line) and in
+     step in time (at a level: the lines that deep or shallower, a call's
+     siblings too; or every line) and in
      depth (the calls above and below), forwards or back; run to a line
      (its next run, or its last);
    - *code*: the source line at the cursor, the lines that ran;
