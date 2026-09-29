@@ -14,6 +14,7 @@ import { objects } from "./objects.js";
 import { tasks } from "./tasks.js";
 import { kernel } from "./kernel.js";
 import { next } from "./steps.js";
+import { layout } from "./layout.js";
 
 
 // 1st, 2nd, 3rd, 4th, …, 11th, 12th, 13th, 21st.
@@ -342,58 +343,8 @@ export function app(m) {
     e.preventDefault();
   });
 
-  // ---- The console: all of it, or (folded) its last line ----
-  let consoleText = "";
-  function showConsole() {
-    $("console").textContent = sizes.consoleOpen ? consoleText : consoleText.trimEnd().split("\n").at(-1) ?? "";
-    $("pane-console").scrollTop = $("pane-console").scrollHeight;
-  }
-
-  // ---- Resizing: the columns, and the timeline's height ----
-  const sizes = { left: 340, right: 380, chart: 190, console: 140, consoleOpen: false };
-  // (The console folded on every load: kept are only the sizes.)
-  try { Object.assign(sizes, JSON.parse(localStorage.getItem("ksee.sizes") ?? "{}"), { consoleOpen: false }); } catch { /* none kept */ }
-  const layout = () => {
-    $("app").style.gridTemplateColumns = `${sizes.left}px 5px minmax(0, 1fr)`;
-    $("main").style.gridTemplateColumns = `minmax(300px, 1fr) 5px ${sizes.right}px`;
-    $("chartbox").style.height = `${sizes.chart}px`;
-    // (Folded: its last line only.)
-    $("pane-console").classList.toggle("folded", !sizes.consoleOpen);
-    $("pane-console").style.flexBasis = `${sizes.console}px`;
-    $("console-tw").textContent = sizes.consoleOpen ? "▾" : "▸";
-    showConsole();
-    try { localStorage.setItem("ksee.sizes", JSON.stringify(sizes)); } catch { /* not kept */ }
-  };
-  // (`click`: a press that did not move.)
-  const drag = (handle, move, click) => (handle.onpointerdown = (e) => {
-    e.preventDefault();
-    const start = { x: e.clientX, y: e.clientY, ...sizes };
-    let moved = false;
-    const onMove = (ev) => {
-      moved ||= Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 3;
-      if (!moved) return;
-      move(start, ev.clientX - start.x, ev.clientY - start.y);
-      layout();
-    };
-    addEventListener("pointermove", onMove);
-    addEventListener("pointerup", () => {
-      removeEventListener("pointermove", onMove);
-      if (!moved) click?.();
-      layout();
-      dispatchEvent(new Event("resize")); // (the canvases redraw)
-    }, { once: true });
-  });
-  for (const h of document.querySelectorAll(".vsplit")) {
-    drag(h, (s, dx) => {
-      if (h.dataset.col === "left") sizes.left = Math.max(200, s.left + dx);
-      else sizes.right = Math.max(220, s.right - dx);
-    });
-  }
-  drag($("hsplit"), (s, _, dy) => (sizes.chart = Math.max(60, s.chart + dy)));
-  // (The console: folded to its last line, or open, as tall as dragged.)
-  drag($("console-head"), (s, _, dy) => sizes.consoleOpen && (sizes.console = Math.max(40, s.console - dy)),
-       () => (sizes.consoleOpen = !sizes.consoleOpen));
-  layout();
+  // ---- The page's layout: the columns, the timeline's height, the console ----
+  const page = layout();
 
   // ---- Starting again, and watching the kernel (its console, a halt) ----
   // Start the kernel again (a fresh one: the page stays); done once /init
@@ -405,8 +356,7 @@ export function app(m) {
     time.clear();
     (chosen = null), (L.key = null), (L.pos = null), (peek.key = null);
     setLevel(null);
-    consoleText = "";
-    showConsole();
+    page.clear();
     await m.restart();
     refresh();
     stack.show(undefined);
@@ -414,10 +364,7 @@ export function app(m) {
   };
   function tick() {
     const out = m.console();
-    if (out) {
-      consoleText += out.replaceAll("\r", "");
-      showConsole();
-    }
+    if (out) page.add(out.replaceAll("\r", ""));
     const code = m.halted();
     if (code !== undefined && halted == null) {
       halted = code;
