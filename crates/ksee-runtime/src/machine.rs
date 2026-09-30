@@ -118,6 +118,16 @@ impl Machine {
             k.booting.set(true);
             k.quiet.set(false);
             k.halted.set(None);
+            // (Nothing of a machine before it: its console, runners, calls, the program's names.)
+            k.console_out.borrow_mut().clear();
+            k.doorbell.borrow_mut().clear();
+            k.runners.borrow_mut().clear();
+            k.main.set(None);
+            k.heaps.borrow_mut().clear();
+            k.calls.borrow_mut().clear();
+            k.finished.borrow_mut().clear();
+            *k.names.borrow_mut() = Default::default();
+            k.lines.set(0);
         });
         crate::programs::instantiated(&kernel);
         sched::boot(&kernel)?;
@@ -142,17 +152,6 @@ impl Machine {
         for (_, fail) in k(|k| k.quiet_waiters.take()) {
             let _ = fail.call1(&JsValue::NULL, &"the kernel started again".into());
         }
-        k(|k| {
-            k.console_out.borrow_mut().clear();
-            k.doorbell.borrow_mut().clear();
-            k.runners.borrow_mut().clear();
-            k.main.set(None);
-            k.heaps.borrow_mut().clear();
-            k.calls.borrow_mut().clear();
-            k.finished.borrow_mut().clear();
-            k.names.borrow_mut().clone_from(&Default::default());
-            k.lines.set(0);
-        });
         *self.rec.borrow_mut() = Default::default();
         *self.past.borrow_mut() = None;
         self.boot().await
