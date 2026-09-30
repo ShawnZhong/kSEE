@@ -73,8 +73,6 @@ pub struct Kernel {
     /// (next free, end)).
     pub heap_of: RefCell<BTreeMap<u32, u32>>,
     pub heaps: RefCell<BTreeMap<u32, (u32, u32)>>,
-    /// Each runner's room there for its calls' buffers (see SCRATCH).
-    pub scratch: RefCell<BTreeMap<u32, u32>>,
     /// The calls asked (by id: see Machine::call), and how many (the last
     /// id).
     pub calls: RefCell<BTreeMap<u32, Call>>,
@@ -97,7 +95,6 @@ impl Kernel {
     pub fn forget(&self, tid: u32) {
         self.runners.borrow_mut().remove(&tid);
         self.requests.borrow_mut().remove(&tid);
-        self.scratch.borrow_mut().remove(&tid);
         let mut heap_of = self.heap_of.borrow_mut();
         if let Some(heap) = heap_of.remove(&tid) && !heap_of.values().any(|&h| h == heap) {
             self.heaps.borrow_mut().remove(&heap);
@@ -145,9 +142,11 @@ pub struct Call {
     pub result: Option<(String, String)>,
 }
 
-/// Each runner's room, in its program's memory, for its call's strings and
-/// compound literals (one call at a time).
-pub const SCRATCH: u32 = 4096;
+/// A runner's request (user/prog.c's struct request, on its stack): its
+/// call's number and arguments, then, at DATA, the call's strings and
+/// compound literals (DATA_SIZE bytes at most).
+pub const DATA: u32 = 32;
+pub const DATA_SIZE: u32 = 4096;
 
 /// The kernel's memory is this module's memory.
 pub struct Direct;

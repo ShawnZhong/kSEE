@@ -150,7 +150,6 @@ impl Machine {
             k.requests.borrow_mut().clear();
             k.heap_of.borrow_mut().clear();
             k.heaps.borrow_mut().clear();
-            k.scratch.borrow_mut().clear();
             k.calls.borrow_mut().clear();
             k.finished.borrow_mut().clear();
             k.names.borrow_mut().clone_from(&Default::default());
@@ -387,17 +386,7 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, St
         return Err(format!("{tid} is still making its call"));
     }
     let id = k(|k| k.asked.get() + 1);
-    // (Its strings and buffers: in the runner's room, in its program's
-    // memory, taken on its first call.)
-    let scratch = match k(|k| k.scratch.borrow().get(&tid).copied()) {
-        Some(at) => at,
-        None => {
-            let at = alloc(tid, SCRATCH)?;
-            k(|k| k.scratch.borrow_mut().insert(tid, at));
-            at
-        }
-    };
-    let (words, data) = pack(args, scratch)?;
+    let (words, data) = pack(args, req + DATA)?;
     let c = Call { id, tid, nr, task, line, result, ..Default::default() };
     k(|k| {
         k.asked.set(id);
@@ -410,7 +399,7 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, St
     // (The call into the runner's request, in its memory, which is
     // kernel memory: recorded, as its strings are.)
     let head: Vec<u8> = core::iter::once(nr).chain(words).flat_map(u32::to_le_bytes).collect();
-    write_logged(scratch, &data);
+    write_logged(req + DATA, &data);
     write_logged(req, &head);
     sched::interrupt(IRQ_DOORBELL);
     Ok(id)
@@ -418,14 +407,14 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, St
 
 /// A call's `args`, each a number, or a buffer (bytes, a string's with its
 /// NUL; an array of strings, argv's) packed into the data (its bytes, to
-/// go at `base`, the runner's room: a buffer argument is its address
+/// go at `base`, the request's data: a buffer argument is its address
 /// there): the argument words, and the data.
 fn pack(args: &[Arg], base: u32) -> Result<([u32; 6], Vec<u8>), String> {
     let mut words = [0u32; 6];
     let mut data = Vec::new();
     // (Bytes `b` into the data, 8-byte aligned: their address.)
     let mut put = |b: &[u8]| -> Result<u32, String> {
-        if data.len() + b.len() > SCRATCH as usize {
+        if data.len() + b.len() > DATA_SIZE as usize {
             return Err("the call's buffers are too big".into());
         }
         let at = base + data.len() as u32;
