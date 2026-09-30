@@ -81,7 +81,9 @@ pub fn build() {
         "target/wasm32-unknown-unknown/release/ksee_runtime.wasm"]));
 
     codemirror();
-    if stale("target/vmlinux", &["linux/vmlinux", "crates/ksee-cli/src/pack.rs"]) {
+    // (Packed again for a new kernel, or a new pack: this program.)
+    let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
+    if stale("target/vmlinux", &["linux/vmlinux", &me]) {
         crate::pack::pack(Path::new("linux"), Path::new(SITE));
         std::fs::rename(format!("{SITE}/vmlinux"), "target/vmlinux")
             .unwrap_or_else(|e| crate::fail(&format!("target/vmlinux: {e}")));
@@ -144,7 +146,7 @@ fn gzip(from: &str, to: &str) {
 /// in order, from the simplest.
 const EXAMPLES: &[(&str, &[&str])] = &[
     ("Start here", &["umask", "umask-inside"]),
-    ("A process", &["getpid", "prctl"]),
+    ("A process", &["getpid", "prctl", "thread"]),
     ("Files, in memory", &["hello", "open-close", "read", "write", "open-fails", "create", "dir"]),
     ("Files on a disk (ext4)", &["ext4-read", "ext4-create", "ext4-write", "durable", "ext4-dir", "remove"]),
     ("Waiting and waking", &["sleep", "futex", "join", "pipe"]),
@@ -183,12 +185,16 @@ export { oneDarkHighlightStyle } from "npm:@codemirror/theme-one-dark@6";
 
 fn codemirror() {
     let out = format!("{SITE}/codemirror.js");
-    if !stale(&out, &["crates/ksee-cli/src/build.rs"]) {
+    // (Bundled again only when what it exports changes: its entry, written
+    // when it differs.)
+    let entry = "target/codemirror-entry.js";
+    if std::fs::read_to_string(entry).ok().as_deref() != Some(CODEMIRROR) {
+        std::fs::write(entry, CODEMIRROR).unwrap_or_else(|e| crate::fail(&format!("{entry}: {e}")));
+    }
+    if !stale(&out, &[entry]) {
         return;
     }
     eprintln!("  CM      {out} (deno bundle: npm's @codemirror)");
-    let entry = "target/codemirror-entry.js";
-    std::fs::write(entry, CODEMIRROR).unwrap_or_else(|e| crate::fail(&format!("{entry}: {e}")));
     run(Command::new("deno").args(["bundle", "-q", "--minify", "--platform=browser", "-o", &out, entry]));
 }
 
@@ -210,8 +216,11 @@ fn site() {
     }
 }
 
-/// Build, then: core's unit tests and tests/web.js (under Deno); with
-/// `ui`, also tests/ui.js (the page in headless Chromium, $CHROME).
+/// Build, then: core's unit tests, and under Deno tests/steps.js
+/// (stepping, on made-up lines) and tests/web.js (the kernel, its
+/// recordings, every example); with `ui`, also tests/ui.js (the page in
+/// headless Chromium, $CHROME: the read example, a changed program, the
+/// pipe example, a phone's screen).
 pub fn test(ui: bool) {
     build();
     run(Command::new("cargo").args(["test", "-q", "-p", "ksee-core"]));
