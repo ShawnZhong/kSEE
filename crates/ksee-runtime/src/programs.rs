@@ -65,7 +65,7 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
     });
     if dead {
         let gone = k(|k| {
-            let tid = k.runners.borrow().iter().find(|(_, task)| **task == prev).map(|(&t, _)| t);
+            let tid = k.runners.borrow().iter().find(|(_, r)| r.task == prev).map(|(&t, _)| t);
             tid.inspect(|&t| k.forget(t))
         });
         if let Some(tid) = gone {
@@ -241,9 +241,7 @@ fn runner_imports() -> Object {
             if main != 0 {
                 k.main.set(Some(tid));
             }
-            k.runners.borrow_mut().insert(tid, task);
-            k.requests.borrow_mut().insert(tid, req);
-            k.heap_of.borrow_mut().insert(tid, heap);
+            k.runners.borrow_mut().insert(tid, Runner { task, req, heap });
             k.heaps.borrow_mut().entry(heap).or_insert((heap, heap + size));
             // (A runner the last call started, a clone's child: its result's
             // name stands for it already, before the clone returns.)

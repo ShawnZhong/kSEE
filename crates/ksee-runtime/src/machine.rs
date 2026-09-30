@@ -147,8 +147,6 @@ impl Machine {
             k.doorbell.borrow_mut().clear();
             k.runners.borrow_mut().clear();
             k.main.set(None);
-            k.requests.borrow_mut().clear();
-            k.heap_of.borrow_mut().clear();
             k.heaps.borrow_mut().clear();
             k.calls.borrow_mut().clear();
             k.finished.borrow_mut().clear();
@@ -313,7 +311,7 @@ fn write_logged(addr: u32, bytes: &[u8]) {
 /// (as mmap gives it: memory the kernel can pin, a ring's).
 fn alloc(tid: u32, len: u32) -> Result<u32, String> {
     k(|k| {
-        let base = *k.heap_of.borrow().get(&tid).ok_or_else(|| format!("no runner {tid}"))?;
+        let base = k.runners.borrow().get(&tid).ok_or_else(|| format!("no runner {tid}"))?.heap;
         let mut heaps = k.heaps.borrow_mut();
         let (next, end) = heaps.get_mut(&base).ok_or("no memory")?;
         let page = ksee_core::arch::PAGE;
@@ -379,7 +377,7 @@ fn plan(text: &str, line: usize) -> Result<(u32, Plan), String> {
 /// Have runner `tid` make syscall `nr` with `args`, for line `line` (its
 /// result named `result`): the call's id.
 fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, String)>) -> Result<u32, String> {
-    let Some((task, req)) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.requests.borrow().get(&tid)?))) else {
+    let Some(Runner { task, req, .. }) = k(|k| k.runners.borrow().get(&tid).copied()) else {
         return Err(format!("no runner {tid}"));
     };
     if k(|k| k.in_flight(tid).is_some()) {

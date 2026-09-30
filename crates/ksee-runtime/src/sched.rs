@@ -223,11 +223,8 @@ const BOOT_NS: u64 = 1_000_000_000;
 /// Whether a runner the page waits for sleeps on a timer of its own (a
 /// sleep, a wait with a timeout: ksee_core::arch::timer_wakes).
 fn sleeping() -> bool {
-    let runners: Vec<u32> = k(|k| {
-        let runners = k.runners.borrow();
-        k.calls.borrow().values().filter(|c| !c.done).filter_map(|c| runners.get(&c.tid).copied()).collect()
-    });
-    ksee_core::arch::timer_wakes(&tables().types, &Direct, &runners)
+    let tasks: Vec<u32> = k(|k| k.calls.borrow().values().filter(|c| !c.done).map(|c| c.task).collect());
+    ksee_core::arch::timer_wakes(&tables().types, &Direct, &tasks)
 }
 
 /// idle (suspending): until an interrupt may be pending.

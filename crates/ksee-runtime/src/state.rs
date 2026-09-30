@@ -59,19 +59,14 @@ pub struct Kernel {
     pub console_out: RefCell<Vec<u8>>,
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
     pub doorbell: RefCell<VecDeque<u32>>,
-    /// The runners ready for the page's calls (user/prog.c): thread id ->
-    /// task, and thread id -> its request (where a call is put: its first
-    /// word, the number, is what the runner waits on).
-    pub runners: RefCell<BTreeMap<u32, u32>>,
+    /// The runners ready for the page's calls (user/prog.c), by thread id.
+    pub runners: RefCell<BTreeMap<u32, Runner>>,
     /// The program's own runner (user/prog.c's main thread: the page's
     /// calls' by default), once it is ready.
     pub main: Cell<Option<u32>>,
-    pub requests: RefCell<BTreeMap<u32, u32>>,
     /// The programs' own memory (user/prog.c's heap: a process's, its
-    /// threads' and vfork children's too, the same memory): each runner's
-    /// (thread id -> its start), and what of each is handed out (start ->
-    /// (next free, end)).
-    pub heap_of: RefCell<BTreeMap<u32, u32>>,
+    /// threads' and vfork children's too, the same memory): what of each
+    /// is handed out (its start -> (next free, end)).
     pub heaps: RefCell<BTreeMap<u32, (u32, u32)>>,
     /// The calls asked (by id: see Machine::call), and how many (the last
     /// id).
@@ -93,16 +88,25 @@ impl Kernel {
     /// program): its request, room and heap forgotten (a heap no runner has
     /// left, its process's gone: another's may come to the same address).
     pub fn forget(&self, tid: u32) {
-        self.runners.borrow_mut().remove(&tid);
-        self.requests.borrow_mut().remove(&tid);
-        let mut heap_of = self.heap_of.borrow_mut();
-        if let Some(heap) = heap_of.remove(&tid) && !heap_of.values().any(|&h| h == heap) {
-            self.heaps.borrow_mut().remove(&heap);
+        let mut runners = self.runners.borrow_mut();
+        if let Some(r) = runners.remove(&tid) && !runners.values().any(|o| o.heap == r.heap) {
+            self.heaps.borrow_mut().remove(&r.heap);
         }
+        drop(runners);
         if self.main.get() == Some(tid) {
             self.main.set(None); // (the program exited: /init starts it again)
         }
     }
+}
+
+/// A runner: its task (its task_struct), its request (where a call is put:
+/// its first word, the number, is what the runner waits on), and its
+/// program's heap (its start).
+#[derive(Clone, Copy)]
+pub struct Runner {
+    pub task: u32,
+    pub req: u32,
+    pub heap: u32,
 }
 
 /// A call finished: returned (its result), or ended by an execve (the new
