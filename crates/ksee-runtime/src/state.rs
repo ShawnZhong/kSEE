@@ -111,6 +111,7 @@ pub struct Runner {
 
 /// A call finished: returned (its result), or ended by an execve (the new
 /// program is running) or by its task's exit.
+#[derive(serde::Serialize)]
 pub struct Finished {
     pub id: u32,
     pub tid: u32,

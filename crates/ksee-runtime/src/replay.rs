@@ -8,7 +8,29 @@ use wasm_bindgen::prelude::*;
 use crate::machine::Machine;
 use crate::state::{k, tables, Direct};
 
-fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
+/// A program's line, for the page (see Machine::statement).
+#[derive(serde::Serialize, Default)]
+struct Step {
+    tid: Option<Tid>,
+    text: String,
+    r#type: Option<String>,
+    name: Option<String>,
+    call: Option<String>,
+    args: Option<Vec<String>>,
+    decl: bool,
+    assign: bool,
+}
+
+/// A runner as written: a thread id, or a result's name.
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum Tid {
+    Nr(u32),
+    Name(String),
+}
+
+/// `v` as a JS value (None: undefined).
+pub(crate) fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
     serde_wasm_bindgen::to_value(v).unwrap_or(JsValue::NULL)
 }
 
@@ -216,28 +238,21 @@ impl Machine {
     /// name of a result (a clone's).
     pub fn statement(&self, text: &str) -> Result<JsValue, JsValue> {
         use ksee_core::program::{statement, Line};
-        let o = js_sys::Object::new();
-        let set = |k: &str, v: JsValue| drop(js_sys::Reflect::set(&o, &k.into(), &v));
-        let tid = |t: Option<String>| match t {
-            Some(t) => t.parse::<f64>().map_or_else(|_| JsValue::from(t), JsValue::from),
-            None => JsValue::UNDEFINED,
-        };
         let st = statement(text)?;
-        if st.runner.is_some() { set("tid", tid(st.runner)); }
-        set("text", st.text.into());
+        let mut s = Step {
+            tid: st.runner.map(|t| t.parse().map_or(Tid::Name(t), Tid::Nr)),
+            text: st.text,
+            ..Default::default()
+        };
         match st.line {
             Line::Call { result, call, texts, .. } => {
-                if let Some((ty, name)) = result {
-                    set("type", ty.text().into());
-                    set("name", name.into());
-                }
-                set("call", call.into());
-                set("args", texts.into_iter().map(JsValue::from).collect::<js_sys::Array>().into());
+                (s.r#type, s.name) = result.map(|(ty, name)| (ty.text(), name)).unzip();
+                (s.call, s.args) = (Some(call), Some(texts));
             }
-            Line::Decl { .. } => set("decl", true.into()),
-            Line::Assign { .. } => set("assign", true.into()),
+            Line::Decl { .. } => s.decl = true,
+            Line::Assign { .. } => s.assign = true,
         }
-        Ok(o.into())
+        Ok(to_js(&s))
     }
 
     /// The names in `text`, a line of C source, each with the fields

@@ -4,7 +4,7 @@
 
 use std::cell::RefCell;
 
-use js_sys::{Function, Object, Promise, Uint8Array, WebAssembly};
+use js_sys::{Function, Promise, Uint8Array, WebAssembly};
 use ksee_core::recording::Recording;
 use ksee_core::tables::Tables;
 use ksee_core::program::{Arg, Sym};
@@ -14,6 +14,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::imports;
+use crate::replay::to_js;
 use crate::js;
 use crate::sched;
 use crate::state::*;
@@ -189,31 +190,22 @@ impl Machine {
     pub fn run(&self, text: &str) -> Result<JsValue, JsValue> {
         let line = k(|k| k.lines.get());
         let (tid, plan) = plan(text, line)?;
-        let o = Object::new();
+        let mut made = Made::default();
         match plan {
             Plan::Decl(d) => {
                 let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
                 write_logged(addr, &d.bytes);
                 k(|k| k.names.borrow_mut().set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
-                let v = Object::new();
-                js::set(&v, "name", d.name.as_str());
-                js::set(&v, "addr", addr);
-                js::set(&v, "ty", d.ty);
-                js::set(&v, "count", d.count.map_or(JsValue::NULL, JsValue::from));
-                js::set(&v, "size", tables().types.size_of(d.ty));
-                js::set(&o, "decl", v);
+                made.decl = Some(Var { name: d.name, addr, ty: d.ty, count: d.count, size: tables().types.size_of(d.ty) });
             }
             Plan::Assign { addr, ty, count, bytes } => {
                 write_logged(addr, &bytes);
-                js::set(&o, "assigned", tables().types.show(&Direct, addr, ty, count));
+                made.assigned = Some(tables().types.show(&Direct, addr, ty, count));
             }
-            Plan::Call { nr, args, result } => {
-                js::set(&o, "id", call(tid, nr, &args, line, result)?);
-                js::set(&o, "tid", tid);
-            }
+            Plan::Call { nr, args, result } => (made.id, made.tid) = (Some(call(tid, nr, &args, line, result)?), Some(tid)),
         }
         k(|k| k.lines.set(line + 1));
-        Ok(o.into())
+        Ok(to_js(&made))
     }
 
     /// Line `text` (see run) as it would be made as line `line`, with the
@@ -227,24 +219,12 @@ impl Machine {
     /// The names line `line` sees (see run): [{ name, value, pointer } (a
     /// result), or { name, addr, ty, count, size } (a variable: `size` all
     /// of it)].
-    pub fn names_before(&self, line: usize) -> js_sys::Array {
-        k(|k| k.names.borrow().before(line).into_iter().map(|(name, sym)| {
-            let o = Object::new();
-            js::set(&o, "name", name);
-            match *sym {
-                Sym::Value { v, to } => {
-                    js::set(&o, "value", v as f64);
-                    js::set(&o, "pointer", to.is_some());
-                }
-                Sym::Var { addr, ty, count } => {
-                    js::set(&o, "addr", addr);
-                    js::set(&o, "ty", ty);
-                    js::set(&o, "count", count.map_or(JsValue::NULL, JsValue::from));
-                    js::set(&o, "size", tables().types.size_of(ty) * count.unwrap_or(1));
-                }
-            }
-            JsValue::from(o)
-        }).collect())
+    pub fn names_before(&self, line: usize) -> JsValue {
+        let names: Vec<Named> = k(|k| k.names.borrow().before(line).into_iter().map(|(name, sym)| match *sym {
+            Sym::Value { v, to } => Named::Result { name: name.into(), value: v as f64, pointer: to.is_some() },
+            Sym::Var { addr, ty, count } => Named::Var(Var { name: name.into(), addr, ty, count, size: tables().types.size_of(ty) * count.unwrap_or(1) }),
+        }).collect());
+        to_js(&names)
     }
 
     /// A promise of the kernel quiet (now, or once it is): { finished: [the
@@ -322,6 +302,37 @@ fn alloc(tid: u32, len: u32) -> Result<u32, String> {
         *next = at + len;
         Ok(at)
     })
+}
+
+/// What a line made (Machine::run): a variable, what memory holds now, or
+/// a call asked (its id, its runner).
+#[derive(serde::Serialize, Default)]
+struct Made {
+    decl: Option<Var>,
+    assigned: Option<String>,
+    id: Option<u32>,
+    tid: Option<u32>,
+}
+
+/// A variable of the program's: memory of type `ty` (an array of `count`)
+/// at `addr`; `size`, an element's (Machine::run's) or all of it
+/// (names_before's).
+#[derive(serde::Serialize)]
+struct Var {
+    name: String,
+    addr: u32,
+    ty: u32,
+    count: Option<u32>,
+    size: u32,
+}
+
+/// A name a line sees (Machine::names_before): a result's value (a
+/// pointer?), or a variable.
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum Named {
+    Result { name: String, value: f64, pointer: bool },
+    Var(Var),
 }
 
 /// What a line of the program makes (see Machine::run), checked: a
@@ -453,18 +464,12 @@ pub(crate) fn settle() {
     if waiters.is_empty() {
         return;
     }
-    let finished = js_sys::Array::new();
-    for f in k(|k| k.finished.take()) {
-        let o = Object::new();
-        js::set(&o, "id", f.id);
-        js::set(&o, "tid", f.tid);
-        js::set(&o, "how", f.how);
-        js::set(&o, "ret", f.ret as f64);
-        finished.push(&o);
+    #[derive(serde::Serialize)]
+    struct News {
+        finished: Vec<Finished>,
+        runners: Vec<u32>,
     }
-    let news = Object::new();
-    js::set(&news, "finished", finished);
-    js::set(&news, "runners", k(|k| k.runners.borrow().keys().map(|&t| JsValue::from(t)).collect::<js_sys::Array>()));
+    let news = to_js(&k(|k| News { finished: k.finished.take(), runners: k.runners.borrow().keys().copied().collect() }));
     for (ok, _) in waiters {
         let _ = ok.call1(&JsValue::NULL, &news);
     }
