@@ -75,16 +75,16 @@ Rust does the work: JS only lays it out.
 | Module | Does |
 |---|---|
 | app.js | wires the panels to the Machine (the right column's tabs: each draws for the selection, follows the cursor); the status (idle, replay, halted); the cursor; stepping (in time: at the level, that deep or shallower, or every line, on into its task's next or last syscall; in depth: the calls above and below, setting the level), run to a line; the keys |
-| steps.js | which line ← → go to, from where the cursor is, at a level (that deep or shallower) or at every line (inlined leaves passed): pure, tried on made-up lines by tests/steps.js |
+| steps.js | which line ← → go to, from where the cursor is, at a level (that deep or shallower) or at every line: pure, tried on made-up lines by tests/steps.js |
 | layout.js | the page's layout: the columns and the timeline's height, dragged (kept in localStorage); the console, folded to its last line or open (a narrow screen, a phone's: the panes one under another, the page scrolling, ui.css; tests/ui/phone.js) |
 | timeline.js | the overview, the task strip, the stack chart (a flame graph: outermost at the bottom), on an axis of steps (blocks run: `Machine.steps`); zoom, pan; finding a function by any part of its name (`Machine.calls_of`) |
 | source.js | the source at the cursor (CodeMirror): lines that ran, the function, the cursor's line's values as it is about to run, what each line stored so far at its end (a link to the store), hover values, definitions |
 | callstack.js | the Stack: calls with arguments and locals, the task running (a link to it in the Tasks) |
 | tasks.js | the Tasks: every task at the cursor, the kernel's task list's, then the recording's others (`Machine.tasks`): the one running marked, each running, runnable or sleeping, and where it is (its syscall, else its outermost call); its task_struct as it was (the running one's open), its key fields first |
-| tree.js | values as trees (the Stack's): pointers open into what they point to, structs into their fields; who last wrote a value |
+| tree.js | values as trees (the Stack's, the Tasks'): pointers open into what they point to, structs into their fields; who last wrote a value |
 | trace.js | the Trace tab: the raw trace, a line a record (what the views are built from) |
-| objects.js | the Objects: what the syscall selected did (`Machine.objects`), all of it, always: a head in a line, then a box per object of the kernel's data it changed (not a stack's), those it left changed first, then those left as they were, each under the one pointing to it: each member before → after, by which function (a line each, when several did it in turn; a row, its writes); at the moment shown (the pointer's, else the cursor's), those not made yet gray, the one it is in marked |
-| examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
+| objects.js | the Objects: what the syscall selected did (`Machine.objects`), all of it, always: a head in a line, then a box per object of the kernel's data it changed (not a stack's), those it left changed first (its own task's, then each other task's that ran meanwhile, a head each), then those left as they were, each under the one pointing to it; each box by its type's name, then as the code names it (`file  filp in do_file_open`): each member before → after, by which function (a line each, when several did it in turn; a row, its writes); at the moment shown (the pointer's, else the cursor's), those not made yet gray, the one it is in marked |
+| examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the explanation (its links into the recording); the URL (`#ex=NAME&p=CALLS`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature (where the cursor is: `Machine.context`) |
 | ksee.js | booting |
 | kernel.js | syscalls from JavaScript: `sys.read(fd, buf, 64)` (a promise of its result: a blocked call pending while others go on), `declare("char buf[64]")` (the program's memory: a variable's `get()`, a JS value, and `set(x)`), JS values as C's (a string, bytes, argv, a variable's address, an object laid out as the parameter's struct); what the page's program lines, the tests and the console (`ksee.kernel`) make their calls through; a call's result with its errno's name (`result`, `errno`: Machine.errno) |
@@ -107,14 +107,12 @@ Every view asks the Machine for the moment at the cursor: `at(i)` (every
 record located: a store at its line, a return at the line it returned
 from), `call_stack(i, nth)`, `line_steps`, `chart`,
 `tasks(i)` (each task, where it is), `memory_at(i)` then `object` /
-`global` (memory as it was), `origin` (who last wrote a value, back through its copies), `stores` (a span
-of records' stores, and variable sets, in order (named once per span and
-snapshot: `objects`, what a call did, and `notes`, the source's notes by
-line, ask again), each named as the code
-names what it hit:
-the structs the calls' arguments point to, the task, locals and frames,
-the kernel's globals by address, the machine's own variables apart:
-"file in vfs_read"; else by its address), `raw` (records as text), `run_of` (a line's next or
+`global` (memory as it was), `origin` (who last wrote a value, back through its copies), `objects`
+(what a call did) and `notes` (the source's notes by line), their stores
+(named once per span and snapshot) named as the code names what they
+hit: the structs the calls' arguments point to, the task, locals, the
+kernel's globals by address, the machine's own variables apart: "file
+in vfs_read"; else by its address; `raw` (records as text), `run_of` (a line's next or
 last run), `definition`.
 
 ## Tests
@@ -124,12 +122,14 @@ last run), `definition`.
 - tests/web.js (Deno, with the page's own ksee.js): boots the kernel, has
   the program make syscalls, recorded (and every example's), and checks what the
   recordings show: stacks with arguments, lines, memory as it was, who
-  wrote a value, tasks, the examples' stops.
+  wrote a value, tasks, the examples' links.
 - tests/ui.js: the page in headless Chromium over CDP, a script from
   tests/ui/ run in it (after lib.js): read.js, the read example (its
-  stops, stepping at a level and ↑ ↓ moving it, → after a click, run to a line, the chart, typing and changing calls,
+  links, each landing in its function, stepping at a level and ↑ ↓ moving it, → after a click, run to a line, the chart, typing and changing calls,
   another example); back.js, a changed program from the URL; pipe.js, two
-  processes, calls that block. Fails on any exception; saves a screenshot
-  in target/.
+  processes, calls that block; phone.js, the read example at 390x844, the
+  panes one under another. Fails on any exception; saves a screenshot in
+  target/.
 
-`./ksee.sh test --ui` runs all three (`$CHROME`: a headless Chromium).
+`./ksee.sh test --ui` runs them all, the page's too (`$CHROME`: a headless
+Chromium).

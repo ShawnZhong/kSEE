@@ -67,8 +67,8 @@ idles (`NO_HZ_IDLE`), so an idle CPU's next timer is a real one. While a
 call is under way, idle skips to it only if the call's runner sleeps on a
 timer of its own (the task a queued timer is to wake: an `hrtimer_sleeper`
 among the hrtimers, a `process_timer` on the timer wheel; a sleep, a wait
-with a timeout, however long; the runtime's sched.rs reads them by the
-kernel's types, no kernel change); else the call is blocked:
+with a timeout, however long; ksee-core's `arch::timer_wakes` reads
+them by the kernel's types, no kernel change); else the call is blocked:
 it waits for another call, and the machine is quiet at once. (During the
 boot, it skips a virtual second's worth: what the boot leaves for later.)
 
@@ -189,7 +189,8 @@ above RAM is the host's heap.
 
 ## The host interface
 
-All of it is in arch/wasm/include/asm/wasm.h. Imports (module `kernel`):
+Nearly all of it is in arch/wasm/include/asm/wasm.h (`print_stack`:
+kernel/traps.c; `ksee_trace`: the plugin's). Imports (module `kernel`):
 `console_write`, `get_cmdline`, `memory_end`, `time_ns`,
 `spawn_task`, `switch_task`, `restart_task` and `idle` (suspending),
 `clone_user`, `doorbell`, `halt`, `user_load`,

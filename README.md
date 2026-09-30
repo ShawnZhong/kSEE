@@ -110,7 +110,7 @@ struct's value opens, field by field, on a click on its name), and a value in th
 for who last wrote it. The Stack shows the selected call's
 values (the innermost's, unless another is selected: a click on it, ▲ ▼,
 a bar in the timeline), the others a row each, as a debugger's variables
-are the selected frame's (every call's, on asking); its locals are all
+are the selected frame's; its locals are all
 of them, in the order it declares them, those in memory and those the
 code keeps in wasm locals, as the recording has them set. The Tasks tab lists every task at the
 cursor, as the kernel's task list had them then (from `init_task`, each
@@ -135,8 +135,8 @@ were (a lock taken and released, a count taken and dropped); in a box, the
 members it left changed first, each member it changed,
 a line a function that changed it in turn, from what to what (`f_mode
 0 → 0x4000001  init_file`, then `0x4000001 → 0x40a801d  do_dentry_open`;
-a pointer, to another object: that one, `fd_array[3]  NULL → f in
-create_pipe_files`, a link to it; a count one took and another dropped,
+a pointer, to another object: that one, `fd_array[3]  NULL → file (f in
+create_pipe_files)`, a link to it; a count one took and another dropped,
 dim); a line goes to its write. As a tree: each object under
 the first that points to it (`← f_inode`), the one holding the task
 first; the head names them, once each (`folio ×23`). What other tasks
@@ -145,8 +145,8 @@ thread) comes after its own, by task, a head each. The moment shown (the
 pointer's over the timeline, else the cursor's) only colors it: the
 writes not made by then are gray, those it is among marked. One store may change several members (a struct
 copied at once: `f_path.mnt` and `f_path.dentry`): each is a change of
-its own. The line the cursor is on shows its values at
-its end, as a debugger does (`fd = 3   count = 64`). Objects are said as
+its own. The line the cursor is on shows its values under it, as they are
+before it runs (`fd = 3   count = 64`). Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by
 its number and filesystem, a task by its comm and pid. The Trace tab is
 the raw trace, a line a record (a call with its arguments, a block, a
@@ -182,4 +182,4 @@ in-memory file system (ramfs: no tmpfs without an MMU), has `/note.txt`.
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs
 the page itself (tests/ui/: the read example, a changed program from the
-URL, the pipe example), and saves screenshots in `target/`. The build is `ksee build` (crates/ksee-cli/src/build.rs).
+URL, the pipe example, the read example on a phone's screen), and saves screenshots in `target/`. The build is `ksee build` (crates/ksee-cli/src/build.rs).

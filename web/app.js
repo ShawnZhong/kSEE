@@ -108,12 +108,11 @@ export function app(m) {
     : [el("span", { textContent: "level: all", title: "◀ ▶ stop at every line, at any depth: select a call (a click, ↑ ↓) to step at its level" })]));
   const setLevel = (l) => ((level = l), showLevel());
   a.level = () => level;
-  // (`sticky`: the call's level the one stepped at; not for a link's call
-  // site: see goCall.)
-  a.selectFrame = (f, sticky = true) => {
+  // (Its level the one stepped at.)
+  a.selectFrame = (f) => {
     chosen = { first: f.first, inlined: f.inlined ? f.func : null };
     stack.select(f.first, f.inlined ? f.func : null);
-    if (sticky) setLevel({ ...stack.level(), func: f.func });
+    setLevel({ ...stack.level(), func: f.func });
     src.view.cursor = { file: f.file, line: f.line };
     const at = time.cursor() != null ? m.at(time.cursor()) : null, s = calls[at?.syscall] ?? null;
     // (Inlined code: in the function it is inlined into, at its own line.)

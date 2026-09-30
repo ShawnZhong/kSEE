@@ -17,8 +17,8 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
   question ("What is a file descriptor?", "What happens in
   read()?", "What is a directory?", "How do two processes talk through a
   pipe?"), a program of a few syscalls that asks it, and a short
-  explanation, with links into the recording. The first, printing
-  "hello", is also a first look at kSEE itself.
+  explanation, with links into the recording. The first, getpid (the
+  smallest syscall), is also a first look at kSEE itself.
 - *Kernel developers*: what a code path really does, on a real kernel they
   can read and change. They make **their own syscalls**.
 
@@ -41,8 +41,8 @@ SMP, no fork (threads and vfork, though): see Limits).
    - *code*: the source line at the cursor, the lines that ran;
    - *values*: the call stack with each call's arguments and locals,
      the task running, and a name's value on hover (who last wrote it);
-     memory as it was at the cursor; what a call changed, by object,
-     each change's moment on a strip, on asking.
+     memory as it was at the cursor; what a call changed, by object
+     (by task, as a tree), each member from what to what.
    An example's explanation is prose with links into the recording: a
    function one of its calls ran, or a call.
 

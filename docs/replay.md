@@ -19,6 +19,13 @@ Who a task is (pid, comm) comes from its task_struct, in memory now (so a
 task that exited meanwhile, a kernel thread or a runner's child, may show
 as whoever has its address now; a runner that execs shows its new comm).
 
+The tasks at a record (`tasks`): the kernel's task list as memory then
+had it (from `init_task`, each process by its `tasks` link, and its
+threads, its signal_struct's `thread_head`: arch.rs), then the others
+the recording has; each running (on the CPU there), runnable (on the
+run queue, `on_rq`), sleeping (off it), exited (no longer on the list)
+or later (not made yet).
+
 ## Calls and stacks
 
 A shadow stack per task (stack.rs). LLVM's entry block has no predecessors,
@@ -43,7 +50,8 @@ was made from and where that one was then), and per record where its
 task is after it (its innermost call, the block and the stretch of its
 lines). So the Stack at a record (`stack_at`: from the innermost call out,
 through each call's caller), where a call ends (`call_end`), the stack
-chart (`chart`: every task's stack at the columns' first records; the
+chart (`chart`: at each column's first record, the task running there
+and its stack; the
 columns are equal in steps, the recording's unit of time: a block run, so
 a store takes none and a memset is not longer than a line) and a store's
 line are lookups, not walks from the first record.
@@ -53,7 +61,7 @@ line are lookups, not walks from the first record.
 A block runs several source lines, and calls functions in between. The
 plugin's `L` lines give a block's lines in stretches split at its calls;
 at a block, its first stretch runs; after a return into it, the next
-(`lines`: those of a span of records). So stepping goes line by line, into and out of
+(`lines`: those one task ran in a span of records). So stepping goes line by line, into and out of
 calls, including lines inlined from other functions. Each line step says
 which of its record's lines it is (`nth`: the Stack there), where it is
 `at` (the record just before it runs, as a debugger stops before a line:
@@ -80,8 +88,8 @@ the chain is a frame of its own on the stack (no arguments: there was no
 call), at the line inside it, and the real call is at the line where the
 chain starts. The stack chart shows them as calls too, and the line a
 record is at names the function its code is inlined from. The page says
-which is which (an inlined frame is marked so on the Stack, italic in
-the Calls) and shows no arguments for inlined code: there was no call. The
+which is which (an inlined frame is marked "inlined" on the Stack) and
+shows no arguments for inlined code: there was no call. The
 one exception is the machine's own primitives, `arch/wasm/include/asm`'s
 and `include/asm-generic`'s `current`, interrupt flag, atomics and bit
 ops (arch::PRIMITIVES): inlined

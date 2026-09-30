@@ -383,7 +383,7 @@ export function timeline(app) {
   // Select records `where()` gives ({ a, b, task }: asked again after each
   // snapshot, as records move), called `title`: the window at them.
   // The window stays as it is (the whole recording by default: zooming is
-  // asked for, `z` or "zoom": see zoomTo), unless the selection is not in it.
+  // asked for, "zoom": see zoomTo), unless the selection is not in it.
   function selectWindow(where, title) {
     t.depth = 1;
     t.where = where;

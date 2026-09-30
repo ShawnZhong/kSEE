@@ -191,9 +191,7 @@ impl View<'_> {
     /// The stores in records `first..=last` (a call's), and the variables
     /// set there, in order, each by what the code names that it hit (see
     /// Region): a call's pointer argument to a struct, a local, the task
-    /// running, a callee's frame (from its frame base up to its caller's:
-    /// the stack it used beyond its named locals; no type), a global of
-    /// the kernel's; else by its address.
+    /// running, a global of the kernel's; else by its address.
     pub fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Named> {
         if let Some((span, got)) = &*self.rec.named.borrow() && *span == (first, last) {
             return got.clone();
