@@ -38,15 +38,15 @@ export function objects(app) {
     mark(app.time.cursor());
   }
 
-  // (A box's name, short: its expression, not where it is named.)
-  const short = (n) => n.what.split(" in ")[0];
+  // (A box's name, and where it is named: "file in vfs_read".)
+  const whole = (n) => (n.within ? `${n.what} in ${n.within}` : n.what);
 
   function render(nodes, title) {
     if (!nodes.length) return [el("div", { className: "dim head" }, `${title} changed nothing of the kernel's data`)];
     const changed = nodes.filter((n) => n.group === "changed"), same = nodes.filter((n) => n.group === "same");
     const count = (list) => `${list.length} object${list.length === 1 ? "" : "s"}`;
     // (Their names, once each: "folio ×23".)
-    const names = (list) => [...Map.groupBy(list, short)].map(([s, of]) => (of.length > 1 ? `${s} ×${of.length}` : s)).join(", ");
+    const names = (list) => [...Map.groupBy(list, (n) => n.what)].map(([s, of]) => (of.length > 1 ? `${s} ×${of.length}` : s)).join(", ");
     // (Its own, then each other task's that first wrote them while it ran,
     // by task: Node.by.)
     const own = changed.filter((n) => !n.by), others = [...Map.groupBy(changed.filter((n) => n.by), (n) => taskName(n.by))];
@@ -95,16 +95,16 @@ export function objects(app) {
           title: `${r.writes === 1 ? "written once" : `written ${r.writes} times`}${r.at ? ` in ${r.at.func} (${r.at.file}:${r.at.line})` : ""}: click to go there` },
         el("td", { className: "fname" }, q ? "" : d.member || "(itself)"),
         el("td", { className: "fval" }, el("span", { className: "dim" }, `${r.before} → `),
-          q === runs.length - 1 && to ? el("a", { textContent: to.what, onclick: (e) => (e.stopPropagation(), flash(d.to)) }) : r.after),
+          q === runs.length - 1 && to ? el("a", { textContent: whole(to), onclick: (e) => (e.stopPropagation(), flash(d.to)) }) : r.after),
         el("td", { className: "ftype" }, r.at?.func ?? ""))));
     });
     // (A global: where it is declared, a link to it in the source.)
     const decl = n.kind === "global" ? m.definition(n.what) : null;
     // (The member it hangs from, unless its name says it: prog(19)->real_cred.)
-    const via = n.under && !n.what.endsWith(`->${n.under[1]}`) ? `  ← ${n.under[1]}` : "";
+    const via = n.via ? `  ← ${n.via}` : "";
     return el("div", { className: `obj ${n.kind}`, dataset: { k } },
       // (As C declares it, the type first: one a pointer reaches, "*": struct file *filp in do_file_open.)
-      el("div", { className: "title" }, el("span", { className: "dim", textContent: `${n.ty} ${n.kind === "object" ? "*" : ""}` }), el("b", { textContent: n.what }),
+      el("div", { className: "title" }, el("span", { className: "dim", textContent: `${n.ty} ${n.kind === "object" ? "*" : ""}` }), el("b", { textContent: whole(n) }),
         el("span", { className: "dim", textContent: `  at 0x${n.addr.toString(16)}${via}` }),
         decl ? el("a", { className: "decl", textContent: `  ${decl.file}:${decl.line}`, title: "where it is declared", onclick: () => app.src.show(decl.file, decl.line) }) : null),
       el("table", { className: "objs" }, el("tbody", {}, ...rows)));

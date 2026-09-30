@@ -196,7 +196,8 @@ pub(super) fn unquote(s: &str) -> Result<Vec<u8>, String> {
 /// A name in a line of C source (see names): `expr`, it with the fields
 /// before it ("file->f_pos" for f_pos), from `start` (where the first of
 /// them is) to `end`, the name itself from `at`; `member`: it follows a ->
-/// or a . (a field's, not a variable's). Offsets in UTF-16 units, as the
+/// or a . (a field's, not a variable's), and then `parent`, the
+/// expression it is a field of ("file"). Offsets in UTF-16 units, as the
 /// page's text has them.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -206,6 +207,7 @@ pub struct Name {
     pub at: usize,
     pub end: usize,
     pub member: bool,
+    pub parent: Option<String>,
 }
 
 /// C's keywords (and its constants' words): not names of values.
@@ -253,19 +255,22 @@ pub fn names(text: &str) -> Vec<Name> {
             continue;
         }
         // (The fields before it: `x->` or `x.`, back to the first.)
-        let (mut start, mut expr, mut member) = (a, token, false);
+        let (mut start, mut expr, mut member, mut op1) = (a, token.clone(), false, 0);
         loop {
             let mut j = start;
             while j > 0 && chars[j - 1] == ' ' {
                 j -= 1;
             }
             let op = if j >= 2 && chars[j - 2] == '-' && chars[j - 1] == '>' { 2 } else if j >= 1 && chars[j - 1] == '.' { 1 } else { break };
-            member = true;
             let Some((b, e)) = before(j - op) else { break };
+            if !member {
+                (member, op1) = (true, op);
+            }
             expr = format!("{}{}{expr}", chars[b..e].iter().collect::<String>(), if op == 2 { "->" } else { "." });
             start = b;
         }
-        out.push(Name { expr, start: pos[start], at: pos[a], end: pos[k], member });
+        let parent = member.then(|| expr[..expr.len() - token.len() - op1].to_string());
+        out.push(Name { expr, start: pos[start], at: pos[a], end: pos[k], member, parent });
     }
     out
 }

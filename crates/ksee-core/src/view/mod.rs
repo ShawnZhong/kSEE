@@ -416,10 +416,29 @@ impl View<'_> {
         if let Some(id) = self.tables.find(name) {
             return self.place(id);
         }
-        let declared = &self.tables.types.declared;
-        // (".member": a member of any struct, when whose is not known.)
-        let (file, line) = declared.get(name).or_else(|| declared.iter().find(|(k, _)| k.ends_with(name) && name.starts_with('.')).map(|(_, v)| v))?;
+        let (file, line) = self.tables.types.declared.get(name)?;
         Some(Place { name: name.to_string(), file: file.clone(), line: *line })
+    }
+
+    /// Where member `member` of type `ty` (a struct or union, or a pointer
+    /// to one) is declared; with no type, of the one struct that has a
+    /// member so named, if only one does.
+    pub fn member_definition(&self, ty: Option<u32>, member: &str) -> Option<Place> {
+        let types = &self.tables.types;
+        let Some(ty) = ty else {
+            let suffix = format!(".{member}");
+            let mut of = types.declared.keys().filter(|k| k.ends_with(&suffix) && !k[..k.len() - suffix.len()].contains('.'));
+            return match (of.next(), of.next()) {
+                (Some(k), None) => self.definition(k),
+                _ => None,
+            };
+        };
+        let id = types.resolve(ty);
+        let id = match types.get(id).kind {
+            Kind::Pointer(to) => types.resolve(to),
+            _ => id,
+        };
+        self.definition(&format!("{}.{member}", types.get(id).name))
     }
 
     /// Function `id`: where it is.

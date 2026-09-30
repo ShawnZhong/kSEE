@@ -10,12 +10,17 @@ impl Memory for Mem {
     }
 }
 
+/// A name as the page says it: "p in f".
+fn named(what: &str, within: &Option<String>) -> String {
+    within.as_ref().map_or(what.into(), |f| format!("{what} in {f}"))
+}
+
 /// Records `first..=last`'s writes, a member each: (record, what, kind, member, before, after).
 fn writes(v: &View, first: usize, last: usize) -> Vec<(usize, String, &'static str, String, String, String)> {
     let n = v.stores(first, last);
     n.writes.iter().flat_map(|w| {
         let r = &n.regions[w.region as usize];
-        v.changes(&n, w).into_iter().map(|c| (w.i, r.what.clone(), r.kind, c.member, c.before, c.after))
+        v.changes(&n, w).into_iter().map(|c| (w.i, named(&r.what, &r.within), r.kind, c.member, c.before, c.after))
     }).collect()
 }
 
@@ -197,7 +202,7 @@ fn the_objects_a_call_wrote_are_a_graph() {
     (m[8], m[32], m[36]) = (2, 7, 4);
     let v = View { tables: &t, rec: &rec, now: &Mem(m) };
     let nodes = v.objects(0, 3);
-    let got: Vec<_> = nodes.iter().map(|n| (n.what.clone(), n.changes.iter().map(|d| (d.member.clone(), format!("{} → {}", d.before, d.after), d.to)).collect::<Vec<_>>())).collect();
+    let got: Vec<_> = nodes.iter().map(|n| (named(&n.what, &n.within), n.changes.iter().map(|d| (d.member.clone(), format!("{} → {}", d.before, d.after), d.to)).collect::<Vec<_>>())).collect();
     // (As a tree, in the order shown: q, then p under it, by its link.)
     assert_eq!(got, [("q in f".into(), alloc::vec![("c".into(), "0 → 7".into(), None), ("link".into(), "NULL → 0x4".into(), Some(1))]),
                      ("p in f".into(), alloc::vec![("b".into(), "1 → 2".into(), None)])]);
@@ -220,7 +225,7 @@ fn another_tasks_objects_come_after_the_spans_own() {
     let mut m = alloc::vec![0u8; 64];
     (m[8], m[20]) = (2, 4);
     let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-    let got: Vec<_> = v.objects(0, 5).into_iter().map(|n| (n.what, n.by.map(|t| t.addr))).collect();
+    let got: Vec<_> = v.objects(0, 5).into_iter().map(|n| (named(&n.what, &n.within), n.by.map(|t| t.addr))).collect();
     assert_eq!(got, [("p in f".into(), None), ("q in g".into(), Some(40))]);
 }
 
@@ -255,7 +260,7 @@ fn an_object_inside_another_is_its_member() {
     let mut m = alloc::vec![0u8; 128];
     m[12] = 3;
     let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-    let got: Vec<_> = v.objects(0, 2).into_iter().map(|n| (n.what, n.changes.into_iter().map(|d| (d.member, format!("{} → {}", d.before, d.after))).collect::<Vec<_>>())).collect();
+    let got: Vec<_> = v.objects(0, 2).into_iter().map(|n| (named(&n.what, &n.within), n.changes.into_iter().map(|d| (d.member, format!("{} → {}", d.before, d.after))).collect::<Vec<_>>())).collect();
     assert_eq!(got, [("p in f".into(), alloc::vec![("inner.b".into(), "0 → 3".into())])]);
 }
 
@@ -274,8 +279,8 @@ fn two_objects_of_one_name_are_numbered() {
     let mut m = alloc::vec![0u8; 128];
     (m[8], m[24]) = (1, 2);
     let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-    let got: Vec<_> = v.objects(0, 5).into_iter().map(|n| n.what).collect();
-    assert_eq!(got, ["p in f", "p in f #2"]);
+    let got: Vec<_> = v.objects(0, 5).into_iter().map(|n| named(&n.what, &n.within)).collect();
+    assert_eq!(got, ["p in f", "p #2 in f"]);
 }
 
 #[test]
@@ -297,7 +302,7 @@ fn a_members_changes_are_a_run_a_function() {
     let nodes = v.objects(0, 4);
     let d = &nodes[0].changes[0];
     let runs: Vec<_> = d.runs.iter().map(|r| (r.at.as_ref().map(|l| l.func.clone()), r.before.clone(), r.after.clone(), r.last)).collect();
-    assert_eq!((nodes[0].what.as_str(), d.member.as_str(), d.before.as_str(), d.after.as_str()), ("p in f", "b", "1", "1"));
+    assert_eq!((named(&nodes[0].what, &nodes[0].within).as_str(), d.member.as_str(), d.before.as_str(), d.after.as_str()), ("p in f", "b", "1", "1"));
     // (Left as it was, in the end: an object of the "same" group.)
     assert_eq!(nodes[0].group, "same");
     assert_eq!(runs, [(Some("f".into()), "1".into(), "2".into(), 1), (Some("g".into()), "2".into(), "1".into(), 3)]);
@@ -396,7 +401,7 @@ fn objects_expose_pointer_targets() {
     m[4..8].copy_from_slice(&8u32.to_le_bytes());
     let o = t.object(&Mem(m), "n", 0, 2, 1);
     let c = o.children.unwrap();
-    assert_eq!((c[0].value.as_deref(), c[1].value.as_deref(), c[1].target), (Some("7"), Some("0x8"), Some(2)));
+    assert_eq!((c[0].value.as_deref(), c[1].value.as_deref(), c[1].target), (Some("7"), Some("0x8"), Some((2, 8))));
 }
 
 #[test]

@@ -10,7 +10,10 @@ use super::stores::Leaf;
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Node {
+    /// As the code names it ("file", "prog(19)->files"), and the function
+    /// that does, if one (Region::within).
     pub what: String,
+    pub within: Option<String>,
     pub kind: &'static str,
     pub ty: String,
     pub id: u32,
@@ -31,6 +34,9 @@ pub struct Node {
     /// members: the first that points to it as the span ends ("f_inode"),
     /// if any.
     pub under: Option<(usize, String)>,
+    /// That member, unless its name says it ("prog(19)->files" under
+    /// prog(19), by files: none).
+    pub via: Option<String>,
 }
 
 /// A member a span of records changed: from `before` (as the span began)
@@ -92,8 +98,8 @@ impl View<'_> {
                 None => {
                     let task = self.rec.tasks[w.i];
                     let by = (Some(task) != own).then(|| self.task(task));
-                    nodes.push((Node { what: r.what.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size, changes: Vec::new(),
-                                       depth: r.depth, group, by, under: None }, Vec::new()));
+                    nodes.push((Node { what: r.what.clone(), within: r.within.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size, changes: Vec::new(),
+                                       depth: r.depth, group, by, under: None, via: None }, Vec::new()));
                     nodes.len() - 1
                 }
             };
@@ -166,10 +172,10 @@ impl View<'_> {
         nodes.sort_by_key(|n| (n.0.group == "same", tasks.iter().position(|&t| t == n.0.by.as_ref().map(|t| t.addr)), n.0.depth));
         let (mut nodes, points): (Vec<Node>, Vec<Vec<Option<u32>>>) = nodes.into_iter().unzip();
         // (One name for two (the slabs of two caches a callee named by one
-        // parameter): the later numbered: "slab in pfmemalloc_match #2".)
-        let mut seen: BTreeMap<String, u32> = BTreeMap::new();
+        // parameter): the later numbered: "slab #2 in pfmemalloc_match".)
+        let mut seen: BTreeMap<(String, Option<String>), u32> = BTreeMap::new();
         for n in &mut nodes {
-            let k = seen.entry(n.what.clone()).or_default();
+            let k = seen.entry((n.what.clone(), n.within.clone())).or_default();
             *k += 1;
             if *k > 1 {
                 n.what = format!("{} #{k}", n.what);
@@ -238,6 +244,7 @@ impl View<'_> {
                 d.to = to.map(|to| new[to]);
             }
             n.under = under[k].take().map(|(p, m)| (new[p], m));
+            n.via = n.under.as_ref().map(|(_, m)| m.clone()).filter(|m| !n.what.ends_with(&format!("->{m}")));
             n
         }).collect()
     }

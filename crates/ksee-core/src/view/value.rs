@@ -9,15 +9,21 @@ use super::*;
 pub struct Object {
     pub name: String,
     pub ty: String,
+    /// Its type's id (typedefs resolved).
+    pub id: u32,
     pub addr: u32,
     /// Its size in bytes.
     pub size: u32,
     pub value: Option<String>,
+    /// Why it has none (its `value` says it too, in parentheses):
+    /// "uninitialized" (not stored to yet), "optimized out".
+    pub none: Option<&'static str>,
     pub children: Option<Vec<Object>>,
     /// Type id to expand this value (an aggregate not expanded yet).
     pub expand: Option<u32>,
-    /// For a pointer to a struct or union: the target's type id.
-    pub target: Option<u32>,
+    /// For a pointer to a struct or union, not NULL: what it points to,
+    /// (type id, address).
+    pub target: Option<(u32, u32)>,
 }
 
 impl Types {
@@ -32,8 +38,8 @@ impl Types {
         let id = self.resolve(ty);
         let t = self.get(id);
         let mut o = Object {
-            name: name.to_string(), ty: self.name(ty), addr, size: self.size_of(ty),
-            value: None, children: None, expand: None, target: None,
+            name: name.to_string(), ty: self.name(ty), id, addr, size: self.size_of(ty),
+            value: None, none: None, children: None, expand: None, target: None,
         };
         match &t.kind {
             Kind::Struct(_) | Kind::Union(_) => {
@@ -69,7 +75,7 @@ impl Types {
                 });
                 let target = self.resolve(*to);
                 match self.get(target).kind {
-                    Kind::Struct(_) | Kind::Union(_) if p != 0 && self.size_of(target) > 0 => o.target = Some(target),
+                    Kind::Struct(_) | Kind::Union(_) if p != 0 && self.size_of(target) > 0 => o.target = Some((target, p)),
                     // (A pointer to a scalar: what it points to, in line: "0x7ffd8 → 0".)
                     Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_) if p != 0 && !self.is_string(*to) => {
                         let mut v = String::new();

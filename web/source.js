@@ -73,8 +73,8 @@ export function source(app) {
   // an inline function: not a value the recording has): where, and its
   // first lines, for a hover; null if none.
   async function declaration(text, k) {
-    const e = exprAt(text, k), w = e && text.slice(e.start, e.end);
-    const d = w && !m.functions(w).length && definition(w, e.expr);
+    const e = exprAt(text, k), w = e && text.slice(e.at, e.end);
+    const d = w && !m.functions(w).length && definition(e, w);
     if (!d) return null;
     const src = await fetchFile(d.file);
     if (!src) return null;
@@ -124,7 +124,7 @@ export function source(app) {
       if (seen.has(e.expr)) continue;
       seen.add(e.expr);
       const o = app.stack.resolve(e.expr, owner(line));
-      if (o && o.value != null && o.value !== "(optimized out)") out.push(`${e.expr} = ${o.value}`);
+      if (o && o.value != null && o.none !== "optimized out") out.push(`${e.expr} = ${o.value}`);
     }
     return out.length ? out.join("   ") : null;
   }
@@ -195,16 +195,18 @@ export function source(app) {
     // (The value, and to open: its fields, and what it points to, a tree.)
     return { start: e.start, end: e.end, text: `${e.expr} = ${o.value ?? "{…}"}  // ${o.ty}`, o, expr: e.expr };
   }
-  // The definition of `word` (`expr`: the expression it ends, for a field:
-  // file->f_pos): { file, line, func? (an instrumented function: its
-  // source, with the lines that ran) }, or null.
-  function definition(word, expr) {
-    const parent = expr?.match(/^(.*\S)\s*(?:->|\.)\s*\w+$/)?.[1];
-    // (A field: of the struct the expression before it is, by name.)
-    const owner = parent && app.stack.resolve(parent)?.ty.match(/^(?:const )?(?:struct|union) (\w+)/)?.[1];
-    // (A field of a value the stack does not have: of any struct with it.)
-    const d = m.definition(owner ? `${owner}.${word}` : parent ? `.${word}` : word);
-    return d && { file: d.file, line: d.line, func: !owner && m.functions(word).length ? word : null };
+  // The definition of name `n` (Machine.names: a field's, with the
+  // expression it is a field of), `word` its text: { file, line, func? (an
+  // instrumented function: its source, with the lines that ran) }, or null.
+  function definition(n, word) {
+    // (A field: of the type of the value before it, if the Stack has it;
+    // else of the one struct with such a member, if only one.)
+    if (n.parent != null) {
+      const d = m.member_definition(app.stack.resolve(n.parent)?.id, word);
+      return d && { file: d.file, line: d.line, func: null };
+    }
+    const d = m.definition(word);
+    return d && { file: d.file, line: d.line, func: m.functions(word).length ? word : null };
   }
   // Go to the definition of the name at `pos` of the shown file (a
   // function: its source, with the lines that ran; else the file, at the
@@ -212,7 +214,7 @@ export function source(app) {
   function definitionAt(pos) {
     const doc = ed.state.doc, line = doc.lineAt(pos), w = ed.state.wordAt(pos);
     if (!w) return false;
-    const word = doc.sliceString(w.from, w.to), jump = definition(word, exprAt(line.text, pos - line.from)?.expr);
+    const word = doc.sliceString(w.from, w.to), jump = definition(exprAt(line.text, pos - line.from) ?? { parent: null }, word);
     if (!jump) return false;
     if (jump.func) showFunction(jump.func);
     else {
@@ -240,7 +242,7 @@ export function source(app) {
       // and locals on the Stack: underlined, a hover shows them; not a
       // member's name, after . or ->.)
       const names = new Set(app.stack.frames().filter((f) => f.func === fn.name && !f.inlined)
-        .flatMap((f) => [...(f.args ?? []), ...(f.locals ?? [])]).filter((o) => o.value !== "(optimized out)").map((o) => o.name));
+        .flatMap((f) => [...(f.args ?? []), ...(f.locals ?? [])]).filter((o) => o.none !== "optimized out").map((o) => o.name));
       for (let n = fn.line; names.size && n <= Math.min(fn.last, doc.lines); n++) {
         const line = doc.line(n);
         for (const w of namesOf(line.text)) if (!w.member && names.has(w.expr)) d.push(valued.range(line.from + w.at, line.from + w.end));

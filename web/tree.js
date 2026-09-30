@@ -22,7 +22,7 @@ export function tree(app, st, redraw) {
   function kids(o) {
     if (o.children) return o.children;
     if (o.expand != null) return m.object_by_id(o.name, o.expand, o.addr, 1)?.children ?? [];
-    if (o.target != null && o.value !== "NULL") return m.object_by_id(o.name, o.target, Number(o.value), 1)?.children ?? [];
+    if (o.target) return m.object_by_id(o.name, o.target[0], o.target[1], 1)?.children ?? [];
     return null;
   }
 
@@ -36,7 +36,7 @@ export function tree(app, st, redraw) {
       st.now.set(p, value);
       const changed = st.last.has(p) && st.last.get(p) !== value;
       // (One with no value yet, or none the recording has: dim.)
-      const none = /^\((uninitialized|optimized out)/.test(value);
+      const none = o.none != null;
       out.push(el("tr", { className: [changed ? "changed" : "", none ? "none" : ""].join(" ").trim(), dataset: { p } },
         // (Its name, or ▸: open it, or fold it.)
         el("td", { className: `fname${can ? " opens" : ""}`, style: `padding-left:${10 + depth * 14}px`,
@@ -65,7 +65,7 @@ export function tree(app, st, redraw) {
 }
 
 // Whether value `o` opens: into its fields, or what it points to.
-export const openable = (o) => o.children || o.expand != null || (o.target != null && o.value !== "NULL");
+export const openable = (o) => o.children || o.expand != null || o.target != null;
 
 // Where a write was: "ksys_read fs/read_write.c:720".
 export const place = (at) => (at ? `${at.inlined ?? at.func} ${at.file}:${at.line}` : "?");

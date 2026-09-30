@@ -316,9 +316,16 @@ impl Machine {
     }
 
     /// Where `name` is defined (view::Place): a function, a type, a global
-    /// or a member ("file.f_pos"); or null.
+    /// or a member ("file.f_pos": see member_definition); or null.
     pub fn definition(&self, name: &str) -> JsValue {
         self.view(|v| to_js(&v.definition(name)))
+    }
+
+    /// Where member `member` of type `ty` (or of what a pointer of it
+    /// points to; none: of the one struct with it) is declared
+    /// (view::Place), or null.
+    pub fn member_definition(&self, ty: Option<u32>, member: &str) -> JsValue {
+        self.view(|v| to_js(&v.member_definition(ty, member)))
     }
 
     /// The functions called `name` (view::Function).
