@@ -48,11 +48,12 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
   function suggest(c) {
     if (c.param == null) {
       const w = c.call;
-      // (Nothing written: the common ones, to start from.)
+      // (Every one that fits, the list scrolling: the common ones first,
+      // then those starting with it, then those with it inside; nothing
+      // written: all of them, the common ones first.)
       const starts = names.filter((n) => n.startsWith(w)), inside = w ? names.filter((n) => !n.startsWith(w) && n.includes(w)) : [];
-      const all = [...new Set([...common.filter((n) => n.startsWith(w)), ...starts, ...inside])];
-      return (w ? all : all.filter((n) => common.includes(n))).slice(0, 12)
-        .map((n) => ({ text: `${n}(`, label: n, detail: signature(n)?.map((p) => p.textContent ?? p).join(""), name: true }));
+      return [...new Set([...common.filter((n) => n.startsWith(w)), ...starts, ...inside])]
+        .map((n) => ({ text: `${n}(`, label: n, detail: signatureText(n), name: true }));
     }
     if (!c.word || /^\d/.test(c.word)) return [];
     // (The results so far, by name, first; then the constants that fit.)
@@ -63,8 +64,11 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
     const fits = p?.consts ?? [];
     const rank = (n) => (fits.some((f) => n.startsWith(f)) ? 0 : 1);
     return [...results, ...constNames.filter((n) => n.startsWith(c.word)).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
-      .map((n) => ({ text: n, label: n, detail: String(consts[n]) }))].slice(0, 12);
+      .map((n) => ({ text: n, label: n, detail: String(consts[n]) }))];
   }
+  // (A syscall's signature as text, once each: the list shows it for all.)
+  const signatures = new Map();
+  const signatureText = (n) => signatures.get(n) ?? signatures.set(n, signature(n)?.map((p) => p.textContent ?? p).join("")).get(n);
 
   function signature(name, bold = -1) {
     const s = m.syscall(name);
@@ -87,6 +91,8 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
       className: k === sel ? "on" : "", onmousedown: (e) => (e.preventDefault(), take(k)) },
       el("span", { className: "mono", textContent: it.label }), " ",
       el("span", { className: "dim", textContent: it.detail ?? "" }))));
+    // (The one chosen in view, as ↑ ↓ move it.)
+    list.children[sel]?.scrollIntoView({ block: "nearest" });
     const sig = c.call && signature(c.call, c.param ?? -1);
     hint.replaceChildren(...(sig ? sig : c.call && c.param != null ? [noSyscall(c.call)] : []));
   }
