@@ -159,19 +159,20 @@ impl Recording {
     /// The first call of function `name` in records `first..=last` (of the
     /// task at address `task`, or any): its record (see calls).
     pub fn first_call(&self, t: &Tables, name: &str, first: usize, last: usize, task: Option<u32>) -> Option<usize> {
-        self.calls(t, name, first, last, task).next()
+        self.calls(t, |n| n == name, first, last, task).next()
     }
 
-    /// The calls of function `name` in records `first..=last` (of the task
-    /// at address `task`, or any), in order: each one's record, its block
-    /// 0; code inlined from it counts too, where it starts (a block that
-    /// runs some, the task's block before not).
-    pub fn calls<'a>(&'a self, t: &'a Tables, name: &str, first: usize, last: usize, task: Option<u32>) -> impl Iterator<Item = usize> + 'a {
-        let ids: Vec<u32> = t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
-        // The inline chains with `name` in them.
-        let inl = t.names.iter().position(|n| n == name).map(|k| k as u32);
-        let chains: Vec<u32> = t.inlines.iter().enumerate()
-            .filter(|(_, c)| c.iter().any(|&(k, _)| Some(k) == inl)).map(|(c, _)| c as u32).collect();
+    /// The calls of the functions whose names `is` says yes to in records
+    /// `first..=last` (of the task at address `task`, or any), in order:
+    /// each one's record, its block 0; code inlined from one counts too,
+    /// where it starts (a block that runs some, the task's block before not).
+    pub fn calls<'a>(&'a self, t: &'a Tables, is: impl Fn(&str) -> bool, first: usize, last: usize, task: Option<u32>) -> impl Iterator<Item = usize> + 'a {
+        use alloc::collections::BTreeSet;
+        let ids: BTreeSet<u32> = t.functions.iter().filter(|(_, f)| is(&f.name)).map(|(&id, _)| id).collect();
+        // The inline chains with one of them in them.
+        let inl: BTreeSet<u32> = t.names.iter().enumerate().filter(|(_, n)| is(n)).map(|(k, _)| k as u32).collect();
+        let chains: BTreeSet<u32> = t.inlines.iter().enumerate()
+            .filter(|(_, c)| c.iter().any(|(k, _)| inl.contains(k))).map(|(c, _)| c as u32).collect();
         let inlined = move |func: u32, n: u32| !chains.is_empty() && t.block(func, n)
             .is_some_and(|b| b.steps.iter().any(|s| s.inlined.is_some_and(|c| chains.contains(&c))));
         // (Per task: whether its last block ran some inlined.)
@@ -267,7 +268,7 @@ mod tests {
         assert_eq!((rec.first_call(&t, "f", 0, 1, None), rec.first_call(&t, "h", 0, 1, None)), (Some(0), Some(1)));
         // (A loop in the inlined code, blocks 1 and 1 again: one call, where it starts; f called again, and h in it.)
         let rec = Recording::new(&t, alloc::vec![b(1, 0), b(1, 1), b(1, 1), b(1, 0), b(1, 1)], (0..5).collect(), Args::default());
-        assert_eq!((rec.calls(&t, "f", 0, 4, None).collect::<Vec<_>>(), rec.calls(&t, "h", 0, 4, None).collect::<Vec<_>>()), (alloc::vec![0, 3], alloc::vec![1, 4]));
+        assert_eq!((rec.calls(&t, |n| n == "f", 0, 4, None).collect::<Vec<_>>(), rec.calls(&t, |n| n == "h", 0, 4, None).collect::<Vec<_>>()), (alloc::vec![0, 3], alloc::vec![1, 4]));
     }
 
 }

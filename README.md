@@ -87,7 +87,10 @@ task ran; the whole recording at first (scroll to zoom, drag to pan;
 of it again; hover a call for what it was (its arguments, what it returned: `ksys_read = 26`): the
 source, the Stack and the Objects show that moment while the pointer is there; click it to fix the cursor there, and select it (on the Stack; a syscall: selected too,
 its records from its entry to its exit, with whatever else ran in
-between, the lines to step through). The
+between, the lines to step through). "find a function…" over it takes
+any part of a name (`read`: vfs_read, filemap_read, …): as it is typed,
+their bars colored and their calls counted; Enter, the next call after
+the cursor, Shift+Enter the one before. The
 cursor's line carries its values as it is about to run (as a debugger
 stops before a line: memory and the variables as the lines before it left
 them), and each line what it

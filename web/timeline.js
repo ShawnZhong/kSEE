@@ -48,7 +48,7 @@ export function timeline(app) {
               depth: 1, shown: null, row: ROW,
               // (lit, sel: the calls outlined, their first records: hovered here or in the Stack; selected)
               lit: null, sel: null, syscallAt: new Map(),
-              // (the function found: its calls' records)
+              // (the text found, and the calls of the functions with it in their names: their records)
               found: { name: "", at: [] } };
   const { fn, iname } = app, tasks = new Map();
   const who = (addr) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr)).get(addr));
@@ -150,7 +150,9 @@ export function timeline(app) {
         const [id, first, inl] = r.c.frames[d], f = fn(id), y = base + rowY(d);
         const x1 = r.from * cw, w = (r.to - r.from) * cw;
         const on = curCol?.frames[d]?.[1] === first && cur >= t.win.a && cur <= t.win.b;
-        ctx.fillStyle = color(f?.file, on);
+        // (One found (its name has the text looked for): in the finding's color.)
+        const name = inl ? iname(inl - 1) : f?.name ?? "";
+        ctx.fillStyle = t.found.name && name.toLowerCase().includes(t.found.name.toLowerCase()) ? css("--found") : color(f?.file, on);
         ctx.fillRect(x1, y, Math.max(1, w - 1), t.row - 1);
         if (first === t.lit || first === t.sel) {
           ctx.strokeStyle = css("--fg");
@@ -424,16 +426,20 @@ export function timeline(app) {
     selectWindow(where, title);
   }
   // ---- Finding a function ----
-  // Find function `name`: its calls marked; `dir` 1: go to the next one
-  // after the cursor, -1: the one before (none: says so).
+  // Find the functions with `name` in theirs (any case: "read", vfs_read,
+  // filemap_read): their calls marked, their bars in the finding's color;
+  // `dir` 1: go to the next call after the cursor, -1: the one before
+  // (none: says so); 0: only mark them (as it is typed).
   function find(name, dir) {
     if (name !== t.found.name) t.found = { name, at: name && t.n ? [...m.calls_of(name, 0, t.n - 1)] : [] };
     const at = t.found.at, cur = t.cursor ?? -1;
+    draw();
+    if (!name) return (finder.hint.textContent = ""), false;
+    if (!at.length) return (finder.hint.textContent = `nothing with "${name}" in its name runs in the recording`), false;
+    if (!dir) return (finder.hint.textContent = `${at.length} call${at.length === 1 ? "" : "s"}: Enter, the next`), false;
     const i = dir > 0 ? at.find((x) => x > cur) : at.findLast((x) => x < cur);
-    drawOverview();
     if (i == null) {
-      finder.hint.textContent = !name ? "" : !at.length ? (m.definition(name) ? `${name} is not called in the recording` : `no function ${name}`)
-        : `no call of ${name} ${dir > 0 ? "after" : "before"} the cursor (${at.length} in the recording)`;
+      finder.hint.textContent = `none ${dir > 0 ? "after" : "before"} the cursor (${at.length} in the recording)`;
       return false;
     }
     finder.hint.textContent = `${at.indexOf(i) + 1} of ${at.length}`;
@@ -442,8 +448,9 @@ export function timeline(app) {
   }
   // (The box, in the header, before the legend.)
   const finder = { input: el("input", { className: "find mono", placeholder: "find a function…", spellcheck: false,
-                     title: "a function: Enter, its next call after the cursor; Shift+Enter, the one before; Esc clears" }),
+                     title: "any part of a function's name (their bars colored as you type): Enter, the next call after the cursor; Shift+Enter, the one before; Esc clears" }),
                    hint: el("span", { className: "dim findhint" }) };
+  finder.input.oninput = () => find(finder.input.value.trim(), 0);
   finder.input.onkeydown = (e) => {
     if (e.key === "Enter") find(finder.input.value.trim(), e.shiftKey ? -1 : 1);
     else if (e.key === "Escape") ((finder.input.value = ""), find("", 1), finder.input.blur());

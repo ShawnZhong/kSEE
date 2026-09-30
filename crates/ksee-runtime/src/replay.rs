@@ -68,10 +68,12 @@ impl Machine {
         self.rec.borrow().ids.get(i).copied()
     }
 
-    /// The calls of function `name` in records `first..=last`: each call's
-    /// first record (see Recording::calls: code inlined from it too).
-    pub fn calls_of(&self, name: &str, first: usize, last: usize) -> Vec<u32> {
-        self.rec.borrow().calls(tables(), name, first, last, None).map(|i| i as u32).collect()
+    /// The calls in records `first..=last` of the functions with `text` in
+    /// their names (any case: "read", vfs_read's, filemap_read's): each
+    /// call's first record (see Recording::calls: inlined code too).
+    pub fn calls_of(&self, text: &str, first: usize, last: usize) -> Vec<u32> {
+        let text = text.to_lowercase();
+        self.rec.borrow().calls(tables(), |n| n.to_lowercase().contains(&text), first, last, None).map(|i| i as u32).collect()
     }
 
     /// Where the call from record `first` ends (its return), or None if it

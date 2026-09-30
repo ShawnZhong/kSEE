@@ -303,16 +303,21 @@
   r.field = [$("fn-title").textContent, ksee.src.text().split("\n")[ksee.src.lineAt() - 1].trim()];
   if (!r.def.includes("may_create_dentry") || !r.field[0].includes("fs.h") || !r.field[1].includes("i_sb"))
     throw new Error("navigation: " + JSON.stringify(r));
-  // Find a function in the recording: Enter, its next call after the cursor; Shift+Enter, the one before.
+  // Find a function in the recording, by any part of its name (as it is
+  // typed: how many calls); Enter, its next call after the cursor;
+  // Shift+Enter, the one before.
   const fbox = document.querySelector("input.find"), fkey = (k, shift = false) => fbox.dispatchEvent(new KeyboardEvent("keydown", { key: k, shiftKey: shift }));
   // (Its one call may be before the cursor: then Shift+Enter finds it.)
-  fbox.value = "vfs_mkdir"; fkey("Enter"); await sleep(300);
+  const typed = (text) => ((fbox.value = text), fbox.dispatchEvent(new Event("input")), Number(document.querySelector(".findhint").textContent.match(/^\d+/)?.[0]));
+  r.matched = [typed("mkdir"), typed("vfs_mkdir")];
+  fkey("Enter"); await sleep(300);
   r.found = [document.querySelector(".findhint").textContent];
-  if (r.found[0].startsWith("no call")) { fkey("Enter", true); await sleep(300); r.found.push(document.querySelector(".findhint").textContent); }
+  if (r.found[0].startsWith("none")) { fkey("Enter", true); await sleep(300); r.found.push(document.querySelector(".findhint").textContent); }
   r.found.push(document.querySelector("#stack tr.frame")?.innerText.includes("vfs_mkdir")); // (at its call site: the call on top)
   fbox.value = "nope_fn"; fkey("Enter");
   r.noFn = document.querySelector(".findhint").textContent;
-  if (!r.found.at(-2).match(/^\d+ of \d+$/) || !r.found.at(-1) || r.noFn !== "no function nope_fn") throw new Error("find: " + JSON.stringify(r));
+  if (!r.found.at(-2).match(/^\d+ of \d+$/) || !r.found.at(-1) || !(r.matched[0] > r.matched[1] && r.matched[1] >= 1)
+      || r.noFn !== 'nothing with "nope_fn" in its name runs in the recording') throw new Error("find: " + JSON.stringify(r));
   // The console, folded to its last line; the current task, a link to the
   // Tasks: there, open, its key fields; each task, where it is.
   r.console = [$("pane-console").classList.contains("folded"), $("console").textContent];
