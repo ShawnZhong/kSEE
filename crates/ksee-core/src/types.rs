@@ -334,7 +334,8 @@ impl Types {
     /// Print the scalar (or string) value of type `ty` at `addr`, possibly
     /// a bitfield (`bit_off`, `bit_size`); an aggregate as "{...}" (see
     /// view::Object for their members).
-    pub fn print(&self, mem: &dyn Memory, addr: u32, ty: u32, bit_off: u32, bit_size: u32, out: &mut String) {
+    pub fn print(&self, mem: &dyn Memory, addr: u32, ty: u32, bit_off: u32, bit_size: u32) -> String {
+        let mut out = String::new();
         let id = self.resolve(ty);
         let t = self.get(id);
         match &t.kind {
@@ -344,17 +345,17 @@ impl Types {
                 let signed = |v: u64, bits: u32| (v << (64 - bits)) as i64 >> (64 - bits);
                 let bits = if bit_size > 0 { bit_size } else { size * 8 };
                 let _ = match b {
-                    Base::Signed if bits > 0 => write!(out, "{}", signed(v, bits)),
-                    Base::Bool => write!(out, "{}", v != 0),
+                    Base::Signed if bits > 0 => write!(&mut out, "{}", signed(v, bits)),
+                    Base::Bool => write!(&mut out, "{}", v != 0),
                     // (A char: its number, and the character if it is one.)
-                    Base::Char if (0x20..0x7f).contains(&v) => write!(out, "{} '{}'", v, v as u8 as char),
-                    Base::Char => write!(out, "{}", signed(v, bits.max(1))),
-                    Base::Float if size == 4 => write!(out, "{}", f32::from_bits(v as u32)),
-                    Base::Float => write!(out, "{}", f64::from_bits(v)),
+                    Base::Char if (0x20..0x7f).contains(&v) => write!(&mut out, "{} '{}'", v, v as u8 as char),
+                    Base::Char => write!(&mut out, "{}", signed(v, bits.max(1))),
+                    Base::Float if size == 4 => write!(&mut out, "{}", f32::from_bits(v as u32)),
+                    Base::Float => write!(&mut out, "{}", f64::from_bits(v)),
                     // Unsigned: decimal, but flags in hex and file modes in octal.
-                    _ if v > 9 && self.is_flags(ty) => write!(out, "{v:#x}"),
-                    _ if v > 7 && crate::arch::OCTAL_TYPES.contains(&self.name(ty).as_str()) => write!(out, "0{v:o}"),
-                    _ => write!(out, "{v}"),
+                    _ if v > 9 && self.is_flags(ty) => write!(&mut out, "{v:#x}"),
+                    _ if v > 7 && crate::arch::OCTAL_TYPES.contains(&self.name(ty).as_str()) => write!(&mut out, "0{v:o}"),
+                    _ => write!(&mut out, "{v}"),
                 };
             }
             Kind::Enum(values) => {
@@ -365,13 +366,13 @@ impl Types {
                 match values.iter().find(|(_, x)| *x == v || *x == u as i64) {
                     Some((name, _)) => out.push_str(name),
                     None => {
-                        let _ = write!(out, "{v}");
+                        let _ = write!(&mut out, "{v}");
                     }
                 }
             }
             Kind::Pointer(_) => {
                 let p = mem.read_u32(addr);
-                let _ = if p == 0 { write!(out, "NULL") } else { write!(out, "{p:#x}") };
+                let _ = if p == 0 { write!(&mut out, "NULL") } else { write!(&mut out, "{p:#x}") };
             }
             // (A char array: its string.)
             Kind::Array { elem, count } if self.is_string(*elem) => {
@@ -384,6 +385,7 @@ impl Types {
             Kind::Func => out.push_str("<function>"),
             Kind::Void | Kind::Typedef(_) => out.push_str("<void>"),
         }
+        out
     }
 
     /// If `ty` is a pointer to a struct or a union: what it points to.
@@ -595,8 +597,7 @@ mod tests {
         m[16] = 0b0101; // flags: 3 bits = 5
         let mem = Mem(m);
         let at = |addr, ty, off, size| {
-            let mut out = String::new();
-            t.print(&mem, addr, ty, off, size, &mut out);
+            let out = t.print(&mem, addr, ty, off, size);
             out
         };
         assert_eq!((at(0, 1, 0, 0), at(4, 3, 0, 0), at(12, 5, 0, 0), at(16, 7, 0, 3), at(0, 6, 0, 0)),

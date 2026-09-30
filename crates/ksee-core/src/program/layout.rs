@@ -164,8 +164,7 @@ impl Types {
                 let v = if core::ptr::eq(m, last) {
                     self.show(mem, rec + off, elem, Some(reclen.saturating_sub(off)))
                 } else {
-                    let mut v = String::new();
-                    self.print(mem, rec + off, m.ty, 0, 0, &mut v);
+                    let v = self.print(mem, rec + off, m.ty, 0, 0);
                     v
                 };
                 format!("{} = {v}", m.name)
@@ -194,13 +193,11 @@ impl Types {
             None => match &self.get(self.resolve(ty)).kind {
                 k @ (Kind::Struct(_) | Kind::Union(_)) => format!("{{{}}}", self.members(k).iter().filter(|m| m.bit_size == 0)
                     .map(|m| {
-                        let mut v = String::new();
-                        self.print(mem, addr + m.bit_offset / 8, m.ty, 0, 0, &mut v);
+                        let v = self.print(mem, addr + m.bit_offset / 8, m.ty, 0, 0);
                         format!("{} = {v}", m.name)
                     }).collect::<Vec<_>>().join(", ")),
                 _ => {
-                    let mut v = String::new();
-                    self.print(mem, addr, ty, 0, 0, &mut v);
+                    let v = self.print(mem, addr, ty, 0, 0);
                     v
                 }
             },

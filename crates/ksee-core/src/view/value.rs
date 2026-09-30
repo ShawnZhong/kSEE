@@ -44,6 +44,9 @@ pub enum Missing {
     /// The optimizer took it away.
     #[cfg_attr(feature = "serde", serde(rename = "optimized out"))]
     OptimizedOut,
+    /// What a store overwrote, when its record does not have it.
+    #[cfg_attr(feature = "serde", serde(rename = "not kept"))]
+    NotKept,
 }
 
 impl Missing {
@@ -52,6 +55,7 @@ impl Missing {
         match self {
             Missing::Uninitialized => "(uninitialized)",
             Missing::OptimizedOut => "(optimized out)",
+            Missing::NotKept => "(not kept)",
         }
     }
 }
@@ -114,18 +118,15 @@ impl Types {
                     Kind::Struct(_) | Kind::Union(_) if p != 0 && self.size_of(target) > 0 => o.open = Some(Target { ty: target, addr: p }),
                     // (A pointer to a scalar: what it points to, in line: "0x7ffd8 → 0".)
                     Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_) if p != 0 && !self.is_string(*to) => {
-                        let mut v = String::new();
-                        self.print(mem, p, *to, 0, 0, &mut v);
+                        let v = self.print(mem, p, *to, 0, 0);
                         o.value = Some(format!("{p:#x} → {v}"));
                     }
                     _ => {}
                 }
             }
             _ => {
-                let mut v = String::new();
                 let (off, size) = bits.unwrap_or((0, 0));
-                self.print(mem, addr, ty, off, size, &mut v);
-                o.value = Some(v);
+                o.value = Some(self.print(mem, addr, ty, off, size));
             }
         }
         o

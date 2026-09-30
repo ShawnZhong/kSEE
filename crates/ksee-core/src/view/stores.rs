@@ -108,7 +108,7 @@ impl View<'_> {
     pub fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
         let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
         let from = self.rec.copied_from(i, addr);
-        let old = old.map_or_else(|| "(not kept)".into(), num);
+        let old = old.map_or_else(|| Missing::NotKept.text().into(), num);
         Some(Write { i, addr, old, task: self.task(self.rec.tasks[i], i), at: line.map(|s| self.line_only(&s)), from })
     }
 
@@ -157,8 +157,7 @@ impl View<'_> {
     /// record `at`, printed.
     pub(super) fn value(&self, base: u32, (leaf, off, bits): Leaf, at: usize) -> String {
         let (b0, bn) = bits.unwrap_or((0, 0));
-        let mut v = String::new();
-        self.tables.types.print(&self.rec.memory_at(self.now, at), base + off, leaf, b0, bn, &mut v);
+        let v = self.tables.types.print(&self.rec.memory_at(self.now, at), base + off, leaf, b0, bn);
         v
     }
 
@@ -181,7 +180,7 @@ impl View<'_> {
                 Some(leaf) => (self.value(r.addr, leaf, w.i.saturating_sub(1)), self.value(r.addr, leaf, w.i)),
                 None => {
                     let Record::Store { old, .. } = self.rec.records[w.i] else { unreachable!() };
-                    (old.map_or_else(|| "(not kept)".into(), num), num(self.wrote(w.i)))
+                    (old.map_or_else(|| Missing::NotKept.text().into(), num), num(self.wrote(w.i)))
                 }
             };
             Change { member, before, after }
