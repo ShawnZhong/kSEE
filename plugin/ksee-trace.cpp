@@ -37,7 +37,7 @@
 // (the ring may have overwritten the start of a record) and skip
 // continuations until the next head:
 //   [fn, 1 << 28 | n]     block n of fn; block 0 (a call) is followed by its
-//                         arguments: the source's parameters, up to six, a
+//                         arguments: the source's parameters, up to seven, a
 //                         word each, two (low, high) for one wider than 32
 //                         bits (see F lines; 0 for any the optimizer took
 //                         away), then its frame base (the
@@ -127,7 +127,7 @@ using namespace llvm;
 namespace {
 
 constexpr unsigned RingWords = 1u << 21;
-constexpr unsigned CallArgs = 6;
+constexpr unsigned CallArgs = 7; // the syscall entry's: the number and six
 constexpr unsigned Values = 2 * CallArgs + 1; // a record's at most: a call's arguments (wide ones two words) and its frame base
 enum Kind { KindBlock = 1, KindReturn = 4, KindCompare = 6, KindStore = 7, KindValue = 8, KindVar = 9 };
 

@@ -275,6 +275,14 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
         && stack.some((f) => f.func === "__wasm_sys_openat" && !f.inlined && f.args?.[0]?.name === "dfd" && f.args[0].value === "AT_FDCWD"));
 }
 
+// (All six of a syscall's arguments, its last too: mmap2's pgoff; a flag named by the syscall's own constants.)
+{
+  const mm = (await line("mmap2(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 7)")).s;
+  // (Nothing under it on its task's stack: the runner's wait before it returned unrecorded.)
+  const stack = m.call_stack(m.line_steps(mm.first, mm.last, mm.task.addr).find((x) => x.func === "vm_mmap_pgoff")?.i), e = stack?.at(-1);
+  check(`a syscall's six arguments: ${e?.syscall}(${e?.args?.map((a) => `${a.name} = ${a.value}`).join(", ")}), at the bottom of its stack (${stack?.map((f) => f.func).slice(-2).join(" < ")})`,
+        e?.syscall === "mmap2" && e.args?.length === 6 && e.args[5].name === "pgoff" && e.args[5].value === "7");
+}
 // The examples (target/site/examples.json): their calls, and each of the explanation's links found in its call's recording.
 const consts = m.constants();
 check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
