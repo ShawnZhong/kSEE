@@ -251,14 +251,12 @@ check("a field's declaration: file.f_pos, by its struct (or a pointer to it), or
   let refused = "";
   try { m.run("io_setup(1, NULL)"); } catch (e) { refused = String(e.message ?? e); }
   check(`the syscalls built: read and setuid, not io_setup (${refused})`,
-        m.syscall("read") && m.syscall("setuid") && !m.syscall("io_setup") && /no syscall io_setup/.test(refused));
+        m.params("read") && m.params("setuid") && !m.params("io_setup") && /no syscall io_setup/.test(refused));
   // (And setuid runs: root may become root, and it is recorded, as any call.)
   const su = await line("setuid(0)");
   check(`setuid(0) = ${su.ret}, recorded (${su.s?.name})`, su.ret === 0 && su.s?.name === "setuid" && ran(su.s, "__sys_setuid"));
 }
-check("a syscall's parameters, typed, with the constants that fit", JSON.stringify(m.syscall("openat")?.params) ===
-      JSON.stringify([{ name: "dfd", ty: "int", consts: ["AT_"] }, { name: "filename", ty: "char *", consts: [] },
-                      { name: "flags", ty: "int", consts: ["O_"] }, { name: "mode", ty: "umode_t", consts: [] }]));
+check(`a syscall's parameters, as C declares them: ${m.params("openat")}`, JSON.stringify(m.params("openat")) === JSON.stringify(["int dfd", "char *filename", "int flags", "umode_t mode"]));
 // The syscall entry: the frame says which syscall, its arguments typed as the syscall's, as constants; the wrapper is a frame of its own, with the same parameters (its SYSCALL_DEFINE line's).
 {
   const op = m.syscalls().find((s) => s.name === "openat"), stack = m.call_stack(m.first_call("do_sys_openat2", op.first, op.last)), entry = stack.at(-1);

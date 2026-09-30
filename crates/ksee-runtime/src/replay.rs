@@ -203,9 +203,10 @@ impl Machine {
         self.view(|v| to_js(&v.timeline(n)))
     }
 
-    /// Syscall `name` (e.g. "openat"): view::SyscallInfo, or null.
-    pub fn syscall(&self, name: &str) -> JsValue {
-        self.view(|v| to_js(&v.syscall(name)))
+    /// Syscall `name`'s parameters, each as C declares it (Types::params_of):
+    /// ["int dfd", "char *filename", …]; null if this kernel has no syscall `name`.
+    pub fn params(&self, name: &str) -> Option<Vec<String>> {
+        tables().types.params_of(name)
     }
 
     /// A program's line (ksee_core::program::statement): { tid?, text (as

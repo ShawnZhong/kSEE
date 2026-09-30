@@ -41,12 +41,8 @@ export function callEditor({ m, line, text = "", placeholder = "", done, cancel,
   const suggest = () => m.completions(input.value, input.selectionStart ?? input.value.length, line(), common);
 
   function signature(name, bold = -1) {
-    const s = m.syscall(name);
-    if (!s) return null;
-    const ps = s.params.map((p, i) => {
-      const t = `${p.ty}${p.ty.endsWith("*") ? "" : " "}${p.name}`;
-      return i === bold ? el("b", { textContent: t }) : t;
-    });
+    const ps = m.params(name)?.map((t, i) => (i === bold ? el("b", { textContent: t }) : t));
+    if (!ps) return null;
     return [`${name}(`, ...ps.flatMap((p, i) => (i ? [", ", p] : [p])), ")"];
   }
 

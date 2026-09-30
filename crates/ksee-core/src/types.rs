@@ -240,13 +240,19 @@ impl Types {
         }
     }
 
-    /// Syscall `name`'s signature, as C declares it: "close(unsigned int fd)".
-    pub fn signature(&self, name: &str) -> Option<String> {
-        let params = self.syscall_params(name)?.iter().map(|(p, ty)| {
+    /// Syscall `name`'s parameters, each as C declares it: ["unsigned int
+    /// fd"] for close; none if this kernel has no syscall `name`.
+    pub fn params_of(&self, name: &str) -> Option<Vec<String>> {
+        self.syscalls.values().find(|n| n.as_str() == name)?;
+        Some(self.syscall_params(name).into_iter().flatten().map(|(p, ty)| {
             let t = self.name(*ty);
             alloc::format!("{t}{}{p}", if t.ends_with('*') { "" } else { " " })
-        }).collect::<Vec<_>>();
-        Some(alloc::format!("{name}({})", params.join(", ")))
+        }).collect())
+    }
+
+    /// Syscall `name`'s signature, as C declares it: "close(unsigned int fd)".
+    pub fn signature(&self, name: &str) -> Option<String> {
+        Some(alloc::format!("{name}({})", self.params_of(name)?.join(", ")))
     }
 
     /// The errno name of `n` (a failed call's result is -n): ENOENT for 2.

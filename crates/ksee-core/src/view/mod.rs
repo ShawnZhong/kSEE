@@ -113,21 +113,6 @@ pub struct Place {
 }
 
 /// A syscall: its parameters (as SYSCALL_DEFINE declares them).
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct SyscallInfo {
-    pub params: Vec<Param>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Param {
-    pub name: String,
-    pub ty: String,
-    /// The starts of the constants' names that fit it ("O_", "AT_"), if any.
-    pub consts: Vec<String>,
-}
-
 /// Value `v` as the constants whose names start with one of `prefixes`
 /// name it: one equal to it, or flags (one bit each) that make it up.
 fn constant_name(constants: &BTreeMap<String, i64>, prefixes: &[&str], v: i64) -> Option<String> {
@@ -469,15 +454,6 @@ impl View<'_> {
     pub fn place(&self, id: u32) -> Option<Place> {
         let f = self.tables.functions.get(&id)?;
         Some(Place { name: f.name.clone(), file: self.tables.file(f.loc).to_string(), line: f.loc.line })
-    }
-
-    /// Syscall `name` (e.g. "openat").
-    pub fn syscall(&self, name: &str) -> Option<SyscallInfo> {
-        let types = &self.tables.types;
-        types.syscalls.values().find(|n| n.as_str() == name)?;
-        let params = types.syscall_params(name).into_iter().flatten()
-            .map(|(pname, ty)| Param { name: pname.clone(), ty: types.name(*ty), consts: arch::consts_of(name, pname).iter().map(|s| s.to_string()).collect() }).collect();
-        Some(SyscallInfo { params })
     }
 
     /// The functions called `name` (usually one).
