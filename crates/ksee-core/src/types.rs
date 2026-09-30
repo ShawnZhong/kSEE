@@ -229,6 +229,11 @@ impl Types {
         }
     }
 
+    /// Syscall `nr`'s name, or its number if this kernel has none.
+    pub fn syscall_name(&self, nr: u32) -> String {
+        self.syscalls.get(&nr).cloned().unwrap_or_else(|| nr.to_string())
+    }
+
     /// A call's result as the page says it: a number (in hex past 0xffff:
     /// a pointer, a flag word), or a failure with its errno's name, "-2
     /// (ENOENT)".

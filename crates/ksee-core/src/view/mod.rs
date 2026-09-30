@@ -48,8 +48,9 @@ pub struct SyscallSummary {
     /// snapshots, where its index has moved on.
     pub id: u32,
     pub task: TaskRef,
-    pub nr: u32,
-    pub name: Option<String>,
+    /// Its name (its number, if this kernel's table has none: see
+    /// Types::syscall_name).
+    pub name: String,
     /// The result (None: still running at the end of the recording).
     pub ret: Option<i32>,
     /// Its span in the records.
@@ -328,8 +329,7 @@ impl View<'_> {
             index,
             id: self.rec.ids.get(s.first).copied().unwrap_or(0),
             task: self.task(s.task, s.first),
-            nr: s.nr,
-            name: self.tables.types.syscalls.get(&s.nr).cloned(),
+            name: self.tables.types.syscall_name(s.nr),
             ret: s.ret,
             first: s.first,
             last: s.last,
@@ -452,7 +452,7 @@ impl View<'_> {
                         // (A syscall's entry, from its first record: with the syscall, as the Stack has it.)
                         let syscall = rec.syscalls.binary_search_by_key(&c.first, |s| s.first).ok().filter(|_| k.is_none()).map(|s| &rec.syscalls[s]);
                         let label = match syscall {
-                            Some(s) => format!("{name} · {}", t.types.syscalls.get(&s.nr).cloned().unwrap_or_else(|| s.nr.to_string())),
+                            Some(s) => format!("{name} · {}", t.types.syscall_name(s.nr)),
                             None => name.clone(),
                         };
                         chart.bars.push(Bar { first: c.first, name, label, file: place.map(|p| p.file), inlined: k.is_some() });

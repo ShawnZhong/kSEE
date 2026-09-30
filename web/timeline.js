@@ -267,7 +267,7 @@ export function timeline(app) {
     const tipLines = (b.inlined
       ? [line(b.name, "")]
       : s
-      ? [line(`${s.name ?? s.nr}(${argsOf(first).map((a) => a.value ?? "{…}").join(", ")}) = ${s.ret == null ? "…" : m.result(s.ret)}`, ""),
+      ? [line(`${s.name}(${argsOf(first).map((a) => a.value ?? "{…}").join(", ")}) = ${s.ret == null ? "…" : m.result(s.ret)}`, ""),
          line(`a syscall by ${taskName(s.task)}`, "dim")]
       : [line(`${b.name}${retOf(first)}`, ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f"))]);
     tip.replaceChildren(...tipLines);
@@ -394,7 +394,7 @@ export function timeline(app) {
   // Select syscall `s` (found again in later snapshots by its task and
   // its first record's id: indexes move as the ring goes on).
   function select(s) {
-    const title = `${s.name ?? s.nr} by ${taskName(s.task)}`;
+    const title = `${s.name} by ${taskName(s.task)}`;
     // (Gone from the recording: no selection.)
     const where = () => {
       const c = t.calls.find((c) => c.id === s.id);
