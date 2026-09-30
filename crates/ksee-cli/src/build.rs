@@ -75,6 +75,8 @@ pub fn build() {
     }
     eprintln!("  KERNEL  linux/vmlinux");
     run(&mut kmake(&[&format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()))]));
+    // (Its UAPI headers: the pack's constants, the programs' syscalls.)
+    run(&mut kmake(&["headers"]));
 
     site();
     eprintln!("  RUNTIME {SITE}/pkg");
@@ -94,7 +96,6 @@ pub fn build() {
     }
     // The programs (/init, /bin/prog): plain C, no C library (their syscalls:
     // user/syscall.h), with the kernel's UAPI headers.
-    run(&mut kmake(&["headers"]));
     let programs = ["init", "prog"];
     let inputs = ["user/init.c", "user/prog.c", "user/syscall.h", "user/initramfs.list", "linux/usr/gen_init_cpio"];
     let dir = "target/initramfs";
