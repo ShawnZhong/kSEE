@@ -107,8 +107,8 @@ the kernel pins must be), its name then its address (`&ts` too; `fds[1]` an elem
 value` writes one, recorded, with what a declaration's value may be: an
 array whole too),
 `Machine.show` printing it as C writes it. A call's strings and compound literals go
-with the call, in its runner's request (user/prog.c's, on its stack: as C's
-compound literals are, automatic).
+in the same memory, as unnamed variables (a C literal's, there for as long
+as the program).
 ksee pack evaluates the UAPI headers' constants with the same evaluator.
 
 Every view asks the Machine for the moment at the cursor: `at(i)` (every

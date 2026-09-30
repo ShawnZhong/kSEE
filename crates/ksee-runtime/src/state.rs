@@ -142,11 +142,6 @@ pub struct Call {
     pub result: Option<(String, String)>,
 }
 
-/// A runner's request (user/prog.c's struct request, on its stack): its
-/// call's number and arguments, then, at DATA, the call's strings and
-/// compound literals (DATA_SIZE bytes at most).
-pub const DATA: u32 = 28;
-pub const DATA_SIZE: u32 = 4096;
 
 /// The kernel's memory is this module's memory.
 pub struct Direct;

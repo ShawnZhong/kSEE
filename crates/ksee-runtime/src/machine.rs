@@ -386,7 +386,7 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, St
         return Err(format!("{tid} is still making its call"));
     }
     let id = k(|k| k.asked.get() + 1);
-    let (words, data) = pack(args, req + DATA)?;
+    let words = words(tid, args)?;
     let c = Call { id, tid, nr, task, line, result, ..Default::default() };
     k(|k| {
         k.asked.set(id);
@@ -399,46 +399,34 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, St
     // (The call into the runner's request, in its memory, which is
     // kernel memory: recorded, as its strings are.)
     let head: Vec<u8> = core::iter::once(nr).chain(words).flat_map(u32::to_le_bytes).collect();
-    write_logged(req + DATA, &data);
     write_logged(req, &head);
     sched::interrupt(IRQ_DOORBELL);
     Ok(id)
 }
 
-/// A call's `args`, each a number, or a buffer (bytes, a string's with its
-/// NUL; an array of strings, argv's) packed into the data (its bytes, to
-/// go at `base`, the request's data: a buffer argument is its address
-/// there): the argument words, and the data.
-fn pack(args: &[Arg], base: u32) -> Result<([u32; 6], Vec<u8>), String> {
-    let mut words = [0u32; 6];
-    let mut data = Vec::new();
-    // (Bytes `b` into the data, at an address 8-byte aligned: their address.)
-    let mut put = |b: &[u8]| -> Result<u32, String> {
-        let at = (base + data.len() as u32 + 7) & !7;
-        if (at - base) as usize + b.len() > DATA_SIZE as usize {
-            return Err("the call's buffers are too big".into());
-        }
-        data.resize((at - base) as usize, 0);
-        data.extend_from_slice(b);
+/// A call's `args` as the words it is made with: a number as it is; a
+/// buffer (bytes, a string's with its NUL; an array of strings, argv's)
+/// put in runner `tid`'s program's memory, as its variables are (a C
+/// literal's: there for as long as the program), its address.
+fn words(tid: u32, args: &[Arg]) -> Result<[u32; 6], String> {
+    let put = |b: &[u8]| -> Result<u32, String> {
+        let at = alloc(tid, b.len() as u32)?;
+        write_logged(at, b);
         Ok(at)
     };
-    for (i, a) in args.iter().enumerate() {
-        words[i] = match a {
+    let mut words = [0u32; 6];
+    for (w, a) in words.iter_mut().zip(args) {
+        *w = match a {
             Arg::Number(v) => *v as u32,
             Arg::Bytes(b) => put(b)?,
             Arg::Strings(list) => {
-                let mut pointers = Vec::new();
-                for s in list {
-                    pointers.push(match s {
-                        Some(s) => put(&[s.as_bytes(), &[0]].concat())?,
-                        None => 0,
-                    });
-                }
+                let pointers = list.iter().map(|s| s.as_ref().map_or(Ok(0), |s| put(&[s.as_bytes(), &[0]].concat())))
+                    .collect::<Result<Vec<u32>, String>>()?;
                 put(&pointers.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>())?
             }
         };
     }
-    Ok((words, data))
+    Ok(words)
 }
 
 /// The page's program's names, as line `line` sees them (see

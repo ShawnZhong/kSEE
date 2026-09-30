@@ -10,19 +10,17 @@
 #include <unistd.h>
 
 // Ready for calls: the host puts a call in *req (its number, -1 while
-// none is asked; its arguments; its strings and compound literals, in
-// `data`: on the runner's stack, as C's are); the runner makes it between
-// begin and end (recorded from the one to the other), and end gets the
-// result.
+// none is asked; its arguments); the runner makes it between begin and
+// end (recorded from the one to the other), and end gets the result.
 struct request {
 	volatile int nr;
 	int args[6];
-	char data[4096];
 };
 
 // The program's own memory, which the host hands out (each variable
 // aligned as it needs): its variables, `char buf[64]` in the page's
-// program, as a C program's globals are; a process's, its threads' too.
+// program, and its calls' strings and compound literals (as C's, there
+// for as long as the program); a process's, its threads' too.
 static char heap[65536];
 
 // (main: whether this runner is the program's own, its main thread, not a
