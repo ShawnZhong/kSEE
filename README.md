@@ -83,7 +83,7 @@ go on), each recorded as the page's are.
 The timeline shows the recording: the call stacks over time (its unit is
 a step, a basic block run: a store takes no room), and which
 task ran; the whole recording at first (scroll to zoom, drag to pan;
-"zoom" or z: the window at the call selected, else the syscall, "whole" or x: all
+"zoom": the window at the call selected, else the syscall, "whole": all
 of it again; hover a call for what it was (its arguments, what it returned: `ksys_read = 26`): the
 source, the Stack and the Objects show that moment while the pointer is there; click it to fix the cursor there, and select it (on the Stack; a syscall: selected too,
 its records from its entry to its exit, with whatever else ran in

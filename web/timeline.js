@@ -8,13 +8,13 @@
 // thin as the deepest stack of the selection needs (so they do not move
 // while zooming), and the box scrolls when deeper still.
 //
-// Scroll (or pinch, or W/S) to zoom; drag to pan, in time and up and down
-// through deep stacks; Shift+scroll, sideways scroll or A/D to pan in time. Hover a call
+// Scroll (or pinch) to zoom; drag to pan, in time and up and down
+// through deep stacks; Shift+scroll or sideways scroll to pan in time. Hover a call
 // for what it was, and where it is, and the source and the Stack
 // show that moment while the pointer is there; click to put the
 // cursor there and select the call (a syscall: selected too, its records,
 // from entry to exit, the lines to step through);
-// "zoom" (z) for the window at the call selected. Click or
+// "zoom" for the window at the call selected. Click or
 // drag the overview to move the window. Find a function (the box in the
 // header, or /): Enter goes to its next call after the cursor, Shift+Enter
 // to the one before; its calls are marked on the overview.
@@ -170,8 +170,8 @@ export function timeline(app) {
     }
     $("chart-title").textContent = t.title || "the recording";
     const f = zoomed();
-    $("chart-verbs").replaceChildren(...(f ? [" · ", el("a", { textContent: f === t.home ? "zoom" : `zoom to ${f.title}`, title: `the window at ${f.title} (z)`, onclick: zoomTo })] : []),
-      ...(t.win && (t.win.sa > 0 || t.win.sb < m.steps() - 1) ? [" · ", el("a", { textContent: "whole", title: "the whole recording (x)", onclick: whole })] : []));
+    $("chart-verbs").replaceChildren(...(f ? [" · ", el("a", { textContent: f === t.home ? "zoom" : `zoom to ${f.title}`, title: `the window at ${f.title}`, onclick: zoomTo })] : []),
+      ...(t.win && (t.win.sa > 0 || t.win.sb < m.steps() - 1) ? [" · ", el("a", { textContent: "whole", title: "the whole recording", onclick: whole })] : []));
   }
   function label(ctx, text, x1, w, y, fill) {
     if (w < 24) return;
@@ -241,16 +241,6 @@ export function timeline(app) {
     strip.title = c ? taskName(who(c.task)) : "";
   };
   strip.onclick = (e) => t.win && go(m.next_block(Math.max(0, at(e.offsetX) - 1), false));
-  // W/S: zoom (around the cursor, or the middle); A/D: pan.
-  chart.tabIndex = 0;
-  chart.onkeydown = (e) => {
-    if (!t.win) return;
-    const mid = t.cursor != null && t.cursor >= t.win.a && t.cursor <= t.win.b ? m.step_of(t.cursor) : (t.win.sa + t.win.sb) / 2;
-    const act = { w: () => zoom(mid, -0.25), s: () => zoom(mid, 0.25), a: () => pan(-W() / 8), d: () => pan(W() / 8), z: zoomTo, x: whole }[e.key.toLowerCase()];
-    if (!act) return;
-    e.preventDefault();
-    act();
-  };
   // Hover: the call there outlined, and what it was (a syscall: its
   // arguments and result; a function: where, and its arguments).
   const tip = document.body.appendChild(Object.assign(document.createElement("div"), { className: "tip", hidden: true }));
@@ -402,7 +392,7 @@ export function timeline(app) {
     if (t.home && t.win && (t.home.a < t.win.a || t.home.b > t.win.b)) whole();
     else draw();
   }
-  // What "zoom" (z) goes to: the call selected (the bar outlined: the one
+  // What "zoom" goes to: the call selected (the bar outlined: the one
   // clicked, or the Stack's), else the syscall selected.
   function zoomed() {
     if (t.sel == null) return t.home;

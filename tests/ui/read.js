@@ -200,8 +200,8 @@
   ksee.tab("stack");
   ksee.select(read); ksee.time.go(before); // (as it was)
   // (At a store: its line in the source says what it stored, at its end.)
-  const lastStore = ksee.m.stores(read.first, read.last).at(-1);
-  ksee.time.go(lastStore.i);
+  const lastStore = Math.max(...ksee.m.objects(read.first, read.last).flatMap((n) => n.changes.flatMap((d) => d.runs.map((r) => r.last))));
+  ksee.time.go(lastStore);
   await sleep(300);
   r.stored = [...document.querySelectorAll(".cm-editor a.stored")].map((a) => a.textContent.trim()).slice(0, 3);
   if (!r.stored.length) throw new Error("no stored notes in the source at " + $("where").textContent);

@@ -28,7 +28,7 @@ mod tests;
 
 pub use frames::{Frame, Line};
 pub use objects::{Diff, Node, Run};
-pub use stores::{Named, Region, Stored, Wrote, Write, Note};
+pub use stores::{Named, Region, Wrote, Write, Note};
 pub use value::Object;
 
 /// Who a task was (pid and comm unknown if the recording does not say, and

@@ -115,7 +115,8 @@ order, each by the region it hit, named as the code names it (a call's pointer
 argument to a struct, a local and what a pointer local points to as the
 call ends, the task running and what its pointer members point to, a
 global: "file->f_pos in vfs_read", "prog(19)->files->next_fd" (the task running as the span begins, by its name); what the
-code did not name, by its address). A call's local, its frame, and an
+code did not name, by its address: a callee's stack bytes no variable
+of its names, a register spilled). A call's local, and an
 object a pointer reaches in a frame on the stack, are theirs only while
 that call runs (the slot is another's before and after). Named once
 per span, a store is printed only where it is shown: as the member it

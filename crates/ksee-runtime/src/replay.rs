@@ -198,13 +198,6 @@ impl Machine {
         self.view(|v| to_js(&v.raw(from, to)))
     }
 
-    /// The stores in records `first..=last` (a call's), and the variables
-    /// set there, in order, each as the code names what it hit
-    /// (view::Stored).
-    pub fn stores(&self, first: usize, last: usize) -> JsValue {
-        self.view(|v| to_js(&v.stored(first, last)))
-    }
-
     /// What each line of `file` stored or set in records `first..=last` by
     /// record `cur` (view::Note): the source's notes.
     pub fn notes(&self, first: usize, last: usize, file: &str, cur: usize) -> JsValue {

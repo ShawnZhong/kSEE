@@ -76,9 +76,9 @@ const wi = m.syscalls().findIndex((s) => s.first === w.first);
 const [vfs] = m.functions("vfs_write");
 check("vfs_write: where it is", vfs?.file === "fs/read_write.c" && vfs.last > vfs.line);
 {
-  const mk = m.syscalls().find((s) => s.name === "mkdirat"), cs = mk ? m.stores(mk.first, mk.last) : [];
-  check(`mkdirat's stores name the kernel's globals: ${[...new Set(cs.filter((c) => c.kind === "global").map((c) => c.what))].join(", ")}; the machine's apart`,
-        cs.some((c) => c.kind === "global" && c.what === "nr_inodes") && cs.some((c) => c.kind === "machine" && c.what === "wasm_irq_flags"));
+  const mk = m.syscalls().find((s) => s.name === "mkdirat"), cs = mk ? m.objects(mk.first, mk.last) : [];
+  check(`mkdirat's objects name the kernel's globals: ${cs.filter((c) => c.kind === "global").map((c) => c.what).join(", ")}; not the machine's`,
+        cs.some((c) => c.kind === "global" && c.what === "nr_inodes") && !cs.some((c) => c.what === "wasm_irq_flags"));
 }
 check("fs/read_write.c coverage", m.file_coverage("fs/read_write.c", wi).some((l) => l.count > 0));
 const chart = m.chart(w.first, w.last, 200);
@@ -149,11 +149,10 @@ check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
   const d = obj?.changes.find((x) => x.member === "f_pos");
   check(`the read wrote its file: ${obj?.changes.map((x) => x.member).join(", ")}; f_pos ${d?.before} → ${d?.after} by ${d?.runs.map((r) => r.at?.func).join(", ")}`,
         d?.before === "0" && d?.after === "26" && d.runs.length === 1 && d.runs[0].at?.func === "ksys_read");
-  // The read's stores, named as the code names what they hit: a call's file, a local of a call in it (at its frame base's offset), a callee's frame; in order.
-  const st = m.stores(read.first, read.last);
-  check(`the read's stores: ${st.length}, ${[...new Set(st.map((s) => s.what))].slice(0, 5).join("; ")}…`,
-        st.some((s) => /^file in \w+$/.test(s.what) && s.kind === "object" && s.member === "f_pos") && st.some((s) => /^(kiocb|iter) in /.test(s.what))
-        && st.some((s) => s.what.startsWith("frame of ")) && st.every((s, k) => k === 0 || st[k - 1].i < s.i));
+  // The read's stores, named as the code names what they hit: a local of a call in it (at its frame base's offset), the kiocb's ki_pos, on its lines.
+  const notes = m.notes(read.first, read.last, "fs/read_write.c", read.last);
+  check(`the read's notes in fs/read_write.c: ${notes.map((n) => n.short).slice(0, 4).join("; ")}…`,
+        notes.some((n) => /^ki_pos: /.test(n.short) && /\bkiocb(->|\.)ki_pos in \w+/.test(n.full)));
 }
 m.memory_at(null);
 // What the read did: its file changed; not its kiocb (on the stack, gone
@@ -259,9 +258,9 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
 {
   const op = m.syscalls().find((s) => s.name === "openat"), stack = m.call_stack(m.first_call("do_sys_openat2", op.first, op.last)), entry = stack.at(-1);
   // (Memory reached through a pointer local, or the task's pointer members, is named too: files->next_fd, through the task's files.)
-  const ops = m.stores(op.first, op.last);
-  check(`a store through the task's files is named: ${[...new Set(ops.filter((s) => s.member === "next_fd").map((s) => s.what))].join(", ")}`,
-        ops.some((s) => s.member === "next_fd" && s.kind === "object"));
+  const ops = m.objects(op.first, op.last);
+  check(`a store through the task's files is named: ${ops.filter((n) => n.changes.some((d) => d.member === "next_fd")).map((n) => n.what).join(", ")}`,
+        ops.some((n) => n.what.endsWith("->files") && n.changes.some((d) => d.member === "next_fd")));
   // (A call begins at its function's signature line: the callee's frame there, before its first statement.)
   const dso = m.at(m.first_call("do_sys_openat2", op.first, op.last)), dsoDef = m.definition("do_sys_openat2");
   check(`a call begins at its signature: do_sys_openat2 at ${dso?.file}:${dso?.line}, defined at ${dsoDef?.line}`, dso?.line === dsoDef?.line && dso?.file === dsoDef?.file);

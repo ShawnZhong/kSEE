@@ -8,11 +8,11 @@ use super::*;
 /// `what` ("file in vfs_read", "x in f", "nr_inodes", "prog(19)"; the
 /// address when nothing names it), its `kind` ("task", "object": a struct
 /// a call's argument points to, "global", "machine": one of the machine's
-/// variables, or what its functions name (arch::MACHINE), "frame": the
-/// stack a call used, "local", "var": a variable kept in a wasm local, or
-/// "other": memory nothing names), its type `ty` (0 for none: a frame's
-/// bytes; a var's, the variable's), where it is (`addr`, `size`), for a
-/// call's local or frame (or an object in one) the call's records, its
+/// variables, or what its functions name (arch::MACHINE), "local", "var":
+/// a variable kept in a wasm local, or "other": memory nothing names), its
+/// type `ty` (0 for none: memory nothing names; a var's, the variable's),
+/// where it is (`addr`, `size`), for a call's local (or an object in one)
+/// the call's records, its
 /// `life`, and how deep the call that names it is (the task's, 0; a
 /// global's, or memory nothing names, u32::MAX): Objects comes in that
 /// order.
@@ -45,23 +45,12 @@ pub struct Wrote {
     pub prev: Option<usize>,
 }
 
-/// A store in a span (Machine.stores): at record `i`, to the `member` (a
-/// path: "f_path.dentry"; "" the object itself; "+8" a frame's byte 8) of
-/// `what`, of `kind` (see Region).
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Stored {
-    pub i: usize,
-    pub what: String,
-    pub kind: &'static str,
-    pub member: String,
-}
-
 /// A member's scalar, as Types::leaf finds it: its type, its offset in the
 /// object, and its bits if a bitfield.
 pub(super) type Leaf = (u32, u32, Option<(u32, u32)>);
 
-/// A write, printed: the member it wrote (see Stored), from `before` to
+/// A write, printed: the member it wrote (a path: "f_path.dentry"; "" the
+/// object itself), from `before` to
 /// `after`.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Change {
@@ -139,9 +128,9 @@ impl View<'_> {
     /// mnt and dentry at once).
     pub(super) fn members(&self, r: &Region, i: usize) -> Vec<(String, Option<Leaf>)> {
         let Record::Store { addr, size, .. } = self.rec.records[i] else { return Vec::new() };
-        // (No type, a frame's bytes: the store as it is, at its offset.)
+        // (No type, memory nothing names: the store as it is.)
         if r.ty == 0 {
-            return alloc::vec![(if addr == r.addr { String::new() } else { format!("+{}", addr.wrapping_sub(r.addr)) }, None)];
+            return alloc::vec![(String::new(), None)];
         }
         let off = addr.max(r.addr) - r.addr;
         let len = size.min(r.size.saturating_sub(off));
@@ -198,17 +187,6 @@ impl View<'_> {
         got
     }
 
-    /// The stores in records `first..=last` (see stores), each with what it
-    /// hit and the member.
-    pub fn stored(&self, first: usize, last: usize) -> Vec<Stored> {
-        let named = self.stores(first, last);
-        named.writes.iter().map(|w| {
-            let r = &named.regions[w.region as usize];
-            let member = self.members(r, w.i).into_iter().map(|(m, _)| m).collect::<Vec<_>>().join(", ");
-            Stored { i: w.i, what: r.what.clone(), kind: r.kind, member }
-        }).collect()
-    }
-
     /// What each line of `file` stored (or set) in records `first..=last`
     /// by record `cur` (the source's notes): each thing it wrote (a
     /// member, a variable), its last change and how many times, said short
@@ -242,7 +220,7 @@ impl View<'_> {
             for ((region, member), (w, n)) in things {
                 let r = &named.regions[region as usize];
                 let Some(x) = self.changes(&named, w).into_iter().find(|x| x.member == member) else { continue };
-                let join = if x.member.starts_with('+') { "" } else if r.kind == "object" { "->" } else { "." };
+                let join = if r.kind == "object" { "->" } else { "." };
                 // (The member after the name, the function it is in last: "filp->f_pos in vfs_read".)
                 let (expr, within) = r.what.split_once(" in ").map_or((r.what.as_str(), String::new()), |(e, f)| (e, format!(" in {f}")));
                 let times = |n: usize| if n > 1 { format!(" ×{n}") } else { String::new() };
@@ -323,11 +301,6 @@ impl View<'_> {
             // (What the machine's own functions name, its: the call's plumbing.)
             let machine = t.file(f.loc).starts_with(arch::MACHINE);
             let kind = |k: &'static str| if machine { "machine" } else { k };
-            // (Its frame: up to its caller's, if the caller is known.)
-            let caller = calls.call_from(i).and_then(|c| c.parent).and_then(|p| args.get(calls.calls[p as usize].first));
-            if let Some((_, caller)) = caller && caller > frame {
-                add(format!("frame of {}", f.name), "frame", 0, frame, Some(caller - frame), Some(i), Some(i));
-            }
             for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
                 let v = v as u32;
                 if let Some(to) = types.struct_target(*ty) {
@@ -385,11 +358,11 @@ impl View<'_> {
             let Record::Store { addr, .. } = records[i] else { continue };
             let end = by_start.partition_point(|&k| regions[k].addr <= addr);
             // (The outermost: an object inside another (a page's refcount,
-            // the atomic_t a callee names) is the other's member; a frame
-            // only if nothing else holds it; of equal ones, the first named.)
+            // the atomic_t a callee names) is the other's member; of equal
+            // ones, the first named.)
             let hit = by_start[..end].iter().rev().take_while(|&&k| addr - regions[k].addr < widest).copied()
                 .filter(|&k| addr < regions[k].addr.saturating_add(regions[k].size) && regions[k].life.is_none_or(|(a, b)| a <= i && i <= b))
-                .min_by_key(|&k| (regions[k].kind == "frame", core::cmp::Reverse(regions[k].size), k));
+                .min_by_key(|&k| (core::cmp::Reverse(regions[k].size), k));
             let region = match hit {
                 Some(k) => k as u32,
                 None => {

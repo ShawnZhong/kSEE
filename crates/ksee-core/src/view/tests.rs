@@ -140,8 +140,8 @@ fn a_lines_note_says_a_name_once() {
 fn a_calls_stores_are_named_as_the_code_names_them() {
     // f (1, "f") takes struct s *p (at 4) and has a local int x (at
     // frame 32 + 4): it stores p->b, then x; calls g (2), whose frame is
-    // at 16, which stores a byte of its own frame; and one byte nobody
-    // names.
+    // at 16, which stores a byte of its own frame that no variable of its
+    // names; and one byte nobody names: both by their addresses.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
                            P\t1\tf\tp:3\nQ\t1\tx:1:4\n");
@@ -157,10 +157,9 @@ fn a_calls_stores_are_named_as_the_code_names_them() {
     let mut m = alloc::vec![0u8; 128];
     (m[8], m[36], m[20], m[100]) = (2, 7, 9, 5);
     let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-    // (The last, to g's frame after g returned: g's no more.)
     let got: Vec<_> = writes(&v, 0, 7).into_iter().map(|(_, what, kind, member, _, after)| (what, kind, member, after)).collect();
     assert_eq!(got, [("p in f".into(), "object", "b".into(), "2".into()), ("x in f".into(), "local", "".into(), "7".into()),
-                     ("frame of g".into(), "frame", "+4".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into()),
+                     ("0x14".into(), "other", "".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into()),
                      ("0x15".into(), "other", "".into(), "0".into())]);
 }
 
