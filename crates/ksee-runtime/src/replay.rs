@@ -264,27 +264,28 @@ impl Machine {
     /// tid?, decl }, or an assignment, { tid?, target, value }; tid a
     /// number if it is one, else the name of a result (a clone's).
     pub fn statement(&self, text: &str) -> Result<JsValue, JsValue> {
-        use ksee_core::program::{statement, Statement};
+        use ksee_core::program::{statement, Line};
         let o = js_sys::Object::new();
         let set = |k: &str, v: JsValue| drop(js_sys::Reflect::set(&o, &k.into(), &v));
         let tid = |t: Option<String>| match t {
             Some(t) => t.parse::<f64>().map_or_else(|_| JsValue::from(t), JsValue::from),
             None => JsValue::UNDEFINED,
         };
-        match statement(text)? {
-            Statement::Call { tid: t, ty, name, call, args } => {
-                if t.is_some() { set("tid", tid(t)); }
-                if let Some(ty) = ty { set("type", ty.into()); }
+        let st = statement(text)?;
+        if st.runner.is_some() { set("tid", tid(st.runner.clone())); }
+        match st.line {
+            Line::Call { ty, name, call, texts, .. } => {
+                if let Some(ty) = ty { set("type", ty.text().into()); }
                 if let Some(n) = name { set("name", n.into()); }
                 set("call", call.into());
-                set("args", args.into_iter().map(JsValue::from).collect::<js_sys::Array>().into());
+                set("args", texts.into_iter().map(JsValue::from).collect::<js_sys::Array>().into());
             }
-            Statement::Decl { tid: t, text } => {
-                if t.is_some() { set("tid", tid(t)); }
-                set("decl", text.into());
-            }
-            Statement::Assign { tid: t, target, value } => {
-                if t.is_some() { set("tid", tid(t)); }
+            // (Its text, but for its runner's `19:`: Machine.declare reads it.)
+            Line::Decl { .. } => set("decl", match st.runner {
+                Some(_) => text.split_once(':').map_or(text, |(_, r)| r).trim().into(),
+                None => text.trim().into(),
+            }),
+            Line::Assign { texts: (target, value), .. } => {
                 set("target", target.into());
                 set("value", value.into());
             }

@@ -5,8 +5,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use super::expr::{value, Env};
-use super::text::{items, literal, unquote, Item};
+use super::eval::{Env, Eval};
+use super::parse::{expression, Expr, Line};
 use crate::types::{Base, Kind, Types};
 use crate::Memory;
 
@@ -45,61 +45,49 @@ pub struct Decl {
 
 impl Types {
     /// A declaration, as in C, of a program's variable (memory of its own,
-    /// in its process: its name then stands for its address): `char
-    /// buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0,
-    /// 30000000}`, `char path[] = "/note.txt"`; the type the kernel's own
-    /// (a struct, union or enum by its tag, a typedef, a base type by its
-    /// name). `known`: as for arg.
+    /// in its process): `char buf[64]`, `int fds[2]`, `struct
+    /// __kernel_timespec ts = {0, 30000000}`, `char path[] = "/note.txt"`,
+    /// `unsigned *tail = (unsigned *)(rings + p.sq_off.tail)`; the type the
+    /// kernel's own (a struct, union or enum by its tag, a typedef, a base
+    /// type by its name). `known`: as for arg.
     pub fn declare(&self, text: &str, known: &dyn Env) -> Result<Decl, String> {
-        let s = text.trim().trim_end_matches(';').trim();
-        let (lhs, init) = match s.split_once('=') {
-            Some((l, r)) => (l.trim(), Some(r.trim())),
-            None => (s, None),
-        };
-        // (Its name, the last word, with [n] after it for an array.)
-        let (head, count) = match lhs.strip_suffix(']').and_then(|l| l.rsplit_once('[')) {
-            Some((h, c)) => (h.trim_end(), Some(c.trim())),
-            None => (lhs, None),
-        };
-        let at = head.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).ok_or("a declaration: a type, then a name")?;
-        let (tyname, name) = (head[..=at].trim(), &head[at + 1..]);
-        if tyname.is_empty() || name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
+        let Line::Decl { ty, name, count, init } = super::parse::statement(text)?.line else {
             return Err("a declaration: a type, then a name".into());
+        };
+        let e = Eval { types: Some(self), env: known };
+        let ty = match e.type_of(&ty)? {
+            (0, Some(_)) => return Err(format!("{name}: no pointer to that type in the kernel")),
+            (0, None) => return Err(format!("{name}: void")),
+            (t, _) => t,
+        };
+        if self.size_of(ty) == 0 {
+            return Err(format!("{name}: no size"));
         }
-        if tyname.ends_with('*') {
-            return Err(format!("{name}: a pointer: declare what it points to (its name is its address)"));
-        }
-        let ty = self.named(tyname).ok_or_else(|| format!("no type {tyname} in the kernel"))?;
-        let esize = self.size_of(ty) as usize;
-        if esize == 0 {
-            return Err(format!("{tyname}: no size"));
-        }
-        let item = init.map(literal).transpose()?;
         // (An array's count: as written, or, `[]`, as many as it starts with.)
         let count = match count {
             None => None,
-            Some("") => Some(match &item {
-                Some(Item::Str(s)) => s.len() as u32 + 1,
-                Some(Item::List(l)) => l.len() as u32,
+            Some(None) => Some(match &init {
+                Some(Expr::Str(s)) => s.len() as u32 + 1,
+                Some(Expr::Init(l)) => l.len() as u32,
                 _ => return Err(format!("{name}[]: how many?")),
             }),
-            Some(c) => Some(u32::try_from(value(c, Some(self), known)?).map_err(|_| format!("{name}[{c}]: not a size"))?),
+            Some(Some(c)) => Some(u32::try_from(e.number(&c)?).map_err(|_| format!("{name}[…]: not a size"))?),
         };
-        let bytes = self.lay(ty, count, item.as_ref(), known).map_err(|e| format!("{name}: {e}"))?;
-        Ok(Decl { name: name.to_string(), ty, count, bytes })
+        let bytes = self.lay(ty, count, init.as_ref(), known).map_err(|e| format!("{name}: {e}"))?;
+        Ok(Decl { name, ty, count, bytes })
     }
 
     /// A variable's bytes (of type `ty`, an array of `count` of them) as
-    /// `text` makes them: a C literal ("hi", {3, 4}, {.tv_sec = 1}, 7).
+    /// `text` makes them: a C initializer ("hi", {3, 4}, {.tv_sec = 1}, 7).
     pub fn assign(&self, ty: u32, count: Option<u32>, text: &str, known: &dyn Env) -> Result<Vec<u8>, String> {
-        self.lay(ty, count, Some(&literal(text.trim())?), known)
+        self.lay(ty, count, Some(&expression(text, Some(self))?), known)
     }
 
     /// The bytes of a variable of type `ty` (an array of `count`) that
-    /// `item` makes (none: zeros).
-    fn lay(&self, ty: u32, count: Option<u32>, item: Option<&Item>, known: &dyn Env) -> Result<Vec<u8>, String> {
+    /// `init` makes (none: zeros).
+    fn lay(&self, ty: u32, count: Option<u32>, init: Option<&Expr>, known: &dyn Env) -> Result<Vec<u8>, String> {
         let mut bytes = vec![0u8; self.size_of(ty) as usize * count.unwrap_or(1) as usize];
-        match (item, count) {
+        match (init, count) {
             (None, _) => {}
             (Some(it), Some(n)) => self.fill_array(&mut bytes, 0, ty, n, it, known)?,
             (Some(it), None) => self.fill(&mut bytes, 0, ty, it, known)?,
@@ -220,43 +208,45 @@ impl Types {
 
     /// Argument `text` for parameter type `ty` (a syscall's, or 0: unknown):
     /// see the module's doc. `known`: the values of names (constants,
-    /// results).
+    /// results, variables).
     pub fn arg(&self, text: &str, ty: u32, known: &dyn Env) -> Result<Arg, String> {
-        let s = text.trim();
-        if s.starts_with('"') {
-            let mut b = unquote(s)?;
-            b.push(0);
-            return Ok(Arg::Bytes(b));
-        }
-        if let Some(inner) = s.strip_prefix('{').and_then(|r| r.strip_suffix('}')) {
-            let list = items(inner)?;
-            // (The parameter's type: what the braces make.)
-            let to = match self.get(self.resolve(ty)).kind {
-                Kind::Pointer(to) => self.resolve(to),
-                _ if ty == 0 => return Err("{…}: a parameter of no known type".into()),
-                _ => return Err(format!("{{…}} for a {}: not a pointer", self.name(ty))),
-            };
-            // A char **: an array of strings.
-            if matches!(self.get(to).kind, Kind::Pointer(c) if self.is_string(c)) {
-                return list.into_iter().map(|(_, it)| match it {
-                    Item::Str(s) => Ok(Some(String::from_utf8_lossy(&s).into_owned())),
-                    Item::Expr(e) if value(&e, Some(self), known)? == 0 => Ok(None),
-                    _ => Err("an array of strings: \"…\" or NULL each".to_string()),
-                }).collect::<Result<_, _>>().map(Arg::Strings);
+        let e = expression(text, Some(self))?;
+        match &e {
+            Expr::Str(s) => {
+                let mut b = s.clone();
+                b.push(0);
+                Ok(Arg::Bytes(b))
             }
-            let mut b = vec![0u8; self.size_of(to) as usize];
-            self.fill(&mut b, 0, to, &Item::List(list), known)?;
-            return Ok(Arg::Bytes(b));
+            Expr::Init(list) => {
+                // (The parameter's type: what the braces make.)
+                let to = match self.get(self.resolve(ty)).kind {
+                    Kind::Pointer(to) => self.resolve(to),
+                    _ if ty == 0 => return Err("{…}: a parameter of no known type".into()),
+                    _ => return Err(format!("{{…}} for a {}: not a pointer", self.name(ty))),
+                };
+                // A char **: an array of strings.
+                if matches!(self.get(to).kind, Kind::Pointer(c) if self.is_string(c)) {
+                    let ev = Eval { types: Some(self), env: known };
+                    return list.iter().map(|(_, it)| match it {
+                        Expr::Str(s) => Ok(Some(String::from_utf8_lossy(s).into_owned())),
+                        it if ev.number(it)? == 0 => Ok(None),
+                        _ => Err("an array of strings: \"…\" or NULL each".to_string()),
+                    }).collect::<Result<_, _>>().map(Arg::Strings);
+                }
+                let mut b = vec![0u8; self.size_of(to) as usize];
+                self.fill(&mut b, 0, to, &e, known)?;
+                Ok(Arg::Bytes(b))
+            }
+            _ => Ok(Arg::Number(Eval { types: Some(self), env: known }.number(&e)?)),
         }
-        Ok(Arg::Number(value(s, Some(self), known)?))
     }
 
-    /// Put `item` into `buf` at `at`, as a value of type `ty`.
-    fn fill(&self, buf: &mut Vec<u8>, at: usize, ty: u32, item: &Item, known: &dyn Env) -> Result<(), String> {
+    /// Put `init` into `buf` at `at`, as a value of type `ty`.
+    fn fill(&self, buf: &mut Vec<u8>, at: usize, ty: u32, init: &Expr, known: &dyn Env) -> Result<(), String> {
         let id = self.resolve(ty);
         let t = self.get(id);
-        match (&t.kind, item) {
-            (Kind::Struct(_) | Kind::Union(_), Item::List(list)) => {
+        match (&t.kind, init) {
+            (Kind::Struct(_) | Kind::Union(_), Expr::Init(list)) => {
                 let members = self.members(&t.kind);
                 let mut next = 0;
                 for (name, it) in list {
@@ -273,36 +263,34 @@ impl Types {
                 }
                 Ok(())
             }
-            (&Kind::Array { elem, count }, Item::Str(_) | Item::List(_)) => self.fill_array(buf, at, elem, count, item, known),
-            (Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_), Item::Expr(e)) => {
-                let v = value(e, Some(self), known)?;
+            (&Kind::Array { elem, count }, Expr::Str(_) | Expr::Init(_)) => self.fill_array(buf, at, elem, count, init, known),
+            (_, Expr::Str(s)) => Err(format!("\"{}\" for a {}", String::from_utf8_lossy(s), self.name(id))),
+            (_, Expr::Init(_)) => Err(format!("{{…}} for a {}", self.name(id))),
+            (Kind::Base(Base::Float), _) => Err(format!("{}: a float", self.name(id))),
+            (Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_), e) => {
+                let v = Eval { types: Some(self), env: known }.number(e)?;
                 let size = self.size_of(id).clamp(1, 8) as usize;
-                if matches!(t.kind, Kind::Base(Base::Float)) {
-                    return Err(format!("{}: a float", self.name(id)));
-                }
                 buf[at..at + size].copy_from_slice(&v.to_le_bytes()[..size]);
                 Ok(())
             }
-            (_, Item::Str(s)) => Err(format!("\"{}\" for a {}", String::from_utf8_lossy(s), self.name(id))),
-            (_, Item::List(_)) => Err(format!("{{…}} for a {}", self.name(id))),
-            (_, Item::Expr(e)) => Err(format!("{e} for a {}", self.name(id))),
+            _ => Err(format!("a value for a {}", self.name(id))),
         }
     }
 
-    /// Lay `item` out at `at` in `buf` as `count` of type `elem` (an
+    /// Lay `init` out at `at` in `buf` as `count` of type `elem` (an
     /// array): a string, for chars; else {…}, an element each.
-    fn fill_array(&self, buf: &mut Vec<u8>, at: usize, elem: u32, count: u32, item: &Item, known: &dyn Env) -> Result<(), String> {
+    fn fill_array(&self, buf: &mut Vec<u8>, at: usize, elem: u32, count: u32, init: &Expr, known: &dyn Env) -> Result<(), String> {
         let esize = self.size_of(elem) as usize;
-        match item {
-            Item::Str(s) if self.is_string(elem) => {
+        match init {
+            Expr::Str(s) if self.is_string(elem) => {
                 if s.len() + 1 > count as usize {
                     return Err(format!("\"{}\": longer than {count} bytes", String::from_utf8_lossy(s)));
                 }
                 buf[at..at + s.len()].copy_from_slice(s);
                 Ok(())
             }
-            Item::List(list) if list.len() > count as usize => Err(format!("too many values: {count} at most")),
-            Item::List(list) => list.iter().enumerate().try_for_each(|(i, (_, it))| self.fill(buf, at + i * esize, elem, it, known)),
+            Expr::Init(list) if list.len() > count as usize => Err(format!("too many values: {count} at most")),
+            Expr::Init(list) => list.iter().enumerate().try_for_each(|(i, (_, it))| self.fill(buf, at + i * esize, elem, it, known)),
             _ => Err("an array is {…} (or a string, for chars)".into()),
         }
     }

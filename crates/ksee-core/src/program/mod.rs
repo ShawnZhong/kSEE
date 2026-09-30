@@ -1,25 +1,38 @@
-//! A syscall's arguments, written as in C (the page's programs):
+//! The page's programs: a line each, one of three statements, of C
+//! expressions:
 //!
 //! ```text
-//! "a string"              a buffer with the string, NUL-terminated
-//! 0644, 0x41, -100        numbers (0: octal, 0x: hex)
-//! O_CREAT | O_WRONLY      constants (the kernel's own: Types::constants),
-//!                         NULL, names of results (fd, $2), with | << + -
-//! {0, 30000000}           a compound literal, laid out as the parameter's
-//! {.tv_nsec = 30000000}   type says (a struct, positional or by name;
-//! {"init", NULL}          an array; for a char **, an array of strings)
+//! [runner:] [type] [name =] call(args)   a syscall (its result named)
+//! [runner:] type name[n] [= init]        a variable of the program's
+//! [runner:] target = value               memory of the program's written
 //! ```
 //!
-//! [`text`]: reading C text (expressions, literals, a program's line, the
-//! names in a line of source); [`layout`]: laying values out in the
-//! kernel's types, and reading them back.
+//! An expression is C's (operators, precedence, `.` `->` `[]` `*` `&`,
+//! casts, `sizeof`), over typed names: a variable is memory of its type, a
+//! result a value of its declared type, a constant the kernel's. An
+//! argument or a value may also be a string ("a buffer with it") or `{…}`
+//! (laid out as the parameter's type, or the variable's, says).
+//!
+//! [`lex`] and [`parse`]: the text as C's tokens, then a statement (a
+//! syntax tree: any other syntax would make the same); [`eval`]: its
+//! expressions' values; [`layout`]: values laid out in the kernel's types,
+//! and read back. [`source`]: names in the kernel's own source, for hovers.
 
-mod expr;
+mod eval;
 mod layout;
-mod text;
+mod lex;
+mod parse;
+mod source;
 #[cfg(test)]
 mod tests;
 
-pub use expr::{lvalue, typed, value, Env, Sym};
+pub use eval::{lvalue, typed, value, Env, Sym};
 pub use layout::{Arg, Decl, Value};
-pub use text::{context, eval, lines, names, statement, Context, Name, Statement};
+pub use parse::{context, expression, lines, statement, Context, Expr, Line, Statement, TypeName};
+pub use source::{names, Name};
+
+/// A C expression's value, of numbers and names only (no types, no
+/// memory): `O_CREAT | O_WRONLY`, `(1U << 16)`, `-100`.
+pub fn eval(s: &str, known: &dyn Env) -> Result<i64, alloc::string::String> {
+    value(s, None, known)
+}

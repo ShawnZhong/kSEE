@@ -28,21 +28,26 @@ fn a_lines_names_with_their_fields() {
 
 #[test]
 fn a_line_is_a_call_or_a_declaration() {
+    let o = |s: &str| Some(s.to_string());
     let call = |t: &str| match statement(t).unwrap() {
-        Statement::Call { tid, ty, name, call, args } => (tid, ty, name, call, args),
+        Statement { runner, line: Line::Call { ty, name, call, texts, .. } } => (runner, ty.map(|t| t.text()), name, call, texts),
         s => panic!("{s:?}"),
     };
-    let o = |s: &str| Some(s.to_string());
     assert_eq!(call("int fd = openat(AT_FDCWD, \"/a, b\", O_RDONLY);"),
-               (None, o("int"), o("fd"), "openat".into(), alloc::vec!["AT_FDCWD".into(), "\"/a, b\"".into(), "O_RDONLY".into()]));
-    assert_eq!(call("child: void *mem = mmap2(NULL, {1, 2}, 3)"), (o("child"), o("void *"), o("mem"), "mmap2".into(), alloc::vec!["NULL".into(), "{1, 2}".into(), "3".into()]));
-    assert_eq!(call("fd = getpid()"), (None, None, o("fd"), "getpid".into(), alloc::vec![]));
-    assert_eq!(statement("char buf[64]").unwrap(), Statement::Decl { tid: None, text: "char buf[64]".into() });
-    assert_eq!(statement("write(1, \"hi)\", 2").unwrap_err(), "a ) missing");
-    assert_eq!(statement("19: struct __kernel_timespec ts = {0, 1}").unwrap(), Statement::Decl { tid: o("19"), text: "struct __kernel_timespec ts = {0, 1}".into() });
+               (None, o("int"), o("fd"), "openat".into(), vec!["AT_FDCWD".into(), "\"/a, b\"".into(), "O_RDONLY".into()]));
+    assert_eq!(call("child: void *mem = mmap2(NULL, {1, 2}, 3)"), (o("child"), o("void *"), o("mem"), "mmap2".into(), vec!["NULL".into(), "{1, 2}".into(), "3".into()]));
+    assert_eq!(call("fd = getpid()"), (None, None, o("fd"), "getpid".into(), vec![]));
+    let decl = |t: &str| match statement(t).unwrap() {
+        Statement { runner, line: Line::Decl { ty, name, count, .. } } => (runner, ty.text(), name, count.is_some()),
+        s => panic!("{s:?}"),
+    };
+    assert_eq!(decl("char buf[64]"), (None, "char".into(), "buf".into(), true));
+    assert_eq!(decl("19: struct __kernel_timespec ts = {0, 1}"), (o("19"), "struct __kernel_timespec".into(), "ts".into(), false));
+    assert_eq!(decl("unsigned long long *p"), (None, "unsigned long long *".into(), "p".into(), false));
+    assert!(statement("write(1, \"hi)\", 2").is_err());
     // (Assignments: memory of the program's written.)
     let assign = |t: &str| match statement(t).unwrap() {
-        Statement::Assign { target, value, .. } => (target, value),
+        Statement { line: Line::Assign { texts, .. }, .. } => texts,
         s => panic!("{s:?}"),
     };
     assert_eq!(assign("*sqe = {.opcode = IORING_OP_READ, .fd = fd}"), ("*sqe".into(), "{.opcode = IORING_OP_READ, .fd = fd}".into()));
@@ -62,7 +67,9 @@ fn declarations_are_a_programs_memory() {
     let fds = t.declare("int fds[2] = {3, 4}", &known).unwrap();
     assert_eq!(fds.bytes, [3, 0, 0, 0, 4, 0, 0, 0]);
     assert_eq!(t.declare("char path[] = \"/x\"", &known).unwrap().bytes, b"/x\0");
-    assert!(t.declare("struct nope x", &known).is_err() && t.declare("char *p", &known).is_err());
+    assert!(t.declare("struct nope x", &known).is_err());
+    // (A pointer: 4 bytes, the address it holds.)
+    assert_eq!(t.declare("char *p = 0x40", &known).unwrap().bytes, [0x40, 0, 0, 0]);
     // Said as C writes it.
     struct M(Vec<u8>);
     impl Memory for M {
