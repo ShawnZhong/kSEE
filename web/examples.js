@@ -101,6 +101,7 @@ export async function examples(app) {
 
   function open(ex, steps = ex.steps) {
     t.ex = ex;
+    document.title = `${ex.title} · kSEE`;
     t.steps = steps.map((s) => ({ ...s }));
     // (Made by a runner, kernel.js's: its steps, how each went, the runners
     // they started, the variables.)

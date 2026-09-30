@@ -1,6 +1,8 @@
 # kSEE
 
-kSEE records what the real Linux kernel does, down to every line it runs and
+*Watch the real Linux kernel run, line by line, in your browser.*
+
+kSEE (see the kernel) records what the real Linux kernel does, down to every line it runs and
 every value it changes, and lets you explore the recording in time, in a
 browser. Linux is compiled to WebAssembly through a minimal `arch/wasm`
 (one instance on the page's thread; its tasks are call stacks it suspends
