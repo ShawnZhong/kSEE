@@ -20,9 +20,10 @@ struct request {
 	char data[4096] __attribute__((aligned(8)));
 };
 
-// The program's own memory, which the host hands out: its variables
-// (`char buf[64]` in the page's program). A process's, its threads' too.
-static char heap[65536] __attribute__((aligned(16)));
+// The program's own memory, which the host hands out (each variable
+// aligned as it needs): its variables, `char buf[64]` in the page's
+// program, as a C program's globals are; a process's, its threads' too.
+static char heap[65536];
 
 // (main: whether this runner is the program's own, its main thread, not a
 // clone child's.)
