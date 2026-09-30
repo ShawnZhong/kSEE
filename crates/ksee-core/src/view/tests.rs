@@ -206,7 +206,7 @@ fn the_objects_a_call_wrote_are_a_graph() {
     // (As a tree, in the order shown: q, then p under it, by its link.)
     assert_eq!(got, [("q in f".into(), alloc::vec![("c".into(), "0 → 7".into(), None), ("link".into(), "NULL → 0x4".into(), Some(1))]),
                      ("p in f".into(), alloc::vec![("b".into(), "1 → 2".into(), None)])]);
-    assert_eq!(nodes.iter().map(|n| n.under.clone()).collect::<Vec<_>>(), [None, Some((0, "link".into()))]);
+    assert_eq!(nodes.iter().map(|n| n.under.clone()).collect::<Vec<_>>(), [None, Some(Under { node: 0, member: "link".into() })]);
 }
 
 #[test]
@@ -401,7 +401,7 @@ fn objects_expose_pointer_targets() {
     m[4..8].copy_from_slice(&8u32.to_le_bytes());
     let o = t.object(&Mem(m), "n", 0, 2, 1);
     let c = o.children.unwrap();
-    assert_eq!((c[0].value.as_deref(), c[1].value.as_deref(), c[1].target), (Some("7"), Some("0x8"), Some((2, 8))));
+    assert_eq!((c[0].value.as_deref(), c[1].value.as_deref(), c[1].target), (Some("7"), Some("0x8"), Some(Target { ty: 2, addr: 8 })));
 }
 
 #[test]

@@ -22,7 +22,7 @@ export function tree(app, st, redraw) {
   function kids(o) {
     if (o.children) return o.children;
     if (o.expand != null) return m.object_by_id(o.name, o.expand, o.addr, 1)?.children ?? [];
-    if (o.target) return m.object_by_id(o.name, o.target[0], o.target[1], 1)?.children ?? [];
+    if (o.target) return m.object_by_id(o.name, o.target.ty, o.target.addr, 1)?.children ?? [];
     return null;
   }
 

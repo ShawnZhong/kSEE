@@ -4,6 +4,16 @@
 
 use super::*;
 
+/// A call a line made: its function, what it returned, and where (its
+/// Return record).
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Called {
+    pub func: String,
+    pub value: i64,
+    pub at: usize,
+}
+
 /// A source line the kernel ran (see stack::lines), at record `i`, the
 /// `nth` of the lines it runs there (see call_stack).
 #[derive(Debug, Clone, PartialEq)]
@@ -31,7 +41,7 @@ pub struct Line {
     pub ret: Option<i64>,
     /// It made a call: the function, what it returned, and where (its
     /// return: the result is not known before).
-    pub called: Option<(String, i64, usize)>,
+    pub called: Option<Called>,
     /// Inlined: the line of its function's own where the code is inlined
     /// (the outermost inline site: `CLASS(fd_pos, f)(fd)`'s line).
     pub site: Option<u32>,
@@ -78,7 +88,7 @@ impl View<'_> {
     pub(super) fn line_only(&self, s: &LineStep) -> Line {
         Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
                inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests: Vec::new(), ret: s.ret,
-               called: s.callee.map(|(f, v, at)| (self.name(f), v, at)), site: self.chain(s.inlined).last().map(|&(_, l)| l.line) }
+               called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }), site: self.chain(s.inlined).last().map(|&(_, l)| l.line) }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.

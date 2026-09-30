@@ -26,10 +26,10 @@ mod value;
 #[cfg(test)]
 mod tests;
 
-pub use frames::{Frame, Line};
-pub use objects::{Diff, Group, Node, Run};
+pub use frames::{Called, Frame, Line};
+pub use objects::{Diff, Group, Node, Run, Under};
 pub use stores::{Named, Note, Region, RegionKind, Wrote, Write};
-pub use value::{Missing, Object};
+pub use value::{Missing, Object, Target};
 
 /// Who a task was (pid and comm unknown if the recording does not say, and
 /// the task_struct is another's by now).

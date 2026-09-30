@@ -35,10 +35,19 @@ pub struct Node {
     /// The node it is shown under (of its group), and by which of its
     /// members: the first that points to it as the span ends ("f_inode"),
     /// if any.
-    pub under: Option<(usize, String)>,
+    pub under: Option<Under>,
     /// That member, unless its name says it ("prog(19)->files" under
     /// prog(19), by files: none).
     pub via: Option<String>,
+}
+
+/// The node another is shown under (its index), and the member of it
+/// that points to the other.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Under {
+    pub node: usize,
+    pub member: String,
 }
 
 /// What happened to an object: it ends otherwise than it began (what the
@@ -259,8 +268,8 @@ impl View<'_> {
             for (d, to) in n.changes.iter_mut().zip(&tos[k]) {
                 d.to = to.map(|to| new[to]);
             }
-            n.under = under[k].take().map(|(p, m)| (new[p], m));
-            n.via = n.under.as_ref().map(|(_, m)| m.clone()).filter(|m| !n.what.ends_with(&format!("->{m}")));
+            n.under = under[k].take().map(|(p, member)| Under { node: new[p], member });
+            n.via = n.under.as_ref().map(|u| u.member.clone()).filter(|m| !n.what.ends_with(&format!("->{m}")));
             n
         }).collect()
     }

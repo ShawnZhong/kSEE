@@ -136,7 +136,7 @@ const inRead = m.line_steps(read.first, read.last, read.task.addr).find((x) => x
   check(`vfs_read's last line (${last?.line}) says what it returns: ${last?.ret}`, last?.ret === 26);
 }
 const file = m.call_stack(inRead)[0].args.find((a) => a.name === "file");
-const fpos = (i) => (m.memory_at(i), m.object_by_id("file", ...file.target, 1)?.children?.find((c) => c.name === "f_pos"));
+const fpos = (i) => (m.memory_at(i), m.object_by_id("file", file.target.ty, file.target.addr, 1)?.children?.find((c) => c.name === "f_pos"));
 check("f_pos before the read, and after", fpos(read.first)?.value === "0" && fpos(read.last)?.value === "26");
 // (The program's buffer is kernel memory: the read fills it, recorded.)
 const buf = (i) => (m.memory_at(i), m.call_stack(inRead)[0].args.find((a) => a.name === "buf")?.value);
@@ -145,7 +145,7 @@ const who = (m.memory_at(read.last), m.origin(fpos(read.last).addr, 8)[0]);
 check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
 // What the read did (Objects): its file's f_pos, 0 to 26, by ksys_read.
 {
-  const obj = m.objects(read.first, read.last).find((n) => n.addr === file.target[1] && n.id === file.target[0]);
+  const obj = m.objects(read.first, read.last).find((n) => n.addr === file.target.addr && n.id === file.target.ty);
   const d = obj?.changes.find((x) => x.member === "f_pos");
   check(`the read wrote its file: ${obj?.changes.map((x) => x.member).join(", ")}; f_pos ${d?.before} → ${d?.after} by ${d?.runs.map((r) => r.at?.func).join(", ")}`,
         d?.before === "0" && d?.after === "26" && d.runs.length === 1 && d.runs[0].at?.func === "ksys_read");
@@ -209,7 +209,7 @@ m.memory_at(null);
   const off = at != null && m.call_stack(at).find((f) => f.func === "vfs_llseek")?.args?.find((a) => a.name === "offset")?.value;
   check(`a 64-bit argument whole: vfs_llseek's offset ${off}`, off === "4294967296");
   // (And a 64-bit result: what vfs_llseek returned, the position.)
-  const got = ls && m.line_steps(ls.first, ls.last, ls.task.addr).find((s) => s.called?.[0] === "vfs_llseek")?.called[1];
+  const got = ls && m.line_steps(ls.first, ls.last, ls.task.addr).find((s) => s.called?.func === "vfs_llseek")?.called.value;
   check(`a 64-bit result whole: vfs_llseek returned ${got}`, got === 4294967296);
 }
 const readSteps = m.line_steps(read.first, read.last, read.task.addr);
@@ -242,7 +242,7 @@ check("a bad user pointer: EFAULT", (await call("write", [1, 0x1000, 4])).ret ==
   const arg = m.call_stack(i).find((f) => f.func === "filename_create")?.args?.find((a) => a.ty === "struct filename *");
   m.memory_at(i); // (as it was: the name is freed after the syscall)
   // (7.2's struct filename: the name pointer is in an anonymous struct, whose members are its own.)
-  const name = arg && m.object_by_id("name", ...arg.target, 1)?.children?.find((c) => c.name === "name");
+  const name = arg && m.object_by_id("name", arg.target.ty, arg.target.addr, 1)?.children?.find((c) => c.name === "name");
   m.memory_at(null);
   check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/named"'));
   await call("unlinkat", [-100, "/mnt/named", 0x200]);

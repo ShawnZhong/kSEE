@@ -22,11 +22,19 @@ pub struct Object {
     pub expand: Option<u32>,
     /// For a pointer to a struct or union, not NULL: what it points to,
     /// (type id, address).
-    pub target: Option<(u32, u32)>,
+    pub target: Option<Target>,
 }
 
 /// How many elements of an array a value shows (then a row: how many more).
 const SHOWN: u32 = 64;
+
+/// What a pointer points to: its type's id, and its address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Target {
+    pub ty: u32,
+    pub addr: u32,
+}
 
 /// Why a value has none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,7 +112,7 @@ impl Types {
                 });
                 let target = self.resolve(*to);
                 match self.get(target).kind {
-                    Kind::Struct(_) | Kind::Union(_) if p != 0 && self.size_of(target) > 0 => o.target = Some((target, p)),
+                    Kind::Struct(_) | Kind::Union(_) if p != 0 && self.size_of(target) > 0 => o.target = Some(Target { ty: target, addr: p }),
                     // (A pointer to a scalar: what it points to, in line: "0x7ffd8 → 0".)
                     Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_) if p != 0 && !self.is_string(*to) => {
                         let mut v = String::new();

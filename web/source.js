@@ -145,9 +145,9 @@ export function source(app) {
     for (const s of app.lineSteps()) {
       if (s.i > cur) break;
       // (Once it returned, by the cursor.)
-      if (!s.called || s.called[2] > cur || s.func !== v.fn.name) continue;
+      if (!s.called || s.called.at > cur || s.func !== v.fn.name) continue;
       const [at, where] = s.inlined ? [s.site, v.fn.file] : [s.line, s.file];
-      if (where === file && at != null) out.set(at, `${s.called[0]}() = ${app.kernel.result(s.called[1])}`);
+      if (where === file && at != null) out.set(at, `${s.called.func}() = ${app.kernel.result(s.called.value)}`);
     }
     return out;
   }
