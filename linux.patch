@@ -1,9 +1,9 @@
 diff --git a/arch/wasm/Kconfig b/arch/wasm/Kconfig
 new file mode 100644
-index 000000000..782f885ff
+index 000000000..aa0dfcb29
 --- /dev/null
 +++ b/arch/wasm/Kconfig
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,49 @@
 +# SPDX-License-Identifier: GPL-2.0-only
 +#
 +# WebAssembly: the kernel runs as a wasm32 module, one instance on one
@@ -16,11 +16,8 @@ index 000000000..782f885ff
 +	select ARCH_HAS_STRNLEN_USER
 +	select ARCH_HAS_SYSCALL_WRAPPER
 +	select ARCH_NO_PREEMPT
-+	select ARCH_NO_SWAP
-+	select BUG
 +	select GENERIC_ATOMIC64
 +	select GENERIC_ENTRY
-+	select GENERIC_IRQ_SHOW
 +	select HAVE_PAGE_SIZE_4KB
 +	# Required by GENERIC_ENTRY; tracing itself stays off (TRACEPOINTS=n).
 +	select HAVE_SYSCALL_TRACEPOINTS
@@ -41,9 +38,6 @@ index 000000000..782f885ff
 +	int
 +	default 100
 +
-+config GENERIC_CSUM
-+	def_bool y
-+
 +config GENERIC_HWEIGHT
 +	def_bool y
 +
@@ -55,9 +49,9 @@ index 000000000..782f885ff
 +	  linear memory below this address; the kernel image is linked above
 +	  it.
 +
-+config DEFAULT_MEM_START
-+	hex
-+	default 0x00000000
++# No port I/O: ioport_map() would add to a NULL PCI_IOBASE.
++config NO_IOPORT_MAP
++	def_bool y
 +
 diff --git a/arch/wasm/Kconfig.debug b/arch/wasm/Kconfig.debug
 new file mode 100644
@@ -68,16 +62,15 @@ index 000000000..a4e40e534
 +# SPDX-License-Identifier: GPL-2.0-only
 diff --git a/arch/wasm/Makefile b/arch/wasm/Makefile
 new file mode 100644
-index 000000000..f9244b5c1
+index 000000000..d124a8845
 --- /dev/null
 +++ b/arch/wasm/Makefile
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,35 @@
 +# SPDX-License-Identifier: GPL-2.0-only
 +
 +# wasm-ld has no linker scripts; kernel/vmlinux.lds.S is wasm assembly that
 +# the wrapper links first to fix the data layout. The wrappers also drop GNU
 +# options that wasm-ld and llvm-objcopy (for wasm) do not understand.
-+KBUILD_DEFCONFIG := defconfig
 +
 +WASM_LD := $(LLVM_PREFIX)wasm-ld$(LLVM_SUFFIX)
 +LD := $(srctree)/arch/wasm/scripts/wasm-ld
@@ -91,9 +84,6 @@ index 000000000..f9244b5c1
 +# Return addresses are not observable in wasm.
 +KBUILD_CPPFLAGS += '-D__builtin_return_address(n)=((void*)0)'
 +
-+KBUILD_CFLAGS += -mbulk-memory -mmutable-globals -msign-ext -mnontrapping-fptoint
-+KBUILD_AFLAGS += -mbulk-memory
-+
 +KBUILD_LDFLAGS += --no-gc-sections --error-limit=0
 +
 +# The final link only. The kernel imports the host runtime's memory (one
@@ -106,10 +96,6 @@ index 000000000..f9244b5c1
 +
 +core-y += arch/wasm/kernel/ arch/wasm/mm/
 +libs-y += arch/wasm/lib/
-+
-+define archhelp
-+  echo  '  vmlinux          - WebAssembly kernel module (vmlinux is a .wasm file)'
-+endef
 +
 +# modpost cannot read wasm objects, so it does not write the vmlinux export
 +# table. It would be empty anyway: exports are disabled.
@@ -183,17 +169,15 @@ index 000000000..cef200e0b
 +# CONFIG_RUNTIME_TESTING_MENU is not set
 diff --git a/arch/wasm/include/asm/Kbuild b/arch/wasm/include/asm/Kbuild
 new file mode 100644
-index 000000000..8a446bcc1
+index 000000000..b87d52d85
 --- /dev/null
 +++ b/arch/wasm/include/asm/Kbuild
-@@ -0,0 +1,12 @@
+@@ -0,0 +1,10 @@
 +# SPDX-License-Identifier: GPL-2.0
 +syscall-y += syscall_table_32.h
 +
 +generic-y += extable.h
 +generic-y += kvm_para.h
-+generic-y += spinlock.h
-+generic-y += spinlock_types.h
 +generic-y += user.h
 +generic-y += cache.h
 +generic-y += string.h
@@ -227,20 +211,15 @@ index 000000000..7aa32b030
 +#endif
 diff --git a/arch/wasm/include/asm/elf.h b/arch/wasm/include/asm/elf.h
 new file mode 100644
-index 000000000..869459cf5
+index 000000000..659f60e8c
 --- /dev/null
 +++ b/arch/wasm/include/asm/elf.h
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,16 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +#ifndef _ASM_WASM_ELF_H
 +#define _ASM_WASM_ELF_H
 +
 +#define ELF_CLASS	ELFCLASS32
-+#define ELF_DATA	ELFDATA2LSB
-+#define ELF_ARCH	EM_NONE
-+#define ELF_PLATFORM	(NULL)
-+#define ELF_HWCAP	(0)
-+#define ELF_EXEC_PAGESIZE	PAGE_SIZE
 +
 +#ifndef __ASSEMBLY__
 +#include <asm/ptrace.h>
@@ -338,10 +317,10 @@ index 000000000..bc06e636d
 +#endif
 diff --git a/arch/wasm/include/asm/page.h b/arch/wasm/include/asm/page.h
 new file mode 100644
-index 000000000..7da05463a
+index 000000000..68644eda2
 --- /dev/null
 +++ b/arch/wasm/include/asm/page.h
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,40 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +#ifndef _ASM_WASM_PAGE_H
 +#define _ASM_WASM_PAGE_H
@@ -349,15 +328,12 @@ index 000000000..7da05463a
 +#include <linux/const.h>
 +#include <vdso/page.h>
 +
-+#define PAGE_OFFSET	_AC(CONFIG_DEFAULT_MEM_START, UL)
-+#define PHYS_OFFSET	PAGE_OFFSET
-+#define ARCH_PFN_OFFSET	(PHYS_OFFSET >> PAGE_SHIFT)
++#define PAGE_OFFSET	_AC(0, UL)
 +
 +#ifndef __ASSEMBLY__
 +
 +#define clear_page(page)	memset((page), 0, PAGE_SIZE)
 +#define copy_page(to, from)	memcpy((to), (from), PAGE_SIZE)
-+#define clear_user_page(page, vaddr, pg)	clear_page(page)
 +#define copy_user_page(to, from, vaddr, pg)	copy_page(to, from)
 +
 +typedef struct { unsigned long pte; } pte_t;
@@ -377,9 +353,7 @@ index 000000000..7da05463a
 +#define __va(x)		((void *)(unsigned long)(x))
 +
 +#define virt_to_pfn(kaddr)	(__pa(kaddr) >> PAGE_SHIFT)
-+#define pfn_to_virt(pfn)	__va((pfn) << PAGE_SHIFT)
 +#define virt_to_page(kaddr)	pfn_to_page(virt_to_pfn(kaddr))
-+#define page_to_virt(page)	pfn_to_virt(page_to_pfn(page))
 +#define virt_addr_valid(kaddr)	pfn_valid(virt_to_pfn(kaddr))
 +
 +#include <asm-generic/memory_model.h>
@@ -389,10 +363,10 @@ index 000000000..7da05463a
 +#endif
 diff --git a/arch/wasm/include/asm/pgtable.h b/arch/wasm/include/asm/pgtable.h
 new file mode 100644
-index 000000000..169edc15b
+index 000000000..7c505c8a0
 --- /dev/null
 +++ b/arch/wasm/include/asm/pgtable.h
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,16 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +#ifndef _ASM_WASM_PGTABLE_H
 +#define _ASM_WASM_PGTABLE_H
@@ -401,10 +375,6 @@ index 000000000..169edc15b
 +#include <asm/page.h>
 +
 +/* There is no MMU: page tables and protections are placeholders. */
-+#define PAGE_NONE	__pgprot(0)
-+#define PAGE_SHARED	__pgprot(0)
-+#define PAGE_COPY	__pgprot(0)
-+#define PAGE_READONLY	__pgprot(0)
 +#define PAGE_KERNEL	__pgprot(0)
 +
 +#define swapper_pg_dir	((pgd_t *)0)
@@ -468,10 +438,10 @@ index 000000000..bd8da2446
 +#endif
 diff --git a/arch/wasm/include/asm/ptrace.h b/arch/wasm/include/asm/ptrace.h
 new file mode 100644
-index 000000000..16b25bfe0
+index 000000000..60c2dca56
 --- /dev/null
 +++ b/arch/wasm/include/asm/ptrace.h
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,20 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +#ifndef _ASM_WASM_PTRACE_H
 +#define _ASM_WASM_PTRACE_H
@@ -483,8 +453,6 @@ index 000000000..16b25bfe0
 +#define user_mode(regs)			0
 +#define instruction_pointer(regs)	0
 +#define user_stack_pointer(regs)	0
-+#define profile_pc(regs)		instruction_pointer(regs)
-+#define current_pt_regs()		task_pt_regs(current)
 +
 +/* Kernel entries are syscalls, made with interrupts enabled. */
 +static inline bool regs_irqs_disabled(struct pt_regs *regs)
@@ -492,19 +460,14 @@ index 000000000..16b25bfe0
 +	return false;
 +}
 +
-+static inline long regs_return_value(struct pt_regs *regs)
-+{
-+	return regs->ret;
-+}
-+
 +#endif /* __ASSEMBLY__ */
 +#endif
 diff --git a/arch/wasm/include/asm/syscall.h b/arch/wasm/include/asm/syscall.h
 new file mode 100644
-index 000000000..b0de81de3
+index 000000000..61fb36c67
 --- /dev/null
 +++ b/arch/wasm/include/asm/syscall.h
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,49 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +#ifndef _ASM_WASM_SYSCALL_H
 +#define _ASM_WASM_SYSCALL_H
@@ -522,34 +485,15 @@ index 000000000..b0de81de3
 +	return regs->syscall_nr;
 +}
 +
-+static inline void syscall_set_nr(struct task_struct *task,
-+				  struct pt_regs *regs, int nr)
-+{
-+	regs->syscall_nr = nr;
-+}
-+
 +static inline void syscall_rollback(struct task_struct *task,
 +				    struct pt_regs *regs)
 +{
-+}
-+
-+static inline long syscall_get_error(struct task_struct *task,
-+				     struct pt_regs *regs)
-+{
-+	return IS_ERR_VALUE(regs->ret) ? regs->ret : 0;
 +}
 +
 +static inline long syscall_get_return_value(struct task_struct *task,
 +					    struct pt_regs *regs)
 +{
 +	return regs->ret;
-+}
-+
-+static inline void syscall_set_return_value(struct task_struct *task,
-+					    struct pt_regs *regs,
-+					    int error, long val)
-+{
-+	regs->ret = error ?: val;
 +}
 +
 +static inline void syscall_get_arguments(struct task_struct *task,
@@ -560,16 +504,6 @@ index 000000000..b0de81de3
 +
 +	for (i = 0; i < 6; i++)
 +		args[i] = regs->args[i];
-+}
-+
-+static inline void syscall_set_arguments(struct task_struct *task,
-+					 struct pt_regs *regs,
-+					 const unsigned long *args)
-+{
-+	int i;
-+
-+	for (i = 0; i < 6; i++)
-+		regs->args[i] = args[i];
 +}
 +
 +static inline bool arch_syscall_is_vdso_sigreturn(struct pt_regs *regs)
@@ -585,10 +519,10 @@ index 000000000..b0de81de3
 +#endif
 diff --git a/arch/wasm/include/asm/syscall_wrapper.h b/arch/wasm/include/asm/syscall_wrapper.h
 new file mode 100644
-index 000000000..3dd5a8f2e
+index 000000000..fd062f51e
 --- /dev/null
 +++ b/arch/wasm/include/asm/syscall_wrapper.h
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,44 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * Syscalls take a pt_regs pointer, so that every sys_call_table entry has
@@ -610,7 +544,6 @@ index 000000000..3dd5a8f2e
 +
 +#define __SYSCALL_DEFINEx(x, name, ...)					\
 +	long __wasm_sys##name(const struct pt_regs *regs);		\
-+	ALLOW_ERROR_INJECTION(__wasm_sys##name, ERRNO);			\
 +	static inline long __do_sys##name(__MAP(x, __SC_DECL, __VA_ARGS__)); \
 +	static inline long __se_sys##name(__MAP(x, __SC_LONG, __VA_ARGS__)) \
 +	{								\
@@ -626,9 +559,7 @@ index 000000000..3dd5a8f2e
 +	static inline long __do_sys##name(__MAP(x, __SC_DECL, __VA_ARGS__))
 +
 +#define SYSCALL_DEFINE0(sname)						\
-+	SYSCALL_METADATA(_##sname, 0);					\
 +	long __wasm_sys_##sname(const struct pt_regs *__unused);	\
-+	ALLOW_ERROR_INJECTION(__wasm_sys_##sname, ERRNO);		\
 +	long __wasm_sys_##sname(const struct pt_regs *__unused)
 +
 +/* A syscall this kernel may not build: no entry (see sys_call_table). */
@@ -842,14 +773,12 @@ index 000000000..ab134ed20
 +#endif
 diff --git a/arch/wasm/include/uapi/asm/Kbuild b/arch/wasm/include/uapi/asm/Kbuild
 new file mode 100644
-index 000000000..2501e82a1
+index 000000000..a31a2f099
 --- /dev/null
 +++ b/arch/wasm/include/uapi/asm/Kbuild
-@@ -0,0 +1,4 @@
+@@ -0,0 +1,2 @@
 +# SPDX-License-Identifier: GPL-2.0
 +syscall-y += unistd_32.h
-+
-+generic-y += ucontext.h
 diff --git a/arch/wasm/include/uapi/asm/byteorder.h b/arch/wasm/include/uapi/asm/byteorder.h
 new file mode 100644
 index 000000000..82cf6ed04
@@ -960,15 +889,6 @@ index 000000000..c99e8c526
 +
 +obj-y := setup.o console.o process.o ptrace.o irq.o time.o traps.o syscall.o \
 +	 signal.o binfmt_wasm.o
-diff --git a/arch/wasm/kernel/Makefile.syscalls b/arch/wasm/kernel/Makefile.syscalls
-new file mode 100644
-index 000000000..0979a6029
---- /dev/null
-+++ b/arch/wasm/kernel/Makefile.syscalls
-@@ -0,0 +1,3 @@
-+# SPDX-License-Identifier: GPL-2.0
-+
-+syscall_abis_32 +=
 diff --git a/arch/wasm/kernel/asm-offsets.c b/arch/wasm/kernel/asm-offsets.c
 new file mode 100644
 index 000000000..34efca5ab
@@ -1814,10 +1734,10 @@ index 000000000..9577f3a99
 +}
 diff --git a/arch/wasm/lib/uaccess.c b/arch/wasm/lib/uaccess.c
 new file mode 100644
-index 000000000..f285f5bed
+index 000000000..2af663902
 --- /dev/null
 +++ b/arch/wasm/lib/uaccess.c
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,43 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * A user string is kernel memory (NOMMU: see asm/uaccess.h), so it is
@@ -1825,7 +1745,6 @@ index 000000000..f285f5bed
 + * reads memory it may not be able to touch. It may run up to where memory
 + * ends (high_memory), not past it.
 + */
-+#include <linux/export.h>
 +#include <linux/minmax.h>
 +#include <linux/string.h>
 +#include <linux/uaccess.h>
@@ -1850,7 +1769,6 @@ index 000000000..f285f5bed
 +	memcpy(dst, (const void __force *)src, n < count ? n + 1 : count);
 +	return n;
 +}
-+EXPORT_SYMBOL(strncpy_from_user);
 +
 +long strnlen_user(const char __user *src, long count)
 +{
@@ -1863,7 +1781,6 @@ index 000000000..f285f5bed
 +		return 0;
 +	return n < count ? n + 1 : count + 1;
 +}
-+EXPORT_SYMBOL(strnlen_user);
 diff --git a/arch/wasm/mm/Makefile b/arch/wasm/mm/Makefile
 new file mode 100644
 index 000000000..8f91041de
