@@ -150,36 +150,9 @@ impl Machine {
         self.view(|v| to_js(&v.lines(first, last, task)))
     }
 
-    /// A stack chart of records `first..=last` in `n` columns of equal
-    /// steps (see ksee_core::stack::Calls::chart, Recording::columns), flattened:
-    /// per column, the task, the record the column is (the stack drawn is
-    /// the one there), the depth, then per call, outermost first, (function, first record,
-    /// inlined): inlined 0 for a call; for code inlined into the call
-    /// before, 1 + the inlined function (see inline_name), and the
-    /// function it is inlined into.
-    pub fn chart(&self, first: usize, last: usize, n: usize) -> Vec<u32> {
-        let rec = self.rec.borrow();
-        let mut out = Vec::new();
-        if rec.is_empty() || n == 0 || first > last {
-            return out;
-        }
-        let columns = rec.columns(first, last.min(rec.len() - 1), n);
-        self.view(|v| {
-            for (i, task, calls) in rec.calls.chart(v.tables, &rec.tasks, &columns) {
-                // (Each call, then the code inlined into it: outermost first.)
-                let rows: Vec<[u32; 3]> = calls.iter().flat_map(|c| {
-                    v.nest(c).into_iter().rev().map(|(k, _)| [c.func, c.first as u32, k.map_or(0, |k| k + 1)])
-                }).collect();
-                out.extend([task, i as u32, rows.len() as u32]);
-                out.extend(rows.into_iter().flatten());
-            }
-        });
-        out
-    }
-
-    /// The name of inlined function `k` (see chart).
-    pub fn inline_name(&self, k: u32) -> String {
-        self.view(|v| v.inline_name(k))
+    /// A stack chart of records `first..=last` in `n` columns (view::Chart).
+    pub fn chart(&self, first: usize, last: usize, n: usize) -> JsValue {
+        self.view(|v| to_js(&v.chart(first, last, n)))
     }
 
     /// The call stack at record `i` (or the last), innermost first
@@ -297,11 +270,6 @@ impl Machine {
     /// the cursor), as C writes it.
     pub fn show_at_cursor(&self, ty: u32, addr: u32, count: Option<u32>) -> String {
         self.with_memory(|mem| tables().types.show(mem, addr, ty, count))
-    }
-
-    /// Function `id`: where it is (view::Place).
-    pub fn function(&self, id: u32) -> JsValue {
-        self.view(|v| to_js(&v.place(id)))
     }
 
     /// Where `name` is defined (view::Place): a function, a type, a global

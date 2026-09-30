@@ -22,14 +22,6 @@ const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st
 
 export function app(m) {
   const a = { m };
-  // The kernel's own tables, asked once (the build's: no snapshot changes
-  // them): a function's place, an inlined function's name.
-  const memo = (f) => {
-    const c = new Map();
-    return (k) => (c.has(k) ? c.get(k) : c.set(k, f(k)).get(k));
-  };
-  a.fn = memo((id) => m.function(id));
-  a.iname = memo((k) => m.inline_name(k));
   // The kernel, for the program's lines (kernel.js): each call's
   // recording on the page as the kernel is quiet after it.
   a.kernel = kernel(m, { snapshot: () => a.refresh() });

@@ -40,17 +40,18 @@ export function timeline(app) {
   };
   const over = $("overview"), chart = $("chart"), strip = $("strip");
   // n: records; calls: syscalls; win: the window shown { a, b }; home: the
-  // selection (a syscall's records, and its task); cols: the
-  // chart's columns [{ task, frames: [[func, first, inlined]] }] (see
-// Machine.chart: inlined, code inlined into the call below it).
-  const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
+  // selection (a syscall's records, and its task); cols, bars: the
+  // chart's columns [{ i, task, frames: [bar] }] and bars [{ first, name,
+  // label, file, inlined }] (Machine.chart).
+  const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], bars: [], buckets: [],
               // (depth: the deepest stack of the selection seen, and the one shown; row: the rows' height)
               depth: 1, shown: null, row: ROW,
               // (lit, sel: the calls outlined, their first records: hovered here or in the Stack; selected)
               lit: null, sel: null, syscallAt: new Map(),
               // (the text found, and the calls of the functions with it in their names: their records)
               found: { name: "", at: [] } };
-  const { fn, iname } = app;
+  // (Column `c`'s bar `d` deep, if it has one.)
+  const barAt = (c, d) => (c && c.frames[d] != null ? t.bars[c.frames[d]] : undefined);
   // (Who task `addr` was at record `i`: its name then, Machine.task.)
   const who = (addr, i) => m.task(addr, i);
 
@@ -103,12 +104,6 @@ export function timeline(app) {
       ctx.fillRect(ox(t.cursor) - 1, 0, 2, OVER);
     }
   }
-  // A call's name; a syscall's entry (from its first record) with the
-  // syscall after it, as the Stack has it: "wasm_syscall · read".
-  const nameOf = (id, first) => {
-    const s = t.syscallAt.get(first), name = fn(id)?.name ?? "?";
-    return s ? `${name} · ${s.name ?? s.nr}` : name;
-  };
   // A flame graph: the outermost calls at the bottom, over the task strip
   // (as in the Stack, the innermost is on top). Rows get thinner to fit the
   // box, down to where names still fit; deeper, the box scrolls (its bottom
@@ -148,20 +143,19 @@ export function timeline(app) {
     }
     // The stacks (the calls at the cursor: darker).
     for (let d = 0; d < depth; d++) {
-      for (const r of runs((c) => (c.frames[d] ? c.frames[d].join(":") : undefined))) {
-        const [id, first, inl] = r.c.frames[d], f = fn(id), y = base + rowY(d);
+      for (const r of runs((c) => c.frames[d])) {
+        const b = t.bars[r.v], y = base + rowY(d);
         const x1 = r.from * cw, w = (r.to - r.from) * cw;
-        const on = curCol?.frames[d]?.[1] === first && cur >= t.win.a && cur <= t.win.b;
+        const on = curCol?.frames[d] === r.v && cur >= t.win.a && cur <= t.win.b;
         // (One found (its name has the text looked for): in the finding's color.)
-        const name = inl ? iname(inl - 1) : f?.name ?? "";
-        ctx.fillStyle = t.found.name && name.toLowerCase().includes(t.found.name.toLowerCase()) ? css("--found") : color(f?.file, on);
+        ctx.fillStyle = t.found.name && b.name.toLowerCase().includes(t.found.name.toLowerCase()) ? css("--found") : color(b.file, on);
         ctx.fillRect(x1, y, Math.max(1, w - 1), t.row - 1);
-        if (first === t.lit || first === t.sel) {
+        if (b.first === t.lit || b.first === t.sel) {
           ctx.strokeStyle = css("--fg");
           ctx.lineWidth = 1.5;
           ctx.strokeRect(x1 + 0.75, y + 0.75, Math.max(1, w - 2.5), t.row - 2.5);
         }
-        label(ctx, inl ? iname(inl - 1) : nameOf(id, first), x1, w, y + t.row / 2, on ? "#fff" : "#1f2328");
+        label(ctx, b.label, x1, w, y + t.row / 2, on ? "#fff" : "#1f2328");
       }
     }
     if (cur >= t.win.a && cur <= t.win.b) {
@@ -186,16 +180,8 @@ export function timeline(app) {
     ctx.restore();
   }
   function load() {
-    if (!t.win) return (t.cols = []);
-    const cols = Math.max(1, Math.min(W(), span()));
-    const flat = m.chart(t.win.a, t.win.b, cols), out = [];
-    for (let k = 0; k < flat.length;) {
-      const task = flat[k], i = flat[k + 1], depth = flat[k + 2], frames = [];
-      for (let d = 0; d < depth; d++) frames.push(flat.slice(k + 3 + 3 * d, k + 6 + 3 * d));
-      out.push({ task, i, frames });
-      k += 3 + 3 * depth;
-    }
-    t.cols = out;
+    if (!t.win) return ((t.cols = []), (t.bars = []));
+    ({ cols: t.cols, bars: t.bars } = m.chart(t.win.a, t.win.b, Math.max(1, Math.min(W(), span()))));
   }
   function draw() {
     drawOverview();
@@ -263,27 +249,27 @@ export function timeline(app) {
   function hover(e) {
     if (!t.win) return;
     const { k, c, d } = hit(e);
-    const [id, first, inl] = c?.frames[d] ?? [];
+    const b = barAt(c, d), first = b?.first;
     hilite(first ?? null);
     // (The view follows the pointer: the moment under it, with the call
     // under it selected: the source shows where that call was, the Stack
     // marks it. Over a call, the column's own moment: the stack drawn is
     // the one there, code inlined for a moment too.)
-    app.peek(first == null ? at(e.offsetX) : c.i, first == null ? null : { first, inlined: inl ? iname(inl - 1) : null });
+    app.peek(first == null ? at(e.offsetX) : c.i, first == null ? null : { first, inlined: b.inlined ? b.name : null });
     if (first == null) {
       tip.hidden = true;
       chart.title = c && d < 0 ? taskName(who(c.task, c.i)) : "";
       return;
     }
     chart.title = "";
-    const f = fn(id), s = t.syscallAt.get(first);
+    const s = t.syscallAt.get(first);
     const line = (text, cls) => Object.assign(document.createElement("div"), { className: cls, textContent: text });
-    const tipLines = (inl
-      ? [line(iname(inl - 1), "")]
+    const tipLines = (b.inlined
+      ? [line(b.name, "")]
       : s
       ? [line(`${s.name ?? s.nr}(${argsOf(first).map((a) => a.value ?? "{…}").join(", ")}) = ${s.ret == null ? "…" : m.result(s.ret)}`, ""),
          line(`a syscall by ${taskName(s.task)}`, "dim")]
-      : [line(`${f?.name ?? "?"}${retOf(first)}`, ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f"))]);
+      : [line(`${b.name}${retOf(first)}`, ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f"))]);
     tip.replaceChildren(...tipLines);
     tip.hidden = false;
     const r = tip.getBoundingClientRect();
@@ -331,15 +317,15 @@ export function timeline(app) {
     if (!was || was.moved) return;
     // A call: the cursor in it, and the call selected (the source shows
     // where it is then). Elsewhere: the cursor at the next block.
-    const { c, d } = hit(e), [, first, inl] = c?.frames[d] ?? [];
+    const { c, d } = hit(e), b = barAt(c, d), first = b?.first;
     if (first == null) return go(m.next_block(Math.max(0, at(e.offsetX) - 1), false));
     // (A syscall: selected too, its records from its entry to its exit.)
-    const s = !inl && t.syscallAt.get(first);
+    const s = !b.inlined && t.syscallAt.get(first);
     if (s) select(s);
     // (The column's moment, whose stack is the one drawn: the call, or the
     // code inlined into it, is on it.)
     go(c.i);
-    app.selectCall(first, inl ? iname(inl - 1) : null);
+    app.selectCall(first, b.inlined ? b.name : null);
   };
   let overDrag = false;
   const overMove = (e) => {
@@ -484,7 +470,7 @@ export function timeline(app) {
     const r = chart.getBoundingClientRect(), cw = W() / Math.max(1, t.cols.length);
     const base = chart.clientHeight - t.depth * t.row;
     for (let k = 0; k < t.cols.length; k++) {
-      const d = t.cols[k].frames.findIndex((f) => f[1] === first && !f[2]);
+      const d = t.cols[k].frames.findIndex((f) => t.bars[f].first === first && !t.bars[f].inlined);
       if (d >= 0) return { x: r.left + (k + 0.5) * cw, y: r.top + base + rowY(d) + t.row / 2 };
     }
     return null;

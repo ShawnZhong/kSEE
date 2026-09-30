@@ -51,15 +51,9 @@ check(`a write, by the program (${w?.task.comm}, pid ${w?.task.pid}), shown on t
 check("write ran vfs_write", ran(w, "vfs_write"));
 check("getpid ran __task_pid_nr_ns", ran((await line("getpid()")).s, "__task_pid_nr_ns"));
 check("mkdirat ran vfs_mkdir", ran((await line('mkdirat(AT_FDCWD, "/tmp", 0755)')).s, "vfs_mkdir"));
-// (The tasks of a stack chart's columns: see Machine.chart.)
-const chartTasks = (flat) => {
-  const out = [];
-  for (let j = 0; j < flat.length; j += 3 + 3 * flat[j + 2]) out.push(flat[j]);
-  return out;
-};
 const nap = (await line("clock_nanosleep(CLOCK_MONOTONIC, 0, {0, 30000000}, NULL)")).s;
 check("sleeping switched to the idle task and back", ran(nap, "__schedule")
-      && chartTasks(m.chart(nap.first, nap.last, 50)).some((a) => m.task(a, nap.first).comm === "swapper/0"));
+      && m.chart(nap.first, nap.last, 50).cols.some((c) => m.task(c.task, nap.first).comm === "swapper/0"));
 // (A long sleep finishes too: time goes on while the call does, its runner waking.)
 const long = await line("clock_nanosleep(CLOCK_MONOTONIC, 0, {2, 0}, NULL)");
 check("a 2 s sleep returns (the clock skipped ahead)", long.how === "returned" && long.ret === 0);
@@ -77,26 +71,24 @@ check("vfs_write: where it is", vfs?.file === "fs/read_write.c" && vfs.last > vf
 }
 check("fs/read_write.c coverage", m.file_coverage("fs/read_write.c", wi).some((l) => l.count > 0));
 const chart = m.chart(w.first, w.last, 200);
-check("a stack chart of write's records", chart.length > 600 && chart[0] === w.task.addr);
+check("a stack chart of write's records", chart.cols.length === 200 && chart.cols[0].task === w.task.addr && chart.bars.length > 10);
 const steps = m.line_steps(w.first, w.last, w.task.addr);
 check("write, line by line (inlined lines too)", steps.length > 50 && steps.some((x) => x.inlined));
 const k = steps.findIndex((x) => x.inlined);
 const inl = m.call_stack(steps[k].i, steps[k].nth);
 check(`inlined code is a frame of its own (${steps[k].inlined} in ${steps[k].func})`,
       inl[0]?.inlined && inl[0].func === steps[k].inlined && inl[0].line === steps[k].line && inl.some((f) => f.func === steps[k].func && !f.inlined));
-let inlinedRows = 0;
-for (let j = 0; j < chart.length; j += 3 + 3 * chart[j + 2]) for (let d = 0; d < chart[j + 2]; d++) if (chart[j + 5 + 3 * d]) inlinedRows++;
-check("and a row of its own in the chart", inlinedRows > 0);
+check("and a bar of its own in the chart", chart.bars.some((b) => b.inlined));
+check(`a syscall's entry says the syscall: ${chart.bars[0]?.label}`, chart.bars[0]?.label === "wasm_syscall · write");
 // (Each column is a moment, its record: the Stack there has every call
 // it draws, the code inlined for a moment too: a click goes there.)
 {
   let drawn = 0, missing = [];
-  for (let j = 0; j < chart.length; j += 3 + 3 * chart[j + 2]) {
-    const frames = m.call_stack(chart[j + 1]);
-    for (let d = 0; d < chart[j + 2]; d++) {
-      const [id, first, inl] = chart.slice(j + 3 + 3 * d, j + 6 + 3 * d), name = inl ? m.inline_name(inl - 1) : m.function(id)?.name;
+  for (const c of chart.cols) {
+    const frames = m.call_stack(c.i);
+    for (const b of c.frames.map((k) => chart.bars[k])) {
       drawn++;
-      if (!frames.some((f) => f.first === first && f.func === name && !!f.inlined === !!inl)) missing.push(name);
+      if (!frames.some((f) => f.first === b.first && f.func === b.name && !!f.inlined === b.inlined)) missing.push(b.name);
     }
   }
   check(`a chart's column is its record's stack: ${drawn} calls drawn, ${missing.length} not there (${missing.slice(0, 3)})`, drawn > 0 && !missing.length);

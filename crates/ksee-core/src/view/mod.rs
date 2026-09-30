@@ -90,6 +90,37 @@ pub struct At {
     pub value: Option<i64>,
 }
 
+/// A stack chart (View::chart): its columns, and the bars they stack.
+#[derive(Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Chart {
+    pub bars: Vec<Bar>,
+    pub cols: Vec<Column>,
+}
+
+/// A column: its record, the task running there, and its stack then, as
+/// bars (indexes in Chart::bars), outermost first.
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Column {
+    pub i: usize,
+    pub task: u32,
+    pub frames: Vec<u32>,
+}
+
+/// A bar: a call from record `first`, or code inlined into it; its
+/// function's name (the inlined one's), what the bar says (a syscall's
+/// entry with the syscall: "wasm_syscall · read"), and the call's file.
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct Bar {
+    pub first: usize,
+    pub name: String,
+    pub label: String,
+    pub file: Option<String>,
+    pub inlined: bool,
+}
+
 /// Where something is declared (a function, a type, a global, a member);
 /// a function the recording has, to `last` (the last line of its blocks in
 /// its own file), and whether only its call and returns are recorded
@@ -398,6 +429,41 @@ impl View<'_> {
             out.push((i, kind, text));
         }
         out
+    }
+
+    /// A stack chart of records `first..=last` in `n` columns, each a
+    /// moment spread evenly over the steps (Recording::columns): the task
+    /// there and its call stack then, outermost first, each call and the
+    /// code inlined into it a bar (in `bars`, once each).
+    pub fn chart(&self, first: usize, last: usize, n: usize) -> Chart {
+        let (t, rec) = (self.tables, self.rec);
+        let mut chart = Chart::default();
+        if rec.is_empty() || n == 0 || first > last {
+            return chart;
+        }
+        let mut known: BTreeMap<(usize, Option<u32>), u32> = BTreeMap::new();
+        for i in rec.columns(first, last.min(rec.len() - 1), n) {
+            let mut frames = Vec::new();
+            for c in rec.calls.stack_at(t, i, None) {
+                for (k, _) in self.nest(&c).into_iter().rev() {
+                    let bar = *known.entry((c.first, k)).or_insert_with(|| {
+                        let place = self.place(c.func);
+                        let name = k.map_or_else(|| place.as_ref().map_or("?".into(), |p| p.name.clone()), |k| self.inline_name(k));
+                        // (A syscall's entry, from its first record: with the syscall, as the Stack has it.)
+                        let syscall = rec.syscalls.binary_search_by_key(&c.first, |s| s.first).ok().filter(|_| k.is_none()).map(|s| &rec.syscalls[s]);
+                        let label = match syscall {
+                            Some(s) => format!("{name} · {}", t.types.syscalls.get(&s.nr).cloned().unwrap_or_else(|| s.nr.to_string())),
+                            None => name.clone(),
+                        };
+                        chart.bars.push(Bar { first: c.first, name, label, file: place.map(|p| p.file), inlined: k.is_some() });
+                        chart.bars.len() as u32 - 1
+                    });
+                    frames.push(bar);
+                }
+            }
+            chart.cols.push(Column { i, task: rec.tasks.get(i).copied().unwrap_or(0), frames });
+        }
+        chart
     }
 
     /// The task running at the start of each of `n` buckets of the recording.

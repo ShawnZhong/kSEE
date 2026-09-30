@@ -228,13 +228,6 @@ impl Calls {
         Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run: 0, ret: None, callee: None })
     }
 
-    /// A stack chart: for each column (its first record, in `columns`, in
-    /// order: see Recording::columns), that record, the task running there
-    /// and that task's call stack then, outermost first.
-    pub fn chart(&self, t: &Tables, tasks: &[u32], columns: &[usize]) -> Vec<(usize, u32, Vec<StackCall>)> {
-        columns.iter().filter(|&&i| i < tasks.len()).map(|&i| (i, tasks[i], self.stack_at(t, i, None))).collect()
-    }
-
     /// The source lines task `task` ran in records `from..=to`, in order: each block's lines up to its first call, then, as
     /// each call returns, the lines up to the next (tables::Block). The
     /// same line twice in a row counts once.
@@ -451,15 +444,14 @@ mod tests {
     }
 
     #[test]
-    fn a_charts_column_is_the_stack_at_its_record() {
+    fn a_record_has_its_tasks_stack() {
         // Task 7's f (1) calls g (2); task 8 runs h (3); back on 7, g returns.
-        // Columns at records 1, 2, 4: 7's f and g, 8's h, 7's f.
+        // At records 1, 2, 4: 7's f and g, 8's h, 7's f.
         let t = Tables::default();
         let r = [b(1, 0), b(2, 0), b(3, 0), Record::Return { func: 2, value: 0 }, b(1, 1)];
-        let tasks = [7, 7, 8, 7, 7];
-        let got: Vec<_> = Calls::new(&t, &r, &tasks).chart(&t, &tasks, &[1, 2, 4, 9]).into_iter()
-            .map(|(i, task, calls)| (i, task, calls.iter().map(|c| c.func).collect::<Vec<_>>())).collect();
-        assert_eq!(got, [(1, 7, alloc::vec![1, 2]), (2, 8, alloc::vec![3]), (4, 7, alloc::vec![1])]);
+        let c = Calls::new(&t, &r, &[7, 7, 8, 7, 7]);
+        let got: Vec<_> = [1, 2, 4].iter().map(|&i| c.stack_at(&t, i, None).iter().map(|c| c.func).collect::<Vec<_>>()).collect();
+        assert_eq!(got, [alloc::vec![1, 2], alloc::vec![3], alloc::vec![1]]);
     }
 
     #[test]
