@@ -412,14 +412,14 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, St
 fn pack(args: &[Arg], base: u32) -> Result<([u32; 6], Vec<u8>), String> {
     let mut words = [0u32; 6];
     let mut data = Vec::new();
-    // (Bytes `b` into the data, 8-byte aligned: their address.)
+    // (Bytes `b` into the data, at an address 8-byte aligned: their address.)
     let mut put = |b: &[u8]| -> Result<u32, String> {
-        if data.len() + b.len() > DATA_SIZE as usize {
+        let at = (base + data.len() as u32 + 7) & !7;
+        if (at - base) as usize + b.len() > DATA_SIZE as usize {
             return Err("the call's buffers are too big".into());
         }
-        let at = base + data.len() as u32;
+        data.resize((at - base) as usize, 0);
         data.extend_from_slice(b);
-        data.resize((data.len() + 7) & !7, 0);
         Ok(at)
     };
     for (i, a) in args.iter().enumerate() {

@@ -17,7 +17,7 @@
 struct request {
 	volatile int nr;
 	int args[6];
-	char data[4096] __attribute__((aligned(8)));
+	char data[4096];
 };
 
 // The program's own memory, which the host hands out (each variable
