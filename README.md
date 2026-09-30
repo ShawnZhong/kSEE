@@ -15,7 +15,7 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
 
 ## Layout
 
-- `linux/`: the kernel with `arch/wasm` (submodule, ShawnZhong/kSEE-linux: the stable tree's v7.2.7, then the port's commits); `linux.patch`, the port as one patch to v7.2.7 (written by the build)
+- `linux.patch`: the port, `arch/wasm` and what it needs elsewhere, as a patch to Linux v7.2.7; `linux/`, the kernel it is built in (the build fetches the stable tree's v7.2.7 there, once, and applies the patch; edited there, it writes the patch again)
 - `plugin/`: the LLVM pass that instruments the kernel (blocks, calls, returns, stores, variables, comparisons)
 - `crates/`: Rust: `ksee-core` (decoding and rebuilding the recording:
   stacks, lines, memory as it was, types), `ksee-runtime` (wasm: boots the

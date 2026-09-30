@@ -2,7 +2,8 @@
 //! tool that knows its own dependencies (kbuild, cargo), or checks whether
 //! its output is older than its inputs.
 //!
-//!   linux.patch            the port: linux/ from its release (its tag) to its HEAD
+//!   linux/                 Linux, the stable tree's LINUX_TAG, fetched once, with linux.patch applied
+//!   linux.patch            the port: linux/ as it differs from the release (written again as it changes)
 //!   plugin/ksee-trace.so   the LLVM pass that instruments the kernel
 //!   linux/vmlinux          the kernel, instrumented (kbuild)
 //!
@@ -45,7 +46,7 @@ fn stale(out: &str, inputs: &[&str]) -> bool {
 
 pub fn build() {
     let llvm = env("LLVM", "-23");
-    patch();
+    linux();
 
     if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
         eprintln!("  PLUGIN  plugin/ksee-trace.so");
@@ -139,16 +140,42 @@ pub fn build() {
     examples();
 }
 
-/// linux.patch: the port, as a patch to the release linux/ is on (the
-/// last tag before its HEAD: v7.2.7), written again when it changes.
-fn patch() {
-    let git = |args: &[&str]| Command::new("git").arg("-C").arg("linux").args(args).output().ok()
-        .filter(|o| o.status.success()).map(|o| o.stdout);
-    let Some(base) = git(&["describe", "--tags", "--abbrev=0", "--match", "v*"]) else { return };
-    let base = String::from_utf8_lossy(&base).trim().to_string();
-    let Some(diff) = git(&["diff", "--no-color", &base, "HEAD"]) else { return };
+/// The release the port is a patch to: the stable tree's tag, and the
+/// commit it must be (what is fetched, checked).
+const LINUX_TREE: &str = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git";
+const LINUX_TAG: &str = "v7.2.7";
+const LINUX_COMMIT: &str = "f42acb3678424d1e08f6ed27c0d8ba8a125e14d6";
+
+/// linux/: the release, fetched (a shallow git repo: its one commit) and
+/// linux.patch applied, the first time; then linux.patch, written from it
+/// again when it changes: the port, all of it (the files new too) as it
+/// differs from the release.
+fn linux() {
+    let git = |args: &[&str]| {
+        let out = Command::new("git").arg("-C").arg("linux").args(args).output()
+            .unwrap_or_else(|e| crate::fail(&format!("git: {e}")));
+        if !out.status.success() {
+            crate::fail(&format!("git {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr)));
+        }
+        out.stdout
+    };
+    if !Path::new("linux/Makefile").exists() {
+        eprintln!("  LINUX   linux/ ({LINUX_TAG}, from the stable tree; linux.patch)");
+        std::fs::create_dir_all("linux").unwrap_or_else(|e| crate::fail(&format!("linux/: {e}")));
+        git(&["init", "-q"]);
+        git(&["fetch", "-q", "--depth=1", LINUX_TREE, "tag", LINUX_TAG]);
+        let commit = git(&["rev-parse", &format!("{LINUX_TAG}^{{commit}}")]);
+        if String::from_utf8_lossy(&commit).trim() != LINUX_COMMIT {
+            crate::fail(&format!("{LINUX_TAG}: not {LINUX_COMMIT}"));
+        }
+        git(&["checkout", "-q", LINUX_TAG]);
+        git(&["apply", "../linux.patch"]);
+        return;
+    }
+    git(&["add", "-A", "--intent-to-add"]);
+    let diff = git(&["diff", "--no-color", LINUX_TAG]);
     if std::fs::read("linux.patch").ok().as_deref() != Some(&diff[..]) {
-        eprintln!("  PATCH   linux.patch (from {base})");
+        eprintln!("  PATCH   linux.patch");
         std::fs::write("linux.patch", &diff).unwrap_or_else(|e| crate::fail(&format!("linux.patch: {e}")));
     }
 }
