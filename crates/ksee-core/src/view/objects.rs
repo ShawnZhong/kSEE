@@ -10,6 +10,10 @@ use super::stores::Leaf;
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Node {
+    /// What to call it: an object a pointer reaches, its type's own name
+    /// ("file": which variable names it is only how a function does); the
+    /// task, a global, their names ("prog(19)", "nr_files").
+    pub label: String,
     /// As the code names it ("file", "prog(19)->files"), and the function
     /// that does, if one (Region::within).
     pub what: String,
@@ -98,7 +102,11 @@ impl View<'_> {
                 None => {
                     let task = self.rec.tasks[w.i];
                     let by = (Some(task) != own).then(|| self.task(task));
-                    nodes.push((Node { what: r.what.clone(), within: r.within.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size, changes: Vec::new(),
+                    nodes.push((Node { label: match (r.kind, types.get(types.resolve(r.ty)).name.as_str()) {
+                                           ("object", name) if !name.is_empty() => name.to_string(),
+                                           _ => r.what.clone(),
+                                       },
+                                       what: r.what.clone(), within: r.within.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size, changes: Vec::new(),
                                        depth: r.depth, group, by, under: None, via: None }, Vec::new()));
                     nodes.len() - 1
                 }

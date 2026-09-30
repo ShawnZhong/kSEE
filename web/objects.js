@@ -5,9 +5,10 @@
 // it left changed (its own task's, then each other task's that ran
 // meanwhile, a head each: "By jbd2/loop0-8(16), while it ran"), then
 // those it left as they were (a lock taken and
-// released, a count taken and dropped) (declared as the code names them:
-// "struct file *file in vfs_read", "struct files_struct *prog(19)->files";
-// and by its address, which it is; a global, where it is declared), each
+// released, a count taken and dropped) (each by what it is, its type's
+// name, "file", then as the code names it, "filp in do_file_open"; the
+// task and a global by their names; and by its address, which it is; a
+// global, where it is declared), each
 // member it changed, a line a function that changed it in turn, from what
 // to what ("f_mode  0 → 0x4000001  init_file", then "0x4000001 →
 // 0x40a801d  do_dentry_open"; one left as it was, a count one took and
@@ -38,15 +39,17 @@ export function objects(app) {
     mark(app.time.cursor());
   }
 
-  // (A box's name, and where it is named: "file in vfs_read".)
-  const whole = (n) => (n.within ? `${n.what} in ${n.within}` : n.what);
+  // (How the code names a box: "filp in do_file_open"; and a box, as a
+  // link to it says it: "file (filp in do_file_open)", "prog(19)".)
+  const named = (n) => (n.within ? `${n.what} in ${n.within}` : n.what);
+  const called = (n) => (n.kind === "object" ? `${n.label} (${named(n)})` : n.label);
 
   function render(nodes, title) {
     if (!nodes.length) return [el("div", { className: "dim head" }, `${title} changed nothing of the kernel's data`)];
     const changed = nodes.filter((n) => n.group === "changed"), same = nodes.filter((n) => n.group === "same");
     const count = (list) => `${list.length} object${list.length === 1 ? "" : "s"}`;
     // (Their names, once each: "folio ×23".)
-    const names = (list) => [...Map.groupBy(list, (n) => n.what)].map(([s, of]) => (of.length > 1 ? `${s} ×${of.length}` : s)).join(", ");
+    const names = (list) => [...Map.groupBy(list, (n) => n.label)].map(([s, of]) => (of.length > 1 ? `${s} ×${of.length}` : s)).join(", ");
     // (Its own, then each other task's that first wrote them while it ran,
     // by task: Node.by.)
     const own = changed.filter((n) => !n.by), others = [...Map.groupBy(changed.filter((n) => n.by), (n) => taskName(n.by))];
@@ -95,7 +98,7 @@ export function objects(app) {
           title: `${r.writes === 1 ? "written once" : `written ${r.writes} times`}${r.at ? ` in ${r.at.func} (${r.at.file}:${r.at.line})` : ""}: click to go there` },
         el("td", { className: "fname" }, q ? "" : d.member || "(itself)"),
         el("td", { className: "fval" }, el("span", { className: "dim" }, `${r.before} → `),
-          q === runs.length - 1 && to ? el("a", { textContent: whole(to), onclick: (e) => (e.stopPropagation(), flash(d.to)) }) : r.after),
+          q === runs.length - 1 && to ? el("a", { textContent: called(to), onclick: (e) => (e.stopPropagation(), flash(d.to)) }) : r.after),
         el("td", { className: "ftype" }, r.at?.func ?? ""))));
     });
     // (A global: where it is declared, a link to it in the source.)
@@ -103,9 +106,10 @@ export function objects(app) {
     // (The member it hangs from, unless its name says it: prog(19)->real_cred.)
     const via = n.via ? `  ← ${n.via}` : "";
     return el("div", { className: `obj ${n.kind}`, dataset: { k } },
-      // (As C declares it, the type first: one a pointer reaches, "*": struct file *filp in do_file_open.)
-      el("div", { className: "title" }, el("span", { className: "dim", textContent: `${n.ty} ${n.kind === "object" ? "*" : ""}` }), el("b", { textContent: whole(n) }),
-        el("span", { className: "dim", textContent: `  at 0x${n.addr.toString(16)}${via}` }),
+      // (What it is, "file" (its type's name; the task's, a global's own),
+      // then how the code names it, "filp in do_file_open", or its type.)
+      el("div", { className: "title" }, el("b", { textContent: n.label }),
+        el("span", { className: "dim", textContent: `  ${n.kind === "object" ? named(n) : n.ty}  at 0x${n.addr.toString(16)}${via}` }),
         decl ? el("a", { className: "decl", textContent: `  ${decl.file}:${decl.line}`, title: "where it is declared", onclick: () => app.src.show(decl.file, decl.line) }) : null),
       el("table", { className: "objs" }, el("tbody", {}, ...rows)));
   }

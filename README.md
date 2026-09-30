@@ -125,9 +125,9 @@ it opens its task_struct as it was (the running one's open; its key fields first
 Objects tab says what the syscall selected did to the kernel's data, all
 of it, always: its head says it in a line (`read by prog(19) changed
 3 objects: file, inode, folio`), then a box per object of the kernel's
-data it changed (as the code
-declares it: `struct file *file in vfs_read`, `struct files_struct
-*prog(19)->files`, `unsigned long nr_inodes`, and by its
+data it changed (by what it is, its type's name, then as the code names
+it: `file  filp in do_file_open`, `files_struct  prog(19)->files`; the
+task and a global by their names, `nr_inodes`; and by its
 address; a global, with where it is declared, a link to it; not a
 stack's: a call's locals are the Stack's; nor the machine's plumbing),
 first those it left changed, then those it left as they
