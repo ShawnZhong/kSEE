@@ -153,10 +153,11 @@ pub struct TaskFields {
     pub fields: Vec<Object>,
 }
 
-/// A task the recording has, at a record: whether it is the one running
-/// there; its `last` record by then (None: it first runs after, at
-/// `first`), and there the syscall it is in, else its outermost call (what
-/// it does: off the CPU, its innermost is always the switch).
+/// A task at a record: what the scheduler has it doing (`state`); its
+/// `last` record by then (None: it first runs after, at `first`, or the
+/// recording never saw it run), and there the syscall it is in, else its
+/// outermost call (what it does: off the CPU, its innermost is always the
+/// switch).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct TaskAt {
@@ -164,8 +165,13 @@ pub struct TaskAt {
     /// The task it sits under (its task_struct's address): a thread, its
     /// thread group's leader; a process, its parent.
     pub up: Option<u32>,
-    pub running: bool,
-    pub first: usize,
+    /// What the scheduler has it doing then: "running" (on the CPU),
+    /// "runnable" (on the run queue, waiting for it), "sleeping" (off it,
+    /// waiting for something); "exited" (the kernel's list no longer has
+    /// it), or "later" (not yet made).
+    pub state: &'static str,
+    /// Its first record, and its last by then, if the recording has them.
+    pub first: Option<usize>,
     pub last: Option<usize>,
     pub syscall: Option<String>,
     pub func: Option<String>,
@@ -219,11 +225,34 @@ impl View<'_> {
         TaskFields { fields }
     }
 
-    /// The tasks the recording has, in the order they first run, as they
-    /// are at record `i` (TaskAt).
+    /// The tasks at record `i`: the kernel's, as its lists had them then
+    /// (arch::INIT_TASK), then the others the recording has (exited by
+    /// then, or made later) (TaskAt).
     pub fn tasks(&self, i: usize) -> Vec<TaskAt> {
         let t = self.tables;
-        // (Each task's first record, and its last by `i`.)
+        let mem = self.rec.memory_at(self.now, i);
+        let field = |addr: u32, s: &str, f: &str| t.types.field(s, f).map(|(off, _)| mem.read_u32(addr.wrapping_add(off)));
+        let offset = |s: &str, f: &str| t.types.field(s, f).map(|(off, _)| off);
+        // (The kernel's: each process, then its threads, the leader among them.)
+        let mut list: Vec<u32> = Vec::new();
+        if let (Some(&(init, _)), Some(next), Some(node), Some(head)) = (t.types.globals.get(arch::INIT_TASK), offset(arch::TASK, arch::TASK_LIST),
+                                                                         offset(arch::TASK, arch::THREAD_NODE), offset(arch::TASK_SIGNAL.1, arch::THREAD_HEAD)) {
+            let mut p = init;
+            // (Guards: a list read from memory as it was may be torn.)
+            while list.len() < 4096 {
+                let threads = field(p, arch::TASK, arch::TASK_SIGNAL.0).unwrap_or(0).wrapping_add(head);
+                let mut n = mem.read_u32(threads);
+                while n != threads && n != 0 && list.len() < 4096 {
+                    list.push(n.wrapping_sub(node));
+                    n = mem.read_u32(n);
+                }
+                p = mem.read_u32(p.wrapping_add(next)).wrapping_sub(next);
+                if p == init || p == next.wrapping_neg() {
+                    break;
+                }
+            }
+        }
+        // (Each task the recording has: its first record, and its last by `i`.)
         let mut seen: Vec<(u32, usize, Option<usize>)> = Vec::new();
         for (j, &task) in self.rec.tasks.iter().enumerate().filter(|&(_, &task)| task != 0) {
             let k = match seen.iter().position(|s| s.0 == task) {
@@ -234,14 +263,32 @@ impl View<'_> {
                 seen[k].2 = Some(j);
             }
         }
-        let field = |addr: u32, f: &str| t.types.field(arch::TASK, f).map(|(off, _)| self.now.read_u32(addr + off)).filter(|&p| p != 0);
-        seen.into_iter().map(|(addr, first, last)| TaskAt {
-            task: self.task(addr),
-            up: field(addr, arch::TASK_LEADER).filter(|&l| l != addr).or_else(|| field(addr, arch::TASK_PARENT)).filter(|&p| p != addr),
-            running: self.rec.tasks.get(i) == Some(&addr),
-            first, last,
-            syscall: last.and_then(|j| self.rec.syscall_at(j)).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr).cloned()),
-            func: last.and_then(|j| self.rec.calls.stack_at(t, j, None).into_iter().next()).and_then(|c| t.functions.get(&c.func)).map(|f| f.name.clone()),
+        // (With no list (the tables have none), every task counts as on it.)
+        let known = !list.is_empty();
+        let others: Vec<u32> = seen.iter().map(|s| s.0).filter(|a| !list.contains(a)).collect();
+        let running = self.rec.tasks.get(i).copied();
+        list.iter().map(|&a| (a, true)).chain(others.into_iter().map(|a| (a, !known))).map(|(addr, listed)| {
+            let (first, last) = seen.iter().find(|s| s.0 == addr).map_or((None, None), |s| (Some(s.1), s.2));
+            let on_rq = t.types.field(arch::TASK, arch::TASK_ON_RQ).is_some_and(|(off, _)| {
+                let mut b = [0u8];
+                mem.read(addr.wrapping_add(off), &mut b);
+                b[0] != 0
+            });
+            let state = match () {
+                _ if running == Some(addr) => "running",
+                _ if !listed && last.is_none() => "later",
+                _ if !listed => "exited",
+                _ if on_rq => "runnable",
+                _ => "sleeping",
+            };
+            let up = |f: &str| field(addr, arch::TASK, f).filter(|&p| p != 0 && p != addr);
+            TaskAt {
+                task: self.task(addr),
+                up: up(arch::TASK_LEADER).or_else(|| up(arch::TASK_PARENT)),
+                state, first, last,
+                syscall: last.and_then(|j| self.rec.syscall_at(j)).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr).cloned()),
+                func: last.and_then(|j| self.rec.calls.stack_at(t, j, None).into_iter().next()).and_then(|c| t.functions.get(&c.func)).map(|f| f.name.clone()),
+            }
         }).collect()
     }
 

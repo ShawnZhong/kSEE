@@ -44,10 +44,36 @@ fn each_task_where_it_last_ran() {
     args.push(1, &[0x100, 0x200, 0]);
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
     let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 16]) };
-    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.running, x.first, x.last)).collect::<Vec<_>>();
-    assert_eq!(at(0), [(0x100, true, 0, Some(0)), (0x200, false, 2, None)]);
-    assert_eq!(at(3), [(0x100, false, 0, Some(1)), (0x200, true, 2, Some(3))]);
+    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.first, x.last)).collect::<Vec<_>>();
+    assert_eq!(at(0), [(0x100, "running", Some(0), Some(0)), (0x200, "sleeping", Some(2), None)]);
+    assert_eq!(at(3), [(0x100, "sleeping", Some(0), Some(1)), (0x200, "running", Some(2), Some(3))]);
     assert_eq!(v.tasks(3)[0].func.as_deref(), Some("f"));
+}
+
+#[test]
+fn the_tasks_are_the_kernels_list_then_the_recordings_others() {
+    // init_task (0x100) and B (0x200, on the run queue) on the kernel's
+    // list, a thread each (its signal_struct's list); 0x300 ran, and is not
+    // on it: exited, once the recording goes on in B.
+    let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n", "T\t10\tstruct\ttask_struct\t24\nM\t10\ttasks\t0\t0\t11\nM\t10\tthread_node\t64\t0\t11\n\
+        M\t10\tsignal\t128\t0\t15\nM\t10\ton_rq\t160\t0\t14\nT\t11\tstruct\tlist_head\t8\nM\t11\tnext\t0\t0\t13\nM\t11\tprev\t32\t0\t13\n\
+        T\t12\tstruct\tsignal_struct\t8\nM\t12\tthread_head\t0\t0\t11\nT\t13\tptr\t\t4\t11\nT\t14\tbase\tu8\t1\tu\nT\t15\tptr\t\t4\t12\nG\tinit_task\t256\t10\n");
+    let mut m = alloc::vec![0u8; 1024];
+    let put = |m: &mut Vec<u8>, at: usize, v: u32| m[at..at + 4].copy_from_slice(&v.to_le_bytes());
+    // (Each task: its tasks.next, its signal, and its signal's one thread, itself.)
+    for (task, next, sig) in [(0x100, 0x200, 0x80), (0x200, 0x100, 0x90)] {
+        put(&mut m, task, next as u32);
+        put(&mut m, task + 16, sig as u32);
+        put(&mut m, sig, (task + 8) as u32);
+        put(&mut m, task + 8, sig as u32);
+    }
+    m[0x214] = 1;
+    let r = [Record::Task { task: 0x300 }, Record::Block { func: 1, n: 0 }, Record::Task { task: 0x200 }, Record::Block { func: 1, n: 0 }];
+    let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), Args::default());
+    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.first)).collect::<Vec<_>>();
+    assert_eq!(at(1), [(0x100, "sleeping", None), (0x200, "runnable", Some(2)), (0x300, "running", Some(0))]);
+    assert_eq!(at(3), [(0x100, "sleeping", None), (0x200, "running", Some(2)), (0x300, "exited", Some(0))]);
 }
 
 #[test]

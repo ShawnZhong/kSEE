@@ -33,6 +33,16 @@ pub const TASK_COMM: &str = "comm";
 /// A task's parent, and its thread group's leader (itself, for a process).
 pub const TASK_PARENT: &str = "real_parent";
 pub const TASK_LEADER: &str = "group_leader";
+/// The kernel's tasks, as for_each_process_thread walks them: from
+/// init_task, each process by its `tasks` link, and each process's
+/// threads, its signal_struct's `thread_head` list, by their `thread_node`.
+pub const INIT_TASK: &str = "init_task";
+pub const TASK_LIST: &str = "tasks";
+pub const TASK_SIGNAL: (&str, &str) = ("signal", "signal_struct");
+pub const THREAD_HEAD: &str = "thread_head";
+pub const THREAD_NODE: &str = "thread_node";
+/// Whether a task is on its CPU's run queue (runnable, or running).
+pub const TASK_ON_RQ: &str = "on_rq";
 /// A task's fields shown first (the Tasks'), in this order.
 pub const TASK_FIELDS: [&str; 12] = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
