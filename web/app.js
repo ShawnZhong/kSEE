@@ -59,7 +59,7 @@ export function app(m) {
     m.snapshot();
     calls = m.syscalls();
     time.refresh(calls);
-    a.outlined?.();
+    a.outlined();
     return calls;
   };
   a.refresh = refresh;
@@ -85,7 +85,7 @@ export function app(m) {
     setLevel(null);
     time.select(s);
     time.go(m.next_block(s.first, true));
-    a.outlined?.();
+    a.outlined();
   };
   // Select call `f` (a Stack frame: see Machine.call_stack) at the cursor:
   // the Stack marks it, the source shows where it is, the timeline outlines it.
@@ -292,7 +292,7 @@ export function app(m) {
     const s = dir > 0 ? calls.find((c) => mine(c) && c.first > w.a) : calls.findLast((c) => mine(c) && c.first < w.a);
     if (!s) return ($("where").textContent = `no syscall of ${taskName(calls.find(mine)?.task ?? { addr: w.task })} ${dir > 0 ? "after" : "before"} this one in the recording`), false;
     time.select(s);
-    a.outlined?.();
+    a.outlined();
     return showStep(dir > 0 ? 0 : steps().length - 1);
   }
   // Run to line `line` of `file`: the next (dir 1) or the last (-1) time it

@@ -20,7 +20,7 @@
     if (k === 0) r.site = document.querySelector(".cm-editor .values")?.textContent;
     if (k === 0 && !/count = 64/.test(r.site ?? "")) throw new Error("the call site's values: " + JSON.stringify(r.site));
     if (k === 1) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
-    if (k === 1) r.args = [...document.querySelectorAll("#stack tr")].slice(1, 4).map((f) => f.innerText.replace(/\s+/g, " ").trim());
+    if (k === 1) r.args = [...document.querySelectorAll("#stack tr")].slice(0, 3).map((f) => f.innerText.replace(/\s+/g, " ").trim());
     if (a.textContent === "vfs_read") {
       // (The link lands at the call site, in ksys_read; ↑ enters vfs_read.)
       dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));

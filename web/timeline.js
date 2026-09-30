@@ -44,9 +44,12 @@ export function timeline(app) {
   // chart's columns [{ task, frames: [[func, first, inlined]] }] (see
 // Machine.chart: inlined, code inlined into the call below it).
   const t = { n: 0, calls: [], win: null, home: null, where: null, title: "", cursor: null, cols: [], buckets: [],
-              depth: 1, row: ROW, // (depth: the deepest stack of the selection seen; row: the rows' height)
+              // (depth: the deepest stack of the selection seen, and the one shown; row: the rows' height)
+              depth: 1, shown: null, row: ROW,
+              // (lit, sel: the calls outlined, their first records: hovered here or in the Stack; selected)
               lit: null, sel: null, syscallAt: new Map(),
-              found: { name: "", at: [] } }; // (the function found: its calls' records) // (lit, sel: the calls outlined, their first records: hovered here or in the Stack; selected)
+              // (the function found: its calls' records)
+              found: { name: "", at: [] } };
   const { fn, iname } = app, tasks = new Map();
   const who = (addr) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr)).get(addr));
 
@@ -172,7 +175,7 @@ export function timeline(app) {
     if (w < 24) return;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x1, y - ROW / 2, w - 2, ROW);
+    ctx.rect(x1, y - t.row / 2, w - 2, t.row);
     ctx.clip();
     ctx.fillStyle = fill;
     ctx.fillText(text, x1 + 3, y);
@@ -284,7 +287,7 @@ export function timeline(app) {
     const tipLines = (inl
       ? [line(iname(inl - 1), "")]
       : s
-      ? [line(`${s.name ?? s.nr}(${argsOf(first).map((a) => a.value ?? "{…}").join(", ")}) = ${s.ret ?? "…"}`, ""),
+      ? [line(`${s.name ?? s.nr}(${argsOf(first).map((a) => a.value ?? "{…}").join(", ")}) = ${s.ret == null ? "…" : app.kernel.result(s.ret)}`, ""),
          line(`a syscall by ${taskName(s.task)}`, "dim")]
       : [line(`${f?.name ?? "?"}${retOf(first)}`, ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f"))]);
     tip.replaceChildren(...tipLines);

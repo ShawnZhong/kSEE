@@ -26,7 +26,7 @@ export function source(app) {
     return texts.get(file);
   };
   // What is shown, and the cursor's line.
-  const v = { file: null, fn: null, syscall: undefined, cursor: null, counts: new Map() };
+  const v = { file: null, shown: null, fn: null, syscall: undefined, cursor: null, counts: new Map() };
   // A file's state (its document), kept once made.
   const states = new Map();
 
@@ -142,7 +142,7 @@ export function source(app) {
   function called(file) {
     const cur = app.time.cursor(), out = new Map();
     if (cur == null || !v.fn) return out;
-    for (const s of app.lineSteps?.() ?? []) {
+    for (const s of app.lineSteps()) {
       if (s.i > cur) break;
       // (Once it returned, by the cursor.)
       if (!s.called || s.called[2] > cur || s.func !== v.fn.name) continue;

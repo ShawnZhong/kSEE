@@ -1,8 +1,7 @@
 // The Stack: the call stack at the cursor, innermost first, a row a call;
 // the selected one (the innermost, unless another is: a click on it, ▲ ▼,
 // a bar in the timeline) with its arguments and its locals as a tree, as a
-// debugger's variables are the selected frame's (every call's, on
-// asking); rebuilt from the trace (Machine.call_stack: a call's arguments
+// debugger's variables are the selected frame's; rebuilt from the trace (Machine.call_stack: a call's arguments
 // are in its record, its locals in
 // memory at their offsets from its frame, the others as the recording has
 // them set). At the bottom, the task running then (a link to it in the
@@ -28,9 +27,6 @@ export function callstack(app) {
   // (not a value opened, or its writes: those leave the view where it is).
   function draw(moved = false) {
     const n = s.frames.length, body = [];
-    // (Every call's values, or only the selected one's: on asking.)
-    if (n > 1) body.push(el("tr", { className: "sub" }, el("td", { colSpan: 3 },
-      el("a", { textContent: s.all ? "▾ only the selected call's values" : "▸ every call's values", onclick: () => ((s.all = !s.all), draw()) }))));
     s.frames.forEach((f, k) => {
       // (Click: select the call; the source shows where it is.)
       const on = s.sel == null ? k === 0 : f === s.sel;
@@ -42,7 +38,7 @@ export function callstack(app) {
       body.push(h);
       // (Only the selected call's values, as a debugger's variables are
       // the selected frame's: the others a row each, a click to select.)
-      if (!on && !s.all) return;
+      if (!on) return;
       // (Its arguments, then its locals: one list, as the source has them
       // all as names.)
       if (f.args) rows(f.args, `${n - k}/${f.func}`, 1, body);
@@ -70,7 +66,6 @@ export function callstack(app) {
   // The stack at record `i` (null: the last; undefined: none), `step` the
   // line shown there ({ nth }: which of the lines record `i` runs); `task`:
   // the task there.
-  // The frames shown.
   function show(i, step, task) {
     moved();
     s.task = task ?? null;
@@ -125,12 +120,5 @@ export function callstack(app) {
   }
   // The call inlined frame `f` is code of.
   const owner = (f) => s.frames.find((x) => x.first === f.first && !x.inlined) ?? null;
-  // The frame `dir` away from the selected one (the innermost if none):
-  // 1 its caller (the row below: the innermost is on top), -1 its callee;
-  // null at the ends.
-  const neighbour = (dir) => s.frames[(s.sel ? s.frames.indexOf(s.sel) : 0) + dir] ?? null;
-
-  // The pointer is over the timeline (on), or not.
-
-  return { show, select, level, owner, neighbour, frames: () => s.frames, resolve, kids };
+  return { show, select, level, owner, frames: () => s.frames, resolve, kids };
 }

@@ -99,7 +99,6 @@ table.objs td.fname.opens { cursor: pointer; }
 table.stack tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); background: var(--panel); }
 table.stack tr.frame.on td { background: var(--sel); }
 table.stack tr.frame a.mono { font-weight: 600; }
-table.stack tr.sub td { padding: 1px 8px 1px 24px; color: var(--dim); font-family: system-ui, sans-serif; font-size: 10.5px; }
 
 /* The right column's tabs: the pane chosen (app.tab) */
 #right .pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
