@@ -8,7 +8,9 @@ five files, 78 lines (build scripts, the initramfs's alignment, and nolibc's
 
 The configuration: wasm32, `CONFIG_MMU=n`, one CPU, `PREEMPT_NONE`, an
 initramfs, a console (output), a timer; the block layer, the loop
-device and ext4.
+device and ext4; io_uring (without an MMU, the program's mmap of a ring
+is the kernel's own memory: it writes requests where the kernel reads
+them).
 
 ## Tasks: stacks the host suspends
 

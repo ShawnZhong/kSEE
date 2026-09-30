@@ -16,10 +16,11 @@ use ksee_core::{module, tables::Tables};
 pub fn pack(kernel: &Path, out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
     let mut types = types(&image).unwrap_or_else(|e| crate::fail(&format!("DWARF: {e}")));
-    for (name, value) in constants(&kernel.join("usr/include")) {
+    let t = ksee_core::types::Types::parse(&types);
+    for (name, value) in constants(&kernel.join("usr/include")).into_iter().chain(enumerators(&t)) {
         types += &format!("C\t{name}\t{value}\n");
     }
-    let calls = syscalls(&image, &ksee_core::types::Types::parse(&types));
+    let calls = syscalls(&image, &t);
     for (nr, name) in &calls {
         types += &format!("S\t{nr}\t{name}\n");
     }
@@ -84,7 +85,19 @@ const CONSTANTS: &[(&str, &[&str])] = &[
     ("asm-generic/signal.h", &["SIG"]),
     ("linux/wait.h", &["P_", "W"]),
     ("linux/prctl.h", &["PR_"]),
+    ("linux/io_uring.h", &["IORING_", "IOSQE_"]),
 ];
+
+/// The values of the enums those headers declare (IORING_OP_READ), as
+/// DWARF has them, with the prefixes kept.
+fn enumerators(t: &ksee_core::types::Types) -> Vec<(String, i64)> {
+    t.types.iter().flat_map(|ty| {
+        let ksee_core::types::Kind::Enum(values) = &ty.kind else { return Vec::new() };
+        let header = t.declared.get(&ty.name).and_then(|(file, _)| CONSTANTS.iter().find(|(h, _)| file.ends_with(&format!("uapi/{h}"))));
+        let Some((_, prefixes)) = header else { return Vec::new() };
+        values.iter().filter(|(n, _)| prefixes.iter().any(|p| n.starts_with(p))).cloned().collect()
+    }).collect()
+}
 
 /// Constants from the kernel's UAPI headers (under `include`: after `make
 /// headers`), for the page (`C name value`: flags, errno names): each

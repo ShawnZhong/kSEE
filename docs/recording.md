@@ -141,7 +141,8 @@ a function inlined elsewhere has them on its out-of-line copy), the
 syscalls this kernel builds (its `sys_call_table` as the image's data
 has it: each entry's function, by the element segment and the name
 section, `__wasm_sys_NAME`; NULL, none), constants from the UAPI headers (`O_*`, `AT_*`,
-`CLOCK_*`, `CLONE_*`, `FUTEX_*`, errno's `E*`, …: for the page's calls,
+`CLOCK_*`, `CLONE_*`, `FUTEX_*`, errno's `E*`, `IORING_*`, …: their
+`#define`s, and the values of the enums they declare, as DWARF has them; for the page's calls,
 written as in C), and `W name file line` lines: where a function (an
 inline one too, which has no probe), a struct, union, enum or typedef, a
 global, or a member (as `struct.member`) is declared, from DWARF's
