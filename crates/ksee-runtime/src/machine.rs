@@ -325,6 +325,10 @@ impl Machine {
 /// call's writes into its request are), so memory as it was stays exact.
 fn write_logged(addr: u32, bytes: &[u8]) {
     let trace = k(|k| k.trace.get());
+    // (Stores recorded from the first write of the host's on, a variable
+    // declared before any call (see programs::on_off: after the boot,
+    // what it left for later runs unrecorded): memory as it was exact from
+    // there.)
     if Direct.read_u32(trace + trace::ON) == 0 {
         Direct.write_u32(trace + trace::ON, 2);
     }
