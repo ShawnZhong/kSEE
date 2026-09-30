@@ -1,7 +1,8 @@
 # The kernel: arch/wasm
 
 Linux 7.2 compiled to WebAssembly, with nothing emulated: `linux/arch/wasm`
-(submodule, branch `wasm`) is a minimal architecture port, and almost
+(submodule, branch `wasm`: the stable tree's v7.2.7, then the port's
+commits; all of them as one patch to it, linux.patch) is a minimal architecture port, and almost
 everything else is the generic kernel. Outside arch/wasm the port changes
 three files, 28 lines (build scripts, and the initramfs's alignment).
 

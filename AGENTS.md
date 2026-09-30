@@ -18,8 +18,10 @@ shape everything), then the doc for the part you touch ([docs/](docs/README.md))
   before a new mode, language or dependency.
 - **Rust does the work** in ksee-core, unit-tested on made-up records; web/
   only lays out what `Machine` returns.
-- **linux/** (submodule, branch wasm) may change in small commits: in
-  arch/wasm where possible, elsewhere only what the port needs.
+- **linux/** (submodule, branch wasm, on the stable tree's v7.2.7) may
+  change in small commits: in arch/wasm where possible, elsewhere only
+  what the port needs. Commit linux.patch with it (the port as a patch
+  to the release: `ksee build` writes it).
 - **Before you finish:** `./ksee.sh test` (`--ui` with `$CHROME` runs the
   page too; the tests check what the page shows). Commit small. Use the page
   as a user would (`deno run -A tests/ui.js OUT.png --eval=…` for a

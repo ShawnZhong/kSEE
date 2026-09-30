@@ -2,6 +2,7 @@
 //! tool that knows its own dependencies (kbuild, cargo), or checks whether
 //! its output is older than its inputs.
 //!
+//!   linux.patch            the port: linux/ from its release (its tag) to its HEAD
 //!   plugin/ksee-trace.so   the LLVM pass that instruments the kernel
 //!   linux/vmlinux          the kernel, instrumented (kbuild)
 //!
@@ -44,6 +45,7 @@ fn stale(out: &str, inputs: &[&str]) -> bool {
 
 pub fn build() {
     let llvm = env("LLVM", "-23");
+    patch();
 
     if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
         eprintln!("  PLUGIN  plugin/ksee-trace.so");
@@ -135,6 +137,20 @@ pub fn build() {
         gzip(&cpio_out, &format!("{SITE}/initramfs.cpio.gz"));
     }
     examples();
+}
+
+/// linux.patch: the port, as a patch to the release linux/ is on (the
+/// last tag before its HEAD: v7.2.7), written again when it changes.
+fn patch() {
+    let git = |args: &[&str]| Command::new("git").arg("-C").arg("linux").args(args).output().ok()
+        .filter(|o| o.status.success()).map(|o| o.stdout);
+    let Some(base) = git(&["describe", "--tags", "--abbrev=0", "--match", "v*"]) else { return };
+    let base = String::from_utf8_lossy(&base).trim().to_string();
+    let Some(diff) = git(&["diff", "--no-color", &base, "HEAD"]) else { return };
+    if std::fs::read("linux.patch").ok().as_deref() != Some(&diff[..]) {
+        eprintln!("  PATCH   linux.patch (from {base})");
+        std::fs::write("linux.patch", &diff).unwrap_or_else(|e| crate::fail(&format!("linux.patch: {e}")));
+    }
 }
 
 fn gzip(from: &str, to: &str) {
