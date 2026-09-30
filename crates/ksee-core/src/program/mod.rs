@@ -14,10 +14,12 @@
 //! names in a line of source); [`layout`]: laying values out in the
 //! kernel's types, and reading them back.
 
+mod expr;
 mod layout;
 mod text;
 #[cfg(test)]
 mod tests;
 
+pub use expr::{lvalue, typed, value, Env, Sym};
 pub use layout::{Arg, Decl, Value};
 pub use text::{context, eval, lines, names, statement, Context, Name, Statement};

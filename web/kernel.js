@@ -119,27 +119,25 @@ export function runner(k, m, steps) {
   // ty, count, size, j, get(), … }.)
   const done = [], started = [], vars = [];
   // Calls are numbered from 1, as $n and the explanations have them: the
-  // declarations are not calls. Step `i`'s number; call `n`'s step.
-  const callNumber = (i) => steps.slice(0, i + 1).filter((s) => !s.decl).length;
-  const stepOf = (n) => steps.findIndex((s, i) => !s.decl && callNumber(i) === n);
-  // The names the first `j` steps make: $n and the name of each call's
-  // result; each variable's address, an array's elements as they are now.
+  // declarations and assignments are not calls. Step `i`'s number; call `n`'s step.
+  const isCall = (s) => s.call != null;
+  const callNumber = (i) => steps.slice(0, i + 1).filter(isCall).length;
+  const stepOf = (n) => steps.findIndex((s, i) => isCall(s) && callNumber(i) === n);
+  // The names the first `j` steps make, as Machine.arg reads them (see
+  // ksee_core::program::Sym): each variable, { addr, ty, count }, memory
+  // of the program's; $n and the name of each call's result, a number, or
+  // { value, type } with its declared type if a pointer (`void *mem`).
   // (`runners`: a call not returned yet is, as a runner, the one it started:
   // a vfork's child, before the clone returns.)
   function known(j = done.length, runners = false) {
     const o = {};
-    for (const v of vars) {
-      if (v.j >= j) continue;
-      o[v.name] = v.addr;
-      // (A char array's elements: its bytes, as C has them.)
-      const now = v.count == null ? null : typeof v.get() === "string" ? [...v.bytes()] : v.get();
-      if (Array.isArray(now)) now.forEach((x, i) => typeof x === "number" && (o[`${v.name}[${i}]`] = x));
-    }
+    for (const v of vars) if (v.j < j) o[v.name] = { addr: v.addr, ty: v.ty, count: v.count ?? undefined };
     done.slice(0, j).forEach((d, i) => {
       const r = d?.ret ?? (runners ? started[i] : null);
-      if (steps[i].decl || r == null) return;
-      o[`$${callNumber(i)}`] = r;
-      if (steps[i].name) o[steps[i].name] = r;
+      if (steps[i].decl || steps[i].target != null || r == null) return;
+      const x = steps[i].type?.includes("*") ? { value: r, type: steps[i].type } : r;
+      o[`$${callNumber(i)}`] = x;
+      if (steps[i].name) o[steps[i].name] = x;
     });
     return o;
   }
@@ -158,6 +156,12 @@ export function runner(k, m, steps) {
       vars.push(v);
       done[j] = { decl: v, how: "declared" };
       return { j, decl: v };
+    }
+    // (An assignment: memory of the program's written; what it holds then.)
+    if (s.target != null) {
+      const shown = m.assign(s.target, s.value, known());
+      done[j] = { how: "assigned", shown };
+      return { j, assigned: shown };
     }
     const args = s.args.map((a, i) => m.arg(s.call, i, a, known())), tid = tidOf(s);
     const before = new Set(m.runners()), made = k.call(s.call, args, tid);

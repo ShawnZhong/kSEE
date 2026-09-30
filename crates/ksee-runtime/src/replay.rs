@@ -8,11 +8,33 @@ use wasm_bindgen::prelude::*;
 use crate::machine::Machine;
 use crate::state::{k, tables, Direct};
 
-/// A name's value in the page's calls: a constant of the kernel's, else
-/// `known`'s ({ name: value }: the results so far, the program's
-/// variables).
-pub(crate) fn lookup(known: &JsValue) -> impl Fn(&str) -> Option<i64> + '_ {
-    move |n| tables().types.constants.get(n).copied().or_else(|| js_sys::Reflect::get(known, &n.into()).ok()?.as_f64().map(|v| v as i64))
+/// The names of the page's program (ksee_core::program::Env): a constant
+/// of the kernel's, else `known`'s ({ name: what it is }: a number, a
+/// result of a declared type, { value, type: "void *" }, or a variable, {
+/// addr, ty, count }), reading memory as it is now.
+pub(crate) struct Known<'a>(pub &'a JsValue);
+
+impl ksee_core::program::Env for Known<'_> {
+    fn sym(&self, n: &str) -> Option<ksee_core::program::Sym> {
+        use ksee_core::program::Sym;
+        let types = &tables().types;
+        if let Some(&v) = types.constants.get(n) {
+            return Some(Sym::Value { v, to: None });
+        }
+        let x = js_sys::Reflect::get(self.0, &n.into()).ok()?;
+        if let Some(v) = x.as_f64() {
+            return Some(Sym::Value { v: v as i64, to: None });
+        }
+        let get = |k: &str| js_sys::Reflect::get(&x, &k.into()).ok().filter(|v| !v.is_undefined() && !v.is_null());
+        if let Some(addr) = get("addr").and_then(|v| v.as_f64()) {
+            return Some(Sym::Var { addr: addr as u32, ty: get("ty")?.as_f64()? as u32, count: get("count").and_then(|c| c.as_f64()).map(|c| c as u32) });
+        }
+        ksee_core::program::typed(get("value")?.as_f64()? as i64, &get("type")?.as_string()?, types)
+    }
+
+    fn memory(&self) -> Option<&dyn Memory> {
+        Some(&Direct)
+    }
 }
 
 /// `{ key: value }`.
@@ -230,8 +252,7 @@ impl Machine {
         use ksee_core::program::Arg;
         let types = &tables().types;
         let ty = types.syscall_params(syscall).and_then(|p| p.get(k)).map_or(0, |(_, t)| *t);
-        let lookup = lookup(&known);
-        Ok(match types.arg(text, ty, &lookup)? {
+        Ok(match types.arg(text, ty, &Known(&known))? {
             Arg::Number(v) => JsValue::from_f64(v as f64),
             Arg::Bytes(b) => obj("bytes", js_sys::Uint8Array::from(&b[..]).into()),
             Arg::Strings(v) => obj("strings", v.into_iter().map(|s| s.map_or(JsValue::NULL, JsValue::from)).collect::<js_sys::Array>().into()),
@@ -239,9 +260,9 @@ impl Machine {
     }
 
     /// A program's line (ksee_core::program::statement): a call, { tid?,
-    /// type?, name?, call, args (as written) }, or a variable's
-    /// declaration, { tid?, decl }; tid a number if it is one, else the
-    /// name of a result (a clone's).
+    /// type?, name?, call, args (as written) }, a variable's declaration, {
+    /// tid?, decl }, or an assignment, { tid?, target, value }; tid a
+    /// number if it is one, else the name of a result (a clone's).
     pub fn statement(&self, text: &str) -> Result<JsValue, JsValue> {
         use ksee_core::program::{statement, Statement};
         let o = js_sys::Object::new();
@@ -262,6 +283,11 @@ impl Machine {
                 if t.is_some() { set("tid", tid(t)); }
                 set("decl", text.into());
             }
+            Statement::Assign { tid: t, target, value } => {
+                if t.is_some() { set("tid", tid(t)); }
+                set("target", target.into());
+                set("value", value.into());
+            }
         }
         Ok(o.into())
     }
@@ -269,7 +295,7 @@ impl Machine {
     /// The value of `text`, a C constant expression (a runner's thread id,
     /// say: "19", "child", "$2"); `known` as for arg.
     pub fn value(&self, text: &str, known: JsValue) -> Result<f64, JsValue> {
-        Ok(ksee_core::program::eval(text, &lookup(&known))? as f64)
+        Ok(ksee_core::program::value(text, Some(&tables().types), &Known(&known))? as f64)
     }
 
     /// The names in `text`, a line of C source, each with the fields

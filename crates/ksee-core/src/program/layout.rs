@@ -5,7 +5,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use super::text::{eval, items, literal, unquote, Item};
+use super::expr::{value, Env};
+use super::text::{items, literal, unquote, Item};
 use crate::types::{Base, Kind, Types};
 use crate::Memory;
 
@@ -49,7 +50,7 @@ impl Types {
     /// 30000000}`, `char path[] = "/note.txt"`; the type the kernel's own
     /// (a struct, union or enum by its tag, a typedef, a base type by its
     /// name). `known`: as for arg.
-    pub fn declare(&self, text: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<Decl, String> {
+    pub fn declare(&self, text: &str, known: &dyn Env) -> Result<Decl, String> {
         let s = text.trim().trim_end_matches(';').trim();
         let (lhs, init) = match s.split_once('=') {
             Some((l, r)) => (l.trim(), Some(r.trim())),
@@ -82,7 +83,7 @@ impl Types {
                 Some(Item::List(l)) => l.len() as u32,
                 _ => return Err(format!("{name}[]: how many?")),
             }),
-            Some(c) => Some(u32::try_from(eval(c, known)?).map_err(|_| format!("{name}[{c}]: not a size"))?),
+            Some(c) => Some(u32::try_from(value(c, Some(self), known)?).map_err(|_| format!("{name}[{c}]: not a size"))?),
         };
         let bytes = self.lay(ty, count, item.as_ref(), known).map_err(|e| format!("{name}: {e}"))?;
         Ok(Decl { name: name.to_string(), ty, count, bytes })
@@ -90,13 +91,13 @@ impl Types {
 
     /// A variable's bytes (of type `ty`, an array of `count` of them) as
     /// `text` makes them: a C literal ("hi", {3, 4}, {.tv_sec = 1}, 7).
-    pub fn assign(&self, ty: u32, count: Option<u32>, text: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<Vec<u8>, String> {
+    pub fn assign(&self, ty: u32, count: Option<u32>, text: &str, known: &dyn Env) -> Result<Vec<u8>, String> {
         self.lay(ty, count, Some(&literal(text.trim())?), known)
     }
 
     /// The bytes of a variable of type `ty` (an array of `count`) that
     /// `item` makes (none: zeros).
-    fn lay(&self, ty: u32, count: Option<u32>, item: Option<&Item>, known: &dyn Fn(&str) -> Option<i64>) -> Result<Vec<u8>, String> {
+    fn lay(&self, ty: u32, count: Option<u32>, item: Option<&Item>, known: &dyn Env) -> Result<Vec<u8>, String> {
         let mut bytes = vec![0u8; self.size_of(ty) as usize * count.unwrap_or(1) as usize];
         match (item, count) {
             (None, _) => {}
@@ -220,7 +221,7 @@ impl Types {
     /// Argument `text` for parameter type `ty` (a syscall's, or 0: unknown):
     /// see the module's doc. `known`: the values of names (constants,
     /// results).
-    pub fn arg(&self, text: &str, ty: u32, known: &dyn Fn(&str) -> Option<i64>) -> Result<Arg, String> {
+    pub fn arg(&self, text: &str, ty: u32, known: &dyn Env) -> Result<Arg, String> {
         let s = text.trim();
         if s.starts_with('"') {
             let mut b = unquote(s)?;
@@ -239,7 +240,7 @@ impl Types {
             if matches!(self.get(to).kind, Kind::Pointer(c) if self.is_string(c)) {
                 return list.into_iter().map(|(_, it)| match it {
                     Item::Str(s) => Ok(Some(String::from_utf8_lossy(&s).into_owned())),
-                    Item::Expr(e) if eval(&e, known)? == 0 => Ok(None),
+                    Item::Expr(e) if value(&e, Some(self), known)? == 0 => Ok(None),
                     _ => Err("an array of strings: \"…\" or NULL each".to_string()),
                 }).collect::<Result<_, _>>().map(Arg::Strings);
             }
@@ -247,11 +248,11 @@ impl Types {
             self.fill(&mut b, 0, to, &Item::List(list), known)?;
             return Ok(Arg::Bytes(b));
         }
-        Ok(Arg::Number(eval(s, known)?))
+        Ok(Arg::Number(value(s, Some(self), known)?))
     }
 
     /// Put `item` into `buf` at `at`, as a value of type `ty`.
-    fn fill(&self, buf: &mut Vec<u8>, at: usize, ty: u32, item: &Item, known: &dyn Fn(&str) -> Option<i64>) -> Result<(), String> {
+    fn fill(&self, buf: &mut Vec<u8>, at: usize, ty: u32, item: &Item, known: &dyn Env) -> Result<(), String> {
         let id = self.resolve(ty);
         let t = self.get(id);
         match (&t.kind, item) {
@@ -274,7 +275,7 @@ impl Types {
             }
             (&Kind::Array { elem, count }, Item::Str(_) | Item::List(_)) => self.fill_array(buf, at, elem, count, item, known),
             (Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_), Item::Expr(e)) => {
-                let v = eval(e, known)?;
+                let v = value(e, Some(self), known)?;
                 let size = self.size_of(id).clamp(1, 8) as usize;
                 if matches!(t.kind, Kind::Base(Base::Float)) {
                     return Err(format!("{}: a float", self.name(id)));
@@ -290,7 +291,7 @@ impl Types {
 
     /// Lay `item` out at `at` in `buf` as `count` of type `elem` (an
     /// array): a string, for chars; else {…}, an element each.
-    fn fill_array(&self, buf: &mut Vec<u8>, at: usize, elem: u32, count: u32, item: &Item, known: &dyn Fn(&str) -> Option<i64>) -> Result<(), String> {
+    fn fill_array(&self, buf: &mut Vec<u8>, at: usize, elem: u32, count: u32, item: &Item, known: &dyn Env) -> Result<(), String> {
         let esize = self.size_of(elem) as usize;
         match item {
             Item::Str(s) if self.is_string(elem) => {

@@ -58,7 +58,7 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
     if (!c.word || /^\d/.test(c.word)) return [];
     // (The results so far, by name, first; then the constants that fit.)
     const results = Object.entries(known()).filter(([n]) => n.startsWith(c.word))
-      .map(([n, r]) => ({ text: n, label: n, detail: `= ${r}${n.startsWith("$") ? `: call ${n.slice(1)}'s result` : ""}` }));
+      .map(([n, r]) => ({ text: n, label: n, detail: `${typeof r !== "object" ? `= ${r}` : r.addr != null ? "a variable" : `= 0x${r.value.toString(16)}`}${n.startsWith("$") ? `: call ${n.slice(1)}'s result` : ""}` }));
     if (c.word.startsWith("$")) return results;
     const p = m.syscall(c.call)?.params?.[c.param];
     const fits = p?.consts ?? [];
@@ -109,13 +109,15 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
     show();
   }
 
-  // The call written: { call, args, name?, tid? }, or an error.
+  // The line written: a call { call, args, name?, tid? }, a declaration {
+  // decl }, an assignment { target, value }; or an error.
   function written() {
     // (A call, or a variable of the program's, declared as in C.)
     let c;
     try {
       c = m.statement(input.value);
       if (c.decl != null) return (m.declaration(c.decl, known()), c);
+      if (c.target != null) return c; // (an assignment: checked as it is made)
     } catch (e) {
       return `${e.message ?? e}: write a call, name(arg, …) or int fd = name(…); or a variable, char buf[64]`;
     }

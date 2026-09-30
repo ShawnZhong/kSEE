@@ -40,6 +40,15 @@ fn a_line_is_a_call_or_a_declaration() {
     assert_eq!(statement("char buf[64]").unwrap(), Statement::Decl { tid: None, text: "char buf[64]".into() });
     assert_eq!(statement("write(1, \"hi)\", 2").unwrap_err(), "a ) missing");
     assert_eq!(statement("19: struct __kernel_timespec ts = {0, 1}").unwrap(), Statement::Decl { tid: o("19"), text: "struct __kernel_timespec ts = {0, 1}".into() });
+    // (Assignments: memory of the program's written.)
+    let assign = |t: &str| match statement(t).unwrap() {
+        Statement::Assign { target, value, .. } => (target, value),
+        s => panic!("{s:?}"),
+    };
+    assert_eq!(assign("*sqe = {.opcode = IORING_OP_READ, .fd = fd}"), ("*sqe".into(), "{.opcode = IORING_OP_READ, .fd = fd}".into()));
+    assert_eq!(assign("*(unsigned *)(rings + p.sq_off.tail) = 1;"), ("*(unsigned *)(rings + p.sq_off.tail)".into(), "1".into()));
+    assert_eq!(assign("fds[0] = 3"), ("fds[0]".into(), "3".into()));
+    assert_eq!(assign("x = y == 2"), ("x".into(), "y == 2".into()));
 }
 
 #[test]
@@ -80,10 +89,47 @@ fn expressions() {
     assert_eq!(eval("0644", &known), Ok(420));
     assert_eq!(eval("(1 << 4) + fd - $2", &known), Ok(14));
     assert_eq!((eval("'h'", &known), eval("'\\n'", &known), eval("'\\0' + 1", &known)), (Ok(104), Ok(10), Ok(1)));
-    assert_eq!(eval("fds[1] + &fd", &|n| [("fds[1]", 4), ("fd", 3)].iter().find(|(k, _)| *k == n).map(|(_, v)| *v)), Ok(7));
     assert_eq!(eval("NULL", &known), Ok(0));
     assert!(eval("nope", &known).is_err());
     assert!(eval("1 2", &known).is_err());
+}
+
+/// A program's names and memory, made up.
+struct Prog(Vec<(&'static str, Sym)>, Vec<u8>);
+impl Env for Prog {
+    fn sym(&self, name: &str) -> Option<Sym> {
+        self.0.iter().find(|(n, _)| *n == name).map(|(_, s)| s.clone())
+    }
+    fn memory(&self) -> Option<&dyn Memory> {
+        Some(&self.1 as &dyn Memory)
+    }
+}
+impl Memory for Vec<u8> {
+    fn read(&self, addr: u32, buf: &mut [u8]) {
+        buf.copy_from_slice(&self[addr as usize..addr as usize + buf.len()]);
+    }
+}
+
+#[test]
+fn expressions_as_c_reads_them() {
+    // struct pt { int x; int y; } p at 8 (3, 4); int fds[2] at 16 (5, 6);
+    // q, a result: struct pt *, 8.
+    let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t2\tstruct\tpt\t8\nM\t2\tx\t0\t0\t1\nM\t2\ty\t32\t0\t1\n\
+                          T\t4\tptr\t\t4\t2\nT\t5\tbase\tunsigned int\t4\tu\n");
+    let mut m = vec![0u8; 32];
+    for (at, v) in [(8, 3), (12, 4), (16, 5), (20, 6)] {
+        m[at] = v;
+    }
+    let env = Prog(vec![("p", Sym::Var { addr: 8, ty: 2, count: None }), ("fds", Sym::Var { addr: 16, ty: 1, count: Some(2) }),
+                        ("q", Sym::Value { v: 8, to: Some(2) })], m);
+    let v = |s| value(s, Some(&t), &env);
+    assert_eq!((v("p.y"), v("fds[1]"), v("q->x + q[0].y"), v("&p"), v("fds")), (Ok(4), Ok(6), Ok(7), Ok(8), Ok(16)));
+    // (Casts, pointer arithmetic by the size pointed to, sizeof.)
+    assert_eq!((v("*(int *)(q + 1)"), v("(unsigned int *)16 - (unsigned int *)8"), v("sizeof(struct pt)"), v("sizeof(fds)")), (Ok(5), Ok(2), Ok(8), Ok(8)));
+    assert!(v("p").is_err()); // (a struct: its address, or a member)
+    // (Memory to write: where, of which type.)
+    assert_eq!((lvalue("fds[1]", &t, &env), lvalue("q->y", &t, &env), lvalue("*(unsigned int *)20", &t, &env)), (Ok((20, 1)), Ok((12, 1)), Ok((20, 5))));
+    assert!(lvalue("fds", &t, &env).is_err());
 }
 
 #[test]

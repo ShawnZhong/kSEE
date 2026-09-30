@@ -5,102 +5,10 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// A C constant expression: numbers (decimal, 0x hex, 0 octal, a U or L
-/// suffix), names (`known`, `&name` the same; `name[i]` known's as
-/// "name[i]": a variable's element), `|`, `<<`, `+`, `-`, parentheses.
-pub fn eval(s: &str, known: &dyn Fn(&str) -> Option<i64>) -> Result<i64, String> {
-    type K<'a> = &'a dyn Fn(&str) -> Option<i64>;
-    fn or(t: &mut &str, k: K) -> Result<i64, String> {
-        let mut v = shift(t, k)?;
-        while let Some(r) = t.trim_start().strip_prefix('|') {
-            *t = r;
-            v |= shift(t, k)?;
-        }
-        Ok(v)
-    }
-    fn shift(t: &mut &str, k: K) -> Result<i64, String> {
-        let mut v = sum(t, k)?;
-        while let Some(r) = t.trim_start().strip_prefix("<<") {
-            *t = r;
-            v <<= sum(t, k)?;
-        }
-        Ok(v)
-    }
-    fn sum(t: &mut &str, k: K) -> Result<i64, String> {
-        let mut v = unary(t, k)?;
-        loop {
-            let s = t.trim_start();
-            if let Some(r) = s.strip_prefix('+') {
-                *t = r;
-                v += unary(t, k)?;
-            } else if let Some(r) = s.strip_prefix('-') {
-                *t = r;
-                v -= unary(t, k)?;
-            } else {
-                return Ok(v);
-            }
-        }
-    }
-    fn unary(t: &mut &str, k: K) -> Result<i64, String> {
-        *t = t.trim_start();
-        if let Some(r) = t.strip_prefix('-') {
-            *t = r;
-            return Ok(-unary(t, k)?);
-        }
-        // ('h', '\n': a character's number.)
-        if let Some(r) = t.strip_prefix('\'') {
-            let end = r.char_indices().skip(1).find(|&(i, c)| c == '\'' && !r[..i].ends_with('\\')).map(|(i, _)| i)
-                .or_else(|| r.find('\''))
-                .ok_or("a ' missing")?;
-            let c = unquote(&format!("\"{}\"", &r[..end]))?;
-            *t = &r[end + 1..];
-            // (A character's byte, or the first of its UTF-8 bytes.)
-            return c.first().map(|&c| c as i64).ok_or_else(|| "an empty character".into());
-        }
-        // (&x: a program's variable's address, which its name stands for
-        // anyway, as C writes it for a struct.)
-        if let Some(r) = t.strip_prefix('&') {
-            *t = r;
-            return unary(t, k);
-        }
-        if let Some(r) = t.strip_prefix('(') {
-            *t = r;
-            let v = or(t, k)?;
-            *t = t.trim_start().strip_prefix(')').ok_or("a ) missing")?;
-            return Ok(v);
-        }
-        let n = t.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$')).unwrap_or(t.len());
-        let (word, rest) = t.split_at(n);
-        *t = rest;
-        if word.is_empty() {
-            return Err(if rest.is_empty() { "a value missing".into() } else { format!("not an argument: {rest}") });
-        }
-        let num = word.trim_end_matches(['U', 'L', 'u', 'l']);
-        if let Some(h) = num.strip_prefix("0x").or_else(|| num.strip_prefix("0X")) {
-            i64::from_str_radix(h, 16).map_err(|_| format!("not a number: {word}"))
-        } else if num.len() > 1 && num.starts_with('0') {
-            i64::from_str_radix(&num[1..], 8).map_err(|_| format!("not a number: {word}"))
-        } else if num.starts_with(|c: char| c.is_ascii_digit()) {
-            num.parse().map_err(|_| format!("not a number: {word}"))
-        } else if word == "NULL" {
-            Ok(0)
-        } else if let Some(r) = t.trim_start().strip_prefix('[') {
-            // (A variable's element: `fds[1]`, its value, `known`'s as
-            // "fds[1]".)
-            *t = r;
-            let i = or(t, k)?;
-            *t = t.trim_start().strip_prefix(']').ok_or("a ] missing")?;
-            k(&format!("{word}[{i}]")).ok_or_else(|| format!("no {word}[{i}]"))
-        } else {
-            k(word).ok_or_else(|| format!("not a number, a constant or a result: {word}"))
-        }
-    }
-    let mut t = s;
-    let v = or(&mut t, known)?;
-    if !t.trim().is_empty() {
-        return Err(format!("not an argument: {}", t.trim()));
-    }
-    Ok(v)
+/// A C expression's value, of numbers and names only (no types, no
+/// memory: see expr::value): `O_CREAT | O_WRONLY`, `(1U << 16)`, `-100`.
+pub fn eval(s: &str, known: &dyn super::expr::Env) -> Result<i64, String> {
+    super::expr::value(s, None, known)
 }
 
 /// A compound literal's items: `{a, b}`, `{.x = a}`, nested braces, strings.
@@ -342,10 +250,16 @@ pub fn context(text: &str, at: usize) -> Context {
 pub enum Statement {
     Call { tid: Option<String>, ty: Option<String>, name: Option<String>, call: String, args: Vec<String> },
     Decl { tid: Option<String>, text: String },
+    /// `target = value`: memory of the program's written (`sqe->fd = fd`,
+    /// `*(unsigned *)(rings + p.sq_off.tail) = 1`, `fds[0] = 3`).
+    Assign { tid: Option<String>, target: String, value: String },
 }
 
-/// A program's line, parsed (see Statement): a call if it ends in one
-/// (`name(…)`, its parentheses the line's end), else a declaration.
+/// A program's line, parsed (see Statement): with an `=` outside brackets,
+/// a declaration if what is before it is one (`type name`), a call's
+/// result named if what is after is a call (`[type] name = call(…)`), else
+/// an assignment; with none, a call if it ends in one (`name(…)`, its
+/// parentheses the line's end), else a declaration.
 pub fn statement(text: &str) -> Result<Statement, String> {
     let s = text.trim().trim_end_matches(';').trim();
     let word = |w: &str| !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') && !w.starts_with(|c: char| c.is_ascii_digit());
@@ -354,9 +268,30 @@ pub fn statement(text: &str) -> Result<Statement, String> {
         Some((t, r)) if word(t.trim()) || t.trim().chars().all(|c| c.is_ascii_digit()) && !t.trim().is_empty() => (Some(t.trim().to_string()), r.trim()),
         _ => (None, s),
     };
-    // (The call: the first "(" outside strings, closed at the line's end.)
     let n = nesting(s);
     let b = s.as_bytes();
+    // (An assignment: an `=` outside brackets, not ==, <=, >=, !=.)
+    let eq = (0..b.len()).find(|&i| b[i] == b'=' && n[i] == Some(0) && !matches!(b.get(i + 1), Some(b'='))
+        && !(i > 0 && matches!(b[i - 1], b'=' | b'!' | b'<' | b'>')));
+    if let Some(eq) = eq {
+        let (lhs, rhs) = (s[..eq].trim(), s[eq + 1..].trim());
+        // (A declaration's: a type, then a name, maybe `[n]`; a call: `name(…)`, to the end.)
+        let name_part = lhs.split_once('[').map_or(lhs, |(h, _)| h).trim_end();
+        let at = name_part.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).map_or(0, |k| k + 1);
+        let declared = at > 0 && word(&name_part[at..]) && name_part[..at].chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ' ' || c == '*')
+            && name_part[..at].split_whitespace().next().is_some_and(word);
+        let callee = rhs.find('(').filter(|&k| word(rhs[..k].trim()) && rhs.ends_with(')'));
+        if callee.is_none() && !declared {
+            return Ok(Statement::Assign { tid, target: lhs.to_string(), value: rhs.to_string() });
+        }
+        if callee.is_none() {
+            return Ok(Statement::Decl { tid, text: s.to_string() });
+        }
+        if !declared && !word(lhs) {
+            return Ok(Statement::Assign { tid, target: lhs.to_string(), value: rhs.to_string() });
+        }
+    }
+    // (The call: the first "(" outside strings, closed at the line's end.)
     let open = (0..b.len()).find(|&i| b[i] == b'(' && n[i].is_some());
     let close = open.and_then(|o| (o + 1..b.len()).find(|&i| b[i] == b')' && n[i] == n[o]));
     if open.is_some() && close.is_none() {

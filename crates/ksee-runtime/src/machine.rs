@@ -249,7 +249,7 @@ impl Machine {
     /// then stands for its address in the calls after.
     pub fn declare(&self, tid: Option<u32>, text: &str, known: JsValue) -> Result<JsValue, JsValue> {
         let tid = tid.or(k(|k| k.main.get())).ok_or("the program is not ready")?;
-        let d = tables().types.declare(text, &crate::replay::lookup(&known))?;
+        let d = tables().types.declare(text, &crate::replay::Known(&known))?;
         let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
         write_logged(addr, &d.bytes);
         let o = Object::new();
@@ -264,7 +264,7 @@ impl Machine {
     /// Whether `text` declares a variable (see declare): its name, or an
     /// error; nothing made.
     pub fn declaration(&self, text: &str, known: JsValue) -> Result<String, JsValue> {
-        Ok(tables().types.declare(text, &crate::replay::lookup(&known))?.name)
+        Ok(tables().types.declare(text, &crate::replay::Known(&known))?.name)
     }
 
     /// A program's variable (of type `ty`, an array of `count` if given, at
@@ -284,8 +284,26 @@ impl Machine {
     /// Set a program's variable (of type `ty`, an array of `count`, at
     /// `addr`: see declare) to `text`, a C literal ("hi", {3, 4},
     /// {.tv_sec = 1}); the host's writes there recorded, as a call's are.
+    /// Assignment `target = value` of the page's program (see
+    /// ksee_core::program::Statement::Assign): the memory `target` is (an
+    /// lvalue: a variable, a member, what a pointer points to) written with
+    /// `value` (an expression, or a C literal: "hi", {.fd = 3}), recorded;
+    /// what it holds then, as C writes it.
+    pub fn assign(&self, target: &str, value: &str, known: JsValue) -> Result<String, JsValue> {
+        let (types, env) = (&tables().types, crate::replay::Known(&known));
+        let (addr, ty) = ksee_core::program::lvalue(target, types, &env)?;
+        let bytes = if value.trim_start().starts_with(['{', '"']) {
+            types.assign(ty, None, value, &env)?
+        } else {
+            let v = ksee_core::program::value(value, Some(types), &env)?;
+            v.to_le_bytes()[..(types.size_of(ty) as usize).clamp(1, 8)].to_vec()
+        };
+        write_logged(addr, &bytes);
+        Ok(types.show(&Direct, addr, ty, None))
+    }
+
     pub fn set(&self, ty: u32, addr: u32, count: Option<u32>, text: &str, known: JsValue) -> Result<(), JsValue> {
-        let b = tables().types.assign(ty, count, text, &crate::replay::lookup(&known))?;
+        let b = tables().types.assign(ty, count, text, &crate::replay::Known(&known))?;
         write_logged(addr, &b);
         Ok(())
     }

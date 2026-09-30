@@ -319,10 +319,10 @@ async function runExample(ex) {
 for (const ex of examples) {
   const asked = await runExample(ex), missing = [], blocked = [];
   ex.steps.forEach((st, j) => {
-    if (!st.decl && !fin.get(asked[j])) blocked.push(`${j + 1}. ${st.call}`);
+    if (st.call && !fin.get(asked[j])) blocked.push(`${j + 1}. ${st.call}`);
   });
   // ([label](2:func:any): see examples.js; call 2, declarations not counted.)
-  const calls = asked.filter((_, j) => !ex.steps[j].decl);
+  const calls = asked.filter((_, j) => ex.steps[j].call);
   for (const [, n, func, any] of (ex.text ?? []).join(" ").matchAll(/\]\((\d+)(?::([\w.]+))?(:any)?\)/g)) {
     const s = syscallOf(calls[Number(n) - 1]);
     if (!s || (func && m.first_call(func, s.first, s.last ?? m.records() - 1, any ? undefined : s.task.addr) == null)) missing.push(`${n}:${func ?? ""}`);

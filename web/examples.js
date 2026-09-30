@@ -209,15 +209,16 @@ export async function examples(app) {
       const by = way.map((w) => w.at?.func ?? (w.from == null ? "the page" : "?")).join(" ← ");
       out.push(`${v.name} = ${m.show_at_cursor(v.ty, v.addr, v.count ?? undefined)}${way.length ? `, written by ${by}` : ""}`);
     }
-    for (const [n, x] of Object.entries(k)) if (words.has(n) && !t.vars.some((v) => v.name === n)) out.push(`${n} = ${x}`);
+    for (const [n, x] of Object.entries(k)) if (words.has(n) && !t.vars.some((v) => v.name === n)) out.push(`${n} = ${typeof x === "object" ? `0x${x.value.toString(16)}` : x}`);
     return out.length ? `At the cursor:\n${out.join("\n")}` : "";
   }
   // A step's line, as written:
   // `tid: name = call(args)`.
-  const text = (s) => s.raw ?? s.decl ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.type ? `${s.type}${s.type.endsWith("*") ? "" : " "}` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.join(", ")})`;
+  const text = (s) => s.raw ?? s.decl ?? (s.target != null ? `${s.tid != null ? `${s.tid}: ` : ""}${s.target} = ${s.value}` : null) ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.type ? `${s.type}${s.type.endsWith("*") ? "" : " "}` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.join(", ")})`;
   // How a call finished, or not yet.
   // (A variable: as it starts; each call's line says how it changed.)
   const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.initial ?? ""}`
+    : s?.target != null ? `→ ${d.shown}`
     : d.how == null ? "… blocked"
     : d.how === "exec" ? "(no return: the new program runs)"
     : d.how === "exited" ? "(no return: it exited)" : `= ${app.kernel.result(d.ret)}`;
@@ -252,7 +253,7 @@ export async function examples(app) {
     // (The calls still waiting at each line: their lanes, marked.)
     const waiting = (r) => t.steps.map((s, j) => [s, j]).filter(([s, j]) => {
       const d = t.done[j];
-      return j < r && d && !s.decl && (d.how == null || d.at > j) && (d.at == null || r <= d.at);
+      return j < r && d && s.call && (d.how == null || d.at > j) && (d.at == null || r <= d.at);
     }).map(([s]) => lanes.indexOf(laneOf(s)));
     t.list.replaceChildren(...t.steps.map((s, j) => {
       const d = t.done[j];
@@ -328,13 +329,18 @@ export async function examples(app) {
     try {
       r = await t.run.next();
     } catch (e) {
-      if (t.list === mine) t.status.textContent = `${s.decl ? "Line" : "Call"} ${j + 1}: ${e.message ?? e}`;
+      if (t.list === mine) t.status.textContent = `${s.call ? "Call" : "Line"} ${j + 1}: ${e.message ?? e}`;
       return false;
     }
     if (t.list !== mine) return false;
     // (A variable: as it starts.)
     if (r.decl) {
       r.decl.shown = r.decl.initial = r.decl.show();
+      draw();
+      return true;
+    }
+    // (An assignment: what it wrote, on its line.)
+    if (r.assigned != null) {
       draw();
       return true;
     }
@@ -360,7 +366,7 @@ export async function examples(app) {
   const syscall = (j) => t.done[j] && app.syscalls()[m.syscall_of(t.done[j].id)];
   // Call `j` picked: its recording selected.
   function pick(j) {
-    if (t.steps[j]?.decl) return mark(j);
+    if (!t.steps[j]?.call) return mark(j);
     const c = syscall(j);
     if (!c) return (t.status.textContent = t.done[j] ? "This call's recording is gone: the ring has moved on." : "");
     app.select(c);
