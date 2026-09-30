@@ -373,3 +373,11 @@ fn objects_expose_pointer_targets() {
     let c = o.children.unwrap();
     assert_eq!((c[0].value.as_deref(), c[1].value.as_deref(), c[1].target), (Some("7"), Some("0x8"), Some(2)));
 }
+
+#[test]
+fn a_member_of_size_0_is_not_shown() {
+    // struct s { int a; struct e {} e; }: the config left e empty, nothing in it.
+    let t = Tables::parse("U\n", "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t4\nM\t2\ta\t0\t0\t1\nM\t2\te\t32\t0\t3\nT\t3\tstruct\te\t0\n");
+    let o = t.types.object(&Mem(alloc::vec![0u8; 8]), "x", 0, 2, 1);
+    assert_eq!(o.children.unwrap().iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["a"]);
+}

@@ -40,7 +40,9 @@ impl Types {
                 if depth == 0 {
                     o.expand = Some(id);
                 } else {
-                    o.children = Some(self.members(&t.kind).iter().map(|m| {
+                    // (Not one of size 0: nothing in it, a struct its
+                    // config left empty, as rseq_data without CONFIG_RSEQ.)
+                    o.children = Some(self.members(&t.kind).iter().filter(|m| m.bit_size > 0 || self.size_of(m.ty) > 0).map(|m| {
                         let bits = (m.bit_size > 0).then_some((m.bit_offset % 8, m.bit_size));
                         self.object_bits(mem, &m.name, addr + m.bit_offset / 8, m.ty, bits, depth - 1)
                     }).collect());
@@ -67,7 +69,7 @@ impl Types {
                 });
                 let target = self.resolve(*to);
                 match self.get(target).kind {
-                    Kind::Struct(_) | Kind::Union(_) if p != 0 => o.target = Some(target),
+                    Kind::Struct(_) | Kind::Union(_) if p != 0 && self.size_of(target) > 0 => o.target = Some(target),
                     // (A pointer to a scalar: what it points to, in line: "0x7ffd8 → 0".)
                     Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_) if p != 0 && !self.is_string(*to) => {
                         let mut v = String::new();
