@@ -302,11 +302,6 @@ impl Machine {
         self.view(|v| to_js(&v.member_definition(ty, member)))
     }
 
-    /// The functions called `name` (view::Function).
-    pub fn functions(&self, name: &str) -> JsValue {
-        self.view(|v| to_js(&v.functions(name)))
-    }
-
     /// Every line of `file` where a block starts, with how often blocks
     /// there ran in syscall `n` (or the whole recording): [{ line, count }].
     pub fn file_coverage(&self, file: &str, n: Option<usize>) -> JsValue {

@@ -90,29 +90,20 @@ pub struct At {
     pub value: Option<i64>,
 }
 
-/// A function: where it is, from `line` to `last` (of its blocks in its
-/// own file).
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Function {
-    pub name: String,
-    pub file: String,
-    pub line: u32,
-    pub last: u32,
-    /// Only its call and returns are recorded (tables::Function::sealed).
-    pub sealed: bool,
-}
-
-/// Where a function is.
+/// Where something is declared (a function, a type, a global, a member);
+/// a function the recording has, to `last` (the last line of its blocks in
+/// its own file), and whether only its call and returns are recorded
+/// (tables::Function::sealed).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Place {
     pub name: String,
     pub file: String,
     pub line: u32,
+    pub last: Option<u32>,
+    pub sealed: bool,
 }
 
-/// A syscall: its parameters (as SYSCALL_DEFINE declares them).
 /// Value `v` as the constants whose names start with one of `prefixes`
 /// name it: one equal to it, or flags (one bit each) that make it up.
 fn constant_name(constants: &BTreeMap<String, i64>, prefixes: &[&str], v: i64) -> Option<String> {
@@ -426,7 +417,7 @@ impl View<'_> {
             return self.place(id);
         }
         let (file, line) = self.tables.types.declared.get(name)?;
-        Some(Place { name: name.to_string(), file: file.clone(), line: *line })
+        Some(Place { name: name.to_string(), file: file.clone(), line: *line, last: None, sealed: false })
     }
 
     /// Where member `member` of type `ty` (a struct or union, or a pointer
@@ -452,20 +443,10 @@ impl View<'_> {
 
     /// Function `id`: where it is.
     pub fn place(&self, id: u32) -> Option<Place> {
-        let f = self.tables.functions.get(&id)?;
-        Some(Place { name: f.name.clone(), file: self.tables.file(f.loc).to_string(), line: f.loc.line })
-    }
-
-    /// The functions called `name` (usually one).
-    pub fn functions(&self, name: &str) -> Vec<Function> {
         let t = self.tables;
-        t.functions.iter().filter(|(_, f)| f.name == name).map(|(&id, f)| Function {
-            name: f.name.clone(),
-            file: t.file(f.loc).to_string(),
-            line: f.loc.line,
-            last: t.blocks_of(id).filter(|(_, l)| l.file == f.loc.file).map(|(_, l)| l.line).fold(f.loc.line, u32::max),
-            sealed: f.sealed,
-        }).collect()
+        let f = t.functions.get(&id)?;
+        let last = t.blocks_of(id).filter(|(_, l)| l.file == f.loc.file).map(|(_, l)| l.line).fold(f.loc.line, u32::max);
+        Some(Place { name: f.name.clone(), file: t.file(f.loc).to_string(), line: f.loc.line, last: Some(last), sealed: f.sealed })
     }
 
     /// The lines of `file` that code ran, in syscall `n` (or the whole

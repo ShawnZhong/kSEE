@@ -74,7 +74,7 @@ export function source(app) {
   // first lines, for a hover; null if none.
   async function declaration(text, k) {
     const e = exprAt(text, k), w = e && text.slice(e.at, e.end);
-    const d = w && !m.functions(w).length && definition(e, w);
+    const d = w && m.definition(w)?.last == null && definition(e, w);
     if (!d) return null;
     const src = await fetchFile(d.file);
     if (!src) return null;
@@ -206,7 +206,7 @@ export function source(app) {
       return d && { file: d.file, line: d.line, func: null };
     }
     const d = m.definition(word);
-    return d && { file: d.file, line: d.line, func: m.functions(word).length ? word : null };
+    return d && { file: d.file, line: d.line, func: d.last != null ? word : null };
   }
   // Go to the definition of the name at `pos` of the shown file (a
   // function: its source, with the lines that ran; else the file, at the
@@ -310,8 +310,8 @@ export function source(app) {
   // Function `name` (the lines that ran: in syscall `syscall`), in `file`
   // (a block's own, when it is inlined from a header) at line `focus`.
   function showFunction(name, syscall, focus, file) {
-    const [f] = m.functions(name);
-    if (!f) return;
+    const f = m.definition(name);
+    if (f?.last == null) return;
     v.fn = f;
     v.syscall = syscall;
     showFile(file ?? f.file, focus);

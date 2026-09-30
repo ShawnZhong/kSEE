@@ -68,7 +68,7 @@ const sel = await line("pselect6(0, NULL, NULL, NULL, {1, 0}, NULL)");
 check("a 1 s select() times out", sel.how === "returned" && sel.ret === 0);
 m.snapshot();
 const wi = m.syscalls().findIndex((s) => s.first === w.first);
-const [vfs] = m.functions("vfs_write");
+const vfs = m.definition("vfs_write");
 check("vfs_write: where it is", vfs?.file === "fs/read_write.c" && vfs.last > vfs.line);
 {
   const mk = m.syscalls().find((s) => s.name === "mkdirat"), cs = mk ? m.objects(mk.first, mk.last) : [];
@@ -103,7 +103,7 @@ check("and a row of its own in the chart", inlinedRows > 0);
 }
 const mid = steps.find((x) => x.func === "vfs_write").i;
 const stack = m.call_stack(mid);
-const kw = stack.find((f) => f.func === "ksys_write"), kwDef = m.functions("ksys_write")[0];
+const kw = stack.find((f) => f.func === "ksys_write"), kwDef = m.definition("ksys_write");
 check("an outer call is where it calls the next one in", kw?.file === "fs/read_write.c" && kw.line > kwDef.line);
 check("a past call stack, with arguments", stack[0]?.func === "vfs_write" && kw?.args?.find((a) => a.name === "count")?.value === "11");
 check("memory as it was: writes undone", m.memory_at(w.first) > m.memory_at(w.last));
@@ -242,7 +242,7 @@ check("a bad user pointer: EFAULT", (await line("write(1, 0x1000, 4)")).ret === 
 }
 check("definitions: a function, a type, a global", m.definition("vfs_write")?.file === "fs/read_write.c"
       && m.definition("task_struct")?.file === "include/linux/sched.h" && m.definition("runqueues")?.line > 0 && m.definition("no_such") == null
-      && m.definition("list_add")?.file === "include/linux/list.h" && !m.functions("list_add").length);
+      && m.definition("list_add")?.file === "include/linux/list.h" && m.definition("list_add").last == null);
 check("a field's declaration: file.f_pos, by its struct (or a pointer to it), or of the one struct with it; not of many",
       m.definition("file.f_pos")?.file === "include/linux/fs.h" && m.member_definition(file.id, "f_pos")?.file === "include/linux/fs.h"
       && m.member_definition(undefined, "f_pos")?.file === "include/linux/fs.h" && m.member_definition(undefined, "next") == null);
