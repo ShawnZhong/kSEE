@@ -236,17 +236,13 @@ export function app(m) {
     showLine(step);
     return true;
   }
-  // Go to the call from record `first`: its call site, as a debugger stops
-  // before stepping in: the cursor at the call's first record, the
-  // caller's frame selected (the source shows the calling line, the Stack
-  // has the callee with its arguments on top); → or ↑ then enters it.
-  // (Inlined code, no call: the cursor at its first record.)
+  // Go to the call from record `first`: in it, at its first line, the
+  // function a link names the one selected on the Stack (the innermost
+  // there), with its arguments; the source there. (Inlined code: its first
+  // record.)
   a.goCall = (first) => {
-    time.go(first);
-    const frames = stack.frames(), k = frames.findIndex((f) => f.first === first && !f.inlined);
-    const caller = k >= 0 ? frames[k + 1] : null;
     setLevel(null);
-    if (caller) a.selectFrame(caller, false);
+    time.go(first);
   };
   // Show line `step` (see Machine.line_steps): the cursor at its record.
   // (The cursor, and memory, just before it runs, `at`; the Stack at its
@@ -313,7 +309,7 @@ export function app(m) {
   $("step-fwd").onclick = () => step(1);
   const climb = (dir) => {
     // (A row from the level, else the call selected on the Stack if not the
-    // innermost (a link's call site), else all (one past the innermost): ↓
+    // innermost (a click on a caller's row), else all (one past the innermost): ↓
     // the one below, as deep as the Stack is now at most; ↑ the one above,
     // past the innermost all, every line.)
     const frames = stack.frames(), rows = frames.length, sel = stack.level();

@@ -9,22 +9,20 @@
   r.first = [pick.selectedOptions[0]?.textContent, line(lis()[0])];
   r.examples = pick.options.length;
   r.calls = lis().map(line);
-  // The explanation's links, each gone to: the function's call site (the caller's line; the call on top of the Stack).
+  // The explanation's links, each gone to: in the function, at its first line, the one selected (on top of the Stack).
   r.notes = [];
   const places = [...document.querySelectorAll(".explain a.place")];
   for (const [k, a] of places.entries()) {
     a.click();
     await sleep(300);
     r.notes.push([a.textContent, $("where").textContent.slice(0, 60), document.querySelector("#stack tr.frame")?.innerText.trim().split(/\s/)[0]]);
-    // (The first, ksys_read's call site: its caller's line, its names the caller's, not a global's.)
+    // (The first, in ksys_read: its first line's values, its arguments, not a global's.)
     if (k === 0) r.site = document.querySelector(".cm-editor .values")?.textContent;
     if (k === 0 && !/count = 64/.test(r.site ?? "")) throw new Error("the call site's values: " + JSON.stringify(r.site));
     if (k === 1) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
     if (k === 1) r.args = [...document.querySelectorAll("#stack tr")].slice(0, 3).map((f) => f.innerText.replace(/\s+/g, " ").trim());
     if (a.textContent === "vfs_read") {
-      // (The link lands at the call site, in ksys_read; ↑ enters vfs_read.)
-      dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
-      await sleep(300);
+      // (The link lands in vfs_read.)
       r.hover = await ksee.src.hoverAt("file->f_mode & FMODE_READ", "f_mode");
       // (The cursor's line, in vfs_read, carries its values at its end.)
       r.values = document.querySelector(".cm-editor .values")?.textContent;
@@ -34,7 +32,7 @@
     }
   }
   if (!r.decl?.startsWith("include/linux/fs.h:") || !r.decl.includes("struct kiocb {")) throw new Error("no declaration on hover: " + JSON.stringify(r.decl));
-  if (r.notes.length < 3 || !r.notes.some(([n, w, top]) => n === "vfs_read" && top === "vfs_read" && w.includes("ksys_read")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
+  if (r.notes.length < 3 || !r.notes.some(([n, w, top]) => n === "vfs_read" && top === "vfs_read" && w.includes("· vfs_read ")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
   // Run to a line (the source's F4): the line where the cursor is, its next run
   // (stepping on until a line that does run again), from the explanation's first link.
   document.querySelector(".explain a.place")?.click(); await sleep(300);
@@ -64,9 +62,9 @@
   const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
   const press = (key) => dispatchEvent(new KeyboardEvent("keydown", { key }));
   const frames = () => [...document.querySelectorAll("#stack tr.frame")].map((f) => f.innerText.trim().split("\n")[0].slice(0, 28));
-  if (ksee.level() != null) throw new Error("a link's call site: a level " + JSON.stringify(ksee.level()));
-  press("ArrowUp"); // (into ksys_read: the innermost, selected: its level)
-  if (ksee.level()?.func !== "ksys_read") throw new Error("↑: the level ksys_read's, not " + JSON.stringify(ksee.level()));
+  if (ksee.level() != null) throw new Error("a link: a level " + JSON.stringify(ksee.level()));
+  press("ArrowDown"); // (from all, the innermost's level: ksys_read's, the link's)
+  if (ksee.level()?.func !== "ksys_read") throw new Error("↓: the level ksys_read's, not " + JSON.stringify(ksee.level()));
   const d0 = depthNow(), trail = [[$("where").textContent, frames()]];
   document.querySelector("#level a").click(); // (every line)
   for (let k = 0; k < 200 && depthNow() <= d0; k++) press("ArrowRight");

@@ -39,8 +39,8 @@ happens in read()?", "What is a directory?", …), a program of syscalls that
 asks it, and an explanation: the program (or a thread or child of it) makes
 the calls as the example opens, each recorded, and the explanation's
 links lead into the recording: a function one of the calls runs (the
-cursor at its call: the source, and the Stack with each call's
-arguments and locals, as they were), or a call. Two pairs of keys
+cursor in it, at its first line, it selected on the Stack: the source, and
+its arguments and locals, as they were), or a call. Two pairs of keys
 explore it: ← → step in time, to the next line run at the level (that
 deep or shallower: what the calls there make is stepped over; the
 caller's lines, and the siblings' at the level, are not; with no level,
