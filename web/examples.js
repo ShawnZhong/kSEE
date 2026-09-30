@@ -1,5 +1,7 @@
-// The examples, one at a time: a selector (and ◀ ▶) switches, each on a
-// fresh kernel (the kernel starts again, the page stays); the URL says
+// The examples, one at a time, as a course's lessons: a chapter, a title,
+// a question, the explanation, then the example before and the next by
+// name; the contents (Examples) lists them all, ◀ ▶ step through them;
+// each on a fresh kernel (the kernel starts again, the page stays); the URL says
 // which (#ex=NAME). An example is a question about the kernel, a program
 // that asks it (user/examples/*.json: syscalls, one after the other), and
 // its explanation: paragraphs of text with links into the recording.
@@ -103,24 +105,51 @@ export async function examples(app) {
     t.list = el("ol", { className: "steps" });
     t.lanes = el("div", { className: "laneheads", hidden: true });
     t.forms = new Map(); // (each lane's line to add a call: see draw)
-    const k = list.indexOf(ex);
-    // (Grouped by their `group`, in order: Start here, Files, ...)
-    const groups = [...new Set(list.map((x) => x.group ?? ""))];
-    const pick = el("select", { className: "pick", title: "the examples (each on a fresh kernel)", onchange: () => go(list[pick.selectedIndex]) },
-      ...groups.map((g) => el("optgroup", { label: g }, ...list.filter((x) => (x.group ?? "") === g)
-        .map((x) => el("option", { textContent: x.title, selected: x === ex })))));
-    // (The examples' navigation: in the panel's title.)
-    $("ex-head").replaceChildren(el("b", { textContent: "kSEE" }),
-      el("button", { textContent: "◀", title: "the example before", disabled: k <= 0, onclick: () => go(list[k - 1]) }), pick,
-      el("button", { textContent: "▶", title: "the next example", disabled: k < 0 || k + 1 >= list.length, onclick: () => go(list[k + 1]) }));
+    const k = list.indexOf(ex), before = list[k - 1], after = list[k + 1];
+    seen(ex);
+    // (The page's name; the contents, and the examples before and after.)
+    $("ex-head").replaceChildren(el("b", { textContent: "kSEE" }), el("span", { className: "dim tag", textContent: "watch the Linux kernel run" }),
+      el("button", { className: "contents", textContent: "Examples", title: "every example, in order", onclick: () => contents(!t.menu) }),
+      el("button", { textContent: "◀", title: before ? `before: ${before.title}` : "", disabled: !before, onclick: () => go(before) }),
+      el("button", { textContent: "▶", title: after ? `next: ${after.title}` : "", disabled: !after, onclick: () => go(after) }));
+    contents(false);
+    // (Where it is in its chapter: "Start here · 1 of 4".)
+    const chapter = list.filter((x) => x.group === ex.group);
     t.form = form();
     $("examples").replaceChildren(
+      el("div", { className: "crumb" }, `${ex.group ?? ""} · ${chapter.indexOf(ex) + 1} of ${chapter.length}`),
+      el("h1", { className: "lesson", textContent: ex.title }),
       ex.question ? el("div", { className: "q", textContent: ex.question }) : null,
-      t.text, el("div", { className: "ptitle dim" }, "Program", el("a", { textContent: "↺ reset",
+      t.text,
+      // (Then on: the example before, the next, by name.)
+      el("div", { className: "pager" },
+        before ? el("a", { className: "before", textContent: `← ${before.title}`, onclick: () => go(before) }) : null,
+        after ? el("a", { className: "after", textContent: `Next: ${after.title} →`, onclick: () => go(after) }) : null),
+      el("div", { className: "ptitle dim" }, "Program", el("a", { textContent: "↺ reset",
         title: "the example's own program again, on a fresh kernel (yours is in the URL until then)", onclick: () => go(ex) })), el("div", { className: "program" }, t.lanes, t.list), t.status);
     draw();
     explain();
   }
+
+  // The contents: every example, by chapter, in order, over the panel (the
+  // one open marked, those opened before ticked); shown or not.
+  function contents(show) {
+    t.menu?.remove();
+    t.menu = null;
+    if (!show) return;
+    const groups = [...new Set(list.map((x) => x.group ?? ""))];
+    t.menu = el("nav", { className: "lessons" }, ...groups.flatMap((g) => [el("h3", { textContent: g }),
+      ...list.filter((x) => (x.group ?? "") === g).map((x) => el("a", {
+        className: [x === t.ex ? "on" : "", was.has(x.name) ? "seen" : ""].join(" ").trim(), textContent: x.title,
+        onclick: () => (x === t.ex ? contents(false) : go(x)) }))]));
+    $("side").append(t.menu);
+  }
+  // The examples opened before, by name (this browser's, kept in localStorage).
+  const was = new Set((() => { try { return JSON.parse(localStorage.getItem("ksee.seen") ?? "[]"); } catch { return []; } })());
+  const seen = (ex) => {
+    was.add(ex.name);
+    try { localStorage.setItem("ksee.seen", JSON.stringify([...was])); } catch { /* not kept */ }
+  };
 
   // The kernel is up: make the calls, all of them; then the explanation's
   // links lead into the recording, the cursor at the first.

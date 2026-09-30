@@ -5,9 +5,16 @@
     const r = {};
   // (All its calls made, the cursor at the explanation's first link.)
   await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".explain a.place.on"));
-  const pick = document.querySelector("#ex-head select");
-  r.first = [pick.selectedOptions[0]?.textContent, line(lis()[0])];
-  r.examples = pick.options.length;
+  r.first = [document.querySelector("#examples h1.lesson")?.textContent, line(lis()[0])];
+  // (The contents: every example, the one open marked.)
+  document.querySelector("#ex-head .contents").click();
+  r.examples = document.querySelectorAll("nav.lessons a").length;
+  // (The lesson ends with the example before and the next, by name, as the contents order them.)
+  const titles = [...document.querySelectorAll("nav.lessons a")].map((a) => a.textContent), lesson = titles.indexOf(r.first[0]);
+  r.pager = [...document.querySelectorAll(".pager a")].map((a) => a.textContent);
+  if (document.querySelector("nav.lessons a.on")?.textContent !== r.first[0] || r.pager.join("|") !== `← ${titles[lesson - 1]}|Next: ${titles[lesson + 1]} →`)
+    throw new Error("the contents: " + JSON.stringify(r));
+  document.querySelector("#ex-head .contents").click();
   r.calls = lis().map(line);
   // The explanation's links, each gone to: in the function, at its first line, the one selected (on top of the Stack).
   r.notes = [];
@@ -251,11 +258,10 @@
   input.value = 'openat(AT_FDCWD, "/mnt/mine", O_CREAT | O_WRONLY, 0644)'; key("Enter");
   await until(() => document.querySelectorAll("ol.steps > li.done").length > had);
   r.mine = line(lis().at(-1));
-  // Another example, from the selector: on a fresh kernel, the page staying.
+  // Another example, from the contents: on a fresh kernel, the page staying.
   window.stayed = true;
-  const sel = document.querySelector("#ex-head select");
-  sel.selectedIndex = [...sel.options].findIndex((o) => o.textContent.includes("directory"));
-  sel.dispatchEvent(new Event("change"));
+  document.querySelector("#ex-head .contents").click();
+  [...document.querySelectorAll("nav.lessons a")].find((a) => a.textContent.includes("directory")).click();
   await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".explain a.place.on"));
   r.switched = [location.hash, window.stayed, line(lis()[1])];
   // (Its first line declares its buffer; its first call is mkdirat.)

@@ -1,12 +1,12 @@
 {
-  "title": "Start here: what does the smallest syscall do?",
+  "title": "What does the smallest syscall do?",
   "group": "Start here",
   "question": "umask(077) sets the mask new files are made with, and returns the old one. What does it take?",
   "text": [
     "`umask(077)` is about the smallest syscall there is: one number in, one number back, one field of the kernel's changed. kSEE recorded everything the kernel did for that one call, and this page is that recording. The timeline above shows the calls the kernel made, one bar each, the deepest on top; the source below shows the line the cursor is at, with the lines that ran in green; the Stack on the right shows the calls that led there, with their arguments as they were.",
     "1. [wasm_syscall](1:wasm_syscall) is the way in, for every syscall: it saves the call's number and arguments in the task's registers (`regs`), then calls the syscall table's entry for umask's number.",
     "2. [__wasm_sys_umask](1:__wasm_sys_umask) is the whole syscall, one line: `xchg(&current->fs->umask, mask & S_IRWXUGO)` swaps the new mask (its permission bits only) into the task's `fs_struct`, and gives back the old one, which the call returns.",
-    "3. [What it changed](1:__wasm_sys_umask:objects): the task's `fs_struct`, its `umask` from 18 to 63: 022 to 077 in octal, as C writes modes (read, write, execute for the owner, the group, the others: 3 bits each). That is all: the next file this program makes has no permissions for the group or others.",
+    "3. [What it changed](1:__wasm_sys_umask:objects): the task's `fs_struct`, its `umask`, from 18 to 63. Those are 022 and 077 in octal, as C writes modes: the leading 0 means octal, so 077 is 7 × 8 + 7 = 63. Each octal digit is 3 bits (read, write, execute) for the owner, the group and the others; a bit set in the mask is taken away from a new file's mode. So after this, the program's new files have no permissions for the group or others.",
     "Now step with ◀ ▶ (or ← →), a line at a time, forwards or back; hover a name in the source for its value.",
     "Try: [twice](try:1): the second call returns what the first set."
   ],

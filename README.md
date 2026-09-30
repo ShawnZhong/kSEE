@@ -34,9 +34,12 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
     ./ksee.sh type task_struct
 
 The page boots the kernel and opens the first example (or the one in the
-URL, `#ex=read`); the selector above it, and ◀ ▶, switch examples, each on
-a fresh kernel (the page starts again), so that each starts from the same
-state. An **example** (on the left) is a question about the kernel ("What
+URL, `#ex=read`), as a course's lesson: its chapter and place ("Start
+here · 1 of 4"), its title, the question, the explanation, then the
+example before and the next by name. Examples (above it) lists them all
+by chapter, those opened before ticked; it, ◀ ▶ and the next's name
+switch examples, each on a fresh kernel (the page starts again), so that
+each starts from the same state. An **example** (on the left) is a question about the kernel ("What
 happens in read()?", "What is a directory?", …), a program of syscalls that
 asks it, and an explanation: the program (or a thread or child of it) makes
 the calls as the example opens, each recorded, and the explanation's
@@ -166,7 +169,7 @@ program, its lines as the page writes them out (`"int fd = openat(AT_FDCWD,
 \"/note.txt\", O_RDONLY)"`, `"char buf[64]"`, `"child: dup3(fds[0], 0,
 0)"`: a call, its result named and typed as C declares it, or a variable
 declared; `child:` the runner that makes it, a thread id or a result's
-name, else the program), and a `group` (the selector's: "Start here", "Files,
+name, else the program), and a `group` (its chapter: "Start here", "Files,
 in memory", "Files on ext4", "Time", "Threads and processes"; the order is
 `EXAMPLES` in crates/ksee-cli/src/build.rs). A call's arguments are
 written as in C: `AT_FDCWD`, `O_CREAT | O_WRONLY` (the kernel's own

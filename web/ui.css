@@ -144,11 +144,26 @@ tr.later { opacity: 0.45; }
 /* A value's writes, and what a call changed: rows under the value, the call */
 
 /* The sidebar: the examples' selector, in its title */
-#ex-head { gap: 4px; align-items: center; padding: 4px 8px; }
-#ex-head b { font-size: 14px; color: var(--fg); margin-right: 4px; }
-#ex-head select { flex: 1; min-width: 0; font-weight: 600; padding: 2px 4px; }
+#ex-head { gap: 4px; align-items: center; padding: 4px 8px 4px 12px; }
+#ex-head b { font-size: 14px; color: var(--fg); }
+#ex-head .tag { font-weight: 400; margin-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#ex-head .contents { margin-left: auto; }
 #ex-head button { padding: 1px 8px; }
-#examples > .q { color: var(--dim); padding: 8px 12px 0; }
+/* A lesson: its chapter and place, its title, its question; the example before and the next */
+#examples > .crumb { padding: 10px 12px 0; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
+#examples > h1.lesson { margin: 2px 12px 0; font-size: 17px; line-height: 1.3; font-weight: 600; }
+#examples > .q { color: var(--dim); padding: 6px 12px 0; }
+.pager { display: flex; gap: 12px; margin: 4px 12px 10px; font-size: 12px; }
+.pager .after { margin-left: auto; text-align: right; font-weight: 600; }
+/* The contents: every example, by chapter, over the panel */
+#side { position: relative; }
+nav.lessons { position: absolute; top: 33px; left: 0; right: 0; bottom: 0; z-index: 10; overflow-y: auto; background: var(--panel);
+              border-top: 1px solid var(--line); padding: 4px 0 12px; box-shadow: 0 6px 16px rgb(0 0 0 / .12); }
+nav.lessons h3 { margin: 12px 12px 2px; font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
+nav.lessons a { display: block; position: relative; padding: 4px 12px 4px 30px; color: var(--fg); }
+nav.lessons a:hover { background: var(--sel); text-decoration: none; }
+nav.lessons a.on { background: var(--sel); font-weight: 600; }
+nav.lessons a.seen::before { content: "✓"; position: absolute; left: 13px; color: var(--run); }
 .tstatus { padding: 4px 12px; font-size: 12px; border-bottom: 1px solid var(--line); }
 .tstatus:empty { display: none; }
 
