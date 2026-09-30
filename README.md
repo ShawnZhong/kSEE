@@ -23,7 +23,7 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
   serve; pack the kernel for the page)
 - `web/`: the page (HTML, JS, CSS); the build puts it, with what it loads,
   in `target/site/` (served, and deployed)
-- `user/`: `init.c` (sets up, starts the program), `prog.c` (the page's program: it makes its syscalls; C on nolibc), `examples/`
+- `user/`: `init.c` (sets up, starts the program), `prog.c` (the page's program: it makes its syscalls), `syscall.h` (a syscall, as arch/wasm makes one: no C library), `examples/`
 - `tests/`: the page's tests (see below)
 
 ## Running

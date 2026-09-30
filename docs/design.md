@@ -65,7 +65,7 @@ SMP, no fork (threads and vfork, though): see Limits).
 
 ```text
 linux/ (arch/wasm) ──clang + plugin──▶ vmlinux (wasm) ──────┐
-user/ (/init, the program: C on nolibc; examples) ─▶ initramfs ┼─▶ site ─▶ browser
+user/ (/init, the program: plain C; examples)  ─▶ initramfs ┼─▶ site ─▶ browser
 crates/ksee-runtime (Rust → wasm) ──────────────────────────┘
 ```
 

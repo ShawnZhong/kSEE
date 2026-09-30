@@ -89,11 +89,11 @@ pub fn build() {
             .unwrap_or_else(|e| crate::fail(&format!("target/vmlinux: {e}")));
         gzip("target/vmlinux", &format!("{SITE}/vmlinux.gz"));
     }
-    // The programs (/init, /bin/prog) use nolibc, with the kernel's UAPI headers.
+    // The programs (/init, /bin/prog): plain C, no C library (their syscalls:
+    // user/syscall.h), with the kernel's UAPI headers.
     run(&mut kmake(&["headers"]));
     let programs = ["init", "prog"];
-    let inputs = ["user/init.c", "user/prog.c", "user/initramfs.list", "linux/usr/gen_init_cpio",
-                  "linux/tools/include/nolibc/arch-wasm.h"];
+    let inputs = ["user/init.c", "user/prog.c", "user/syscall.h", "user/initramfs.list", "linux/usr/gen_init_cpio"];
     let dir = "target/initramfs";
     let cpio_out = format!("{dir}/initramfs.cpio");
     if stale(&cpio_out, &inputs) {
@@ -103,8 +103,8 @@ pub fn build() {
             run(Command::new(format!("clang{llvm}"))
                 // (Position-independent, in the kernel's memory: see binfmt_wasm.c.)
                 .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-fPIC", "-Wl,-pie",
-                       "-Wl,--experimental-pic", "-Wl,--import-memory", "-Wl,--no-entry", "-Wl,--export=_start",
-                       "-nostdinc", "-isystem", "linux/tools/include/nolibc", "-isystem", "linux/usr/include",
+                       "-Wl,--experimental-pic", "-Wl,--import-memory", "-Wl,--no-entry",
+                       "-nostdinc", "-isystem", "linux/usr/include",
                        "-o", &format!("{dir}/{p}.wasm"), &format!("user/{p}.c")]));
         }
         // A file in the (in-memory) root, for the examples: /note.txt.

@@ -3,8 +3,7 @@
 Linux 7.2 compiled to WebAssembly, with nothing emulated: `linux/arch/wasm`
 (submodule, branch `wasm`) is a minimal architecture port, and almost
 everything else is the generic kernel. Outside arch/wasm the port changes
-five files, 78 lines (build scripts, the initramfs's alignment, and nolibc's
-`arch-wasm.h` for the programs).
+three files, 28 lines (build scripts, and the initramfs's alignment).
 
 The configuration: wasm32, `CONFIG_MMU=n`, one CPU, `PREEMPT_NONE`, an
 initramfs, a console (output), a timer; the block layer, the loop
@@ -126,7 +125,7 @@ thread-local storage. Futexes are the kernel's own
 
 ## /init, the program, and the runners
 
-There are two programs (C on nolibc). **/init** (user/init.c) sets up:
+There are two programs (plain C, no C library: user/syscall.h makes their syscalls, a call to the kernel's syscall export). **/init** (user/init.c) sets up:
 it mounts devtmpfs and the disk, then starts **/bin/prog** (user/prog.c)
 as its vfork child, waits for it, and starts it again when it exits. The
 program is the page's: a process as any (not pid 1), it makes the
