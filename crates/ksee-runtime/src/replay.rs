@@ -69,10 +69,9 @@ impl Machine {
     }
 
     /// The calls of function `name` in records `first..=last`: each call's
-    /// first record.
+    /// first record (see Recording::calls: code inlined from it too).
     pub fn calls_of(&self, name: &str, first: usize, last: usize) -> Vec<u32> {
-        let ids: Vec<u32> = tables().functions.iter().filter(|(_, f)| f.name == name).map(|(&id, _)| id).collect();
-        ksee_core::stack::calls_of(&self.rec.borrow().records, first, last, &ids).into_iter().map(|i| i as u32).collect()
+        self.rec.borrow().calls(tables(), name, first, last, None).map(|i| i as u32).collect()
     }
 
     /// Where the call from record `first` ends (its return), or None if it

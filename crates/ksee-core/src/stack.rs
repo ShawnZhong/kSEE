@@ -233,19 +233,18 @@ impl Calls {
         columns.iter().filter(|&&i| i < tasks.len()).map(|&i| (i, tasks[i], self.stack_at(t, i, None))).collect()
     }
 
-    /// The source lines run in records `from..=to` (of task `task`, or
-    /// any), in order: each block's lines up to its first call, then, as
+    /// The source lines task `task` ran in records `from..=to`, in order: each block's lines up to its first call, then, as
     /// each call returns, the lines up to the next (tables::Block). The
     /// same line twice in a row counts once.
     pub fn lines(&self, t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
-                 task: Option<u32>) -> Vec<LineStep> {
+                 task: u32) -> Vec<LineStep> {
         let mut out: Vec<LineStep> = Vec::new();
         // (How often each call entered each block so far: in a call, a block
         // runs again only in a loop, so its lines' turn.)
         let mut runs: BTreeMap<(u32, u32), u32> = BTreeMap::new();
         for i in from..=to.min(records.len().saturating_sub(1)) {
             let tk = tasks[i];
-            if task.is_some_and(|x| x != tk) {
+            if tk != task {
                 continue;
             }
             let Some((p, steps)) = self.stretch(t, i) else { continue };
@@ -347,13 +346,6 @@ pub struct LineStep {
 }
 
 
-/// The calls of any of `funcs` in records `from..=to`: each call's first
-/// record (its block 0), in order.
-pub fn calls_of(records: &[Record], from: usize, to: usize, funcs: &[u32]) -> Vec<usize> {
-    let to = to.min(records.len().saturating_sub(1));
-    (from..=to).filter(|&i| matches!(records[i], Record::Block { func, n: 0 } if funcs.contains(&func))).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,7 +359,7 @@ mod tests {
         Calls::new(&t, records, tasks).stack_at(&t, at, None).into_iter().map(|c| c.func).collect()
     }
 
-    fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: Option<u32>) -> Vec<LineStep> {
+    fn lines(t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize, task: u32) -> Vec<LineStep> {
         Calls::new(t, records, tasks).lines(t, records, tasks, from, to, task)
     }
 
@@ -390,18 +382,18 @@ mod tests {
         let t = crate::tables::Tables::parse(
             "U\nP\t0\tf.c\nP\t1\tg.c\nL\t1\t0\t0:1;:2;|;:3\nL\t2\t0\t1:10\n", "");
         let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 0 }, Record::Return { func: 1, value: 0 }];
-        let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| (s.loc.line, s.record, s.depth)).collect();
+        let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, 7).iter().map(|s| (s.loc.line, s.record, s.depth)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (10, 1, 1), (3, 2, 0)]);
         // g's line and f's last are where they return (both 0 here: 7, 9).
         let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 7 }, Record::Return { func: 1, value: 9 }];
-        let got = lines(&t, &r, &[7; 4], 0, 3, None);
+        let got = lines(&t, &r, &[7; 4], 0, 3, 7);
         assert_eq!(got.iter().map(|s| s.ret).collect::<Vec<_>>(), [None, None, Some(7), Some(9)]);
         // f's line 2 made the call to g: it says g returned 7.
         assert_eq!(got.iter().map(|s| s.callee.map(|(f, v, _)| (f, v))).collect::<Vec<_>>(), [None, Some((2, 7)), None, None]);
         // A loop: f's block 1 (lines 5, 6) three times; each turn counted.
         let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nL\t1\t0\t0:1\nL\t1\t1\t0:5;:6\n", "");
         let r = [b(1, 0), b(1, 1), b(1, 1), b(1, 1)];
-        let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, None).iter().map(|s| (s.loc.line, s.run)).collect();
+        let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, 7).iter().map(|s| (s.loc.line, s.run)).collect();
         assert_eq!(got, [(1, 1), (5, 1), (6, 1), (5, 2), (6, 2), (5, 3), (6, 3)]);
     }
 
@@ -416,7 +408,7 @@ mod tests {
             "U\nP\t0\tf.c\nP\t1\tg.c\nL\t1\t0\t0:1;:2;:3;|;:4\nL\t2\t0\t1:10\n", "");
         let st = |line| Record::Store { addr: 8, size: 4, old: Some(0), line, from: None };
         let r = [b(1, 0), st(1), st(1), b(2, 0), Record::Return { func: 2, value: 0 }, st(3), Record::Return { func: 1, value: 0 }];
-        let got: Vec<_> = lines(&t, &r, &[7; 7], 0, 6, None).iter().map(|s| (s.loc.line, s.record, s.at)).collect();
+        let got: Vec<_> = lines(&t, &r, &[7; 7], 0, 6, 7).iter().map(|s| (s.loc.line, s.record, s.at)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (3, 0, 2), (10, 3, 3), (4, 4, 4)]);
         // A store is on its line (the block's third item, line 4, after the call); the
         // stack there has f at line 4, and at g, f where it calls g (line 3).
@@ -461,13 +453,6 @@ mod tests {
         let got: Vec<_> = Calls::new(&t, &r, &tasks).chart(&t, &tasks, &[1, 2, 4, 9]).into_iter()
             .map(|(i, task, calls)| (i, task, calls.iter().map(|c| c.func).collect::<Vec<_>>())).collect();
         assert_eq!(got, [(1, 7, alloc::vec![1, 2]), (2, 8, alloc::vec![3]), (4, 7, alloc::vec![1])]);
-    }
-
-    #[test]
-    fn calls_of_a_function_are_its_entries() {
-        let r = [b(1, 0), b(2, 0), b(2, 1), b(1, 1), b(2, 0)];
-        assert_eq!(calls_of(&r, 0, 4, &[2]), [1, 4]);
-        assert_eq!(calls_of(&r, 2, 4, &[2]), [4]);
     }
 
     #[test]

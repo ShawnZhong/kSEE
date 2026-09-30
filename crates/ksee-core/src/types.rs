@@ -224,7 +224,7 @@ impl Types {
     /// The errno name of `n` (a failed call's result is -n): ENOENT for 2.
     pub fn errno(&self, n: i64) -> Option<&str> {
         let is = |k: &str| k.strip_prefix(crate::arch::ERRNO).is_some_and(|r| !r.is_empty() && r.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
-        (1..4096).contains(&n).then(|| self.constants.iter().find(|&(k, &v)| v == n && is(k)).map(|(k, _)| k.as_str())).flatten()
+        (1..=crate::arch::MAX_ERRNO).contains(&n).then(|| self.constants.iter().find(|&(k, &v)| v == n && is(k)).map(|(k, _)| k.as_str())).flatten()
     }
 
     /// A struct, union, enum or typedef by name ("task_struct").

@@ -55,6 +55,9 @@ pub const RECORD_LENGTHS: &[&str] = &["d_reclen"];
 /// The errno names among the UAPI constants (errno-base.h's and errno.h's:
 /// ENOENT, EEXIST): what a failed call's -errno is called.
 pub const ERRNO: &str = "E";
+/// The largest errno (include/linux/err.h's MAX_ERRNO): a result from -1
+/// down to -MAX_ERRNO is an error.
+pub const MAX_ERRNO: i64 = 4095;
 
 /// The types that hold flags, printed in hex (`*`: a name's end).
 pub const FLAG_TYPES: &[&str] = &["fmode_t", "gfp_t", "*flags_t"];

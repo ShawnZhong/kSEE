@@ -15,6 +15,7 @@ pub struct Node {
     pub ty: String,
     pub id: u32,
     pub addr: u32,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub size: u32,
     pub changes: Vec<Diff>,
     #[cfg_attr(feature = "serde", serde(skip))]
