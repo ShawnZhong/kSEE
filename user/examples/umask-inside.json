@@ -1,6 +1,5 @@
 {
   "title": "Stepping through a syscall",
-  "group": "Start here",
   "question": "What did the kernel run for umask(077), line by line?",
   "text": [
     "The same call, from the inside. Step with ◀ ▶ under the timeline (or ← →), a line at a time, forwards or back; hover a name in the source for its value; click a bar in the timeline to go there.",

@@ -1,6 +1,5 @@
 {
   "title": "What is a file descriptor?",
-  "group": "Files, in memory",
   "question": "open() gives a program a small number for a file, close() gives it back. What are they, in the kernel?",
   "text": [
     "open() gives a program a small number for a file, and close() gives it back. In the kernel, that number is an index into the process's table of open files, and what it points to is a `struct file`.",

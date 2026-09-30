@@ -1,6 +1,5 @@
 {
   "title": "What does write() do?",
-  "group": "Files, in memory",
   "question": "A program adds a line to a file. Where do the bytes go? (In memory: ramfs.)",
   "text": [
     "A program appends a line to a file that is in memory. Where do the bytes go?",

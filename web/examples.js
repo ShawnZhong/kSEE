@@ -145,8 +145,7 @@ export async function examples(app) {
     if (!show) return;
     const groups = [...new Set(list.map((x) => x.group ?? ""))];
     t.menu = el("nav", { className: "lessons" },
-      el("div", { className: "lessons-head" }, el("b", { textContent: "Examples" }), el("span", { className: "dim", textContent: " · each on a fresh kernel" }),
-        el("button", { className: "close", textContent: "✕", title: "close (Esc)", onclick: () => contents(false) })),
+      el("button", { className: "close", textContent: "✕", title: "close (Esc)", onclick: () => contents(false) }),
       ...groups.flatMap((g) => [el("h3", { textContent: g }),
       ...list.filter((x) => (x.group ?? "") === g).map((x) => el("a", {
         className: [x === t.ex ? "on" : "", was.has(x.name) ? "seen" : ""].join(" ").trim(), textContent: x.title,

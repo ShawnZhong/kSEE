@@ -1,6 +1,5 @@
 {
   "title": "A real Linux, in your browser",
-  "group": "Start here",
   "question": "This page runs Linux itself. What happens when a program asks it something?",
   "text": [
     "This page runs a real Linux kernel, compiled for the browser. The program below made one syscall, `umask(077)`: it asks the kernel to set the mask that new files take their permissions from. The kernel answered 18, the mask before.",

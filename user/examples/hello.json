@@ -1,6 +1,5 @@
 {
   "title": "What does write() to the console do?",
-  "group": "Start here",
   "question": "A program prints \"hello\": write(1, \"hello\", 5). What does the kernel do for it?",
   "text": [
     "A program prints hello: `write(1, \"hello\", 5)`.",

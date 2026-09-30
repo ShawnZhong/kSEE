@@ -1,6 +1,5 @@
 {
   "title": "Why does open() fail?",
-  "group": "Files, in memory",
   "question": "Opening a file that is not there fails with ENOENT; opening a directory for writing, with EISDIR. Where in the kernel is each decided?",
   "text": [
     "Two opens that fail: a name that is not there, and a directory opened for writing. Each error is decided in a different place.",

@@ -170,9 +170,9 @@ program, its lines as the page writes them out (`"int fd = openat(AT_FDCWD,
 \"/note.txt\", O_RDONLY)"`, `"char buf[64]"`, `"child: dup3(fds[0], 0,
 0)"`: a call, its result named and typed as C declares it, or a variable
 declared; `child:` the runner that makes it, a thread id or a result's
-name, else the program), and a `group` (its chapter: "Start here", "Files,
-in memory", "Files on ext4", "Time", "Threads and processes"; the order is
-`EXAMPLES` in crates/ksee-cli/src/build.rs). A call's arguments are
+name, else the program); its chapter and place in the course are `EXAMPLES` in
+crates/ksee-cli/src/build.rs ("Start here", "A process", "Files, in
+memory", "Files on a disk (ext4)", "Waiting and waking", "Your own"). A call's arguments are
 written as in C: `AT_FDCWD`, `O_CREAT | O_WRONLY` (the kernel's own
 constants, from its UAPI headers), `0644`, `"a string"`, `{0, 30000000}`
 or `{.tv_nsec = 30000000}` (a compound literal, laid out as the

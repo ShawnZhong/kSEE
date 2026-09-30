@@ -140,20 +140,30 @@ fn gzip(from: &str, to: &str) {
     run(Command::new("gzip").args(["-9nc", from]).stdout(out));
 }
 
-/// The examples' order on the page, from the simplest (others after them).
-const EXAMPLES: &[&str] = &["umask", "umask-inside", "getpid", "prctl", "hello", "open-close", "read", "open-fails", "create", "write", "dir",
-                               "ext4-read", "ext4-create", "ext4-write", "durable", "ext4-dir", "remove", "sleep",
-                               "futex", "join", "pipe", "yours"];
+/// The course: its chapters, each its examples (user/examples/NAME.json)
+/// in order, from the simplest.
+const EXAMPLES: &[(&str, &[&str])] = &[
+    ("Start here", &["umask", "umask-inside"]),
+    ("A process", &["getpid", "prctl"]),
+    ("Files, in memory", &["hello", "open-close", "read", "write", "open-fails", "create", "dir"]),
+    ("Files on a disk (ext4)", &["ext4-read", "ext4-create", "ext4-write", "durable", "ext4-dir", "remove"]),
+    ("Waiting and waking", &["sleep", "futex", "join", "pipe"]),
+    ("Your own", &["yours"]),
+];
 
 /// examples.json: the examples (user/examples/*.json: each a list
-/// of syscalls for /init to make, one at a time), with their names.
+/// of syscalls for /init to make, one at a time), in the course's order,
+/// with their names and chapters (`group`); any other after them.
 fn examples() {
+    let course: Vec<(&str, &str)> = EXAMPLES.iter().flat_map(|&(group, names)| names.iter().map(move |&n| (n, group))).collect();
     let mut index: Vec<(usize, String)> = std::fs::read_dir("user/examples").into_iter().flatten().flatten()
         .map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).map(|p| {
             let name = p.file_stem().unwrap().to_string_lossy().into_owned();
             let text = String::from_utf8_lossy(&crate::read(&p)).into_owned();
-            let entry = format!("  {{ \"name\": \"{name}\", {}", text.trim().strip_prefix('{').unwrap_or("}").trim_start());
-            (EXAMPLES.iter().position(|&e| e == name).unwrap_or(EXAMPLES.len()), entry)
+            let k = course.iter().position(|&(n, _)| n == name).unwrap_or(course.len());
+            let group = course.get(k).map_or("", |&(_, g)| g);
+            let entry = format!("  {{ \"name\": \"{name}\", \"group\": \"{group}\", {}", text.trim().strip_prefix('{').unwrap_or("}").trim_start());
+            (k, entry)
         }).collect();
     index.sort();
     let index: Vec<String> = index.into_iter().map(|(_, e)| e).collect();

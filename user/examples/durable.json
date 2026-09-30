@@ -1,6 +1,5 @@
 {
   "title": "How does a write reach the disk?",
-  "group": "Files on ext4",
   "question": "A write is in memory until it is written back. fsync() makes it durable now: what does that take?",
   "text": [
     "A write stays in memory until it is written back. fsync() asks for it to be durable now. What does that take?",

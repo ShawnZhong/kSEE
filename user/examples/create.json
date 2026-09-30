@@ -1,6 +1,5 @@
 {
   "title": "How is a file made?",
-  "group": "Files, in memory",
   "question": "open() with O_CREAT makes a file that is not there. What does the kernel make? (In memory: ramfs.)",
   "text": [
     "open() with O_CREAT makes a file that is not there. What does the kernel make?",

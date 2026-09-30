@@ -1,6 +1,5 @@
 {
   "title": "Writing to a file on a disk",
-  "group": "Files on ext4",
   "question": "The same write, on ext4: is anything written to the disk?",
   "text": [
     "The same write, but on ext4. Is anything written to the disk?",

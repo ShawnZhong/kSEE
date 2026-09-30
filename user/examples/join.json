@@ -1,7 +1,6 @@
 {
   "title": "How does a thread wait for another to end?",
   "question": "A thread joins another: it sleeps until the other exits. How does the kernel tell it (with no thread library in between)?",
-  "group": "Threads and processes",
   "text": [
     "A thread joins another: it sleeps until the other exits. With no thread library in between, this is how the kernel tells it.",
     "1. [do_mmap](1:do_mmap): memory for the new thread's stack.",

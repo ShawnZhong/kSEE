@@ -1,6 +1,5 @@
 {
   "title": "What is a directory?",
-  "group": "Files, in memory",
   "question": "A directory is names, each pointing to a file. What happens when one is made, and when one is listed? (In memory: ramfs.)",
   "text": [
     "A directory is names, each pointing to a file. Here one is made and the root is listed, all in memory.",

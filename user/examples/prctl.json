@@ -1,6 +1,5 @@
 {
   "title": "How does a task get its name?",
-  "group": "Start here",
   "question": "prctl(PR_SET_NAME, name) renames the task that makes it, as ps shows it. Where does the name go?",
   "text": [
     "A task's name is `comm`, 16 bytes in its `task_struct`: what ps, top and the timeline here show. The program renames itself, then reads the name back.",

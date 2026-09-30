@@ -1,6 +1,5 @@
 {
   "title": "What happens in read()?",
-  "group": "Files, in memory",
   "question": "A program reads 64 bytes of a file. Which parts of the kernel does that go through? (Here the file is in memory: no disk.)",
   "text": [
     "A program reads 64 bytes of a file. The bytes go through three layers, and here the file is in memory, so no disk is involved.",

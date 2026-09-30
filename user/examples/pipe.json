@@ -1,7 +1,6 @@
 {
   "title": "How do two processes talk through a pipe?",
   "question": "The program makes a pipe and starts a child that reads from it, as a shell does for `echo hello | cat`. What does the kernel do as one process waits for the other?",
-  "group": "Threads and processes",
   "text": [
     "The program makes a pipe and starts a child that reads from it, as the `cat` in a shell's `echo hello | cat` would. Two processes, and the kernel in between.",
     "1. [create_pipe_files](2:create_pipe_files): a pipe is a buffer in the kernel and two files for it. The program's line shows the fds: 3 reads, 4 writes.",

@@ -1,6 +1,5 @@
 {
   "title": "Which process am I? getpid()",
-  "group": "Start here",
   "question": "getpid() asks the kernel one question: which process am I? What does it take to answer?",
   "text": [
     "`getpid()` has no arguments and one number back, but the number is not simply stored in the task: a process's id is a `struct pid`, with a number for each pid namespace it is seen from.",

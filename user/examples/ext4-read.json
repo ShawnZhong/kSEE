@@ -1,6 +1,5 @@
 {
   "title": "Reading from a disk",
-  "group": "Files on ext4",
   "question": "The same read(), of a file on ext4: where do the bytes come from the first time?",
   "text": [
     "The same read as before, but of a file on a disk (ext4, on the loop device). Where do the bytes come from the first time?",
