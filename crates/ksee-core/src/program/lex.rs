@@ -22,8 +22,8 @@ pub struct Token {
     pub end: usize,
 }
 
-const OPS: [&str; 32] = ["<<", ">>", "<=", ">=", "==", "!=", "&&", "||", "->", "(", ")", "[", "]", "{", "}", ".", ",", ";", "=", "*", "/",
-                         "%", "+", "-", "~", "!", "&", "|", "^", "<", ">", ":"];
+const OPS: [&str; 22] = ["<<", ">>", "->", "(", ")", "[", "]", "{", "}", ".", ",", ";", "=", "*", "/",
+                         "+", "-", "~", "&", "|", "^", ":"];
 
 /// `text`'s tokens. (A string or a character not closed: an error.)
 pub fn tokens(text: &str) -> Result<Vec<Token>, String> {

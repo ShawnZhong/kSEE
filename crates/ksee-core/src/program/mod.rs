@@ -7,8 +7,8 @@
 //! [runner:] target = value               memory of the program's written
 //! ```
 //!
-//! An expression is C's (operators, precedence, `.` `->` `[]` `*` `&`,
-//! casts, `sizeof`), over typed names: a variable is memory of its type, a
+//! An expression is a small part of C's (`| ^ & << >> + - * /`, unary
+//! `- ~ * &`, `.` `->` `[]`, C's precedence), over typed names: a variable is memory of its type, a
 //! result a value of its declared type, a constant the kernel's. An
 //! argument or a value may also be a string ("a buffer with it") or `{…}`
 //! (laid out as the parameter's type, or the variable's, says).

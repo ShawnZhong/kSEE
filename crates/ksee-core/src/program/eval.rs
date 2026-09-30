@@ -1,7 +1,7 @@
-//! C expressions evaluated as C does (see parse): over names that are
-//! typed (Sym: a variable is memory of its type, a result a value of its
-//! declared type), reading the program's memory and the kernel's types:
-//! `.`, `->`, `[]`, `*`, `&`, casts, `sizeof`, pointer arithmetic.
+//! A program's expressions evaluated as C does (see parse): over names
+//! that are typed (Sym: a variable is memory of its type, a result a value
+//! of its declared type), reading the program's memory and the kernel's
+//! types: `.`, `->`, `[]`, `*`, `&`, and `+` on a pointer.
 
 use alloc::format;
 use alloc::string::String;
@@ -57,25 +57,15 @@ impl Eval<'_> {
         self.types.ok_or_else(|| "the kernel's types: none here".into())
     }
 
-    /// Type `t` (void: 0), and what it points to if a pointer: its pointee.
+    /// Type `t`: its id (void: 0); for a pointer (one deep), what it points to.
     pub(super) fn type_of(&self, t: &TypeName) -> Result<(u32, Option<u32>), String> {
         let types = self.types()?;
-        let base = if t.name == "void" { 0 } else { named(types, &t.name).ok_or_else(|| format!("no type {} in the kernel", t.name))? };
-        if t.depth == 0 {
-            return Ok((base, None));
+        let base = if t.name == "void" { 0 } else { types.named(&t.name).ok_or_else(|| format!("no type {} in the kernel", t.name))? };
+        match t.depth {
+            0 => Ok((base, None)),
+            1 => Ok((0, Some(base))),
+            _ => Err(format!("{}: a pointer to a pointer", t.text())),
         }
-        // (A pointer's own type, where the kernel has one (its size: 4); what it points to, `depth - 1` pointers to base.)
-        let to = self.pointer_to(base, t.depth - 1)?;
-        Ok((self.pointer_to(to, 1).unwrap_or(0), Some(to)))
-    }
-
-    fn pointer_to(&self, mut ty: u32, depth: u32) -> Result<u32, String> {
-        let t = self.types()?;
-        for _ in 0..depth {
-            ty = (0..t.types.len() as u32).find(|&k| matches!(t.get(k).kind, Kind::Pointer(to) if t.resolve(to) == ty))
-                .ok_or_else(|| format!("no pointer to {} in the kernel", t.name(ty)))?;
-        }
-        Ok(ty)
     }
 
     fn eval(&self, e: &Expr) -> Result<V, String> {
@@ -95,34 +85,19 @@ impl Eval<'_> {
                 _ => return Err("&: of a variable, or a member of one".into()),
             },
             Expr::Unary("*", x) => match self.rvalue(self.eval(x)?)? {
-                V::Ptr { to: 0, .. } => return Err("*: of a void *: cast it first".into()),
+                V::Ptr { to: 0, .. } => return Err("*: of a void *: name the result's type".into()),
                 V::Ptr { addr, to } => self.place(addr, to),
-                _ => return Err("*: of a number, not a pointer: cast it first".into()),
+                _ => return Err("*: of a number, not a pointer".into()),
             },
             Expr::Unary(op, x) => {
                 let n = num(self.rvalue(self.eval(x)?)?);
-                V::Int(match *op { "-" => n.wrapping_neg(), "~" => !n, "!" => (n == 0) as i64, _ => n })
+                V::Int(if *op == "-" { n.wrapping_neg() } else { !n })
             }
             Expr::Binary(op, l, r) => self.apply(op, self.rvalue(self.eval(l)?)?, self.rvalue(self.eval(r)?)?)?,
-            Expr::Cast(t, x) => {
-                let v = num(self.rvalue(self.eval(x)?)?);
-                match self.type_of(t)? {
-                    (_, Some(to)) => V::Ptr { addr: v as u32, to },
-                    (ty, None) => V::Int(self.convert(v, ty)?),
-                }
-            }
-            Expr::SizeofType(t) => V::Int(match self.type_of(t)? {
-                (_, Some(_)) => 4,
-                (ty, None) => self.types()?.size_of(ty) as i64,
-            }),
-            Expr::SizeofExpr(x) => V::Int(match self.eval(x)? {
-                V::Lv { ty, count, .. } => (self.types()?.size_of(ty) * count.unwrap_or(1)) as i64,
-                _ => 4,
-            }),
             Expr::Index(b, i) => {
                 let i = num(self.rvalue(self.eval(i)?)?);
                 match self.rvalue(self.eval(b)?)? {
-                    V::Ptr { to: 0, .. } => return Err("[]: of a void *: cast it first".into()),
+                    V::Ptr { to: 0, .. } => return Err("[]: of a void *: name the result's type".into()),
                     V::Ptr { addr, to } => self.place((addr as i64 + i * self.types()?.size_of(to) as i64) as u32, to),
                     _ => return Err("[]: of a number, not an array or a pointer".into()),
                 }
@@ -150,29 +125,18 @@ impl Eval<'_> {
         Ok(match (op, l, r) {
             ("+", V::Ptr { addr, to }, V::Int(i)) | ("+", V::Int(i), V::Ptr { addr, to }) => V::Ptr { addr: (addr as i64 + i * size(to)?) as u32, to },
             ("-", V::Ptr { addr, to }, V::Int(i)) => V::Ptr { addr: (addr as i64 - i * size(to)?) as u32, to },
-            ("-", V::Ptr { addr: a, to }, V::Ptr { addr: b, .. }) => V::Int((a as i64 - b as i64) / size(to)?),
             _ => {
                 let (a, b) = (num(l), num(r));
                 V::Int(match op {
-                    "||" => (a != 0 || b != 0) as i64,
-                    "&&" => (a != 0 && b != 0) as i64,
                     "|" => a | b,
                     "^" => a ^ b,
                     "&" => a & b,
-                    "==" => (a == b) as i64,
-                    "!=" => (a != b) as i64,
-                    "<" => (a < b) as i64,
-                    ">" => (a > b) as i64,
-                    "<=" => (a <= b) as i64,
-                    ">=" => (a >= b) as i64,
                     "<<" => a.checked_shl(b as u32).ok_or("a shift too far")?,
                     ">>" => a.checked_shr(b as u32).ok_or("a shift too far")?,
                     "+" => a.wrapping_add(b),
                     "-" => a.wrapping_sub(b),
                     "*" => a.wrapping_mul(b),
-                    "/" => a.checked_div(b).ok_or("a division by 0")?,
-                    "%" => a.checked_rem(b).ok_or("a division by 0")?,
-                    _ => return Err(format!("not an operator here: {op}")),
+                    _ => a.checked_div(b).ok_or("a division by 0")?,
                 })
             }
         })
@@ -241,47 +205,22 @@ fn num(v: V) -> i64 {
     }
 }
 
-/// Type `name` as C spells it, in the kernel's types: a tag's, a typedef's,
-/// or one of C's own, whose words DWARF orders its own way ("unsigned
-/// long": "long unsigned int").
-pub(super) fn named(types: &Types, name: &str) -> Option<u32> {
-    if let Some(t) = types.named(name) {
-        return Some(t);
-    }
-    let words: alloc::vec::Vec<&str> = name.split_whitespace().collect();
-    if !words.iter().all(|w| matches!(*w, "unsigned" | "signed" | "char" | "short" | "int" | "long")) {
-        return None;
-    }
-    let longs = words.iter().filter(|&&w| w == "long").count();
-    let unsigned = words.contains(&"unsigned");
-    let kind = if words.contains(&"char") { "char" } else if words.contains(&"short") { "short" } else { "" };
-    let dwarf = match (kind, longs, unsigned) {
-        ("char", _, true) => "unsigned char".into(),
-        ("char", _, false) if words.contains(&"signed") => "signed char".into(),
-        ("char", _, false) => "char".into(),
-        ("short", _, u) => format!("short {}int", if u { "unsigned " } else { "" }),
-        (_, 0, u) => format!("{}int", if u { "unsigned " } else { "" }),
-        (_, n, u) => format!("{}{}int", "long ".repeat(n), if u { "unsigned " } else { "" }),
-    };
-    types.named(&dwarf)
-}
-
 /// Expression `s`'s value (a pointer's: its address), with `types` for
-/// casts, members and memory (none: numbers and names only).
+/// members and memory (none: numbers and names only).
 pub fn value(s: &str, types: Option<&Types>, env: &dyn Env) -> Result<i64, String> {
-    Eval { types, env }.number(&expression(s, types)?)
+    Eval { types, env }.number(&expression(s)?)
 }
 
 /// Expression `s` as memory to write (an lvalue): its address and type.
 pub fn lvalue(s: &str, types: &Types, env: &dyn Env) -> Result<(u32, u32), String> {
-    Eval { types: Some(types), env }.lvalue(&expression(s, Some(types))?).map_err(|e| format!("{}: {e}", s.trim()))
+    Eval { types: Some(types), env }.lvalue(&expression(s)?).map_err(|e| format!("{}: {e}", s.trim()))
 }
 
 /// A result's value as its declared type (`void *`, `struct x *`, `int`)
 /// makes it: a number, or a pointer to what the type names.
 pub fn typed(v: i64, ty: &str, types: &Types) -> Option<Sym> {
     let env = |_: &str| None;
-    let mut p = super::parse::Parser::new(ty, Some(types)).ok()?;
+    let mut p = super::parse::Parser::new(ty).ok()?;
     let t = p.type_name_only().ok()?;
     let (_, to) = Eval { types: Some(types), env: &env }.type_of(&t).ok()?;
     Some(Sym::Value { v, to })

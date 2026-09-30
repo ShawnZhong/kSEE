@@ -47,7 +47,7 @@ impl Types {
     /// A declaration, as in C, of a program's variable (memory of its own,
     /// in its process): `char buf[64]`, `int fds[2]`, `struct
     /// __kernel_timespec ts = {0, 30000000}`, `char path[] = "/note.txt"`,
-    /// `unsigned *tail = (unsigned *)(rings + p.sq_off.tail)`; the type the
+    /// the type the
     /// kernel's own (a struct, union or enum by its tag, a typedef, a base
     /// type by its name). `known`: as for arg.
     pub fn declare(&self, text: &str, known: &dyn Env) -> Result<Decl, String> {
@@ -56,9 +56,9 @@ impl Types {
         };
         let e = Eval { types: Some(self), env: known };
         let ty = match e.type_of(&ty)? {
-            (0, Some(_)) => return Err(format!("{name}: no pointer to that type in the kernel")),
+            (_, Some(_)) => return Err(format!("{name}: a pointer: declare what it points to (its name is its address)")),
             (0, None) => return Err(format!("{name}: void")),
-            (t, _) => t,
+            (t, None) => t,
         };
         if self.size_of(ty) == 0 {
             return Err(format!("{name}: no size"));
@@ -80,7 +80,7 @@ impl Types {
     /// A variable's bytes (of type `ty`, an array of `count` of them) as
     /// `text` makes them: a C initializer ("hi", {3, 4}, {.tv_sec = 1}, 7).
     pub fn assign(&self, ty: u32, count: Option<u32>, text: &str, known: &dyn Env) -> Result<Vec<u8>, String> {
-        self.lay(ty, count, Some(&expression(text, Some(self))?), known)
+        self.lay(ty, count, Some(&expression(text)?), known)
     }
 
     /// The bytes of a variable of type `ty` (an array of `count`) that
@@ -210,7 +210,7 @@ impl Types {
     /// see the module's doc. `known`: the values of names (constants,
     /// results, variables).
     pub fn arg(&self, text: &str, ty: u32, known: &dyn Env) -> Result<Arg, String> {
-        let e = expression(text, Some(self))?;
+        let e = expression(text)?;
         match &e {
             Expr::Str(s) => {
                 let mut b = s.clone();

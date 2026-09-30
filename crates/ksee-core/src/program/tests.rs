@@ -43,7 +43,7 @@ fn a_line_is_a_call_or_a_declaration() {
     };
     assert_eq!(decl("char buf[64]"), (None, "char".into(), "buf".into(), true));
     assert_eq!(decl("19: struct __kernel_timespec ts = {0, 1}"), (o("19"), "struct __kernel_timespec".into(), "ts".into(), false));
-    assert_eq!(decl("unsigned long long *p"), (None, "unsigned long long *".into(), "p".into(), false));
+    assert_eq!(decl("unsigned long long n"), (None, "unsigned long long".into(), "n".into(), false));
     assert!(statement("write(1, \"hi)\", 2").is_err());
     // (Assignments: memory of the program's written.)
     let assign = |t: &str| match statement(t).unwrap() {
@@ -51,9 +51,9 @@ fn a_line_is_a_call_or_a_declaration() {
         s => panic!("{s:?}"),
     };
     assert_eq!(assign("*sqe = {.opcode = IORING_OP_READ, .fd = fd}"), ("*sqe".into(), "{.opcode = IORING_OP_READ, .fd = fd}".into()));
-    assert_eq!(assign("*(unsigned *)(rings + p.sq_off.tail) = 1;"), ("*(unsigned *)(rings + p.sq_off.tail)".into(), "1".into()));
+    assert_eq!(assign("rings->sq.tail = 1;"), ("rings->sq.tail".into(), "1".into()));
     assert_eq!(assign("fds[0] = 3"), ("fds[0]".into(), "3".into()));
-    assert_eq!(assign("x = y == 2"), ("x".into(), "y == 2".into()));
+    assert_eq!(assign("x = y + 2"), ("x".into(), "y + 2".into()));
 }
 
 #[test]
@@ -68,8 +68,8 @@ fn declarations_are_a_programs_memory() {
     assert_eq!(fds.bytes, [3, 0, 0, 0, 4, 0, 0, 0]);
     assert_eq!(t.declare("char path[] = \"/x\"", &known).unwrap().bytes, b"/x\0");
     assert!(t.declare("struct nope x", &known).is_err());
-    // (A pointer: 4 bytes, the address it holds.)
-    assert_eq!(t.declare("char *p = 0x40", &known).unwrap().bytes, [0x40, 0, 0, 0]);
+    // (A pointer: not a variable; a result's, or a variable's address.)
+    assert!(t.declare("char *p = 0x40", &known).is_err());
     // Said as C writes it.
     struct M(Vec<u8>);
     impl Memory for M {
@@ -131,11 +131,11 @@ fn expressions_as_c_reads_them() {
                         ("q", Sym::Value { v: 8, to: Some(2) })], m);
     let v = |s| value(s, Some(&t), &env);
     assert_eq!((v("p.y"), v("fds[1]"), v("q->x + q[0].y"), v("&p"), v("fds")), (Ok(4), Ok(6), Ok(7), Ok(8), Ok(16)));
-    // (Casts, pointer arithmetic by the size pointed to, sizeof.)
-    assert_eq!((v("*(int *)(q + 1)"), v("(unsigned int *)16 - (unsigned int *)8"), v("sizeof(struct pt)"), v("sizeof(fds)")), (Ok(5), Ok(2), Ok(8), Ok(8)));
+    // (Pointer arithmetic: by the size pointed to.)
+    assert_eq!((v("*(fds + 1)"), v("(q + 1)->x")), (Ok(6), Ok(5)));
     assert!(v("p").is_err()); // (a struct: its address, or a member)
     // (Memory to write: where, of which type.)
-    assert_eq!((lvalue("fds[1]", &t, &env), lvalue("q->y", &t, &env), lvalue("*(unsigned int *)20", &t, &env)), (Ok((20, 1)), Ok((12, 1)), Ok((20, 5))));
+    assert_eq!((lvalue("fds[1]", &t, &env), lvalue("q->y", &t, &env), lvalue("*(fds + 1)", &t, &env)), (Ok((20, 1)), Ok((12, 1)), Ok((20, 1))));
     assert!(lvalue("fds", &t, &env).is_err());
 }
 

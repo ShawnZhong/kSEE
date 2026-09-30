@@ -7,7 +7,6 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use super::lex::{tokens, Tok, Token};
-use crate::types::Types;
 
 /// A C expression, or an initializer (a string, `{…}`).
 #[derive(Debug, Clone, PartialEq)]
@@ -17,9 +16,6 @@ pub enum Expr {
     Name(String),
     Unary(&'static str, Box<Expr>),
     Binary(&'static str, Box<Expr>, Box<Expr>),
-    Cast(TypeName, Box<Expr>),
-    SizeofType(TypeName),
-    SizeofExpr(Box<Expr>),
     /// `e.m`, or `e->m` (true).
     Member(Box<Expr>, String, bool),
     Index(Box<Expr>, Box<Expr>),
@@ -69,13 +65,11 @@ pub(super) struct Parser<'a> {
     toks: Vec<Token>,
     at: usize,
     text: &'a str,
-    /// For the names that are types in a cast: `(pid_t)x`.
-    types: Option<&'a Types>,
 }
 
 impl<'a> Parser<'a> {
-    pub(super) fn new(text: &'a str, types: Option<&'a Types>) -> Result<Parser<'a>, String> {
-        Ok(Parser { toks: tokens(text)?, at: 0, text, types })
+    pub(super) fn new(text: &'a str) -> Result<Parser<'a>, String> {
+        Ok(Parser { toks: tokens(text)?, at: 0, text })
     }
     fn tok(&self, k: usize) -> Option<&Tok> {
         self.toks.get(self.at + k).map(|t| &t.tok)
@@ -123,16 +117,6 @@ impl<'a> Parser<'a> {
             k += 1;
         }
         self.name(k).is_some()
-    }
-
-    /// Whether a type name starts here, in a cast or sizeof (after its "("):
-    /// a type's word, or a type the kernel has followed by `*` or `)`.
-    fn type_here(&self) -> bool {
-        match self.name(0) {
-            Some(w) if TYPE_WORDS.contains(&w) => true,
-            Some(w) => self.types.is_some_and(|t| t.named(w).is_some()) && (self.is(1, "*") || self.is(1, ")")),
-            None => false,
-        }
     }
 
     fn type_name(&mut self) -> Result<TypeName, String> {
@@ -200,9 +184,10 @@ impl<'a> Parser<'a> {
         self.binary(0)
     }
 
-    /// Binary operators, by C's precedence (loosest first).
+    /// Binary operators, by C's precedence (loosest first): those a
+    /// program's arguments need (flags, sizes, addresses).
     fn binary(&mut self, level: usize) -> Result<Expr, String> {
-        const LEVELS: [&[&str]; 10] = [&["||"], &["&&"], &["|"], &["^"], &["&"], &["==", "!="], &["<", ">", "<=", ">="], &["<<", ">>"], &["+", "-"], &["*", "/", "%"]];
+        const LEVELS: [&[&str]; 6] = [&["|"], &["^"], &["&"], &["<<", ">>"], &["+", "-"], &["*", "/"]];
         if level == LEVELS.len() {
             return self.unary();
         }
@@ -218,26 +203,10 @@ impl<'a> Parser<'a> {
     }
 
     fn unary(&mut self) -> Result<Expr, String> {
-        for op in ["-", "~", "!", "*", "&", "+"] {
+        for op in ["-", "~", "*", "&"] {
             if self.eat(op) {
                 return Ok(Expr::Unary(op, Box::new(self.unary()?)));
             }
-        }
-        if self.name(0) == Some("sizeof") {
-            self.at += 1;
-            self.expect("(")?;
-            let e = if self.type_here() { Expr::SizeofType(self.type_name()?) } else { Expr::SizeofExpr(Box::new(self.expr()?)) };
-            self.expect(")")?;
-            return Ok(e);
-        }
-        if self.is(0, "(") {
-            self.at += 1;
-            if self.type_here() {
-                let ty = self.type_name()?;
-                self.expect(")")?;
-                return Ok(Expr::Cast(ty, Box::new(self.unary()?)));
-            }
-            self.at -= 1;
         }
         self.postfix()
     }
@@ -272,10 +241,6 @@ impl<'a> Parser<'a> {
                 let e = self.expr()?;
                 self.expect(")")?;
                 Ok(e)
-            }
-            Some(Tok::Op("{")) => {
-                self.at -= 1;
-                self.init()
             }
             Some(Tok::Op(o)) => Err(format!("not a value: {o}")),
             None => Err("a value missing".into()),
@@ -383,13 +348,12 @@ impl<'a> Parser<'a> {
 
 /// A program's line, parsed.
 pub fn statement(text: &str) -> Result<Statement, String> {
-    Parser::new(text, None)?.statement()
+    Parser::new(text)?.statement()
 }
 
-/// An expression or an initializer, parsed (`types`: for casts to their
-/// typedef names).
-pub fn expression(text: &str, types: Option<&Types>) -> Result<Expr, String> {
-    let mut p = Parser::new(text, types)?;
+/// An expression or an initializer, parsed.
+pub fn expression(text: &str) -> Result<Expr, String> {
+    let mut p = Parser::new(text)?;
     let e = p.init()?;
     if !p.done() {
         return Err(format!("not C here{}", p.here()));
