@@ -253,6 +253,13 @@ check("definitions: a function, a type, a global", m.definition("vfs_write")?.fi
 check("a field's declaration: file.f_pos, by its struct (or a pointer to it), or of the one struct with it; not of many",
       m.definition("file.f_pos")?.file === "include/linux/fs.h" && m.member_definition(file.id, "f_pos")?.file === "include/linux/fs.h"
       && m.member_definition(undefined, "f_pos")?.file === "include/linux/fs.h" && m.member_definition(undefined, "next") == null);
+{
+  // (The syscalls this kernel builds, as its syscall table says: not setuid, with CONFIG_MULTIUSER off; a call to it, refused.)
+  const names = m.syscall_names();
+  let refused = "";
+  try { m.call("setuid", [0]); } catch (e) { refused = String(e.message ?? e); }
+  check(`the syscalls built: ${names.length}; read, not setuid (${refused})`, names.includes("read") && !names.includes("setuid") && /does not build setuid/.test(refused));
+}
 check("a syscall's parameters, typed, with the constants that fit", JSON.stringify(m.syscall("openat")?.params) ===
       JSON.stringify([{ name: "dfd", ty: "int", consts: ["AT_"] }, { name: "filename", ty: "char *", consts: [] },
                       { name: "flags", ty: "int", consts: ["O_"] }, { name: "mode", ty: "umode_t", consts: [] }]));

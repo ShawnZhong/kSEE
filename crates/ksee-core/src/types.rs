@@ -221,6 +221,12 @@ impl Types {
         out
     }
 
+    /// Whether this kernel builds syscall `nr`: its entry in the syscall
+    /// table (arch::SYSCALL_TABLE, in `mem`) is not NULL.
+    pub fn built(&self, mem: &dyn crate::Memory, nr: u32) -> bool {
+        self.globals.get(crate::arch::SYSCALL_TABLE).is_some_and(|&(table, _)| mem.read_u32(table.wrapping_add(4 * nr)) != 0)
+    }
+
     /// The errno name of `n` (a failed call's result is -n): ENOENT for 2.
     pub fn errno(&self, n: i64) -> Option<&str> {
         let is = |k: &str| k.strip_prefix(crate::arch::ERRNO).is_some_and(|r| !r.is_empty() && r.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
@@ -562,5 +568,14 @@ mod tests {
         };
         assert_eq!((at(0, 1, 0, 0), at(4, 3, 0, 0), at(12, 5, 0, 0), at(16, 7, 0, 3), at(0, 6, 0, 0)),
                    ("-3".into(), "\"init\"".into(), "0x40".into(), "5".into(), "{...}".into()));
+    }
+
+    #[test]
+    fn a_syscall_is_built_if_its_table_entry_is_not_null() {
+        // The table at 8: entries 0 (read: function 3) and 1 (NULL).
+        let t = Types::parse("G\tsys_call_table\t8\t0\n");
+        let mut m = alloc::vec![0u8; 16];
+        m[8] = 3;
+        assert_eq!((t.built(&Mem(m.clone()), 0), t.built(&Mem(m), 1)), (true, false));
     }
 }

@@ -85,7 +85,11 @@ needs), the kernel maps it pages for its data and a 64 KiB stack
 kernel's function table, which the task calls when it returns to user mode
 (a direct call: nothing of the host's may be on a stack it suspends). A
 syscall is a plain wasm call into the kernel's `syscall` export
-(kernel/syscall.c).
+(kernel/syscall.c). Its `sys_call_table` entries are weak: one this
+kernel does not build (a `COND_SYSCALL`, `setuid` with `CONFIG_MULTIUSER`
+off) has none, NULL, and returns -ENOSYS; so the table in memory says
+which syscalls there are, and the page offers only those
+(`Types::built`).
 
 So `copy_from_user`/`copy_to_user` are plain copies (`UACCESS_MEMCPY`),
 recorded like any other, and a program's buffers are in the recording's

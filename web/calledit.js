@@ -24,10 +24,11 @@ const PREFIX = /^\s*(?:[$A-Za-z_]\w*\s*:\s*)?(?:[A-Za-z_]\w*\s*=(?!=)\s*)?/;
 
 export function callEditor({ m, consts, known, text = "", placeholder = "", done, cancel, focus, inline = false, common = [], history }) {
   const names = m.syscall_names();
-  // (No syscall `name`: those whose names start with it, if any: openat for open.)
+  // (No syscall `name` this kernel builds: those whose names start with
+  // it, if any: openat for open.)
   const noSyscall = (name) => {
     const like = names.filter((n) => n.startsWith(name)).slice(0, 3);
-    return `no syscall ${name}${like.length ? `: ${like.join(", ")}?` : ""}`;
+    return `this kernel has no syscall ${name}${like.length ? `: ${like.join(", ")}?` : ""}`;
   };
   const constNames = [...Object.keys(consts), "NULL"];
   // (A text area of one line, as tall as its text wraps to.)

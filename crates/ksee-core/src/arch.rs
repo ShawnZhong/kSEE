@@ -10,6 +10,9 @@ pub const SYSCALL: &str = "wasm_syscall";
 /// source's parameters (the SYSCALL_DEFINE line's) are the syscall's
 /// arguments, on the entry's record.
 pub const SYSCALL_WRAPPER: &str = "__wasm_sys_";
+/// The syscall table (arch/wasm/kernel/syscall.c): an entry per number,
+/// NULL for a syscall this kernel does not build (the linker found none).
+pub const SYSCALL_TABLE: &str = "sys_call_table";
 /// The machine's own primitives (arch/wasm/include/asm and the generic
 /// half of the arch layer: `current`, the interrupt flag, atomics, bit
 /// ops), inlined all over the kernel: the machine, not calls. Their code

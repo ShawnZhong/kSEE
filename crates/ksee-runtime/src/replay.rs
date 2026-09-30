@@ -305,9 +305,10 @@ impl Machine {
         tables().types.errno(n as i64).map(String::from)
     }
 
-    /// The syscalls' names (the kernel's syscall table).
+    /// The names of the syscalls this kernel builds (Types::built).
     pub fn syscall_names(&self) -> Vec<String> {
-        tables().types.syscalls.values().cloned().collect()
+        let types = &tables().types;
+        types.syscalls.iter().filter(|&(&nr, _)| types.built(&Direct, nr)).map(|(_, n)| n.clone()).collect()
     }
 
     /// Function `id`: where it is (view::Place).
