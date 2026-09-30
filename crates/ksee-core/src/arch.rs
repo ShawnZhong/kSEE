@@ -11,7 +11,9 @@ pub const SYSCALL: &str = "wasm_syscall";
 /// arguments, on the entry's record.
 pub const SYSCALL_WRAPPER: &str = "__wasm_sys_";
 /// The syscall table (arch/wasm/kernel/syscall.c): an entry per number,
-/// NULL for a syscall this kernel does not build (the linker found none).
+/// the function it calls (SYSCALL_WRAPPER + its name), NULL for a
+/// syscall this kernel does not build (the linker found none): ksee pack
+/// reads the syscalls from it.
 pub const SYSCALL_TABLE: &str = "sys_call_table";
 /// The machine's own primitives (arch/wasm/include/asm and the generic
 /// half of the arch layer: `current`, the interrupt flag, atomics, bit
@@ -49,15 +51,14 @@ pub const TASK_ON_RQ: &str = "on_rq";
 /// A task's fields shown first (the Tasks'), in this order.
 pub const TASK_FIELDS: [&str; 12] = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
-/// are the syscall's; a `_time64` syscall's is the plain one's.
+/// are the syscall's.
 pub const SYSCALL_BODY: &str = "__do_sys_";
-pub const TIME64: &str = "_time64";
 /// The constants that fit a syscall's parameter, by the starts of their
 /// names: for "syscall.param", else any syscall's parameter of that name.
 pub const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
     ("mmap2.flags", &["MAP_"]), ("unlinkat.flag", &["AT_"]), ("renameat2.flags", &["RENAME_"]),
     ("waitid.which", &["P_"]), ("waitid.options", &["W"]), ("clone.clone_flags", &["CLONE_", "SIG"]),
-    ("clock_nanosleep_time64.flags", &["TIMER_"]),
+    ("clock_nanosleep.flags", &["TIMER_"]),
     ("dfd", &["AT_"]), ("olddfd", &["AT_"]), ("newdfd", &["AT_"]), ("flags", &["O_"]), ("prot", &["PROT_"]),
     ("which_clock", &["CLOCK_"]), ("op", &["FUTEX_"]),
 ];

@@ -10,8 +10,8 @@
 //! V id name value                        an enumerator of enum id
 //! G name address type                    a variable with a fixed address
 //! W name file line                       where a function, type or variable is declared
-//! S nr name                              a syscall (its parameters: its
-//!                                        entry's P line)
+//! S nr name                              a syscall this kernel builds
+//!                                        (its parameters: its body's P line)
 //! C name value                           a constant of the UAPI headers
 //! P fn name param:type,…                 a function's parameters (fn: its
 //!                                        id, as the probes have it)
@@ -198,11 +198,9 @@ impl Types {
         self.types.get(id as usize).unwrap_or(&VOID)
     }
 
-    /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY; a
-    /// `_time64` syscall's body is the plain one's: clock_nanosleep).
+    /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY).
     pub fn syscall_params(&self, name: &str) -> Option<&Vec<(String, u32)>> {
-        let body = |n: &str| self.params.get(self.by_name.get(&format!("{}{n}", crate::arch::SYSCALL_BODY))?);
-        body(name).or_else(|| body(name.strip_suffix(crate::arch::TIME64)?))
+        self.params.get(self.by_name.get(&format!("{}{name}", crate::arch::SYSCALL_BODY))?)
     }
 
     /// The pointers in a value of type `ty` (in the structs and unions it
@@ -219,12 +217,6 @@ impl Types {
             }
         }
         out
-    }
-
-    /// Whether this kernel builds syscall `nr`: its entry in the syscall
-    /// table (arch::SYSCALL_TABLE, in `mem`) is not NULL.
-    pub fn built(&self, mem: &dyn crate::Memory, nr: u32) -> bool {
-        self.globals.get(crate::arch::SYSCALL_TABLE).is_some_and(|&(table, _)| mem.read_u32(table.wrapping_add(4 * nr)) != 0)
     }
 
     /// The errno name of `n` (a failed call's result is -n): ENOENT for 2.
@@ -570,12 +562,4 @@ mod tests {
                    ("-3".into(), "\"init\"".into(), "0x40".into(), "5".into(), "{...}".into()));
     }
 
-    #[test]
-    fn a_syscall_is_built_if_its_table_entry_is_not_null() {
-        // The table at 8: entries 0 (read: function 3) and 1 (NULL).
-        let t = Types::parse("G\tsys_call_table\t8\t0\n");
-        let mut m = alloc::vec![0u8; 16];
-        m[8] = 3;
-        assert_eq!((t.built(&Mem(m.clone()), 0), t.built(&Mem(m), 1)), (true, false));
-    }
 }

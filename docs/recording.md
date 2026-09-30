@@ -138,11 +138,14 @@ files each have their own; from the variables' DWARF locations: `DW_OP_fbreg`, o
 `DW_OP_WASM_location 0 <the frame base's local>` plus a constant, in
 pieces for a struct's members; the locals of calls inlined into it too;
 a function inlined elsewhere has them on its out-of-line copy), the
-syscalls' names, constants from the UAPI headers (`O_*`, `AT_*`,
+syscalls this kernel builds (its `sys_call_table` as the image's data
+has it: each entry's function, by the element segment and the name
+section, `__wasm_sys_NAME`; NULL, none), constants from the UAPI headers (`O_*`, `AT_*`,
 `CLOCK_*`, `CLONE_*`, `FUTEX_*`, errno's `E*`, …: for the page's calls,
 written as in C), and `W name file line` lines: where a function (an
 inline one too, which has no probe), a struct, union, enum or typedef, a
 global, or a member (as `struct.member`) is declared, from DWARF's
-decl_file/decl_line (the page's Ctrl+click and F12 go there: `Machine.definition(name)`, `.member` a member
-of any struct). The page's kernel is a copy of vmlinux with that
+decl_file/decl_line (the page's Ctrl+click and F12 go there: `Machine.definition(name)`;
+`Machine.member_definition(type, member)`, a member of that type, or,
+with none, of the one struct with such a member). The page's kernel is a copy of vmlinux with that
 section and without DWARF, plus the sources the probes name.

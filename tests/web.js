@@ -61,15 +61,15 @@ const chartTasks = (flat) => {
   return out;
 };
 const ts = { bytes: new Uint8Array(new BigInt64Array([0n, 30000000n]).buffer) };
-const nap = (await call("clock_nanosleep_time64", [1, 0, ts, 0])).s;
+const nap = (await call("clock_nanosleep", [1, 0, ts, 0])).s;
 check("sleeping switched to the idle task and back", ran(nap, "__schedule")
       && chartTasks(m.chart(nap.first, nap.last, 50)).some((a) => m.task(a).comm === "swapper/0"));
 // (A long sleep finishes too: time goes on while the call does, its runner waking.)
-const long = await call("clock_nanosleep_time64", [1, 0, { bytes: new Uint8Array(new BigInt64Array([2n, 0n]).buffer) }, 0]);
+const long = await call("clock_nanosleep", [1, 0, { bytes: new Uint8Array(new BigInt64Array([2n, 0n]).buffer) }, 0]);
 check("a 2 s sleep returns (the clock skipped ahead)", long.how === "returned" && long.ret === 0);
 // (And a timed wait: select's timeout.)
 const tv = { bytes: new Uint8Array(new BigInt64Array([1n, 0n]).buffer) };
-const sel = await call("pselect6_time64", [0, 0, 0, 0, tv, 0]);
+const sel = await call("pselect6", [0, 0, 0, 0, tv, 0]);
 check("a 1 s select() times out", sel.how === "returned" && sel.ret === 0);
 m.snapshot();
 const wi = m.syscalls().findIndex((s) => s.first === w.first);
@@ -186,7 +186,7 @@ m.memory_at(null);
 // write wakes it.
 {
   const buf = kern.declare("char buf[8]"), fds = kern.declare("int fds[2]");
-  const slept = await kern.sys.clock_nanosleep_time64(kern.C.CLOCK_MONOTONIC, 0, { tv_sec: 0, tv_nsec: 1000000 }, null);
+  const slept = await kern.sys.clock_nanosleep(kern.C.CLOCK_MONOTONIC, 0, { tv_sec: 0, tv_nsec: 1000000 }, null);
   await kern.sys.pipe2(fds, 0);
   const [r, w] = fds.get();
   // (A thread, a runner of its own, reads: it blocks, nothing written yet;
@@ -254,11 +254,11 @@ check("a field's declaration: file.f_pos, by its struct (or a pointer to it), or
       m.definition("file.f_pos")?.file === "include/linux/fs.h" && m.member_definition(file.id, "f_pos")?.file === "include/linux/fs.h"
       && m.member_definition(undefined, "f_pos")?.file === "include/linux/fs.h" && m.member_definition(undefined, "next") == null);
 {
-  // (The syscalls this kernel builds, as its syscall table says: not setuid, with CONFIG_MULTIUSER off; a call to it, refused.)
+  // (The syscalls this kernel builds, as its syscall table in the image says (ksee pack): not setuid, with CONFIG_MULTIUSER off.)
   const names = m.syscall_names();
   let refused = "";
   try { m.call("setuid", [0]); } catch (e) { refused = String(e.message ?? e); }
-  check(`the syscalls built: ${names.length}; read, not setuid (${refused})`, names.includes("read") && !names.includes("setuid") && /does not build setuid/.test(refused));
+  check(`the syscalls built: ${names.length}; read, not setuid (${refused})`, names.includes("read") && !names.includes("setuid") && /no syscall setuid/.test(refused));
 }
 check("a syscall's parameters, typed, with the constants that fit", JSON.stringify(m.syscall("openat")?.params) ===
       JSON.stringify([{ name: "dfd", ty: "int", consts: ["AT_"] }, { name: "filename", ty: "char *", consts: [] },
@@ -288,9 +288,9 @@ check("arguments as in C", a("openat", 2, "O_CREAT | O_WRONLY | O_TRUNC") === 57
       && new TextDecoder().decode(a("openat", 1, '"a\\n"').bytes) === "a\n\0");
 check("an array of strings as in C (argv)", JSON.stringify(a("execve", 1, '{"init", "-x", NULL}')) === '{"strings":["init","-x",null]}');
 // A struct, laid out as the parameter's type says (a __kernel_timespec: two s64).
-const spec = (text) => [...new BigInt64Array(a("clock_nanosleep_time64", 2, text).bytes.buffer)].join(",");
+const spec = (text) => [...new BigInt64Array(a("clock_nanosleep", 2, text).bytes.buffer)].join(",");
 check("a struct as in C, positional or by name", spec("{0, 30000000}") === "0,30000000" && spec("{.tv_nsec = 30000000}") === "0,30000000");
-check("a wrong member is an error", (() => { try { a("clock_nanosleep_time64", 2, "{.tv_min = 1}"); return false; } catch (e) { return /no member/.test(e); } })());
+check("a wrong member is an error", (() => { try { a("clock_nanosleep", 2, "{.tv_min = 1}"); return false; } catch (e) { return /no member/.test(e); } })());
 check("a runner by a result: value()", m.value("$2 + 0", { $2: 19 }) === 19);
 const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/examples.json", root)));
 // (An example's program: its lines, as written, parsed as the page parses them.)

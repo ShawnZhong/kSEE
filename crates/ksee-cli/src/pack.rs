@@ -14,13 +14,14 @@ use ksee_core::{module, tables::Tables};
 
 /// Write OUT/vmlinux (from KERNEL/vmlinux) and OUT/src (from KERNEL).
 pub fn pack(kernel: &Path, out: &Path) {
-    let generated = kernel.join("arch/wasm/include/generated");
-    let text = |p: &Path| String::from_utf8_lossy(&crate::read(p)).into_owned();
     let image = crate::read(&kernel.join("vmlinux"));
-    let calls = syscalls(&text(&generated.join("uapi/asm/unistd_32.h")));
-    let mut types = types(&image, &calls).unwrap_or_else(|e| crate::fail(&format!("DWARF: {e}")));
+    let mut types = types(&image).unwrap_or_else(|e| crate::fail(&format!("DWARF: {e}")));
     for (name, value) in constants(&kernel.join("usr/include")) {
         types += &format!("C\t{name}\t{value}\n");
+    }
+    let calls = syscalls(&image, &ksee_core::types::Types::parse(&types));
+    for (nr, name) in &calls {
+        types += &format!("S\t{nr}\t{name}\n");
     }
     let packed = rewrite(&image, &types);
     std::fs::create_dir_all(out).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", out.display())));
@@ -54,12 +55,18 @@ pub fn pack(kernel: &Path, out: &Path) {
 
 type R<'a> = EndianSlice<'a, LittleEndian>;
 
-/// Syscalls from the kernel's generated unistd header (`#define __NR_x n`):
-/// (number, name).
-pub fn syscalls(unistd: &str) -> Vec<(u32, String)> {
-    unistd.lines().filter_map(|l| {
-        let (name, nr) = l.strip_prefix("#define __NR_")?.split_once(char::is_whitespace)?;
-        Some((nr.trim().parse().ok()?, name.to_string()))
+/// The syscalls this kernel builds, as its syscall table (arch::
+/// SYSCALL_TABLE) is in the image: each entry the function a number
+/// calls, `__wasm_sys_NAME` (arch::SYSCALL_WRAPPER), by its index in the
+/// function table; NULL for a syscall it does not build: (number, NAME).
+pub fn syscalls(image: &[u8], t: &ksee_core::types::Types) -> Vec<(u32, String)> {
+    use ksee_core::arch;
+    let Some(&(addr, ty)) = t.globals.get(arch::SYSCALL_TABLE) else { return Vec::new() };
+    let entries = module::memory(image, addr, t.size_of(ty));
+    let (table, names) = (module::table(image), module::function_names(image));
+    entries.chunks(4).enumerate().filter_map(|(nr, e)| {
+        let f = table.get(&u32::from_le_bytes(e.try_into().ok()?))?;
+        Some((nr as u32, names.get(f)?.strip_prefix(arch::SYSCALL_WRAPPER)?.to_string()))
     }).collect()
 }
 
@@ -108,8 +115,9 @@ pub fn constants(include: &Path) -> Vec<(String, i64)> {
 
 /// The type table as ksee.types text: types, globals, every function's
 /// parameters (`P name params`, as "name:type": the call stack's
-/// arguments), and the syscalls' names (`S nr name`).
-pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::Error> {
+/// arguments). (The syscalls' names, `S nr name`, come after: see
+/// syscalls.)
+pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
     let sections: HashMap<String, Vec<u8>> = module::custom_sections(image)
         .filter(|(name, _)| name.starts_with(".debug_"))
         .map(|(name, data)| (name.to_string(), data.to_vec()))
@@ -209,9 +217,6 @@ pub fn types(image: &[u8], syscalls: &[(u32, String)]) -> Result<String, gimli::
                 b.locate(&name, &file, line);
             }
         }
-    }
-    for (nr, name) in syscalls {
-        b.extra.push(format!("S\t{nr}\t{name}"));
     }
     Ok(b.text())
 }

@@ -188,12 +188,8 @@ impl Machine {
     /// entry to return, and whatever the kernel does meanwhile.
     pub fn call(&self, name: &str, args: Vec<JsValue>, tid: Option<u32>) -> Result<u32, JsValue> {
         let tid = tid.or(k(|k| k.main.get())).ok_or("the program is not ready")?;
-        let types = &tables().types;
-        let nr = types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
-            .ok_or_else(|| format!("no syscall {name}"))?;
-        if !types.built(&Direct, nr) {
-            return Err(format!("this kernel does not build {name} (it would return ENOSYS)").into());
-        }
+        let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
+            .ok_or_else(|| format!("this kernel has no syscall {name}"))?;
         let Some((task, req)) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.requests.borrow().get(&tid)?))) else {
             return Err(format!("no runner {tid}").into());
         };

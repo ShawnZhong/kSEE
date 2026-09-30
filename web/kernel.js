@@ -7,7 +7,7 @@
 //   const fd = await k.sys.openat(k.C.AT_FDCWD, "/note.txt", k.C.O_RDONLY);
 //   const n = await k.sys.read(fd, buf, 64);          // 18
 //   buf.show();                                       // '"hello from memory\n"'
-//   await k.sys.clock_nanosleep_time64(k.C.CLOCK_MONOTONIC, 0, { tv_sec: 0, tv_nsec: 30000000 }, null);
+//   await k.sys.clock_nanosleep(k.C.CLOCK_MONOTONIC, 0, { tv_sec: 0, tv_nsec: 30000000 }, null);
 //   k.sys.on(child).read(0, buf, 64);                 // another runner (a thread, a child)
 //
 // Arguments are JS values, taken as C would: a number (or a BigInt) as it
