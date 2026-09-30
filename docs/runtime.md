@@ -98,7 +98,8 @@ positional or by member; an array; argv for a `char **`); and a line can
 declare a variable of the program's as in C (`char buf[64]`, `struct
 __kernel_timespec ts = {0, 30000000}`: a type of the kernel's), which
 `Machine.declare` puts in the program's own memory (user/prog.c's heap, in
-its process), its name then its address (`&ts` too; `fds[1]` an element;
+its process; a variable of a page or more on a page of its own, as memory
+the kernel pins must be), its name then its address (`&ts` too; `fds[1]` an element;
 `rings->sq.tail`, through a result typed as a pointer; a line `target =
 value` writes one, recorded: `Machine.assign`),
 `Machine.show` printing it as C writes it. A call's strings and compound literals go

@@ -377,13 +377,16 @@ fn js_value(v: &ksee_core::program::Value) -> JsValue {
 }
 
 /// `len` bytes of the memory of runner `tid`'s program (user/prog.c's heap:
-/// its process's): their address.
+/// its process's): their address, on 16 bytes; a page or more, on a page
+/// (as mmap gives it: memory the kernel can pin, a ring's).
 fn alloc(tid: u32, len: u32) -> Result<u32, String> {
     k(|k| {
         let base = *k.heap_of.borrow().get(&tid).ok_or_else(|| format!("no runner {tid}"))?;
         let mut heaps = k.heaps.borrow_mut();
         let (next, end) = heaps.get_mut(&base).ok_or("no memory")?;
-        let at = (*next + 15) & !15;
+        let page = ksee_core::arch::PAGE;
+        let align = if len >= page { page } else { 16 };
+        let at = (*next + align - 1) & !(align - 1);
         if at + len > *end {
             return Err("the program's memory is full".into());
         }

@@ -28,6 +28,8 @@ pub const MACHINE: &str = "arch/wasm/";
 pub const TASK_ENTRY: &str = "wasm_task_entry";
 /// The context switch: switch(prev, next) returns on next's stack.
 pub const SWITCH: &str = "__switch_to";
+/// The kernel's page (arch/wasm: PAGE_SHIFT 12).
+pub const PAGE: u32 = 4096;
 /// A task (what the task running points at), and the fields of it the
 /// Stack shows first.
 pub const TASK: &str = "task_struct";
