@@ -114,9 +114,9 @@ impl Machine {
         self.view(|v| to_js(&v.tasks(i)))
     }
 
-    /// Who the task at address `task` is (view::TaskRef).
-    pub fn task(&self, task: u32) -> JsValue {
-        self.view(|v| to_js(&v.task(task)))
+    /// Who the task at address `task` was at record `at` (view::TaskRef).
+    pub fn task(&self, task: u32, at: usize) -> JsValue {
+        self.view(|v| to_js(&v.task(task, at)))
     }
 
     /// The next (dir > 0) or previous record from `i` that runs line `line`

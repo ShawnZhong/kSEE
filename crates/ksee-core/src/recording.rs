@@ -30,9 +30,9 @@ pub struct Recording {
     pub blocks: Vec<usize>,
     /// The calls, and where each record's task is in them.
     pub calls: stack::Calls,
-    /// Who each task is (by its task_struct's address), read once per
-    /// snapshot (View::task).
-    pub names: core::cell::RefCell<alloc::collections::BTreeMap<u32, crate::task::Task>>,
+    /// Who each task was (by its task_struct's address, and the last write
+    /// to its pid or comm by then), read once per snapshot (View::task).
+    pub names: core::cell::RefCell<alloc::collections::BTreeMap<(u32, Option<usize>), crate::task::Task>>,
     /// The last span's stores, named (View::stores: what Objects and the
     /// source's notes ask again at each moment), by its first and last.
     pub named: core::cell::RefCell<Option<((usize, usize), alloc::rc::Rc<crate::view::Named>)>>,

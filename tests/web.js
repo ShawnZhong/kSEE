@@ -63,7 +63,7 @@ const chartTasks = (flat) => {
 const ts = { bytes: new Uint8Array(new BigInt64Array([0n, 30000000n]).buffer) };
 const nap = (await call("clock_nanosleep", [1, 0, ts, 0])).s;
 check("sleeping switched to the idle task and back", ran(nap, "__schedule")
-      && chartTasks(m.chart(nap.first, nap.last, 50)).some((a) => m.task(a).comm === "swapper/0"));
+      && chartTasks(m.chart(nap.first, nap.last, 50)).some((a) => m.task(a, nap.first).comm === "swapper/0"));
 // (A long sleep finishes too: time goes on while the call does, its runner waking.)
 const long = await call("clock_nanosleep", [1, 0, { bytes: new Uint8Array(new BigInt64Array([2n, 0n]).buffer) }, 0]);
 check("a 2 s sleep returns (the clock skipped ahead)", long.how === "returned" && long.ret === 0);

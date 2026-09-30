@@ -264,9 +264,10 @@
   const inp = document.querySelector(".callform textarea");
   inp.focus();
   await sleep(100);
-  // (Nothing written: the syscalls the examples make, to start from.)
-  r.offered = [...document.querySelectorAll(".callform ul.complete li")].map((li) => li.innerText.split(" ")[0]).slice(0, 4);
-  if (!r.offered.includes("openat")) throw new Error("nothing offered: " + JSON.stringify(r.offered));
+  // (Nothing written: every syscall, the ones the examples make first.)
+  const all = [...document.querySelectorAll(".callform ul.complete li")].map((li) => li.innerText.split(" ")[0]);
+  r.offered = [all.slice(0, 4), all.length];
+  if (all[0] !== "umask" || !all.includes("openat") || all.length < 100) throw new Error("nothing offered: " + JSON.stringify(r.offered));
   inp.value = 'openat(AT_FDCWD, "/x", O_CR'; inp.dispatchEvent(new Event("input"));
   r.complete = [...document.querySelectorAll(".callform ul.complete li")].map((li) => li.innerText).slice(0, 3);
   inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));

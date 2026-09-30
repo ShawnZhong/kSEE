@@ -50,8 +50,9 @@ export function timeline(app) {
               lit: null, sel: null, syscallAt: new Map(),
               // (the text found, and the calls of the functions with it in their names: their records)
               found: { name: "", at: [] } };
-  const { fn, iname } = app, tasks = new Map();
-  const who = (addr) => (tasks.has(addr) ? tasks.get(addr) : tasks.set(addr, m.task(addr)).get(addr));
+  const { fn, iname } = app;
+  // (Who task `addr` was at record `i`: its name then, Machine.task.)
+  const who = (addr, i) => m.task(addr, i);
 
   function canvas(c, h) {
     const dpr = devicePixelRatio;
@@ -139,7 +140,7 @@ export function timeline(app) {
     };
     // The task strip.
     for (const r of runs((c) => c.task)) {
-      const p = who(r.v);
+      const p = who(r.v, r.c.i);
       sctx.fillStyle = taskColor(p?.pid ?? 0);
       sctx.fillRect(r.from * cw, 0, (r.to - r.from) * cw, STRIP);
       label(sctx, taskName(p), r.from * cw, (r.to - r.from) * cw, STRIP / 2, "#1f2328");
@@ -238,7 +239,7 @@ export function timeline(app) {
   // The task strip: who ran; click to put the cursor there.
   strip.onpointermove = (e) => {
     const c = t.win && t.cols[Math.floor((e.offsetX / W()) * t.cols.length)];
-    strip.title = c ? taskName(who(c.task)) : "";
+    strip.title = c ? taskName(who(c.task, c.i)) : "";
   };
   strip.onclick = (e) => t.win && go(m.next_block(Math.max(0, at(e.offsetX) - 1), false));
   // Hover: the call there outlined, and what it was (a syscall: its
@@ -270,7 +271,7 @@ export function timeline(app) {
     app.peek(first == null ? at(e.offsetX) : c.i, first == null ? null : { first, inlined: inl ? iname(inl - 1) : null });
     if (first == null) {
       tip.hidden = true;
-      chart.title = c && d < 0 ? taskName(who(c.task)) : "";
+      chart.title = c && d < 0 ? taskName(who(c.task, c.i)) : "";
       return;
     }
     chart.title = "";
@@ -367,7 +368,6 @@ export function timeline(app) {
     t.n = m.records();
     t.calls = calls;
     t.syscallAt = new Map(calls.map((c) => [c.first, c]));
-    tasks.clear();
     args.clear();
     t.buckets = m.timeline(Math.max(1, over.clientWidth));
     if (t.found.name) t.found.at = [...m.calls_of(t.found.name, 0, Math.max(0, t.n - 1))];

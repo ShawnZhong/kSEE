@@ -1,0 +1,22 @@
+{
+  "title": "How does a task get its name?",
+  "group": "Start here",
+  "question": "prctl(PR_SET_NAME, name) renames the task that makes it, as ps shows it. Where does the name go?",
+  "text": [
+    "A task's name is `comm`, 16 bytes in its `task_struct`: what ps, top and the timeline here show. The program renames itself, then reads the name back.",
+    "1. [__wasm_sys_prctl](1:__wasm_sys_prctl) is one big switch on the option, `PR_SET_NAME` here; first [cap_task_prctl](1:cap_task_prctl), the security module, gets a say.",
+    "2. [strncpy_from_user](1:strncpy_from_user) copies the new name in from the program's memory, at most 15 bytes and a NUL: the kernel never uses a user pointer as it is.",
+    "3. [__set_task_comm](1:__set_task_comm) copies it into `comm`, under the task's lock, padded with zeros: [what it changed](1:__set_task_comm:objects), `comm` from \"prog\" to \"worker\".",
+    "4. The second call, `PR_GET_NAME`, copies it back out: [sized_strscpy](2:sized_strscpy) into a buffer of the kernel's, then to the program's `got`.",
+    "Try: [a name too long](try:1): it is cut to 15 characters."
+  ],
+  "tries": [
+    "char name[32] = \"a-name-longer-than-sixteen\"; prctl(PR_SET_NAME, name, 0, 0, 0); char got[16]; prctl(PR_GET_NAME, got, 0, 0, 0)"
+  ],
+  "steps": [
+    "char name[16] = \"worker\"",
+    "prctl(PR_SET_NAME, name, 0, 0, 0)",
+    "char got[16]",
+    "prctl(PR_GET_NAME, got, 0, 0, 0)"
+  ]
+}

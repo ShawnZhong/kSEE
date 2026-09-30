@@ -17,8 +17,9 @@ compiled to WebAssembly (no emulator), and instrumented by the compiler.
   question ("What is a file descriptor?", "What happens in
   read()?", "What is a directory?", "How do two processes talk through a
   pipe?"), a program of a few syscalls that asks it, and a short
-  explanation, with links into the recording. The first, getpid (the
-  smallest syscall), is also a first look at kSEE itself.
+  explanation, with links into the recording. The first, umask (the
+  smallest syscall that changes something: one field), is also a first
+  look at kSEE itself.
 - *Kernel developers*: what a code path really does, on a real kernel they
   can read and change. They make **their own syscalls**.
 

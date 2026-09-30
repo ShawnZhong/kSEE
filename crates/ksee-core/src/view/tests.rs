@@ -419,3 +419,20 @@ fn a_long_array_says_how_many_more() {
     let c = t.types.object(&Mem(alloc::vec![0u8; 400]), "a", 0, 2, 1).children.unwrap();
     assert_eq!((c.len(), c[64].name.as_str(), c[64].value.as_deref()), (65, "[64…99]", Some("… 36 more")));
 }
+
+#[test]
+fn a_task_is_named_as_it_was_then() {
+    // task_struct { int pid; char comm[8]; } at 0x40, pid 19: renamed from
+    // "prog" to "hi" at record 2 (a store of comm's first 4 bytes).
+    let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n", "T\t1\tbase\tint\t4\ts\nT\t2\tbase\tchar\t1\tc\nT\t3\tarray\t\t8\t2\t8\n\
+        T\t4\tstruct\ttask_struct\t12\nM\t4\tpid\t0\t0\t1\nM\t4\tcomm\t32\t0\t3\n");
+    let r = [Record::Task { task: 0x40 }, Record::Block { func: 1, n: 0 },
+             Record::Store { addr: 0x44, size: 4, old: Some(u32::from_le_bytes(*b"prog") as u64), line: 0, from: None }, Record::Block { func: 1, n: 0 }];
+    let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), Args::default());
+    let mut m = alloc::vec![0u8; 128];
+    m[0x40] = 19;
+    m[0x44..0x47].copy_from_slice(b"hi\0");
+    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let name = |i| v.task(0x40, i).comm;
+    assert_eq!((name(1), name(3), v.task(0x40, 3).pid), (Some("prog".into()), Some("hi".into()), Some(19)));
+}

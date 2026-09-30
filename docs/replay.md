@@ -15,9 +15,9 @@ known places, so a pass over the records tracks it:
 - a new task starts in `wasm_task_entry(p)`;
 - before the first switch, its `prev` ran.
 
-Who a task is (pid, comm) comes from its task_struct, in memory now (so a
-task that exited meanwhile, a kernel thread or a runner's child, may show
-as whoever has its address now; a runner that execs shows its new comm).
+Who a task was (pid, comm) comes from its task_struct as memory was at
+the record it is named at (`View::task`): a task renamed later
+(`prctl(PR_SET_NAME)`, an exec) is named as it was then.
 
 The tasks at a record (`tasks`): the kernel's task list as memory then
 had it (from `init_task`, each process by its `tasks` link, and its

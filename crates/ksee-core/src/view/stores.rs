@@ -109,7 +109,7 @@ impl View<'_> {
         let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
         let from = self.rec.copied_from(i, addr);
         let old = old.map_or_else(|| "(not kept)".into(), num);
-        Some(Write { i, addr, old, task: self.task(self.rec.tasks[i]), at: line.map(|s| self.line_only(&s)), from })
+        Some(Write { i, addr, old, task: self.task(self.rec.tasks[i], i), at: line.map(|s| self.line_only(&s)), from })
     }
 
     /// Where the value at `addr..addr + len` after record `at` came from:
@@ -277,7 +277,7 @@ impl View<'_> {
         if let Some(ty) = types.find(arch::TASK) {
             // (By its name, "prog(19)": the task running as the span begins,
             // which another may follow in it; not "current".)
-            let who = self.task(task);
+            let who = self.task(task, first);
             let who = format!("{}({})", who.comm.unwrap_or_default(), who.pid.unwrap_or(0));
             add((who.clone(), None), RegionKind::Task, ty, task, None, None, None);
             // (And what its pointer members point to, as the span ends:

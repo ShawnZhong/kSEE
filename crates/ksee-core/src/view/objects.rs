@@ -118,7 +118,7 @@ impl View<'_> {
                 Some(k) => k,
                 None => {
                     let task = self.rec.tasks[w.i];
-                    let by = (Some(task) != own).then(|| self.task(task));
+                    let by = (Some(task) != own).then(|| self.task(task, w.i));
                     nodes.push((Node { label: match (r.kind, types.get(types.resolve(r.ty)).name.as_str()) {
                                            (RegionKind::Object, name) if !name.is_empty() => name.to_string(),
                                            _ => r.what.clone(),

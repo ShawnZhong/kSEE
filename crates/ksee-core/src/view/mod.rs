@@ -31,8 +31,7 @@ pub use objects::{Diff, Group, Node, Run, Under};
 pub use stores::{Named, Note, Region, RegionKind, Wrote, Write};
 pub use value::{Missing, Object, Target};
 
-/// Who a task was (pid and comm unknown if the recording does not say, and
-/// the task_struct is another's by now).
+/// Who a task was, at a record (see View::task).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct TaskRef {
@@ -229,16 +228,24 @@ impl View<'_> {
         self.tables.functions.get(&func).map_or_else(|| format!("{func:#x}"), |f| f.name.clone())
     }
 
-    /// Who the task at `addr` is (as memory says now).
-    pub fn task(&self, addr: u32) -> TaskRef {
-        // (Read once per snapshot: every store names its task.)
-        let known = self.rec.names.borrow().get(&addr).cloned();
-        let t = known.or_else(|| {
-            let t = read_task(self.tables, self.now, addr)?;
-            self.rec.names.borrow_mut().insert(addr, t.clone());
-            Some(t)
+    /// Who the task at `addr` was at record `at`: its pid and comm as memory
+    /// was then (a task renamed later, or one whose task_struct another has
+    /// by now, as it was).
+    pub fn task(&self, addr: u32, at: usize) -> TaskRef {
+        let t = self.tables;
+        let at = at.min(last_record(self.rec));
+        // (Read once per snapshot and per last write to its pid or comm by
+        // then: every store names its task.)
+        let h = self.rec.stores();
+        let last = |f: &str| t.types.field(arch::TASK, f).and_then(|(off, len)| h.last_write(&self.rec.records, addr.wrapping_add(off), len, at)).map(|(i, _)| i);
+        let key = (addr, last(arch::TASK_PID).max(last(arch::TASK_COMM)));
+        let known = self.rec.names.borrow().get(&key).cloned();
+        let task = known.or_else(|| {
+            let task = read_task(t, &self.rec.memory_at(self.now, at), addr)?;
+            self.rec.names.borrow_mut().insert(key, task.clone());
+            Some(task)
         });
-        TaskRef { addr, pid: t.as_ref().map(|t| t.pid), comm: t.map(|t| t.comm) }
+        TaskRef { addr, pid: task.as_ref().map(|t| t.pid), comm: task.map(|t| t.comm) }
     }
 
     /// The fields of the task at `addr`, in `mem` (memory as it was): the
@@ -308,7 +315,7 @@ impl View<'_> {
             };
             let up = |f: &str| field(addr, arch::TASK, f).filter(|&p| p != 0 && p != addr);
             TaskAt {
-                task: self.task(addr),
+                task: self.task(addr, i),
                 up: up(arch::TASK_LEADER).or_else(|| up(arch::TASK_PARENT)),
                 state, last,
                 syscall: last.and_then(|j| self.rec.syscall_at(j)).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr).cloned()),
@@ -321,7 +328,7 @@ impl View<'_> {
         self.rec.syscalls.iter().enumerate().map(|(index, s)| SyscallSummary {
             index,
             id: self.rec.ids.get(s.first).copied().unwrap_or(0),
-            task: self.task(s.task),
+            task: self.task(s.task, s.first),
             nr: s.nr,
             name: self.tables.types.syscalls.get(&s.nr).cloned(),
             ret: s.ret,
@@ -368,7 +375,7 @@ impl View<'_> {
             file: loc.map(|l| t.file(l).to_string()),
             line: loc.map(|l| l.line),
             inlined: self.inlined_from(inlined),
-            task: self.task(self.rec.tasks[i]),
+            task: self.task(self.rec.tasks[i], i),
             syscall: self.rec.syscall_at(i),
             value: match records[i] { Record::Return { value, .. } => Some(value), _ => None },
         })
@@ -385,7 +392,7 @@ impl View<'_> {
         let mut out = Vec::new();
         for i in from..=to.min(last_record(rec)) {
             if i > 0 && rec.tasks.get(i) != rec.tasks.get(i - 1) {
-                let task = self.task(rec.tasks[i]);
+                let task = self.task(rec.tasks[i], i);
                 out.push((i, RecordKind::Task, format!("── {}({}) runs", task.comm.unwrap_or_default(), task.pid.unwrap_or(0))));
             }
             let (kind, text) = match rec.records[i] {
@@ -430,7 +437,7 @@ impl View<'_> {
         let steps = self.rec.steps().max(1);
         (0..n).filter_map(|b| {
             let i = self.rec.record_of(b * steps / n);
-            Some(self.task(*self.rec.tasks.get(i)?))
+            Some(self.task(*self.rec.tasks.get(i)?, i))
         }).collect()
     }
 
