@@ -45,8 +45,8 @@ static void __attribute__((noreturn)) serve(int main)
 		while (req.nr < 0)
 			sys(__NR_futex_time64, &req.nr, FUTEX_WAIT_PRIVATE, -1);
 		ksee_begin();
-		long long ret = linux_syscall(req.nr, req.args[0], req.args[1], req.args[2],
-					      req.args[3], req.args[4], req.args[5]);
+		long long ret = sys(req.nr, req.args[0], req.args[1], req.args[2],
+				    req.args[3], req.args[4], req.args[5]);
 		req.nr = -1;
 		ksee_end(ret);
 	}
