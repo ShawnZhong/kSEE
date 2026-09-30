@@ -116,7 +116,7 @@ pub fn constants(include: &Path) -> Vec<(String, i64)> {
             if name.contains('(') || known.iter().any(|(n, _)| n == name) {
                 continue;
             }
-            if let Ok(v) = ksee_core::program::value(value.trim(), None, &|n: &str| known.iter().find(|(k, _)| k == n).map(|&(_, v)| v)) {
+            if let Ok(v) = ksee_core::program::expression(value).and_then(|e| ksee_core::program::value(&e, None, &|n: &str| known.iter().find(|(k, _)| k == n).map(|&(_, v)| v))) {
                 known.push((name.to_string(), v));
                 if prefixes.iter().any(|p| name.starts_with(p)) && !name.starts_with("__") {
                     out.push((name.to_string(), v));

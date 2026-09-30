@@ -56,7 +56,7 @@ pub enum Line {
     /// Some(None) for `[]`).
     Decl { ty: TypeName, name: String, count: Option<Option<Expr>>, init: Option<Expr> },
     /// `target = value`: memory of the program's written.
-    Assign { target: Expr, value: Expr, texts: (String, String) },
+    Assign { target: Expr, value: Expr },
 }
 
 /// The words that begin a type.
@@ -323,13 +323,9 @@ impl<'a> Parser<'a> {
             let (call, args, texts) = self.call()?;
             Line::Call { result: None, call, args, texts }
         } else {
-            let from = self.at;
             let target = self.expr()?;
-            let t = self.span(from, self.at);
             self.expect("=")?;
-            let from = self.at;
-            let value = self.init()?;
-            Line::Assign { target, value, texts: (t, self.span(from, self.at)) }
+            Line::Assign { target, value: self.init()? }
         };
         if !self.done() {
             return Err(format!("not C here{}", self.here()));

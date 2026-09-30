@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use super::eval::{Env, Eval};
-use super::parse::{expression, Expr, Line};
+use super::parse::{Expr, Line};
 use crate::types::{Base, Kind, Types};
 use crate::Memory;
 
@@ -50,12 +50,12 @@ impl Types {
     /// the type the
     /// kernel's own (a struct, union or enum by its tag, a typedef, a base
     /// type by its name). `known`: as for arg.
-    pub fn declare(&self, text: &str, known: &dyn Env) -> Result<Decl, String> {
-        let Line::Decl { ty, name, count, init } = super::parse::statement(text)?.line else {
+    pub fn declare(&self, line: &Line, known: &dyn Env) -> Result<Decl, String> {
+        let Line::Decl { ty, name, count, init } = line else {
             return Err("a declaration: a type, then a name".into());
         };
-        let e = Eval { types: Some(self), env: known };
-        let ty = match e.type_of(&ty)? {
+        let (e, name) = (Eval { types: Some(self), env: known }, name.clone());
+        let ty = match e.type_of(ty)? {
             (_, Some(_)) => return Err(format!("{name}: a pointer: declare what it points to (its name is its address)")),
             (0, None) => return Err(format!("{name}: void")),
             (t, None) => t,
@@ -71,16 +71,17 @@ impl Types {
                 Some(Expr::Init(l)) => l.len() as u32,
                 _ => return Err(format!("{name}[]: how many?")),
             }),
-            Some(Some(c)) => Some(u32::try_from(e.number(&c)?).map_err(|_| format!("{name}[…]: not a size"))?),
+            Some(Some(c)) => Some(u32::try_from(e.number(c)?).map_err(|_| format!("{name}[…]: not a size"))?),
         };
         let bytes = self.lay(ty, count, init.as_ref(), known).map_err(|e| format!("{name}: {e}"))?;
         Ok(Decl { name, ty, count, bytes })
     }
 
     /// A variable's bytes (of type `ty`, an array of `count` of them) as
-    /// `text` makes them: a C initializer ("hi", {3, 4}, {.tv_sec = 1}, 7).
-    pub fn assign(&self, ty: u32, count: Option<u32>, text: &str, known: &dyn Env) -> Result<Vec<u8>, String> {
-        self.lay(ty, count, Some(&expression(text)?), known)
+    /// `init` makes them, as a declaration's value: an expression, or "hi",
+    /// {3, 4}, {.tv_sec = 1}.
+    pub fn assign(&self, ty: u32, count: Option<u32>, init: &Expr, known: &dyn Env) -> Result<Vec<u8>, String> {
+        self.lay(ty, count, Some(init), known)
     }
 
     /// The bytes of a variable of type `ty` (an array of `count`) that
@@ -209,9 +210,8 @@ impl Types {
     /// Argument `text` for parameter type `ty` (a syscall's, or 0: unknown):
     /// see the module's doc. `known`: the values of names (constants,
     /// results, variables).
-    pub fn arg(&self, text: &str, ty: u32, known: &dyn Env) -> Result<Arg, String> {
-        let e = expression(text)?;
-        match &e {
+    pub fn arg(&self, e: &Expr, ty: u32, known: &dyn Env) -> Result<Arg, String> {
+        match e {
             Expr::Str(s) => {
                 let mut b = s.clone();
                 b.push(0);
@@ -234,10 +234,10 @@ impl Types {
                     }).collect::<Result<_, _>>().map(Arg::Strings);
                 }
                 let mut b = vec![0u8; self.size_of(to) as usize];
-                self.fill(&mut b, 0, to, &e, known)?;
+                self.fill(&mut b, 0, to, e, known)?;
                 Ok(Arg::Bytes(b))
             }
-            _ => Ok(Arg::Number(Eval { types: Some(self), env: known }.number(&e)?)),
+            _ => Ok(Arg::Number(Eval { types: Some(self), env: known }.number(e)?)),
         }
     }
 

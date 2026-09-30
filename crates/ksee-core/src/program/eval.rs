@@ -6,7 +6,7 @@
 use alloc::format;
 use alloc::string::String;
 
-use super::parse::{expression, Expr, TypeName};
+use super::parse::{Expr, TypeName};
 use crate::types::{Base, Kind, Types};
 use crate::Memory;
 
@@ -201,16 +201,16 @@ fn num(v: V) -> i64 {
     }
 }
 
-/// Expression `s`'s value (a pointer's: its address), with `types` for
+/// Expression `e`'s value (a pointer's: its address), with `types` for
 /// members and memory (none: numbers and names only).
-pub fn value(s: &str, types: Option<&Types>, env: &dyn Env) -> Result<i64, String> {
-    Eval { types, env }.number(&expression(s)?)
+pub fn value(e: &Expr, types: Option<&Types>, env: &dyn Env) -> Result<i64, String> {
+    Eval { types, env }.number(e)
 }
 
-/// Expression `s` as memory to write (an lvalue): its address, type, and
+/// Expression `e` as memory to write (an lvalue): its address, type, and
 /// count if an array.
-pub fn lvalue(s: &str, types: &Types, env: &dyn Env) -> Result<(u32, u32, Option<u32>), String> {
-    Eval { types: Some(types), env }.lvalue(&expression(s)?).map_err(|e| format!("{}: {e}", s.trim()))
+pub fn lvalue(e: &Expr, types: &Types, env: &dyn Env) -> Result<(u32, u32, Option<u32>), String> {
+    Eval { types: Some(types), env }.lvalue(e)
 }
 
 /// A result's value as its declared type (`void *`, `struct x *`, `int`)

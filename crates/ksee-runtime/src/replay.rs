@@ -211,7 +211,7 @@ impl Machine {
     /// A program's line (ksee_core::program::statement): { tid?, text (as
     /// written, but for its runner) } and a call's { type?, name?, call,
     /// args (as written) }, a declaration's { decl: true }, or an
-    /// assignment's { target, value }; tid a number if it is one, else the
+    /// assignment's { assign: true }; tid a number if it is one, else the
     /// name of a result (a clone's).
     pub fn statement(&self, text: &str) -> Result<JsValue, JsValue> {
         use ksee_core::program::{statement, Line};
@@ -234,10 +234,7 @@ impl Machine {
                 set("args", texts.into_iter().map(JsValue::from).collect::<js_sys::Array>().into());
             }
             Line::Decl { .. } => set("decl", true.into()),
-            Line::Assign { texts: (target, value), .. } => {
-                set("target", target.into());
-                set("value", value.into());
-            }
+            Line::Assign { .. } => set("assign", true.into()),
         }
         Ok(o.into())
     }

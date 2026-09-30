@@ -216,7 +216,7 @@ export async function examples(app) {
   // How a call finished, or not yet.
   // (A variable: as it starts; each call's line says how it changed.)
   const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.initial ?? ""}`
-    : s?.target != null ? `→ ${d.shown}`
+    : s?.assign ? `→ ${d.shown}`
     : d.how == null ? "… blocked"
     : d.how === "exec" ? "(no return: the new program runs)"
     : d.how === "exited" ? "(no return: it exited)" : `= ${app.kernel.result(d.ret)}`;

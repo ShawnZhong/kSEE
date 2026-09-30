@@ -5,12 +5,18 @@ use crate::types::Types;
 use crate::Memory;
 use alloc::string::ToString;
 use alloc::vec;
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 const TYPES: &str = "T\t1\tbase\tlong long\t8\ts\nT\t2\tstruct\ttimespec\t16\nM\t2\ttv_sec\t0\t0\t1\nM\t2\ttv_nsec\t64\t0\t1\n\
                      T\t3\tptr\t\t4\t2\nT\t4\tbase\tchar\t1\tc\nT\t5\tptr\t\t4\t4\nT\t6\tptr\t\t4\t5\nT\t7\tbase\tint\t4\ts\n\
                      T\t8\tarray\t\t8\t4\t8\nT\t9\tstruct\tnamed\t12\nM\t9\tn\t0\t0\t7\nM\t9\ts\t32\t0\t8\nT\t10\tptr\t\t4\t9\n\
                      T\t11\tarray\t\t8\t7\t2\nT\t12\tstruct\tpair\t8\nM\t12\tv\t0\t0\t11\nT\t13\tptr\t\t4\t12\n";
+
+/// Declaration `text`, in types `t`.
+fn decl(t: &Types, text: &str, known: &dyn Env) -> Result<Decl, alloc::string::String> {
+    t.declare(&statement(text)?.line, known)
+}
 
 fn known(name: &str) -> Option<i64> {
     [("O_CREAT", 64), ("O_WRONLY", 1), ("AT_FDCWD", -100), ("fd", 3), ("n", 5)].iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
@@ -51,29 +57,30 @@ fn a_line_is_a_call_or_a_declaration() {
     assert!(statement("write(1, \"hi)\", 2").is_err());
     // (Assignments: memory of the program's written.)
     let assign = |t: &str| match statement(t).unwrap() {
-        Statement { line: Line::Assign { texts, .. }, .. } => texts,
+        Statement { line: Line::Assign { target, value }, .. } => (target, value),
         s => panic!("{s:?}"),
     };
-    assert_eq!(assign("*sqe = {.opcode = IORING_OP_READ, .fd = fd}"), ("*sqe".into(), "{.opcode = IORING_OP_READ, .fd = fd}".into()));
-    assert_eq!(assign("rings->sq.tail = 1;"), ("rings->sq.tail".into(), "1".into()));
-    assert_eq!(assign("fds[0] = 3"), ("fds[0]".into(), "3".into()));
-    assert_eq!(assign("x = y + 2"), ("x".into(), "y + 2".into()));
+    let n = |s: &str| Expr::Name(s.into());
+    assert_eq!(assign("rings->sq.tail = 1;"), (Expr::Member(Box::new(Expr::Member(Box::new(n("rings")), "sq".into(), true)), "tail".into(), false), Expr::Num(1)));
+    assert_eq!(assign("fds[0] = 3").0, Expr::Index(Box::new(n("fds")), Box::new(Expr::Num(0))));
+    assert_eq!(assign("x = y + 2").1, Expr::Binary("+", Box::new(n("y")), Box::new(Expr::Num(2))));
+    assert!(matches!(assign("*sqe = {.opcode = IORING_OP_READ, .fd = fd}"), (Expr::Unary("*", _), Expr::Init(l)) if l.len() == 2));
 }
 
 #[test]
 fn declarations_are_a_programs_memory() {
     let t = Types::parse(TYPES);
-    let d = t.declare("struct timespec ts = {0, 30000000}", &known).unwrap();
+    let d = decl(&t, "struct timespec ts = {0, 30000000}", &known).unwrap();
     assert_eq!((d.name.as_str(), d.ty, d.count, d.bytes.len()), ("ts", 2, None, 16));
     assert_eq!(&d.bytes[8..12], &30000000u32.to_le_bytes());
-    let buf = t.declare("char buf[64]", &known).unwrap();
+    let buf = decl(&t, "char buf[64]", &known).unwrap();
     assert_eq!((buf.ty, buf.count, buf.bytes.len()), (4, Some(64), 64));
-    let fds = t.declare("int fds[2] = {3, 4}", &known).unwrap();
+    let fds = decl(&t, "int fds[2] = {3, 4}", &known).unwrap();
     assert_eq!(fds.bytes, [3, 0, 0, 0, 4, 0, 0, 0]);
-    assert_eq!(t.declare("char path[] = \"/x\"", &known).unwrap().bytes, b"/x\0");
-    assert!(t.declare("struct nope x", &known).is_err());
+    assert_eq!(decl(&t, "char path[] = \"/x\"", &known).unwrap().bytes, b"/x\0");
+    assert!(decl(&t, "struct nope x", &known).is_err());
     // (A pointer: not a variable; a result's, or a variable's address.)
-    assert!(t.declare("char *p = 0x40", &known).is_err());
+    assert!(decl(&t, "char *p = 0x40", &known).is_err());
     // Said as C writes it.
     struct M(Vec<u8>);
     impl Memory for M {
@@ -89,14 +96,14 @@ fn declarations_are_a_programs_memory() {
     assert_eq!(t.value(&mem, 0, 7, Some(2)), Value::List(alloc::vec![Value::Int(3), Value::Int(4)]));
     assert_eq!(t.value(&mem, 8, 2, None), Value::Fields(alloc::vec![("tv_sec".into(), Value::Int(0)), ("tv_nsec".into(), Value::Int(30000000))]));
     assert_eq!(t.value(&mem, 24, 4, Some(3)), Value::Text("hi".into()));
-    assert_eq!(t.assign(7, Some(2), "{5, 6}", &known).unwrap(), [5, 0, 0, 0, 6, 0, 0, 0]);
+    assert_eq!(t.assign(7, Some(2), &expression("{5, 6}").unwrap(), &known).unwrap(), [5, 0, 0, 0, 6, 0, 0, 0]);
     // (Past a NUL too, escaped, as C writes it.)
     assert_eq!(t.show(&M(b"a\0b\x05\0\0".to_vec()), 0, 4, Some(6)), "\"a\\0b\\x05\"");
 }
 
 #[test]
 fn expressions() {
-    let eval = |s: &str, k: &dyn Env| value(s, None, k);
+    let eval = |s: &str, k: &dyn Env| expression(s).and_then(|e| value(&e, None, k));
     assert_eq!(eval("O_CREAT | O_WRONLY", &known), Ok(65));
     assert_eq!(eval("0644", &known), Ok(420));
     assert_eq!(eval("(1 << 4) + fd - n", &known), Ok(14));
@@ -133,20 +140,21 @@ fn expressions_as_c_reads_them() {
     }
     let env = Prog(vec![("p", Sym::Var { addr: 8, ty: 2, count: None }), ("fds", Sym::Var { addr: 16, ty: 1, count: Some(2) }),
                         ("q", Sym::Value { v: 8, to: Some(2) })], m);
-    let v = |s| value(s, Some(&t), &env);
+    let v = |s| value(&expression(s).unwrap(), Some(&t), &env);
+    let lv = |s| lvalue(&expression(s).unwrap(), &t, &env);
     assert_eq!((v("p.y"), v("fds[1]"), v("q->x + q[0].y"), v("&p"), v("fds")), (Ok(4), Ok(6), Ok(7), Ok(8), Ok(16)));
     // (Pointer arithmetic: by the size pointed to.)
     assert_eq!((v("*(fds + 1)"), v("(q + 1)->x")), (Ok(6), Ok(5)));
     assert!(v("p").is_err()); // (a struct: its address, or a member)
     // (Memory to write: where, of which type.)
-    assert_eq!((lvalue("fds[1]", &t, &env), lvalue("q->y", &t, &env), lvalue("*(fds + 1)", &t, &env)), (Ok((20, 1, None)), Ok((12, 1, None)), Ok((20, 1, None))));
-    assert_eq!(lvalue("fds", &t, &env), Ok((16, 1, Some(2)))); // (an array, whole: as a declaration's value)
+    assert_eq!((lv("fds[1]"), lv("q->y"), lv("*(fds + 1)")), (Ok((20, 1, None)), Ok((12, 1, None)), Ok((20, 1, None))));
+    assert_eq!(lv("fds"), Ok((16, 1, Some(2)))); // (an array, whole: as a declaration's value)
 }
 
 #[test]
 fn a_struct_is_laid_out_by_its_type() {
     let t = Types::parse(TYPES);
-    let ts = |text| t.arg(text, 3, &known);
+    let ts = |text| t.arg(&expression(text).unwrap(), 3, &known);
     let want = Arg::Bytes([0u64.to_le_bytes(), 30000000u64.to_le_bytes()].concat());
     assert_eq!(ts("{0, 30000000}"), Ok(want.clone()));
     assert_eq!(ts("{.tv_nsec = 30000000}"), Ok(want));
@@ -157,21 +165,21 @@ fn a_struct_is_laid_out_by_its_type() {
     let mut named = vec![0u8; 12];
     named[0] = 7;
     named[4..7].copy_from_slice(b"abc");
-    assert_eq!(t.arg("{7, \"abc\"}", 10, &known), Ok(Arg::Bytes(named)));
-    assert_eq!(t.arg("{{1, 2}}", 13, &known), Ok(Arg::Bytes([1u32.to_le_bytes(), 2u32.to_le_bytes()].concat())));
+    assert_eq!(t.arg(&expression("{7, \"abc\"}").unwrap(), 10, &known), Ok(Arg::Bytes(named)));
+    assert_eq!(t.arg(&expression("{{1, 2}}").unwrap(), 13, &known), Ok(Arg::Bytes([1u32.to_le_bytes(), 2u32.to_le_bytes()].concat())));
 }
 
 #[test]
 fn strings_and_argv() {
     let t = Types::parse(TYPES);
-    assert_eq!(t.arg("\"a\\n\"", 5, &known), Ok(Arg::Bytes(b"a\n\0".to_vec())));
+    assert_eq!(t.arg(&expression("\"a\\n\"").unwrap(), 5, &known), Ok(Arg::Bytes(b"a\n\0".to_vec())));
     // (An escape's byte, not its character's UTF-8: \xff is one byte.)
-    assert_eq!(t.arg("\"\\xff\"", 5, &known), Ok(Arg::Bytes(alloc::vec![0xff, 0])));
-    assert_eq!(t.arg("{\"init\", NULL}", 6, &known), Ok(Arg::Strings(vec![Some("init".into()), None])));
-    assert_eq!(t.arg("fd", 7, &known), Ok(Arg::Number(3)));
+    assert_eq!(t.arg(&expression("\"\\xff\"").unwrap(), 5, &known), Ok(Arg::Bytes(alloc::vec![0xff, 0])));
+    assert_eq!(t.arg(&expression("{\"init\", NULL}").unwrap(), 6, &known), Ok(Arg::Strings(vec![Some("init".into()), None])));
+    assert_eq!(t.arg(&expression("fd").unwrap(), 7, &known), Ok(Arg::Number(3)));
     // (No type known: no layout.)
-    assert!(t.arg("{1, 2}", 0, &known).is_err());
-    assert!(t.arg("{1}", 7, &known).unwrap_err().contains("not a pointer"));
+    assert!(t.arg(&expression("{1, 2}").unwrap(), 0, &known).is_err());
+    assert!(t.arg(&expression("{1}").unwrap(), 7, &known).unwrap_err().contains("not a pointer"));
 }
 
 #[test]

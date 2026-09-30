@@ -340,35 +340,30 @@ enum Plan {
 /// a result's name; else the program's own, Machine::main), and what it
 /// makes, with the names the lines before it made.
 fn plan(text: &str, line: usize) -> Result<(u32, Plan), String> {
-    use ksee_core::program::{lvalue, statement, typed, value, Line};
+    use ksee_core::program::{expression, lvalue, statement, typed, value, Line};
     let (st, types, env) = (statement(text)?, &tables().types, Seen(line));
     let tid = match &st.runner {
         None => k(|k| k.main.get()).ok_or("the program is not ready")?,
-        Some(r) => value(r, Some(types), &env)? as u32,
+        Some(r) => value(&expression(r)?, Some(types), &env)? as u32,
     };
     if !k(|k| k.runners.borrow().contains_key(&tid)) {
         return Err(format!("no runner {tid}: the runners are {:?}", k(|k| k.runners.borrow().keys().copied().collect::<Vec<_>>())));
     }
     Ok((tid, match st.line {
-        Line::Decl { .. } => Plan::Decl(types.declare(&st.text, &env)?),
-        Line::Assign { texts: (target, v), .. } => {
+        Line::Decl { .. } => Plan::Decl(types.declare(&st.line, &env)?),
+        Line::Assign { target, value } => {
             // (As a declaration's value: an expression, "…" or {…}; an array's, whole.)
             let (addr, ty, count) = lvalue(&target, types, &env)?;
-            let bytes = if count.is_some() || v.trim_start().starts_with(['{', '"']) {
-                types.assign(ty, count, &v, &env)?
-            } else {
-                value(&v, Some(types), &env)?.to_le_bytes()[..(types.size_of(ty) as usize).clamp(1, 8)].to_vec()
-            };
-            Plan::Assign { addr, ty, count, bytes }
+            Plan::Assign { addr, ty, count, bytes: types.assign(ty, count, &value, &env)? }
         }
-        Line::Call { result, call, texts, .. } => {
+        Line::Call { result, call, args, texts } => {
             let nr = types.syscalls.iter().find(|(_, n)| **n == call).map(|(&nr, _)| nr)
                 .ok_or_else(|| format!("this kernel has no syscall {call}"))?;
             let params = types.syscall_params(&call).cloned().unwrap_or_default();
             if texts.len() > params.len() {
                 return Err(format!("{call}: {} arguments, not {}", params.len(), texts.len()));
             }
-            let args = texts.iter().enumerate().map(|(k, a)| types.arg(a, params.get(k).map_or(0, |p| p.1), &env))
+            let args = args.iter().enumerate().map(|(k, a)| types.arg(a, params.get(k).map_or(0, |p| p.1), &env))
                 .collect::<Result<Vec<_>, _>>()?;
             let result = match result {
                 Some((ty, name)) => {
