@@ -206,7 +206,7 @@ fn the_objects_a_call_wrote_are_a_graph() {
     // (As a tree, in the order shown: q, then p under it, by its link.)
     assert_eq!(got, [("q in f".into(), alloc::vec![("c".into(), "0 → 7".into(), None), ("link".into(), "NULL → 0x4".into(), Some(1))]),
                      ("p in f".into(), alloc::vec![("b".into(), "1 → 2".into(), None)])]);
-    assert_eq!(nodes.iter().map(|n| n.under.clone()).collect::<Vec<_>>(), [None, Some(Under { node: 0, member: "link".into() })]);
+    assert_eq!(nodes.iter().map(|n| (n.under, n.via.clone())).collect::<Vec<_>>(), [(None, None), (Some(0), Some("link".into()))]);
 }
 
 #[test]

@@ -63,7 +63,7 @@ export function objects(app) {
     // it: Node.under); one under another indented, a guide line down its
     // left.)
     const depth = [];
-    nodes.forEach((n, k) => (depth[k] = n.under ? depth[n.under.node] + 1 : 0));
+    nodes.forEach((n, k) => (depth[k] = n.under != null ? depth[n.under] + 1 : 0));
     const tree = (list) => nodes.flatMap((n, k) => {
       if (!list.includes(n)) return [];
       const b = box(n, nodes, k);
