@@ -85,9 +85,9 @@ Rust does the work: JS only lays it out.
 | trace.js | the Trace tab: the raw trace, a line a record (what the views are built from) |
 | objects.js | the Objects: what the syscall selected did (`Machine.objects`), all of it, always: a head in a line, then a box per object of the kernel's data it changed (not a stack's), those it left changed first (its own task's, then each other task's that ran meanwhile, a head each), then those left as they were, each under the one pointing to it; each box by its type's name, then as the code names it (`file  filp in do_file_open`): each member before → after, by which function (a line each, when several did it in turn; a row, its writes); at the moment shown (the pointer's, else the cursor's), those not made yet gray, the one it is in marked |
 | examples.js | the examples, as lessons (a chapter and place, a title, the question, the explanation, then the example before and the next; the contents, every one by chapter, those opened before ticked): the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the explanation (its links into the recording); the URL (`#ex=NAME&p=CALLS`: the program if changed, its calls separated by `;`) |
-| calledit.js | a call written as in C: completions, the signature (where the cursor is: `Machine.context`) |
+| calledit.js | a call written as in C: what fits at the cursor (`Machine.completions`), the signature (where the cursor is: `Machine.context`), the line checked (`Machine.check`) |
 | ksee.js | booting |
-| kernel.js | a program's lines made one after another (`Machine.run` each, then the kernel quiet after a call: a blocked call pending while the next lines go on), how each went, the runner each call started; what the page's program and the tests share; a call's result with its errno's name (`result`, `errno`: Machine.errno) |
+| kernel.js | a program's lines made one after another (`Machine.run` each, then the kernel quiet after a call: a blocked call pending while the next lines go on), how each went, the runner each call started; what the page's program and the tests share (a result's text: `Machine.result`) |
 
 A program is a small language, parsed, evaluated and laid out in the core
 (crates/ksee-core/src/program/), a line made by `Machine.run`, checked
