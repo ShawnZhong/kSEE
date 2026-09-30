@@ -357,9 +357,12 @@ impl View<'_> {
         let mut globals: Vec<(u32, u32, &str, u32)> = types.globals.iter()
             .map(|(name, &(addr, ty))| (addr, types.size_of(ty), name.as_str(), ty)).filter(|g| g.1 > 0).collect();
         globals.sort_unstable();
+        // (Globals do not overlap: the one holding `addr` starts at the
+        // nearest start at or below it, of the names starting there.)
         let global_at = |addr: u32| {
             let k = globals.partition_point(|g| g.0 <= addr);
-            globals[..k].iter().rev().take(8).find(|g| addr < g.0.saturating_add(g.1)).copied()
+            let start = globals[..k].last()?.0;
+            globals[..k].iter().rev().take_while(|g| g.0 == start).find(|g| addr < g.0.saturating_add(g.1)).copied()
         };
         // (Each store to the outermost region holding its first byte. The
         // regions by address: a store's are those starting at most the

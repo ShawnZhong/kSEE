@@ -203,20 +203,30 @@ impl Types {
         self.params.get(self.by_name.get(&format!("{}{name}", crate::arch::SYSCALL_BODY))?)
     }
 
-    /// The pointers in a value of type `ty` (in the structs and unions it
-    /// holds too, `depth` levels down): each member's path ("f_path.dentry")
+    /// Every pointer in a value of type `ty` (it, or in the structs,
+    /// unions and arrays it holds, however deep: a value holds itself in
+    /// none): each one's path ("f_path.dentry", "fd_array[3]"; "" itself)
     /// and offset.
-    pub fn pointers(&self, ty: u32, depth: u32) -> Vec<(String, u32)> {
-        let mut out = Vec::new();
-        for m in self.members(&self.get(self.resolve(ty)).kind).iter().filter(|m| m.bit_size == 0) {
-            match self.get(self.resolve(m.ty)).kind {
-                Kind::Pointer(_) => out.push((m.name.clone(), m.bit_offset / 8)),
-                Kind::Struct(_) | Kind::Union(_) if depth > 0 => out.extend(self.pointers(m.ty, depth - 1).into_iter()
-                    .map(|(p, off)| (alloc::format!("{}.{p}", m.name), m.bit_offset / 8 + off))),
-                _ => {}
+    pub fn pointers(&self, ty: u32) -> Vec<(String, u32)> {
+        let t = self.get(self.resolve(ty));
+        match &t.kind {
+            Kind::Pointer(_) => alloc::vec![(String::new(), 0)],
+            Kind::Struct(_) | Kind::Union(_) => self.members(&t.kind).iter().filter(|m| m.bit_size == 0).flat_map(|m| {
+                self.pointers(m.ty).into_iter().map(|(p, off)| {
+                    (if p.is_empty() || p.starts_with('[') { alloc::format!("{}{p}", m.name) } else { alloc::format!("{}.{p}", m.name) }, m.bit_offset / 8 + off)
+                }).collect::<Vec<_>>()
+            }).collect(),
+            &Kind::Array { elem, count } => {
+                let (inner, size) = (self.pointers(elem), self.size_of(elem));
+                if inner.is_empty() {
+                    return Vec::new();
+                }
+                (0..count).flat_map(|i| inner.iter().map(move |(p, off)| {
+                    (if p.is_empty() || p.starts_with('[') { alloc::format!("[{i}]{p}") } else { alloc::format!("[{i}].{p}") }, i * size + off)
+                })).collect()
             }
+            _ => Vec::new(),
         }
-        out
     }
 
     /// The errno name of `n` (a failed call's result is -n): ENOENT for 2.
@@ -562,4 +572,12 @@ mod tests {
                    ("-3".into(), "\"init\"".into(), "0x40".into(), "5".into(), "{...}".into()));
     }
 
+
+    #[test]
+    fn every_pointer_in_a_value_however_deep() {
+        // struct s { int a; struct in { void *p; } in; void *arr[2]; }
+        let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t2\tptr\t\t4\t0\nT\t3\tstruct\tin\t4\nM\t3\tp\t0\t0\t2\n\
+                              T\t4\tarray\t\t8\t2\t2\nT\t5\tstruct\ts\t16\nM\t5\ta\t0\t0\t1\nM\t5\tin\t32\t0\t3\nM\t5\tarr\t64\t0\t4\n");
+        assert_eq!(t.pointers(5), [("in.p".into(), 4), ("arr[0]".into(), 8), ("arr[1]".into(), 12)]);
+    }
 }

@@ -376,10 +376,10 @@ fn char_pointers_show_their_strings() {
     let mut m = alloc::vec![0u8; 128];
     m[0..4].copy_from_slice(&8u32.to_le_bytes());
     m[8..12].copy_from_slice(b"tmp\0");
-    m[4..8].copy_from_slice(&16u32.to_le_bytes()); // (to bytes that are no string)
+    m[4..8].copy_from_slice(&16u32.to_le_bytes()); // (to bytes not printable: escaped, as C writes them)
     m[16] = 0xff;
     let value = |at| t.object(&Mem(m.clone()), "p", at, 2, 0).value.unwrap();
-    assert_eq!((value(0).as_str(), value(4).as_str()), ("0x8 → \"tmp\"", "0x10"));
+    assert_eq!((value(0).as_str(), value(4).as_str()), ("0x8 → \"tmp\"", "0x10 → \"\\xff\""));
 }
 
 #[test]

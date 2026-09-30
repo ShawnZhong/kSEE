@@ -210,7 +210,7 @@ impl View<'_> {
         // (Each node's pointers to the others of its group and task, as
         // memory is as the span ends: the tree each is shown as.)
         let links: Vec<Vec<(String, usize)>> = nodes.iter().enumerate().map(|(k, n)| {
-            types.pointers(n.id, 3).into_iter().filter_map(|(member, off)| Some((member, within(mem.read_u32(n.addr.wrapping_add(off)))
+            types.pointers(n.id).into_iter().filter_map(|(member, off)| Some((member, within(mem.read_u32(n.addr.wrapping_add(off)))
                 .filter(|&to| to != k && nodes[to].group == n.group && nodes[to].by == n.by)?))).collect()
         }).collect();
         let tos: Vec<Vec<Option<usize>>> = points.iter().enumerate().map(|(k, p)| p.iter().map(|p| p.and_then(within).filter(|&to| to != k)).collect()).collect();

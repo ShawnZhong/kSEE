@@ -130,7 +130,8 @@ them: `Types::leaves`) from what it was as the span began to what it is as it en
 and how: a run a function writing it in turn, from what to what (one
 that left it as it was, not; a member no run changed, not); a pointer, the
 object it points to as it ends; and each object under the first that
-points to it then (the members of pointer type, `Types::pointers`, whose
+points to it then (every pointer in it, in its structs and arrays too,
+`Types::pointers`, whose
 value is inside another, of its group: those left changed, and those left
 as they were, every change undone), and of its task: the one that
 made its first write (`Node::by`: another than the span's, one that ran

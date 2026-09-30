@@ -103,8 +103,8 @@ impl Types {
             }
             Kind::Pointer(to) => {
                 let p = mem.read_u32(addr);
-                // (A char *: and the string it points to, if it looks like one: "0x1d40130 → \"/sub\"", as any pointer's target.)
-                let text = if p != 0 && self.is_string(*to) { c_string(mem, p) } else { None };
+                // (A char *: and the string it points to: "0x1d40130 → \"/sub\"", as any pointer's target.)
+                let text = (p != 0 && self.is_string(*to)).then(|| c_string(mem, p));
                 o.value = Some(match text {
                     _ if p == 0 => "NULL".into(),
                     Some(t) => format!("{p:#x} → {t}"),

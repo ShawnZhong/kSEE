@@ -532,16 +532,12 @@ fn last_record(rec: &Recording) -> usize {
     rec.records.len().saturating_sub(1)
 }
 
-/// The C string at `p`, quoted (up to 64 characters, then "…"), if what is
-/// there looks like one: printable, with at least one character. (A
-/// __user one too: a program's memory is kernel memory.)
-fn c_string(mem: &dyn Memory, p: u32) -> Option<String> {
+/// The C string at `p`, up to its NUL, quoted as C writes it (what is not
+/// printable escaped; past 64 characters, "…"), as a char * says there is.
+/// (A __user one too: a program's memory is kernel memory.)
+fn c_string(mem: &dyn Memory, p: u32) -> String {
     let mut buf = [0u8; 65];
     mem.read(p, &mut buf);
     let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-    let text = &buf[..n.min(64)];
-    if text.is_empty() || !text.iter().all(|&c| (0x20..0x7f).contains(&c) || c == b'\n' || c == b'\t') {
-        return None;
-    }
-    Some(crate::types::quote(&buf[..n]))
+    crate::types::quote(&buf[..n])
 }
