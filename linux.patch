@@ -1,9 +1,9 @@
 diff --git a/arch/wasm/Kconfig b/arch/wasm/Kconfig
 new file mode 100644
-index 000000000..aa0dfcb29
+index 000000000..9fbf0a932
 --- /dev/null
 +++ b/arch/wasm/Kconfig
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,46 @@
 +# SPDX-License-Identifier: GPL-2.0-only
 +#
 +# WebAssembly: the kernel runs as a wasm32 module, one instance on one
@@ -23,9 +23,6 @@ index 000000000..aa0dfcb29
 +	select HAVE_SYSCALL_TRACEPOINTS
 +	select THREAD_INFO_IN_TASK
 +	select UACCESS_MEMCPY
-+
-+config GENERIC_CALIBRATE_DELAY
-+	def_bool y
 +
 +config MMU
 +	def_bool n
@@ -569,10 +566,10 @@ index 000000000..fd062f51e
 +#endif
 diff --git a/arch/wasm/include/asm/thread_info.h b/arch/wasm/include/asm/thread_info.h
 new file mode 100644
-index 000000000..30e7e749e
+index 000000000..73e786b75
 --- /dev/null
 +++ b/arch/wasm/include/asm/thread_info.h
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,29 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +#ifndef _ASM_WASM_THREAD_INFO_H
 +#define _ASM_WASM_THREAD_INFO_H
@@ -594,7 +591,6 @@ index 000000000..30e7e749e
 +
 +#define INIT_THREAD_INFO(tsk)				\
 +{							\
-+	.flags		= 0,				\
 +	.preempt_count	= INIT_PREEMPT_COUNT,		\
 +}
 +
@@ -901,10 +897,10 @@ index 000000000..34efca5ab
 +#include <linux/kbuild.h>
 diff --git a/arch/wasm/kernel/binfmt_wasm.c b/arch/wasm/kernel/binfmt_wasm.c
 new file mode 100644
-index 000000000..220f9b58d
+index 000000000..7674ff9a4
 --- /dev/null
 +++ b/arch/wasm/kernel/binfmt_wasm.c
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,83 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Executables are position-independent wasm modules that import the
@@ -935,7 +931,7 @@ index 000000000..220f9b58d
 +	void *image;
 +	int ret;
 +
-+	if (bprm->buf[0] != 0 || memcmp(bprm->buf, "\0asm\1\0\0\0", 8))
++	if (memcmp(bprm->buf, "\0asm\1\0\0\0", 8))
 +		return -ENOEXEC;
 +	if (size > INT_MAX)
 +		return -E2BIG;
@@ -979,7 +975,6 @@ index 000000000..220f9b58d
 +}
 +
 +static struct linux_binfmt wasm_format = {
-+	.module		= THIS_MODULE,
 +	.load_binary	= load_wasm_binary,
 +};
 +
@@ -991,10 +986,10 @@ index 000000000..220f9b58d
 +core_initcall(init_wasm_binfmt);
 diff --git a/arch/wasm/kernel/console.c b/arch/wasm/kernel/console.c
 new file mode 100644
-index 000000000..197e8327e
+index 000000000..42951fd77
 --- /dev/null
 +++ b/arch/wasm/kernel/console.c
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,69 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * The console: output only, to the host, synchronously (programs get the
@@ -1021,7 +1016,6 @@ index 000000000..197e8327e
 +	.name	= "wasm",
 +	.write	= wasm_console_write_con,
 +	.flags	= CON_PRINTBUFFER,
-+	.index	= 0,
 +};
 +
 +/*
@@ -1067,7 +1061,7 @@ index 000000000..197e8327e
 +device_initcall(console_dev_init);
 diff --git a/arch/wasm/kernel/irq.c b/arch/wasm/kernel/irq.c
 new file mode 100644
-index 000000000..1b64b0177
+index 000000000..da44de98e
 --- /dev/null
 +++ b/arch/wasm/kernel/irq.c
 @@ -0,0 +1,66 @@
@@ -1096,7 +1090,7 @@ index 000000000..1b64b0177
 +
 +/*
 + * The doorbell: the host has something for a task (a program waiting for
-+ * it, as /init waits for the page's calls, in a futex on a word the host
++ * it, as /bin/prog waits for the page's calls, in a futex on a word the host
 + * has written: woken, the wait sees the word changed and returns).
 + */
 +static void wasm_ring(void)
@@ -1260,10 +1254,10 @@ index 000000000..2a784f2af
 +}
 diff --git a/arch/wasm/kernel/setup.c b/arch/wasm/kernel/setup.c
 new file mode 100644
-index 000000000..ee6bb6567
+index 000000000..5af06275d
 --- /dev/null
 +++ b/arch/wasm/kernel/setup.c
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,77 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#include <linux/console.h>
 +#include <linux/delay.h>
@@ -1314,11 +1308,7 @@ index 000000000..ee6bb6567
 +	memblock_add(0, mem_end);
 +	memblock_reserve(0, PAGE_ALIGN(__pa(__heap_base)));
 +
-+	min_low_pfn = 0;
 +	max_low_pfn = max_pfn = PFN_DOWN(mem_end);
-+
-+	/* There is no timer interrupt to calibrate the delay loop against. */
-+	preset_lpj = 1000000 / HZ;
 +
 +	parse_early_param();
 +	/* The host loads an initramfs at the top of memory ("initrd=a,n"). */
@@ -1341,7 +1331,10 @@ index 000000000..ee6bb6567
 +	wasm_halt(0);
 +}
 +
-+void (*pm_power_off)(void);
++/* Delays read the host's clock (lib/delay.c): no loop to calibrate. */
++void __init calibrate_delay(void)
++{
++}
 diff --git a/arch/wasm/kernel/signal.c b/arch/wasm/kernel/signal.c
 new file mode 100644
 index 000000000..53fec93e6
@@ -1367,10 +1360,10 @@ index 000000000..53fec93e6
 +}
 diff --git a/arch/wasm/kernel/syscall.c b/arch/wasm/kernel/syscall.c
 new file mode 100644
-index 000000000..993caf6ab
+index 000000000..f63a699b3
 --- /dev/null
 +++ b/arch/wasm/kernel/syscall.c
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,66 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * System call entry. A user module imports the kernel's syscall export
@@ -1437,18 +1430,12 @@ index 000000000..993caf6ab
 +	return ksys_mmap_pgoff(addr, len, prot, flags, fd,
 +			       pgoff >> (PAGE_SHIFT - 12));
 +}
-+
-+/* User signal handlers are not supported yet (see signal.c). */
-+SYSCALL_DEFINE0(rt_sigreturn)
-+{
-+	return -ENOSYS;
-+}
 diff --git a/arch/wasm/kernel/time.c b/arch/wasm/kernel/time.c
 new file mode 100644
-index 000000000..261eece5f
+index 000000000..c6d2b4c15
 --- /dev/null
 +++ b/arch/wasm/kernel/time.c
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,69 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Time: the clocksource reads the host's clock (virtual: it moves on as
@@ -1460,16 +1447,10 @@ index 000000000..261eece5f
 +#include <linux/clocksource.h>
 +#include <linux/init.h>
 +#include <linux/sched/clock.h>
-+#include <linux/sched_clock.h>
 +#include <linux/time.h>
 +#include <asm/wasm.h>
 +
-+u64 wasm_timer_deadline __aligned(8) = U64_MAX;
-+
-+static void wasm_set_deadline(u64 deadline)
-+{
-+	WRITE_ONCE(wasm_timer_deadline, deadline);
-+}
++u64 wasm_timer_deadline = U64_MAX;
 +
 +static u64 wasm_clocksource_read(struct clocksource *cs)
 +{
@@ -1487,13 +1468,13 @@ index 000000000..261eece5f
 +static int wasm_set_next_event(unsigned long delta,
 +			       struct clock_event_device *ce)
 +{
-+	wasm_set_deadline(wasm_time_ns() + delta);
++	WRITE_ONCE(wasm_timer_deadline, wasm_time_ns() + delta);
 +	return 0;
 +}
 +
 +static int wasm_set_state_shutdown(struct clock_event_device *ce)
 +{
-+	wasm_set_deadline(U64_MAX);
++	WRITE_ONCE(wasm_timer_deadline, U64_MAX);
 +	return 0;
 +}
 +
@@ -1502,8 +1483,9 @@ index 000000000..261eece5f
 +	.features		= CLOCK_EVT_FEAT_ONESHOT,
 +	.rating			= 300,
 +	.set_next_event		= wasm_set_next_event,
++	/* (No event, stopped or shut down: no deadline for the host.) */
 +	.set_state_shutdown	= wasm_set_state_shutdown,
-+	.set_state_oneshot	= wasm_set_state_shutdown,
++	.set_state_oneshot_stopped = wasm_set_state_shutdown,
 +};
 +
 +void wasm_timer_interrupt(void)
@@ -1547,10 +1529,10 @@ index 000000000..39308031c
 +}
 diff --git a/arch/wasm/kernel/vmlinux.lds.S b/arch/wasm/kernel/vmlinux.lds.S
 new file mode 100644
-index 000000000..1adc396ba
+index 000000000..4d508afb6
 --- /dev/null
 +++ b/arch/wasm/kernel/vmlinux.lds.S
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,92 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * Not a linker script: wasm-ld has none. This is wasm assembly that
@@ -1575,7 +1557,6 @@ index 000000000..1adc396ba
 +#define END(sym)		SECTION(.lds.sym, 0); SYMBOL(sym)
 +
 +SECTION(.lds, 0)
-+SYMBOL(_text)
 +SYMBOL(_stext)
 +SYMBOL(_etext)
 +SYMBOL(_sinittext)
@@ -1623,10 +1604,6 @@ index 000000000..1adc396ba
 +SYMBOL(__setup_start)
 +END(__setup_end)
 +
-+SECTION(__param, 2)
-+SYMBOL(__start___param)
-+END(__stop___param)
-+
 +/*
 + * kernel/sched: sched_class instances, highest priority first, as an array
 + * (no padding: alignment is __alignof__(struct sched_class)). Keep in sync
@@ -1659,10 +1636,10 @@ index 000000000..f09592941
 +obj-y := uaccess.o
 diff --git a/arch/wasm/lib/delay.c b/arch/wasm/lib/delay.c
 new file mode 100644
-index 000000000..04dc64b20
+index 000000000..d2275c7ea
 --- /dev/null
 +++ b/arch/wasm/lib/delay.c
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,27 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Delays spin on the host's clock (one thread: nothing to sleep on; there
@@ -1689,12 +1666,6 @@ index 000000000..04dc64b20
 +void __const_udelay(unsigned long xloops)
 +{
 +	__ndelay(((u64)xloops * NSEC_PER_SEC) >> 32);
-+}
-+
-+/* A "loop" is a nanosecond (see preset_lpj in setup_arch()). */
-+void __delay(unsigned long loops)
-+{
-+	__ndelay(loops * (NSEC_PER_SEC / HZ / (1000000 / HZ)));
 +}
 diff --git a/arch/wasm/lib/multi3.c b/arch/wasm/lib/multi3.c
 new file mode 100644
@@ -1791,10 +1762,10 @@ index 000000000..8f91041de
 +obj-y := init.o
 diff --git a/arch/wasm/mm/init.c b/arch/wasm/mm/init.c
 new file mode 100644
-index 000000000..3d66a01a2
+index 000000000..0d937d3d1
 --- /dev/null
 +++ b/arch/wasm/mm/init.c
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,9 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#include <linux/init.h>
 +#include <linux/memblock.h>
@@ -1803,14 +1774,6 @@ index 000000000..3d66a01a2
 +void __init arch_zone_limits_init(unsigned long *max_zone_pfns)
 +{
 +	max_zone_pfns[ZONE_NORMAL] = max_low_pfn;
-+}
-+
-+/*
-+ * Init sections are not contiguous in a wasm-ld layout (segments are
-+ * grouped by name class), so init memory is never freed.
-+ */
-+void free_initmem(void)
-+{
 +}
 diff --git a/arch/wasm/scripts/objcopy b/arch/wasm/scripts/objcopy
 new file mode 100755
@@ -1832,7 +1795,7 @@ index 000000000..7bcd03214
 +esac
 diff --git a/arch/wasm/scripts/wasm-ld b/arch/wasm/scripts/wasm-ld
 new file mode 100755
-index 000000000..6760829dd
+index 000000000..512dd4c76
 --- /dev/null
 +++ b/arch/wasm/scripts/wasm-ld
 @@ -0,0 +1,28 @@
@@ -1853,7 +1816,7 @@ index 000000000..6760829dd
 +	case $arg in
 +	--script=*)	script=${arg#--script=} ;;
 +	-z)		skip=1 ;;
-+	--start-group|--end-group|-EL) ;;
++	--start-group|--end-group) ;;
 +	*)		set -- "$@" "$arg" ;;
 +	esac
 +done
