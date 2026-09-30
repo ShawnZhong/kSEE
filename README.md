@@ -151,7 +151,8 @@ copied at once: `f_path.mnt` and `f_path.dentry`): each is a change of
 its own. The line the cursor is on shows its values under it, as they are
 before it runs (`fd = 3   count = 64`). Objects are said as
 the kernel's own fields name them: a file by its fd and name, an inode by
-its number and filesystem, a task by its comm and pid. The Trace tab is
+its number and filesystem, a task by its comm and pid. The Console tab is
+the kernel's log and the programs' output. The Trace tab is
 the raw trace, a line a record (a call with its arguments, a block, a
 store from what to what, a return): what every other view is built from.
 Ctrl+click (or F12) a name for its definition: a function, a type, a
