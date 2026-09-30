@@ -13,6 +13,7 @@ use wasm_bindgen::JsCast;
 use crate::imports::bulk;
 use crate::js::{self, func};
 use crate::state::*;
+use ksee_core::program::Sym;
 use ksee_core::Memory;
 
 /// The tasks' programs (position-independent modules, in kernel memory):
@@ -196,7 +197,15 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
 pub(crate) fn finish(tid: u32, how: &'static str, ret: i64) {
     let done = k(|k| {
         let Some(id) = k.in_flight(tid) else { return false };
-        k.calls.borrow_mut().get_mut(&id).unwrap().done = true;
+        let mut calls = k.calls.borrow_mut();
+        let c = calls.get_mut(&id).unwrap();
+        c.done = true;
+        // (Its result: the name it was declared with stands for it now.)
+        if let (Some((name, ty)), "returned") = (&c.result, how) {
+            let sym = ksee_core::program::typed(ret, ty, &tables().types).unwrap_or(Sym::Value { v: ret, to: None });
+            k.names.borrow_mut().set(name, c.line, sym);
+        }
+        drop(calls);
         k.finished.borrow_mut().push(Finished { id, tid, how, ret });
         if k.calls.borrow().values().all(|c| c.done) {
             k.waiting.set(None);
@@ -236,6 +245,13 @@ fn runner_imports() -> Object {
             k.requests.borrow_mut().insert(tid, req);
             k.heap_of.borrow_mut().insert(tid, heap);
             k.heaps.borrow_mut().entry(heap).or_insert((heap, heap + size));
+            // (A runner the last call started, a clone's child: its result's
+            // name stands for it already, before the clone returns.)
+            if let Some(Call { line, result: Some((name, _)), .. }) = k.calls.borrow().get(&k.asked.get())
+                && main == 0 && !k.names.borrow().has(name, *line)
+            {
+                k.names.borrow_mut().set(name, *line, Sym::Value { v: tid as i64, to: None });
+            }
         });
         if main != 0 && k(|k| k.calls.borrow().values().all(|c| c.done)) {
             // (The boot's over: let what it left for later run now, while

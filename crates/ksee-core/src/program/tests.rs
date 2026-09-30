@@ -139,8 +139,8 @@ fn expressions_as_c_reads_them() {
     assert_eq!((v("*(fds + 1)"), v("(q + 1)->x")), (Ok(6), Ok(5)));
     assert!(v("p").is_err()); // (a struct: its address, or a member)
     // (Memory to write: where, of which type.)
-    assert_eq!((lvalue("fds[1]", &t, &env), lvalue("q->y", &t, &env), lvalue("*(fds + 1)", &t, &env)), (Ok((20, 1)), Ok((12, 1)), Ok((20, 1))));
-    assert!(lvalue("fds", &t, &env).is_err());
+    assert_eq!((lvalue("fds[1]", &t, &env), lvalue("q->y", &t, &env), lvalue("*(fds + 1)", &t, &env)), (Ok((20, 1, None)), Ok((12, 1, None)), Ok((20, 1, None))));
+    assert_eq!(lvalue("fds", &t, &env), Ok((16, 1, Some(2)))); // (an array, whole: as a declaration's value)
 }
 
 #[test]
@@ -193,4 +193,18 @@ fn where_the_cursor_is_in_a_line_being_written() {
 #[test]
 fn a_program_on_one_line_is_its_lines() {
     assert_eq!(lines(r#"write(1, "a;b\";", 4);  close(1) ;"#), [r#"write(1, "a;b\";", 4)"#, "close(1)"]);
+}
+
+#[test]
+fn a_line_sees_the_names_of_the_lines_before_it() {
+    let mut n = Names::default();
+    let v = |v| Sym::Value { v, to: None };
+    n.set("fd", 0, v(3));
+    n.set("buf", 1, Sym::Var { addr: 64, ty: 4, count: Some(8) });
+    n.set("fd", 2, v(4));
+    assert_eq!((n.get("fd", 0), n.get("fd", 2), n.get("fd", 3)), (None, Some(&v(3)), Some(&v(4))));
+    // (A result set again, as its call returns: the same line's.)
+    n.set("fd", 2, v(5));
+    assert_eq!(n.before(3), [("fd", &v(5)), ("buf", &Sym::Var { addr: 64, ty: 4, count: Some(8) })]);
+    assert!(n.has("fd", 2) && !n.has("fd", 1));
 }

@@ -39,7 +39,7 @@ never resumed), let what it had under way end, and boot again.
 **The page and the kernel** talk through memory and promises: the page
 raises interrupts (a bit, and a wake-up of idle), and asks a runner (the program,
 or a thread or child of it: see [kernel.md](kernel.md)) for a syscall
-(`Machine.call(name, args, tid)`: it writes the call into the runner's
+(a line of the program, `Machine.run`: it writes the call into the runner's
 request and rings the runner, which waits in a futex on its number; the
 runner records the syscall it then makes, `ksee.begin` to `ksee.end`); it
 reads the console's output. `Machine.quiet()` is a promise of
@@ -87,21 +87,25 @@ Rust does the work: JS only lays it out.
 | examples.js | the examples, as lessons (a chapter and place, a title, the question, the explanation, then the example before and the next; the contents, every one by chapter, those opened before ticked): the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the explanation (its links into the recording); the URL (`#ex=NAME&p=CALLS`: the program if changed, its calls separated by `;`) |
 | calledit.js | a call written as in C: completions, the signature (where the cursor is: `Machine.context`) |
 | ksee.js | booting |
-| kernel.js | syscalls from JavaScript: `sys.read(fd, buf, 64)` (a promise of its result: a blocked call pending while others go on), `declare("char buf[64]")` (the program's memory: a variable's `get()`, a JS value, and `set(x)`), JS values as C's (a string, bytes, argv, a variable's address, an object laid out as the parameter's struct); what the page's program lines, the tests and the console (`ksee.kernel`) make their calls through; a call's result with its errno's name (`result`, `errno`: Machine.errno) |
+| kernel.js | a program's lines made one after another (`Machine.run` each, then the kernel quiet after a call: a blocked call pending while the next lines go on), how each went, the runner each call started; what the page's program and the tests share; a call's result with its errno's name (`result`, `errno`: Machine.errno) |
 
-A program is a small language, parsed and laid out in the core
-(crates/ksee-core/src/program/, `Machine.arg`, `Machine.value`,
-`Machine.declare`): a call's arguments are numbers, the kernel's constants
+A program is a small language, parsed, evaluated and laid out in the core
+(crates/ksee-core/src/program/), a line made by `Machine.run`, checked
+first by `Machine.check` (the editor's: nothing made). Its names are the
+Machine's: each line sees those of the lines before it (a variable's, a
+call's result once it returns; a clone's, its child runner as it starts:
+`Machine.names_before`, the completions' and the hovers'). A call's arguments are numbers, the kernel's constants
 with `| ^ & << >> + - * /`, `- ~`, strings, results by name,
 and compound literals laid out by the parameter's type (a struct,
 positional or by member; an array; argv for a `char **`); and a line can
 declare a variable of the program's as in C (`char buf[64]`, `struct
 __kernel_timespec ts = {0, 30000000}`: a type of the kernel's), which
-`Machine.declare` puts in the program's own memory (user/prog.c's heap, in
+goes in the program's own memory (user/prog.c's heap, in
 its process; a variable of a page or more on a page of its own, as memory
 the kernel pins must be), its name then its address (`&ts` too; `fds[1]` an element;
 `rings->sq.tail`, through a result typed as a pointer; a line `target =
-value` writes one, recorded: `Machine.assign`),
+value` writes one, recorded, with what a declaration's value may be: an
+array whole too),
 `Machine.show` printing it as C writes it. A call's strings and compound literals go
 in the same memory, in the runner's room for them (`SCRATCH`).
 ksee pack evaluates the UAPI headers' constants with the same evaluator.

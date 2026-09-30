@@ -9,7 +9,7 @@
 //
 // Opening an example makes all its calls, each recorded (a runner makes
 // each: the program (/bin/prog), or a thread or child of it; see
-// Machine.call). A call may block, and finish as a later one wakes it.
+// Machine.run). A call may block, and finish as a later one wakes it.
 // Then the explanation's links lead into the recording: `[label](2)` is
 // call 2 (its recording selected), `[label](2:vfs_read)` the first call
 // of vfs_read in it (on the call's task; `:any` on any task), the cursor
@@ -25,17 +25,17 @@
 //
 // A step: a line of the program (Machine.statement: { text, tid? }), a
 // call { call, args, type?, name? }, its arguments written as in C
-// (Machine.arg): "a string", 0644, O_CREAT | O_WRONLY, {0, 30000000}, fd
+// (Machine.run): "a string", 0644, O_CREAT | O_WRONLY, {0, 30000000}, fd
 // (a result: `name` names a call's). Its runner: thread `tid` (a number,
 // or a result: "child"); else the program (Machine.main).
 // Or a variable of the program's: { decl }, declared as in C (`char
 // buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0, 30000000}`:
-// Machine.declare), memory of its own in the program's process; its name then
+// Machine.run), memory of its own in the program's process; its name then
 // stands for its address (`read(fd, buf, 64)`, `&ts`), and each call's
 // line says the variables it changed, as C writes them (`fds = {3, 4}`).
 import { $, el, taskName } from "./dom.js";
 import { callEditor } from "./calledit.js";
-import { runner } from "./kernel.js";
+import { runner, text } from "./kernel.js";
 import { hue } from "./timeline.js";
 
 export async function examples(app) {
@@ -194,26 +194,25 @@ export async function examples(app) {
     go(t.ex, t.steps.filter((_, k) => k !== j), true);
   }
 
-  // The program's names, numbers and runners: its runner's (kernel.js).
-  const known = (...a) => t.run.known(...a);
   const stepOf = (n) => t.run.stepOf(n);
   // The names line `j` (step `s`) uses, as they are at the cursor: a
   // result, its value; a variable (its own, for a declaration), its value
   // as memory was there, and who wrote it, back through the copies that
   // brought it (Machine.origin).
   function names(s, j) {
-    const words = new Set(text(s).match(/\b[A-Za-z_]\w*/g) ?? []), k = known(j), out = [];
-    for (const v of t.vars) {
-      if (!words.has(v.name) || v.j > j) continue;
-      const way = m.origin(v.addr, Math.min(8, v.size * (v.count ?? 1)));
+    const words = new Set(text(s).match(/\b[A-Za-z_]\w*/g) ?? []), out = [];
+    // (Its own variable too, for a declaration.)
+    for (const v of m.names_before(s.decl ? j + 1 : j).filter((v) => words.has(v.name))) {
+      if (v.addr == null) {
+        out.push(`${v.name} = ${v.pointer ? `0x${v.value.toString(16)}` : v.value}`);
+        continue;
+      }
+      const way = m.origin(v.addr, Math.min(8, v.size));
       const by = way.map((w) => w.at?.func ?? (w.from == null ? "the page" : "?")).join(" ← ");
       out.push(`${v.name} = ${m.show_at_cursor(v.ty, v.addr, v.count ?? undefined)}${way.length ? `, written by ${by}` : ""}`);
     }
-    for (const [n, x] of Object.entries(k)) if (words.has(n) && !t.vars.some((v) => v.name === n)) out.push(`${n} = ${typeof x === "object" ? `0x${x.value.toString(16)}` : x}`);
     return out.length ? `At the cursor:\n${out.join("\n")}` : "";
   }
-  // A step's line, as written, its runner's `tid: ` first.
-  const text = (s) => `${s.tid != null ? `${s.tid}: ` : ""}${s.text}`;
   // How a call finished, or not yet.
   // (A variable: as it starts; each call's line says how it changed.)
   const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.initial ?? ""}`
@@ -259,7 +258,7 @@ export async function examples(app) {
       // (Its runner is its lane's: not written on the line; edited, it
       // stays, unless the line names another.)
       const shown = text({ ...s, tid: undefined });
-      const e = callEditor({ m, consts, known: (r) => known(j, r), text: shown, inline: true, common,
+      const e = callEditor({ m, consts, line: () => j, text: shown, inline: true, common,
         focus: () => pick(j),
         done: (c) => (c == null ? remove(j) : ((c.tid ??= s.tid), text(c) === text(s) ? e.input.blur() : change(j, c))),
         cancel: () => ((e.input.value = shown), e.input.blur()) });
@@ -334,7 +333,7 @@ export async function examples(app) {
     if (t.list !== mine) return false;
     // (A variable: as it starts.)
     if (r.decl) {
-      r.decl.shown = r.decl.initial = r.decl.show();
+      r.decl.shown = r.decl.initial = m.show(r.decl.ty, r.decl.addr, r.decl.count ?? undefined);
       draw();
       return true;
     }
@@ -381,7 +380,7 @@ export async function examples(app) {
   // prompt again, ↑ for the calls before.)
   // (In a lane: its runner makes the call, the prefix written for it.)
   function form(lane = "") {
-    const e = callEditor({ m, consts, known: (r) => known(t.done.length, r), common, placeholder: "add a call…", history: () => t.steps.map((s) => text(s)),
+    const e = callEditor({ m, consts, line: () => t.steps.length, common, placeholder: "add a call…", history: () => t.steps.map((s) => text(s)),
       done: async (c) => {
         if (lane && c.tid == null) c.tid = /^\d+$/.test(lane) ? Number(lane) : lane;
         t.steps.push(c);

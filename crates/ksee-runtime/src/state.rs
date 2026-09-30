@@ -79,6 +79,10 @@ pub struct Kernel {
     /// id).
     pub calls: RefCell<BTreeMap<u32, Call>>,
     pub asked: Cell<u32>,
+    /// The page's program: its names (a variable's, a result's), and how
+    /// many of its lines have been made (see Machine::run).
+    pub names: RefCell<ksee_core::program::Names>,
+    pub lines: Cell<usize>,
 }
 
 impl Kernel {
@@ -135,6 +139,10 @@ pub struct Call {
     pub from: u32,
     pub begun: bool,
     pub done: bool,
+    /// The program's line that made it, and its result's name and type, if
+    /// declared (`int fd = openat(…)`).
+    pub line: usize,
+    pub result: Option<(String, String)>,
 }
 
 /// Each runner's room, in its program's memory, for its call's strings and

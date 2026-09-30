@@ -30,10 +30,8 @@ export function app(m) {
   };
   a.fn = memo((id) => m.function(id));
   a.iname = memo((k) => m.inline_name(k));
-  // The kernel's syscalls, from JavaScript (kernel.js): the program's
-  // lines are made through it, and the console may use it (ksee.kernel).
-  // (Each call's recording on the page as it settles: the program's, the
-  // console's alike.)
+  // The kernel, for the program's lines (kernel.js): each call's
+  // recording on the page as the kernel is quiet after it.
   a.kernel = kernel(m, { snapshot: () => a.refresh() });
   const src = source(a), time = timeline(a), stack = callstack(a);
   // (The panels, for each other and for tests.)

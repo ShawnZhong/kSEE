@@ -25,23 +25,20 @@ async function until(pred, ms = 10000) {
     if (v) return v;
   }
 }
-// The syscalls, from JavaScript (web/kernel.js), as the page makes them.
+// The kernel, as the page makes its program's lines (web/kernel.js).
 const kern = kernel(m);
 // Calls finished (Machine.quiet's news), by id.
 const fin = new Map();
-// Ask runner `tid` to make syscall `name`, recorded, and wait until the
-// kernel is quiet: the call's id (it may not have finished: blocked).
-async function ask(name, args, tid) {
-  const made = kern.call(name, args, tid);
-  for (const f of (await made.quiet).finished) fin.set(f.id, f);
-  return made.id;
-}
 // Its syscall summary.
 const syscallOf = (id) => m.syscalls()[m.syscall_of(id)];
-// Syscall `name`, made by runner `tid`: { ret, buffers, how, s (its syscall summary) }.
-async function call(name, args, tid) {
-  const id = await ask(name, args, tid);
-  return { ...fin.get(id), s: syscallOf(id) };
+// A line of the program (Machine.run), made, and the kernel run until it
+// is quiet: a call's { id, ret?, how? (none: it blocked), s (its syscall
+// summary) }; a variable's { name, addr, ty, count, size }.
+async function line(text) {
+  const r = m.run(text);
+  if (r.decl || r.assigned != null) return r.decl ?? r;
+  for (const f of (await kern.quiet()).finished) fin.set(f.id, f);
+  return { id: r.id, ...fin.get(r.id), s: syscallOf(r.id) };
 }
 const ran = (s, func) => s?.last != null && m.first_call(func, s.first, s.last, s.task.addr) != null;
 
@@ -49,27 +46,25 @@ check(`the program ready: a runner (${m.main()}), not /init`, m.main() > 1 && m.
 check("nothing recorded at first", (m.snapshot(), m.records() === 0));
 
 // Calls, traced.
-const w = (await call("write", [1, "hello kSEE\n", 11])).s;
+const w = (await line('write(1, "hello kSEE\\n", 11)')).s;
 check(`a write, by the program (${w?.task.comm}, pid ${w?.task.pid}), shown on the console`, w?.ret === 11 && w.task.comm === "prog" && w.task.pid === m.main() && await until(() => out.includes("hello kSEE")));
 check("write ran vfs_write", ran(w, "vfs_write"));
-check("getpid ran __task_pid_nr_ns", ran((await call("getpid", [])).s, "__task_pid_nr_ns"));
-check("mkdirat ran vfs_mkdir", ran((await call("mkdirat", [-100, "/tmp", 0o755])).s, "vfs_mkdir"));
+check("getpid ran __task_pid_nr_ns", ran((await line("getpid()")).s, "__task_pid_nr_ns"));
+check("mkdirat ran vfs_mkdir", ran((await line('mkdirat(AT_FDCWD, "/tmp", 0755)')).s, "vfs_mkdir"));
 // (The tasks of a stack chart's columns: see Machine.chart.)
 const chartTasks = (flat) => {
   const out = [];
   for (let j = 0; j < flat.length; j += 3 + 3 * flat[j + 2]) out.push(flat[j]);
   return out;
 };
-const ts = { bytes: new Uint8Array(new BigInt64Array([0n, 30000000n]).buffer) };
-const nap = (await call("clock_nanosleep", [1, 0, ts, 0])).s;
+const nap = (await line("clock_nanosleep(CLOCK_MONOTONIC, 0, {0, 30000000}, NULL)")).s;
 check("sleeping switched to the idle task and back", ran(nap, "__schedule")
       && chartTasks(m.chart(nap.first, nap.last, 50)).some((a) => m.task(a, nap.first).comm === "swapper/0"));
 // (A long sleep finishes too: time goes on while the call does, its runner waking.)
-const long = await call("clock_nanosleep", [1, 0, { bytes: new Uint8Array(new BigInt64Array([2n, 0n]).buffer) }, 0]);
+const long = await line("clock_nanosleep(CLOCK_MONOTONIC, 0, {2, 0}, NULL)");
 check("a 2 s sleep returns (the clock skipped ahead)", long.how === "returned" && long.ret === 0);
 // (And a timed wait: select's timeout.)
-const tv = { bytes: new Uint8Array(new BigInt64Array([1n, 0n]).buffer) };
-const sel = await call("pselect6", [0, 0, 0, 0, tv, 0]);
+const sel = await line("pselect6(0, NULL, NULL, NULL, {1, 0}, NULL)");
 check("a 1 s select() times out", sel.how === "returned" && sel.ret === 0);
 m.snapshot();
 const wi = m.syscalls().findIndex((s) => s.first === w.first);
@@ -122,12 +117,12 @@ function inWrite(s) {
 }
 
 // A read: f_pos over time, who wrote it, a local.
-const fd = (await call("openat", [-100, "/tmp/note", 0o1101, 0o644])).ret; // O_CREAT | O_TRUNC | O_WRONLY
-await call("write", [fd, "hello from the page cache\n", 26]);
-await call("close", [fd]);
-const rfd = (await call("openat", [-100, "/tmp/note", 0, 0])).ret;
-const got = m.declare(undefined, "char got[64]", {});
-const { s: read } = await call("read", [rfd, got.addr, 64]);
+await line('int fd = openat(AT_FDCWD, "/tmp/note", O_CREAT | O_TRUNC | O_WRONLY, 0644)');
+await line('write(fd, "hello from the page cache\\n", 26)');
+await line("close(fd)");
+await line('int rfd = openat(AT_FDCWD, "/tmp/note", O_RDONLY)');
+const got = await line("char got[64]");
+const { s: read } = await line("read(rfd, got, 64)");
 check("read 26 bytes back", read?.ret === 26 && m.show(got.ty, got.addr, 64).startsWith('"hello from the page cache'));
 const inRead = m.line_steps(read.first, read.last, read.task.addr).find((x) => x.func === "vfs_read").i;
 {
@@ -171,46 +166,38 @@ m.memory_at(null);
   check(`the read's bytes, back through their copies: ${way.map((w) => `${w.at?.func}(0x${w.addr.toString(16)})`).join(" ← ")}`,
         way.length >= 2 && way[0].from != null && way[1].addr === way[0].from);
 }
-// A program's own variables (Machine.declare): memory in the program's process,
-// passed by address, read back as C writes them.
-{
-  const buf = m.declare(undefined, "char buf[16]", {}), fds = m.declare(undefined, "int fds[2]", {});
-  await call("pipe2", [fds.addr, 0]);
-  const [r, w] = m.show(fds.ty, fds.addr, 2).slice(1, -1).split(", ").map(Number);
-  await call("write", [w, "hi", 2]);
-  const n = (await call("read", [r, buf.addr, 16])).ret;
-  check(`variables: fds = ${m.show(fds.ty, fds.addr, 2)}, buf = ${m.show(buf.ty, buf.addr, 16)}`, n === 2 && m.show(buf.ty, buf.addr, 16) === '"hi"');
-}
-// Syscalls from JavaScript (kernel.js): JS values as C's (a struct as an
-// object, a variable as its address); a blocked read goes on as a later
+// A program's own variables: memory in the program's process, passed by
+// address, read back as C writes them; a blocked read goes on as a later
 // write wakes it.
+const shown = (v) => m.show(v.ty, v.addr, v.count ?? undefined);
 {
-  const buf = kern.declare("char buf[8]"), fds = kern.declare("int fds[2]");
-  const slept = await kern.sys.clock_nanosleep(kern.C.CLOCK_MONOTONIC, 0, { tv_sec: 0, tv_nsec: 1000000 }, null);
-  await kern.sys.pipe2(fds, 0);
-  const [r, w] = fds.get();
+  const buf = await line("char buf[16]"), fds = await line("int fds[2]");
+  await line("pipe2(fds, 0)");
+  await line('write(fds[1], "hi", 2)');
+  const n = (await line("read(fds[0], buf, 16)")).ret;
+  check(`variables: fds = ${shown(fds)}, buf = ${shown(buf)}`, n === 2 && shown(buf) === '"hi"');
   // (A thread, a runner of its own, reads: it blocks, nothing written yet;
-  // /init writes, and wakes it.)
-  const C = kern.C, mem = await kern.sys.mmap2(null, 65536, C.PROT_READ | C.PROT_WRITE, C.MAP_PRIVATE | C.MAP_ANONYMOUS, -1, 0);
-  const thread = await kern.sys.clone(C.CLONE_VM | C.CLONE_FS | C.CLONE_FILES | C.CLONE_SIGHAND | C.CLONE_THREAD | C.CLONE_SYSVSEM, mem + 65536, null, null, 0);
-  const reading = kern.sys.on(thread).read(r, buf, 8);
-  const wrote = await kern.sys.write(w, "ok", 2);
-  check(`syscalls from JS: slept ${slept}, wrote ${wrote}, read ${await reading}: buf = ${buf.show()}`, slept === 0 && wrote === 2 && buf.get() === "ok");
+  // the program writes, and wakes it.)
+  await line("void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)");
+  await line("pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0)");
+  const reading = await line("thread: read(fds[0], buf, 8)"), wrote = await line('write(fds[1], "ok", 2)');
+  check(`a blocked read, woken: wrote ${wrote.ret}, read ${fin.get(reading.id)?.ret} (blocked first: ${reading.how == null}): buf = ${shown(buf)}`,
+        reading.how == null && wrote.ret === 2 && fin.get(reading.id)?.ret === 2 && shown(buf) === '"ok"');
   // (prctl, with the constants of linux/prctl.h: the task's name set, read back, and set back.)
-  const name = kern.declare('char name[16] = "ksee"'), got = kern.declare("char got[16]");
-  const set = await kern.sys.prctl(C.PR_SET_NAME, name, 0, 0, 0), get = await kern.sys.prctl(C.PR_GET_NAME, got, 0, 0, 0);
-  name.set("prog");
-  await kern.sys.prctl(C.PR_SET_NAME, name, 0, 0, 0);
-  check(`prctl(PR_SET_NAME) = ${set}, PR_GET_NAME: ${got.show()}`, set === 0 && get === 0 && got.get() === "ksee");
-  // (Its variables as JS values, both ways.)
-  const ts = kern.declare("struct __kernel_timespec ts");
-  ts.set({ tv_sec: 1, tv_nsec: 5 });
-  check(`a variable as a JS value, and set from one: ${JSON.stringify(ts.get())}`, ts.get().tv_sec === 1 && ts.get().tv_nsec === 5);
+  const name = await line('char name[16] = "ksee"'), got = await line("char got16[16]");
+  const set = await line("prctl(PR_SET_NAME, name, 0, 0, 0)"), get = await line("prctl(PR_GET_NAME, got16, 0, 0, 0)");
+  await line('name = "prog"');
+  await line("prctl(PR_SET_NAME, name, 0, 0, 0)");
+  check(`prctl(PR_SET_NAME) = ${set.ret}, PR_GET_NAME: ${shown(got)}; name set again: ${shown(name)}`, set.ret === 0 && get.ret === 0 && shown(got) === '"ksee"' && shown(name) === '"prog"');
+  // (A struct assigned whole.)
+  const ts = await line("struct __kernel_timespec ts");
+  await line("ts = {1, 5}");
+  check(`a struct assigned: ts = ${shown(ts)}`, shown(ts) === "{tv_sec = 1, tv_nsec = 5}");
 }
 // A 64-bit argument, whole: llseek's offset (high 1, low 0) is vfs_llseek's loff_t 1 << 32.
 {
-  const res = m.declare(undefined, "long long res", {});
-  const ls = (await call("llseek", [rfd, 1, 0, res.addr, 0])).s;
+  await line("long long res");
+  const ls = (await line("llseek(rfd, 1, 0, &res, 0)")).s;
   const at = ls && m.first_call("vfs_llseek", ls.first, ls.last, ls.task.addr);
   const off = at != null && m.call_stack(at).find((f) => f.func === "vfs_llseek")?.args?.find((a) => a.name === "offset")?.value;
   check(`a 64-bit argument whole: vfs_llseek's offset ${off}`, off === "4294967296");
@@ -238,20 +225,20 @@ check("a local on the stack, as it was: ksys_read's pos, 0 then 26",
   check(`a local in a wasm local: ksys_read's ret = ${ret?.value}`, ret?.value === "26");
 }
 m.memory_at(null);
-await call("close", [rfd]);
+await line("close(rfd)");
 // (A user pointer must be in RAM: not the runtime's memory, below it.)
-check("a bad user pointer: EFAULT", (await call("write", [1, 0x1000, 4])).ret === -14 && (await call("getpid", [])).ret === m.main());
+check("a bad user pointer: EFAULT", (await line("write(1, 0x1000, 4)")).ret === -14 && (await line("getpid()")).ret === m.main());
 
 // A char * shows its string: mkdir's struct filename, its name.
 {
-  const mk = (await call("mkdirat", [-100, "/mnt/named", 0o755])).s, i = m.first_call("filename_create", mk.first, mk.last);
+  const mk = (await line('mkdirat(AT_FDCWD, "/mnt/named", 0755)')).s, i = m.first_call("filename_create", mk.first, mk.last);
   const arg = m.call_stack(i).find((f) => f.func === "filename_create")?.args?.find((a) => a.ty === "struct filename *");
   m.memory_at(i); // (as it was: the name is freed after the syscall)
   // (7.2's struct filename: the name pointer is in an anonymous struct, whose members are its own.)
   const name = arg && m.object_by_id("name", arg.target.ty, arg.target.addr, 1)?.children?.find((c) => c.name === "name");
   m.memory_at(null);
   check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/named"'));
-  await call("unlinkat", [-100, "/mnt/named", 0x200]);
+  await line('unlinkat(AT_FDCWD, "/mnt/named", AT_REMOVEDIR)');
 }
 check("definitions: a function, a type, a global", m.definition("vfs_write")?.file === "fs/read_write.c"
       && m.definition("task_struct")?.file === "include/linux/sched.h" && m.definition("runqueues")?.line > 0 && m.definition("no_such") == null
@@ -263,11 +250,11 @@ check("a field's declaration: file.f_pos, by its struct (or a pointer to it), or
   // (The syscalls this kernel builds, as its syscall table in the image says (ksee pack): setuid (CONFIG_MULTIUSER), not io_setup (no CONFIG_AIO).)
   const names = m.syscall_names();
   let refused = "";
-  try { m.call("io_setup", [1, 0]); } catch (e) { refused = String(e.message ?? e); }
+  try { m.run("io_setup(1, NULL)"); } catch (e) { refused = String(e.message ?? e); }
   check(`the syscalls built: ${names.length}; read and setuid, not io_setup (${refused})`,
         names.includes("read") && names.includes("setuid") && !names.includes("io_setup") && /no syscall io_setup/.test(refused));
   // (And setuid runs: root may become root, and it is recorded, as any call.)
-  const su = await call("setuid", [0]);
+  const su = await line("setuid(0)");
   check(`setuid(0) = ${su.ret}, recorded (${su.s?.name})`, su.ret === 0 && su.s?.name === "setuid" && ran(su.s, "__sys_setuid"));
 }
 check("a syscall's parameters, typed, with the constants that fit", JSON.stringify(m.syscall("openat")?.params) ===
@@ -292,16 +279,11 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
 const consts = m.constants();
 check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
       consts.O_CREAT === 64 && consts.AT_FDCWD === -100 && consts.AT_REMOVEDIR === 0x200 && consts.ENOTEMPTY === 39);
-const a = (call, k, text, known = {}) => m.arg(call, k, text, known);
-check("arguments as in C", a("openat", 2, "O_CREAT | O_WRONLY | O_TRUNC") === 577 && a("openat", 3, "0644") === 420
-      && a("read", 0, "fd + 1", { fd: 3 }) === 4
-      && new TextDecoder().decode(a("openat", 1, '"a\\n"').bytes) === "a\n\0");
-check("an array of strings as in C (argv)", JSON.stringify(a("execve", 1, '{"init", "-x", NULL}')) === '{"strings":["init","-x",null]}');
-// A struct, laid out as the parameter's type says (a __kernel_timespec: two s64).
-const spec = (text) => [...new BigInt64Array(a("clock_nanosleep", 2, text).bytes.buffer)].join(",");
-check("a struct as in C, positional or by name", spec("{0, 30000000}") === "0,30000000" && spec("{.tv_nsec = 30000000}") === "0,30000000");
-check("a wrong member is an error", (() => { try { a("clock_nanosleep", 2, "{.tv_min = 1}"); return false; } catch (e) { return /no member/.test(e); } })());
-check("a runner by a result: value()", m.value("child + 0", { child: 19 }) === 19);
+// (A line checked before it is made: with the names of the lines before it.)
+const refusal = (text, line) => { try { m.check(text, line); return ""; } catch (e) { return String(e.message ?? e); } };
+check("a line checked: a wrong member, a name not made yet, too many arguments",
+      /no member/.test(refusal("clock_nanosleep(1, 0, {.tv_min = 1}, NULL)", 1e9)) && /rfd/.test(refusal("close(rfd)", 0))
+      && refusal("close(rfd)", 1e9) === "" && /arguments/.test(refusal("getpid(1)", 1e9)));
 const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/examples.json", root)));
 // (An example's program: its lines, as written, parsed as the page parses them.)
 for (const ex of examples) ex.steps = ex.steps.map((line) => m.statement(line));
@@ -338,17 +320,17 @@ for (const ex of examples) {
 }
 
 // A fresh kernel, in place: nothing of the calls before (/tmp is gone).
-await call("mkdirat", [-100, "/tmp", 0o755]);
-check("/tmp is there before", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === -17);
+await line('mkdirat(AT_FDCWD, "/tmp", 0755)');
+check("/tmp is there before", (await line('mkdirat(AT_FDCWD, "/tmp", 0755)')).ret === -17);
 const before = out.length;
 // (Restarted while a call is under way, its quiet not come: the calls after it still finish.)
-const cut = kern.call("getpid", []);
-cut.quiet.catch(() => {});
+m.run("getpid()");
+kern.quiet().catch(() => {});
 await m.restart();
-const after = await Promise.race([kern.call("getpid", []), new Promise((ok) => setTimeout(() => ok(null), 5000))]);
+const after = await Promise.race([line("getpid()"), new Promise((ok) => setTimeout(() => ok(null), 5000))]);
 check(`a call after a restart cut one short finishes (${after?.ret})`, after?.ret === m.main());
-check("restarted: the program ready again", m.runners().includes(m.main()) && (await call("getpid", [])).ret === m.main());
-check("... on a fresh kernel: /tmp is not there", (await call("mkdirat", [-100, "/tmp", 0o755])).ret === 0);
+check("restarted: the program ready again, its names gone", m.runners().includes(m.main()) && (await line("getpid()")).ret === m.main() && m.names_before(1e9).length === 0);
+check("... on a fresh kernel: /tmp is not there", (await line('mkdirat(AT_FDCWD, "/tmp", 0755)')).ret === 0);
 
 // Deterministic: the same calls on a fresh kernel make the same recording,
 // record for record (the kernel's clock is virtual; see the runtime's sched.rs).
@@ -375,7 +357,7 @@ for (const name of ["create", "futex"]) {
 
 // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts)
 await m.restart();
-m.call("reboot", [0xfee1dead, 672274793, 0x4321fedc, 0]);
+m.run("reboot(0xfee1dead, 672274793, 0x4321fedc, 0)");
 check("powered off", (await until(() => m.halted() !== undefined && m.halted() + 1)) === 1);
 
 check("no warning from the kernel (an execve has its argv)", !out.includes("NULL argv"));

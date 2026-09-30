@@ -11,15 +11,15 @@
 // (`history`), as a shell's.
 import { el } from "./dom.js";
 
-// { el, input, focus }: `text` to start with; `known(runners?)`: the
-// results of the calls before, by name ({ fd: 3 }; `runners`: for
-// a runner, see examples.js); `done(call)`: a call made
+// { el, input, focus }: `text` to start with; `line()`: which line of
+// the program it is (the names it sees are the lines' before it:
+// Machine.names_before); `done(call)`: a call made
 // of what was written ({ call, args, name?, tid? }); `cancel()`: Esc with
 // no list open; `focus()`: it gets the focus; `inline`: a line of a
 // program (its hint only while it has the focus); `common`: the syscalls
 // to list first, and with nothing written yet; `history()`: calls to
 // recall with ↑.
-export function callEditor({ m, consts, known, text = "", placeholder = "", done, cancel, focus, inline = false, common = [], history }) {
+export function callEditor({ m, consts, line, text = "", placeholder = "", done, cancel, focus, inline = false, common = [], history }) {
   const names = m.syscall_names();
   // (No syscall `name` this kernel builds: those whose names start with
   // it, if any: openat for open.)
@@ -57,9 +57,8 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
     }
     if (!c.word || /^\d/.test(c.word)) return [];
     // (The results so far, by name, first; then the constants that fit.)
-    const results = Object.entries(known()).filter(([n]) => n.startsWith(c.word))
-      .map(([n, r]) => ({ text: n, label: n, detail: `${typeof r !== "object" ? `= ${r}` : r.addr != null ? "a variable" : `= 0x${r.value.toString(16)}`}${n.startsWith("$") ? `: call ${n.slice(1)}'s result` : ""}` }));
-    if (c.word.startsWith("$")) return results;
+    const results = m.names_before(line()).filter((r) => r.name.startsWith(c.word))
+      .map((r) => ({ text: r.name, label: r.name, detail: r.addr != null ? "a variable" : r.pointer ? `= 0x${r.value.toString(16)}` : `= ${r.value}` }));
     const p = m.syscall(c.call)?.params?.[c.param];
     const fits = p?.consts ?? [];
     const rank = (n) => (fits.some((f) => n.startsWith(f)) ? 0 : 1);
@@ -109,32 +108,16 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
     show();
   }
 
-  // The line written: a call { call, args, name?, tid? }, a declaration {
-  // decl }, an assignment { target, value }; or an error.
+  // The line written, as Machine.statement has it, checked (Machine.check:
+  // with the names of the lines before it); or why it cannot be made.
   function written() {
-    // (A call, or a variable of the program's, declared as in C.)
-    let c;
     try {
-      c = m.statement(input.value);
-      if (c.decl) return (m.declaration(c.text, known()), c);
-      if (c.target != null) return c; // (an assignment: checked as it is made)
+      return m.check(input.value, line());
     } catch (e) {
-      return `${e.message ?? e}: write a call, name(arg, …) or int fd = name(…); or a variable, char buf[64]`;
+      const c = (() => { try { return m.statement(input.value); } catch { return null; } })();
+      if (!c) return `${e.message ?? e}: write a call, name(arg, …) or int fd = name(…); or a variable, char buf[64]`;
+      return c.call && !m.syscall(c.call) ? noSyscall(c.call) : String(e.message ?? e);
     }
-    const s = m.syscall(c.call);
-    if (!s) return noSyscall(c.call);
-    if (c.args.length > s.params.length) return `${c.call}: ${s.params.length} arguments, not ${c.args.length}`;
-    try {
-      // (Checked now, with the results so far.)
-      if (c.tid != null) {
-        const tid = typeof c.tid === "number" ? c.tid : m.value(c.tid, known(true));
-        if (!m.runners().includes(tid)) return `no runner ${c.tid}${tid !== c.tid ? ` (${tid})` : ""}: the runners are ${[...m.runners()].join(", ")}`;
-      }
-      c.args.forEach((a, k) => m.arg(c.call, k, a, known()));
-    } catch (e) {
-      return String(e.message ?? e);
-    }
-    return c;
   }
 
   input.oninput = () => ((sel = 0), fit(), show());

@@ -184,11 +184,11 @@ impl Eval<'_> {
         Ok(num(self.rvalue(self.eval(e)?)?))
     }
 
-    /// Expression `e` as memory to write: its address and type.
-    pub(super) fn lvalue(&self, e: &Expr) -> Result<(u32, u32), String> {
+    /// Expression `e` as memory to write: its address, type (an array's
+    /// element's), and count if an array.
+    pub(super) fn lvalue(&self, e: &Expr) -> Result<(u32, u32, Option<u32>), String> {
         match self.eval(e)? {
-            V::Lv { addr, ty, count: None } => Ok((addr, ty)),
-            V::Lv { .. } => Err("an array: one of its elements".into()),
+            V::Lv { addr, ty, count } => Ok((addr, ty, count)),
             _ => Err("not a variable, a member of one, or what a pointer points to".into()),
         }
     }
@@ -207,8 +207,9 @@ pub fn value(s: &str, types: Option<&Types>, env: &dyn Env) -> Result<i64, Strin
     Eval { types, env }.number(&expression(s)?)
 }
 
-/// Expression `s` as memory to write (an lvalue): its address and type.
-pub fn lvalue(s: &str, types: &Types, env: &dyn Env) -> Result<(u32, u32), String> {
+/// Expression `s` as memory to write (an lvalue): its address, type, and
+/// count if an array.
+pub fn lvalue(s: &str, types: &Types, env: &dyn Env) -> Result<(u32, u32, Option<u32>), String> {
     Eval { types: Some(types), env }.lvalue(&expression(s)?).map_err(|e| format!("{}: {e}", s.trim()))
 }
 

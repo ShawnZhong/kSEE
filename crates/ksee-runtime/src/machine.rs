@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use js_sys::{Function, Object, Promise, Uint8Array, WebAssembly};
 use ksee_core::recording::Recording;
 use ksee_core::tables::Tables;
+use ksee_core::program::{Arg, Sym};
 use ksee_core::{trace, Memory};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -152,6 +153,8 @@ impl Machine {
             k.scratch.borrow_mut().clear();
             k.calls.borrow_mut().clear();
             k.finished.borrow_mut().clear();
+            k.names.borrow_mut().clone_from(&Default::default());
+            k.lines.set(0);
         });
         *self.rec.borrow_mut() = Default::default();
         *self.past.borrow_mut() = None;
@@ -176,55 +179,76 @@ impl Machine {
         *self.rec.borrow_mut() = Recording::new(t, records, ids, args);
     }
 
-    // ---- Syscalls, made by the runners ----
+    // ---- The page's program, a line at a time ----
 
-    /// Have runner `tid` (none: the program's own, Machine::main; see user/prog.c) make syscall `name`
-    /// (e.g. "openat") with `args`: each a number, a string (as a
-    /// NUL-terminated buffer), { bytes } (a buffer of them: an array or a
-    /// Uint8Array), or { strings } (an array of char *, null for NULL:
-    /// argv). The call's id: it finishes when it returns; or, when
-    /// it blocks, later, as another call wakes it (see quiet). Recorded
-    /// from the runner's begin to its end (user/prog.c): the syscall,
-    /// entry to return, and whatever the kernel does meanwhile.
-    pub fn call(&self, name: &str, args: Vec<JsValue>, tid: Option<u32>) -> Result<u32, JsValue> {
-        let tid = tid.or(k(|k| k.main.get())).ok_or("the program is not ready")?;
-        let nr = tables().types.syscalls.iter().find(|(_, n)| n.as_str() == name).map(|(&nr, _)| nr)
-            .ok_or_else(|| format!("this kernel has no syscall {name}"))?;
-        let Some((task, req)) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.requests.borrow().get(&tid)?))) else {
-            return Err(format!("no runner {tid}").into());
-        };
-        if k(|k| k.in_flight(tid).is_some()) {
-            return Err(format!("{tid} is still making its call").into());
-        }
-        let id = k(|k| k.asked.get() + 1);
-        // (Its strings and buffers: in the runner's room, in its program's
-        // memory, taken on its first call.)
-        let scratch = match k(|k| k.scratch.borrow().get(&tid).copied()) {
-            Some(at) => at,
-            None => {
-                let at = alloc(tid, SCRATCH)?;
-                k(|k| k.scratch.borrow_mut().insert(tid, at));
-                at
+    /// Make line `text` of the program (ksee_core::program::statement), the
+    /// next: a variable declared, in its runner's process's own memory ({
+    /// decl: { name, addr, ty, count, size (an element's) } }: its name
+    /// then its address); memory written ({ assigned: what it holds then,
+    /// as C writes it }); or a syscall asked of its runner ({ id, tid }: it
+    /// finishes when it returns, or, when it blocks, later, as another call
+    /// wakes it: see quiet). The host's writes are recorded, as a call's
+    /// are; a call from its runner's begin to its end (user/prog.c): the
+    /// syscall, entry to return, and whatever the kernel does meanwhile.
+    pub fn run(&self, text: &str) -> Result<JsValue, JsValue> {
+        let line = k(|k| k.lines.get());
+        let (tid, plan) = plan(text, line)?;
+        let o = Object::new();
+        match plan {
+            Plan::Decl(d) => {
+                let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
+                write_logged(addr, &d.bytes);
+                k(|k| k.names.borrow_mut().set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
+                let v = Object::new();
+                js::set(&v, "name", d.name.as_str());
+                js::set(&v, "addr", addr);
+                js::set(&v, "ty", d.ty);
+                js::set(&v, "count", d.count.map_or(JsValue::NULL, JsValue::from));
+                js::set(&v, "size", tables().types.size_of(d.ty));
+                js::set(&o, "decl", v);
             }
-        };
-        let (words, data) = pack(&args, scratch)?;
-        let c = Call { id, tid, nr, task, ..Default::default() };
-        k(|k| {
-            k.asked.set(id);
-            k.calls.borrow_mut().insert(id, c);
-            // (The page waits for the kernel now: see Kernel::waiting.)
-            k.waiting.set(Some(k.clock.get()));
-            // (Ring the runner: it waits on the request's number.)
-            k.doorbell.borrow_mut().push_back(task);
-        });
-        // (The call into the runner's request, in its memory, which is
-        // kernel memory: recorded, as its strings are.)
-        let head: Vec<u8> = core::iter::once(nr).chain(words).flat_map(u32::to_le_bytes).collect();
-        write_logged(scratch, &data);
-        write_logged(req, &head);
+            Plan::Assign { addr, ty, count, bytes } => {
+                write_logged(addr, &bytes);
+                js::set(&o, "assigned", tables().types.show(&Direct, addr, ty, count));
+            }
+            Plan::Call { nr, args, result } => {
+                js::set(&o, "id", call(tid, nr, &args, line, result)?);
+                js::set(&o, "tid", tid);
+            }
+        }
+        k(|k| k.lines.set(line + 1));
+        Ok(o.into())
+    }
 
-        sched::interrupt(IRQ_DOORBELL);
-        Ok(id)
+    /// Line `text` (see run) as it would be made as line `line`, with the
+    /// names of the lines before it: its statement (Machine::statement),
+    /// or why it cannot be made; nothing made.
+    pub fn check(&self, text: &str, line: usize) -> Result<JsValue, JsValue> {
+        plan(text, line)?;
+        self.statement(text)
+    }
+
+    /// The names line `line` sees (see run): [{ name, value, pointer } (a
+    /// result), or { name, addr, ty, count, size } (a variable: `size` all
+    /// of it)].
+    pub fn names_before(&self, line: usize) -> js_sys::Array {
+        k(|k| k.names.borrow().before(line).into_iter().map(|(name, sym)| {
+            let o = Object::new();
+            js::set(&o, "name", name);
+            match *sym {
+                Sym::Value { v, to } => {
+                    js::set(&o, "value", v as f64);
+                    js::set(&o, "pointer", to.is_some());
+                }
+                Sym::Var { addr, ty, count } => {
+                    js::set(&o, "addr", addr);
+                    js::set(&o, "ty", ty);
+                    js::set(&o, "count", count.map_or(JsValue::NULL, JsValue::from));
+                    js::set(&o, "size", tables().types.size_of(ty) * count.unwrap_or(1));
+                }
+            }
+            JsValue::from(o)
+        }).collect())
     }
 
     /// A promise of the kernel quiet (now, or once it is): { finished: [the
@@ -240,72 +264,11 @@ impl Machine {
         })
     }
 
-    /// Declare a variable of the program runner `tid` makes calls for:
-    /// `text` as in C (`char buf[64]`, `struct __kernel_timespec ts = {0,
-    /// 30000000}`: see ksee_core::program's Types::declare; `known` as for
-    /// arg), in its process's own memory, as it starts (the host's writes
-    /// there recorded, as a call's are). { name, addr, ty, count, size (an
-    /// element's) }: its name
-    /// then stands for its address in the calls after.
-    pub fn declare(&self, tid: Option<u32>, text: &str, known: JsValue) -> Result<JsValue, JsValue> {
-        let tid = tid.or(k(|k| k.main.get())).ok_or("the program is not ready")?;
-        let d = tables().types.declare(text, &crate::replay::Known(&known))?;
-        let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
-        write_logged(addr, &d.bytes);
-        let o = Object::new();
-        js::set(&o, "name", d.name.as_str());
-        js::set(&o, "addr", addr);
-        js::set(&o, "ty", d.ty);
-        js::set(&o, "count", d.count.map_or(JsValue::NULL, JsValue::from));
-        js::set(&o, "size", tables().types.size_of(d.ty));
-        Ok(o.into())
-    }
-
-    /// Whether `text` declares a variable (see declare): its name, or an
-    /// error; nothing made.
-    pub fn declaration(&self, text: &str, known: JsValue) -> Result<String, JsValue> {
-        Ok(tables().types.declare(text, &crate::replay::Known(&known))?.name)
-    }
-
     /// A program's variable (of type `ty`, an array of `count` if given, at
-    /// `addr`: see declare) as it is now, as C would write it: `"hello"`,
+    /// `addr`: see run) as it is now, as C would write it: `"hello"`,
     /// `{3, 4}`, `{tv_sec = 0, tv_nsec = 30000000}`.
     pub fn show(&self, ty: u32, addr: u32, count: Option<u32>) -> String {
         tables().types.show(&Direct, addr, ty, count)
-    }
-
-    /// A program's variable (see declare) as a JavaScript value, as it is
-    /// now: a number (a BigInt past 2^53), a string (chars), an array, an
-    /// object (a struct's members).
-    pub fn get(&self, ty: u32, addr: u32, count: Option<u32>) -> JsValue {
-        js_value(&tables().types.value(&Direct, addr, ty, count))
-    }
-
-    /// Set a program's variable (of type `ty`, an array of `count`, at
-    /// `addr`: see declare) to `text`, a C literal ("hi", {3, 4},
-    /// {.tv_sec = 1}); the host's writes there recorded, as a call's are.
-    /// Assignment `target = value` of the page's program (see
-    /// ksee_core::program::Statement::Assign): the memory `target` is (an
-    /// lvalue: a variable, a member, what a pointer points to) written with
-    /// `value` (an expression, or a C literal: "hi", {.fd = 3}), recorded;
-    /// what it holds then, as C writes it.
-    pub fn assign(&self, target: &str, value: &str, known: JsValue) -> Result<String, JsValue> {
-        let (types, env) = (&tables().types, crate::replay::Known(&known));
-        let (addr, ty) = ksee_core::program::lvalue(target, types, &env)?;
-        let bytes = if value.trim_start().starts_with(['{', '"']) {
-            types.assign(ty, None, value, &env)?
-        } else {
-            let v = ksee_core::program::value(value, Some(types), &env)?;
-            v.to_le_bytes()[..(types.size_of(ty) as usize).clamp(1, 8)].to_vec()
-        };
-        write_logged(addr, &bytes);
-        Ok(types.show(&Direct, addr, ty, None))
-    }
-
-    pub fn set(&self, ty: u32, addr: u32, count: Option<u32>, text: &str, known: JsValue) -> Result<(), JsValue> {
-        let b = tables().types.assign(ty, count, text, &crate::replay::Known(&known))?;
-        write_logged(addr, &b);
-        Ok(())
     }
 
     /// The `len` bytes at `addr`, passed as argument `k` of syscall `call`,
@@ -317,14 +280,6 @@ impl Machine {
         let &(_, ty) = types.syscall_params(call)?.get(k)?;
         let Kind::Pointer(to) = types.get(types.resolve(ty)).kind else { return None };
         types.records(&Direct, addr, len, to)
-    }
-
-    /// `len` bytes of memory at `addr`, as it is now (a variable's: see
-    /// declare).
-    pub fn memory(&self, addr: u32, len: u32) -> Uint8Array {
-        let mut b = vec![0u8; len.min(1 << 16) as usize];
-        Direct.read(addr, &mut b);
-        Uint8Array::from(&b[..])
     }
 
     /// The program's own runner (user/prog.c's main thread), its tid: the
@@ -354,28 +309,6 @@ fn write_logged(addr: u32, bytes: &[u8]) {
     unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), addr as *mut u8, bytes.len()) };
 }
 
-/// A value of the kernel's types (ksee_core::program::Value) as JavaScript's.
-fn js_value(v: &ksee_core::program::Value) -> JsValue {
-    use ksee_core::program::Value;
-    const SAFE: u64 = 1 << 53;
-    match v {
-        Value::Int(x) if x.unsigned_abs() < SAFE => JsValue::from_f64(*x as f64),
-        Value::Int(x) => js_sys::BigInt::from(*x).into(),
-        Value::Uint(x) if *x < SAFE => JsValue::from_f64(*x as f64),
-        Value::Uint(x) => js_sys::BigInt::from(*x).into(),
-        Value::Float(x) => JsValue::from_f64(*x),
-        Value::Text(s) => JsValue::from_str(s),
-        Value::List(l) => l.iter().map(js_value).collect::<js_sys::Array>().into(),
-        Value::Fields(f) => {
-            let o = Object::new();
-            for (name, x) in f {
-                js::set(&o, name, js_value(x));
-            }
-            o.into()
-        }
-    }
-}
-
 /// `len` bytes of the memory of runner `tid`'s program (user/prog.c's heap:
 /// its process's): their address, on 16 bytes; a page or more, on a page
 /// (as mmap gives it: memory the kernel can pin, a ring's).
@@ -395,18 +328,108 @@ fn alloc(tid: u32, len: u32) -> Result<u32, String> {
     })
 }
 
-/// A call's `args` (see Machine::call), each a number, or a buffer (a
-/// string, { bytes }, { strings }) packed into the data (its bytes, to go
-/// at `base`, the runner's room: a buffer argument is its address there):
-/// the argument words, and the data.
-fn pack(args: &[JsValue], base: u32) -> Result<([u32; 6], Vec<u8>), JsValue> {
-    if args.len() > 6 {
-        return Err("a syscall takes 6 arguments at most".into());
+/// What a line of the program makes (see Machine::run), checked: a
+/// variable (its bytes, as it starts), memory written, or a syscall.
+enum Plan {
+    Decl(ksee_core::program::Decl),
+    Assign { addr: u32, ty: u32, count: Option<u32>, bytes: Vec<u8> },
+    Call { nr: u32, args: Vec<Arg>, result: Option<(String, String)> },
+}
+
+/// Line `text` as line `line` of the program: its runner (a thread id, or
+/// a result's name; else the program's own, Machine::main), and what it
+/// makes, with the names the lines before it made.
+fn plan(text: &str, line: usize) -> Result<(u32, Plan), String> {
+    use ksee_core::program::{lvalue, statement, typed, value, Line};
+    let (st, types, env) = (statement(text)?, &tables().types, Seen(line));
+    let tid = match &st.runner {
+        None => k(|k| k.main.get()).ok_or("the program is not ready")?,
+        Some(r) => value(r, Some(types), &env)? as u32,
+    };
+    if !k(|k| k.runners.borrow().contains_key(&tid)) {
+        return Err(format!("no runner {tid}: the runners are {:?}", k(|k| k.runners.borrow().keys().copied().collect::<Vec<_>>())));
     }
+    Ok((tid, match st.line {
+        Line::Decl { .. } => Plan::Decl(types.declare(&st.text, &env)?),
+        Line::Assign { texts: (target, v), .. } => {
+            // (As a declaration's value: an expression, "…" or {…}; an array's, whole.)
+            let (addr, ty, count) = lvalue(&target, types, &env)?;
+            let bytes = if count.is_some() || v.trim_start().starts_with(['{', '"']) {
+                types.assign(ty, count, &v, &env)?
+            } else {
+                value(&v, Some(types), &env)?.to_le_bytes()[..(types.size_of(ty) as usize).clamp(1, 8)].to_vec()
+            };
+            Plan::Assign { addr, ty, count, bytes }
+        }
+        Line::Call { result, call, texts, .. } => {
+            let nr = types.syscalls.iter().find(|(_, n)| **n == call).map(|(&nr, _)| nr)
+                .ok_or_else(|| format!("this kernel has no syscall {call}"))?;
+            let params = types.syscall_params(&call).cloned().unwrap_or_default();
+            if texts.len() > params.len() {
+                return Err(format!("{call}: {} arguments, not {}", params.len(), texts.len()));
+            }
+            let args = texts.iter().enumerate().map(|(k, a)| types.arg(a, params.get(k).map_or(0, |p| p.1), &env))
+                .collect::<Result<Vec<_>, _>>()?;
+            let result = match result {
+                Some((ty, name)) => {
+                    typed(0, &ty.text(), types).ok_or_else(|| format!("{name}: no type {} in the kernel", ty.text()))?;
+                    Some((name, ty.text()))
+                }
+                None => None,
+            };
+            Plan::Call { nr, args, result }
+        }
+    }))
+}
+
+/// Have runner `tid` make syscall `nr` with `args`, for line `line` (its
+/// result named `result`): the call's id.
+fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, String)>) -> Result<u32, String> {
+    let Some((task, req)) = k(|k| Some((*k.runners.borrow().get(&tid)?, *k.requests.borrow().get(&tid)?))) else {
+        return Err(format!("no runner {tid}"));
+    };
+    if k(|k| k.in_flight(tid).is_some()) {
+        return Err(format!("{tid} is still making its call"));
+    }
+    let id = k(|k| k.asked.get() + 1);
+    // (Its strings and buffers: in the runner's room, in its program's
+    // memory, taken on its first call.)
+    let scratch = match k(|k| k.scratch.borrow().get(&tid).copied()) {
+        Some(at) => at,
+        None => {
+            let at = alloc(tid, SCRATCH)?;
+            k(|k| k.scratch.borrow_mut().insert(tid, at));
+            at
+        }
+    };
+    let (words, data) = pack(args, scratch)?;
+    let c = Call { id, tid, nr, task, line, result, ..Default::default() };
+    k(|k| {
+        k.asked.set(id);
+        k.calls.borrow_mut().insert(id, c);
+        // (The page waits for the kernel now: see Kernel::waiting.)
+        k.waiting.set(Some(k.clock.get()));
+        // (Ring the runner: it waits on the request's number.)
+        k.doorbell.borrow_mut().push_back(task);
+    });
+    // (The call into the runner's request, in its memory, which is
+    // kernel memory: recorded, as its strings are.)
+    let head: Vec<u8> = core::iter::once(nr).chain(words).flat_map(u32::to_le_bytes).collect();
+    write_logged(scratch, &data);
+    write_logged(req, &head);
+    sched::interrupt(IRQ_DOORBELL);
+    Ok(id)
+}
+
+/// A call's `args`, each a number, or a buffer (bytes, a string's with its
+/// NUL; an array of strings, argv's) packed into the data (its bytes, to
+/// go at `base`, the runner's room: a buffer argument is its address
+/// there): the argument words, and the data.
+fn pack(args: &[Arg], base: u32) -> Result<([u32; 6], Vec<u8>), String> {
     let mut words = [0u32; 6];
     let mut data = Vec::new();
     // (Bytes `b` into the data, 8-byte aligned: their address.)
-    let mut put = |b: &[u8]| -> Result<u32, JsValue> {
+    let mut put = |b: &[u8]| -> Result<u32, String> {
         if data.len() + b.len() > SCRATCH as usize {
             return Err("the call's buffers are too big".into());
         }
@@ -416,32 +439,40 @@ fn pack(args: &[JsValue], base: u32) -> Result<([u32; 6], Vec<u8>), JsValue> {
         Ok(at)
     };
     for (i, a) in args.iter().enumerate() {
-        // { strings: [s, …, null] }: an array of char * (null: NULL), as argv.
-        if let Ok(list) = js::get(a, "strings").dyn_into::<js_sys::Array>() {
-            let mut pointers = Vec::new();
-            for s in list.iter() {
-                pointers.push(match s.as_string() {
-                    Some(s) => put(&[s.as_bytes(), &[0]].concat())?,
-                    None => 0,
-                });
+        words[i] = match a {
+            Arg::Number(v) => *v as u32,
+            Arg::Bytes(b) => put(b)?,
+            Arg::Strings(list) => {
+                let mut pointers = Vec::new();
+                for s in list {
+                    pointers.push(match s {
+                        Some(s) => put(&[s.as_bytes(), &[0]].concat())?,
+                        None => 0,
+                    });
+                }
+                put(&pointers.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>())?
             }
-            let array: Vec<u8> = pointers.iter().flat_map(|w| w.to_le_bytes()).collect();
-            words[i] = put(&array)?;
-            continue;
-        }
-        let buffer: Option<Vec<u8>> = if let Some(s) = a.as_string() {
-            Some([s.as_bytes(), &[0]].concat())
-        } else if !js::get(a, "bytes").is_undefined() {
-            Some(Uint8Array::new(&js::get(a, "bytes")).to_vec())
-        } else {
-            None
-        };
-        words[i] = match buffer {
-            Some(b) => put(&b)?,
-            None => a.as_f64().ok_or("an argument: a number, a string, { bytes } or { strings }")? as i64 as u32,
         };
     }
     Ok((words, data))
+}
+
+/// The page's program's names, as line `line` sees them (see
+/// ksee_core::program::Names), and the kernel's constants; memory as it is
+/// now.
+struct Seen(usize);
+
+impl ksee_core::program::Env for Seen {
+    fn sym(&self, n: &str) -> Option<Sym> {
+        if let Some(&v) = tables().types.constants.get(n) {
+            return Some(Sym::Value { v, to: None });
+        }
+        k(|k| k.names.borrow().get(n, self.0).cloned())
+    }
+
+    fn memory(&self) -> Option<&dyn Memory> {
+        Some(&Direct)
+    }
 }
 
 /// The kernel is quiet: settle what waits for it (see Machine::quiet).

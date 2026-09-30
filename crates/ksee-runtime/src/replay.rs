@@ -8,42 +8,6 @@ use wasm_bindgen::prelude::*;
 use crate::machine::Machine;
 use crate::state::{k, tables, Direct};
 
-/// The names of the page's program (ksee_core::program::Env): a constant
-/// of the kernel's, else `known`'s ({ name: what it is }: a number, a
-/// result of a declared type, { value, type: "void *" }, or a variable, {
-/// addr, ty, count }), reading memory as it is now.
-pub(crate) struct Known<'a>(pub &'a JsValue);
-
-impl ksee_core::program::Env for Known<'_> {
-    fn sym(&self, n: &str) -> Option<ksee_core::program::Sym> {
-        use ksee_core::program::Sym;
-        let types = &tables().types;
-        if let Some(&v) = types.constants.get(n) {
-            return Some(Sym::Value { v, to: None });
-        }
-        let x = js_sys::Reflect::get(self.0, &n.into()).ok()?;
-        if let Some(v) = x.as_f64() {
-            return Some(Sym::Value { v: v as i64, to: None });
-        }
-        let get = |k: &str| js_sys::Reflect::get(&x, &k.into()).ok().filter(|v| !v.is_undefined() && !v.is_null());
-        if let Some(addr) = get("addr").and_then(|v| v.as_f64()) {
-            return Some(Sym::Var { addr: addr as u32, ty: get("ty")?.as_f64()? as u32, count: get("count").and_then(|c| c.as_f64()).map(|c| c as u32) });
-        }
-        ksee_core::program::typed(get("value")?.as_f64()? as i64, &get("type")?.as_string()?, types)
-    }
-
-    fn memory(&self) -> Option<&dyn Memory> {
-        Some(&Direct)
-    }
-}
-
-/// `{ key: value }`.
-fn obj(key: &str, value: JsValue) -> JsValue {
-    let o = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(&o, &key.into(), &value);
-    o.into()
-}
-
 fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
     serde_wasm_bindgen::to_value(v).unwrap_or(JsValue::NULL)
 }
@@ -244,21 +208,6 @@ impl Machine {
         self.view(|v| to_js(&v.syscall(name)))
     }
 
-    /// Argument `text` (written as in C: see ksee_core::program) of syscall
-    /// `syscall`'s parameter `k`, as Machine::call takes it: a number, a
-    /// string, { bytes } or { strings }; or an error. `known`: {
-    /// name: value }, the results so far (fd).
-    pub fn arg(&self, syscall: &str, k: usize, text: &str, known: JsValue) -> Result<JsValue, JsValue> {
-        use ksee_core::program::Arg;
-        let types = &tables().types;
-        let ty = types.syscall_params(syscall).and_then(|p| p.get(k)).map_or(0, |(_, t)| *t);
-        Ok(match types.arg(text, ty, &Known(&known))? {
-            Arg::Number(v) => JsValue::from_f64(v as f64),
-            Arg::Bytes(b) => obj("bytes", js_sys::Uint8Array::from(&b[..]).into()),
-            Arg::Strings(v) => obj("strings", v.into_iter().map(|s| s.map_or(JsValue::NULL, JsValue::from)).collect::<js_sys::Array>().into()),
-        })
-    }
-
     /// A program's line (ksee_core::program::statement): { tid?, text (as
     /// written, but for its runner) } and a call's { type?, name?, call,
     /// args (as written) }, a declaration's { decl: true }, or an
@@ -291,12 +240,6 @@ impl Machine {
             }
         }
         Ok(o.into())
-    }
-
-    /// The value of `text`, a C constant expression (a runner's thread id,
-    /// say: "19", "child"); `known` as for arg.
-    pub fn value(&self, text: &str, known: JsValue) -> Result<f64, JsValue> {
-        Ok(ksee_core::program::value(text, Some(&tables().types), &Known(&known))? as f64)
     }
 
     /// The names in `text`, a line of C source, each with the fields
