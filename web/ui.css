@@ -218,3 +218,17 @@ ol.steps.lanes > li.add { display: grid; grid-template-columns: repeat(var(--lan
 .laneheads { display: grid; grid-template-columns: repeat(var(--lanes), var(--col)); column-gap: 10px; margin: 4px 12px 0 34px; width: max-content; }
 .laneheads[hidden] { display: none; }
 .laneheads .lane { font-size: 11px; border-bottom: 2px solid hsl(var(--hue) 50% 62%); padding: 2px 5px; }
+
+/* A narrow screen (a phone): the panes one under another, the page
+   scrolling: the example, the timeline, the source, the Stack's tabs; no
+   splits. */
+@media (max-width: 800px) {
+  body { height: auto; }
+  #app, main { display: block; }
+  #side { border-right: 0; border-bottom: 1px solid var(--line); }
+  #side .body { overflow: visible; }
+  .vsplit, .hsplit, #legend { display: none; }
+  main > .col { height: 70dvh; border-top: 1px solid var(--line); }
+  .transport { flex-wrap: wrap; row-gap: 2px; }
+  .transport button { padding: 4px 14px; }
+}

@@ -211,6 +211,7 @@ pub fn test(ui: bool) {
         run(Command::new("deno").args(["run", "-A", "tests/ui.js", "target/ui.png"]));
         run(Command::new("deno").args(["run", "-A", "tests/ui.js", "target/ui-back.png", "--back"]));
         run(Command::new("deno").args(["run", "-A", "tests/ui.js", "target/ui-pipe.png", "--pipe"]));
+        run(Command::new("deno").args(["run", "-A", "tests/ui.js", "target/ui-phone.png", "--phone"]));
     }
 }
 

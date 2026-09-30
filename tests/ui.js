@@ -1,12 +1,14 @@
 // The page in headless Chromium (./ksee.sh test --ui): serve the site (target/site), load it,
 // go through examples, fail on any exception (or if the script throws), and
 // save a screenshot. Options look at another page, or run another script
-// (--eval; --back, --pipe: tests/ui/back.js, pipe.js; by default read.js).
-//   deno run -A tests/ui.js OUT.png [--url=URL] [--at=PATH] [--wait=ms] [--eval=JS | --back | --pipe] [--size=WxH]
+// (--eval; --back, --pipe, --phone: tests/ui/back.js, pipe.js, phone.js;
+// by default read.js).
+//   deno run -A tests/ui.js OUT.png [--url=URL] [--at=PATH] [--wait=ms] [--eval=JS | --back | --pipe | --phone] [--size=WxH]
 // $CHROME: a Chromium binary (e.g. Playwright's chrome-headless-shell).
 const [out] = Deno.args.filter((a) => !a.startsWith("--"));
 const opt = (k, d) => Deno.args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
-const [w, h] = opt("size", "1500x900").split("x").map(Number);
+const phone = Deno.args.includes("--phone");
+const [w, h] = opt("size", phone ? "390x844" : "1500x900").split("x").map(Number);
 const port = 9333;
 let exceptions = 0;
 // Serve the site unless given a URL.
@@ -65,7 +67,7 @@ await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
 // The script to run in the page: tests/ui/NAME.js (read, the default;
 // back; pipe), after tests/ui/lib.js; or --eval's.
 const page = (name) => Deno.readTextFileSync(new URL(`ui/${name}.js`, import.meta.url));
-const script = opt("eval", null) ?? page("lib") + page(Deno.args.includes("--back") ? "back" : Deno.args.includes("--pipe") ? "pipe" : "read");
+const script = opt("eval", null) ?? page("lib") + page(Deno.args.includes("--back") ? "back" : Deno.args.includes("--pipe") ? "pipe" : phone ? "phone" : "read");
 
 if (script) {
   const r = await send("Runtime.evaluate", { expression: script, awaitPromise: true, returnByValue: true });
