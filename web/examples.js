@@ -1,6 +1,7 @@
 // The examples, one at a time, as a course's lessons: a chapter, a title,
 // a question, the explanation, then the example before and the next by
-// name; the contents (Examples) lists them all, ◀ ▶ step through them;
+// name; the contents (Examples: its button pressed while open; ✕, Esc
+// or a click elsewhere closes it) lists them all, ◀ ▶ step through them;
 // each on a fresh kernel (the kernel starts again, the page stays); the URL says
 // which (#ex=NAME). An example is a question about the kernel, a program
 // that asks it (user/examples/*.json: syscalls, one after the other), and
@@ -133,17 +134,32 @@ export async function examples(app) {
 
   // The contents: every example, by chapter, in order, over the panel (the
   // one open marked, those opened before ticked); shown or not.
+  // (Its button pressed while it is shown; ✕, Esc, or the one open again
+  // closes it.)
   function contents(show) {
     t.menu?.remove();
     t.menu = null;
+    const button = document.querySelector("#ex-head .contents");
+    button?.classList.toggle("on", show);
+    button?.setAttribute("aria-expanded", String(show));
     if (!show) return;
     const groups = [...new Set(list.map((x) => x.group ?? ""))];
-    t.menu = el("nav", { className: "lessons" }, ...groups.flatMap((g) => [el("h3", { textContent: g }),
+    t.menu = el("nav", { className: "lessons" },
+      el("div", { className: "lessons-head" }, el("b", { textContent: "Examples" }), el("span", { className: "dim", textContent: " · each on a fresh kernel" }),
+        el("button", { className: "close", textContent: "✕", title: "close (Esc)", onclick: () => contents(false) })),
+      ...groups.flatMap((g) => [el("h3", { textContent: g }),
       ...list.filter((x) => (x.group ?? "") === g).map((x) => el("a", {
         className: [x === t.ex ? "on" : "", was.has(x.name) ? "seen" : ""].join(" ").trim(), textContent: x.title,
         onclick: () => (x === t.ex ? contents(false) : go(x)) }))]));
     $("side").append(t.menu);
   }
+  addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && t.menu) (contents(false), e.preventDefault());
+  });
+  // (A click elsewhere, not on it or its button, closes it too.)
+  addEventListener("pointerdown", (e) => {
+    if (t.menu && !t.menu.contains(e.target) && !e.target.closest?.("#ex-head .contents")) contents(false);
+  });
   // The examples opened before, by name (this browser's, kept in localStorage).
   const was = new Set((() => { try { return JSON.parse(localStorage.getItem("ksee.seen") ?? "[]"); } catch { return []; } })());
   const seen = (ex) => {

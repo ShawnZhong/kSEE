@@ -329,7 +329,7 @@ for (const ex of examples) {
   }
   // (Its tries: each a program that runs; its calls finish, or block on purpose.)
   for (const [k, prog] of (ex.tries ?? []).entries()) {
-    const steps = prog.split(";").map((c) => c.trim()).filter(Boolean).map((c) => m.statement(c));
+    const steps = m.program_lines(prog).map((c) => m.statement(c));
     const ran = await runExample({ ...ex, steps });
     check(`example ${ex.name}, try ${k + 1}: ${steps.length} calls made (${prog.slice(0, 50)}…)`, ran.length === steps.length && steps.length > 0);
   }
