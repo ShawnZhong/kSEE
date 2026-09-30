@@ -21,8 +21,7 @@ export function tree(app, st, redraw) {
   // The children of value `o` (an Object, see ksee_core::view), if it has any.
   function kids(o) {
     if (o.children) return o.children;
-    if (o.expand != null) return m.object_by_id(o.name, o.expand, o.addr, 1)?.children ?? [];
-    if (o.target) return m.object_by_id(o.name, o.target.ty, o.target.addr, 1)?.children ?? [];
+    if (o.open) return m.object(o.name, o.open.ty, o.open.addr, 1)?.children ?? [];
     return null;
   }
 
@@ -48,7 +47,7 @@ export function tree(app, st, redraw) {
           ? el("td", { className: "fval mem", title: value, onmouseenter: (ev) => (ev.target.title = `${value}\n${wroteIt(o)}`) }, value)
           : el("td", { className: "fval", title: value }, value),
         el("td", { className: "ftype" }, o.ty)));
-      if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? `${e}->` : `${e}.`);
+      if (open) rows(kids(o) ?? [], p, depth + 1, out, o.ty.endsWith("*") ? `${e}->` : `${e}.`);
     }
   }
   // Who last wrote value `o`, and where from: back through the copies
@@ -65,7 +64,7 @@ export function tree(app, st, redraw) {
 }
 
 // Whether value `o` opens: into its fields, or what it points to.
-export const openable = (o) => o.children || o.expand != null || o.target != null;
+export const openable = (o) => o.children || o.open;
 
 // Where a write was: "ksys_read fs/read_write.c:720".
 export const place = (at) => (at ? `${at.inlined ?? at.func} ${at.file}:${at.line}` : "?");

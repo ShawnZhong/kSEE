@@ -68,7 +68,7 @@ impl Machine {
         self.rec.borrow().calls.call_end(first)
     }
 
-    /// Show memory (object, object_by_id, global, call_stack's locals) as it
+    /// Show memory (object, global, call_stack's locals) as it
     /// was after record `i`, or as it is now (None): how many stores that
     /// undoes.
     pub fn memory_at(&self, i: Option<usize>) -> usize {
@@ -313,30 +313,23 @@ impl Machine {
         self.view(|v| to_js(&v.coverage(file, n)))
     }
 
-    /// The value of the type named `name` at `addr` (view::Object),
-    /// aggregates expanded `depth` levels.
-    pub fn object(&self, name: &str, addr: u32, depth: Option<u32>) -> JsValue {
-        match tables().types.find(name) {
-            Some(ty) => self.object_by_id(name, ty, addr, depth),
-            None => JsValue::NULL,
-        }
-    }
-
     /// The fields of the task at `addr` as memory_at shows them
     /// (view::TaskFields): the key ones first.
     pub fn task_fields(&self, addr: u32) -> JsValue {
         self.with_memory(|mem| self.view(|v| to_js(&v.task_fields(mem, addr))))
     }
 
-    /// Like `object`, by type id (an Object's `expand` or `target`).
-    pub fn object_by_id(&self, label: &str, ty: u32, addr: u32, depth: Option<u32>) -> JsValue {
+    /// The value of type `ty` at `addr` (view::Object: what an Object's
+    /// `open` says), named `label`, aggregates read `depth` levels, as
+    /// memory_at shows it.
+    pub fn object(&self, label: &str, ty: u32, addr: u32, depth: Option<u32>) -> JsValue {
         self.with_memory(|mem| to_js(&tables().types.object(mem, label, addr, ty, depth.unwrap_or(1))))
     }
 
     /// The value of the variable `name` (view::Object), or null.
     pub fn global(&self, name: &str, depth: Option<u32>) -> JsValue {
         match tables().types.globals.get(name) {
-            Some(&(addr, ty)) => self.object_by_id(name, ty, addr, depth),
+            Some(&(addr, ty)) => self.object(name, ty, addr, depth),
             None => JsValue::NULL,
         }
     }

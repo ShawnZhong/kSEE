@@ -3,7 +3,7 @@
 use super::*;
 
 /// A value in memory. Aggregates beyond the requested depth have no
-/// children yet (`expand` names the type to ask for them).
+/// children yet (`open` says what to ask for them).
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Object {
@@ -18,11 +18,10 @@ pub struct Object {
     /// Why it has none, if (its `value` says it too, in parentheses).
     pub none: Option<Missing>,
     pub children: Option<Vec<Object>>,
-    /// Type id to expand this value (an aggregate not expanded yet).
-    pub expand: Option<u32>,
-    /// For a pointer to a struct or union, not NULL: what it points to,
-    /// (type id, address).
-    pub target: Option<Target>,
+    /// What opening it reads (its children not read yet): itself, an
+    /// aggregate; or what it points to, a pointer to a struct or union not
+    /// NULL.
+    pub open: Option<Target>,
 }
 
 /// How many elements of an array a value shows (then a row: how many more).
@@ -70,12 +69,12 @@ impl Types {
         let t = self.get(id);
         let mut o = Object {
             name: name.to_string(), ty: self.name(ty), id, addr, size: self.size_of(ty),
-            value: None, none: None, children: None, expand: None, target: None,
+            value: None, none: None, children: None, open: None,
         };
         match &t.kind {
             Kind::Struct(_) | Kind::Union(_) => {
                 if depth == 0 {
-                    o.expand = Some(id);
+                    o.open = Some(Target { ty: id, addr });
                 } else {
                     // (Not one of size 0: nothing in it, a struct its
                     // config left empty, as rseq_data without CONFIG_RSEQ.)
@@ -87,7 +86,7 @@ impl Types {
             }
             Kind::Array { elem, count } if !self.is_string(*elem) => {
                 if depth == 0 {
-                    o.expand = Some(id);
+                    o.open = Some(Target { ty: id, addr });
                 } else {
                     let esize = self.size_of(*elem);
                     let mut shown: Vec<Object> = (0..(*count).min(SHOWN)).map(|i| {
@@ -96,7 +95,7 @@ impl Types {
                     // (Past the first SHOWN: a row saying how many more.)
                     if *count > SHOWN {
                         shown.push(Object { name: format!("[{SHOWN}…{}]", count - 1), ty: String::new(), id: 0, addr: addr + SHOWN * esize, size: 0,
-                                            value: Some(format!("… {} more", count - SHOWN)), none: None, children: None, expand: None, target: None });
+                                            value: Some(format!("… {} more", count - SHOWN)), none: None, children: None, open: None });
                     }
                     o.children = Some(shown);
                 }
@@ -112,7 +111,7 @@ impl Types {
                 });
                 let target = self.resolve(*to);
                 match self.get(target).kind {
-                    Kind::Struct(_) | Kind::Union(_) if p != 0 && self.size_of(target) > 0 => o.target = Some(Target { ty: target, addr: p }),
+                    Kind::Struct(_) | Kind::Union(_) if p != 0 && self.size_of(target) > 0 => o.open = Some(Target { ty: target, addr: p }),
                     // (A pointer to a scalar: what it points to, in line: "0x7ffd8 → 0".)
                     Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_) if p != 0 && !self.is_string(*to) => {
                         let mut v = String::new();

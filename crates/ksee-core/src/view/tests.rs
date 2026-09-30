@@ -389,7 +389,7 @@ fn scalar_pointers_show_what_they_point_to() {
     m[0..4].copy_from_slice(&8u32.to_le_bytes());
     m[8..12].copy_from_slice(&(-3i32).to_le_bytes());
     let o = t.object(&Mem(m), "pos", 0, 2, 0);
-    assert_eq!((o.value.as_deref(), o.target), (Some("0x8 → -3"), None));
+    assert_eq!((o.value.as_deref(), o.open), (Some("0x8 → -3"), None));
 }
 
 #[test]
@@ -401,7 +401,7 @@ fn objects_expose_pointer_targets() {
     m[4..8].copy_from_slice(&8u32.to_le_bytes());
     let o = t.object(&Mem(m), "n", 0, 2, 1);
     let c = o.children.unwrap();
-    assert_eq!((c[0].value.as_deref(), c[1].value.as_deref(), c[1].target), (Some("7"), Some("0x8"), Some(Target { ty: 2, addr: 8 })));
+    assert_eq!((c[0].value.as_deref(), c[1].value.as_deref(), c[1].open), (Some("7"), Some("0x8"), Some(Target { ty: 2, addr: 8 })));
 }
 
 #[test]

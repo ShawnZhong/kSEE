@@ -234,7 +234,7 @@ impl View<'_> {
             let arg = t.types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
             // (Not passed any more: the optimizer took it away.)
             if known >> k & 1 == 0 {
-                return Object { value: Some(Missing::OptimizedOut.text().into()), none: Some(Missing::OptimizedOut), children: None, expand: None, target: None, ..arg };
+                return Object { value: Some(Missing::OptimizedOut.text().into()), none: Some(Missing::OptimizedOut), children: None, open: None, ..arg };
             }
             arg
         }).collect()
@@ -248,7 +248,7 @@ impl View<'_> {
     /// local as `set` has it (Record::Var), else not set yet.
     fn locals(&self, func: u32, frame: u32, mem: &dyn Memory, first: usize, at: usize, set: &[Object]) -> Vec<Object> {
         let types = &self.tables.types;
-        let not = |o: Object, why: Missing| Object { value: Some(why.text().into()), none: Some(why), children: None, expand: None, target: None, ..o };
+        let not = |o: Object, why: Missing| Object { value: Some(why.text().into()), none: Some(why), children: None, open: None, ..o };
         // (A name once: two variables of one name, in two of its scopes, are
         // one to the recording, which knows a variable by its name.)
         let mut seen = alloc::collections::BTreeSet::new();

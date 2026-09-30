@@ -63,7 +63,7 @@ export function source(app) {
     function draw() {
       moved();
       const out = [], k = openable(h.o) ? kids(h.o) : null;
-      if (k) rows(k, "tip", 0, out, `${h.expr}${h.o.target != null ? "->" : "."}`);
+      if (k) rows(k, "tip", 0, out, `${h.expr}${h.o.ty.endsWith("*") ? "->" : "."}`);
       body.replaceChildren(...out);
     }
     draw();

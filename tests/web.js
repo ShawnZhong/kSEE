@@ -108,8 +108,8 @@ check("an outer call is where it calls the next one in", kw?.file === "fs/read_w
 check("a past call stack, with arguments", stack[0]?.func === "vfs_write" && kw?.args?.find((a) => a.name === "count")?.value === "11");
 check("memory as it was: writes undone", m.memory_at(w.first) > m.memory_at(w.last));
 m.memory_at(inWrite(w));
-const task = m.object("task_struct", w.task.addr, 1);
-check("the task, as it was", task?.children?.find((c) => c.name === "comm")?.value === '"prog"');
+const task = m.task_fields(w.task.addr);
+check("the task, as it was", task?.fields?.find((c) => c.name === "comm")?.value === '"prog"');
 check("a global", m.global("runqueues", 1)?.children?.some((c) => c.name === "nr_running"));
 m.memory_at(null);
 function inWrite(s) {
@@ -131,7 +131,7 @@ const inRead = m.line_steps(read.first, read.last, read.task.addr).find((x) => x
   check(`vfs_read's last line (${last?.line}) says what it returns: ${last?.ret}`, last?.ret === 26);
 }
 const file = m.call_stack(inRead)[0].args.find((a) => a.name === "file");
-const fpos = (i) => (m.memory_at(i), m.object_by_id("file", file.target.ty, file.target.addr, 1)?.children?.find((c) => c.name === "f_pos"));
+const fpos = (i) => (m.memory_at(i), m.object("file", file.open.ty, file.open.addr, 1)?.children?.find((c) => c.name === "f_pos"));
 check("f_pos before the read, and after", fpos(read.first)?.value === "0" && fpos(read.last)?.value === "26");
 // (The program's buffer is kernel memory: the read fills it, recorded.)
 const buf = (i) => (m.memory_at(i), m.call_stack(inRead)[0].args.find((a) => a.name === "buf")?.value);
@@ -140,7 +140,7 @@ const who = (m.memory_at(read.last), m.origin(fpos(read.last).addr, 8)[0]);
 check("who wrote f_pos: ksys_read", who?.at?.func === "ksys_read");
 // What the read did (Objects): its file's f_pos, 0 to 26, by ksys_read.
 {
-  const obj = m.objects(read.first, read.last).find((n) => n.addr === file.target.addr && n.id === file.target.ty);
+  const obj = m.objects(read.first, read.last).find((n) => n.addr === file.open.addr && n.id === file.open.ty);
   const d = obj?.changes.find((x) => x.member === "f_pos");
   check(`the read wrote its file: ${obj?.changes.map((x) => x.member).join(", ")}; f_pos ${d?.before} → ${d?.after} by ${d?.runs.map((r) => r.at?.func).join(", ")}`,
         d?.before === "0" && d?.after === "26" && d.runs.length === 1 && d.runs[0].at?.func === "ksys_read");
@@ -235,7 +235,7 @@ check("a bad user pointer: EFAULT", (await line("write(1, 0x1000, 4)")).ret === 
   const arg = m.call_stack(i).find((f) => f.func === "filename_create")?.args?.find((a) => a.ty === "struct filename *");
   m.memory_at(i); // (as it was: the name is freed after the syscall)
   // (7.2's struct filename: the name pointer is in an anonymous struct, whose members are its own.)
-  const name = arg && m.object_by_id("name", arg.target.ty, arg.target.addr, 1)?.children?.find((c) => c.name === "name");
+  const name = arg && m.object("name", arg.open.ty, arg.open.addr, 1)?.children?.find((c) => c.name === "name");
   m.memory_at(null);
   check(`a char * with its string: filename->name = ${name?.value}`, name?.value?.endsWith('"/mnt/named"'));
   await line('unlinkat(AT_FDCWD, "/mnt/named", AT_REMOVEDIR)');
