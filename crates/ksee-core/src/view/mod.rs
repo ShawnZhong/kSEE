@@ -154,8 +154,8 @@ pub struct TaskFields {
 }
 
 /// A task at a record: what the scheduler has it doing (`state`); its
-/// `last` record by then (None: it first runs after, at `first`, or the
-/// recording never saw it run), and there the syscall it is in, else its
+/// `last` record by then (None: it first runs after, or the recording
+/// never saw it run), and there the syscall it is in, else its
 /// outermost call (what it does: off the CPU, its innermost is always the
 /// switch).
 #[derive(Debug, Clone, PartialEq)]
@@ -170,8 +170,7 @@ pub struct TaskAt {
     /// waiting for something); "exited" (the kernel's list no longer has
     /// it), or "later" (not yet made).
     pub state: &'static str,
-    /// Its first record, and its last by then, if the recording has them.
-    pub first: Option<usize>,
+    /// Its last record by then, if the recording has one.
     pub last: Option<usize>,
     pub syscall: Option<String>,
     pub func: Option<String>,
@@ -252,15 +251,15 @@ impl View<'_> {
                 }
             }
         }
-        // (Each task the recording has: its first record, and its last by `i`.)
-        let mut seen: Vec<(u32, usize, Option<usize>)> = Vec::new();
+        // (Each task the recording has, in the order it first runs: its last record by `i`.)
+        let mut seen: Vec<(u32, Option<usize>)> = Vec::new();
         for (j, &task) in self.rec.tasks.iter().enumerate().filter(|&(_, &task)| task != 0) {
             let k = match seen.iter().position(|s| s.0 == task) {
                 Some(k) => k,
-                None => (seen.push((task, j, None)), seen.len() - 1).1,
+                None => (seen.push((task, None)), seen.len() - 1).1,
             };
             if j <= i {
-                seen[k].2 = Some(j);
+                seen[k].1 = Some(j);
             }
         }
         // (With no list (the tables have none), every task counts as on it.)
@@ -268,7 +267,7 @@ impl View<'_> {
         let others: Vec<u32> = seen.iter().map(|s| s.0).filter(|a| !list.contains(a)).collect();
         let running = self.rec.tasks.get(i).copied();
         list.iter().map(|&a| (a, true)).chain(others.into_iter().map(|a| (a, !known))).map(|(addr, listed)| {
-            let (first, last) = seen.iter().find(|s| s.0 == addr).map_or((None, None), |s| (Some(s.1), s.2));
+            let last = seen.iter().find(|s| s.0 == addr).and_then(|s| s.1);
             let on_rq = t.types.field(arch::TASK, arch::TASK_ON_RQ).is_some_and(|(off, _)| {
                 let mut b = [0u8];
                 mem.read(addr.wrapping_add(off), &mut b);
@@ -285,7 +284,7 @@ impl View<'_> {
             TaskAt {
                 task: self.task(addr),
                 up: up(arch::TASK_LEADER).or_else(|| up(arch::TASK_PARENT)),
-                state, first, last,
+                state, last,
                 syscall: last.and_then(|j| self.rec.syscall_at(j)).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr).cloned()),
                 func: last.and_then(|j| self.rec.calls.stack_at(t, j, None).into_iter().next()).and_then(|c| t.functions.get(&c.func)).map(|f| f.name.clone()),
             }

@@ -114,9 +114,8 @@ or made later), as a tree (a thread under its process's leader, a process
 under its parent): the one running marked, each what the scheduler has it
 doing (running; runnable: on the run queue, waiting for the CPU;
 sleeping: off it, waiting for something) and where it is (`prog(20)
-sleeping in read`: its syscall, else its outermost call), its name a
-link to its last moment (the Stack then shows its stack), its task_struct
-as it was (the running one's open; its key fields first: pid, comm, mm,
+sleeping in read`: its syscall, else its outermost call); a click on
+it opens its task_struct as it was (the running one's open; its key fields first: pid, comm, mm,
 …, then the others); the Stack's `current task` is a link to it. The
 Objects tab says what the syscall selected did to the kernel's data, all
 of it, always: its head says it in a line (`read by prog(19) changed

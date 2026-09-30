@@ -3,9 +3,7 @@
 // (Machine.tasks), as a tree (a thread under its process's leader, a
 // process under its parent): the one running marked, each what the
 // scheduler has it doing (running, runnable, sleeping) and where it is
-// (the syscall it is in, else its outermost call, as it last ran); its
-// name a link to that moment (the Stack then shows its stack; one the
-// recording never saw run, none). Open (the
+// (the syscall it is in, else its outermost call, as it last ran). Open (the
 // running one, to begin with): its task_struct as it was at the cursor,
 // its key fields first, then the others.
 import { $, el, taskName } from "./dom.js";
@@ -57,12 +55,9 @@ export function tasks(app) {
       // (The one running, marked; one not made yet by the cursor, or gone, dim.)
       all.push(el("tr", { className: `frame task${running ? " on" : ""}${t.state === "later" || t.state === "exited" ? " later" : ""}`,
                           title: states[t.state] }, el("td", { colSpan: 3, style: `padding-left: ${8 + depth * 16}px` },
-        el("a", { className: "tw", textContent: open ? "▾ " : "▸ ", title: open ? "fold it" : "its task_struct, as it was at the cursor", onclick: () => (opened.set(p, !open), redraw()) }),
-        // (A link to its last moment by the cursor, its first if later; one
-        // the recording never saw run, none.)
-        t.first == null ? el("span", { className: "mono", textContent: taskName(t.task) })
-          : el("a", { className: "mono", textContent: taskName(t.task), title: running ? "" : "go to its last moment (its first, if it runs later)",
-                      onclick: () => app.time.go(t.last ?? t.first) }),
+        // (Its name, or ▸: open it (its task_struct, as it was at the cursor), or fold it.)
+        el("a", { className: "mono", title: open ? "fold it" : "its task_struct, as it was at the cursor", onclick: () => (opened.set(p, !open), redraw()) },
+          el("span", { className: "tw", textContent: open ? "▾ " : "▸ " }), taskName(t.task)),
         el("span", { className: "dim", textContent: `  ${t.state}${t.last == null || !(t.syscall ?? t.func) ? "" : ` in ${t.syscall ?? t.func}`}` }))));
       if (!open) continue;
       rows(m.task_fields(t.task.addr).fields, p, 1, all);

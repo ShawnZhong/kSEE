@@ -44,9 +44,9 @@ fn each_task_where_it_last_ran() {
     args.push(1, &[0x100, 0x200, 0]);
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
     let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 16]) };
-    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.first, x.last)).collect::<Vec<_>>();
-    assert_eq!(at(0), [(0x100, "running", Some(0), Some(0)), (0x200, "sleeping", Some(2), None)]);
-    assert_eq!(at(3), [(0x100, "sleeping", Some(0), Some(1)), (0x200, "running", Some(2), Some(3))]);
+    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.last)).collect::<Vec<_>>();
+    assert_eq!(at(0), [(0x100, "running", Some(0)), (0x200, "sleeping", None)]);
+    assert_eq!(at(3), [(0x100, "sleeping", Some(1)), (0x200, "running", Some(3))]);
     assert_eq!(v.tasks(3)[0].func.as_deref(), Some("f"));
 }
 
@@ -71,9 +71,9 @@ fn the_tasks_are_the_kernels_list_then_the_recordings_others() {
     let r = [Record::Task { task: 0x300 }, Record::Block { func: 1, n: 0 }, Record::Task { task: 0x200 }, Record::Block { func: 1, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), Args::default());
     let v = View { tables: &t, rec: &rec, now: &Mem(m) };
-    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.first)).collect::<Vec<_>>();
-    assert_eq!(at(1), [(0x100, "sleeping", None), (0x200, "runnable", Some(2)), (0x300, "running", Some(0))]);
-    assert_eq!(at(3), [(0x100, "sleeping", None), (0x200, "running", Some(2)), (0x300, "exited", Some(0))]);
+    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.last)).collect::<Vec<_>>();
+    assert_eq!(at(1), [(0x100, "sleeping", None), (0x200, "runnable", None), (0x300, "running", Some(1))]);
+    assert_eq!(at(3), [(0x100, "sleeping", None), (0x200, "running", Some(3)), (0x300, "exited", Some(1))]);
 }
 
 #[test]
