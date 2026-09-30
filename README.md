@@ -112,10 +112,11 @@ recording has, at the cursor, as a tree (a thread under its process's
 leader, a process under its parent): the one running marked, each where it is
 (`prog(20)  in read`: its syscall, else its outermost call), its name a
 link to its last moment (the Stack then shows its stack), its task_struct
-as it was on asking; the Stack's `current task` is a link to it. The
+as it was (the running one's open; its key fields first: pid, comm, mm,
+…, then the others); the Stack's `current task` is a link to it. The
 Objects tab says what the syscall selected did to the kernel's data, all
 of it, always: its head says it in a line (`read by prog(19) changed
-3 objects: file, folio, inode`), then a box per object of the kernel's
+3 objects: file, inode, folio`), then a box per object of the kernel's
 data it changed (as the code
 declares it: `struct file *file in vfs_read`, `struct files_struct
 *prog(19)->files`, `unsigned long nr_inodes`, and by its

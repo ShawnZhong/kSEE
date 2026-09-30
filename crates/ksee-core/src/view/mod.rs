@@ -145,8 +145,8 @@ pub struct LineCount {
     pub count: u64,
 }
 
-/// A task's fields: the key ones (arch::TASK_FIELDS, in that order), or
-/// all.
+/// A task's fields: the key ones first (arch::TASK_FIELDS, in that
+/// order), then the others.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct TaskFields {
@@ -211,13 +211,11 @@ impl View<'_> {
     }
 
     /// The fields of the task at `addr`, in `mem` (memory as it was): the
-    /// key ones, or `all`.
-    pub fn task_fields(&self, mem: &dyn Memory, addr: u32, all: bool) -> TaskFields {
+    /// key ones first (arch::TASK_FIELDS), then the others as declared.
+    pub fn task_fields(&self, mem: &dyn Memory, addr: u32) -> TaskFields {
         let types = &self.tables.types;
-        let every = types.find(arch::TASK).and_then(|ty| types.object(mem, arch::CURRENT, addr, ty, 1).children).unwrap_or_default();
-        let fields = if all { every } else {
-            arch::TASK_FIELDS.iter().filter_map(|&k| every.iter().find(|o| o.name == k).cloned()).collect()
-        };
+        let mut fields = types.find(arch::TASK).and_then(|ty| types.object(mem, arch::CURRENT, addr, ty, 1).children).unwrap_or_default();
+        fields.sort_by_key(|o| arch::TASK_FIELDS.iter().position(|&k| k == o.name).unwrap_or(usize::MAX));
         TaskFields { fields }
     }
 

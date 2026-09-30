@@ -27,13 +27,9 @@ export function tree(app, st, redraw) {
   }
 
   // Rows for `list` under `path`, `depth` deep, into `out`; `pre`: their C
-  // expressions' start ("file->", "file->f_path."); `keep`, if given: the paths to show (what changed, and the way to it),
-  // the others of each level folded into a row of their own ("▸ 5 other
-  // fields"), open on asking.
-  function rows(list, path, depth, out, pre = "", keep = null) {
-    const others = keep ? list.filter((o) => !keep.has(`${path}.${o.name}`)) : [];
-    const all = !others.length || st.open.has(`${path}/others`);
-    for (const o of all ? list : list.filter((o) => keep.has(`${path}.${o.name}`))) {
+  // expressions' start ("file->", "file->f_path.").
+  function rows(list, path, depth, out, pre = "") {
+    for (const o of list) {
       const p = `${path}.${o.name}`, can = openable(o), open = can && st.open.has(p);
       const value = o.value ?? "{…}";
       const e = o.name.startsWith("[") ? pre.replace(/(\.|->)$/, "") + o.name : pre + o.name;
@@ -52,10 +48,8 @@ export function tree(app, st, redraw) {
           ? el("td", { className: "fval mem", title: value, onmouseenter: (ev) => (ev.target.title = `${value}\n${wroteIt(o)}`) }, value)
           : el("td", { className: "fval", title: value }, value),
         el("td", { className: "ftype" }, o.ty)));
-      if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? `${e}->` : `${e}.`, keep);
+      if (open) rows(kids(o) ?? [], p, depth + 1, out, o.target != null ? `${e}->` : `${e}.`);
     }
-    if (others.length) out.push(el("tr", { className: "sub" }, el("td", { colSpan: 3, style: `padding-left:${24 + depth * 14}px` },
-      el("a", { textContent: all ? "▾ only what changed" : `▸ ${others.length} other field${others.length === 1 ? "" : "s"}`, onclick: () => toggle(st.open, `${path}/others`) }))));
   }
   // Who last wrote value `o`, and where from: back through the copies
   // that brought it there (Machine.origin), a line each.

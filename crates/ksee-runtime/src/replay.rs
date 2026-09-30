@@ -348,9 +348,9 @@ impl Machine {
     }
 
     /// The fields of the task at `addr` as memory_at shows them
-    /// (view::TaskFields): the key ones, or `all`.
-    pub fn task_fields(&self, addr: u32, all: bool) -> JsValue {
-        self.with_memory(|mem| self.view(|v| to_js(&v.task_fields(mem, addr, all))))
+    /// (view::TaskFields): the key ones first.
+    pub fn task_fields(&self, addr: u32) -> JsValue {
+        self.with_memory(|mem| self.view(|v| to_js(&v.task_fields(mem, addr))))
     }
 
     /// Like `object`, by type id (an Object's `expand` or `target`).

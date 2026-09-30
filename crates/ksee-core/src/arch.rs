@@ -33,6 +33,7 @@ pub const TASK_COMM: &str = "comm";
 /// A task's parent, and its thread group's leader (itself, for a process).
 pub const TASK_PARENT: &str = "real_parent";
 pub const TASK_LEADER: &str = "group_leader";
+/// A task's fields shown first (the Tasks'), in this order.
 pub const TASK_FIELDS: [&str; 12] = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
 /// are the syscall's; a `_time64` syscall's is the plain one's.
