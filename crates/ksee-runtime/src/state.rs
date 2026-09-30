@@ -48,8 +48,6 @@ pub struct Kernel {
     /// skips to the next timer), since when (the clock); whether it boots.
     pub waiting: Cell<Option<u64>>,
     pub booting: Cell<bool>,
-    /// Whether the kernel is quiet: idle, until the page's input.
-    pub quiet: Cell<bool>,
     /// What waits for it to be quiet (Machine::quiet): settled with the
     /// calls finished since the last time (or rejected: it halted).
     pub quiet_waiters: RefCell<Vec<(Function, Function)>>,
@@ -68,8 +66,8 @@ pub struct Kernel {
     /// threads' and vfork children's too, the same memory): what of each
     /// is handed out (its start -> (next free, end)).
     pub heaps: RefCell<BTreeMap<u32, (u32, u32)>>,
-    /// The calls asked (by id: see Machine::call), and how many (the last
-    /// id).
+    /// The calls asked (by id: see Machine::run), this boot's; and how many
+    /// ever (the last id: ids are not used again, a boot after another's).
     pub calls: RefCell<BTreeMap<u32, Call>>,
     pub asked: Cell<u32>,
     /// The page's program: its names (a variable's, a result's), and how

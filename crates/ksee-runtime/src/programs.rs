@@ -245,7 +245,7 @@ fn runner_imports() -> Object {
             k.heaps.borrow_mut().entry(heap).or_insert((heap, heap + size));
             // (A runner the last call started, a clone's child: its result's
             // name stands for it already, before the clone returns.)
-            if let Some(Call { line, result: Some((name, _)), .. }) = k.calls.borrow().get(&k.asked.get())
+            if let Some(Call { line, result: Some((name, _)), .. }) = k.calls.borrow().values().next_back()
                 && main == 0 && !k.names.borrow().has(name, *line)
             {
                 k.names.borrow_mut().set(name, *line, Sym::Value { v: tid as i64, to: None });

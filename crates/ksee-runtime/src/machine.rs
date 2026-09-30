@@ -117,7 +117,6 @@ impl Machine {
             k.clock.set(0);
             k.waiting.set(Some(0));
             k.booting.set(true);
-            k.quiet.set(false);
             k.halted.set(None);
             // (Nothing of a machine before it: its console, runners, calls, the program's names.)
             k.console_out.borrow_mut().clear();
@@ -234,7 +233,7 @@ impl Machine {
     pub fn quiet(&self) -> Promise {
         Promise::new(&mut |ok, fail| {
             k(|k| k.quiet_waiters.borrow_mut().push((ok, fail)));
-            if k(|k| k.quiet.get()) {
+            if sched::quiet() {
                 settle();
             }
         })

@@ -256,10 +256,7 @@ pub fn idle() -> Promise {
     let mut wake = None;
     let p = Promise::new(&mut |ok, _| wake = Some(ok));
     S.with_borrow_mut(|s| s.idle = wake);
-    k(|k| {
-        k.quiet.set(true);
-        k.booting.set(false);
-    });
+    k(|k| k.booting.set(false));
     crate::machine::settle();
     p
 }
@@ -270,9 +267,13 @@ pub fn interrupt(irq: u32) {
     wake();
 }
 
+/// Whether the kernel is quiet: idle, until the page's input.
+pub fn quiet() -> bool {
+    S.with_borrow(|s| s.idle.is_some())
+}
+
 /// Wake the CPU if it idles (an interrupt is pending).
 fn wake() {
-    k(|k| k.quiet.set(false));
     if let Some(w) = S.with_borrow_mut(|s| s.idle.take()) {
         let _ = w.call0(&JsValue::NULL);
     }
