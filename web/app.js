@@ -105,14 +105,13 @@ export function app(m) {
   const showLevel = () => $("level").replaceChildren(...(level
     ? [el("span", { textContent: `level ${level.row}`, title: `◀ ▶ stop at the lines of the Stack's ${level.row} outermost rows (set at ${level.func}): what the calls there make is stepped over` }),
        " · ", el("a", { textContent: "all", title: "every line, at any depth (↑ past the innermost)", onclick: () => setLevel(null) })]
-    : [el("span", { textContent: "level: all", title: "◀ ▶ stop at every line, at any depth: select a call (a click, ↑ ↓) to step at its level" })]));
+    : [el("span", { textContent: "level: all", title: "◀ ▶ stop at every line, at any depth: ↓ steps at the level of the call selected (the innermost unless another is)" })]));
   const setLevel = (l) => ((level = l), showLevel());
   a.level = () => level;
-  // (Its level the one stepped at.)
+  // (Only selected: the level ◀ ▶ step at is ▲ ▼'s, see climb.)
   a.selectFrame = (f) => {
     chosen = { first: f.first, inlined: f.inlined ? f.func : null };
     stack.select(f.first, f.inlined ? f.func : null);
-    setLevel({ ...stack.level(), func: f.func });
     src.view.cursor = { file: f.file, line: f.line };
     const at = time.cursor() != null ? m.at(time.cursor()) : null, s = calls[at?.syscall] ?? null;
     // (Inlined code: in the function it is inlined into, at its own line.)
@@ -306,16 +305,18 @@ export function app(m) {
   // in depth, setting it.)
   $("step-back").onclick = () => step(-1);
   $("step-fwd").onclick = () => step(1);
+  // The level, one row: ↓ the one below, as deep as the Stack is now at
+  // most (from all: the call selected, the innermost unless another is);
+  // ↑ the one above, past the innermost all, every line. (Only these set
+  // it: a click selects a call, and ◀ ▶ step as they did.)
   const climb = (dir) => {
-    // (A row from the level, else the call selected on the Stack if not the
-    // innermost (a click on a caller's row), else all (one past the innermost): ↓
-    // the one below, as deep as the Stack is now at most; ↑ the one above,
-    // past the innermost all, every line.)
     const frames = stack.frames(), rows = frames.length, sel = stack.level();
-    if (!rows) return;
-    const row = (level?.row ?? (sel && sel.row < rows ? sel.row : rows + 1)) - dir;
-    if (row > rows && dir < 0) return setLevel(null);
-    a.selectFrame(frames[rows - Math.max(1, Math.min(row, rows))]);
+    if (!rows || (!level && dir < 0)) return;
+    const row = (level?.row ?? (sel?.row ?? rows) + 1) - dir;
+    if (row > rows) return setLevel(null);
+    const f = frames[rows - Math.max(1, row)];
+    a.selectFrame(f);
+    setLevel({ ...stack.level(), func: f.func });
   };
   $("step-up").onclick = () => climb(-1);
   $("step-down").onclick = () => climb(1);

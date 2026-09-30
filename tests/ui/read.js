@@ -75,7 +75,9 @@
   const d0 = depthNow(), trail = [[$("where").textContent, frames()]];
   document.querySelector("#level a").click(); // (every line)
   for (let k = 0; k < 200 && depthNow() <= d0; k++) press("ArrowRight");
-  document.querySelector("#stack tr.frame a").click(); // (the innermost: its level)
+  document.querySelector("#stack tr.frame a").click(); // (a click only selects: the level stays all)
+  if (ksee.level() != null) throw new Error("a click set the level: " + JSON.stringify(ksee.level()));
+  press("ArrowDown"); // (from all: the call selected's level, the innermost's)
   const d1 = depthNow();
   trail.push([$("where").textContent, frames()]);
   press("ArrowRight");
@@ -105,6 +107,7 @@
     ksee.time.go(vfs);
     await sleep(100);
     [...document.querySelectorAll("#stack tr.frame a")].find((f) => f.textContent.startsWith("vfs_read"))?.click();
+    press("ArrowDown"); // (from all: vfs_read's level, the call selected)
     const lv = ksee.level(), seen = new Set();
     for (let k = 0; k < 80; k++) {
       press("ArrowLeft");
