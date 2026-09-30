@@ -216,3 +216,20 @@ fn a_line_sees_the_names_of_the_lines_before_it() {
     assert_eq!(n.before(3), [("fd", &v(5)), ("buf", &Sym::Var { addr: 64, ty: 4, count: Some(8) })]);
     assert!(n.has("fd", 2) && !n.has("fd", 1));
 }
+
+#[test]
+fn what_fits_at_the_cursor() {
+    // (In an argument: the program's names first, then the constants starting with the word.)
+    let t = Types::parse("C\tO_CREAT\t64\nC\tO_RDONLY\t0\nC\tOPEN_MAX\t9\n");
+    let mut n = Names::default();
+    n.set("ofd", 0, Sym::Value { v: 3, to: None });
+    let labels = |text: &str| completions(&t, &context(text, text.len()), &n.before(1), &[]).into_iter().map(|c| (c.label, c.detail)).collect::<Vec<_>>();
+    assert_eq!(labels("close(o"), [("ofd".into(), "= 3".into())]);
+    assert_eq!(labels("close(O"), [("OPEN_MAX".into(), "9".into()), ("O_CREAT".into(), "64".into()), ("O_RDONLY".into(), "0".into())]);
+    assert!(labels("close(4").is_empty()); // (a number: nothing)
+    // (A name: not before the line that made it.)
+    assert!(completions(&t, &context("close(o", 7), &n.before(0), &[]).is_empty());
+    // (A result as the page says it: an error with its name, if the kernel has one.)
+    assert_eq!(t.result(-2), "-2 (an error)");
+    assert_eq!((t.result(3), t.result(0x1d20000)), ("3".into(), "0x1d20000".into()));
+}

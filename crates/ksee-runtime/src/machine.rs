@@ -354,7 +354,10 @@ fn plan(text: &str, line: usize) -> Result<(u32, Plan), String> {
         }
         Line::Call { result, call, args, texts } => {
             let nr = types.syscalls.iter().find(|(_, n)| **n == call).map(|(&nr, _)| nr)
-                .ok_or_else(|| format!("this kernel has no syscall {call}"))?;
+                .ok_or_else(|| {
+                    let like: Vec<&str> = types.syscalls.values().filter(|n| n.starts_with(call.as_str())).take(3).map(String::as_str).collect();
+                    format!("this kernel has no syscall {call}{}", if like.is_empty() { String::new() } else { format!(": {}?", like.join(", ")) })
+                })?;
             let params = types.syscall_params(&call).cloned().unwrap_or_default();
             if texts.len() > params.len() {
                 return Err(format!("{call}: {} arguments, not {}", params.len(), texts.len()));

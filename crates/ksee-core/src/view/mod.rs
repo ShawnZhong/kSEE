@@ -128,14 +128,6 @@ pub struct Param {
     pub consts: Vec<String>,
 }
 
-/// The starts of the names of the constants that fit syscall `syscall`'s
-/// parameter `param` (arch::SYSCALL_CONSTS).
-fn consts_of(syscall: &str, param: &str) -> &'static [&'static str] {
-    let key = format!("{syscall}.{param}");
-    let consts = arch::SYSCALL_CONSTS;
-    consts.iter().find(|(k, _)| *k == key).or_else(|| consts.iter().find(|(k, _)| *k == param)).map_or(&[], |(_, c)| c)
-}
-
 /// Value `v` as the constants whose names start with one of `prefixes`
 /// name it: one equal to it, or flags (one bit each) that make it up.
 fn constant_name(constants: &BTreeMap<String, i64>, prefixes: &[&str], v: i64) -> Option<String> {
@@ -484,7 +476,7 @@ impl View<'_> {
         let types = &self.tables.types;
         types.syscalls.values().find(|n| n.as_str() == name)?;
         let params = types.syscall_params(name).into_iter().flatten()
-            .map(|(pname, ty)| Param { name: pname.clone(), ty: types.name(*ty), consts: consts_of(name, pname).iter().map(|s| s.to_string()).collect() }).collect();
+            .map(|(pname, ty)| Param { name: pname.clone(), ty: types.name(*ty), consts: arch::consts_of(name, pname).iter().map(|s| s.to_string()).collect() }).collect();
         Some(SyscallInfo { params })
     }
 

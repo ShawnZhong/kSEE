@@ -218,7 +218,7 @@ impl View<'_> {
         let params = types.syscall_params(name)?;
         let args = params.iter().zip(entry.iter().skip(1).copied()).map(|((pname, ty), v)| {
             let mut o = types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
-            let names = constant_name(&types.constants, consts_of(name, pname), v as i32 as i64);
+            let names = constant_name(&types.constants, crate::arch::consts_of(name, pname), v as i32 as i64);
             o.value = names.or(o.value);
             o
         }).collect();

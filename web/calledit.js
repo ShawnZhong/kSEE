@@ -19,15 +19,7 @@ import { el } from "./dom.js";
 // program (its hint only while it has the focus); `common`: the syscalls
 // to list first, and with nothing written yet; `history()`: calls to
 // recall with ↑.
-export function callEditor({ m, consts, line, text = "", placeholder = "", done, cancel, focus, inline = false, common = [], history }) {
-  const names = m.syscall_names();
-  // (No syscall `name` this kernel builds: those whose names start with
-  // it, if any: openat for open.)
-  const noSyscall = (name) => {
-    const like = names.filter((n) => n.startsWith(name)).slice(0, 3);
-    return `this kernel has no syscall ${name}${like.length ? `: ${like.join(", ")}?` : ""}`;
-  };
-  const constNames = Object.keys(consts);
+export function callEditor({ m, line, text = "", placeholder = "", done, cancel, focus, inline = false, common = [], history }) {
   // (A text area of one line, as tall as its text wraps to.)
   const input = el("textarea", { className: "mono", value: text, placeholder, spellcheck: false, autocomplete: "off", rows: 1 });
   const fit = () => {
@@ -44,30 +36,9 @@ export function callEditor({ m, consts, line, text = "", placeholder = "", done,
   // param (which argument it is in, if in them) }.
   const context = () => m.context(input.value, input.selectionStart ?? input.value.length);
 
-  // What fits at the cursor: [{ text (to put in), label, detail }].
-  function suggest(c) {
-    if (c.param == null) {
-      const w = c.call;
-      // (Every one that fits, the list scrolling: the common ones first,
-      // then those starting with it, then those with it inside; nothing
-      // written: all of them, the common ones first.)
-      const starts = names.filter((n) => n.startsWith(w)), inside = w ? names.filter((n) => !n.startsWith(w) && n.includes(w)) : [];
-      return [...new Set([...common.filter((n) => n.startsWith(w)), ...starts, ...inside])]
-        .map((n) => ({ text: `${n}(`, label: n, detail: signatureText(n), name: true }));
-    }
-    if (!c.word || /^\d/.test(c.word)) return [];
-    // (The results so far, by name, first; then the constants that fit.)
-    const results = m.names_before(line()).filter((r) => r.name.startsWith(c.word))
-      .map((r) => ({ text: r.name, label: r.name, detail: r.addr != null ? "a variable" : r.pointer ? `= 0x${r.value.toString(16)}` : `= ${r.value}` }));
-    const p = m.syscall(c.call)?.params?.[c.param];
-    const fits = p?.consts ?? [];
-    const rank = (n) => (fits.some((f) => n.startsWith(f)) ? 0 : 1);
-    return [...results, ...constNames.filter((n) => n.startsWith(c.word)).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
-      .map((n) => ({ text: n, label: n, detail: String(consts[n]) }))];
-  }
-  // (A syscall's signature as text, once each: the list shows it for all.)
-  const signatures = new Map();
-  const signatureText = (n) => signatures.get(n) ?? signatures.set(n, signature(n)?.map((p) => p.textContent ?? p).join("")).get(n);
+  // What fits at the cursor (Machine.completions): [{ text (to put in),
+  // label, detail, name (a syscall's: it replaces the call's name) }].
+  const suggest = () => m.completions(input.value, input.selectionStart ?? input.value.length, line(), common);
 
   function signature(name, bold = -1) {
     const s = m.syscall(name);
@@ -81,7 +52,7 @@ export function callEditor({ m, consts, line, text = "", placeholder = "", done,
 
   function show() {
     const c = context();
-    items = suggest(c);
+    items = suggest();
     sel = Math.min(sel, Math.max(0, items.length - 1));
     // (Nothing to choose from, or only what is written already.)
     const open = items.length > 0 && !(items.length === 1 && items[0].label === (c.param == null ? c.call : c.word));
@@ -93,7 +64,7 @@ export function callEditor({ m, consts, line, text = "", placeholder = "", done,
     // (The one chosen in view, as ↑ ↓ move it.)
     list.children[sel]?.scrollIntoView({ block: "nearest" });
     const sig = c.call && signature(c.call, c.param ?? -1);
-    hint.replaceChildren(...(sig ? sig : c.call && c.param != null ? [noSyscall(c.call)] : []));
+    hint.replaceChildren(...(sig ? sig : c.call && c.param != null ? [`this kernel has no syscall ${c.call}`] : []));
   }
 
   // Take suggestion `k`: it replaces the word at the cursor (or the name).
@@ -114,9 +85,8 @@ export function callEditor({ m, consts, line, text = "", placeholder = "", done,
     try {
       return m.check(input.value, line());
     } catch (e) {
-      const c = (() => { try { return m.statement(input.value); } catch { return null; } })();
-      if (!c) return `${e.message ?? e}: write a call, name(arg, …) or int fd = name(…); or a variable, char buf[64]`;
-      return c.call && !m.syscall(c.call) ? noSyscall(c.call) : String(e.message ?? e);
+      const parsed = (() => { try { return m.statement(input.value); } catch { return null; } })();
+      return parsed ? String(e.message ?? e) : `${e.message ?? e}: write a call, name(arg, …) or int fd = name(…); or a variable, char buf[64]`;
     }
   }
 

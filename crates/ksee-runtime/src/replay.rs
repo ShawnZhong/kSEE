@@ -258,39 +258,29 @@ impl Machine {
         to_js(&ksee_core::program::context(text, at))
     }
 
+    /// What fits at the cursor `at` of `text`, line `line` of the program
+    /// (ksee_core::program::completions; `common`: the syscalls to list
+    /// first): [{ text, label, detail, name }].
+    pub fn completions(&self, text: &str, at: usize, line: usize, common: Vec<String>) -> JsValue {
+        let c = ksee_core::program::context(text, at);
+        k(|k| to_js(&ksee_core::program::completions(&tables().types, &c, &k.names.borrow().before(line), &common)))
+    }
+
+    /// A call's result as the page says it (Types::result): "3", "0x1d20000", "-2 (ENOENT)".
+    pub fn result(&self, v: f64) -> String {
+        tables().types.result(v as i64)
+    }
+
     /// The kernel's areas (ksee_core::arch::AREAS): [[a file's start, its
     /// name], …], for the timeline's colors.
     pub fn areas(&self) -> JsValue {
         ksee_core::arch::AREAS.iter().map(|&(p, n)| js_sys::Array::of2(&p.into(), &n.into())).collect::<js_sys::Array>().into()
     }
 
-    /// Constants from the kernel's UAPI headers (O_*, AT_*, CLOCK_*, and
-    /// errno's E*), and C's NULL (as ksee_core::program::eval has it): {
-    /// name: value }.
-    pub fn constants(&self) -> JsValue {
-        let o = js_sys::Object::new();
-        let _ = js_sys::Reflect::set(&o, &"NULL".into(), &0.into());
-        for (name, &v) in &tables().types.constants {
-            let _ = js_sys::Reflect::set(&o, &name.into(), &(v as f64).into());
-        }
-        o.into()
-    }
-
     /// A program's variable (see Machine::declare) as memory_at shows it (at
     /// the cursor), as C writes it.
     pub fn show_at_cursor(&self, ty: u32, addr: u32, count: Option<u32>) -> String {
         self.with_memory(|mem| tables().types.show(mem, addr, ty, count))
-    }
-
-    /// The errno name of `n` (a failed call returns -n): "ENOENT" for 2.
-    pub fn errno(&self, n: f64) -> Option<String> {
-        tables().types.errno(n as i64).map(String::from)
-    }
-
-    /// The names of the syscalls this kernel builds (its syscall table's:
-    /// see ksee pack).
-    pub fn syscall_names(&self) -> Vec<String> {
-        tables().types.syscalls.values().cloned().collect()
     }
 
     /// Function `id`: where it is (view::Place).

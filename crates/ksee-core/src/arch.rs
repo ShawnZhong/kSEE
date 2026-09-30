@@ -65,6 +65,14 @@ pub const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
     ("dfd", &["AT_"]), ("olddfd", &["AT_"]), ("newdfd", &["AT_"]), ("flags", &["O_"]), ("prot", &["PROT_"]),
     ("which_clock", &["CLOCK_"]), ("op", &["FUTEX_"]),
 ];
+/// The starts of the names of the constants that fit syscall `syscall`'s
+/// parameter `param` (SYSCALL_CONSTS).
+pub fn consts_of(syscall: &str, param: &str) -> &'static [&'static str] {
+    let key = alloc::format!("{syscall}.{param}");
+    let consts = SYSCALL_CONSTS;
+    consts.iter().find(|(k, _)| *k == key).or_else(|| consts.iter().find(|(k, _)| *k == param)).map_or(&[], |(_, c)| c)
+}
+
 /// Records of a variable length, one after another (a struct ending in a
 /// flexible array: a directory's entries, getdents64's): the members that
 /// say how long each record is, all of it.

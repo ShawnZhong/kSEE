@@ -248,11 +248,10 @@ check("a field's declaration: file.f_pos, by its struct (or a pointer to it), or
       && m.member_definition(undefined, "f_pos")?.file === "include/linux/fs.h" && m.member_definition(undefined, "next") == null);
 {
   // (The syscalls this kernel builds, as its syscall table in the image says (ksee pack): setuid (CONFIG_MULTIUSER), not io_setup (no CONFIG_AIO).)
-  const names = m.syscall_names();
   let refused = "";
   try { m.run("io_setup(1, NULL)"); } catch (e) { refused = String(e.message ?? e); }
-  check(`the syscalls built: ${names.length}; read and setuid, not io_setup (${refused})`,
-        names.includes("read") && names.includes("setuid") && !names.includes("io_setup") && /no syscall io_setup/.test(refused));
+  check(`the syscalls built: read and setuid, not io_setup (${refused})`,
+        m.syscall("read") && m.syscall("setuid") && !m.syscall("io_setup") && /no syscall io_setup/.test(refused));
   // (And setuid runs: root may become root, and it is recorded, as any call.)
   const su = await line("setuid(0)");
   check(`setuid(0) = ${su.ret}, recorded (${su.s?.name})`, su.ret === 0 && su.s?.name === "setuid" && ran(su.s, "__sys_setuid"));
@@ -284,9 +283,16 @@ check("a syscall's parameters, typed, with the constants that fit", JSON.stringi
         e?.syscall === "mmap2" && e.args?.length === 6 && e.args[5].name === "pgoff" && e.args[5].value === "7");
 }
 // The examples (target/site/examples.json): their calls, and each of the explanation's links found in its call's recording.
-const consts = m.constants();
-check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
-      consts.O_CREAT === 64 && consts.AT_FDCWD === -100 && consts.AT_REMOVEDIR === 0x200 && consts.ENOTEMPTY === 39);
+// (The kernel's constants, as the editor completes them: those that fit the parameter first.)
+{
+  const done = (text) => Object.fromEntries(m.completions(text, text.length, 1e9, []).map((c) => [c.label, c.detail]));
+  const flags = m.completions("openat(AT_FDCWD, NULL, O", 24, 1e9, []).map((c) => c.label);
+  const c = { ...done("openat(AT_FDCWD, NULL, O_CR"), ...done("openat(AT_"), ...done("close(ENOTE") };
+  check(`the kernel's constants, completed: O_CREAT = ${c.O_CREAT}, AT_FDCWD = ${c.AT_FDCWD}, AT_REMOVEDIR = ${c.AT_REMOVEDIR}, ENOTEMPTY = ${c.ENOTEMPTY}; for flags, O_ first (${flags.slice(0, 2)})`,
+        c.O_CREAT === "64" && c.AT_FDCWD === "-100" && c.AT_REMOVEDIR === "512" && c.ENOTEMPTY === "39" && flags[0].startsWith("O_"));
+  const names = m.completions("clos", 4, 1e9, []);
+  check(`syscall names completed, with their signatures: ${names[0]?.detail}`, names[0]?.label === "close" && names[0].detail === "close(unsigned int fd)");
+}
 // (A line checked before it is made: with the names of the lines before it.)
 const refusal = (text, line) => { try { m.check(text, line); return ""; } catch (e) { return String(e.message ?? e); } };
 check("a line checked: a wrong member, a name not made yet, too many arguments",

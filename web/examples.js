@@ -40,7 +40,6 @@ import { hue } from "./timeline.js";
 
 export async function examples(app) {
   const { m } = app;
-  const consts = app.kernel.C;
   // A program's line (as written: see Machine.statement), as a step: a
   // call, or a variable's declaration. (One not either: as written, with
   // why; making it says so.)
@@ -219,7 +218,7 @@ export async function examples(app) {
     : s?.assign ? `→ ${d.shown}`
     : d.how == null ? "… blocked"
     : d.how === "exec" ? "(no return: the new program runs)"
-    : d.how === "exited" ? "(no return: it exited)" : `= ${app.kernel.result(d.ret)}`;
+    : d.how === "exited" ? "(no return: it exited)" : `= ${m.result(d.ret)}`;
   // A step's lane: the runner that makes it, as written (the program's own: "").
   const laneOf = (s) => (s.tid == null ? "" : String(s.tid));
   // The program: a call a line, each its own editor; then a line to add
@@ -258,7 +257,7 @@ export async function examples(app) {
       // (Its runner is its lane's: not written on the line; edited, it
       // stays, unless the line names another.)
       const shown = text({ ...s, tid: undefined });
-      const e = callEditor({ m, consts, line: () => j, text: shown, inline: true, common,
+      const e = callEditor({ m, line: () => j, text: shown, inline: true, common,
         focus: () => pick(j),
         done: (c) => (c == null ? remove(j) : ((c.tid ??= s.tid), text(c) === text(s) ? e.input.blur() : change(j, c))),
         cancel: () => ((e.input.value = shown), e.input.blur()) });
@@ -380,7 +379,7 @@ export async function examples(app) {
   // prompt again, ↑ for the calls before.)
   // (In a lane: its runner makes the call, the prefix written for it.)
   function form(lane = "") {
-    const e = callEditor({ m, consts, line: () => t.steps.length, common, placeholder: "add a call…", history: () => t.steps.map((s) => text(s)),
+    const e = callEditor({ m, line: () => t.steps.length, common, placeholder: "add a call…", history: () => t.steps.map((s) => text(s)),
       done: async (c) => {
         if (lane && c.tid == null) c.tid = /^\d+$/.test(lane) ? Number(lane) : lane;
         t.steps.push(c);

@@ -147,7 +147,7 @@ export function source(app) {
       // (Once it returned, by the cursor.)
       if (!s.called || s.called.at > cur || s.func !== v.fn.name) continue;
       const [at, where] = s.inlined ? [s.site, v.fn.file] : [s.line, s.file];
-      if (where === file && at != null) out.set(at, `${s.called.func}() = ${app.kernel.result(s.called.value)}`);
+      if (where === file && at != null) out.set(at, `${s.called.func}() = ${m.result(s.called.value)}`);
     }
     return out;
   }

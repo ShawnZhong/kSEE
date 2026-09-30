@@ -257,13 +257,13 @@ export function app(m) {
     // the line says it, as the source's other lines do.)
     const note = [step.run > 1 && `${ordinal(step.run)} time here`,
                   step.tests.length && step.tests.join(", "),
-                  step.ret != null && `returns ${a.kernel.result(step.ret)}`];
+                  step.ret != null && `returns ${m.result(step.ret)}`];
     src.view.cursor = { file: step.file, line: step.line, note: note.filter(Boolean).join("   ") || null };
     src.showFunction(step.func, at?.syscall ?? undefined, step.line, step.file); // (the lines that ran: in its syscall, as elsewhere)
     // (The stack as it runs: see Machine.call_stack's nth.)
     stack.show(step.i, step, at?.task);
     // (A line after a return: what returned, as a debugger's finish says it.)
-    const ret = at?.kind === "return" && at.value != null ? `${at.func} returned ${a.kernel.result(at.value)}` : null;
+    const ret = at?.kind === "return" && at.value != null ? `${at.func} returned ${m.result(at.value)}` : null;
     where({ task: at?.task, name: step.inlined ?? step.func, file: step.file, line: step.line, ret });
   }
   // Step, `dir` 1 forward, -1 back: to the next line at the level (see

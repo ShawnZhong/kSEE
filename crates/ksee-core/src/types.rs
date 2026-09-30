@@ -229,6 +229,26 @@ impl Types {
         }
     }
 
+    /// A call's result as the page says it: a number (in hex past 0xffff:
+    /// a pointer, a flag word), or a failure with its errno's name, "-2
+    /// (ENOENT)".
+    pub fn result(&self, v: i64) -> String {
+        match v {
+            0x10000.. => alloc::format!("{v:#x}"),
+            0.. => alloc::format!("{v}"),
+            _ => alloc::format!("{v} ({})", self.errno(-v).unwrap_or("an error")),
+        }
+    }
+
+    /// Syscall `name`'s signature, as C declares it: "close(unsigned int fd)".
+    pub fn signature(&self, name: &str) -> Option<String> {
+        let params = self.syscall_params(name)?.iter().map(|(p, ty)| {
+            let t = self.name(*ty);
+            alloc::format!("{t}{}{p}", if t.ends_with('*') { "" } else { " " })
+        }).collect::<Vec<_>>();
+        Some(alloc::format!("{name}({})", params.join(", ")))
+    }
+
     /// The errno name of `n` (a failed call's result is -n): ENOENT for 2.
     pub fn errno(&self, n: i64) -> Option<&str> {
         let is = |k: &str| k.strip_prefix(crate::arch::ERRNO).is_some_and(|r| !r.is_empty() && r.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));

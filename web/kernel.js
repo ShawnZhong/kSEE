@@ -19,12 +19,7 @@ export function kernel(m, { snapshot = () => m.snapshot() } = {}) {
     return news;
   }));
 
-  // A call's result as the page says it: a number (in hex past 0xffff: a
-  // pointer, a flag word), a failure with its errno's name: "-2 (ENOENT)".
-  const errno = (r) => (r < 0 ? m.errno(-r) : undefined);
-  const result = (r) => (r > 0xffff ? `0x${r.toString(16)}` : r >= 0 ? String(r) : `${r} (${errno(r) ?? "an error"})`);
-
-  return { quiet, C: m.constants(), errno, result };
+  return { quiet };
 }
 
 // A step's line, as written, its runner's `tid: ` first.

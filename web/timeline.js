@@ -250,7 +250,7 @@ export function timeline(app) {
   // (What it returned, if it did in the recording: " = 26".)
   const retOf = (first) => {
     const end = m.call_end(first), at = end == null ? null : m.at(end);
-    return at?.kind === "return" && at.value != null ? ` = ${app.kernel.result(at.value)}` : "";
+    return at?.kind === "return" && at.value != null ? ` = ${m.result(at.value)}` : "";
   };
   const argsOf = (first) => args.get(first) ?? args.set(first, m.call_stack(first)?.find((f) => !f.inlined)?.args ?? []).get(first);
   // The call under the pointer: its column `k` and depth `d` (above a
@@ -281,7 +281,7 @@ export function timeline(app) {
     const tipLines = (inl
       ? [line(iname(inl - 1), "")]
       : s
-      ? [line(`${s.name ?? s.nr}(${argsOf(first).map((a) => a.value ?? "{…}").join(", ")}) = ${s.ret == null ? "…" : app.kernel.result(s.ret)}`, ""),
+      ? [line(`${s.name ?? s.nr}(${argsOf(first).map((a) => a.value ?? "{…}").join(", ")}) = ${s.ret == null ? "…" : m.result(s.ret)}`, ""),
          line(`a syscall by ${taskName(s.task)}`, "dim")]
       : [line(`${f?.name ?? "?"}${retOf(first)}`, ""), ...argsOf(first).map((a) => line(`${a.name} = ${a.value ?? "{…}"}`, "f"))]);
     tip.replaceChildren(...tipLines);

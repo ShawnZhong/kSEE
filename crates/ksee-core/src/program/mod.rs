@@ -15,9 +15,10 @@
 //!
 //! [`lex`] and [`parse`]: the text as C's tokens, then a statement (a
 //! syntax tree: any other syntax would make the same); [`eval`]: its
-//! expressions' values; [`names`]: what the lines before a line named;
+//! expressions' values; [`complete`]: what fits at a cursor; [`names`]: what the lines before a line named;
 //! [`layout`]: values laid out in the kernel's types, and read back. [`source`]: names in the kernel's own source, for hovers.
 
+mod complete;
 mod eval;
 mod layout;
 mod lex;
@@ -27,6 +28,7 @@ mod source;
 #[cfg(test)]
 mod tests;
 
+pub use complete::{completions, Completion};
 pub use eval::{lvalue, typed, value, Env, Sym};
 pub use layout::{Arg, Decl, Value};
 pub use names::Names;
