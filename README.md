@@ -173,7 +173,8 @@ program, its lines as the page writes them out (`"int fd = openat(AT_FDCWD,
 declared; `child:` the runner that makes it, a thread id or a result's
 name, else the program); its chapter and place in the course are `EXAMPLES` in
 crates/ksee-cli/src/build.rs ("Start here", "A process", "Files, in
-memory", "Files on a disk (ext4)", "Waiting and waking", "Your own"). A call's arguments are
+memory", "Files on a disk (ext4)", "Waiting and waking", "Requests in memory
+(io_uring)", "Your own"). A call's arguments are
 written as in C: `AT_FDCWD`, `O_CREAT | O_WRONLY` (the kernel's own
 constants, from its UAPI headers), `0644`, `"a string"`, `{0, 30000000}`
 or `{.tv_nsec = 30000000}` (a compound literal, laid out as the

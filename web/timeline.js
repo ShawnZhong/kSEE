@@ -138,9 +138,10 @@ export function timeline(app) {
       });
       return out.filter((r) => r.v !== undefined);
     };
-    // The task strip.
+    // The task strip: a run named as the task is when it ends (a task
+    // renamed during it, a thread that names itself: what it became).
     for (const r of runs((c) => c.task)) {
-      const p = who(r.v, r.c.i);
+      const p = who(r.v, t.cols[r.to - 1].i);
       sctx.fillStyle = taskColor(p?.pid ?? 0);
       sctx.fillRect(r.from * cw, 0, (r.to - r.from) * cw, STRIP);
       label(sctx, taskName(p), r.from * cw, (r.to - r.from) * cw, STRIP / 2, "#1f2328");
