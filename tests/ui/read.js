@@ -327,15 +327,17 @@
   r.noFn = document.querySelector(".findhint").textContent;
   if (!r.found.at(-2).match(/^\d+ of \d+$/) || !r.found.at(-1) || !(r.matched[0] > r.matched[1] && r.matched[1] >= 1)
       || r.noFn !== 'nothing with "nope_fn" in its name runs in the recording') throw new Error("find: " + JSON.stringify(r));
-  // The console, folded to its last line; the current task, a link to the
-  // Tasks: there, open, its key fields; each task, where it is.
-  r.console = [$("pane-console").classList.contains("folded"), $("console").textContent];
+  // The console, a tab: the kernel's log, whole; the current task, a link
+  // to the Tasks: there, open, its key fields; each task, where it is.
+  ksee.tab("console");
+  r.console = [$("pane-console").offsetParent !== null, $("console").textContent.split("\n").find((l) => l.startsWith("Linux version"))?.slice(0, 20)];
+  ksee.tab("stack");
   const cur = document.querySelector("#stack tr.task a");
   r.current = [cur?.textContent];
   cur?.click(); await sleep(200);
   r.current.push($("right").dataset.tab, ...[...document.querySelectorAll("#tasks tr.on, #tasks tr.on ~ tr")].slice(0, 14).map((tr) => tr.innerText.replace(/\s+/g, " ").trim()));
   r.tasks = [...document.querySelectorAll("#tasks tr.task")].map((tr) => tr.innerText.replace(/\s+/g, " ").trim());
-  if (!r.console[0] || !r.console[1] || r.console[1].includes("\n") || r.current[0] !== `current task: prog(${ksee.m.main()})` || r.current[1] !== "tasks"
+  if (!r.console[0] || !r.console[1] || r.current[0] !== `current task: prog(${ksee.m.main()})` || r.current[1] !== "tasks"
       || !r.current[2]?.includes(`prog(${ksee.m.main()}) running in `) || !r.current.slice(3).some((x) => x.startsWith("pid")) || !r.tasks.some((x) => /^▸init\(1\) sleeping/.test(x))) throw new Error("console, current: " + JSON.stringify(r));
   ksee.tab("stack");
   return r;

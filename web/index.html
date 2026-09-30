@@ -11,8 +11,6 @@
 <aside class="col" id="side">
   <h2 id="ex-head"><b>kSEE</b></h2>
   <div class="body" id="examples"></div>
-  <h2 class="sub fold" id="console-head" title="click: open or fold the console; drag, when open: its height"><span id="console-tw">▸</span> Console</h2>
-  <div class="body consolebox" id="pane-console"><pre id="console"></pre></div>
 </aside>
 <div class="vsplit" data-col="left" title="drag to resize"></div>
 <div id="work">
@@ -42,6 +40,7 @@
       <a data-tab="stack" title="the calls at the cursor, their values as they were then">Stack</a>
       <a data-tab="tasks" title="every task the recording has, at the cursor: where each is, its task_struct">Tasks</a>
       <a data-tab="objects" title="the objects the selected call wrote, and how they point to each other">Objects</a>
+      <a data-tab="console" title="the kernel's log and the programs' output">Console</a>
       <a data-tab="trace" title="the raw trace around the cursor: what the views are built from">Trace</a>
     </h2>
     <div class="pane" data-tab="stack">
@@ -51,6 +50,9 @@
     <div class="pane" data-tab="tasks">
       <div class="stackhead dim" id="tasks-note"></div>
       <div class="body" id="tasks"></div>
+    </div>
+    <div class="pane" data-tab="console">
+      <div class="body" id="pane-console"><pre id="console"></pre></div>
     </div>
     <div class="pane" data-tab="trace">
       <div class="stackhead dim" id="trace-note"></div>

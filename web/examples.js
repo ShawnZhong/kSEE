@@ -12,7 +12,7 @@
 // Then the explanation's links lead into the recording: `[label](2)` is
 // call 2 (its recording selected), `[label](2:vfs_read)` the first call
 // of vfs_read in it (on the call's task; `:any` on any task), the cursor
-// there, and `:objects` (or `:stack`, `:tasks`, `:trace`) shows that tab
+// there, and `:objects` (or `:stack`, `:tasks`, `:console`, `:trace`) shows that tab
 // (`:objects`: the cursor at the function's return, so that what it did
 // is in color); the first such link is where the cursor starts;
 // `[label](try:1)` runs the example's `tries[0]`, another program (calls
@@ -108,8 +108,8 @@ export async function examples(app) {
     const k = list.indexOf(ex), before = list[k - 1], after = list[k + 1];
     seen(ex);
     // (The page's name; the contents, and the examples before and after.)
-    $("ex-head").replaceChildren(el("b", { textContent: "kSEE" }), el("span", { className: "dim tag", textContent: "watch the Linux kernel run" }),
-      el("button", { className: "contents", textContent: "Examples", title: "every example, in order", onclick: () => contents(!t.menu) }),
+    $("ex-head").replaceChildren(el("b", { textContent: "kSEE", title: "watch the Linux kernel run" }),
+      el("button", { className: "contents", textContent: "☰ Examples", title: "every example, in order", onclick: () => contents(!t.menu) }),
       el("button", { textContent: "◀", title: before ? `before: ${before.title}` : "", disabled: !before, onclick: () => go(before) }),
       el("button", { textContent: "▶", title: after ? `next: ${after.title}` : "", disabled: !after, onclick: () => go(after) }));
     contents(false);
@@ -275,7 +275,7 @@ export async function examples(app) {
       const tr = part.match(/^\[([^\]]*)\]\(try:(\d+)\)$/), prog = tr && t.ex.tries?.[Number(tr[2]) - 1];
       if (tr) return el("a", { className: "try", textContent: tr[1], title: prog ? `run this program instead:\n${prog}` : "no such try",
         onclick: prog ? () => go(t.ex, program(prog), true) : null });
-      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|tasks|objects|trace))?\)$/);
+      const link = part.match(/^\[([^\]]*)\]\((\d+)(?::([\w.]+))?(:any)?(?::(stack|tasks|objects|console|trace))?\)$/);
       if (link) {
         const n = Number(link[2]), l = { n, j: stepOf(n), func: link[3], any: !!link[4], tab: link[5] };
         l.c = syscall(l.j);
