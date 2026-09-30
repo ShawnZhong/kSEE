@@ -14,7 +14,6 @@
     "char buf[256]",
     "mkdirat(AT_FDCWD, \"/mnt/sub\", 0755)",
     "int fd = openat(AT_FDCWD, \"/mnt\", O_RDONLY | O_DIRECTORY)",
-    "getdents64(fd, buf, 256)",
-    "close(fd)"
+    "getdents64(fd, buf, 256)"
   ]
 }

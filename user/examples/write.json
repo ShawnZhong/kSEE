@@ -14,7 +14,6 @@
   ],
   "steps": [
     "int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)",
-    "write(fd, \"more\\n\", 5)",
-    "close(fd)"
+    "write(fd, \"more\\n\", 5)"
   ]
 }

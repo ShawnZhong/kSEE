@@ -4,15 +4,14 @@
   "text": [
     "Threads share memory; processes talk through the kernel. The program makes a pipe and starts a child that reads from it, as the `cat` in a shell's `echo hello | cat` would.",
     "1. [create_pipe_files](2:create_pipe_files): a pipe is a buffer in the kernel and two files for it. The program's line shows the fds: 3 reads, 4 writes.",
-    "2. [copy_process](3:copy_process) makes the child, a process of its own: with no MMU it shares the program's memory (CLONE_VM, on the stack `mem` gives it), but [dup_fd](3:dup_fd) gives it a copy of the program's fds, the pipe's too.",
-    "3. The child closes its writing end, which it must not keep, or it would never see the end of its input ([file_close_fd](4:file_close_fd)), and reads: [anon_pipe_read](5:anon_pipe_read) finds the pipe empty, so it sleeps. The read blocks.",
-    "4. The program closes its reading end and writes hello: [anon_pipe_write](7:anon_pipe_write) puts the bytes into the pipe's buffer, and [try_to_wake_up](7:try_to_wake_up:any) wakes the reader. The child's read returns the 6 bytes: see `buf`.",
-    "5. The child reads again, and sleeps; the program closes its writing end, the last: [pipe_release](9:pipe_release:any) finds no writer left and wakes the readers. The read returns 0, the end of its input.",
-    "6. The child exits: [do_exit](10:do_exit), and [exit_notify](10:exit_notify) sends SIGCHLD to its parent; it stays a zombie until the parent asks how it ended. [do_wait](11:do_wait) is that asking: [wait_task_zombie](11:wait_task_zombie) takes its exit status, and [release_task](11:release_task) reaps it.",
-    "Try: [the child keeps fd 4](try:1): after the program closes its writing end, the child's own fd 4 keeps the pipe open, so its read blocks for ever."
+    "2. [copy_process](3:copy_process) makes the child, a process of its own (not CLONE_THREAD): with no MMU it shares the program's memory (CLONE_VM, on the stack `mem` gives it), but [dup_fd](3:dup_fd) gives it a copy of the program's fds, the pipe's too.",
+    "3. The child reads: [anon_pipe_read](4:anon_pipe_read) finds the pipe empty, so it sleeps. The read blocks: its line says it returned only during the program's write, the next line.",
+    "4. The program writes hello: [anon_pipe_write](5:anon_pipe_write) puts the bytes into the pipe's buffer, and [try_to_wake_up](5:try_to_wake_up:any) wakes the reader. The child's read returns the 6 bytes: see `buf`.",
+    "Try: [the end of input](try:1): once every writing end is closed, the child's own too, a read returns 0 (`pipe_release` wakes the readers); or [the child's end](try:2): it exits, and the parent, told by SIGCHLD, reaps it with waitid (`wait_task_zombie`, `release_task`)."
   ],
   "tries": [
-    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); int fds[2]; pipe2(fds, 0); pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0); char buf[16]; child: read(fds[0], buf, 16); close(fds[0]); write(fds[1], \"hello\\n\", 6); child: read(fds[0], buf, 16); close(fds[1])"
+    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); int fds[2]; pipe2(fds, 0); pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0); char buf[16]; child: close(fds[1]); child: read(fds[0], buf, 16); close(fds[0]); write(fds[1], \"hello\\n\", 6); child: read(fds[0], buf, 16); close(fds[1])",
+    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); int fds[2]; pipe2(fds, 0); pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0); char buf[16]; child: read(fds[0], buf, 16); write(fds[1], \"hello\\n\", 6); child: exit(0); siginfo_t info; waitid(P_PID, child, &info, WEXITED, NULL)"
   ],
   "steps": [
     "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
@@ -20,14 +19,7 @@
     "pipe2(fds, 0)",
     "pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)",
     "char buf[16]",
-    "child: close(fds[1])",
     "child: read(fds[0], buf, 16)",
-    "close(fds[0])",
-    "write(fds[1], \"hello\\n\", 6)",
-    "child: read(fds[0], buf, 16)",
-    "close(fds[1])",
-    "child: exit(0)",
-    "siginfo_t info",
-    "waitid(P_PID, child, &info, WEXITED, NULL)"
+    "write(fds[1], \"hello\\n\", 6)"
   ]
 }

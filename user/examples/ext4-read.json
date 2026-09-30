@@ -13,7 +13,6 @@
   "steps": [
     "char buf[64]",
     "int fd = openat(AT_FDCWD, \"/mnt/note.txt\", O_RDONLY)",
-    "read(fd, buf, 64)",
-    "close(fd)"
+    "read(fd, buf, 64)"
   ]
 }

@@ -15,7 +15,6 @@
   "steps": [
     "int fd = openat(AT_FDCWD, \"/mnt/log.txt\", O_CREAT | O_WRONLY, 0644)",
     "write(fd, \"hello, ext4\\n\", 12)",
-    "fsync(fd)",
-    "close(fd)"
+    "fsync(fd)"
   ]
 }
