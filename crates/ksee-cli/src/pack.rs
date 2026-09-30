@@ -347,10 +347,20 @@ struct Cu<'a, 'b> {
     files: HashMap<u64, String>,
 }
 
+/// A type's row (`T id kind name size rest`): `rest` its fields after
+/// the size, each with its tab ("\ts", "\t12\t4").
+#[derive(Default)]
+struct Row {
+    kind: &'static str,
+    name: String,
+    size: u32,
+    rest: String,
+}
+
 #[derive(Default)]
 struct Builder {
     /// Rows of the type table, by id (0 is void).
-    rows: Vec<String>,
+    rows: Vec<Row>,
     extra: Vec<String>, // M, V, W (where a type or global is declared) lines
     ids: HashMap<String, u32>,
     /// (tag, name) -> the id of the first complete definition, or a
@@ -369,13 +379,13 @@ struct Builder {
 impl Builder {
     fn new_id(&mut self) -> u32 {
         if self.rows.is_empty() {
-            self.rows.push(String::new()); // 0: void
+            self.rows.push(Row::default()); // 0: void
         }
-        self.rows.push(String::new());
+        self.rows.push(Row::default());
         self.rows.len() as u32 - 1
     }
 
-    fn intern(&mut self, key: String, row: impl FnOnce(u32) -> String) -> u32 {
+    fn intern(&mut self, key: String, row: impl FnOnce(u32) -> Row) -> u32 {
         if let Some(&id) = self.ids.get(&key) {
             return id;
         }
@@ -395,9 +405,8 @@ impl Builder {
 
     fn text(&self) -> String {
         let mut out = String::new();
-        for row in self.rows.iter().skip(1) {
-            out.push_str(row);
-            out.push('\n');
+        for (id, r) in self.rows.iter().enumerate().skip(1) {
+            let _ = writeln!(out, "T\t{id}\t{}\t{}\t{}{}", r.kind, r.name, r.size, r.rest);
         }
         for line in &self.extra {
             out.push_str(line);
@@ -432,23 +441,23 @@ impl Builder {
                     Some(dw::DW_ATE_signed_char | dw::DW_ATE_unsigned_char) => "c",
                     _ => "u",
                 };
-                self.intern(format!("base {name} {size} {enc}"), |id| format!("T\t{id}\tbase\t{name}\t{size}\t{enc}"))
+                self.intern(format!("base {name} {size} {enc}"), |_| Row { kind: "base", name: name.clone(), size, rest: format!("\t{enc}") })
             }
             dw::DW_TAG_const_type | dw::DW_TAG_volatile_type | dw::DW_TAG_restrict_type
             | dw::DW_TAG_atomic_type => target(self, cu)?,
             dw::DW_TAG_pointer_type => {
                 // Memoize before recursing: pointers close cycles.
                 let t = target(self, cu)?;
-                self.intern(format!("ptr {t}"), |id| format!("T\t{id}\tptr\t\t4\t{t}"))
+                self.intern(format!("ptr {t}"), |_| Row { kind: "ptr", name: String::new(), size: 4, rest: format!("\t{t}") })
             }
             dw::DW_TAG_typedef => {
                 let t = target(self, cu)?;
                 let size = self.size(t);
                 let (file, line) = (decl_file(cu, &e)?, attr_u64(&e, dw::DW_AT_decl_line).unwrap_or(0));
                 self.locate(&name, &file, line);
-                self.intern(format!("typedef {name} {t}"), |id| format!("T\t{id}\ttypedef\t{name}\t{size}\t{t}"))
+                self.intern(format!("typedef {name} {t}"), |_| Row { kind: "typedef", name: name.clone(), size, rest: format!("\t{t}") })
             }
-            dw::DW_TAG_subroutine_type => self.intern("func".into(), |id| format!("T\t{id}\tfunc\t\t0")),
+            dw::DW_TAG_subroutine_type => self.intern("func".into(), |_| Row { kind: "func", ..Row::default() }),
             dw::DW_TAG_array_type => {
                 let elem = target(self, cu)?;
                 let mut dims = Vec::new();
@@ -467,7 +476,7 @@ impl Builder {
                 for &n in dims.iter().rev() {
                     let esize = self.size(id);
                     let size = n * esize;
-                    id = self.intern(format!("array {id} {n}"), |aid| format!("T\t{aid}\tarray\t\t{size}\t{id}\t{n}"));
+                    id = self.intern(format!("array {id} {n}"), |_| Row { kind: "array", name: String::new(), size, rest: format!("\t{id}\t{n}") });
                 }
                 id
             }
@@ -485,7 +494,7 @@ impl Builder {
                         id
                     } else {
                         let id = self.new_id();
-                        self.rows[id as usize] = format!("T\t{id}\t{kind}\t{name}\t0");
+                        self.rows[id as usize] = Row { kind, name: name.clone(), ..Row::default() };
                         self.by_name.insert(named, (id, false));
                         id
                     }
@@ -506,7 +515,7 @@ impl Builder {
                     }
                     self.ids.insert(key, id);
                     self.locate(&name, &file, line);
-                    self.rows[id as usize] = format!("T\t{id}\t{kind}\t{name}\t{size}");
+                    self.rows[id as usize] = Row { kind, name: name.clone(), size, rest: String::new() };
                     cu.memo.insert(off, id);
                     self.members(cu, off, id, tag)?;
                     id
@@ -553,7 +562,7 @@ impl Builder {
             }
         }
         // (The aggregate's name, for its members' declarations: "file.f_pos".)
-        let owner = self.rows[id as usize].split('\t').nth(3).unwrap_or("").to_string();
+        let owner = self.rows[id as usize].name.clone();
         for (is_enum, name, bit_offset, bit_size, ty, value, (file, line)) in rows {
             if is_enum {
                 self.extra.push(format!("V\t{id}\t{name}\t{value}"));
@@ -571,9 +580,9 @@ impl Builder {
         Ok(())
     }
 
-    /// The size of type `id` (from its row).
+    /// The size of type `id`.
     fn size(&self, id: u32) -> u32 {
-        self.rows.get(id as usize).and_then(|r| r.split('\t').nth(4)).and_then(|s| s.parse().ok()).unwrap_or(0)
+        self.rows.get(id as usize).map_or(0, |r| r.size)
     }
 }
 
