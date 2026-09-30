@@ -2,7 +2,7 @@
 //! expressions:
 //!
 //! ```text
-//! [runner:] [type] [name =] call(args)   a syscall (its result named)
+//! [runner:] [type name =] call(args)     a syscall (its result declared)
 //! [runner:] type name[n] [= init]        a variable of the program's
 //! [runner:] target = value               memory of the program's written
 //! ```
@@ -30,9 +30,3 @@ pub use eval::{lvalue, typed, value, Env, Sym};
 pub use layout::{Arg, Decl, Value};
 pub use parse::{context, expression, lines, statement, Context, Expr, Line, Statement, TypeName};
 pub use source::{names, Name};
-
-/// A C expression's value, of numbers and names only (no types, no
-/// memory): `O_CREAT | O_WRONLY`, `(1U << 16)`, `-100`.
-pub fn eval(s: &str, known: &dyn Env) -> Result<i64, alloc::string::String> {
-    value(s, None, known)
-}

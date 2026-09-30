@@ -92,7 +92,7 @@ Rust does the work: JS only lays it out.
 A program is a small language, parsed and laid out in the core
 (crates/ksee-core/src/program/, `Machine.arg`, `Machine.value`,
 `Machine.declare`): a call's arguments are numbers, the kernel's constants
-with `| ^ & << >> + - * /`, `- ~`, strings, results by name or `$n`,
+with `| ^ & << >> + - * /`, `- ~`, strings, results by name,
 and compound literals laid out by the parameter's type (a struct,
 positional or by member; an array; argv for a `char **`); and a line can
 declare a variable of the program's as in C (`char buf[64]`, `struct

@@ -294,14 +294,14 @@ check("the kernel's constants: O_CREAT, AT_FDCWD, AT_REMOVEDIR, ENOTEMPTY",
       consts.O_CREAT === 64 && consts.AT_FDCWD === -100 && consts.AT_REMOVEDIR === 0x200 && consts.ENOTEMPTY === 39);
 const a = (call, k, text, known = {}) => m.arg(call, k, text, known);
 check("arguments as in C", a("openat", 2, "O_CREAT | O_WRONLY | O_TRUNC") === 577 && a("openat", 3, "0644") === 420
-      && a("read", 0, "$2", { $2: 7 }) === 7 && a("read", 0, "fd + 1", { fd: 3 }) === 4
+      && a("read", 0, "fd + 1", { fd: 3 }) === 4
       && new TextDecoder().decode(a("openat", 1, '"a\\n"').bytes) === "a\n\0");
 check("an array of strings as in C (argv)", JSON.stringify(a("execve", 1, '{"init", "-x", NULL}')) === '{"strings":["init","-x",null]}');
 // A struct, laid out as the parameter's type says (a __kernel_timespec: two s64).
 const spec = (text) => [...new BigInt64Array(a("clock_nanosleep", 2, text).bytes.buffer)].join(",");
 check("a struct as in C, positional or by name", spec("{0, 30000000}") === "0,30000000" && spec("{.tv_nsec = 30000000}") === "0,30000000");
 check("a wrong member is an error", (() => { try { a("clock_nanosleep", 2, "{.tv_min = 1}"); return false; } catch (e) { return /no member/.test(e); } })());
-check("a runner by a result: value()", m.value("$2 + 0", { $2: 19 }) === 19);
+check("a runner by a result: value()", m.value("child + 0", { child: 19 }) === 19);
 const examples = JSON.parse(await Deno.readTextFile(new URL("target/site/examples.json", root)));
 // (An example's program: its lines, as written, parsed as the page parses them.)
 for (const ex of examples) ex.steps = ex.steps.map((line) => m.statement(line));

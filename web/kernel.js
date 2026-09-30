@@ -118,14 +118,14 @@ export function runner(k, m, steps) {
   // decl }); the runner it started, if any. The variables: { name, addr,
   // ty, count, size, j, get(), … }.)
   const done = [], started = [], vars = [];
-  // Calls are numbered from 1, as $n and the explanations have them: the
+  // Calls are numbered from 1, as the explanations have them: the
   // declarations and assignments are not calls. Step `i`'s number; call `n`'s step.
   const isCall = (s) => s.call != null;
   const callNumber = (i) => steps.slice(0, i + 1).filter(isCall).length;
   const stepOf = (n) => steps.findIndex((s, i) => isCall(s) && callNumber(i) === n);
   // The names the first `j` steps make, as Machine.arg reads them (see
   // ksee_core::program::Sym): each variable, { addr, ty, count }, memory
-  // of the program's; $n and the name of each call's result, a number, or
+  // of the program's; the name of each call's result, a number, or
   // { value, type } with its declared type if a pointer (`void *mem`).
   // (`runners`: a call not returned yet is, as a runner, the one it started:
   // a vfork's child, before the clone returns.)
@@ -134,10 +134,8 @@ export function runner(k, m, steps) {
     for (const v of vars) if (v.j < j) o[v.name] = { addr: v.addr, ty: v.ty, count: v.count ?? undefined };
     done.slice(0, j).forEach((d, i) => {
       const r = d?.ret ?? (runners ? started[i] : null);
-      if (steps[i].decl || steps[i].target != null || r == null) return;
-      const x = steps[i].type?.includes("*") ? { value: r, type: steps[i].type } : r;
-      o[`$${callNumber(i)}`] = x;
-      if (steps[i].name) o[steps[i].name] = x;
+      if (!steps[i].name || r == null) return;
+      o[steps[i].name] = steps[i].type.includes("*") ? { value: r, type: steps[i].type } : r;
     });
     return o;
   }
@@ -152,7 +150,7 @@ export function runner(k, m, steps) {
     if (!s) return null;
     if (s.error) throw new Error(s.error); // (a line that is no call nor declaration)
     if (s.decl) {
-      const v = Object.assign(k.declare(s.decl, tidOf(s), known()), { j });
+      const v = Object.assign(k.declare(s.text, tidOf(s), known()), { j });
       vars.push(v);
       done[j] = { decl: v, how: "declared" };
       return { j, decl: v };

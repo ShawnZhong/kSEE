@@ -12,7 +12,7 @@
 import { el } from "./dom.js";
 
 // { el, input, focus }: `text` to start with; `known(runners?)`: the
-// results of the calls before, by name ({ $1: 3, fd: 3 }; `runners`: for
+// results of the calls before, by name ({ fd: 3 }; `runners`: for
 // a runner, see examples.js); `done(call)`: a call made
 // of what was written ({ call, args, name?, tid? }); `cancel()`: Esc with
 // no list open; `focus()`: it gets the focus; `inline`: a line of a
@@ -116,7 +116,7 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
     let c;
     try {
       c = m.statement(input.value);
-      if (c.decl != null) return (m.declaration(c.decl, known()), c);
+      if (c.decl) return (m.declaration(c.text, known()), c);
       if (c.target != null) return c; // (an assignment: checked as it is made)
     } catch (e) {
       return `${e.message ?? e}: write a call, name(arg, …) or int fd = name(…); or a variable, char buf[64]`;

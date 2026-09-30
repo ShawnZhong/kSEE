@@ -13,7 +13,7 @@ const TYPES: &str = "T\t1\tbase\tlong long\t8\ts\nT\t2\tstruct\ttimespec\t16\nM\
                      T\t11\tarray\t\t8\t7\t2\nT\t12\tstruct\tpair\t8\nM\t12\tv\t0\t0\t11\nT\t13\tptr\t\t4\t12\n";
 
 fn known(name: &str) -> Option<i64> {
-    [("O_CREAT", 64), ("O_WRONLY", 1), ("AT_FDCWD", -100), ("fd", 3), ("$2", 5)].iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
+    [("O_CREAT", 64), ("O_WRONLY", 1), ("AT_FDCWD", -100), ("fd", 3), ("n", 5)].iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
 }
 
 #[test]
@@ -30,20 +30,24 @@ fn a_lines_names_with_their_fields() {
 fn a_line_is_a_call_or_a_declaration() {
     let o = |s: &str| Some(s.to_string());
     let call = |t: &str| match statement(t).unwrap() {
-        Statement { runner, line: Line::Call { ty, name, call, texts, .. } } => (runner, ty.map(|t| t.text()), name, call, texts),
+        Statement { runner, line: Line::Call { result, call, texts, .. }, .. } => (runner, result.clone().map(|(t, _)| t.text()), result.map(|(_, n)| n), call, texts),
         s => panic!("{s:?}"),
     };
     assert_eq!(call("int fd = openat(AT_FDCWD, \"/a, b\", O_RDONLY);"),
                (None, o("int"), o("fd"), "openat".into(), vec!["AT_FDCWD".into(), "\"/a, b\"".into(), "O_RDONLY".into()]));
     assert_eq!(call("child: void *mem = mmap2(NULL, {1, 2}, 3)"), (o("child"), o("void *"), o("mem"), "mmap2".into(), vec!["NULL".into(), "{1, 2}".into(), "3".into()]));
-    assert_eq!(call("fd = getpid()"), (None, None, o("fd"), "getpid".into(), vec![]));
+    assert_eq!(call("getpid()"), (None, None, None, "getpid".into(), vec![]));
+    assert!(statement("fd = getpid()").is_err()); // (a result: declared)
+    // (Its text, as written, but for its runner.)
+    assert_eq!(statement("child: close(fd);").unwrap().text, "close(fd)");
     let decl = |t: &str| match statement(t).unwrap() {
-        Statement { runner, line: Line::Decl { ty, name, count, .. } } => (runner, ty.text(), name, count.is_some()),
+        Statement { runner, line: Line::Decl { ty, name, count, .. }, .. } => (runner, ty.text(), name, count.is_some()),
         s => panic!("{s:?}"),
     };
     assert_eq!(decl("char buf[64]"), (None, "char".into(), "buf".into(), true));
     assert_eq!(decl("19: struct __kernel_timespec ts = {0, 1}"), (o("19"), "struct __kernel_timespec".into(), "ts".into(), false));
     assert_eq!(decl("unsigned long long n"), (None, "unsigned long long".into(), "n".into(), false));
+    assert!(statement("char **argv").is_err());
     assert!(statement("write(1, \"hi)\", 2").is_err());
     // (Assignments: memory of the program's written.)
     let assign = |t: &str| match statement(t).unwrap() {
@@ -92,10 +96,10 @@ fn declarations_are_a_programs_memory() {
 
 #[test]
 fn expressions() {
+    let eval = |s: &str, k: &dyn Env| value(s, None, k);
     assert_eq!(eval("O_CREAT | O_WRONLY", &known), Ok(65));
     assert_eq!(eval("0644", &known), Ok(420));
-    assert_eq!(eval("(1 << 4) + fd - $2", &known), Ok(14));
-    assert_eq!((eval("'h'", &known), eval("'\\n'", &known), eval("'\\0' + 1", &known)), (Ok(104), Ok(10), Ok(1)));
+    assert_eq!(eval("(1 << 4) + fd - n", &known), Ok(14));
     assert_eq!(eval("NULL", &known), Ok(0));
     assert!(eval("nope", &known).is_err());
     assert!(eval("1 2", &known).is_err());

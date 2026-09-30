@@ -247,7 +247,7 @@ impl Machine {
     /// Argument `text` (written as in C: see ksee_core::program) of syscall
     /// `syscall`'s parameter `k`, as Machine::call takes it: a number, a
     /// string, { bytes } or { strings }; or an error. `known`: {
-    /// name: value }, the results so far ($1, fd).
+    /// name: value }, the results so far (fd).
     pub fn arg(&self, syscall: &str, k: usize, text: &str, known: JsValue) -> Result<JsValue, JsValue> {
         use ksee_core::program::Arg;
         let types = &tables().types;
@@ -259,10 +259,11 @@ impl Machine {
         })
     }
 
-    /// A program's line (ksee_core::program::statement): a call, { tid?,
-    /// type?, name?, call, args (as written) }, a variable's declaration, {
-    /// tid?, decl }, or an assignment, { tid?, target, value }; tid a
-    /// number if it is one, else the name of a result (a clone's).
+    /// A program's line (ksee_core::program::statement): { tid?, text (as
+    /// written, but for its runner) } and a call's { type?, name?, call,
+    /// args (as written) }, a declaration's { decl: true }, or an
+    /// assignment's { target, value }; tid a number if it is one, else the
+    /// name of a result (a clone's).
     pub fn statement(&self, text: &str) -> Result<JsValue, JsValue> {
         use ksee_core::program::{statement, Line};
         let o = js_sys::Object::new();
@@ -272,19 +273,18 @@ impl Machine {
             None => JsValue::UNDEFINED,
         };
         let st = statement(text)?;
-        if st.runner.is_some() { set("tid", tid(st.runner.clone())); }
+        if st.runner.is_some() { set("tid", tid(st.runner)); }
+        set("text", st.text.into());
         match st.line {
-            Line::Call { ty, name, call, texts, .. } => {
-                if let Some(ty) = ty { set("type", ty.text().into()); }
-                if let Some(n) = name { set("name", n.into()); }
+            Line::Call { result, call, texts, .. } => {
+                if let Some((ty, name)) = result {
+                    set("type", ty.text().into());
+                    set("name", name.into());
+                }
                 set("call", call.into());
                 set("args", texts.into_iter().map(JsValue::from).collect::<js_sys::Array>().into());
             }
-            // (Its text, but for its runner's `19:`: Machine.declare reads it.)
-            Line::Decl { .. } => set("decl", match st.runner {
-                Some(_) => text.split_once(':').map_or(text, |(_, r)| r).trim().into(),
-                None => text.trim().into(),
-            }),
+            Line::Decl { .. } => set("decl", true.into()),
             Line::Assign { texts: (target, value), .. } => {
                 set("target", target.into());
                 set("value", value.into());
@@ -294,7 +294,7 @@ impl Machine {
     }
 
     /// The value of `text`, a C constant expression (a runner's thread id,
-    /// say: "19", "child", "$2"); `known` as for arg.
+    /// say: "19", "child"); `known` as for arg.
     pub fn value(&self, text: &str, known: JsValue) -> Result<f64, JsValue> {
         Ok(ksee_core::program::value(text, Some(&tables().types), &Known(&known))? as f64)
     }

@@ -68,7 +68,7 @@ the calls are in the URL (`#ex=NAME&p=CALLS`: the program if
 changed, its calls separated by `;`), a link to them. ✕ (or emptying its line) removes a call, ↺ reset (always there) brings the example's
 own program back, and an edit left without Enter goes back to what it was. Add a call at the
 end. As you type, a list shows what fits (syscalls, the constants for the
-parameter, the results so far as `$n`), and the signature. Some examples
+parameter, the results so far by name), and the signature. Some examples
 have several threads or processes (a futex, a thread's join, a pipe
 between two processes): a call can be made by a thread or child of the program, and a call can
 block, until a later call wakes it. With more than one task, the program
@@ -179,7 +179,7 @@ written as in C: `AT_FDCWD`, `O_CREAT | O_WRONLY` (the kernel's own
 constants, from its UAPI headers), `0644`, `"a string"`, `{0, 30000000}`
 or `{.tv_nsec = 30000000}` (a compound literal, laid out as the
 parameter's type says: here a struct timespec), `{"init", NULL}` (an
-array of strings, for a char **: argv), `fd` or `$1` (a result), `buf` (a
+array of strings, for a char **: argv), `fd` (a result, declared: `int fd = openat(…)`), `buf` (a
 variable: its address), `fds[1]`, `mem + 65536`, `rings->sq.tail` (a line can assign to one:
 `rings->sq.tail = 1`); see
 crates/ksee-core/src/program/ (Machine.statement parses a line). /init mounts an ext4 disk on /mnt (an

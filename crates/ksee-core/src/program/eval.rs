@@ -61,11 +61,7 @@ impl Eval<'_> {
     pub(super) fn type_of(&self, t: &TypeName) -> Result<(u32, Option<u32>), String> {
         let types = self.types()?;
         let base = if t.name == "void" { 0 } else { types.named(&t.name).ok_or_else(|| format!("no type {} in the kernel", t.name))? };
-        match t.depth {
-            0 => Ok((base, None)),
-            1 => Ok((0, Some(base))),
-            _ => Err(format!("{}: a pointer to a pointer", t.text())),
-        }
+        Ok(if t.pointer { (0, Some(base)) } else { (base, None) })
     }
 
     fn eval(&self, e: &Expr) -> Result<V, String> {

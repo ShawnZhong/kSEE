@@ -8,7 +8,7 @@
     "Try: [create the same file twice](try:1): the second time the name is there, so `lookup_open` takes the other branch and nothing is made. [With O_EXCL](try:2) the second open fails with EEXIST instead."
   ],
   "tries": [
-    "int fd = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644); close(fd); fd2 = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644); close(fd2)",
+    "int fd = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644); close(fd); int fd2 = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644); close(fd2)",
     "int fd = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644); close(fd); openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_EXCL | O_WRONLY, 0644)"
   ],
   "steps": [

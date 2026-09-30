@@ -24,7 +24,7 @@ if (!url) {
 // --back: the page opened with a program changed (examples.js, the URL's
 // p=): the write example, its first call, then another instead of its
 // second.
-const back = 'openat(AT_FDCWD, "/note.txt", O_WRONLY | O_APPEND); write($1, "changed;\\n", 9)';
+const back = 'int fd = openat(AT_FDCWD, "/note.txt", O_WRONLY | O_APPEND); write(fd, "changed;\\n", 9)';
 if (Deno.args.includes("--back")) url += `#ex=write&p=${encodeURIComponent(back)}`;
 if (!Deno.env.get("CHROME")) {
   console.log("set CHROME to a (headless) Chromium binary");

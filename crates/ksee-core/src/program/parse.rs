@@ -24,33 +24,34 @@ pub enum Expr {
 }
 
 /// A type as written: its name ("struct io_uring_sqe", "unsigned int",
-/// "pid_t"), and how many pointers deep.
+/// "pid_t"), or a pointer to it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeName {
     pub name: String,
-    pub depth: u32,
+    pub pointer: bool,
 }
 
 impl TypeName {
     /// As C writes it: "void *", "int".
     pub fn text(&self) -> String {
-        let stars: String = "*".repeat(self.depth as usize);
-        if stars.is_empty() { self.name.clone() } else { format!("{} {stars}", self.name) }
+        if self.pointer { format!("{} *", self.name) } else { self.name.clone() }
     }
 }
 
 /// A program's line: made by `runner` (a thread id or a result's name, as
-/// written; none: the program), one of these.
+/// written; none: the program), one of these; `text`, as written (but for
+/// its runner).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Statement {
     pub runner: Option<String>,
+    pub text: String,
     pub line: Line,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Line {
-    /// `[type] [name =] call(args)`: a syscall, its result named, and typed.
-    Call { ty: Option<TypeName>, name: Option<String>, call: String, args: Vec<Expr>, texts: Vec<String> },
+    /// `[type name =] call(args)`: a syscall, its result declared.
+    Call { result: Option<(TypeName, String)>, call: String, args: Vec<Expr>, texts: Vec<String> },
     /// `type name[count] = init`: a variable of the program's (`count`:
     /// Some(None) for `[]`).
     Decl { ty: TypeName, name: String, count: Option<Option<Expr>>, init: Option<Expr> },
@@ -59,7 +60,7 @@ pub enum Line {
 }
 
 /// The words that begin a type.
-const TYPE_WORDS: [&str; 13] = ["struct", "union", "enum", "unsigned", "signed", "char", "short", "int", "long", "void", "const", "_Bool", "volatile"];
+const TYPE_WORDS: [&str; 10] = ["struct", "union", "enum", "unsigned", "signed", "char", "short", "int", "long", "void"];
 
 pub(super) struct Parser<'a> {
     toks: Vec<Token>,
@@ -112,11 +113,7 @@ impl<'a> Parser<'a> {
         if TYPE_WORDS.contains(&first) {
             return true;
         }
-        let mut k = 1;
-        while self.is(k, "*") {
-            k += 1;
-        }
-        self.name(k).is_some()
+        self.name(1 + self.is(1, "*") as usize).is_some()
     }
 
     fn type_name(&mut self) -> Result<TypeName, String> {
@@ -140,12 +137,11 @@ impl<'a> Parser<'a> {
             }
             None => return Err(format!("a type missing{}", self.here())),
         }
-        words.retain(|w| !matches!(w.as_str(), "const" | "volatile"));
-        let mut depth = 0;
-        while self.eat("*") {
-            depth += 1;
+        let pointer = self.eat("*");
+        if self.is(0, "*") {
+            return Err(format!("{} **: a pointer to a pointer", words.join(" ")));
         }
-        Ok(TypeName { name: words.join(" "), depth })
+        Ok(TypeName { name: words.join(" "), pointer })
     }
 
     /// A type name, alone: all of the text.
@@ -301,6 +297,7 @@ impl<'a> Parser<'a> {
         while self.toks.last().is_some_and(|t| t.tok == Tok::Op(";")) {
             self.toks.pop();
         }
+        let text = self.span(self.at, self.toks.len());
         let line = if self.declares() {
             let ty = self.type_name()?;
             let name = self.name(0).ok_or_else(|| format!("a name missing{}", self.here()))?.to_string();
@@ -315,21 +312,16 @@ impl<'a> Parser<'a> {
             if self.eat("=") {
                 if count.is_none() && self.call_ends_at(0) {
                     let (call, args, texts) = self.call()?;
-                    Line::Call { ty: Some(ty), name: Some(name), call, args, texts }
+                    Line::Call { result: Some((ty, name)), call, args, texts }
                 } else {
                     Line::Decl { ty, name, count, init: Some(self.init()?) }
                 }
             } else {
                 Line::Decl { ty, name, count, init: None }
             }
-        } else if self.name(0).is_some() && self.is(1, "=") && self.call_ends_at(2) {
-            let name = self.name(0).map(String::from);
-            self.at += 2;
-            let (call, args, texts) = self.call()?;
-            Line::Call { ty: None, name, call, args, texts }
         } else if self.call_ends_at(0) {
             let (call, args, texts) = self.call()?;
-            Line::Call { ty: None, name: None, call, args, texts }
+            Line::Call { result: None, call, args, texts }
         } else {
             let from = self.at;
             let target = self.expr()?;
@@ -342,7 +334,7 @@ impl<'a> Parser<'a> {
         if !self.done() {
             return Err(format!("not C here{}", self.here()));
         }
-        Ok(Statement { runner, line })
+        Ok(Statement { runner, text, line })
     }
 }
 
@@ -370,7 +362,7 @@ fn tokens_so_far(text: &str) -> Vec<Token> {
             return t;
         }
         // (Back to before the last quote: what is being written.)
-        match text[..end].rfind(['"', '\'']) {
+        match text[..end].rfind('"') {
             Some(k) => end = k,
             None => return Vec::new(),
         }

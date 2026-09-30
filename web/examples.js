@@ -23,11 +23,11 @@
 // empty it (or ✕) to remove it; add a call at the end; ↺ for the
 // example's own program again.
 //
-// A step: a line of the program (Machine.statement), a call { call, args,
-// type?, name?, tid? }, its arguments written as in C (Machine.arg): "a
-// string", 0644, O_CREAT | O_WRONLY, {0, 30000000}, fd or $2 (a result:
-// `name` names a call's). Its runner: thread `tid` (a number, or a
-// result: "child", "$2"); else the program (Machine.main).
+// A step: a line of the program (Machine.statement: { text, tid? }), a
+// call { call, args, type?, name? }, its arguments written as in C
+// (Machine.arg): "a string", 0644, O_CREAT | O_WRONLY, {0, 30000000}, fd
+// (a result: `name` names a call's). Its runner: thread `tid` (a number,
+// or a result: "child"); else the program (Machine.main).
 // Or a variable of the program's: { decl }, declared as in C (`char
 // buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0, 30000000}`:
 // Machine.declare), memory of its own in the program's process; its name then
@@ -48,7 +48,7 @@ export async function examples(app) {
     try {
       return m.statement(line);
     } catch (e) {
-      return { raw: line, error: String(e.message ?? e) };
+      return { text: line, error: String(e.message ?? e) };
     }
   };
   const list = await fetch(new URL("./examples.json", location)).then((r) => (r.ok ? r.json() : [])).catch(() => []);
@@ -202,7 +202,7 @@ export async function examples(app) {
   // as memory was there, and who wrote it, back through the copies that
   // brought it (Machine.origin).
   function names(s, j) {
-    const words = new Set(text(s).match(/\$?\b[A-Za-z_]\w*/g) ?? []), k = known(j), out = [];
+    const words = new Set(text(s).match(/\b[A-Za-z_]\w*/g) ?? []), k = known(j), out = [];
     for (const v of t.vars) {
       if (!words.has(v.name) || v.j > j) continue;
       const way = m.origin(v.addr, Math.min(8, v.size * (v.count ?? 1)));
@@ -212,9 +212,8 @@ export async function examples(app) {
     for (const [n, x] of Object.entries(k)) if (words.has(n) && !t.vars.some((v) => v.name === n)) out.push(`${n} = ${typeof x === "object" ? `0x${x.value.toString(16)}` : x}`);
     return out.length ? `At the cursor:\n${out.join("\n")}` : "";
   }
-  // A step's line, as written:
-  // `tid: name = call(args)`.
-  const text = (s) => s.raw ?? s.decl ?? (s.target != null ? `${s.tid != null ? `${s.tid}: ` : ""}${s.target} = ${s.value}` : null) ?? `${s.tid != null ? `${s.tid}: ` : ""}${s.type ? `${s.type}${s.type.endsWith("*") ? "" : " "}` : ""}${s.name ? `${s.name} = ` : ""}${s.call}(${s.args.join(", ")})`;
+  // A step's line, as written, its runner's `tid: ` first.
+  const text = (s) => `${s.tid != null ? `${s.tid}: ` : ""}${s.text}`;
   // How a call finished, or not yet.
   // (A variable: as it starts; each call's line says how it changed.)
   const how = (d, s) => s?.decl ? `= ${t.vars.find((v) => v.j === t.done.indexOf(d))?.initial ?? ""}`

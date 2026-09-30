@@ -25,7 +25,7 @@ pub struct Token {
 const OPS: [&str; 22] = ["<<", ">>", "->", "(", ")", "[", "]", "{", "}", ".", ",", ";", "=", "*", "/",
                          "+", "-", "~", "&", "|", "^", ":"];
 
-/// `text`'s tokens. (A string or a character not closed: an error.)
+/// `text`'s tokens. (A string not closed: an error.)
 pub fn tokens(text: &str) -> Result<Vec<Token>, String> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -50,28 +50,22 @@ pub fn tokens(text: &str) -> Result<Vec<Token>, String> {
                 num.parse()
             };
             Tok::Num(v.map_err(|_| format!("not a number: {word}"))?)
-        } else if c.is_ascii_alphabetic() || c == b'_' || c == b'$' {
-            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_' || b[i] == b'$') {
+        } else if c.is_ascii_alphabetic() || c == b'_' {
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
                 i += 1;
             }
             Tok::Name(text[start..i].to_string())
-        } else if c == b'"' || c == b'\'' {
-            // (A literal: to its closing quote, past escapes.)
+        } else if c == b'"' {
+            // (A string: to its closing quote, past escapes.)
             i += 1;
-            while i < b.len() && b[i] != c {
+            while i < b.len() && b[i] != b'"' {
                 i += if b[i] == b'\\' { 2 } else { 1 };
             }
             if i >= b.len() {
-                return Err(format!("a {} missing", c as char));
+                return Err("a \" missing".into());
             }
             i += 1;
-            let bytes = unquote(&text[start + 1..i - 1])?;
-            if c == b'"' {
-                Tok::Str(bytes)
-            } else {
-                // ('h', '\n': a character's number: its byte, or its first UTF-8 byte.)
-                Tok::Num(*bytes.first().ok_or("an empty character")? as i64)
-            }
+            Tok::Str(unquote(&text[start + 1..i - 1])?)
         } else {
             let op = OPS.iter().find(|o| text[i..].starts_with(**o)).ok_or_else(|| format!("not C: {}", &text[i..]))?;
             i += op.len();
