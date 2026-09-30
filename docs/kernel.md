@@ -86,8 +86,8 @@ kernel's function table, which the task calls when it returns to user mode
 (a direct call: nothing of the host's may be on a stack it suspends). A
 syscall is a plain wasm call into the kernel's `syscall` export
 (kernel/syscall.c). Its `sys_call_table` entries are weak: one this
-kernel does not build (a `COND_SYSCALL`, `setuid` with `CONFIG_MULTIUSER`
-off) has none, NULL, and returns -ENOSYS; so the table says which
+kernel does not build (a `COND_SYSCALL`: `io_setup`, with no
+`CONFIG_AIO`) has none, NULL, and returns -ENOSYS; so the table says which
 syscalls there are, and `ksee pack` reads them from it (the page offers
 only those).
 

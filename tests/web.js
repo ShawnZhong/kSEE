@@ -254,11 +254,15 @@ check("a field's declaration: file.f_pos, by its struct (or a pointer to it), or
       m.definition("file.f_pos")?.file === "include/linux/fs.h" && m.member_definition(file.id, "f_pos")?.file === "include/linux/fs.h"
       && m.member_definition(undefined, "f_pos")?.file === "include/linux/fs.h" && m.member_definition(undefined, "next") == null);
 {
-  // (The syscalls this kernel builds, as its syscall table in the image says (ksee pack): not setuid, with CONFIG_MULTIUSER off.)
+  // (The syscalls this kernel builds, as its syscall table in the image says (ksee pack): setuid (CONFIG_MULTIUSER), not io_setup (no CONFIG_AIO).)
   const names = m.syscall_names();
   let refused = "";
-  try { m.call("setuid", [0]); } catch (e) { refused = String(e.message ?? e); }
-  check(`the syscalls built: ${names.length}; read, not setuid (${refused})`, names.includes("read") && !names.includes("setuid") && /no syscall setuid/.test(refused));
+  try { m.call("io_setup", [1, 0]); } catch (e) { refused = String(e.message ?? e); }
+  check(`the syscalls built: ${names.length}; read and setuid, not io_setup (${refused})`,
+        names.includes("read") && names.includes("setuid") && !names.includes("io_setup") && /no syscall io_setup/.test(refused));
+  // (And setuid runs: root may become root, and it is recorded, as any call.)
+  const su = await call("setuid", [0]);
+  check(`setuid(0) = ${su.ret}, recorded (${su.s?.name})`, su.ret === 0 && su.s?.name === "setuid" && ran(su.s, "__sys_setuid"));
 }
 check("a syscall's parameters, typed, with the constants that fit", JSON.stringify(m.syscall("openat")?.params) ===
       JSON.stringify([{ name: "dfd", ty: "int", consts: ["AT_"] }, { name: "filename", ty: "char *", consts: [] },
