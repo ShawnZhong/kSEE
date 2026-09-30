@@ -83,6 +83,7 @@ const CONSTANTS: &[(&str, &[&str])] = &[
     ("linux/mman.h", &["MAP_"]),
     ("asm-generic/signal.h", &["SIG"]),
     ("linux/wait.h", &["P_", "W"]),
+    ("linux/prctl.h", &["PR_"]),
 ];
 
 /// Constants from the kernel's UAPI headers (under `include`: after `make

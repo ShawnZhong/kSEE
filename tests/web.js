@@ -196,6 +196,12 @@ m.memory_at(null);
   const reading = kern.sys.on(thread).read(r, buf, 8);
   const wrote = await kern.sys.write(w, "ok", 2);
   check(`syscalls from JS: slept ${slept}, wrote ${wrote}, read ${await reading}: buf = ${buf.show()}`, slept === 0 && wrote === 2 && buf.get() === "ok");
+  // (prctl, with the constants of linux/prctl.h: the task's name set, read back, and set back.)
+  const name = kern.declare('char name[16] = "ksee"'), got = kern.declare("char got[16]");
+  const set = await kern.sys.prctl(C.PR_SET_NAME, name, 0, 0, 0), get = await kern.sys.prctl(C.PR_GET_NAME, got, 0, 0, 0);
+  name.set("prog");
+  await kern.sys.prctl(C.PR_SET_NAME, name, 0, 0, 0);
+  check(`prctl(PR_SET_NAME) = ${set}, PR_GET_NAME: ${got.show()}`, set === 0 && get === 0 && got.get() === "ksee");
   // (Its variables as JS values, both ways.)
   const ts = kern.declare("struct __kernel_timespec ts");
   ts.set({ tv_sec: 1, tv_nsec: 5 });

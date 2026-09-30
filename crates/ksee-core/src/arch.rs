@@ -57,7 +57,7 @@ pub const SYSCALL_BODY: &str = "__do_sys_";
 /// names: for "syscall.param", else any syscall's parameter of that name.
 pub const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
     ("mmap2.flags", &["MAP_"]), ("unlinkat.flag", &["AT_"]), ("renameat2.flags", &["RENAME_"]),
-    ("waitid.which", &["P_"]), ("waitid.options", &["W"]), ("clone.clone_flags", &["CLONE_", "SIG"]),
+    ("prctl.option", &["PR_"]), ("waitid.which", &["P_"]), ("waitid.options", &["W"]), ("clone.clone_flags", &["CLONE_", "SIG"]),
     ("clock_nanosleep.flags", &["TIMER_"]),
     ("dfd", &["AT_"]), ("olddfd", &["AT_"]), ("newdfd", &["AT_"]), ("flags", &["O_"]), ("prot", &["PROT_"]),
     ("which_clock", &["CLOCK_"]), ("op", &["FUTEX_"]),
