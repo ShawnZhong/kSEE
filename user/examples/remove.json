@@ -2,7 +2,7 @@
   "title": "Renaming and removing",
   "question": "A name moves, a directory will not go while it has names in it, and a file goes when its last name does. What does ext4 do?",
   "text": [
-    "A name moves, a directory will not go while it has names in it, and a file goes when its last name does. Four calls on ext4.",
+    "Names made, names taken away. Four calls on ext4: a name moves, a directory will not go while it has names in it, and a file goes when its last name does.",
     "1. Renaming within one directory: [ext4_rename](1:ext4_rename) changes the entry's name from \"a.txt\" to \"b.txt\"; the inode stays as it is.",
     "2. Removing the directory: [ext4_empty_dir](2:ext4_empty_dir) asks whether it is empty. It is not (\"b.txt\" is in it), so the call fails with ENOTEMPTY.",
     "3. Removing the file: [ext4_delete_entry](3:ext4_delete_entry) takes the name out of the directory block, and since it was the file's only name and nobody has it open, [ext4_free_inode](3:ext4_free_inode) frees the inode.",

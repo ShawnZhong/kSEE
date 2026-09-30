@@ -2,7 +2,7 @@
   "title": "How does a thread sleep until another says so?",
   "question": "Two threads share memory. One waits for a word to change, the other wakes it: a futex. How does the kernel make sure no wake-up is lost?",
   "text": [
-    "Two threads share memory. One waits for a word to change and the other wakes it: a futex, the primitive under every mutex and condition variable. The question is how the kernel makes sure no wake-up is lost.",
+    "A sleep waits for time; a thread can also wait for another thread. Two threads share memory: one waits for a word to change and the other wakes it, a futex, the primitive under every mutex and condition variable. How does the kernel make sure no wake-up is lost?",
     "1. [do_mmap](1:do_mmap) gives the new thread a stack: anonymous, zeroed pages (no MMU here, so at one address, the same for every thread).",
     "2. [copy_process](2:copy_process) makes a new task that shares the program's memory, files and signal handlers: a thread of the same process (CLONE_THREAD). [wake_up_new_task](2:wake_up_new_task) makes it runnable; it starts on the stack it was given (its top, `mem + 65536`; stacks grow down).",
     "3. In the thread, getpid: [__task_pid_nr_ns](3:__task_pid_nr_ns) returns the process's id, the thread group's, not the thread's own.",

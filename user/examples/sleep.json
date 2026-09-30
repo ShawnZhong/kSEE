@@ -2,9 +2,9 @@
   "title": "Where does the time go when a program sleeps?",
   "question": "Sleeping for 30 ms takes 30 ms, but the kernel works for a tiny part of it. What happens in between?",
   "text": [
-    "Sleeping for 30 ms takes 30 ms, but the kernel works for only a tiny part of it. What happens in between?",
+    "So far every call ran straight through. Some wait: a sleep of 30 ms takes 30 ms, but the kernel works for only a tiny part of it. What happens in between?",
     "1. [hrtimer_nanosleep](1:hrtimer_nanosleep) sets a high-resolution timer for 30 ms from now.",
-    "2. [schedule](1:schedule): nothing to do until then, so the CPU is given away. The idle task (swapper) runs and waits for an interrupt. Look at the task strip under the timeline: the long green stretch is idle.",
+    "2. [schedule](1:schedule): nothing to do until then, so the CPU is given away. The idle task (swapper) runs and waits for an interrupt. The strip under the timeline shows which task ran when: the long stretch is idle.",
     "3. 30 ms later the timer's interrupt fires and [hrtimer_wakeup](1:hrtimer_wakeup:any) makes the sleeper runnable again; the call returns 0.",
     "Try: [sleep for 0 ns](try:1): does it still schedule? Or [CLOCK_REALTIME](try:2) instead of CLOCK_MONOTONIC."
   ],

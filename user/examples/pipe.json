@@ -2,7 +2,7 @@
   "title": "How do two processes talk through a pipe?",
   "question": "The program makes a pipe and starts a child that reads from it, as a shell does for `echo hello | cat`. What does the kernel do as one process waits for the other?",
   "text": [
-    "The program makes a pipe and starts a child that reads from it, as the `cat` in a shell's `echo hello | cat` would. Two processes, and the kernel in between.",
+    "Threads share memory; processes talk through the kernel. The program makes a pipe and starts a child that reads from it, as the `cat` in a shell's `echo hello | cat` would.",
     "1. [create_pipe_files](2:create_pipe_files): a pipe is a buffer in the kernel and two files for it. The program's line shows the fds: 3 reads, 4 writes.",
     "2. [copy_process](3:copy_process) makes the child, a process of its own: with no MMU it shares the program's memory (CLONE_VM, on the stack `mem` gives it), but [dup_fd](3:dup_fd) gives it a copy of the program's fds, the pipe's too.",
     "3. The child closes its writing end, which it must not keep, or it would never see the end of its input ([file_close_fd](4:file_close_fd)), and reads: [anon_pipe_read](5:anon_pipe_read) finds the pipe empty, so it sleeps. The read blocks.",
