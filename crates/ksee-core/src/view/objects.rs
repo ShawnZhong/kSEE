@@ -2,7 +2,7 @@
 //! changed, as a graph.
 
 use super::*;
-use super::stores::Leaf;
+use super::stores::{Leaf, RegionKind};
 
 /// An object a span of records (a call) changed, which is still there when
 /// it returns (see View::objects): as the Stores name it (`what`, `kind`,
@@ -18,7 +18,7 @@ pub struct Node {
     /// that does, if one (Region::within).
     pub what: String,
     pub within: Option<String>,
-    pub kind: &'static str,
+    pub kind: RegionKind,
     pub ty: String,
     pub id: u32,
     pub addr: u32,
@@ -27,10 +27,8 @@ pub struct Node {
     pub changes: Vec<Diff>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub depth: u32,
-    /// What happened to it: "changed" (it ends otherwise than it began:
-    /// what the call did), or "same" (every change undone by the end: a
-    /// lock taken and released, a count taken and dropped).
-    pub group: &'static str,
+    /// What happened to it (Group).
+    pub group: Group,
     /// Another task than the span's, if one made its first write (one the
     /// span woke, or that ran while it waited: a journal's thread).
     pub by: Option<TaskRef>,
@@ -41,6 +39,16 @@ pub struct Node {
     /// That member, unless its name says it ("prog(19)->files" under
     /// prog(19), by files: none).
     pub via: Option<String>,
+}
+
+/// What happened to an object: it ends otherwise than it began (what the
+/// call did), or as it began (every change undone by the end: a lock
+/// taken and released, a count taken and dropped).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
+pub enum Group {
+    Changed,
+    Same,
 }
 
 /// A member a span of records changed: from `before` (as the span began)
@@ -93,17 +101,17 @@ impl View<'_> {
             let r = &named.regions[w.region as usize];
             // (The kernel's data, not a stack's: a call's locals, and what a
             // pointer reaches on a stack, are the Stack's.)
-            if !matches!(r.kind, "object" | "task" | "global") || r.size == 0 || r.life.is_some() {
+            if !matches!(r.kind, RegionKind::Object | RegionKind::Task | RegionKind::Global) || r.size == 0 || r.life.is_some() {
                 continue;
             }
-            let group = "changed";
+            let group = Group::Changed;
             let k = match nodes.iter().position(|(n, _)| n.addr == r.addr && n.id == r.ty) {
                 Some(k) => k,
                 None => {
                     let task = self.rec.tasks[w.i];
                     let by = (Some(task) != own).then(|| self.task(task));
                     nodes.push((Node { label: match (r.kind, types.get(types.resolve(r.ty)).name.as_str()) {
-                                           ("object", name) if !name.is_empty() => name.to_string(),
+                                           (RegionKind::Object, name) if !name.is_empty() => name.to_string(),
                                            _ => r.what.clone(),
                                        },
                                        what: r.what.clone(), within: r.within.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size, changes: Vec::new(),
@@ -156,7 +164,7 @@ impl View<'_> {
             }
             // (Lasting, but every member as it was: its changes undone.)
             if n.changes.iter().all(|d| d.before == d.after) {
-                n.group = "same";
+                n.group = Group::Same;
             }
             // (The members it ends with changed first, then those as they were.)
             let mut both: Vec<(Diff, Option<u32>)> = n.changes.drain(..).zip(points).collect();
@@ -177,7 +185,7 @@ impl View<'_> {
                 tasks.push(t);
             }
         }
-        nodes.sort_by_key(|n| (n.0.group == "same", tasks.iter().position(|&t| t == n.0.by.as_ref().map(|t| t.addr)), n.0.depth));
+        nodes.sort_by_key(|n| (n.0.group == Group::Same, tasks.iter().position(|&t| t == n.0.by.as_ref().map(|t| t.addr)), n.0.depth));
         let (mut nodes, points): (Vec<Node>, Vec<Vec<Option<u32>>>) = nodes.into_iter().unzip();
         // (One name for two (the slabs of two caches a callee named by one
         // parameter): the later numbered: "slab #2 in pfmemalloc_match".)

@@ -27,9 +27,9 @@ mod value;
 mod tests;
 
 pub use frames::{Frame, Line};
-pub use objects::{Diff, Node, Run};
-pub use stores::{Named, Region, Wrote, Write, Note};
-pub use value::Object;
+pub use objects::{Diff, Group, Node, Run};
+pub use stores::{Named, Note, Region, RegionKind, Wrote, Write};
+pub use value::{Missing, Object};
 
 /// Who a task was (pid and comm unknown if the recording does not say, and
 /// the task_struct is another's by now).
@@ -58,13 +58,27 @@ pub struct SyscallSummary {
     pub last: Option<usize>,
 }
 
+/// A record's kind, as the page names it ("store"): a block 0 with its
+/// arguments is a call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
+pub enum RecordKind {
+    Call,
+    Block,
+    Return,
+    Store,
+    Compare,
+    Var,
+    Task,
+}
+
 /// Where the kernel was at record `i`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct At {
     pub i: usize,
-    /// "block", "return", or another record's kind.
-    pub kind: &'static str,
+    /// Its record's kind (a block 0's: Block).
+    pub kind: RecordKind,
     pub func: String,
     pub file: Option<String>,
     pub line: Option<u32>,
@@ -165,15 +179,27 @@ pub struct TaskAt {
     /// The task it sits under (its task_struct's address): a thread, its
     /// thread group's leader; a process, its parent.
     pub up: Option<u32>,
-    /// What the scheduler has it doing then: "running" (on the CPU),
-    /// "runnable" (on the run queue, waiting for it), "sleeping" (off it,
-    /// waiting for something); "exited" (the kernel's list no longer has
-    /// it), or "later" (not yet made).
-    pub state: &'static str,
+    pub state: TaskState,
     /// Its last record by then, if the recording has one.
     pub last: Option<usize>,
     pub syscall: Option<String>,
     pub func: Option<String>,
+}
+
+/// What the scheduler has a task doing then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
+pub enum TaskState {
+    /// On the CPU.
+    Running,
+    /// On the run queue, waiting for it.
+    Runnable,
+    /// Off it, waiting for something.
+    Sleeping,
+    /// The kernel's task list no longer has it.
+    Exited,
+    /// Not made yet.
+    Later,
 }
 
 /// Views of a recording. `now`: memory as it is (for tasks the recording
@@ -274,11 +300,11 @@ impl View<'_> {
                 b[0] != 0
             });
             let state = match () {
-                _ if running == Some(addr) => "running",
-                _ if !listed && last.is_none() => "later",
-                _ if !listed => "exited",
-                _ if on_rq => "runnable",
-                _ => "sleeping",
+                _ if running == Some(addr) => TaskState::Running,
+                _ if !listed && last.is_none() => TaskState::Later,
+                _ if !listed => TaskState::Exited,
+                _ if on_rq => TaskState::Runnable,
+                _ => TaskState::Sleeping,
             };
             let up = |f: &str| field(addr, arch::TASK, f).filter(|&p| p != 0 && p != addr);
             TaskAt {
@@ -316,15 +342,15 @@ impl View<'_> {
         let (kind, func, (loc, inlined)) = match *records.get(i)? {
             Record::Block { func, n } => {
                 let b = t.block(func, n);
-                ("block", func, (b.map(|b| b.loc()), b.and_then(|b| b.steps.first()?.inlined)))
+                (RecordKind::Block, func, (b.map(|b| b.loc()), b.and_then(|b| b.steps.first()?.inlined)))
             }
             Record::Return { func, .. } => {
                 let prev = (0..i).rev().find(|&j| tasks[j] == tasks[i]);
-                ("return", func, located(func, prev.and_then(top).and_then(|(_, s)| s)))
+                (RecordKind::Return, func, located(func, prev.and_then(top).and_then(|(_, s)| s)))
             }
             // (A store, a comparison: on its line, the record's, see line_at.)
             r @ (Record::Store { .. } | Record::Compare { .. }) => {
-                let kind = if matches!(r, Record::Store { .. }) { "store" } else { "compare" };
+                let kind = if matches!(r, Record::Store { .. }) { RecordKind::Store } else { RecordKind::Compare };
                 match self.rec.line_at(t, i) {
                     Some(l) => (kind, l.func, (Some(l.loc), l.inlined)),
                     None => (kind, 0, (None, None)),
@@ -332,7 +358,7 @@ impl View<'_> {
             }
             r @ (Record::Task { .. } | Record::Var { .. }) => {
                 let (func, step) = top(i).unwrap_or((0, None));
-                let kind = if matches!(r, Record::Task { .. }) { "task" } else { "var" };
+                let kind = if matches!(r, Record::Task { .. }) { RecordKind::Task } else { RecordKind::Var };
                 (kind, func, located(func, step))
             }
         };
@@ -353,15 +379,14 @@ impl View<'_> {
     /// fs/read_write.c:710 frame=0x1ce000" (the block 0 and the Args record
     /// after it, as one line), "block ksys_read #3 fs/read_write.c:712",
     /// "store 0x1ce0020 [8] 0 → 26", "return ksys_read = 26"; a task switch
-    /// as a line of its own. Each with its kind: "call", "block", "store",
-    /// "return", "task".
-    pub fn raw(&self, from: usize, to: usize) -> Vec<(usize, &'static str, String)> {
+    /// as a line of its own. Each with its kind (RecordKind).
+    pub fn raw(&self, from: usize, to: usize) -> Vec<(usize, RecordKind, String)> {
         let (t, rec) = (self.tables, self.rec);
         let mut out = Vec::new();
         for i in from..=to.min(last_record(rec)) {
             if i > 0 && rec.tasks.get(i) != rec.tasks.get(i - 1) {
                 let task = self.task(rec.tasks[i]);
-                out.push((i, "task", format!("── {}({}) runs", task.comm.unwrap_or_default(), task.pid.unwrap_or(0))));
+                out.push((i, RecordKind::Task, format!("── {}({}) runs", task.comm.unwrap_or_default(), task.pid.unwrap_or(0))));
             }
             let (kind, text) = match rec.records[i] {
                 Record::Block { func, n } => {
@@ -373,23 +398,23 @@ impl View<'_> {
                             let name = params.and_then(|p| p.get(k)).map_or(format!("{k}"), |p| p.0.clone());
                             format!("{name}={}", num(v))
                         });
-                        ("call", format!("call {}({}){loc} frame={frame:#x}", self.name(func), each.collect::<Vec<_>>().join(", ")))
+                        (RecordKind::Call, format!("call {}({}){loc} frame={frame:#x}", self.name(func), each.collect::<Vec<_>>().join(", ")))
                     } else {
-                        ("block", format!("block {} #{n}{loc}", self.name(func)))
+                        (RecordKind::Block, format!("block {} #{n}{loc}", self.name(func)))
                     }
                 }
-                Record::Return { func, value } => ("return", format!("return {} = {}", self.name(func), value)),
+                Record::Return { func, value } => (RecordKind::Return, format!("return {} = {}", self.name(func), value)),
                 Record::Task { .. } => continue, // (the task's line is above)
                 // (As its type says: a pointer in hex, a string's text, an enumerator.)
                 Record::Var { var, value, .. } => {
                     let v = self.var_at(i, var);
                     let shown = v.and_then(|v| self.var_object(v, value, self.now)).and_then(|o| o.value).unwrap_or_else(|| num(value));
-                    ("var", format!("var {} = {shown}", v.map_or("?", |v| v.name.as_str())))
+                    (RecordKind::Var, format!("var {} = {shown}", v.map_or("?", |v| v.name.as_str())))
                 }
-                r @ Record::Compare { .. } => ("compare", format!("compare {}", compared(&r).unwrap_or_default())),
+                r @ Record::Compare { .. } => (RecordKind::Compare, format!("compare {}", compared(&r).unwrap_or_default())),
                 Record::Store { addr, size, old, from, .. } => {
                     let from = from.map_or(String::new(), |f| format!(" ← {f:#x}"));
-                    ("store", match old {
+                    (RecordKind::Store, match old {
                         None => format!("store {addr:#x} [{size} bytes] (old contents not kept){from}"),
                         Some(old) => format!("store {addr:#x} [{size}] {} → {}{from}", num(old), num(self.wrote(i))),
                     })

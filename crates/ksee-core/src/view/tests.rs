@@ -16,7 +16,7 @@ fn named(what: &str, within: &Option<String>) -> String {
 }
 
 /// Records `first..=last`'s writes, a member each: (record, what, kind, member, before, after).
-fn writes(v: &View, first: usize, last: usize) -> Vec<(usize, String, &'static str, String, String, String)> {
+fn writes(v: &View, first: usize, last: usize) -> Vec<(usize, String, RegionKind, String, String, String)> {
     let n = v.stores(first, last);
     n.writes.iter().flat_map(|w| {
         let r = &n.regions[w.region as usize];
@@ -50,8 +50,8 @@ fn each_task_where_it_last_ran() {
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
     let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 16]) };
     let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.last)).collect::<Vec<_>>();
-    assert_eq!(at(0), [(0x100, "running", Some(0)), (0x200, "sleeping", None)]);
-    assert_eq!(at(3), [(0x100, "sleeping", Some(1)), (0x200, "running", Some(3))]);
+    assert_eq!(at(0), [(0x100, TaskState::Running, Some(0)), (0x200, TaskState::Sleeping, None)]);
+    assert_eq!(at(3), [(0x100, TaskState::Sleeping, Some(1)), (0x200, TaskState::Running, Some(3))]);
     assert_eq!(v.tasks(3)[0].func.as_deref(), Some("f"));
 }
 
@@ -77,8 +77,8 @@ fn the_tasks_are_the_kernels_list_then_the_recordings_others() {
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), Args::default());
     let v = View { tables: &t, rec: &rec, now: &Mem(m) };
     let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.last)).collect::<Vec<_>>();
-    assert_eq!(at(1), [(0x100, "sleeping", None), (0x200, "runnable", None), (0x300, "running", Some(1))]);
-    assert_eq!(at(3), [(0x100, "sleeping", None), (0x200, "running", Some(3)), (0x300, "exited", Some(1))]);
+    assert_eq!(at(1), [(0x100, TaskState::Sleeping, None), (0x200, TaskState::Runnable, None), (0x300, TaskState::Running, Some(1))]);
+    assert_eq!(at(3), [(0x100, TaskState::Sleeping, None), (0x200, TaskState::Running, Some(3)), (0x300, TaskState::Exited, Some(1))]);
 }
 
 #[test]
@@ -163,9 +163,9 @@ fn a_calls_stores_are_named_as_the_code_names_them() {
     (m[8], m[36], m[20], m[100]) = (2, 7, 9, 5);
     let v = View { tables: &t, rec: &rec, now: &Mem(m) };
     let got: Vec<_> = writes(&v, 0, 7).into_iter().map(|(_, what, kind, member, _, after)| (what, kind, member, after)).collect();
-    assert_eq!(got, [("p in f".into(), "object", "b".into(), "2".into()), ("x in f".into(), "local", "".into(), "7".into()),
-                     ("0x14".into(), "other", "".into(), "9".into()), ("0x64".into(), "other", "".into(), "5".into()),
-                     ("0x15".into(), "other", "".into(), "0".into())]);
+    assert_eq!(got, [("p in f".into(), RegionKind::Object, "b".into(), "2".into()), ("x in f".into(), RegionKind::Local, "".into(), "7".into()),
+                     ("0x14".into(), RegionKind::Other, "".into(), "9".into()), ("0x64".into(), RegionKind::Other, "".into(), "5".into()),
+                     ("0x15".into(), RegionKind::Other, "".into(), "0".into())]);
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn a_members_changes_are_a_run_a_function() {
     let runs: Vec<_> = d.runs.iter().map(|r| (r.at.as_ref().map(|l| l.func.clone()), r.before.clone(), r.after.clone(), r.last)).collect();
     assert_eq!((named(&nodes[0].what, &nodes[0].within).as_str(), d.member.as_str(), d.before.as_str(), d.after.as_str()), ("p in f", "b", "1", "1"));
     // (Left as it was, in the end: an object of the "same" group.)
-    assert_eq!(nodes[0].group, "same");
+    assert_eq!(nodes[0].group, Group::Same);
     assert_eq!(runs, [(Some("f".into()), "1".into(), "2".into(), 1), (Some("g".into()), "2".into(), "1".into(), 3)]);
 }
 

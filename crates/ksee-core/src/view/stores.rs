@@ -16,13 +16,26 @@ use super::*;
 /// `life`, and how deep the call that names it is (the task's, 0; a
 /// global's, or memory nothing names, u32::MAX): Objects comes in that
 /// order.
+/// What a region is (see Region), as the page names it ("object").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
+pub enum RegionKind {
+    Task,
+    Object,
+    Global,
+    Machine,
+    Local,
+    Var,
+    Other,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Region {
     pub what: String,
     /// The function that names it, if one does ("vfs_read": "file in
     /// vfs_read").
     pub within: Option<String>,
-    pub kind: &'static str,
+    pub kind: RegionKind,
     pub ty: u32,
     pub addr: u32,
     pub size: u32,
@@ -159,8 +172,8 @@ impl View<'_> {
     /// Write `w` of `named`, printed: each member it wrote, from what to what.
     pub(super) fn changes(&self, named: &Named, w: &Wrote) -> Vec<Change> {
         let r = &named.regions[w.region as usize];
-        if r.kind == "var" {
-            let before = w.prev.map_or_else(|| "(uninitialized)".into(), |p| self.var_value(p));
+        if r.kind == RegionKind::Var {
+            let before = w.prev.map_or_else(|| Missing::Uninitialized.text().into(), |p| self.var_value(p));
             return alloc::vec![Change { member: String::new(), before, after: self.var_value(w.i) }];
         }
         self.members(r, w.i).into_iter().map(|(member, leaf)| {
@@ -204,7 +217,7 @@ impl View<'_> {
         for w in named.writes.iter().take_while(|w| w.i <= cur) {
             let Some(at) = w.at.filter(|at| files.contains(&at.loc.file)) else { continue };
             let r = &named.regions[w.region as usize];
-            let members = if r.kind == "var" { alloc::vec![String::new()] } else { self.members(r, w.i).into_iter().map(|(m, _)| m).collect() };
+            let members = if r.kind == RegionKind::Var { alloc::vec![String::new()] } else { self.members(r, w.i).into_iter().map(|(m, _)| m).collect() };
             let (things, i) = by.entry(at.loc.line).or_default();
             *i = w.i;
             for m in members {
@@ -223,7 +236,7 @@ impl View<'_> {
             for ((region, member), (w, n)) in things {
                 let r = &named.regions[region as usize];
                 let Some(x) = self.changes(&named, w).into_iter().find(|x| x.member == member) else { continue };
-                let join = if r.kind == "object" { "->" } else { "." };
+                let join = if r.kind == RegionKind::Object { "->" } else { "." };
                 // (The member after the name, the function it is in last: "filp->f_pos in vfs_read".)
                 let (expr, within) = (r.what.as_str(), r.within.as_ref().map_or(String::new(), |f| format!(" in {f}")));
                 let times = |n: usize| if n > 1 { format!(" ×{n}") } else { String::new() };
@@ -255,7 +268,7 @@ impl View<'_> {
         let mut regions: Vec<Region> = Vec::new();
         let mut seen = alloc::collections::BTreeSet::new();
         // (Named at record `by`: by the call there, its depth.)
-        let mut add = |(what, within): (String, Option<String>), kind: &'static str, ty: u32, addr: u32, size: Option<u32>, call: Option<usize>, by: Option<usize>| {
+        let mut add = |(what, within): (String, Option<String>), kind: RegionKind, ty: u32, addr: u32, size: Option<u32>, call: Option<usize>, by: Option<usize>| {
             let ty = types.resolve(ty);
             if addr != 0 && seen.insert((addr, ty, call)) {
                 let life = call.map(|c| (c, self.rec.calls.call_end(c).unwrap_or(usize::MAX)));
@@ -268,7 +281,7 @@ impl View<'_> {
             // which another may follow in it; not "current".)
             let who = self.task(task);
             let who = format!("{}({})", who.comm.unwrap_or_default(), who.pid.unwrap_or(0));
-            add((who.clone(), None), "task", ty, task, None, None, None);
+            add((who.clone(), None), RegionKind::Task, ty, task, None, None, None);
             // (And what its pointer members point to, as the span ends:
             // current->files, ->fs, ->mm: "files->next_fd" through a local
             // the optimizer kept in a register is reached this way.)
@@ -276,7 +289,7 @@ impl View<'_> {
             if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
                 for mb in members.iter().filter(|mb| mb.bit_size == 0) {
                     if let Some(to) = types.struct_target(mb.ty) {
-                        add((format!("{who}->{}", mb.name), None), "object", to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None, None);
+                        add((format!("{who}->{}", mb.name), None), RegionKind::Object, to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None, None);
                     }
                 }
             }
@@ -303,22 +316,22 @@ impl View<'_> {
             let Some((f, (words, frame))) = t.functions.get(&func).zip(args.get(i)) else { continue };
             // (What the machine's own functions name, its: the call's plumbing.)
             let machine = t.file(f.loc).starts_with(arch::MACHINE);
-            let kind = |k: &'static str| if machine { "machine" } else { k };
+            let kind = |k: RegionKind| if machine { RegionKind::Machine } else { k };
             for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
                 let v = v as u32;
                 if let Some(to) = types.struct_target(*ty) {
-                    add((pname.clone(), Some(f.name.clone())), kind("object"), to, v, None, frame_of(i, v), Some(i));
+                    add((pname.clone(), Some(f.name.clone())), kind(RegionKind::Object), to, v, None, frame_of(i, v), Some(i));
                 }
             }
             // (Where its pointers point as the call ends.)
             let end = calls.call_end(i).unwrap_or(last).min(last);
             for (var, ty, off) in types.locals.get(&func).into_iter().flatten().filter_map(|(v, t, o)| Some((v, t, (*o)?))) {
-                add((var.clone(), Some(f.name.clone())), kind("local"), *ty, frame.wrapping_add(off), None, Some(i), Some(i));
+                add((var.clone(), Some(f.name.clone())), kind(RegionKind::Local), *ty, frame.wrapping_add(off), None, Some(i), Some(i));
                 // (A local pointing at a struct: that too ("files->next_fd"
                 // through `struct files_struct *files = current->files`).)
                 if let Some(to) = types.struct_target(*ty) {
                     let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
-                    add((var.clone(), Some(f.name.clone())), kind("object"), to, v, None, frame_of(i, v), Some(i));
+                    add((var.clone(), Some(f.name.clone())), kind(RegionKind::Object), to, v, None, frame_of(i, v), Some(i));
                 }
             }
             // (One the code keeps in a wasm local, pointing at a struct
@@ -336,7 +349,7 @@ impl View<'_> {
             }
             for (v, value) in values {
                 if let Some(to) = self.var_ty(v).and_then(|ty| types.struct_target(ty)) {
-                    add((v.name.clone(), Some(v.function.clone())), kind("object"), to, value, None, frame_of(i, value), Some(i));
+                    add((v.name.clone(), Some(v.function.clone())), kind(RegionKind::Object), to, value, None, frame_of(i, value), Some(i));
                 }
             }
         }
@@ -372,9 +385,9 @@ impl View<'_> {
                     let r = match global_at(addr) {
                         Some((gaddr, size, name, ty)) => {
                             let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
-                            Region { what: name.into(), within: None, kind: if machine { "machine" } else { "global" }, ty: types.resolve(ty), addr: gaddr, size, life: None, depth: u32::MAX }
+                            Region { what: name.into(), within: None, kind: if machine { RegionKind::Machine } else { RegionKind::Global }, ty: types.resolve(ty), addr: gaddr, size, life: None, depth: u32::MAX }
                         }
-                        None => Region { what: format!("{addr:#x}"), within: None, kind: "other", ty: 0, addr, size: 0, life: None, depth: u32::MAX },
+                        None => Region { what: format!("{addr:#x}"), within: None, kind: RegionKind::Other, ty: 0, addr, size: 0, life: None, depth: u32::MAX },
                     };
                     *own.entry(r.addr).or_insert_with(|| {
                         regions.push(r);
@@ -393,7 +406,7 @@ impl View<'_> {
             let Some(c) = calls.call_at(i) else { continue };
             let (region, prev) = vars.entry((c.first, var)).or_insert_with(|| {
                 let v = t.vars.get(&(c.func, var));
-                let r = v.and_then(|v| Some(Region { what: v.name.clone(), within: Some(v.function.clone()), kind: "var", ty: self.var_ty(v)?, addr: 0, size: 0, life: None, depth: c.depth }));
+                let r = v.and_then(|v| Some(Region { what: v.name.clone(), within: Some(v.function.clone()), kind: RegionKind::Var, ty: self.var_ty(v)?, addr: 0, size: 0, life: None, depth: c.depth }));
                 (r.map(|r| (regions.push(r), regions.len() as u32 - 1).1), None)
             });
             let Some(region) = *region else { continue };

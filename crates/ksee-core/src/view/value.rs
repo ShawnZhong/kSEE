@@ -15,9 +15,8 @@ pub struct Object {
     /// Its size in bytes.
     pub size: u32,
     pub value: Option<String>,
-    /// Why it has none (its `value` says it too, in parentheses):
-    /// "uninitialized" (not stored to yet), "optimized out".
-    pub none: Option<&'static str>,
+    /// Why it has none, if (its `value` says it too, in parentheses).
+    pub none: Option<Missing>,
     pub children: Option<Vec<Object>>,
     /// Type id to expand this value (an aggregate not expanded yet).
     pub expand: Option<u32>,
@@ -28,6 +27,27 @@ pub struct Object {
 
 /// How many elements of an array a value shows (then a row: how many more).
 const SHOWN: u32 = 64;
+
+/// Why a value has none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
+pub enum Missing {
+    /// Not stored to yet.
+    Uninitialized,
+    /// The optimizer took it away.
+    #[cfg_attr(feature = "serde", serde(rename = "optimized out"))]
+    OptimizedOut,
+}
+
+impl Missing {
+    /// As its value says it: "(uninitialized)".
+    pub fn text(self) -> &'static str {
+        match self {
+            Missing::Uninitialized => "(uninitialized)",
+            Missing::OptimizedOut => "(optimized out)",
+        }
+    }
+}
 
 impl Types {
     /// The value of type `ty` at `addr`, aggregates expanded `depth` deep.
