@@ -266,7 +266,7 @@ export async function examples(app) {
       // (Hover: the names it uses, at the cursor.)
       e.input.onmouseenter = () => (e.input.title = names(s, j));
       const lane = lanes.indexOf(laneOf(s));
-      const later = d && d.at > j ? el("div", { className: "dim more", textContent: `(returned during line ${d.at + 1})` }) : null;
+      const later = d && d.at > j ? el("div", { className: "dim more", textContent: `(${d.how === "returned" ? "returned" : "ended"} during line ${d.at + 1})` }) : null;
       const cell = el("div", { className: "cell", style: many ? `grid-column: ${lane + 1}; --hue: ${hue(tidOf(laneOf(s)))}` : "" },
         el("div", { className: "line" }, e.el,
           d ? el("span", { className: "mono ret", textContent: how(d, s) }) : null,
