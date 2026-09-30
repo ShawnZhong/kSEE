@@ -116,3 +116,24 @@ fn strings_and_argv() {
     assert!(t.arg("{1, 2}", 0, &known).is_err());
     assert!(t.arg("{1}", 7, &known).unwrap_err().contains("not a pointer"));
 }
+
+#[test]
+fn where_the_cursor_is_in_a_line_being_written() {
+    let at = |t: &str| {
+        let c = context(&t.replace('|', ""), t[..t.find('|').unwrap()].encode_utf16().count());
+        (c.call, c.call_start, c.word, c.param)
+    };
+    // (The name, after a runner and a typed result.)
+    assert_eq!(at("19: int fd = open|"), ("open".into(), 13, "open".into(), None));
+    // (An argument: which, past strings and braces with commas in them.)
+    assert_eq!(at("read(fd, b|"), ("read".into(), 0, "b".into(), Some(1)));
+    assert_eq!(at("write(1, \"a,b\", {1, 2}, O_|)"), ("write".into(), 0, "O_".into(), Some(3)));
+    assert_eq!(at("x = openat(|"), ("openat".into(), 4, "".into(), Some(0)));
+    // (UTF-16 offsets: a character past the BMP counts two.)
+    assert_eq!(at("write(1, \"😀\", n|"), ("write".into(), 0, "n".into(), Some(2)));
+}
+
+#[test]
+fn a_program_on_one_line_is_its_lines() {
+    assert_eq!(lines(r#"write(1, "a;b\";", 4);  close(1) ;"#), [r#"write(1, "a;b\";", 4)"#, "close(1)"]);
+}

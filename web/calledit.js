@@ -19,9 +19,6 @@ import { el } from "./dom.js";
 // program (its hint only while it has the focus); `common`: the syscalls
 // to list first, and with nothing written yet; `history()`: calls to
 // recall with ↑.
-// A line's start: the runner and the name, if written (`19: fd = `).
-const PREFIX = /^\s*(?:[$A-Za-z_]\w*\s*:\s*)?(?:[A-Za-z_]\w*\s*=(?!=)\s*)?/;
-
 export function callEditor({ m, consts, known, text = "", placeholder = "", done, cancel, focus, inline = false, common = [], history }) {
   const names = m.syscall_names();
   // (No syscall `name` this kernel builds: those whose names start with
@@ -30,7 +27,7 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
     const like = names.filter((n) => n.startsWith(name)).slice(0, 3);
     return `this kernel has no syscall ${name}${like.length ? `: ${like.join(", ")}?` : ""}`;
   };
-  const constNames = [...Object.keys(consts), "NULL"];
+  const constNames = Object.keys(consts);
   // (A text area of one line, as tall as its text wraps to.)
   const input = el("textarea", { className: "mono", value: text, placeholder, spellcheck: false, autocomplete: "off", rows: 1 });
   const fit = () => {
@@ -42,34 +39,15 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
   const hint = el("div", { className: "mono dim hint" });
   let items = [], sel = 0;
 
-  // Where the cursor is: { name (the syscall's: the whole call's, wherever
-  // the cursor), start (of the word at the cursor), word, param (its index,
-  // if the cursor is in the arguments) }.
-  function context() {
-    const v = input.value, before = v.slice(0, input.selectionStart ?? v.length);
-    const pre = v.match(PREFIX)[0].length, paren = v.indexOf("(", pre);
-    const name = v.slice(pre, paren < 0 ? v.length : paren).trim();
-    const word = before.match(/[$A-Za-z_]\w*$|\$$/)?.[0] ?? "";
-    const at = { name, start: before.length - word.length, word };
-    const rest = before.slice(pre), open = rest.indexOf("(");
-    if (open < 0) return { ...at, typed: rest.trim(), param: null };
-    // (Which argument: the commas outside strings, () and {} before it.)
-    let param = 0, depth = 0, quote = false;
-    for (let i = open + 1; i < rest.length; i++) {
-      const c = rest[i];
-      if (quote) (c === "\\" ? i++ : c === '"' && (quote = false));
-      else if (c === '"') quote = true;
-      else if ("({".includes(c)) depth++;
-      else if (")}".includes(c)) depth--;
-      else if (c === "," && depth === 0) param++;
-    }
-    return { ...at, name: rest.slice(0, open).trim(), param };
-  }
+  // Where the cursor is (Machine.context): { call (the syscall's name,
+  // as far as written), call_start, word (at the cursor), word_start,
+  // param (which argument it is in, if in them) }.
+  const context = () => m.context(input.value, input.selectionStart ?? input.value.length);
 
   // What fits at the cursor: [{ text (to put in), label, detail }].
   function suggest(c) {
     if (c.param == null) {
-      const w = c.typed;
+      const w = c.call;
       // (Nothing written: the common ones, to start from.)
       const starts = names.filter((n) => n.startsWith(w)), inside = w ? names.filter((n) => !n.startsWith(w) && n.includes(w)) : [];
       const all = [...new Set([...common.filter((n) => n.startsWith(w)), ...starts, ...inside])];
@@ -81,11 +59,11 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
     const results = Object.entries(known()).filter(([n]) => n.startsWith(c.word))
       .map(([n, r]) => ({ text: n, label: n, detail: `= ${r}${n.startsWith("$") ? `: call ${n.slice(1)}'s result` : ""}` }));
     if (c.word.startsWith("$")) return results;
-    const p = m.syscall(c.name)?.params?.[c.param];
+    const p = m.syscall(c.call)?.params?.[c.param];
     const fits = p?.consts ?? [];
     const rank = (n) => (fits.some((f) => n.startsWith(f)) ? 0 : 1);
     return [...results, ...constNames.filter((n) => n.startsWith(c.word)).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
-      .map((n) => ({ text: n, label: n, detail: n === "NULL" ? "0" : String(consts[n]) }))].slice(0, 12);
+      .map((n) => ({ text: n, label: n, detail: String(consts[n]) }))].slice(0, 12);
   }
 
   function signature(name, bold = -1) {
@@ -103,21 +81,20 @@ export function callEditor({ m, consts, known, text = "", placeholder = "", done
     items = suggest(c);
     sel = Math.min(sel, Math.max(0, items.length - 1));
     // (Nothing to choose from, or only what is written already.)
-    const open = items.length > 0 && !(items.length === 1 && items[0].label === (c.param == null ? c.typed : c.word));
+    const open = items.length > 0 && !(items.length === 1 && items[0].label === (c.param == null ? c.call : c.word));
     list.hidden = !open;
     list.replaceChildren(...(open ? items : []).map((it, k) => el("li", {
       className: k === sel ? "on" : "", onmousedown: (e) => (e.preventDefault(), take(k)) },
       el("span", { className: "mono", textContent: it.label }), " ",
       el("span", { className: "dim", textContent: it.detail ?? "" }))));
-    const sig = c.name && signature(c.name, c.param ?? -1);
-    hint.replaceChildren(...(sig ? sig : c.name && c.param != null ? [noSyscall(c.name)] : []));
+    const sig = c.call && signature(c.call, c.param ?? -1);
+    hint.replaceChildren(...(sig ? sig : c.call && c.param != null ? [noSyscall(c.call)] : []));
   }
 
   // Take suggestion `k`: it replaces the word at the cursor (or the name).
   function take(k) {
     const it = items[k], c = context(), v = input.value, end = input.selectionStart ?? v.length;
-    let start = c.start;
-    if (it.name) start = v.slice(0, end).match(PREFIX)[0].length;
+    const start = it.name ? c.call_start : c.word_start;
     input.value = v.slice(0, start) + it.text + v.slice(end);
     fit();
     const at = start + it.text.length;

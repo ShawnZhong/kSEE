@@ -411,3 +411,11 @@ fn a_member_of_size_0_is_not_shown() {
     let o = t.types.object(&Mem(alloc::vec![0u8; 8]), "x", 0, 2, 1);
     assert_eq!(o.children.unwrap().iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["a"]);
 }
+
+#[test]
+fn a_long_array_says_how_many_more() {
+    // int a[100]: the first 64, then "… 36 more".
+    let t = Tables::parse("U\n", "T\t1\tbase\tint\t4\ts\nT\t2\tarray\t\t400\t1\t100\n");
+    let c = t.types.object(&Mem(alloc::vec![0u8; 400]), "a", 0, 2, 1).children.unwrap();
+    assert_eq!((c.len(), c[64].name.as_str(), c[64].value.as_deref()), (65, "[64…99]", Some("… 36 more")));
+}

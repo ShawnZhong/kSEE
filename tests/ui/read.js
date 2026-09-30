@@ -243,6 +243,10 @@
   input.value = "mkdira"; key("Tab");
   input.value += "AT_FDCWD, "; input.dispatchEvent(new Event("input"));
   r.typed = [input.value, document.querySelector(".callform .hint").textContent];
+  // (With its result's type and name written first: the same call, its second parameter bold.)
+  input.value = "int fd = openat(AT_FDCWD, "; input.dispatchEvent(new Event("input"));
+  r.typedResult = [document.querySelector(".callform .hint").textContent, document.querySelector(".callform .hint b")?.textContent];
+  if (!r.typedResult[0].startsWith("openat(") || r.typedResult[1] !== "char *filename") throw new Error("a call with its result named: " + JSON.stringify(r.typedResult));
   const had = lis().length;
   input.value = 'openat(AT_FDCWD, "/mnt/mine", O_CREAT | O_WRONLY, 0644)'; key("Enter");
   await until(() => document.querySelectorAll("ol.steps > li.done").length > had);

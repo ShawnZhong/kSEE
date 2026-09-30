@@ -278,6 +278,19 @@ impl Machine {
         to_js(&ksee_core::program::names(text))
     }
 
+    /// A program written on one line: its lines (ksee_core::program::lines,
+    /// `;` outside strings between them).
+    pub fn program_lines(&self, text: &str) -> Vec<String> {
+        ksee_core::program::lines(text).into_iter().map(String::from).collect()
+    }
+
+    /// Where the cursor at `at` (UTF-16 units) is in `text`, a program's
+    /// line being written (ksee_core::program::context): { call,
+    /// call_start, word, word_start, param }.
+    pub fn context(&self, text: &str, at: usize) -> JsValue {
+        to_js(&ksee_core::program::context(text, at))
+    }
+
     /// The kernel's areas (ksee_core::arch::AREAS): [[a file's start, its
     /// name], …], for the timeline's colors.
     pub fn areas(&self) -> JsValue {
@@ -285,9 +298,11 @@ impl Machine {
     }
 
     /// Constants from the kernel's UAPI headers (O_*, AT_*, CLOCK_*, and
-    /// errno's E*): { name: value }.
+    /// errno's E*), and C's NULL (as ksee_core::program::eval has it): {
+    /// name: value }.
     pub fn constants(&self) -> JsValue {
         let o = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&o, &"NULL".into(), &0.into());
         for (name, &v) in &tables().types.constants {
             let _ = js_sys::Reflect::set(&o, &name.into(), &(v as f64).into());
         }

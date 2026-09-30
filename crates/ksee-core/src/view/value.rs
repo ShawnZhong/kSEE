@@ -26,6 +26,9 @@ pub struct Object {
     pub target: Option<(u32, u32)>,
 }
 
+/// How many elements of an array a value shows (then a row: how many more).
+const SHOWN: u32 = 64;
+
 impl Types {
     /// The value of type `ty` at `addr`, aggregates expanded `depth` deep.
     pub fn object(&self, mem: &dyn Memory, name: &str, addr: u32, ty: u32, depth: u32) -> Object {
@@ -59,9 +62,15 @@ impl Types {
                     o.expand = Some(id);
                 } else {
                     let esize = self.size_of(*elem);
-                    o.children = Some((0..(*count).min(64)).map(|i| {
+                    let mut shown: Vec<Object> = (0..(*count).min(SHOWN)).map(|i| {
                         self.object_bits(mem, &format!("[{i}]"), addr + i * esize, *elem, None, depth - 1)
-                    }).collect());
+                    }).collect();
+                    // (Past the first SHOWN: a row saying how many more.)
+                    if *count > SHOWN {
+                        shown.push(Object { name: format!("[{SHOWN}…{}]", count - 1), ty: String::new(), id: 0, addr: addr + SHOWN * esize, size: 0,
+                                            value: Some(format!("… {} more", count - SHOWN)), none: None, children: None, expand: None, target: None });
+                    }
+                    o.children = Some(shown);
                 }
             }
             Kind::Pointer(to) => {

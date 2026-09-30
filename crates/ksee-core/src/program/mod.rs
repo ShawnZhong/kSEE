@@ -20,4 +20,4 @@ mod text;
 mod tests;
 
 pub use layout::{Arg, Decl, Value};
-pub use text::{eval, names, statement, Name, Statement};
+pub use text::{context, eval, lines, names, statement, Context, Name, Statement};

@@ -72,20 +72,9 @@ export async function examples(app) {
     const p = t.changed ? `&p=${encodeURIComponent(t.steps.map((s) => text(s)).join("; "))}` : "";
     history.replaceState(null, "", `#ex=${t.ex.name}${p}`);
   }
-  // Program `text` (calls as written, separated by ";" outside strings).
-  function program(text) {
-    const calls = [];
-    let cur = "", quote = false;
-    for (let i = 0; i < text.length; i++) {
-      const c = text[i];
-      if (quote && c === "\\") (cur += c + (text[++i] ?? ""));
-      else if (c === '"') ((quote = !quote), (cur += c));
-      else if (c === ";" && !quote) ((calls.push(cur)), (cur = ""));
-      else cur += c;
-    }
-    calls.push(cur);
-    return calls.map((c) => c.trim()).filter(Boolean).map(statement);
-  }
+  // Program `text` (calls as written, separated by ";" outside strings:
+  // Machine.program_lines), as steps.
+  const program = (text) => m.program_lines(text).map(statement);
   // Switch to example `ex` (its program `steps`, `changed` from the
   // example's: see change), on a fresh kernel, so that it always starts
   // from the same state; and make its calls.

@@ -85,7 +85,7 @@ Rust does the work: JS only lays it out.
 | trace.js | the Trace tab: the raw trace, a line a record (what the views are built from) |
 | objects.js | the Objects: what the syscall selected did (`Machine.objects`), all of it, always: a head in a line, then a box per object of the kernel's data it changed (not a stack's), those it left changed first, then those left as they were, each under the one pointing to it: each member before → after, by which function (a line each, when several did it in turn; a row, its writes); at the moment shown (the pointer's, else the cursor's), those not made yet gray, the one it is in marked |
 | examples.js | the examples: the program (syscalls the runners make, all as it opens, each recorded; a call a line, each editable), the tutorial (its stops); the URL (`#ex=NAME&p=CALLS&stop=N`: the program if changed, its calls separated by `;`) |
-| calledit.js | a call written as in C: completions, the signature |
+| calledit.js | a call written as in C: completions, the signature (where the cursor is: `Machine.context`) |
 | ksee.js | booting |
 | kernel.js | syscalls from JavaScript: `sys.read(fd, buf, 64)` (a promise of its result: a blocked call pending while others go on), `declare("char buf[64]")` (the program's memory: a variable's `get()`, a JS value, and `set(x)`), JS values as C's (a string, bytes, argv, a variable's address, an object laid out as the parameter's struct); what the page's program lines, the tests and the console (`ksee.kernel`) make their calls through; a call's result with its errno's name (`result`, `errno`: Machine.errno) |
 

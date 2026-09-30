@@ -275,6 +275,65 @@ pub fn names(text: &str) -> Vec<Name> {
     out
 }
 
+/// A program written on one line (a URL's, an example's try): its lines,
+/// separated by `;` outside strings, each trimmed; none empty.
+pub fn lines(text: &str) -> Vec<&str> {
+    let n = nesting(text);
+    let mut out = Vec::new();
+    let mut from = 0;
+    for (i, b) in text.bytes().enumerate() {
+        if b == b';' && n[i].is_some() {
+            out.push(&text[from..i]);
+            from = i + 1;
+        }
+    }
+    out.push(&text[from..]);
+    out.into_iter().map(str::trim).filter(|l| !l.is_empty()).collect()
+}
+
+/// Where the cursor is in a program's line being written (see
+/// statement): the call's name as far as written, and where it starts;
+/// the word at the cursor, and where it starts; in the arguments, which
+/// one (from 0). Offsets in UTF-16 units, as the page's text has them.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct Context {
+    pub call: String,
+    pub call_start: usize,
+    pub word: String,
+    pub word_start: usize,
+    pub param: Option<usize>,
+}
+
+/// The cursor at `at` (UTF-16 units) in `text`, a program's line (see
+/// Context): `19: int fd = open|` is at the call's name, "open";
+/// `read(fd, b|` at argument 1, the word "b".
+pub fn context(text: &str, at: usize) -> Context {
+    // (UTF-16 offsets to bytes and back.)
+    let byte = text.char_indices().scan(0, |u, (i, c)| {
+        let here = *u;
+        *u += c.len_utf16();
+        Some((here, i))
+    }).find(|&(u, _)| u >= at).map_or(text.len(), |(_, i)| i);
+    let utf16 = |b: usize| text[..b].encode_utf16().count();
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$';
+    // (The call's "(": the first outside a string.)
+    let n = nesting(text);
+    let open = text.bytes().enumerate().find(|&(i, c)| c == b'(' && n[i].is_some()).map(|(i, _)| i);
+    // (Its name: the word before it, after a runner's `19:` and a result's `int fd =`.)
+    let head = &text[..open.unwrap_or(text.len())];
+    let head = head.trim_end();
+    let start = head.rfind(|c: char| !word(c)).map_or(0, |k| k + head[k..].chars().next().map_or(1, char::len_utf8));
+    let before = &text[..byte];
+    let w = before.rfind(|c: char| !word(c)).map_or(0, |k| k + before[k..].chars().next().map_or(1, char::len_utf8));
+    // (In the arguments: the commas before the cursor outside strings and () {}.)
+    let param = open.filter(|&o| o < byte).map(|o| {
+        let depth = n[o];
+        (o + 1..byte).filter(|&i| text.as_bytes()[i] == b',' && n[i] == depth.map(|d| d + 1)).count()
+    });
+    Context { call: head[start..].to_string(), call_start: utf16(start), word: before[w..].to_string(), word_start: utf16(w), param }
+}
+
 /// A program's line (see statement): a call, `[runner:] [type] [name =]
 /// syscall(args)` (its arguments as written: Types::arg reads each), or a
 /// variable's declaration, `[runner:] type name[n] = init` (Types::declare
