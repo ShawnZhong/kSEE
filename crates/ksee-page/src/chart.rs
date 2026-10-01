@@ -149,20 +149,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     // (The rows thinner to fit the chart's room; deeper, it scrolls.)
     let room = use_context::<Signal<crate::layout::Sizes>>()().chart;
     let row = (room / depth.max(1) as f64).clamp(MIN_ROW, ROW).floor();
-    // (Each row's runs: a bar over the columns it is on, in a row.)
-    let mut runs = Vec::new();
-    for dd in 0..depth {
-        let mut k = 0;
-        while k < n {
-            let Some(&bar) = chart.cols.get(k).and_then(|c| c.frames.get(dd)) else { k += 1; continue };
-            let mut e = k + 1;
-            while chart.cols.get(e).and_then(|c| c.frames.get(dd)) == Some(&bar) {
-                e += 1;
-            }
-            runs.push((dd, k, e, bar as usize));
-            k = e;
-        }
-    }
+    let runs = chart.bar_runs();
     let cursor = d.cursor.cloned();
     let (wa, wb) = (d.window)();
     // (Where a record is, across the window (%): the cursor's, solid; the
@@ -272,7 +259,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             onmouseleave: move |_| { let mut ui = ui; ui.peek.set(None); tip.set(None); pan.set(None); dragged.set(false); },
             for (dd , a , e , b) in runs {
                 {
-                    let bar = &chart.bars[b];
+                    let bar = &chart.bars[b as usize];
                     let id = (bar.first, bar.name.clone());
                     let on = calls.contains(&id);
                     let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
@@ -328,13 +315,7 @@ fn Strip() -> Element {
     let d = use_context::<Derived>();
     let chart: Shared<Chart> = d.chart.cloned();
     let n = chart.cols.len().max(1);
-    let mut runs: Vec<(usize, usize, u32)> = Vec::new();
-    for (k, c) in chart.cols.iter().enumerate() {
-        match runs.last_mut() {
-            Some(r) if r.2 == c.task => r.1 = k + 1,
-            _ => runs.push((k, k + 1, c.task)),
-        }
-    }
+    let runs = chart.task_runs();
     let m = machine();
     let pct = |k: usize| k as f64 * 100.0 / n as f64;
     rsx! {
