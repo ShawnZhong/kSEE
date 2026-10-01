@@ -176,8 +176,12 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
     let shown = d.shown.read().as_ref().and_then(|m| d.lines.read().get(m.line).cloned());
     let values: Vec<String> = if here && line >= 1 && (line as usize) <= total {
         let words: Vec<&str> = src.pieces[line as usize - 1].iter().filter(|p| p.kind.is_ident()).map(|p| p.text.as_str()).collect();
-        // (A call made on this line or the one before it, returned by now.)
-        let before = d.shown.read().as_ref().and_then(|m| d.lines.read().get(m.line.checked_sub(1)?).cloned());
+        // (A call made on this line or this function's line before it, returned by now.)
+        let before = d.shown.read().as_ref().and_then(|m| {
+            let lines = d.lines.read();
+            let depth = lines.get(m.line)?.depth;
+            lines[..m.line].iter().rev().find(|l| l.depth <= depth).filter(|l| l.depth == depth).cloned()
+        });
         let returned = shown.as_ref().and_then(|l| [Some(l), before.as_ref()].into_iter().flatten().find_map(|c| c.called.as_ref())
             .filter(|c| c.at <= l.at).map(|c| format!("{} → {}", c.func, machine().result(c.value))));
         frame.args.iter().flatten().chain(frame.locals.iter().flatten())
