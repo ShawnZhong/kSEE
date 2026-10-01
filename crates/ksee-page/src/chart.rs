@@ -5,8 +5,8 @@
 //! one) over the columns it is on, colored by the kernel's part it is in,
 //! the calls at the cursor darker; the task strip under it; then the
 //! transport. The wheel zooms, a drag pans; hover a bar: the moment shown
-//! everywhere, and what the call was; click it: the cursor there. Find a
-//! function by any part of its name.
+//! everywhere but the cursor's line, and what the call was; click it: the
+//! cursor there. Find a function by any part of its name.
 
 use dioxus::prelude::*;
 use ksee_core::view::{Chart, Move};
@@ -144,8 +144,6 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     // already none — so a drag never ends in a click.)
     let mut dragged = use_signal(|| false);
     let mut width = use_signal(|| 1000.0f64);
-    // (The pointer's x over the chart (px), while it is over it: the line is there.)
-    let mut hover = use_signal(|| None::<f64>);
     let n = chart.cols.len().max(1);
     let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
     // (The rows thinner to fit the chart's room; deeper, it scrolls.)
@@ -238,9 +236,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                             return;
                         }
                     }
-                    // (Else the moment under the pointer shown, the line at it; over a bar, what its call was.)
+                    // (Else the moment under the pointer shown everywhere but the line: over a bar, what its call was.)
                     let at = e.element_coordinates();
-                    hover.set(Some(at.x));
                     let Some((k, dd)) = hit(&chart, at.x, at.y) else { return };
                     let call = dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]).map(|b| (b.first, b.name.clone()));
                     let peek = Some(Peek { i: chart.cols[k].i, call });
@@ -283,10 +280,9 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                         }
                     }
                     ui.peek.set(None);
-                    hover.set(None);
                 }
             },
-            onmouseleave: move |_| { let mut ui = ui; ui.peek.set(None); tip.set(None); pan.set(None); dragged.set(false); hover.set(None); },
+            onmouseleave: move |_| { let mut ui = ui; ui.peek.set(None); tip.set(None); pan.set(None); dragged.set(false); },
             for (dd , a , e , b) in runs {
                 {
                     let bar = &chart.bars[b];
@@ -305,10 +301,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     }
                 }
             }
-            match hover() {
-                Some(x) => rsx! { div { class: "now", style: "left: {x}px" } },
-                None => rsx! { if let Some(x) = now { div { class: "now", style: "left: {x}%" } } },
-            }
+            // (The line at the committed cursor only: hover never moves it.)
+            if let Some(x) = now { div { class: "now", style: "left: {x}%" } }
         }
     }
 }
@@ -380,6 +374,8 @@ fn Transport() -> Element {
     let s = ui.syscall();
     let task = s.as_ref().map(|s| s.task.named()).unwrap_or_default();
     let place = here.map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
+    // (A line that runs more than once in this call: which turn the cursor is on.)
+    let turn = here.filter(|l| l.run > 1).map(|l| format!(" · turn {}", l.run)).unwrap_or_default();
     let call = s.as_ref().map(|s| format!(" · in {}", s.name)).unwrap_or_default();
     // (A step that lands after a call: what it returned.)
     let returned = here.and_then(|l| l.called.as_ref()).filter(|c| c.at <= here.map_or(0, |l| l.at))
@@ -391,7 +387,7 @@ fn Transport() -> Element {
             button { title: "the next line (→); Shift: over the calls; Alt: out, past the function's return", onclick: move |e| crate::stack::walk(ui, 1, how(&e)), "▶" }
             button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| crate::stack::frame(ui, -1), "▲" }
             button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| crate::stack::frame(ui, 1), "▼" }
-            span { class: "where mono dim", "{task} · {place}{call}{returned}" }
+            span { class: "where mono dim", "{task} · {place}{turn}{call}{returned}" }
         }
     }
 }
