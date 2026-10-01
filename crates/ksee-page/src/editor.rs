@@ -28,7 +28,12 @@ pub fn Editor(text: String, line: usize, placeholder: String, common: Vec<String
     let items: Vec<Completion> = if open() { machine().complete(&draft(), at(), line, &common) } else { Vec::new() };
     // (Nothing to choose, or only what is written already: no list.)
     let c = context(&draft(), at());
-    let shown = !items.is_empty() && !(items.len() == 1 && items[0].label == if c.param.is_none() { c.call.clone() } else { c.word.clone() });
+    let written = if c.param.is_none() { &c.call } else { &c.word };
+    let shown = match &items[..] {
+        [] => false,
+        [only] => only.label != *written,
+        _ => true,
+    };
     let sel_now = sel().min(items.len().saturating_sub(1));
     let hint = (!c.call.is_empty()).then(|| machine().params(&c.call)).flatten();
     let mut take = move |it: Completion| {
@@ -61,7 +66,7 @@ pub fn Editor(text: String, line: usize, placeholder: String, common: Vec<String
                     } else if key == Key::Enter {
                         e.prevent_default();
                         let t = draft().trim().to_string();
-                        match t.is_empty().then_some(Ok(())).unwrap_or_else(|| machine().can_make(&t, line)) {
+                        match if t.is_empty() { Ok(()) } else { machine().can_make(&t, line) } {
                             Ok(()) => { open.set(false); done.call(t); }
                             Err(why) => error.set(Some(why)),
                         }

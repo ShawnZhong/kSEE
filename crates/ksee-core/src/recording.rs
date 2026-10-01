@@ -145,17 +145,6 @@ impl Recording {
         if dir > 0 { (i + 1..self.records.len()).find(|&j| hit(j)) } else { (0..i.min(self.records.len())).rev().find(|&j| hit(j)) }
     }
 
-    /// The next block record after `i` (`other`: of another function than
-    /// record `i`'s, if it is a block); `i` if none.
-    pub fn next_block(&self, i: usize, other: bool) -> usize {
-        let func_at = |j: usize| match self.records.get(j) {
-            Some(Record::Block { func, .. }) => Some(*func),
-            _ => None,
-        };
-        let here = func_at(i);
-        (i + 1..self.len()).find(|&j| func_at(j).is_some_and(|f| !other || Some(f) != here)).unwrap_or(i)
-    }
-
     /// The first call of function `name` in records `first..=last` (of the
     /// task at address `task`, or any): its record (see calls).
     pub fn first_call(&self, t: &Tables, name: &str, first: usize, last: usize, task: Option<u32>) -> Option<usize> {

@@ -154,8 +154,7 @@ impl View<'_> {
     /// record `at`, printed.
     pub(super) fn value(&self, base: u32, (leaf, off, bits): Leaf, at: usize) -> String {
         let (b0, bn) = bits.unwrap_or((0, 0));
-        let v = self.tables.types.print(&self.rec.memory_at(self.now, at), base + off, leaf, b0, bn);
-        v
+        self.tables.types.print(&self.rec.memory_at(self.now, at), base + off, leaf, b0, bn)
     }
 
     /// Variable set `i` (a Var record)'s value, printed.

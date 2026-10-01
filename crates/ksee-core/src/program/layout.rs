@@ -164,8 +164,7 @@ impl Types {
                 let v = if core::ptr::eq(m, last) {
                     self.show(mem, rec + off, elem, Some(reclen.saturating_sub(off)))
                 } else {
-                    let v = self.print(mem, rec + off, m.ty, 0, 0);
-                    v
+                    self.print(mem, rec + off, m.ty, 0, 0)
                 };
                 format!("{} = {v}", m.name)
             }).collect();
@@ -196,10 +195,7 @@ impl Types {
                         let v = self.print(mem, addr + m.bit_offset / 8, m.ty, 0, 0);
                         format!("{} = {v}", m.name)
                     }).collect::<Vec<_>>().join(", ")),
-                _ => {
-                    let v = self.print(mem, addr, ty, 0, 0);
-                    v
-                }
+                _ => self.print(mem, addr, ty, 0, 0),
             },
         }
     }
