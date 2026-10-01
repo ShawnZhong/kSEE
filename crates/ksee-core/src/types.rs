@@ -45,6 +45,13 @@ pub struct Member {
     pub ty: u32,
 }
 
+/// A task, as its task_struct says: its id and name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Task {
+    pub pid: i32,
+    pub comm: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
     Void,
@@ -196,6 +203,21 @@ impl Types {
     pub fn get(&self, id: u32) -> &Type {
         static VOID: Type = Type { name: String::new(), size: 0, kind: Kind::Void };
         self.types.get(id as usize).unwrap_or(&VOID)
+    }
+
+    /// A task_struct's pid and comm, at `p` in `mem`.
+    pub fn read_task(&self, mem: &dyn Memory, p: u32) -> Option<Task> {
+        let (pid, comm) = (self.field(crate::arch::TASK, crate::arch::TASK_PID)?, self.field(crate::arch::TASK, crate::arch::TASK_COMM)?);
+        if p == 0 {
+            return None;
+        }
+        let mut name = alloc::vec![0; comm.1 as usize];
+        mem.read(p + comm.0, &mut name);
+        let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+        Some(Task {
+            pid: mem.read_u32(p + pid.0) as i32,
+            comm: String::from_utf8_lossy(&name[..len]).into(),
+        })
     }
 
     /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY).
@@ -552,6 +574,16 @@ mod tests {
                          T\t5\tptr\t\t4\t4\n\
                          T\t6\ttypedef\ttask_t\t20\t4\n\
                          T\t7\tbase\tunsigned int\t4\tu\n";
+
+    #[test]
+    fn reads_tasks() {
+        let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t2\tbase\tchar\t1\tc\n\
+            T\t3\tarray\t\t16\t2\t16\nT\t4\tstruct\ttask_struct\t20\nM\t4\tpid\t0\t0\t1\nM\t4\tcomm\t32\t0\t3\n");
+        let mut m = alloc::vec![0u8; 0x200];
+        m[0x100..0x104].copy_from_slice(&7u32.to_le_bytes());
+        m[0x104..0x108].copy_from_slice(b"ping");
+        assert_eq!(t.read_task(&Mem(m), 0x100), Some(Task { pid: 7, comm: "ping".into() }));
+    }
 
     #[test]
     fn anonymous_members_are_the_outer_ones() {

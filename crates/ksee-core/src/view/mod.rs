@@ -11,7 +11,6 @@ use crate::arch;
 use crate::recording::Recording;
 use crate::stack::{self, LineStep};
 use crate::tables::{Loc, Step, Tables, Var};
-use crate::task::read_task;
 use crate::trace::Record;
 use crate::types::{num, Kind, Types};
 use crate::Memory;
@@ -234,7 +233,7 @@ impl View<'_> {
         let key = (addr, last(arch::TASK_PID).max(last(arch::TASK_COMM)));
         let known = self.rec.names.borrow().get(&key).cloned();
         let task = known.or_else(|| {
-            let task = read_task(t, &self.rec.memory_at(self.now, at), addr)?;
+            let task = t.types.read_task(&self.rec.memory_at(self.now, at), addr)?;
             self.rec.names.borrow_mut().insert(key, task.clone());
             Some(task)
         });

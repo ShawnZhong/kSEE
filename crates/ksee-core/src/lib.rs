@@ -4,7 +4,7 @@
 //!   probe tables; types from DWARF, see crates/ksee-cli's pack).
 //! * [`trace`]: decoding the trace ring into records.
 //! * [`recording`]: what the host rebuilds from the records: tasks,
-//!   syscalls ([`syscalls`]), calls and lines ([`stack`]), memory as it was
+//!   syscalls, and the calls and lines ([`stack`]), memory as it was
 //!   ([`mem`]).
 //! * [`view`]: what the page shows of it.
 //! * [`program`]: a syscall's arguments as the page writes them (C, with the
@@ -28,8 +28,6 @@ pub mod module;
 pub mod recording;
 pub mod stack;
 pub mod tables;
-pub mod text;
-pub mod task;
 pub mod trace;
 pub mod types;
 pub mod view;
