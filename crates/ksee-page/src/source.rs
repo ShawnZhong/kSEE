@@ -170,7 +170,8 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
     // (The cursor's line: the frame's values its names have, as they are before it runs.)
     let values: Vec<String> = if here && line >= 1 && (line as usize) <= total {
         let words: Vec<&str> = src.pieces[line as usize - 1].iter().filter(|p| p.kind.is_ident()).map(|p| p.text.as_str()).collect();
-        frame.args.iter().flatten().chain(frame.locals.iter().flatten()).filter(|o| words.contains(&o.name.as_str()))
+        frame.args.iter().flatten().chain(frame.locals.iter().flatten())
+            .filter(|o| words.contains(&o.name.as_str()) && o.none != Some(ksee_core::view::Missing::NotRecorded))
             .map(|o| format!("{} = {}", o.name, o.value.clone().unwrap_or_else(|| "{…}".into()))).collect()
     } else { Vec::new() };
     let extra = if values.is_empty() { 0 } else { 1 };

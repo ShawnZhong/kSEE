@@ -345,7 +345,6 @@ fn Transport() -> Element {
     let place = here.map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
     // (A line that runs more than once in this call: which turn the cursor is on.)
     let turn = here.filter(|l| l.run > 1).map(|l| format!(" · turn {}", l.run)).unwrap_or_default();
-    let call = s.as_ref().map(|s| format!(" · in {}", s.name)).unwrap_or_default();
     // (A step that lands after a call: what it returned.)
     let returned = here.and_then(|l| l.called.as_ref()).filter(|c| c.at <= here.map_or(0, |l| l.at))
         .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value))).unwrap_or_default();
@@ -355,7 +354,7 @@ fn Transport() -> Element {
             button { title: "the next line (→); Shift: over the calls", onclick: move |e| crate::stack::walk(ui, 1, e.modifiers().shift()), "▶" }
             button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| crate::stack::frame(ui, d, -1), "▲" }
             button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| crate::stack::frame(ui, d, 1), "▼" }
-            span { class: "where mono dim", "{task} · {place}{turn}{call}{returned}" }
+            span { class: "where mono dim", "{task} · {place}{turn}{returned}" }
         }
     }
 }
