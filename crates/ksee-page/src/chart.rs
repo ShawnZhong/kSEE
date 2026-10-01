@@ -46,6 +46,19 @@ struct Tip {
 pub fn Timeline() -> Element {
     let mut ui = use_context::<Ui>();
     let tip = use_signal(|| None::<Tip>);
+    // (The cursor stepped out of the window: the window moved to it, as wide.)
+    let d = use_context::<Derived>();
+    use_effect(move || {
+        let Some(at) = d.cursor.cloned() else { return };
+        let (a, b) = *d.window.peek();
+        let m = machine();
+        let (sa, sb, total) = m.view(|v| (v.rec.step_of(a), v.rec.step_of(b), v.rec.steps().max(1)));
+        if at < sa as f64 || at >= (sb + 1) as f64 {
+            let (span, at) = (sb - sa, at as usize);
+            let na = at.saturating_sub(span / 2).min(total.saturating_sub(span + 1));
+            ui.win.set(Some(m.view(|v| (v.rec.record_of(na), v.rec.record_of(na + span)))));
+        }
+    });
     let title = ui.syscall().map(|s| format!("{} by {}", s.name, s.task.named())).unwrap_or_default();
     rsx! {
         section { class: "history",
