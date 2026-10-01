@@ -390,6 +390,26 @@ fn inlined_code_is_a_frame_of_its_own() {
 }
 
 #[test]
+fn two_inlined_frames_of_one_call_are_bars_of_their_own() {
+    // f (1) runs h's line 20 (h inlined into f at line 2), itself g's
+    // line 30 (g inlined into h at its line 3): one call, two inlined
+    // frames, each with an identity of its own (the chart's bars: hovering
+    // one must not light up the other).
+    let t = Tables::parse("U\nP\t0\tf.c\nP\t1\th.c\nP\t2\tg.c\nF\t1\tf\t0:1\t0\n\
+                           I\t0\th\t0:2\nI\t1\tg\t1:3\nL\t1\t0\t2:30@1@0\n", "");
+    let r = [Record::Block { func: 1, n: 0 }];
+    let rec = Recording::new(&t, r.to_vec(), alloc::vec![0], Args::default());
+    let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
+    let frames: Vec<_> = v.call_stack(0, None, &Mem(Vec::new()), 0).iter().map(|f| (f.func.clone(), f.inlined)).collect();
+    assert_eq!(frames, [("g".into(), true), ("h".into(), true), ("f".into(), false)]);
+    let chart = v.chart(0, 0, 1);
+    let bars: Vec<_> = chart.cols[0].frames.iter().map(|&b| (chart.bars[b as usize].first, chart.bars[b as usize].name.clone())).collect();
+    assert_eq!(bars, [(0, "f".into()), (0, "h".into()), (0, "g".into())]);
+    // (Each bar runs alone: no two share an identity.)
+    assert_eq!(chart.bar_runs(), alloc::vec![(0, 0, 1, 0), (1, 0, 1, 1), (2, 0, 1, 2)]);
+}
+
+#[test]
 fn char_pointers_show_their_strings() {
     let t = Types::parse("T\t1\tbase\tchar\t1\tc\nT\t2\tptr\t\t4\t1\n");
     let mut m = alloc::vec![0u8; 128];
