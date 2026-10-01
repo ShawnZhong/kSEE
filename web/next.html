@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kSEE (next)</title>
+<style>
+:root { --bg: #fff; --fg: #1f2328; --dim: #656d76; --line: #d0d7de; --cell: #f6f8fa; --accent: #0969da; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #0d1117; --fg: #e6edf3; --dim: #8d96a0; --line: #30363d; --cell: #161b22; --accent: #4493f8; } }
+:root[data-theme="dark"] { --bg: #0d1117; --fg: #e6edf3; --dim: #8d96a0; --line: #30363d; --cell: #161b22; --accent: #4493f8; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+code, pre, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+.bar { display: flex; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.bar select { flex: 1; min-width: 0; }
+.page { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 0; height: calc(100vh - 45px); }
+.lesson { overflow: auto; padding: 16px 24px; }
+.side { border-left: 1px solid var(--line); overflow: auto; padding: 0 16px; }
+.dim { color: var(--dim); font-size: 13px; }
+h1 { font-size: 22px; margin: 4px 0; }
+.question { color: var(--dim); }
+.cells { list-style: none; padding: 0; margin: 16px 0; }
+.cell { border-left: 3px solid var(--line); padding: 4px 0 4px 12px; margin: 10px 0; }
+.line { display: flex; gap: 12px; align-items: baseline; background: var(--cell); padding: 6px 8px; border-radius: 6px; }
+.line code { flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; }
+.result { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--accent); white-space: nowrap; }
+.para code { background: var(--cell); padding: 0 3px; border-radius: 3px; }
+.link { color: var(--accent); cursor: pointer; }
+.console { white-space: pre-wrap; font-size: 12px; }
+@media (max-width: 700px) { .page { grid-template-columns: 1fr; height: auto; } .side { border-left: 0; border-top: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div id="root"><p style="padding: 16px">Starting the kernel…</p></div>
+<script type="module">
+import { start } from "./ksee.js";
+import { mount } from "./pkg/ksee_page.js";
+const [m, examples] = await Promise.all([
+  start({ kernel: new URL("vmlinux.gz", location.href), initrd: new URL("initramfs.cpio.gz", location.href) }),
+  fetch("examples.json").then((r) => r.json()),
+]);
+document.getElementById("root").replaceChildren();
+mount("root", m, examples);
+</script>
+</body>
+</html>

@@ -35,7 +35,8 @@ pub(crate) fn to_js<T: serde::Serialize>(v: &T) -> JsValue {
 }
 
 impl Machine {
-    fn view<T>(&self, f: impl FnOnce(&View) -> T) -> T {
+    /// Run `f` on a view of the last snapshot (ksee_core::view).
+    pub fn view<T>(&self, f: impl FnOnce(&View) -> T) -> T {
         let rec = self.rec.borrow();
         f(&View { tables: tables(), rec: &rec, now: &Direct })
     }

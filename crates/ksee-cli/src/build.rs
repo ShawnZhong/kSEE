@@ -79,11 +79,12 @@ pub fn build() {
     run(&mut kmake(&["headers"]));
 
     site();
+    // (The runtime and the page, one module: the page calls the Machine.)
     eprintln!("  RUNTIME {SITE}/pkg");
-    run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-runtime",
+    run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-page",
         "--target", "wasm32-unknown-unknown"]));
     run(Command::new("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", &format!("{SITE}/pkg"),
-        "target/wasm32-unknown-unknown/release/ksee_runtime.wasm"]));
+        "target/wasm32-unknown-unknown/release/ksee_page.wasm"]));
 
     codemirror();
     // (Packed again for a new kernel, or a new pack: this program.)

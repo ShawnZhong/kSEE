@@ -187,6 +187,13 @@ impl Machine {
     /// are; a call from its runner's begin to its end (user/prog.c): the
     /// syscall, entry to return, and whatever the kernel does meanwhile.
     pub fn run(&self, text: &str) -> Result<JsValue, JsValue> {
+        Ok(to_js(&self.make(text)?))
+    }
+}
+
+impl Machine {
+    /// Make line `text` of the program, the next (see run): what it made.
+    pub fn make(&self, text: &str) -> Result<Made, String> {
         let line = k(|k| k.lines.get());
         let (tid, plan) = plan(text, line)?;
         let mut made = Made::default();
@@ -204,9 +211,12 @@ impl Machine {
             Plan::Call { nr, args, result } => (made.id, made.tid) = (Some(call(tid, nr, &args, line, result)?), Some(tid)),
         }
         k(|k| k.lines.set(line + 1));
-        Ok(to_js(&made))
+        Ok(made)
     }
+}
 
+#[wasm_bindgen]
+impl Machine {
     /// Line `text` (see run) as it would be made as line `line`, with the
     /// names of the lines before it: its statement (Machine::statement),
     /// or why it cannot be made; nothing made.
@@ -306,23 +316,23 @@ fn alloc(tid: u32, len: u32) -> Result<u32, String> {
 /// What a line made (Machine::run): a variable, what memory holds now, or
 /// a call asked (its id, its runner).
 #[derive(serde::Serialize, Default)]
-struct Made {
-    decl: Option<Var>,
-    assigned: Option<String>,
-    id: Option<u32>,
-    tid: Option<u32>,
+pub struct Made {
+    pub decl: Option<Var>,
+    pub assigned: Option<String>,
+    pub id: Option<u32>,
+    pub tid: Option<u32>,
 }
 
 /// A variable of the program's: memory of type `ty` (an array of `count`)
 /// at `addr`; `size`, an element's (Machine::run's) or all of it
 /// (names_before's).
 #[derive(serde::Serialize)]
-struct Var {
-    name: String,
-    addr: u32,
-    ty: u32,
-    count: Option<u32>,
-    size: u32,
+pub struct Var {
+    pub name: String,
+    pub addr: u32,
+    pub ty: u32,
+    pub count: Option<u32>,
+    pub size: u32,
 }
 
 /// A name a line sees (Machine::names_before): a result's value (a
