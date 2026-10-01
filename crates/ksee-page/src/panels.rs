@@ -17,13 +17,14 @@ pub fn Tabs() -> Element {
     let head = |t: Tab, label: &'static str| rsx! { a { class: if tab == t { "tab on" } else { "tab" }, onclick: move |_| ui.tab.set(t), "{label}" } };
     rsx! {
         div { class: "panels",
-            nav { class: "tabs", {head(Tab::Stack, "Stack")} {head(Tab::Objects, "Objects")} {head(Tab::Tasks, "Tasks")} {head(Tab::Console, "Console")} }
+            nav { class: "head tabs", {head(Tab::Stack, "Stack")} {head(Tab::Objects, "Objects")} {head(Tab::Tasks, "Tasks")} {head(Tab::Console, "Console")} {head(Tab::Trace, "Trace")} }
             div { class: "pane",
                 match tab {
                     Tab::Stack => rsx! { crate::stack::Stack {} },
                     Tab::Objects => rsx! { Objects {} },
                     Tab::Tasks => rsx! { Tasks {} },
                     Tab::Console => rsx! { pre { class: "console", "{ui.console}" } },
+                    Tab::Trace => rsx! { p { class: "dim", "…" } },
                 }
             }
         }

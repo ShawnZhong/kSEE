@@ -190,29 +190,81 @@ fn to_url(ui: Ui) {
     }
 }
 
-#[component]
-pub fn Header() -> Element {
-    let mut ui = use_context::<Ui>();
-    let all = examples();
-    let n = all.len();
-    let mut open = move |k: usize| {
-        ui.lesson.set(k);
-        ui.program.set(examples()[k].steps.clone());
-    };
-    let at = (ui.lesson)();
-    rsx! {
-        header { class: "bar",
-            b { "kSEE" }
-            select {
-                onchange: move |e| open(e.value().parse().unwrap_or(0)),
-                for (k , x) in all.iter().enumerate() {
-                    option { value: "{k}", selected: k == at, "{x.group} · {x.title}" }
-                }
-            }
-            button { disabled: at == 0, onclick: move |_| open(at - 1), "◀" }
-            button { disabled: at + 1 >= n, onclick: move |_| open(at + 1), "▶" }
+/// The lessons opened before (kept in the browser's storage), by name.
+fn seen() -> Vec<String> {
+    web_sys::window().and_then(|w| w.local_storage().ok().flatten()).and_then(|s| s.get_item("ksee.seen").ok().flatten())
+        .map(|t| t.split(',').map(String::from).collect()).unwrap_or_default()
+}
+
+fn see(name: &str) {
+    let mut all = seen();
+    if !all.iter().any(|n| n == name) {
+        all.push(name.into());
+        if let Some(s) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+            let _ = s.set_item("ksee.seen", &all.join(","));
         }
     }
+}
+
+/// Lesson `k` opened: its own program made, on a fresh kernel.
+fn open(mut ui: Ui, k: usize) {
+    ui.lesson.set(k);
+    ui.program.set(examples()[k].steps.clone());
+}
+
+#[component]
+pub fn Header() -> Element {
+    let ui = use_context::<Ui>();
+    let mut menu = use_signal(|| false);
+    let all = examples();
+    let at = (ui.lesson)();
+    let ex = &all[at];
+    rsx! {
+        header { class: "bar",
+            b { title: "watch the Linux kernel run", "kSEE" }
+            button { class: if menu() { "on" } else { "" }, title: "every lesson, by chapter", onclick: move |_| menu.toggle(), "☰ Lessons" }
+            button { disabled: at == 0, title: "the lesson before", onclick: move |_| open(ui, at - 1), "◀" }
+            button { disabled: at + 1 >= all.len(), title: "the next lesson", onclick: move |_| open(ui, at + 1), "▶" }
+            span { class: "title", "{ex.group} · " b { "{ex.title}" } }
+        }
+        if menu() {
+            div { class: "menuback", onclick: move |_| menu.set(false) }
+            Contents { close: move |_| menu.set(false) }
+        }
+    }
+}
+
+/// Every lesson, by chapter: the one open marked, those opened before ticked.
+#[component]
+fn Contents(close: EventHandler<()>) -> Element {
+    let ui = use_context::<Ui>();
+    let all = examples();
+    let seen = seen();
+    let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+    for (k, e) in all.iter().enumerate() {
+        match groups.last_mut() {
+            Some((g, ks)) if *g == e.group => ks.push(k),
+            _ => groups.push((e.group.clone(), vec![k])),
+        }
+    }
+    rsx! {
+        nav { class: "menu",
+            for (g , ks) in groups {
+                div { class: "chapter", "{g}" }
+                for k in ks {
+                    a { class: if k == (ui.lesson)() { "item on" } else { "item" },
+                        onclick: move |_| { open(ui, k); close.call(()); },
+                        span { class: "tick", if seen.contains(&all[k].name) { "✓" } }
+                        "{all[k].title}" }
+                }
+            }
+        }
+    }
+}
+
+/// A line's runner, as written (none: the program's own, "").
+fn lane(line: &str) -> String {
+    statement(line).ok().and_then(|s| s.runner).unwrap_or_default()
 }
 
 #[component]
@@ -222,12 +274,14 @@ pub fn Lesson() -> Element {
     use_effect(move || {
         let lines = (ui.program)();
         to_url(ui);
+        see(&examples()[(ui.lesson)()].name);
         spawn(run(ui, lines));
     });
     let all = examples();
-    let ex = all[(ui.lesson)()].clone();
+    let at = (ui.lesson)();
+    let ex = all[at].clone();
     let group: Vec<usize> = (0..all.len()).filter(|&k| all[k].group == ex.group).collect();
-    let place = group.iter().position(|&k| k == (ui.lesson)()).unwrap_or(0) + 1;
+    let place = group.iter().position(|&k| k == at).unwrap_or(0) + 1;
     let program = (ui.program)();
     // (Each line's call number, from 1: the text's links name calls so.)
     let mut n = 0;
@@ -235,52 +289,116 @@ pub fn Lesson() -> Element {
     let first = |p: &str| text::calls(p).first().copied();
     let mine = program == ex.steps;
     let outcomes = ui.outcomes.read().clone();
+    // (Lanes: a column per runner, with more than one; the program's first.)
+    let mut lanes = vec![String::new()];
+    for l in &program {
+        let r = lane(l);
+        if !lanes.contains(&r) {
+            lanes.push(r);
+        }
+    }
+    let many = lanes.len() > 1;
+    let col = |l: &str| lanes.iter().position(|x| *x == lane(l)).unwrap_or(0) + 1;
+    // (A lane waits, at row r, while a call of its asked before r has not returned by then.)
+    let waits = |r: usize| -> Vec<usize> {
+        program.iter().enumerate().filter(|&(j, _)| j < r).filter_map(|(j, l)| match outcomes.get(j) {
+            Some(Outcome::Call { ret, during, .. }) if ret.is_none() || during.is_some_and(|d| d >= r) => Some(col(l)),
+            _ => None,
+        }).collect()
+    };
+    let before = at.checked_sub(1).map(|k| (k, all[k].title.clone()));
+    let after = (at + 1 < all.len()).then(|| (at + 1, all[at + 1].title.clone()));
     rsx! {
-        div { class: "dim", "{ex.group} · {place} of {group.len()}" }
+        div { class: "place", "{ex.group} · {place} of {group.len()}" }
         h1 { "{ex.title}" }
         p { class: "question", "{ex.question}" }
         if mine {
             for p in ex.text.iter().filter(|p| first(p).is_none()) { Paragraph { text: p.clone() } }
         } else {
             p { class: "dim", "A try, not the lesson's own program: "
-                a { class: "link", onclick: move |_| { let mut ui = ui; ui.program.set(examples()[(ui.lesson)()].steps.clone()); }, "back to it" } }
+                a { class: "link", onclick: move |_| open(ui, (ui.lesson)()), "↺ back to it" } }
         }
-        ol { class: "cells",
-            for (j , line) in program.iter().enumerate() {
-                Cell { key: "{j}:{line}", j, line: line.clone(), outcome: outcomes.get(j).cloned(), call: calls[j] }
-                if mine {
-                    for p in ex.text.iter().filter(|p| calls[j].is_some() && first(p) == calls[j]) { Paragraph { text: p.clone() } }
+        ol { class: if many { "cells lanes" } else { "cells" }, style: "--lanes: {lanes.len()}",
+            if many {
+                for (c , l) in lanes.iter().enumerate() {
+                    li { class: "lanehead mono", style: "grid-column: {c + 1}", {lane_name(ui, l, &program)} }
                 }
             }
-            li { class: "cell add",
-                crate::editor::Editor { key: "{program.len()}", text: String::new(), line: program.len(), placeholder: "add a call…", common: common(),
-                    done: move |t: String| if !t.is_empty() { let mut ui = ui; ui.program.write().push(t); },
-                    focus: move |_| {} }
+            for (j , line) in program.iter().enumerate() {
+                Fragment { key: "{j}:{line}",
+                    for w in if many { waits(j) } else { Vec::new() } {
+                        if w != col(line) { li { class: "wait", style: "grid-column: {w}", title: "a call of this lane's, waiting (blocked)" } }
+                    }
+                    Cell { j, line: line.clone(), outcome: outcomes.get(j).cloned(), call: calls[j], column: if many { col(line) } else { 0 } }
+                    if mine {
+                        for p in ex.text.iter().filter(|p| calls[j].is_some() && first(p) == calls[j]) { li { class: "wide", Paragraph { text: p.clone() } } }
+                    }
+                }
             }
+            for (c , l) in lanes.iter().enumerate() {
+                {
+                    let prefix = if l.is_empty() { String::new() } else { format!("{l}: ") };
+                    rsx! {
+                        li { class: "cell add", style: if many { format!("grid-column: {}", c + 1) } else { String::new() },
+                            crate::editor::Editor { key: "{program.len()}:{c}", text: String::new(), line: program.len(),
+                                placeholder: if many { format!("add a call{}…", if l.is_empty() { String::new() } else { format!(", by {l}") }) } else { "add a call…".to_string() },
+                                common: common(),
+                                done: move |t: String| if !t.is_empty() { let mut ui = ui; ui.program.write().push(format!("{prefix}{t}")); },
+                                focus: move |_| {} }
+                        }
+                    }
+                }
+            }
+        }
+        div { class: "ends",
+            if let Some((k, t)) = before { a { onclick: move |_| open(ui, k), "← {t}" } } else { span {} }
+            if let Some((k, t)) = after { a { onclick: move |_| open(ui, k), b { "Next: {t} →" } } }
         }
     }
 }
 
+/// A lane's head: its runner's task, as its first call's syscall has it,
+/// else its runner as written.
+fn lane_name(ui: Ui, runner: &str, program: &[String]) -> String {
+    let id = program.iter().enumerate().filter(|(_, l)| lane(l) == runner).find_map(|(j, _)| match ui.outcomes.read().get(j) {
+        Some(Outcome::Call { id, .. }) => Some(*id),
+        _ => None,
+    });
+    let m = machine();
+    let task = id.and_then(|id| m.syscall_of(id)).and_then(|k| m.view(|v| v.syscalls().into_iter().nth(k))).map(|s| s.task);
+    match task {
+        Some(t) => format!("{}({})", t.comm.unwrap_or_default(), t.pid.unwrap_or(0)),
+        None if runner.is_empty() => "the program".into(),
+        None => runner.into(),
+    }
+}
+
 /// A program's line `j` (written in place: Enter makes the program again,
-/// the line changed, or removed if emptied): what it did; a call, its
-/// recording selected as it gets the focus.
+/// the line changed, or removed if emptied, or by its ✕): what it did; a
+/// call, its recording selected as it gets the focus. In a lane, `column`.
 #[component]
-fn Cell(j: usize, line: String, outcome: Option<Outcome>, call: Option<usize>) -> Element {
+fn Cell(j: usize, line: String, outcome: Option<Outcome>, call: Option<usize>, column: usize) -> Element {
     let ui = use_context::<Ui>();
     let selected = call.is_some() && call.and_then(|n| call_of(ui, n)) == (ui.call)();
+    // (In a lane, its runner is its column's: not written on the line.)
+    let runner = lane(&line);
+    let shown = if column > 0 && !runner.is_empty() { statement(&line).map(|s| s.text).unwrap_or(line.clone()) } else { line.clone() };
+    let style = if column > 0 { format!("grid-column: {column}") } else { String::new() };
     rsx! {
-        li { class: if selected { "cell on" } else { "cell" },
-            crate::editor::Editor { text: line.clone(), line: j, placeholder: "", common: common(),
+        li { class: if selected { "cell on" } else { "cell" }, style: "{style}",
+            crate::editor::Editor { text: shown, line: j, placeholder: "", common: common(),
                 done: move |t: String| {
                     let mut ui = ui;
                     let mut p = ui.program.write();
+                    let t = if column > 0 && !runner.is_empty() && !t.is_empty() && lane(&t).is_empty() { format!("{runner}: {t}") } else { t };
                     if t.is_empty() { p.remove(j); } else { p[j] = t; }
                 },
                 focus: move |_| if let Some(k) = call.and_then(|n| call_of(ui, n)) { ui.select(k) } }
             span { class: "result", {said(outcome.as_ref())} }
+            button { class: "x", title: "remove this line", onclick: move |_| { let mut ui = ui; ui.program.write().remove(j); }, "✕" }
         }
         if let Some(Outcome::Call { changed, .. }) = &outcome && !changed.is_empty() {
-            div { class: "changed mono dim", "{changed.join(\"   \")}" }
+            li { class: "changed mono", style: "{style}", "{changed.join(\"   \")}" }
         }
     }
 }

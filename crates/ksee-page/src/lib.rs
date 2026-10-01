@@ -16,6 +16,8 @@ use wasm_bindgen::prelude::*;
 
 mod chart;
 mod editor;
+mod highlight;
+mod layout;
 mod lesson;
 mod panels;
 #[cfg(feature = "selftest")]
@@ -62,16 +64,21 @@ fn App() -> Element {
     });
     let derived = state::Derived::new(ui);
     use_context_provider(|| derived);
+    let sizes = use_context_provider(|| Signal::new(layout::Sizes::kept()));
+    use_context_provider(|| Signal::new(None::<layout::Drag>));
     rsx! {
         lesson::Header {}
-        main { class: "page",
+        main { class: "page", style: "{sizes().style()}",
             article { class: "lesson", lesson::Lesson {} }
+            layout::Handle { split: layout::Split::Left }
             section { class: "work", tabindex: "0", onkeydown: move |e| stack::key(ui, &e),
                 if ui.call.read().is_some() {
-                    chart::Chart {}
+                    chart::Timeline {}
+                    layout::Handle { split: layout::Split::Chart }
                     stack::Transport {}
                     div { class: "below",
                         source::Source {}
+                        layout::Handle { split: layout::Split::Right }
                         panels::Tabs {}
                     }
                 } else {
@@ -79,5 +86,6 @@ fn App() -> Element {
                 }
             }
         }
+        layout::Sheet {}
     }
 }

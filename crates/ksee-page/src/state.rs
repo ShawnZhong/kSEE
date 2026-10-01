@@ -33,15 +33,28 @@ impl<T> std::ops::Deref for Shared<T> {
     }
 }
 
+/// The moment under the pointer, over the chart: a column's record, and
+/// the bar there (its call's first record; code inlined into it, or not).
+#[derive(Clone, Copy, PartialEq)]
+pub struct Peek {
+    pub i: usize,
+    pub first: usize,
+    pub inlined: bool,
+}
+
 /// What the state makes, computed once each time what it depends on
-/// changes: the call selected (as the snapshot has it), its lines and its
-/// chart; the stack at the cursor (and the cursor's line).
+/// changes: the call selected (as the snapshot has it), its lines; the
+/// chart's window and the chart; the moment shown (the pointer's, else the
+/// cursor's), its stack, and the frame shown on it.
 #[derive(Clone, Copy)]
 pub struct Derived {
     pub syscall: Memo<Option<SyscallSummary>>,
     pub lines: Memo<Shared<Vec<Line>>>,
+    pub window: Memo<(usize, usize)>,
     pub chart: Memo<Shared<Chart>>,
-    pub stack: Memo<Shared<(Vec<Frame>, Option<Line>)>>,
+    pub moment: Memo<Option<(usize, Option<usize>)>>,
+    pub stack: Memo<Shared<Vec<Frame>>>,
+    pub shown: Memo<usize>,
 }
 
 impl Derived {
@@ -56,16 +69,27 @@ impl Derived {
             let m = machine();
             Shared(Rc::new(syscall.cloned().map_or_else(Vec::new, |s| m.view(|v| v.lines(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), s.task.addr)))))
         });
+        let window = use_memo(move || {
+            (ui.version)();
+            let end = machine().records().saturating_sub(1);
+            (ui.win)().or_else(|| syscall.cloned().map(|s| (s.first, s.last.unwrap_or(end)))).unwrap_or((0, end))
+        });
         let chart = use_memo(move || {
-            let m = machine();
-            Shared(Rc::new(syscall.cloned().map_or_else(Chart::default, |s| m.view(|v| v.chart(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), crate::chart::COLUMNS)))))
+            let (a, b) = window();
+            Shared(Rc::new(machine().view(|v| v.chart(a, b, crate::chart::COLUMNS))))
+        });
+        let moment = use_memo(move || match (ui.peek)() {
+            Some(p) => Some((p.i, None)),
+            None => lines.read().get((ui.cursor)()).map(|l| (l.i, Some(l.nth as usize))),
         });
         let stack = use_memo(move || {
-            let l = lines.read().get((ui.cursor)()).cloned();
-            let frames = l.as_ref().map_or_else(Vec::new, |l| machine().at_moment(l.i, |v, mem| v.call_stack(l.i, Some(l.nth as usize), mem, l.i)));
-            Shared(Rc::new((frames, l)))
+            Shared(Rc::new(moment().map_or_else(Vec::new, |(i, nth)| machine().at_moment(i, |v, mem| v.call_stack(i, nth, mem, i)))))
         });
-        Derived { syscall, lines, chart, stack }
+        let shown = use_memo(move || match (ui.peek)() {
+            Some(p) => stack.read().iter().position(|f| f.first == p.first && f.inlined == p.inlined).unwrap_or(0),
+            None => (ui.frame)().unwrap_or(0),
+        });
+        Derived { syscall, lines, window, chart, moment, stack, shown }
     }
 }
 
@@ -75,6 +99,7 @@ pub enum Tab {
     Objects,
     Tasks,
     Console,
+    Trace,
 }
 
 #[derive(Clone, Copy)]
@@ -84,6 +109,10 @@ pub struct Ui {
     pub call: Signal<Option<usize>>,
     pub cursor: Signal<usize>,
     pub frame: Signal<Option<usize>>,
+    /// The chart's window (records; none: the call selected's), and the
+    /// moment under the pointer, if it is over the chart.
+    pub win: Signal<Option<(usize, usize)>>,
+    pub peek: Signal<Option<Peek>>,
     pub tab: Signal<Tab>,
     pub console: Signal<String>,
     /// The text looked for in the functions' names (the chart's bars).
@@ -102,6 +131,8 @@ impl Ui {
             call: Signal::new(None),
             cursor: Signal::new(0),
             frame: Signal::new(None),
+            win: Signal::new(None),
+            peek: Signal::new(None),
             tab: Signal::new(Tab::Stack),
             console: Signal::new(String::new()),
             find: Signal::new(String::new()),
@@ -121,16 +152,23 @@ impl Ui {
         consume_context::<Derived>().lines.cloned()
     }
 
+    /// Syscall `k`'s lines (its task's), as the snapshot has them.
+    fn lines_of(k: usize) -> Vec<Line> {
+        let m = machine();
+        m.view(|v| {
+            let Some(s) = v.syscalls().into_iter().nth(k) else { return Vec::new() };
+            v.lines(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), s.task.addr)
+        })
+    }
+
     /// Select call `k` (an index in the syscalls), the cursor at its own
-    /// code's first line (past the syscall entry's), on its innermost frame.
+    /// code's first line (past the syscall entry's), on its innermost
+    /// frame; the chart's window, its records.
     pub fn select(mut self, k: usize) {
         self.call.set(Some(k));
+        self.win.set(None);
         // (Its lines, now: the memo's are the call's before until it runs again.)
-        let m = machine();
-        let own = m.view(|v| {
-            let s = v.syscalls().into_iter().nth(k)?;
-            v.lines(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), s.task.addr).iter().position(|l| l.func != ksee_core::arch::SYSCALL)
-        });
+        let own = Ui::lines_of(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
         self.go(own.unwrap_or(0));
     }
 
@@ -138,5 +176,22 @@ impl Ui {
     pub fn go(mut self, k: usize) {
         self.cursor.set(k);
         self.frame.set(None);
+    }
+
+    /// The cursor to record `i` (a moment in the chart), on frame `frame`
+    /// there (from the innermost): the call it is in selected first, if
+    /// another's (the window stays); its line there, the last at or before it.
+    pub fn go_record(mut self, i: usize, frame: Option<usize>) {
+        let m = machine();
+        let k = m.view(|v| v.rec.syscall_at(i));
+        let lines = match k {
+            Some(k) if Some(k) != (self.call)() => {
+                self.call.set(Some(k));
+                Ui::lines_of(k)
+            }
+            _ => self.lines().0.as_ref().clone(),
+        };
+        self.cursor.set(lines.iter().rposition(|l| l.i <= i).unwrap_or(0));
+        self.frame.set(frame);
     }
 }
