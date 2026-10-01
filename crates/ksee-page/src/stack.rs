@@ -109,7 +109,7 @@ pub fn Stack() -> Element {
                 div { class: "current dim", "current task: "
                     a { class: "mono", title: "its task_struct, in Tasks (the task running: open there)",
                         onclick: move |_| { ui.tab.set(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
-                        "{crate::chart::named(&t)}" }
+                        "{t.named()}" }
                 }
             }
         }

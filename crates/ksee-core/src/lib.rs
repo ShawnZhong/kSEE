@@ -28,6 +28,7 @@ pub mod module;
 pub mod recording;
 pub mod stack;
 pub mod tables;
+pub mod text;
 pub mod trace;
 pub mod types;
 pub mod view;

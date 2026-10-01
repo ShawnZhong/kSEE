@@ -9,7 +9,6 @@ use dioxus::html::geometry::PixelsVector2D;
 use dioxus::prelude::*;
 use ksee_core::view::{Group, Node, RecordKind, RegionKind, TaskState};
 
-use crate::chart::named;
 use crate::machine;
 use crate::state::{Derived, Shared, Tab, Ui};
 
@@ -73,7 +72,7 @@ fn Objects() -> Element {
         Shared(Rc::new(d.syscall.cloned().map_or_else(Vec::new, |s| m.view(|v| v.objects(s.first, s.last.unwrap_or(m.records().saturating_sub(1)))))))
     })();
     let Some(s) = ui.syscall() else { return rsx! { p { class: "pad dim", "Select a call: what it did to the kernel's data." } } };
-    let title = format!("{} by {}", s.name, named(&s.task));
+    let title = format!("{} by {}", s.name, s.task.named());
     if nodes.is_empty() {
         return rsx! { p { class: "pad dim", "{title} changed nothing of the kernel's data" } };
     }
@@ -89,7 +88,7 @@ fn Objects() -> Element {
     let mut others: Vec<(String, Vec<usize>)> = Vec::new();
     for k in (0..nodes.len()).filter(|&k| nodes[k].group == Group::Changed) {
         let Some(t) = &nodes[k].by else { continue };
-        let t = named(t);
+        let t = t.named();
         match others.iter_mut().find(|(x, _)| *x == t) {
             Some((_, l)) => l.push(k),
             None => others.push((t, vec![k])),
@@ -230,7 +229,7 @@ fn Tasks() -> Element {
                     let place = if t.last.is_some() { t.syscall.clone().or(t.func.clone()).map_or(String::new(), |s| format!(" in {s}")) } else { String::new() };
                     let class = format!("frame{}{}", if running { " on" } else { "" }, if matches!(t.state, TaskState::Later | TaskState::Exited) { " later" } else { "" });
                     let fields = if is_open { m.at_moment(i, |v, mem| v.task_fields(mem, t.task.addr)).fields } else { Vec::new() };
-                    let name = named(&t.task);
+                    let name = t.task.named();
                     let q = p.clone();
                     rsx! {
                         tr { class, title,
