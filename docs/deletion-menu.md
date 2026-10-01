@@ -86,7 +86,7 @@ linked).
 | J4 | Layout drag/storage (layout.rs 108; storage-kept ~25) | 25–108 | resizable panes / kept sizes | USER DECIDES |
 | J5 | Find box (chart.rs ~35) | ~35 | function navigation for devs | USER DECIDES |
 | J6 | `ksee deploy` (deploy.rs 38 + arms/docs) | ~50 | publishing to gh-pages | USER DECIDES |
-| J7 | Proposals docs (info 138 + ui 111) | ~249 | working notes; fold after tasks 12/13 close | DEFER |
+| J7 | Proposals docs (info 132 + ui 111) | ~243 | working notes; fold after tasks 12/13 close | DEFER |
 | J8 | umask-inside overlap; yours.json (8) | ~30 | first-look funnel; page-lesson call | USER DECIDES |
 
 NOT candidates (lesson- or design-load-bearing): Objects tab (8 lesson
