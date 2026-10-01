@@ -47,7 +47,8 @@ pub enum Outcome {
 async fn run(mut ui: Ui, lines: Vec<String>) {
     let m = machine();
     ui.outcomes.write().clear();
-    ui.call.set(None);
+    ui.at.set(None);
+    ui.peek.set(None);
     if m.restart().await.is_err() {
         return;
     }
@@ -400,7 +401,7 @@ fn lane_name(ui: Ui, runner: &str, program: &[String]) -> (String, i32) {
 #[component]
 fn Cell(j: usize, line: String, outcome: Option<Outcome>, call: Option<usize>, lane: Option<(usize, i32)>) -> Element {
     let ui = use_context::<Ui>();
-    let selected = call.is_some() && call.and_then(|n| call_of(ui, n)) == (ui.call)();
+    let selected = call.is_some() && call.and_then(|n| call_of(ui, n)) == ui.call();
     // (In a lane, its runner is its column's: not written on the line.)
     let runner = self::lane(&line);
     let shown = if lane.is_some() && !runner.is_empty() { statement(&line).map(|s| s.text).unwrap_or(line.clone()) } else { line.clone() };

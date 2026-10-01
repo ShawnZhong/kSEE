@@ -11,7 +11,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 
 use crate::machine;
-use crate::state::{Derived, Shared, Tab, Ui};
+use crate::state::{Derived, Moment, Shared, Tab, Ui};
 
 /// The stack at the moment shown (the pointer's over the chart, else the
 /// cursor's).
@@ -22,7 +22,7 @@ pub fn frames() -> Shared<Vec<Frame>> {
 /// The frame shown: the one chosen (or under the pointer), else the innermost.
 pub fn shown() -> Option<Frame> {
     let d = use_context::<Derived>();
-    let k = d.shown.cloned();
+    let k = d.frame.cloned();
     let frames = d.stack.read();
     frames.get(k).or(frames.first()).cloned()
 }
@@ -33,13 +33,13 @@ pub fn moment() -> usize {
 }
 
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
-/// lines, into its task's syscall after it (or before). Context-free (the
-/// window's listener calls it): the lines read from the Machine, not the
-/// memos.
+/// lines, into its task's syscall after it (or before). The lines read
+/// from the Machine (the window's listener calls it, outside the page).
 pub fn walk(ui: Ui, dir: isize, how: Move) {
-    let Some(k) = (ui.call)() else { return };
+    let Some(at) = ui.at.peek().clone() else { return };
+    let k = at.call;
     let lines = Ui::lines_of(k);
-    if let Some(j) = step(&lines, (ui.cursor)(), dir, how) {
+    if let Some(j) = step(&lines, at.line, dir, how) {
         ui.go(j);
         return;
     }
@@ -59,25 +59,13 @@ pub fn walk(ui: Ui, dir: isize, how: Move) {
     }
 }
 
-/// The stack's length at the moment shown (context-free: see `walk`).
-fn stack_len(ui: Ui) -> usize {
-    let Some(k) = (ui.call)() else { return 0 };
-    let lines = Ui::lines_of(k);
-    let peeked = (ui.peek)();
-    let i = peeked.as_ref().map_or_else(|| lines.get((ui.cursor)()).map_or(0, |l| l.i), |p| p.i);
-    let nth = if peeked.is_some() {
-        None
-    } else {
-        lines.get((ui.cursor)()).map(|l| l.nth as usize)
-    };
-    machine().at_moment(i, |v, mem| v.call_stack(i, nth, mem, i).len())
-}
-
-/// The frame chosen, `dir` up the Stack (-1: the callee) or down (1: the caller).
-pub fn frame(mut ui: Ui, dir: isize) {
-    let n = stack_len(ui);
-    let k = (ui.frame)().unwrap_or(0);
-    ui.frame.set(Some(k.saturating_add_signed(dir).min(n.saturating_sub(1))));
+/// The frame chosen on the cursor's stack (`d.stack`), `dir` up it (-1:
+/// the callee) or down (1: the caller).
+pub fn frame(mut ui: Ui, d: Derived, dir: isize) {
+    let Some(at) = ui.at.peek().clone() else { return };
+    let frames = d.stack.peek();
+    let k = d.frame.peek().saturating_add_signed(dir).min(frames.len().saturating_sub(1));
+    ui.at.set(Some(Moment { frame: frames.get(k).map(|f| (f.first, f.func.clone())), ..at }));
 }
 
 /// The page's keys, anywhere on it: one listener on the window; ← → a
@@ -85,6 +73,7 @@ pub fn frame(mut ui: Ui, dir: isize) {
 /// up (its callee) or down (its caller). Not in text fields (the lesson's
 /// lines, find): arrows move the cursor there.
 pub fn listen(ui: Ui) {
+    let d = use_context::<Derived>();
     use_hook(move || {
         let Some(window) = web_sys::window() else { return };
         let document = window.document();
@@ -99,12 +88,14 @@ pub fn listen(ui: Ui) {
                     return;
                 }
             }
+            let mut peek = ui.peek;
+            peek.set(None);
             let how = if e.alt_key() { Move::Out } else if e.shift_key() { Move::Over } else { Move::Into };
             let arrow = match e.key().as_str() {
                 "ArrowLeft" => { walk(ui, -1, how); true }
                 "ArrowRight" => { walk(ui, 1, how); true }
-                "ArrowUp" => { frame(ui, -1); true }
-                "ArrowDown" => { frame(ui, 1); true }
+                "ArrowUp" => { frame(ui, d, -1); true }
+                "ArrowDown" => { frame(ui, d, 1); true }
                 _ => false,
             };
             if arrow {
@@ -124,7 +115,7 @@ pub fn listen(ui: Ui) {
 pub fn Stack() -> Element {
     let mut ui = use_context::<Ui>();
     let frames = frames();
-    let chosen = use_context::<Derived>().shown.cloned();
+    let chosen = use_context::<Derived>().frame.cloned();
     let i = moment();
     let task = machine().view(|v| v.rec.tasks.get(i).map(|&t| v.task(t, i)));
     let mut open = use_context::<Signal<BTreeSet<String>>>();
@@ -132,7 +123,13 @@ pub fn Stack() -> Element {
         div { class: "stack",
             table { class: "objs",
                 for (k , f) in frames.iter().cloned().enumerate() {
-                    tr { class: if k == chosen { "frame on" } else { "frame" }, onclick: move |_| ui.frame.set(Some(k)),
+                    tr { class: if k == chosen { "frame on" } else { "frame" }, onclick: {
+                        let id = (f.first, f.func.clone());
+                        move |_| {
+                            let at = ui.at.peek().clone();
+                            if let Some(at) = at { ui.peek.set(None); ui.at.set(Some(Moment { frame: Some(id.clone()), ..at })) }
+                        }
+                    },
                         td { colspan: "3",
                             a { class: "mono", "{f.func}" }
                             span { class: "dim mono", " {f.file.clone().unwrap_or_default()}:{f.line.unwrap_or(0)}" }

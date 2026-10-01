@@ -1,7 +1,7 @@
-//! The page's state: the snapshot (a new one after each call), the call
-//! selected, the cursor in it (a line it ran: an index in its lines), and
-//! the frame chosen on the Stack (none: the innermost). Derived from them:
-//! the call's lines, and the moment the cursor is at.
+//! The page's state: the snapshot (a new one after each call), and two
+//! moments: the cursor (where a click or a step left it) and the one under
+//! the pointer, over the chart. The page shows the pointer's, else the
+//! cursor's; derived from it: its call's lines, its stack, its frame.
 
 use std::rc::Rc;
 
@@ -36,35 +36,41 @@ impl<T> std::ops::Deref for Shared<T> {
     }
 }
 
-/// The moment under the pointer, over the chart: a column's record, and
-/// the bar there, if one (its call's first record and function).
-#[derive(Clone, PartialEq)]
-pub struct Peek {
-    pub i: usize,
-    pub call: Option<(usize, String)>,
+/// A moment: a call (an index in the syscalls), a line it ran (an index
+/// in its lines), and the frame chosen on the stack there, by its call's
+/// first record and function (none: the innermost).
+#[derive(Clone, PartialEq, Default)]
+pub struct Moment {
+    pub call: usize,
+    pub line: usize,
+    pub frame: Option<(usize, String)>,
 }
 
 /// What the state makes, computed once each time what it depends on
-/// changes: the call selected (as the snapshot has it), its lines; the
-/// chart's window and the chart; the moment shown (the pointer's, else the
-/// cursor's), its stack, and the frame shown on it.
+/// changes: the moment shown (the pointer's, else the cursor's), its call
+/// (as the snapshot has it) and lines; the chart's window and the chart;
+/// the record the moment is at, its stack, and the frame shown on it; and
+/// the record the cursor is at (the chart's line).
 #[derive(Clone, Copy)]
 pub struct Derived {
+    pub shown: Memo<Option<Moment>>,
     pub syscall: Memo<Option<SyscallSummary>>,
     pub lines: Memo<Shared<Vec<Line>>>,
     pub window: Memo<(usize, usize)>,
     pub chart: Memo<Shared<Chart>>,
     pub moment: Memo<Option<(usize, Option<usize>)>>,
     pub stack: Memo<Shared<Vec<Frame>>>,
-    pub shown: Memo<usize>,
+    pub frame: Memo<usize>,
+    pub cursor: Memo<Option<usize>>,
 }
 
 impl Derived {
     /// The memos (a component's hooks: the App's).
     pub fn new(ui: Ui) -> Derived {
+        let shown = use_memo(move || (ui.peek)().or((ui.at)()));
         let syscall = use_memo(move || {
             (ui.version)();
-            let k = (ui.call)()?;
+            let k = shown()?.call;
             machine().view(|v| v.syscalls().into_iter().nth(k))
         });
         let lines = use_memo(move || {
@@ -84,18 +90,20 @@ impl Derived {
             let (a, b) = window();
             Shared(Rc::new(if up() { machine().view(|v| v.chart(a, b, COLUMNS)) } else { Chart::default() }))
         });
-        let moment = use_memo(move || match (ui.peek)() {
-            Some(p) => Some((p.i, None)),
-            None => lines.read().get((ui.cursor)()).map(|l| (l.i, Some(l.nth as usize))),
-        });
+        let moment = use_memo(move || lines.read().get(shown()?.line).map(|l| (l.i, Some(l.nth as usize))));
         let stack = use_memo(move || {
             Shared(Rc::new(moment().map_or_else(Vec::new, |(i, nth)| machine().at_moment(i, |v, mem| v.call_stack(i, nth, mem, i)))))
         });
-        let shown = use_memo(move || match (ui.peek)() {
-            Some(p) => p.call.and_then(|c| stack.read().iter().position(|f| f.first == c.0 && f.func == c.1)).unwrap_or(0),
-            None => (ui.frame)().unwrap_or(0),
+        let frame = use_memo(move || shown().and_then(|m| m.frame).and_then(|(first, func)| stack.read().iter().position(|f| f.first == first && f.func == func)).unwrap_or(0));
+        let cursor = use_memo(move || {
+            let at = (ui.at)()?;
+            if shown().is_some_and(|s| s.call == at.call) {
+                lines.read().get(at.line).map(|l| l.i)
+            } else {
+                Ui::lines_of(at.call).get(at.line).map(|l| l.i)
+            }
         });
-        Derived { syscall, lines, window, chart, moment, stack, shown }
+        Derived { shown, syscall, lines, window, chart, moment, stack, frame, cursor }
     }
 }
 
@@ -111,13 +119,12 @@ pub enum Tab {
 pub struct Ui {
     /// Bumped at each snapshot: what reads the recording reads it again.
     pub version: Signal<u32>,
-    pub call: Signal<Option<usize>>,
-    pub cursor: Signal<usize>,
-    pub frame: Signal<Option<usize>>,
-    /// The chart's window (records; none: the whole recording), and the
-    /// moment under the pointer, if it is over the chart.
+    /// The cursor (none: no call selected), and the moment under the
+    /// pointer, if it is over the chart.
+    pub at: Signal<Option<Moment>>,
+    pub peek: Signal<Option<Moment>>,
+    /// The chart's window (records; none: the whole recording).
     pub win: Signal<Option<(usize, usize)>>,
-    pub peek: Signal<Option<Peek>>,
     pub tab: Signal<Tab>,
     /// The kernel: booting (none), up, or why it could not start.
     pub kernel: Signal<Option<Result<(), String>>>,
@@ -138,11 +145,9 @@ impl Ui {
     pub fn new() -> Ui {
         Ui {
             version: Signal::new(0),
-            call: Signal::new(None),
-            cursor: Signal::new(0),
-            frame: Signal::new(None),
-            win: Signal::new(None),
+            at: Signal::new(None),
             peek: Signal::new(None),
+            win: Signal::new(None),
             tab: Signal::new(Tab::Stack),
             kernel: Signal::new(None),
             console: Signal::new(String::new()),
@@ -154,12 +159,17 @@ impl Ui {
         }
     }
 
-    /// The call selected, as the snapshot has it (Derived's).
+    /// The call selected (the cursor's).
+    pub fn call(&self) -> Option<usize> {
+        self.at.read().as_ref().map(|m| m.call)
+    }
+
+    /// The call shown, as the snapshot has it (Derived's).
     pub fn syscall(&self) -> Option<SyscallSummary> {
         consume_context::<Derived>().syscall.cloned()
     }
 
-    /// The lines the call selected ran (its task's), in order.
+    /// The lines the call shown ran (its task's), in order.
     pub fn lines(&self) -> Shared<Vec<Line>> {
         consume_context::<Derived>().lines.cloned()
     }
@@ -177,36 +187,38 @@ impl Ui {
     /// code's first line (past the syscall entry's), on its innermost
     /// frame; the chart's window the whole recording, unless it has the call.
     pub fn select(mut self, k: usize) {
-        self.call.set(Some(k));
         let s = machine().view(|v| v.syscalls().into_iter().nth(k));
         if let (Some((a, b)), Some(s)) = ((self.win)(), s) && (s.first < a || s.last.is_none_or(|l| l > b)) {
             self.win.set(None);
         }
-        // (Its lines, now: the memo's are the call's before until it runs again.)
         let own = Ui::lines_of(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
-        self.go(own.unwrap_or(0));
+        self.peek.set(None);
+        self.at.set(Some(Moment { call: k, line: own.unwrap_or(0), frame: None }));
     }
 
-    /// The cursor to line `k`, on its innermost frame.
+    /// The cursor to line `k` of its call, on its innermost frame.
     pub fn go(mut self, k: usize) {
-        self.cursor.set(k);
-        self.frame.set(None);
+        if let Some(call) = self.call() {
+            self.peek.set(None);
+            self.at.set(Some(Moment { call, line: k, frame: None }));
+        }
     }
 
-    /// The cursor to record `i` (a moment in the chart), on frame `frame`
-    /// there (from the innermost): the call it is in selected first, if
-    /// another's (the window stays); its line there, the last at or before it.
-    pub fn go_record(mut self, i: usize, frame: Option<usize>) {
-        let m = machine();
-        let k = m.view(|v| v.rec.syscall_at(i));
-        let lines = match k {
-            Some(k) if Some(k) != (self.call)() => {
-                self.call.set(Some(k));
-                Ui::lines_of(k)
-            }
-            _ => self.lines().0.as_ref().clone(),
-        };
-        self.cursor.set(lines.iter().rposition(|l| l.i <= i).unwrap_or(0));
-        self.frame.set(frame);
+    /// The moment at record `i` (in the chart), on frame `frame` there:
+    /// the call it is in, its line there (the last at or before it).
+    pub fn moment_at(&self, i: usize, frame: Option<(usize, String)>) -> Option<Moment> {
+        let call = machine().view(|v| v.rec.syscall_at(i))?;
+        let shown = consume_context::<Derived>().shown.peek().as_ref().map(|m| m.call);
+        let line = |lines: &[Line]| lines.iter().rposition(|l| l.i <= i).unwrap_or(0);
+        let line = if shown == Some(call) { line(&self.lines()) } else { line(&Ui::lines_of(call)) };
+        Some(Moment { call, line, frame })
+    }
+
+    /// The cursor to record `i`, on frame `frame` (see `moment_at`).
+    pub fn go_record(mut self, i: usize, frame: Option<(usize, String)>) {
+        if let Some(m) = self.moment_at(i, frame) {
+            self.peek.set(None);
+            self.at.set(Some(m));
+        }
     }
 }

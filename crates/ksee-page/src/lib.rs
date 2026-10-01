@@ -111,7 +111,7 @@ fn App() -> Element {
             }
             layout::Handle { split: layout::Split::Left }
             section { class: "work",
-                if ui.call.read().is_some() {
+                if ui.at.read().is_some() {
                     chart::Timeline {}
                     layout::Handle { split: layout::Split::Chart }
                     div { class: "below",

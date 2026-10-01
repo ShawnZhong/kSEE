@@ -12,7 +12,7 @@ use dioxus::prelude::*;
 use ksee_core::view::{Chart, Move};
 
 use crate::machine;
-use crate::state::{Derived, Peek, Shared, Ui};
+use crate::state::{Derived, Shared, Ui};
 
 /// The overview's buckets.
 const BUCKETS: usize = 240;
@@ -93,7 +93,7 @@ fn Overview() -> Element {
     (ui.version)();
     let mut width = use_signal(|| 1000.0f64);
     let m = machine();
-    let cursor = d.moment.cloned().map(|(i, _)| i);
+    let cursor = d.cursor.cloned();
     let (n, tasks, starts, (wa, wb), at) = m.view(|v| {
         let n = v.rec.steps().max(1);
         let tasks: Vec<i32> = (0..BUCKETS).map(|k| {
@@ -163,7 +163,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             k = e;
         }
     }
-    let cursor = d.moment.cloned().map(|(i, _)| i);
+    let cursor = d.cursor.cloned();
     let (wa, wb) = (d.window)();
     // (Where the cursor is, across the window (%); the calls on its stack.)
     let now = cursor.filter(|&i| i >= wa && i <= wb).map(|i| machine().view(|v| {
@@ -173,10 +173,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let calls: Vec<(usize, String)> = d.stack.read().iter().map(|f| (f.first, f.func.clone())).collect();
     let find = (ui.find)().to_lowercase();
     // (The bar outlined: the one under the pointer, else the frame shown's call.)
-    let lit = match (ui.peek)() {
-        Some(p) => p.call,
-        None => d.stack.read().get(d.shown.cloned()).map(|f| (f.first, f.func.clone())),
-    };
+    let lit = tip().map(|t| t.call).or_else(|| d.stack.read().get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
     let height = (depth as f64 * row).max(room);
     // (What is under the pointer, at x, y in the chart: its column, and the bar there, if
     // one: its depth from the outermost.)
@@ -240,8 +237,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     let at = e.element_coordinates();
                     let Some((k, dd)) = hit(&chart, at.x, at.y) else { return };
                     let call = dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]).map(|b| (b.first, b.name.clone()));
-                    let peek = Some(Peek { i: chart.cols[k].i, call });
-                    if (ui.peek)() != peek { ui.peek.set(peek); }
+                    let peek = ui.moment_at(chart.cols[k].i, call);
+                    if *ui.peek.peek() != peek { ui.peek.set(peek); }
                     let p = e.client_coordinates();
                     match dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]) {
                         None => if tip().is_some() { tip.set(None) },
@@ -253,32 +250,19 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 }
             },
             onpointerup: move |_| pan.set(None),
-            // (A click, not a drag: the hovered preview committed — the
-            // moment and bar under the pointer, not re-derived beside them.)
+            // (A click, not a drag: the moment previewed committed, as it is.)
             onclick: {
                 let chart = chart.clone();
                 move |e: MouseEvent| {
                     if dragged() { dragged.set(false); return }
                     let mut ui = ui;
-                    match (ui.peek)() {
-                        Some(p) => {
-                            // (The hovered bar's frame, from the innermost.)
-                            let frame = p.call.and_then(|(first, name)| {
-                                chart.cols.iter().find(|c| c.i == p.i).and_then(|c| {
-                                    c.frames.iter().position(|&b| {
-                                        chart.bars.get(b as usize).is_some_and(|bar| bar.first == first && bar.name == name)
-                                    }).map(|dd| c.frames.len() - 1 - dd)
-                                })
-                            });
-                            ui.go_record(p.i, frame);
-                        }
-                        // (No hover yet — the pointer never moved: what is under it.)
-                        None => {
-                            let at = e.element_coordinates();
-                            let Some((k, dd)) = hit(&chart, at.x, at.y) else { return };
-                            ui.go_record(chart.cols[k].i, dd.map(|dd| chart.cols[k].frames.len() - 1 - dd));
-                        }
-                    }
+                    let at = e.element_coordinates();
+                    let peek = ui.peek.peek().clone().or_else(|| {
+                        let (k, dd) = hit(&chart, at.x, at.y)?;
+                        let call = dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]).map(|b| (b.first, b.name.clone()));
+                        ui.moment_at(chart.cols[k].i, call)
+                    });
+                    if peek.is_some() { ui.at.set(peek); }
                     ui.peek.set(None);
                 }
             },
@@ -301,7 +285,6 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     }
                 }
             }
-            // (The line at the committed cursor only: hover never moves it.)
             if let Some(x) = now { div { class: "now", style: "left: {x}%" } }
         }
     }
@@ -369,8 +352,9 @@ fn Strip() -> Element {
 #[component]
 fn Transport() -> Element {
     let ui = use_context::<Ui>();
+    let d = use_context::<Derived>();
     let lines = ui.lines();
-    let here = lines.get((ui.cursor)());
+    let here = use_context::<Derived>().shown.read().as_ref().and_then(|m| lines.get(m.line));
     let s = ui.syscall();
     let task = s.as_ref().map(|s| s.task.named()).unwrap_or_default();
     let place = here.map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
@@ -385,8 +369,8 @@ fn Transport() -> Element {
         div { class: "transport",
             button { title: "the line before (←); Shift: back over the calls; Alt: out, to where the function was called", onclick: move |e| crate::stack::walk(ui, -1, how(&e)), "◀" }
             button { title: "the next line (→); Shift: over the calls; Alt: out, past the function's return", onclick: move |e| crate::stack::walk(ui, 1, how(&e)), "▶" }
-            button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| crate::stack::frame(ui, -1), "▲" }
-            button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| crate::stack::frame(ui, 1), "▼" }
+            button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| crate::stack::frame(ui, d, -1), "▲" }
+            button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| crate::stack::frame(ui, d, 1), "▼" }
             span { class: "where mono dim", "{task} · {place}{turn}{call}{returned}" }
         }
     }

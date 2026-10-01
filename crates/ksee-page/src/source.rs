@@ -82,7 +82,7 @@ pub fn Source() -> Element {
 /// how often; what each stored, its note and the write's record.
 fn ran(ui: Ui, file: &str) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
     let m = machine();
-    let k = (ui.call)();
+    let k = ui.call();
     let counts = m.view(|v| v.coverage(file, k)).into_iter().map(|c| (c.line, c.count)).collect();
     let cur = crate::stack::moment();
     let notes = ui.syscall().map(|s| m.view(|v| v.notes(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), file, cur)))
