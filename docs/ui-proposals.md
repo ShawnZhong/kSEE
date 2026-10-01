@@ -3,8 +3,8 @@
 For page-lesson (the Header, the lessons menu, the theme toggle) and
 page-chart (the timeline and the transport, which do not move). CSS and
 docs only: no Rust, no new dependencies. The CSS half lives in
-`web/index.html` (the `.topbar` rules and the `:root[data-theme="dark"]`
-override); the DOM half is offered as exact class names below, so each
+`web/index.html` (the `.topbar` rules and the one `light-dark()` palette
+with the `data-theme` forcing rules); the DOM half is offered as exact
 owner can land it in one small diff.
 
 ## Why a top bar
