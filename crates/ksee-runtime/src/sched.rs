@@ -230,9 +230,11 @@ const BOOT_NS: u64 = 1_000_000_000;
 fn timer_wakes(t: &ksee_core::types::Types, mem: &dyn ksee_core::Memory, tasks: &[u32]) -> bool {
     let off = |s: &str, f: &str| t.field(s, f).map(|(off, _)| off);
     let size = |s: &str| t.find(s).map_or(0, |id| t.size_of(id));
+    // (How far a timer list is walked: kernel memory read live may be torn.)
+    const MAX_WALK: u32 = 4096;
     // (A list's nodes from `first`, by the next pointer at `next`.)
     let wakes = |mut p: u32, next: u32, task: u32| {
-        for _ in 0..4096 {
+        for _ in 0..MAX_WALK {
             if p == 0 {
                 return false;
             }
