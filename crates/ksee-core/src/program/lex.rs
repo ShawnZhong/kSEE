@@ -6,7 +6,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Tok {
+pub(crate) enum Tok {
     Num(i64),
     Name(String),
     /// A string literal's bytes (no NUL added).
@@ -16,7 +16,7 @@ pub enum Tok {
 
 /// A token and its bytes in the text, `start..end`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Token {
+pub(crate) struct Token {
     pub tok: Tok,
     pub start: usize,
     pub end: usize,
@@ -26,7 +26,7 @@ const OPS: [&str; 22] = ["<<", ">>", "->", "(", ")", "[", "]", "{", "}", ".", ",
                          "+", "-", "~", "&", "|", "^", ":"];
 
 /// `text`'s tokens. (A string not closed: an error.)
-pub fn tokens(text: &str) -> Result<Vec<Token>, String> {
+pub(crate) fn tokens(text: &str) -> Result<Vec<Token>, String> {
     let mut out = Vec::new();
     let mut i = 0;
     let b = text.as_bytes();
@@ -77,7 +77,7 @@ pub fn tokens(text: &str) -> Result<Vec<Token>, String> {
 }
 
 /// A C string literal's inside as bytes (\n, \t, \r, \\, \", \0, \xHH).
-pub fn unquote(inner: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn unquote(inner: &str) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
     let mut chars = inner.chars();
     // (A character as its UTF-8 bytes; an escape, the byte it says.)

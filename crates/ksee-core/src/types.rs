@@ -229,7 +229,7 @@ impl Types {
     /// unions and arrays it holds, however deep: a value holds itself in
     /// none): each one's path ("f_path.dentry", "fd_array[3]"; "" itself)
     /// and offset.
-    pub fn pointers(&self, ty: u32) -> Vec<(String, u32)> {
+    pub(crate) fn pointers(&self, ty: u32) -> Vec<(String, u32)> {
         let t = self.get(self.resolve(ty));
         match &t.kind {
             Kind::Pointer(_) => alloc::vec![(String::new(), 0)],
@@ -277,12 +277,12 @@ impl Types {
     }
 
     /// Syscall `name`'s signature, as C declares it: "close(unsigned int fd)".
-    pub fn signature(&self, name: &str) -> Option<String> {
+    pub(crate) fn signature(&self, name: &str) -> Option<String> {
         Some(alloc::format!("{name}({})", self.params_of(name)?.join(", ")))
     }
 
     /// The errno name of `n` (a failed call's result is -n): ENOENT for 2.
-    pub fn errno(&self, n: i64) -> Option<&str> {
+    pub(crate) fn errno(&self, n: i64) -> Option<&str> {
         let is = |k: &str| k.strip_prefix(crate::arch::ERRNO).is_some_and(|r| !r.is_empty() && r.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
         (1..=crate::arch::MAX_ERRNO).contains(&n).then(|| self.constants.iter().find(|&(k, &v)| v == n && is(k)).map(|(k, _)| k.as_str())).flatten()
     }
@@ -313,7 +313,7 @@ impl Types {
     /// A struct's or union's members, as C names them: an anonymous
     /// struct's or union's own members in its place (their offsets from
     /// the outer one's start).
-    pub fn members(&self, kind: &Kind) -> Vec<Member> {
+    pub(crate) fn members(&self, kind: &Kind) -> Vec<Member> {
         let (Kind::Struct(members) | Kind::Union(members)) = kind else { return Vec::new() };
         let mut out = Vec::with_capacity(members.len());
         for m in members {
@@ -355,7 +355,7 @@ impl Types {
     /// Print the scalar (or string) value of type `ty` at `addr`, possibly
     /// a bitfield (`bit_off`, `bit_size`); an aggregate as "{...}" (see
     /// view::Object for their members).
-    pub fn print(&self, mem: &dyn Memory, addr: u32, ty: u32, bit_off: u32, bit_size: u32) -> String {
+    pub(crate) fn print(&self, mem: &dyn Memory, addr: u32, ty: u32, bit_off: u32, bit_size: u32) -> String {
         let mut out = String::new();
         let id = self.resolve(ty);
         let t = self.get(id);
@@ -410,13 +410,13 @@ impl Types {
     }
 
     /// If `ty` is a pointer to a struct or a union: what it points to.
-    pub fn struct_target(&self, ty: u32) -> Option<u32> {
+    pub(crate) fn struct_target(&self, ty: u32) -> Option<u32> {
         let Kind::Pointer(to) = self.get(self.resolve(ty)).kind else { return None };
         matches!(self.get(self.resolve(to)).kind, Kind::Struct(_) | Kind::Union(_)).then_some(to)
     }
 
     /// Whether `elem` is a char (so an array or pointer of it is a string).
-    pub fn is_string(&self, elem: u32) -> bool {
+    pub(crate) fn is_string(&self, elem: u32) -> bool {
         matches!(self.get(self.resolve(elem)).kind, Kind::Base(Base::Char)) && self.size_of(elem) == 1
     }
 
@@ -424,7 +424,7 @@ impl Types {
     /// path in the value ("f_path.dentry", "[2]"; "" for the value itself),
     /// its type, its offset in the value, and its bits if a bitfield
     /// (offset in its first byte, size).
-    pub fn leaf(&self, ty: u32, off: u32) -> (String, u32, u32, Option<(u32, u32)>) {
+    pub(crate) fn leaf(&self, ty: u32, off: u32) -> (String, u32, u32, Option<(u32, u32)>) {
         let (mut path, mut ty, mut at, mut bits) = (String::new(), ty, 0, None);
         loop {
             match &self.get(self.resolve(ty)).kind {
@@ -459,7 +459,7 @@ impl Types {
     /// The scalars (or strings) bytes `off..off + len` of a value of type
     /// `ty` are in, in order (see leaf; padding between them skipped; up to
     /// 16): a struct copied by one wide store writes each of its members.
-    pub fn leaves(&self, ty: u32, off: u32, len: u32) -> Vec<(String, u32, u32, Option<(u32, u32)>)> {
+    pub(crate) fn leaves(&self, ty: u32, off: u32, len: u32) -> Vec<(String, u32, u32, Option<(u32, u32)>)> {
         let (mut out, mut o, end) = (Vec::new(), off, off.saturating_add(len.max(1)));
         while o < end && out.len() < 16 {
             let l @ (_, leaf, at, _) = self.leaf(ty, o);
@@ -532,7 +532,7 @@ pub fn num(v: u64) -> String {
 
 /// Bytes as a C string literal: text as text, the rest escaped (\n, \t,
 /// \", \\, \0, \xHH); past 64, "…".
-pub fn quote(b: &[u8]) -> String {
+pub(crate) fn quote(b: &[u8]) -> String {
     let mut s = String::from("\"");
     for &c in b.iter().take(64) {
         match c {

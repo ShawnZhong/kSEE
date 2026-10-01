@@ -288,7 +288,7 @@ impl View<'_> {
     /// each inlined function (Some: its index, see inline_name) at its line
     /// there, then the call (None) at its own line (where the outermost
     /// inlined code is inlined, or the line it is at).
-    pub fn nest(&self, c: &stack::StackCall) -> Vec<(Option<u32>, Option<Loc>)> {
+    pub(crate) fn nest(&self, c: &stack::StackCall) -> Vec<(Option<u32>, Option<Loc>)> {
         let mut at = c.step.map(|s| s.loc).or(self.tables.functions.get(&c.func).map(|f| f.loc));
         let mut out = Vec::new();
         for &(k, site) in self.chain(c.step.and_then(|s| s.inlined)) {
@@ -311,7 +311,7 @@ impl View<'_> {
     }
 
     /// Inlined function `k`'s name (Tables::names).
-    pub fn inline_name(&self, k: u32) -> String {
+    pub(crate) fn inline_name(&self, k: u32) -> String {
         self.tables.names.get(k as usize).cloned().unwrap_or_default()
     }
 }

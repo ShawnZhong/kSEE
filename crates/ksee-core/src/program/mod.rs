@@ -29,8 +29,9 @@ mod parse;
 mod tests;
 
 pub use complete::{completions, Completion};
-pub use eval::{lvalue, typed, value, Env, Sym};
+pub use eval::{typed, value, Env, Sym};
 pub use layout::{Arg, Decl, Value};
 pub use lower::{lower, words, Lowered};
 pub use names::Names;
-pub use parse::{context, expression, lines, statement, Context, Expr, Line, Statement, TypeName};
+pub use parse::{context, expression, lines, statement, Line};
+pub use parse::{Context, Expr, Statement, TypeName};

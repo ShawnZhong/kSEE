@@ -50,7 +50,7 @@ impl Types {
     /// the type the
     /// kernel's own (a struct, union or enum by its tag, a typedef, a base
     /// type by its name). `known`: as for arg.
-    pub fn declare(&self, line: &Line, known: &dyn Env) -> Result<Decl, String> {
+    pub(crate) fn declare(&self, line: &Line, known: &dyn Env) -> Result<Decl, String> {
         let Line::Decl { ty, name, count, init } = line else {
             return Err("a declaration: a type, then a name".into());
         };
@@ -80,7 +80,7 @@ impl Types {
     /// A variable's bytes (of type `ty`, an array of `count` of them) as
     /// `init` makes them, as a declaration's value: an expression, or "hi",
     /// {3, 4}, {.tv_sec = 1}.
-    pub fn assign(&self, ty: u32, count: Option<u32>, init: &Expr, known: &dyn Env) -> Result<Vec<u8>, String> {
+    pub(crate) fn assign(&self, ty: u32, count: Option<u32>, init: &Expr, known: &dyn Env) -> Result<Vec<u8>, String> {
         self.lay(ty, count, Some(init), known)
     }
 

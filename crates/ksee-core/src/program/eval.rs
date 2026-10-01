@@ -209,7 +209,7 @@ pub fn value(e: &Expr, types: Option<&Types>, env: &dyn Env) -> Result<i64, Stri
 
 /// Expression `e` as memory to write (an lvalue): its address, type, and
 /// count if an array.
-pub fn lvalue(e: &Expr, types: &Types, env: &dyn Env) -> Result<(u32, u32, Option<u32>), String> {
+pub(crate) fn lvalue(e: &Expr, types: &Types, env: &dyn Env) -> Result<(u32, u32, Option<u32>), String> {
     Eval { types: Some(types), env }.lvalue(e)
 }
 

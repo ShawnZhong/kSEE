@@ -1,6 +1,7 @@
 //! The programs' text and values, on made-up types.
 
 use super::*;
+use super::eval::lvalue;
 use crate::types::Types;
 use crate::Memory;
 use alloc::string::ToString;

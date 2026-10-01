@@ -154,25 +154,25 @@ impl Calls {
     }
 
     /// The call running at record `i` (its task's innermost).
-    pub fn call_at(&self, i: usize) -> Option<&Call> {
+    pub(crate) fn call_at(&self, i: usize) -> Option<&Call> {
         self.calls.get(self.place_at(i)?.call as usize)
     }
 
     /// The function running at record `i` (its task's innermost call's).
-    pub fn func_at(&self, i: usize) -> Option<u32> {
+    pub(crate) fn func_at(&self, i: usize) -> Option<u32> {
         Some(self.call_at(i)?.func)
     }
 
     /// The Var records of the call from record `first` (a block 0), by
     /// record `upto`, in order.
-    pub fn vars_of(&self, first: usize, upto: usize) -> impl Iterator<Item = usize> + '_ {
+    pub(crate) fn vars_of(&self, first: usize, upto: usize) -> impl Iterator<Item = usize> + '_ {
         let call = self.place_at(first).filter(|p| self.calls[p.call as usize].first == first).map_or(NONE, |p| p.call);
         let from = self.vars.partition_point(|&(c, _)| c < call);
         self.vars[from..].iter().take_while(move |&&(c, i)| c == call && i as usize <= upto).map(|&(_, i)| i as usize)
     }
 
     /// The call the block 0 at record `first` begins.
-    pub fn call_from(&self, first: usize) -> Option<&Call> {
+    pub(crate) fn call_from(&self, first: usize) -> Option<&Call> {
         let c = self.calls.get(self.place_at(first)?.call as usize)?;
         (c.first == first).then_some(c)
     }
@@ -188,7 +188,7 @@ impl Calls {
     /// each call at its last line; the innermost at the first of the lines
     /// record `i` runs if it starts them (a block, a return into one), or,
     /// if `nth`, at the nth (a LineStep's).
-    pub fn stack_at(&self, t: &Tables, i: usize, nth: Option<usize>) -> Vec<StackCall> {
+    pub(crate) fn stack_at(&self, t: &Tables, i: usize, nth: Option<usize>) -> Vec<StackCall> {
         let Some(p) = self.place_at(i) else { return Vec::new() };
         // (At the record that starts a stretch, its task is at the
         // stretch's first line, or the `nth`; after, at its last.)
@@ -210,7 +210,7 @@ impl Calls {
 
     /// The line the store (or comparison, or variable set) at record `i` is on (its record's
     /// line: which of its block's lines), in the call running it.
-    pub fn line_at(&self, t: &Tables, i: usize, records: &[Record]) -> Option<LineStep> {
+    pub(crate) fn line_at(&self, t: &Tables, i: usize, records: &[Record]) -> Option<LineStep> {
         let (&Record::Store { line, .. } | &Record::Compare { line, .. } | &Record::Var { line, .. }) = records.get(i)? else { return None };
         let p = self.place_at(i)?;
         let c = &self.calls[p.call as usize];
@@ -231,7 +231,7 @@ impl Calls {
     /// The source lines task `task` ran in records `from..=to`, in order: each block's lines up to its first call, then, as
     /// each call returns, the lines up to the next (tables::Block). The
     /// same line twice in a row counts once.
-    pub fn lines(&self, t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
+    pub(crate) fn lines(&self, t: &Tables, records: &[Record], tasks: &[u32], from: usize, to: usize,
                  task: u32) -> Vec<LineStep> {
         let mut out: Vec<LineStep> = Vec::new();
         // (How often each call entered each block so far: in a call, a block
@@ -304,7 +304,7 @@ impl Calls {
 /// A call on a stack (the Stack's, the chart's): `func` from record `first`, at `step` (its last
 /// line then, if known: with the functions it is inlined from).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct StackCall {
+pub(crate) struct StackCall {
     pub func: u32,
     pub first: usize,
     pub step: Option<Step>,

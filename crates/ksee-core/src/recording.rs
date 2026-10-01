@@ -128,7 +128,7 @@ impl Recording {
 
     /// The records `n` columns of steps `from..=to` (records) begin at, for
     /// a chart: the k-th column's, at step from + k * span / n.
-    pub fn columns(&self, from: usize, to: usize, n: usize) -> Vec<usize> {
+    pub(crate) fn columns(&self, from: usize, to: usize, n: usize) -> Vec<usize> {
         let (a, b) = (self.step_of(from), self.step_of(to));
         let span = b - a + 1;
         (0..n).map(|k| self.record_of(a + k * span / n).max(from)).collect()
@@ -206,7 +206,7 @@ impl Recording {
 
     /// How often each block ran in syscall `n` (its task's records), or the
     /// whole recording (None).
-    pub fn block_counts(&self, n: Option<usize>) -> BTreeMap<(u32, u32), u64> {
+    pub(crate) fn block_counts(&self, n: Option<usize>) -> BTreeMap<(u32, u32), u64> {
         let (first, last, task) = match n.map(|n| self.syscalls.get(n)) {
             Some(None) => return BTreeMap::new(),
             Some(Some(s)) => (s.first, s.last.unwrap_or(usize::MAX), Some(s.task)),
@@ -222,14 +222,14 @@ impl Recording {
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.
-    pub fn lines(&self, t: &Tables, first: usize, last: usize, task: u32) -> Vec<LineStep> {
+    pub(crate) fn lines(&self, t: &Tables, first: usize, last: usize, task: u32) -> Vec<LineStep> {
         self.calls.lines(t, &self.records, &self.tasks, first, last, task)
     }
 
     /// The newest store to `addr..addr + len` at or before record `at` (or
     /// the end): (its record, the value it overwrote if kept, the line that
     /// made it: where the function running then was).
-    pub fn last_write(&self, t: &Tables, addr: u32, len: u32, at: usize) -> Option<(usize, Option<u64>, Option<LineStep>)> {
+    pub(crate) fn last_write(&self, t: &Tables, addr: u32, len: u32, at: usize) -> Option<(usize, Option<u64>, Option<LineStep>)> {
         let at = at.min(self.len().checked_sub(1)?);
         let (i, old) = self.stores().last_write(&self.records, addr, len, at)?;
         Some((i, old, self.line_at(t, i)))
@@ -237,7 +237,7 @@ impl Recording {
 
     /// Where the store at record `i` copied its byte at `addr` from, if it
     /// is a copy (its record says where its bytes come from).
-    pub fn copied_from(&self, i: usize, addr: u32) -> Option<u32> {
+    pub(crate) fn copied_from(&self, i: usize, addr: u32) -> Option<u32> {
         match self.records.get(i)? {
             // (From where the store and the value overlap.)
             Record::Store { addr: at, from: Some(from), .. } => Some(from.get().wrapping_add(addr.max(*at) - at)),
@@ -246,12 +246,12 @@ impl Recording {
     }
 
     /// The line the store at record `i` is on.
-    pub fn line_at(&self, t: &Tables, i: usize) -> Option<LineStep> {
+    pub(crate) fn line_at(&self, t: &Tables, i: usize) -> Option<LineStep> {
         self.calls.line_at(t, i, &self.records)
     }
 
     /// The stores in records `from..=to`, oldest first.
-    pub fn stores_between(&self, from: usize, to: usize) -> &[usize] {
+    pub(crate) fn stores_between(&self, from: usize, to: usize) -> &[usize] {
         self.stores().between(from, to.min(self.len().saturating_sub(1)))
     }
 }

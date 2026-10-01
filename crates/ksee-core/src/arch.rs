@@ -19,45 +19,45 @@ pub const SYSCALL_TABLE: &str = "sys_call_table";
 /// half of the arch layer: `current`, the interrupt flag, atomics, bit
 /// ops), inlined all over the kernel: the machine, not calls. Their code
 /// counts as the line it is inlined at.
-pub const PRIMITIVES: [&str; 2] = ["arch/wasm/include/asm/", "include/asm-generic/"];
+pub(crate) const PRIMITIVES: [&str; 2] = ["arch/wasm/include/asm/", "include/asm-generic/"];
 /// The machine's own variables (arch/wasm: the interrupt flag, the task
 /// running, the timer), written by every lock and switch: the machine's
 /// state, not the kernel's.
 pub const MACHINE: &str = "arch/wasm/";
 /// Where a task starts (arch/wasm/kernel/process.c), with an empty stack.
-pub const TASK_ENTRY: &str = "wasm_task_entry";
+pub(crate) const TASK_ENTRY: &str = "wasm_task_entry";
 /// The context switch: switch(prev, next) returns on next's stack.
-pub const SWITCH: &str = "__switch_to";
+pub(crate) const SWITCH: &str = "__switch_to";
 /// The kernel's page (arch/wasm: PAGE_SHIFT 12).
 pub const PAGE: u32 = 4096;
 /// A task (what the task running points at), and the fields of it the
 /// Stack shows first.
 pub const TASK: &str = "task_struct";
 /// What the kernel calls the task running, and a task's id and name.
-pub const CURRENT: &str = "current";
-pub const TASK_PID: &str = "pid";
-pub const TASK_COMM: &str = "comm";
+pub(crate) const CURRENT: &str = "current";
+pub(crate) const TASK_PID: &str = "pid";
+pub(crate) const TASK_COMM: &str = "comm";
 /// A task's parent, and its thread group's leader (itself, for a process).
-pub const TASK_PARENT: &str = "real_parent";
-pub const TASK_LEADER: &str = "group_leader";
+pub(crate) const TASK_PARENT: &str = "real_parent";
+pub(crate) const TASK_LEADER: &str = "group_leader";
 /// The kernel's tasks, as for_each_process_thread walks them: from
 /// init_task, each process by its `tasks` link, and each process's
 /// threads, its signal_struct's `thread_head` list, by their `thread_node`.
-pub const INIT_TASK: &str = "init_task";
-pub const TASK_LIST: &str = "tasks";
-pub const TASK_SIGNAL: (&str, &str) = ("signal", "signal_struct");
-pub const THREAD_HEAD: &str = "thread_head";
-pub const THREAD_NODE: &str = "thread_node";
+pub(crate) const INIT_TASK: &str = "init_task";
+pub(crate) const TASK_LIST: &str = "tasks";
+pub(crate) const TASK_SIGNAL: (&str, &str) = ("signal", "signal_struct");
+pub(crate) const THREAD_HEAD: &str = "thread_head";
+pub(crate) const THREAD_NODE: &str = "thread_node";
 /// Whether a task is on its CPU's run queue (runnable, or running).
-pub const TASK_ON_RQ: &str = "on_rq";
+pub(crate) const TASK_ON_RQ: &str = "on_rq";
 /// A task's fields shown first (the Tasks'), in this order.
-pub const TASK_FIELDS: [&str; 12] = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
+pub(crate) const TASK_FIELDS: [&str; 12] = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
 /// are the syscall's.
-pub const SYSCALL_BODY: &str = "__do_sys_";
+pub(crate) const SYSCALL_BODY: &str = "__do_sys_";
 /// The constants that fit a syscall's parameter, by the starts of their
 /// names: for "syscall.param", else any syscall's parameter of that name.
-pub const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
+pub(crate) const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
     ("mmap2.flags", &["MAP_"]), ("unlinkat.flag", &["AT_"]), ("renameat2.flags", &["RENAME_"]), ("linkat.flags", &["AT_"]),
     ("io_uring_enter.flags", &["IORING_ENTER_"]),
     ("prctl.option", &["PR_"]), ("waitid.which", &["P_"]), ("waitid.options", &["W"]), ("clone.clone_flags", &["CLONE_", "SIG"]),
@@ -67,7 +67,7 @@ pub const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
 ];
 /// The starts of the names of the constants that fit syscall `syscall`'s
 /// parameter `param` (SYSCALL_CONSTS).
-pub fn consts_of(syscall: &str, param: &str) -> &'static [&'static str] {
+pub(crate) fn consts_of(syscall: &str, param: &str) -> &'static [&'static str] {
     let key = alloc::format!("{syscall}.{param}");
     let consts = SYSCALL_CONSTS;
     consts.iter().find(|(k, _)| *k == key).or_else(|| consts.iter().find(|(k, _)| *k == param)).map_or(&[], |(_, c)| c)
@@ -76,22 +76,22 @@ pub fn consts_of(syscall: &str, param: &str) -> &'static [&'static str] {
 /// Records of a variable length, one after another (a struct ending in a
 /// flexible array: a directory's entries, getdents64's): the members that
 /// say how long each record is, all of it.
-pub const RECORD_LENGTHS: &[&str] = &["d_reclen"];
+pub(crate) const RECORD_LENGTHS: &[&str] = &["d_reclen"];
 /// The errno names among the UAPI constants (errno-base.h's and errno.h's:
 /// ENOENT, EEXIST): what a failed call's -errno is called.
-pub const ERRNO: &str = "E";
+pub(crate) const ERRNO: &str = "E";
 /// The largest errno (include/linux/err.h's MAX_ERRNO): a result from -1
 /// down to -MAX_ERRNO is an error.
-pub const MAX_ERRNO: i64 = 4095;
+pub(crate) const MAX_ERRNO: i64 = 4095;
 
 /// The types that hold flags, printed in hex (`*`: a name's end).
-pub const FLAG_TYPES: &[&str] = &["fmode_t", "gfp_t", "*flags_t"];
+pub(crate) const FLAG_TYPES: &[&str] = &["fmode_t", "gfp_t", "*flags_t"];
 /// The types printed in octal: file modes.
-pub const OCTAL_TYPES: &[&str] = &["umode_t"];
+pub(crate) const OCTAL_TYPES: &[&str] = &["umode_t"];
 
 /// The variables the kernel's macros make up (`__UNIQUE_ID`: min_t's,
 /// max_t's temporaries), not the source's own: not shown.
-pub const MADE_UP: &str = "__UNIQUE_ID_";
+pub(crate) const MADE_UP: &str = "__UNIQUE_ID_";
 
 /// The kernel's areas, by where a function's file is (the first that fits;
 /// the timeline colors a call by its area's, the last gray): its

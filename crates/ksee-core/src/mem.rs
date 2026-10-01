@@ -92,7 +92,7 @@ impl History {
 
     /// The newest store to any of `addr..addr + len` at or before record
     /// `at`: (its record, the old value, if kept).
-    pub fn last_write(&self, records: &[Record], addr: u32, len: u32, at: usize) -> Option<(usize, Option<u64>)> {
+    pub(crate) fn last_write(&self, records: &[Record], addr: u32, len: u32, at: usize) -> Option<(usize, Option<u64>)> {
         let i = self.writes(addr, len).into_iter().take_while(|&i| i <= at).last()?;
         let Record::Store { old, .. } = records[i] else { return None };
         Some((i, old))

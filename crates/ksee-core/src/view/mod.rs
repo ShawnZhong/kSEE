@@ -25,7 +25,8 @@ mod tests;
 
 pub use frames::{step, Called, Frame, Line, Move};
 pub use objects::{Diff, Group, Node, Run};
-pub use stores::{Named, Note, Region, RegionKind, Wrote, Write};
+pub use stores::{RegionKind, Write};
+pub use stores::{Named, Note, Region, Wrote};
 pub use value::{Missing, Object, Target};
 
 /// Who a task was, at a record (see View::task).
@@ -491,7 +492,7 @@ impl View<'_> {
     }
 
     /// Function `id`: where it is.
-    pub fn place(&self, id: u32) -> Option<Place> {
+    pub(crate) fn place(&self, id: u32) -> Option<Place> {
         let t = self.tables;
         let f = t.functions.get(&id)?;
         let last = t.blocks_of(id).filter(|(_, l)| l.file == f.loc.file).map(|(_, l)| l.line).fold(f.loc.line, u32::max);

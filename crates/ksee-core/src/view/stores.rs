@@ -102,7 +102,7 @@ pub struct Write {
 
 impl View<'_> {
     /// The newest write to `addr..addr + len` at or before record `at`.
-    pub fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
+    pub(crate) fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
         let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
         let from = self.rec.copied_from(i, addr);
         let old = old.map_or_else(|| Missing::NotKept.text().into(), num);

@@ -31,12 +31,12 @@ pub enum Record {
 }
 
 /// A Compare's predicate, as LLVM numbers them from eq.
-pub const PREDICATES: [(&str, bool); 10] =
+pub(crate) const PREDICATES: [(&str, bool); 10] =
     [("==", false), ("!=", false), (">", false), (">=", false), ("<", false), ("<=", false), (">", true), (">=", true), ("<", true), ("<=", true)];
 
 impl Record {
     /// A Compare's operator, whether it is signed, and whether it held.
-    pub fn compare(&self) -> Option<(&'static str, bool, bool)> {
+    pub(crate) fn compare(&self) -> Option<(&'static str, bool, bool)> {
         let (op, signed) = *PREDICATES.get(self.compared()?.3 as usize)?;
         let (a, b) = self.operands(signed)?;
         let held = match op { "==" => a == b, "!=" => a != b, ">" => a > b, ">=" => a >= b, "<" => a < b, _ => a <= b };
@@ -44,7 +44,7 @@ impl Record {
     }
 
     /// A Compare's operands, as numbers: signed or not, 32 or 64 bits.
-    pub fn operands(&self, signed: bool) -> Option<(i128, i128)> {
+    pub(crate) fn operands(&self, signed: bool) -> Option<(i128, i128)> {
         let (lhs, rhs, wide, _) = self.compared()?;
         let n = |x: u64| match (signed, wide) {
             (true, true) => x as i64 as i128,
@@ -96,7 +96,7 @@ impl Args {
     }
 
     /// The call at record `first`'s argument words and its frame base.
-    pub fn get(&self, first: usize) -> Option<(&[u32], u32)> {
+    pub(crate) fn get(&self, first: usize) -> Option<(&[u32], u32)> {
         let k = self.at.binary_search_by_key(&(first as u32), |a| a.0).ok()?;
         let end = self.at.get(k + 1).map_or(self.words.len(), |a| a.1 as usize);
         let (&frame, args) = self.words[self.at[k].1 as usize..end].split_last()?;
@@ -129,7 +129,7 @@ pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> (Vec<Record>, Vec<u32>,
 }
 
 /// Decodes `len` pairs obtained from `pair(i)`.
-pub struct Decoder<F> {
+pub(crate) struct Decoder<F> {
     pair: F,
     next: u32,
     len: u32,
