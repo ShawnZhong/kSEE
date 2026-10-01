@@ -72,7 +72,6 @@ call, and the machine is quiet at once.
 
 ## Programs
 
-<<<<<<< HEAD
 Programs are **position-independent** wasm modules (`-fPIC -pie`) that
 import the kernel's memory: as on any NOMMU system, a program lives in
 pages the kernel gives it, and its pointers are kernel addresses.

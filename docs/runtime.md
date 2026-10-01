@@ -106,7 +106,6 @@ parameter's type (a struct, positional or by member; an array; argv for a
 (`char buf[64]`: a type of the kernel's), which goes in the program's own
 memory, its name then its address (`&ts` too; `fds[1]` an element;
 `rings->sq.tail`, through a result typed as a pointer; a line `target =
-<<<<<<< HEAD
 value` writes one, recorded), `Machine::show` printing it as C writes it.
 A call's strings and compound literals go in the same memory, as unnamed
 variables (a C literal's, there for as long as the program). The build's pack
@@ -139,7 +138,6 @@ line's next or last run), `definition`.
   the URL; pipe, two processes, a call that blocks, what calls changed;
   phone, the read example at 390x844, the panes one under another.
 
-<<<<<<< HEAD
 The kernel's run on `ksee test`, the page's too with `--ui` (a screenshot
 each in `target/`), all in headless Chromium (`$CHROME`), in the page
 built with them (the selftest feature: target/test/site): the page runs
