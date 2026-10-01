@@ -19,7 +19,7 @@ fn decl(t: &Types, text: &str, known: &dyn Env) -> Result<Decl, alloc::string::S
 }
 
 fn known(name: &str) -> Option<i64> {
-    [("O_CREAT", 64), ("O_WRONLY", 1), ("AT_FDCWD", -100), ("fd", 3), ("n", 5)].iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
+    [("O_CREAT", 64), ("O_WRONLY", 1), ("AT_FDCWD", -100), ("fd", 3), ("n", 5), ("child", 7)].iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
 }
 
 #[test]
@@ -186,6 +186,44 @@ fn where_the_cursor_is_in_a_line_being_written() {
     assert_eq!(at("x = openat(|"), ("openat".into(), 4, "".into(), Some(0)));
     // (UTF-16 offsets: a character past the BMP counts two.)
     assert_eq!(at("write(1, \"😀\", n|"), ("write".into(), 0, "n".into(), Some(2)));
+}
+
+#[test]
+fn a_line_is_lowered_to_what_it_makes() {
+    let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t7\tbase\tint\t4\ts\nS\t3\tgetpid\nP\t1\t__do_sys_getpid\t\n");
+    let env = |n: &str| known(n);
+    let lower = |text: &str| super::lower(text, &t, &env, Some(19), &[19]);
+    // A call: its number, its arguments, its result's name and type.
+    match lower("int fd = getpid()").unwrap() {
+        (19, Lowered::Call { nr, args, result }) => {
+            assert_eq!((nr, args, result), (3, Vec::new(), Some(("fd".to_string(), "int".to_string()))));
+        }
+        l => panic!("{l:?}"),
+    }
+    // No runner, no syscall, too many arguments: why not.
+    assert!(lower("child: getpid()").unwrap_err().contains("no runner"));
+    assert!(lower("nosuch()").unwrap_err().contains("no syscall nosuch"));
+    assert!(lower("getpid(1)").unwrap_err().contains("0 arguments, not 1"));
+    // Not ready (no main yet), and a result of no known type.
+    assert!(super::lower("getpid()", &t, &env, None, &[]).unwrap_err().contains("not ready"));
+    assert!(lower("struct nope *p = getpid()").unwrap_err().contains("no type"));
+}
+
+#[test]
+fn a_calls_words_put_buffers_in_memory() {
+    // A number as it is; bytes and strings put in memory (at 0x100, 0x104),
+    // past the words: byte-identical to what the machine wrote.
+    // A number as it is; bytes and strings put in memory (at 0x100, 0x104),
+    // past the words: byte-identical to what the machine wrote.
+    let mut heap = Vec::new();
+    let mut put = |b: &[u8]| -> Result<u32, alloc::string::String> {
+        let at = 0x100 + heap.len() as u32;
+        heap.extend_from_slice(b);
+        Ok(at)
+    };
+    let args = [Arg::Number(3), Arg::Bytes(b"hi\0".to_vec()), Arg::Strings(vec![Some("init".into()), None])];
+    assert_eq!(super::words(&args, &mut put), Ok([3, 0x100, 0x108, 0, 0, 0]));
+    assert_eq!(heap, [b'h', b'i', b'\0', b'i', b'n', b'i', b't', b'\0', 3, 1, 0, 0, 0, 0, 0, 0]);
 }
 
 #[test]

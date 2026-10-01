@@ -22,6 +22,7 @@ mod complete;
 mod eval;
 mod layout;
 mod lex;
+mod lower;
 mod names;
 mod parse;
 #[cfg(test)]
@@ -30,5 +31,6 @@ mod tests;
 pub use complete::{completions, Completion};
 pub use eval::{lvalue, typed, value, Env, Sym};
 pub use layout::{Arg, Decl, Value};
+pub use lower::{lower, words, Lowered};
 pub use names::Names;
 pub use parse::{context, expression, lines, statement, Context, Expr, Line, Statement, TypeName};

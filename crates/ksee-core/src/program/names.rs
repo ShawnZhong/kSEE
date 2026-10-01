@@ -42,7 +42,7 @@ impl Names {
         let mut out: Vec<(&str, &Sym)> = Vec::new();
         for (n, l, s) in self.0.iter().filter(|e| e.1 < line) {
             match at.get(n.as_str()) {
-                Some(&(_, k)) if at[n.as_str()].0 > *l => {}
+                Some(&(m, _)) if m > *l => {}
                 Some(&(_, k)) => {
                     at.insert(n, (*l, k));
                     out[k].1 = s;

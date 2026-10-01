@@ -185,21 +185,23 @@ impl Machine {
     /// (user/prog.c): the syscall, entry to return, and whatever the kernel
     /// does meanwhile.
     pub fn make(&self, text: &str) -> Result<Made, String> {
+        use ksee_core::program::{lower, Lowered};
         let line = k(|k| k.lines.get());
-        let (tid, plan) = plan(text, line)?;
+        let (tid, plan) = lower(text, &tables().types, &Seen(line),
+                                k(|k| k.main.get()), &k(|k| k.runners.borrow().keys().copied().collect::<Vec<_>>()))?;
         let mut made = Made::default();
         match plan {
-            Plan::Decl(d) => {
+            Lowered::Decl(d) => {
                 let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
                 write_logged(addr, &d.bytes);
                 k(|k| k.names.borrow_mut().set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
                 made.decl = Some(Var { name: d.name, addr, ty: d.ty, count: d.count, size: tables().types.size_of(d.ty) });
             }
-            Plan::Assign { addr, ty, count, bytes } => {
+            Lowered::Assign { addr, ty, count, bytes } => {
                 write_logged(addr, &bytes);
                 made.assigned = Some(tables().types.show(&Direct, addr, ty, count));
             }
-            Plan::Call { nr, args, result } => (made.id, made.tid) = (Some(call(tid, nr, &args, line, result)?), Some(tid)),
+            Lowered::Call { nr, args, result } => (made.id, made.tid) = (Some(call(tid, nr, &args, line, result)?), Some(tid)),
         }
         k(|k| k.lines.set(line + 1));
         Ok(made)
@@ -208,7 +210,8 @@ impl Machine {
     /// Whether line `text` can be made as line `line` (with the names of
     /// the lines before it): why not, if not; nothing made.
     pub fn can_make(&self, text: &str, line: usize) -> Result<(), String> {
-        plan(text, line).map(|_| ())
+        ksee_core::program::lower(text, &tables().types, &Seen(line),
+                                  k(|k| k.main.get()), &k(|k| k.runners.borrow().keys().copied().collect::<Vec<_>>())).map(|_| ())
     }
 
     /// What fits at the cursor `at` of `text`, line `line` of the program
@@ -320,58 +323,6 @@ pub struct Var {
     pub size: u32,
 }
 
-/// What a line of the program makes (see Machine::run), checked: a
-/// variable (its bytes, as it starts), memory written, or a syscall.
-enum Plan {
-    Decl(ksee_core::program::Decl),
-    Assign { addr: u32, ty: u32, count: Option<u32>, bytes: Vec<u8> },
-    Call { nr: u32, args: Vec<Arg>, result: Option<(String, String)> },
-}
-
-/// Line `text` as line `line` of the program: its runner (a thread id, or
-/// a result's name; else the program's own, Machine::main), and what it
-/// makes, with the names the lines before it made.
-fn plan(text: &str, line: usize) -> Result<(u32, Plan), String> {
-    use ksee_core::program::{expression, lvalue, statement, typed, value, Line};
-    let (st, types, env) = (statement(text)?, &tables().types, Seen(line));
-    let tid = match &st.runner {
-        None => k(|k| k.main.get()).ok_or("the program is not ready")?,
-        Some(r) => value(&expression(r)?, Some(types), &env)? as u32,
-    };
-    if !k(|k| k.runners.borrow().contains_key(&tid)) {
-        return Err(format!("no runner {tid}: the runners are {:?}", k(|k| k.runners.borrow().keys().copied().collect::<Vec<_>>())));
-    }
-    Ok((tid, match st.line {
-        Line::Decl { .. } => Plan::Decl(types.declare(&st.line, &env)?),
-        Line::Assign { target, value } => {
-            // (As a declaration's value: an expression, "…" or {…}; an array's, whole.)
-            let (addr, ty, count) = lvalue(&target, types, &env)?;
-            Plan::Assign { addr, ty, count, bytes: types.assign(ty, count, &value, &env)? }
-        }
-        Line::Call { result, call, args, texts } => {
-            let nr = types.syscalls.iter().find(|(_, n)| **n == call).map(|(&nr, _)| nr)
-                .ok_or_else(|| {
-                    let like: Vec<&str> = types.syscalls.values().filter(|n| n.starts_with(call.as_str())).take(3).map(String::as_str).collect();
-                    format!("this kernel has no syscall {call}{}", if like.is_empty() { String::new() } else { format!(": {}?", like.join(", ")) })
-                })?;
-            let params = types.syscall_params(&call).cloned().unwrap_or_default();
-            if texts.len() > params.len() {
-                return Err(format!("{call}: {} arguments, not {}", params.len(), texts.len()));
-            }
-            let args = args.iter().enumerate().map(|(k, a)| types.arg(a, params.get(k).map_or(0, |p| p.1), &env))
-                .collect::<Result<Vec<_>, _>>()?;
-            let result = match result {
-                Some((ty, name)) => {
-                    typed(0, &ty.text(), types).ok_or_else(|| format!("{name}: no type {} in the kernel", ty.text()))?;
-                    Some((name, ty.text()))
-                }
-                None => None,
-            };
-            Plan::Call { nr, args, result }
-        }
-    }))
-}
-
 /// Have runner `tid` make syscall `nr` with `args`, for line `line` (its
 /// result named `result`): the call's id.
 fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, String)>) -> Result<u32, String> {
@@ -382,7 +333,14 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, St
         return Err(format!("{tid} is still making its call"));
     }
     let id = k(|k| k.asked.get() + 1);
-    let words = words(tid, args)?;
+    // (A call's words as the buffers they point to are put in its program's
+    // memory, recorded, as its variables are.)
+    let mut put = |b: &[u8]| -> Result<u32, String> {
+        let at = alloc(tid, b.len() as u32)?;
+        write_logged(at, b);
+        Ok(at)
+    };
+    let words = ksee_core::program::words(args, &mut put)?;
     let c = Call { id, tid, nr, task, line, result, ..Default::default() };
     k(|k| {
         k.asked.set(id);
@@ -398,31 +356,6 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, St
     write_logged(req, &head);
     sched::interrupt(IRQ_DOORBELL);
     Ok(id)
-}
-
-/// A call's `args` as the words it is made with: a number as it is; a
-/// buffer (bytes, a string's with its NUL; an array of strings, argv's)
-/// put in runner `tid`'s program's memory, as its variables are (a C
-/// literal's: there for as long as the program), its address.
-fn words(tid: u32, args: &[Arg]) -> Result<[u32; 6], String> {
-    let put = |b: &[u8]| -> Result<u32, String> {
-        let at = alloc(tid, b.len() as u32)?;
-        write_logged(at, b);
-        Ok(at)
-    };
-    let mut words = [0u32; 6];
-    for (w, a) in words.iter_mut().zip(args) {
-        *w = match a {
-            Arg::Number(v) => *v as u32,
-            Arg::Bytes(b) => put(b)?,
-            Arg::Strings(list) => {
-                let pointers = list.iter().map(|s| s.as_ref().map_or(Ok(0), |s| put(&[s.as_bytes(), &[0]].concat())))
-                    .collect::<Result<Vec<u32>, String>>()?;
-                put(&pointers.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>())?
-            }
-        };
-    }
-    Ok(words)
 }
 
 /// The page's program's names, as line `line` sees them (see
