@@ -50,13 +50,14 @@ SMP, no fork (threads and vfork, though): see Limits).
 
 ```text
 ┌──────────────┬──────────────────────────────────────────────┐
-│ Example:     │ Timeline: overview · call stacks · tasks     │
+│ Lesson:      │ Timeline: overview · call stacks · tasks     │
 │  question    │ ◀ ▶ step (← → in time, ↑ ↓ in depth)           │
 │  explanation ├───────────────────────────────┬──────────────┤
 │  (linked)    │ Source at the cursor          │ Stack (args, │
 │  program     │ (the lines that ran)          │ locals)      │
 │  (its calls) │                               │ Tasks        │
-│ Console      │                               │ Objects      │
+│              │                               │ Objects      │
+│              │                               │ Console      │
 │              │                               │ Trace        │
 └──────────────┴───────────────────────────────┴──────────────┘
 ```

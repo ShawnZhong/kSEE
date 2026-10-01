@@ -37,18 +37,22 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
     ./ksee.sh type task_struct
 
 The page boots the kernel and opens the first lesson (or the one in the
-URL, `#ex=read`). The bar at the top lists every lesson by chapter, with
-◀ ▶ for the one before and the next; each opens on a fresh kernel, so
-that each starts from the same state.
+URL, `#ex=read`). On the left is the lesson; its head lists every lesson
+by chapter (☰ Lessons, those opened before ticked), with ◀ ▶ for the one
+before and the next; each opens on a fresh kernel, so that each starts
+from the same state.
 
-A lesson is a notebook: its chapter and place ("Start here · 1 of 2"),
-its title and question, then its program, a line at a time, as the page
-makes it. Each line shows what it did (`= 3`, a call's result, an error
+A lesson is its chapter and place ("Start here · 1 of 2"), its title and
+question, the paragraphs that explain it, then its program, a line at a
+time, as the page makes it (with more than one runner, in lanes: a column
+each, in its task's color; a call that blocked has its lane dotted until
+it returns). Each line shows what it did (`= 3`, a call's result, an error
 with its name: `-2 (ENOENT)`; a variable as it starts; a call that blocked
-until a later line: `= 6 (during line 7)`), the variables the call
-changed under it (`fds = {3, 4}`), and the paragraphs that explain it.
-Their links lead into the recording: a call, a function in it (the
-cursor at its first line), what it changed; a try runs another program.
+until a later line: `= 6 (during line 7)`), and the variables the call
+changed under it (`fds = {3, 4}`). The paragraphs' links lead into the
+recording: a call, a function in it (the cursor at its first line; the
+lesson opens at the first), what it changed; a try runs another program
+(↺ reset: the lesson's own again).
 Every line is written in place: as you type, a list of what fits there
 (syscalls, the constants that fit the parameter, the names of the lines
 before), and the call's signature with the argument at the cursor in
@@ -56,20 +60,30 @@ bold; Enter makes the program again (a line emptied is removed; one that
 cannot be made says why, and nothing runs). The URL keeps the lesson and,
 if changed, the program (`#ex=write&p=…`).
 
-On the right is the call selected (a click on its line): its stack chart,
-the call stacks over its records, the outermost at the bottom, each bar
-colored by the part of the kernel it is in, a click going there; the
-task strip under it (who ran when, an idle stretch, a worker that names
-itself); a box to find a function by any part of its name (its bars
-light up, Enter goes to the next). Under them, the cursor's place and the
-steps, as a debugger's: ◀ ▶ a line (← →), over the calls (Shift), out of
-the function (Alt). Then the source at the cursor, the lines that ran
-marked, and the Stack: the calls then, innermost first, each with its
-arguments and locals as memory was then, a value opening into its members
-or what it points to. The other tabs: Objects (what the call changed:
-each object, each member from what to what), Tasks (every task then,
-what it is doing, its task_struct to open), Console (the kernel's log and
-the programs' output).
+On the right is the recording: on top, an overview of all of it (who
+ran when, where each syscall starts, the window shown, the cursor), and
+the window as a stack chart, the call stacks over time, the outermost at
+the bottom, each bar colored by the part of the kernel it is in, the
+calls at the cursor darker (the wheel zooms, a drag pans; "zoom": the
+call selected, "whole": all of it; hover a bar: what the call was, the
+source and the Stack at that moment; a click goes there); the task strip
+under it (who ran when, an idle stretch, a worker that names itself); a
+box to find a function by any part of its name (its bars light up, Enter
+goes to the next). Under them the steps, as a debugger's: ◀ ▶ a line
+(← →), over the calls (Shift), out of the function (Alt); ▲ ▼ the frame
+(↑ ↓), and the cursor's place. Then the source at the cursor (the whole
+file, scrolling; the function's lines edged, those that ran in the call
+green, a line's number: how often, a click runs to its next run; what a
+line stored at its end; a name's value on hover, Ctrl+click: its
+definition; the cursor's line with its values under it), and the tabs:
+the Stack (the calls then, innermost first, the one chosen open, its
+arguments and locals as memory was then, a value opening into its
+members or what it points to, hovered: who last wrote it), Tasks (every
+task then, as a tree, what each is doing, its task_struct to open),
+Objects (what the call changed: each object, under the one that points to
+it, each member a function changed in turn, from what to what, a click:
+that write), Console (the kernel's log and the programs' output), Trace
+(the raw records). The splits between them drag (the sizes are kept).
 
 An example is one JSON file in user/examples/: a title, a question, `text`
 (the explanation: paragraphs, with links into the recording as

@@ -76,17 +76,20 @@ at a moment). web/ is its frame: index.html (the style) and ksee.js (it
 boots the kernel, `Machine.start`, then `mount`s the page, handing it the
 Machine). The page's state is three things, in Dioxus signals: the call
 selected, the cursor in it (a line it ran), and the frame chosen on the
-Stack; what they make (the call's lines, its chart, the stack at the
-cursor) is computed once each time they change (memos).
+Stack (besides: the chart's window, the moment under the pointer, the
+tab); what they make (the call's lines, the chart, the moment shown and
+its stack) is computed once each time they change (memos).
 
 | Module | Does |
 |---|---|
-| lesson.rs | the lessons: the bar (every one by chapter, ◀ ▶), a lesson as a notebook (each program line, what it did, the variables its call changed, the paragraphs about it), the runner (a line at a time on a fresh kernel, the kernel quiet after a call), links (a call, a function in it, a tab; a try), the URL |
+| lesson.rs | the lessons: their head (every one by chapter, ◀ ▶), a lesson (its paragraphs; its program, each line what it did and the variables its call changed, in lanes for more than one runner), the runner (a line at a time on a fresh kernel, the kernel quiet after a call), links (a call, a function in it, a tab; a try), the URL |
 | editor.rs | a line written in place: what fits at the cursor (`Machine::complete`), the signature, why a line cannot be made (`Machine::can_make`) |
-| chart.rs | the call selected as a stack chart (`View::chart`): DOM bars, a run of a call over its columns each (a click: the cursor there, that frame); the task strip; find a function |
-| stack.rs | the transport (where the cursor is; stepping into, over, out: `view::step`); the Stack: frames, values that open (as memory was then) |
-| source.rs | the source of the frame shown: its function's lines (the site's src/), the line it runs marked, those that ran in the call |
-| panels.rs | the tabs: Stack, Objects (what the call changed), Tasks (each task_struct to open), Console |
+| chart.rs | the timeline: the overview, the window as a stack chart (`View::chart`: DOM bars, a run of a call over its columns each; zoom, pan, a tip, a click: the cursor there, that frame), the task strip, the transport; find a function |
+| stack.rs | stepping (into, over, out: `view::step`; on into the task's next syscall), the keys; the Stack: frames, values that open (as memory was then), who wrote a value |
+| source.rs | the source of the frame shown (the site's src/): the whole file, only the lines in view made; the line it runs, its values; those that ran in the call, what each stored; a name's value, its definition |
+| highlight.rs | C, colored: a line's pieces (keywords, types, strings, comments, numbers, names) |
+| panels.rs | the tabs: Stack, Tasks (a tree, each task_struct to open), Objects (what the call changed, `View::objects`), Console, Trace (`View::raw`, only the rows in view made) |
+| layout.rs | the splits: the lesson's column, the chart's height, the tabs' column, dragged (kept in the browser's storage) |
 | state.rs | the state and what it makes |
 | text.rs | a lesson's paragraphs: text, `code`, links |
 

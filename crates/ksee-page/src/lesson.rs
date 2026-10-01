@@ -1,6 +1,7 @@
-//! A lesson: its chapter and place, title and question, and its program as
-//! a notebook, each line with what it did and the paragraphs about it;
-//! made on a fresh kernel, a line at a time, as it opens.
+//! A lesson: its chapter and place, title and question, the paragraphs
+//! that explain it, and its program, each line with what it did (in lanes,
+//! a column a runner, with more than one); made on a fresh kernel, a line
+//! at a time, as it opens.
 
 use dioxus::prelude::*;
 use ksee_core::program::{statement, Line};

@@ -1,11 +1,12 @@
 //! The page, in Rust (Dioxus), in the runtime's wasm module: it calls the
-//! Machine directly. A lesson is a notebook (lesson.rs): its program's
-//! lines, each with what it did and the paragraphs that explain it, made
-//! one after another on a fresh kernel. Beside it, the call selected: its
-//! stack chart (chart.rs), the source where the cursor is (source.rs), and
-//! the Stack, the objects it changed, the tasks, the console (stack.rs,
-//! panels.rs). The state is three things (state.rs): the call selected,
-//! the cursor in it (a line it ran), and the frame chosen on the Stack.
+//! Machine directly. On the left, a lesson (lesson.rs): its paragraphs,
+//! then its program's lines, each with what it did, made one after another
+//! on a fresh kernel. Beside it, the recording: the timeline (chart.rs),
+//! the source where the cursor is (source.rs), and the tabs: the Stack,
+//! the tasks, the objects the call selected changed, the console, the
+//! trace (stack.rs, panels.rs). The state is three things (state.rs): the
+//! call selected, the cursor in it (a line it ran), and the frame chosen on
+//! the Stack.
 
 use std::cell::RefCell;
 use std::rc::Rc;
