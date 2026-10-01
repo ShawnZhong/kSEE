@@ -165,10 +165,10 @@ async fn wait(f: impl Fn() -> bool, n: usize, what: &str, detail: impl Fn() -> S
     check(ok, what, detail())
 }
 
-/// The kernel's tests (selftest.rs), once `mount` has the Machine (the
-/// page not mounted: #selftest).
+/// The kernel's tests (selftest.rs), on the Machine `mount` was given,
+/// once booted (the page not mounted: #selftest).
 async fn kernel() -> Check {
-    until(|| crate::MACHINE.with_borrow(|m| m.is_some()), 600).await;
+    crate::boot().await?;
     if crate::selftest::self_test().await { Ok("passed".into()) } else { Err("failed (see the log)".into()) }
 }
 

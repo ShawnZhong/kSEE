@@ -69,17 +69,21 @@ impl Derived {
             machine().view(|v| v.syscalls().into_iter().nth(k))
         });
         let lines = use_memo(move || {
-            let m = machine();
-            Shared(Rc::new(syscall.cloned().map_or_else(Vec::new, |s| m.view(|v| v.lines(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), s.task.addr)))))
+            Shared(Rc::new(syscall.cloned().map_or_else(Vec::new, |s| {
+                let m = machine();
+                m.view(|v| v.lines(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), s.task.addr))
+            })))
         });
+        // (The chart's: none before the kernel is up.)
+        let up = move || matches!((ui.kernel)(), Some(Ok(())));
         let window = use_memo(move || {
             (ui.version)();
-            let end = machine().records().saturating_sub(1);
+            let end = if up() { machine().records().saturating_sub(1) } else { 0 };
             (ui.win)().unwrap_or((0, end))
         });
         let chart = use_memo(move || {
             let (a, b) = window();
-            Shared(Rc::new(machine().view(|v| v.chart(a, b, COLUMNS))))
+            Shared(Rc::new(if up() { machine().view(|v| v.chart(a, b, COLUMNS)) } else { Chart::default() }))
         });
         let moment = use_memo(move || match (ui.peek)() {
             Some(p) => Some((p.i, None)),
@@ -117,6 +121,8 @@ pub struct Ui {
     pub win: Signal<Option<(usize, usize)>>,
     pub peek: Signal<Option<Peek>>,
     pub tab: Signal<Tab>,
+    /// The kernel: booting (none), up, or why it could not start.
+    pub kernel: Signal<Option<Result<(), String>>>,
     pub console: Signal<String>,
     /// What the source shows instead of the cursor's place, until it
     /// moves: a definition (file, line).
@@ -140,6 +146,7 @@ impl Ui {
             win: Signal::new(None),
             peek: Signal::new(None),
             tab: Signal::new(Tab::Stack),
+            kernel: Signal::new(None),
             console: Signal::new(String::new()),
             seen: Signal::new(None),
             find: Signal::new(String::new()),

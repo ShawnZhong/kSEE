@@ -23,8 +23,8 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
   Machine), `ksee-page` (the page, in Dioxus: the same wasm module as the
   runtime, calling the Machine), `ksee-cli` (`./ksee.sh`: build, test,
   serve; pack the kernel for the page)
-- `web/`: `index.html` (the page's frame and style) and `ksee.js` (it boots
-  the kernel, then mounts the page); the build puts them, with what they
+- `web/`: `index.html` (the page's frame and style) and `ksee.js` (it loads
+  the module and boots the kernel; the page shows meanwhile); the build puts them, with what they
   load, in `target/site/` (served, and deployed)
 - `user/`: `init.c` (sets up, starts the program), `prog.c` (the page's program: it makes its syscalls), `syscall.h` (a syscall, as arch/wasm makes one: no C library), `examples/`
 

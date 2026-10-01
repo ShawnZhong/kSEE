@@ -137,7 +137,7 @@ fn follow(mut ui: Ui, target: &str) {
         let k: usize = parts.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
         let tries = examples()[(ui.lesson)()].tries.clone();
         if let Some(t) = tries.get(k - 1) {
-            ui.program.set(machine().program_lines(t));
+            ui.program.set(ksee_core::program::lines(t).into_iter().map(String::from).collect());
         }
         return;
     }
@@ -183,7 +183,7 @@ pub fn from_url(mut ui: Ui) {
     let all = examples();
     if let Some(k) = ex.and_then(|n| all.iter().position(|e| e.name == n)) {
         ui.lesson.set(k);
-        ui.program.set(p.map_or_else(|| all[k].steps.clone(), |p| machine().program_lines(&p)));
+        ui.program.set(p.map_or_else(|| all[k].steps.clone(), |p| ksee_core::program::lines(&p).into_iter().map(String::from).collect()));
     }
 }
 
@@ -280,7 +280,10 @@ pub fn Lesson() -> Element {
         let lines = (ui.program)();
         to_url(ui);
         see(&examples()[(ui.lesson)()].name);
-        spawn(run(ui, lines));
+        // (Once the kernel is up.)
+        if matches!((ui.kernel)(), Some(Ok(()))) {
+            spawn(run(ui, lines));
+        }
     });
     let all = examples();
     let at = (ui.lesson)();
@@ -378,8 +381,11 @@ fn lane_name(ui: Ui, runner: &str, program: &[String]) -> (String, i32) {
         Some(Outcome::Call { id, .. }) => Some(*id),
         _ => None,
     });
-    let m = machine();
-    let task = id.and_then(|id| m.syscall_of(id)).and_then(|k| m.view(|v| v.syscalls().into_iter().nth(k))).map(|s| s.task);
+    // (A call made: the kernel is up.)
+    let task = id.and_then(|id| {
+        let m = machine();
+        m.syscall_of(id).and_then(|k| m.view(|v| v.syscalls().into_iter().nth(k))).map(|s| s.task)
+    });
     match task {
         Some(t) => (format!("{}({})", t.comm.unwrap_or_default(), t.pid.unwrap_or(0)), t.pid.unwrap_or(0)),
         None if runner.is_empty() => ("the program".into(), 0),

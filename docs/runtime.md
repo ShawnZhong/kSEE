@@ -17,7 +17,7 @@ no cross-origin isolation either. It needs JSPI: Chrome and Edge 137,
 Firefox 153, Safari 27.
 
 ```text
-web/ksee.js      init the module; Machine.start (then the page mounts: ksee-page)
+web/ksee.js      load the module; Machine.start (the page mounted meanwhile: ksee-page)
 machine.rs       boot (a new kernel instance on wiped memory), restart,
                  console, snapshots, syscalls by the runners (recorded)
 sched.rs         the tasks: switch_task, idle (suspending), spawn_task
@@ -73,8 +73,10 @@ The page is Rust too: crates/ksee-page, in Dioxus, built into the same
 wasm module as the runtime, so it calls the Machine directly, Rust to
 Rust (`Machine::make`, `view`, `at_moment`: a view with memory as it was
 at a moment). web/ is its frame: index.html (the style) and ksee.js (it
-boots the kernel, `Machine.start`, then `mount`s the page, handing it the
-Machine). The page's state is three things, in Dioxus signals: the call
+loads the module, then boots the kernel, `Machine.start`). The page is
+mounted as soon as the module is loaded, handed the kernel booting (a
+promise of the Machine): the lesson shows meanwhile, its program made
+once the kernel is up (`Ui::kernel`). The page's state is three things, in Dioxus signals: the call
 selected, the cursor in it (a line it ran), and the frame chosen on the
 Stack (besides: the chart's window, the moment under the pointer, the
 tab); what they make (the call's lines, the chart, the moment shown and

@@ -421,7 +421,7 @@ pub async fn self_test() -> bool {
             }
         }
         for (k, try_) in ex.tries.iter().enumerate() {
-            let lines = m.program_lines(try_);
+            let lines: Vec<String> = ksee_core::program::lines(try_).into_iter().map(String::from).collect();
             let ran = t.program(&lines).await;
             t.check(format!("example {}, try {}: {} lines made", ex.name, k + 1, lines.len()), ran.len() == lines.len() && !lines.is_empty());
         }

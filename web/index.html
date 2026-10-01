@@ -215,16 +215,13 @@ table.objs tr.later { opacity: .45; }
 </style>
 </head>
 <body>
-<div id="root"><p style="padding: 16px">Starting the kernel…</p></div>
+<div id="root"></div>
 <script type="module">
-import { start } from "./ksee.js";
+import { load, start } from "./ksee.js";
 import { mount } from "./pkg/ksee_page.js";
-const [m, examples] = await Promise.all([
-  start({ kernel: new URL("vmlinux.gz", location.href), initrd: new URL("initramfs.cpio.gz", location.href) }),
-  fetch("examples.json").then((r) => r.json()),
-]);
-document.getElementById("root").replaceChildren();
-mount("root", m, examples);
+// (The page at once; the kernel boots meanwhile, the page's once up.)
+const [, examples] = await Promise.all([load(), fetch("examples.json").then((r) => r.json())]);
+mount("root", examples, start({ kernel: new URL("vmlinux.gz", location.href), initrd: new URL("initramfs.cpio.gz", location.href) }));
 </script>
 </body>
 </html>

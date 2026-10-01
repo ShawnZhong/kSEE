@@ -55,12 +55,6 @@ impl Machine {
         tables().types.params_of(name)
     }
 
-    /// A program written on one line: its lines (ksee_core::program::lines,
-    /// `;` outside strings between them).
-    pub fn program_lines(&self, text: &str) -> Vec<String> {
-        ksee_core::program::lines(text).into_iter().map(String::from).collect()
-    }
-
     /// A call's result as the page says it (Types::result): "3", "0x1d20000", "-2 (ENOENT)".
     pub fn result(&self, v: i64) -> String {
         tables().types.result(v)

@@ -25,7 +25,9 @@ pub fn Editor(text: String, line: usize, placeholder: String, common: Vec<String
     let mut sel = use_signal(|| 0usize);
     let mut open = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
-    let items: Vec<Completion> = if open() { machine().complete(&draft(), at(), line, &common) } else { Vec::new() };
+    // (The Machine's, once the kernel is up.)
+    let up = matches!((use_context::<crate::state::Ui>().kernel)(), Some(Ok(())));
+    let items: Vec<Completion> = if open() && up { machine().complete(&draft(), at(), line, &common) } else { Vec::new() };
     // (Nothing to choose, or only what is written already: no list.)
     let c = context(&draft(), at());
     let written = if c.param.is_none() { &c.call } else { &c.word };
@@ -35,7 +37,7 @@ pub fn Editor(text: String, line: usize, placeholder: String, common: Vec<String
         _ => true,
     };
     let sel_now = sel().min(items.len().saturating_sub(1));
-    let hint = (!c.call.is_empty()).then(|| machine().params(&c.call)).flatten();
+    let hint = (up && !c.call.is_empty()).then(|| machine().params(&c.call)).flatten();
     let mut take = move |it: Completion| {
         let (d, a) = (draft(), at().min(draft().len()));
         let c = context(&d, a);
@@ -66,7 +68,7 @@ pub fn Editor(text: String, line: usize, placeholder: String, common: Vec<String
                     } else if key == Key::Enter {
                         e.prevent_default();
                         let t = draft().trim().to_string();
-                        match if t.is_empty() { Ok(()) } else { machine().can_make(&t, line) } {
+                        match if t.is_empty() { Ok(()) } else if !up { Err("the kernel is starting".into()) } else { machine().can_make(&t, line) } {
                             Ok(()) => { open.set(false); done.call(t); }
                             Err(why) => error.set(Some(why)),
                         }
