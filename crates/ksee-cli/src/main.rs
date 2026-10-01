@@ -4,6 +4,8 @@
 //!   ksee build               build the kernel, runtime and page (build.rs)
 //!   ksee test [--ui]         build, then run the tests (in Chromium,
 //!                            $CHROME; --ui: the page's too)
+//!   ksee trace LESSON        build, then the lesson as the page shows it,
+//!                            a line per step (→ through its call)
 //!   ksee deploy              build, then push the page to origin's gh-pages
 //!   ksee patch               write linux.patch from linux/ (the port, as it
 //!                            differs from the release)
@@ -39,13 +41,14 @@ fn main() -> ExitCode {
         }
         ["build"] => build::build(),
         ["test"] => build::test(ui),
+        ["trace", name] => build::trace(name),
         ["deploy"] => deploy::deploy(),
         ["patch"] => build::patch(),
         ["serve"] => {
             serve::serve(Path::new(build::SITE), port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
         }
         _ => {
-            eprintln!("usage: ksee [build | test [--ui] | deploy | serve [--port=N] | patch]");
+            eprintln!("usage: ksee [build | test [--ui] | trace LESSON | deploy | serve [--port=N] | patch]");
             return ExitCode::from(2);
         }
     }

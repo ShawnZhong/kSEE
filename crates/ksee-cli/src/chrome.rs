@@ -52,7 +52,21 @@ pub fn test(name: &str) -> bool {
         fail(&format!("no test {name}: {}", TESTS.iter().map(|t| t.0).collect::<Vec<_>>().join(", ")))
     };
     let hash = if name == "back" { format!("#ex=write&p={BACK}&test=back") } else { hash.into() };
-    let timeout = Duration::from_secs(if name == "kernel" { KERNEL_TIMEOUT } else { UI_TIMEOUT });
+    let (passed, log) = open(&hash, size, Duration::from_secs(if name == "kernel" { KERNEL_TIMEOUT } else { UI_TIMEOUT }));
+    print!("{log}");
+    println!("{name}: {}", if passed { "PASS" } else { "FAIL" });
+    passed
+}
+
+/// Lesson `name` as the page shows it, a line per step (its `trace` test).
+pub fn trace(name: &str) -> bool {
+    let (passed, log) = open(&format!("#ex={name}&test=trace"), SCREEN, Duration::from_secs(UI_TIMEOUT));
+    print!("{log}");
+    passed
+}
+
+/// The test site at `hash`, `size`d: whether the page said `ok`, and its log.
+fn open(hash: &str, size: (u32, u32), timeout: Duration) -> (bool, String) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap_or_else(|e| fail(&format!("serve: {e}")));
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let (tx, rx) = channel();
@@ -60,12 +74,7 @@ pub fn test(name: &str) -> bool {
     let args = vec![format!("--window-size={},{}", size.0, size.1),
         format!("http://127.0.0.1:{port}/{hash}")];
     let (child, profile) = launch(&args);
-    let outcome = rx.recv_timeout(timeout);
-    let passed = outcome.map(|o| {
-        print!("{log}", log = o.log);
-        o.passed
-    }).unwrap_or(false);
+    let outcome = rx.recv_timeout(timeout).map_or((false, String::new()), |o| (o.passed, o.log));
     reap(child, &profile);
-    println!("{name}: {}", if passed { "PASS" } else { "FAIL" });
-    passed
+    outcome
 }

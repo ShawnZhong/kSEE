@@ -407,6 +407,25 @@ fn site() {
 pub fn test(ui: bool) {
     build();
     run(cmd("cargo").args(["test", "-p", "ksee-core", "-p", "ksee-cli"]));
+    test_site();
+    for &(name, ..) in crate::chrome::TESTS.iter().filter(|t| ui || t.0 == "kernel") {
+        if !crate::chrome::test(name) {
+            crate::fail(&format!("the {name} test failed"));
+        }
+    }
+}
+
+/// Build, then lesson `name` as the page shows it, a line per step.
+pub fn trace(name: &str) {
+    build();
+    test_site();
+    if !crate::chrome::trace(name) {
+        crate::fail(&format!("no trace of {name}"));
+    }
+}
+
+/// target/test/site: the site, its module built with the tests.
+fn test_site() {
     // (Its own target directory: the site's module, built without them, stays as it is.)
     run(cmd("cargo").args(["build", "--release", "-p", "ksee-page", "--features", "selftest",
         "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));
@@ -419,11 +438,6 @@ pub fn test(ui: bool) {
         let name = e.file_name();
         let from = if name == "pkg" { Path::new("../pkg").to_path_buf() } else { Path::new("../../site").join(&name) };
         std::os::unix::fs::symlink(from, site.join(&name)).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", site.display())));
-    }
-    for &(name, ..) in crate::chrome::TESTS.iter().filter(|t| ui || t.0 == "kernel") {
-        if !crate::chrome::test(name) {
-            crate::fail(&format!("the {name} test failed"));
-        }
     }
 }
 
