@@ -191,9 +191,11 @@ pub fn Value(o: Object, path: String, depth: usize, i: usize) -> Element {
     let value = o.value.clone().unwrap_or_else(|| "{…}".into());
     let (addr, size) = (o.addr, o.size.clamp(1, 8));
     rsx! {
-        tr { class: if o.none.is_some() { "none" } else { "" },
+        // (One that opens: a click anywhere on its row.)
+        tr { class: format!("{}{}", if o.none.is_some() { "none" } else { "" }, if can { " opens" } else { "" }),
+            onclick: move |_| if can { let mut s = open.write(); if !s.remove(&p) { s.insert(p.clone()); } },
             td { class: "fname", style: "padding-left: {depth * 14}px",
-                if can { a { class: "tw", onclick: move |_| { let mut s = open.write(); if !s.remove(&p) { s.insert(p.clone()); } }, if is_open { "▾ " } else { "▸ " } } }
+                if can { span { class: "tw", if is_open { "▾ " } else { "▸ " } } }
                 "{o.name}"
             }
             td { class: "fval", title: "{wrote}",

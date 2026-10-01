@@ -229,10 +229,10 @@ fn Tasks() -> Element {
                     let name = t.task.named();
                     let q = p.clone();
                     rsx! {
-                        tr { class, title,
+                        tr { class: "{class} opens", title,
+                            onclick: move |_| { let mut s = open.write(); if !s.remove(&q) { s.insert(q.clone()); } },
                             td { colspan: "3", style: "padding-left: {8 + depth * 16}px",
                                 a { class: "mono", title: if is_open { "fold it" } else { "its task_struct, as it was at the cursor" },
-                                    onclick: move |_| { let mut s = open.write(); if !s.remove(&q) { s.insert(q.clone()); } },
                                     span { class: "tw", if is_open { "▾ " } else { "▸ " } }
                                     "{name}" }
                                 span { class: "dim", "  {said}{place}" }
