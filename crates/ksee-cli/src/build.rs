@@ -150,7 +150,7 @@ pub fn build() {
     // The programs (/init, /bin/prog): plain C, no C library (their syscalls:
     // user/syscall.h), with the kernel's UAPI headers.
     let programs = ["init", "prog"];
-    let inputs = ["user/init.c", "user/prog.c", "user/syscall.h", "user/initramfs.list", "linux/usr/gen_init_cpio"];
+    let inputs = ["user/init.c", "user/prog.c", "user/syscall.h", "user/initramfs.list"];
     let dir = "target/initramfs";
     let cpio_out = format!("{dir}/initramfs.cpio");
     if stale(&cpio_out, &inputs) {
@@ -180,10 +180,10 @@ pub fn build() {
         run(cmd("mkfs.ext4").args(["-F", "-b", "1024", "-L", "ksee", "-N", "32", "-d", &files,
                                             "-E", "lazy_itable_init=0,lazy_journal_init=0", &disk, "2M"]));
         // (The list's paths are relative to the dir.)
-        let tool = Path::new("linux/usr/gen_init_cpio").canonicalize()
-            .unwrap_or_else(|e| crate::fail(&format!("linux/usr/gen_init_cpio: {e}")));
-        let cpio = output(cmd(&tool.to_string_lossy()).arg(Path::new("user/initramfs.list").canonicalize().unwrap()).current_dir(dir));
-        std::fs::write(&cpio_out, cpio).unwrap_or_else(|e| crate::fail(&format!("{cpio_out}: {e}")));
+        eprintln!("+ (cpio) user/initramfs.list -> {cpio_out}");
+        let list = crate::read(Path::new("user/initramfs.list"));
+        std::fs::write(&cpio_out, cpio(&String::from_utf8_lossy(&list), Path::new(dir)))
+            .unwrap_or_else(|e| crate::fail(&format!("{cpio_out}: {e}")));
         gzip(&cpio_out, &format!("{SITE}/initramfs.cpio.gz"));
     }
     examples();
@@ -236,6 +236,116 @@ fn bindgen(wasm: &str, out: &str) {
 fn gzip(from: &str, to: &str) {
     let out = std::fs::File::create(to).unwrap_or_else(|e| crate::fail(&format!("{to}: {e}")));
     run(cmd("gzip").args(["-9nc", from]).stdout(out));
+}
+
+/// The archive for the list's entries (user/initramfs.list: `file NAME
+/// LOCATION MODE UID GID`, `dir NAME MODE UID GID`, `nod NAME MODE UID GID
+/// TYPE MAJ MIN` with TYPE b or c, `slink NAME TARGET MODE UID GID`; modes
+/// octal), as a newc ("070701") archive: what gen_init_cpio wrote. Names lose
+/// their leading `/`; the locations live under `dir`; all times are 0.
+fn cpio(list: &str, dir: &Path) -> Vec<u8> {
+    // (The kernel's own file types, as octal: no libc here.)
+    const REG: u32 = 0o100000;
+    const DIR: u32 = 0o040000;
+    const LNK: u32 = 0o120000;
+    const BLK: u32 = 0o060000;
+    const CHR: u32 = 0o020000;
+    let mut out = Vec::new();
+    let mut ino = 0u32;
+    let mut entry = |name: &str, mode: u32, uid: u32, gid: u32, nlink: u32, maj: u32, min: u32, data: &[u8]| {
+        ino += 1;
+        let name = name.strip_prefix('/').unwrap_or(name);
+        out.extend_from_slice(format!("070701{ino:08X}{mode:08X}{uid:08X}{gid:08X}{nlink:08X}00000000{:08X}0000000300000001{maj:08X}{min:08X}{:08X}00000000",
+            data.len(), name.len() + 1).as_bytes());
+        out.extend_from_slice(name.as_bytes());
+        // (The name's NUL, then pad the offset: the header is 110 bytes.)
+        out.push(0);
+        while out.len() % 4 != 0 {
+            out.push(0);
+        }
+        out.extend_from_slice(data);
+        while out.len() % 4 != 0 {
+            out.push(0);
+        }
+    };
+    let num = |w: &str| w.parse::<u32>().unwrap_or_else(|_| crate::fail(&format!("initramfs.list: {w}: not a number")));
+    let oct = |w: &str| u32::from_str_radix(w, 8).unwrap_or_else(|_| crate::fail(&format!("initramfs.list: {w}: not octal")));
+    for line in list.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+        let w: Vec<&str> = line.split_whitespace().collect();
+        match w[..] {
+            ["file", name, loc, mode, uid, gid] => {
+                let data = std::fs::read(dir.join(loc))
+                    .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", dir.join(loc).display())));
+                entry(name, REG | oct(mode), num(uid), num(gid), 1, 0, 0, &data);
+            }
+            ["dir", name, mode, uid, gid] => entry(name, DIR | oct(mode), num(uid), num(gid), 2, 0, 0, &[]),
+            ["nod", name, mode, uid, gid, t, maj, min] => entry(name,
+                match t { "b" => BLK, "c" => CHR, _ => crate::fail(&format!("initramfs.list: {t}: neither b nor c")) } | oct(mode),
+                num(uid), num(gid), 1, num(maj), num(min), &[]),
+            ["slink", name, target, mode, uid, gid] => {
+                let mut data = target.as_bytes().to_vec();
+                data.push(0);
+                entry(name, LNK | oct(mode), num(uid), num(gid), 1, 0, 0, &data);
+            }
+            _ => crate::fail(&format!("initramfs.list: {line}: neither file, dir, nod nor slink")),
+        }
+    }
+    entry("TRAILER!!!", 0, 0, 0, 1, 0, 0, &[]);
+    // (As gen_init_cpio: pad the file to a block.)
+    while out.len() % 512 != 0 {
+        out.push(0);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The headers back: each entry's name, mode and data.
+    fn entries(archive: &[u8]) -> Vec<(String, u32, Vec<u8>)> {
+        let mut entries = Vec::new();
+        let mut at = 0;
+        let mut align = |at: &mut usize| {
+            while *at % 4 != 0 {
+                assert_eq!(archive[*at], 0);
+                *at += 1;
+            }
+        };
+        loop {
+            let head = std::str::from_utf8(&archive[at..at + 110]).unwrap();
+            assert_eq!(&head[..6], "070701");
+            let num = |r: std::ops::Range<usize>| u32::from_str_radix(&head[r], 16).unwrap();
+            let (size, namesize) = (num(54..62) as usize, num(94..102) as usize);
+            at += 110;
+            let name = std::str::from_utf8(&archive[at..at + namesize - 1]).unwrap().to_string();
+            at += namesize;
+            align(&mut at);
+            let data = archive[at..at + size].to_vec();
+            at += size;
+            align(&mut at);
+            let last = name == "TRAILER!!!";
+            entries.push((name, num(14..22), data));
+            if last {
+                return entries;
+            }
+        }
+    }
+
+    #[test]
+    fn cpio_round_trip() {
+        let dir = std::env::temp_dir().join(format!("ksee-cpio-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("hello"), b"hi\n").unwrap();
+        let entries = entries(&cpio("dir /d 0755 0 0\nfile /d/hello hello 0644 0 0\nslink /d/link hello 0777 0 0\n", &dir));
+        assert_eq!(entries.len(), 4);
+        assert_eq!((entries[0].0.as_str(), entries[0].1, entries[0].2.len()), ("d", 0o040755u32, 0));
+        assert_eq!((entries[1].0.as_str(), entries[1].1, entries[1].2.as_slice()), ("d/hello", 0o100644u32, b"hi\n".as_slice()));
+        assert_eq!((entries[2].0.as_str(), entries[2].1, entries[2].2.as_slice()), ("d/link", 0o120777u32, b"hello\0".as_slice()));
+        assert_eq!((entries[3].0.as_str(), entries[3].2.len()), ("TRAILER!!!", 0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 /// The course: its chapters, each its examples (user/examples/NAME.json)
