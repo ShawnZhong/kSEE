@@ -33,10 +33,24 @@ impl Names {
 
     /// The names line `line` sees, each once, as get has them.
     pub fn before(&self, line: usize) -> Vec<(&str, &Sym)> {
+        use alloc::collections::BTreeMap;
+        // (One pass: each name once, in first-seen order, standing for what
+        // its last line before `line` made it, as get has it. A call's
+        // result is set when it returns, so lines may finish out of order:
+        // the greatest line wins, not the last set.)
+        let mut at: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
         let mut out: Vec<(&str, &Sym)> = Vec::new();
-        for (n, _, _) in self.0.iter().filter(|e| e.1 < line) {
-            if !out.iter().any(|(m, _)| m == n) {
-                out.push((n, self.get(n, line).unwrap()));
+        for (n, l, s) in self.0.iter().filter(|e| e.1 < line) {
+            match at.get(n.as_str()) {
+                Some(&(_, k)) if at[n.as_str()].0 > *l => {}
+                Some(&(_, k)) => {
+                    at.insert(n, (*l, k));
+                    out[k].1 = s;
+                }
+                None => {
+                    at.insert(n, (*l, out.len()));
+                    out.push((n, s));
+                }
             }
         }
         out
