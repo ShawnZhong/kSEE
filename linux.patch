@@ -1,3 +1,28 @@
+diff --git a/Makefile b/Makefile
+index c28f11c61..8edb0b52a 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1377,7 +1377,8 @@ PHONY += vmlinux
+ #  vmlinux: private export LDFLAGS_vmlinux := $(LDFLAGS_vmlinux)
+ vmlinux: private _LDFLAGS_vmlinux := $(LDFLAGS_vmlinux)
+ vmlinux: export LDFLAGS_vmlinux = $(_LDFLAGS_vmlinux)
+-vmlinux: vmlinux.o $(KBUILD_LDS) modpost
++# (wasm: no modules, and modpost cannot read wasm objects anyway.)
++vmlinux: vmlinux.o $(KBUILD_LDS) $(if $(filter-out wasm,$(SRCARCH)),modpost)
+ 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.vmlinux
+ 
+ # The actual objects are generated when descending,
+@@ -1415,7 +1416,10 @@ archprepare: outputmakefile archheaders archscripts scripts include/config/kerne
+ 	include/generated/rustc_cfg remove-stale-files
+ 
+ prepare0: archprepare
++# (wasm: no modules, and modpost cannot read wasm objects anyway.)
++ifneq ($(SRCARCH),wasm)
+ 	$(Q)$(MAKE) $(build)=scripts/mod
++endif
+ 	$(Q)$(MAKE) $(build)=. prepare
+ 
+ # All the preparing..
 diff --git a/arch/wasm/Kconfig b/arch/wasm/Kconfig
 new file mode 100644
 index 000000000..9fbf0a932
@@ -1795,7 +1820,7 @@ index 000000000..7bcd03214
 +esac
 diff --git a/arch/wasm/scripts/wasm-ld b/arch/wasm/scripts/wasm-ld
 new file mode 100755
-index 000000000..512dd4c76
+index 000000000..c41e0185f
 --- /dev/null
 +++ b/arch/wasm/scripts/wasm-ld
 @@ -0,0 +1,28 @@
@@ -1823,7 +1848,7 @@ index 000000000..512dd4c76
 +
 +[ -z "$script" ] && exec $WASM_LD "$@"
 +
-+head=$(mktemp --suffix=.o)
++head=$(mktemp "${TMPDIR:-/tmp}/wasm-ld.XXXXXX.o")
 +trap 'rm -f "$head"' EXIT
 +$WASM_CC --target=wasm32 -x assembler -c "$script" -o "$head"
 +$WASM_LD "$head" "$@"
@@ -1839,26 +1864,42 @@ index b67636b28..b37824b5c 100644
  # This is only for i386 UM builds, which need the 32-bit target not -m32
  CLANG_TARGET_FLAGS_i386		:= i386-linux-gnu
  CLANG_TARGET_FLAGS_um		:= $(CLANG_TARGET_FLAGS_$(SUBARCH))
-diff --git a/scripts/mod/mk_elfconfig.c b/scripts/mod/mk_elfconfig.c
-index e8cee4e4b..71a441be2 100644
---- a/scripts/mod/mk_elfconfig.c
-+++ b/scripts/mod/mk_elfconfig.c
-@@ -8,8 +8,14 @@ int
- main(int argc, char **argv)
- {
- 	unsigned char ei[EI_NIDENT];
-+	size_t n = fread(ei, 1, EI_NIDENT, stdin);
+diff --git a/scripts/Makefile.vmlinux b/scripts/Makefile.vmlinux
+index fcae1e432..383c3a033 100644
+--- a/scripts/Makefile.vmlinux
++++ b/scripts/Makefile.vmlinux
+@@ -110,10 +110,11 @@ vmlinux: vmlinux.unstripped FORCE
+ #   depmod: ERROR: kmod_builtin_iter_next: unexpected string without modname prefix
+ #
+ # Strip the trailing padding bytes after extracting .modinfo to comply with
+-# what kmod expects to parse.
++# what kmod expects to parse. (wasm has no modules, so nothing is padded:
++# skip the strip, which BSD sed cannot spell.)
+ quiet_cmd_modules_builtin_modinfo = GEN     $@
+       cmd_modules_builtin_modinfo = $(cmd_objcopy); \
+-                                    sed -i 's/\x00\+$$/\x00/g' $@; \
++                                    $(if $(filter-out wasm,$(SRCARCH)),sed -i 's/\x00\+$$/\x00/g' $@) \
+                                     chmod -x $@
  
--	if (fread(ei, 1, EI_NIDENT, stdin) != EI_NIDENT) {
-+	/* wasm32 objects are not ELF; modpost ignores them anyway. */
-+	if (n >= 4 && memcmp(ei, "\0asm", 4) == 0) {
-+		printf("#define KERNEL_ELFCLASS ELFCLASS32\n");
-+		return 0;
-+	}
-+	if (n != EI_NIDENT) {
- 		fprintf(stderr, "Error: input truncated\n");
- 		return 1;
- 	}
+ OBJCOPYFLAGS_modules.builtin.modinfo := -j .modinfo -O binary
+diff --git a/usr/gen_init_cpio.c b/usr/gen_init_cpio.c
+index b7296edc6..f5ac25821 100644
+--- a/usr/gen_init_cpio.c
++++ b/usr/gen_init_cpio.c
+@@ -14,6 +14,13 @@
+ #include <ctype.h>
+ #include <limits.h>
+ 
++// (macOS: no copy_file_range(2) or O_LARGEFILE; the read/write loop below
++// copies as is, and off_t is 64-bit.)
++#ifdef __APPLE__
++#define copy_file_range(in, off_in, out, off_out, len, flags) ((ssize_t)-1)
++#define O_LARGEFILE 0
++#endif
++
+ /*
+  * Original work by Jeff Garzik
+  *
 diff --git a/usr/initramfs_data.S b/usr/initramfs_data.S
 index cd67edc38..b85b5c0d1 100644
 --- a/usr/initramfs_data.S
