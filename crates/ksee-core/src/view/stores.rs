@@ -273,7 +273,7 @@ impl View<'_> {
             // (By its name, "prog(19)": the task running as the span begins,
             // which another may follow in it; not "current".)
             let who = self.task(task, first);
-            let who = format!("{}({})", who.comm.unwrap_or_default(), who.pid.unwrap_or(0));
+            let who = who.named();
             add((who.clone(), None), RegionKind::Task, ty, task, None, None, None);
             // (And what its pointer members point to, as the span ends:
             // current->files, ->fs, ->mm: "files->next_fd" through a local

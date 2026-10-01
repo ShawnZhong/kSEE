@@ -37,6 +37,13 @@ pub struct TaskRef {
     pub comm: Option<String>,
 }
 
+impl TaskRef {
+    /// As the page names it: comm(pid).
+    pub fn named(&self) -> String {
+        format!("{}({})", self.comm.clone().unwrap_or_default(), self.pid.unwrap_or(0))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SyscallSummary {
     pub index: usize,

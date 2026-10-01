@@ -387,7 +387,7 @@ fn lane_name(ui: Ui, runner: &str, program: &[String]) -> (String, i32) {
         m.syscall_of(id).and_then(|k| m.view(|v| v.syscalls().into_iter().nth(k))).map(|s| s.task)
     });
     match task {
-        Some(t) => (format!("{}({})", t.comm.unwrap_or_default(), t.pid.unwrap_or(0)), t.pid.unwrap_or(0)),
+        Some(t) => (t.named(), t.pid.unwrap_or(0)),
         None if runner.is_empty() => ("the program".into(), 0),
         None => (runner.into(), 0),
     }

@@ -9,7 +9,7 @@
 //! function by any part of its name.
 
 use dioxus::prelude::*;
-use ksee_core::view::{Chart, Move, TaskRef};
+use ksee_core::view::{Chart, Move};
 
 use crate::machine;
 use crate::state::{Derived, Peek, Shared, Ui};
@@ -31,11 +31,6 @@ fn task_color(pid: i32) -> String {
     format!("hsl({} 50% {}%)", hue(pid), if pid == 0 { 85 } else { 62 })
 }
 
-/// A task as the page names it: comm(pid).
-pub fn named(t: &TaskRef) -> String {
-    format!("{}({})", t.comm.clone().unwrap_or_default(), t.pid.unwrap_or(0))
-}
-
 /// What the tip over a bar says: lines, where.
 #[derive(Clone, PartialEq)]
 struct Tip {
@@ -50,7 +45,7 @@ struct Tip {
 pub fn Timeline() -> Element {
     let mut ui = use_context::<Ui>();
     let tip = use_signal(|| None::<Tip>);
-    let title = ui.syscall().map(|s| format!("{} by {}", s.name, named(&s.task))).unwrap_or_default();
+    let title = ui.syscall().map(|s| format!("{} by {}", s.name, s.task.named())).unwrap_or_default();
     rsx! {
         section { class: "history",
             Overview {}
@@ -313,7 +308,7 @@ fn said(first: usize, inlined: bool, name: &str) -> Vec<(String, &'static str)> 
                 let ret = s.ret.map(|r| v.tables.types.result(r as i64)).unwrap_or_else(|| "…".into());
                 let shown: Vec<String> = args.iter().map(|(_, x)| x.clone()).collect();
                 vec![(format!("{}({}) = {ret}", v.tables.types.syscall_name(s.nr), shown.join(", ")), ""),
-                     (format!("a syscall by {}", named(&task)), "dim")]
+                     (format!("a syscall by {}", task.named()), "dim")]
             }
             None => std::iter::once((format!("{name}{ret}"), "")).chain(args.into_iter().map(|(n, x)| (format!("{n} = {x}"), "f"))).collect(),
         }
@@ -341,7 +336,7 @@ fn Strip() -> Element {
             for (a , e , task) in runs {
                 {
                     let t = m.view(|v| v.task(task, chart.cols[e - 1].i));
-                    let name = named(&t);
+                    let name = t.named();
                     rsx! { div { class: "run", title: "{name}", style: "left: {pct(a)}%; width: {pct(e - a)}%; background: {task_color(t.pid.unwrap_or(0))}", "{name}" } }
                 }
             }
@@ -358,7 +353,7 @@ fn Transport() -> Element {
     let lines = ui.lines();
     let here = lines.get((ui.cursor)());
     let s = ui.syscall();
-    let task = s.as_ref().map(|s| named(&s.task)).unwrap_or_default();
+    let task = s.as_ref().map(|s| s.task.named()).unwrap_or_default();
     let place = here.map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
     let call = s.as_ref().map(|s| format!(" · in {}", s.name)).unwrap_or_default();
     // (A step that lands after a call: what it returned.)
