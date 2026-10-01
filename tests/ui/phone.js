@@ -6,7 +6,7 @@
   const box = (s) => document.querySelector(s).getBoundingClientRect();
   const r = { order: box(".lesson").top < box(".chart").top && box(".chart").top < box(".source").top && box(".source").top < box(".panels").top,
               wide: document.documentElement.scrollWidth, at: where() };
-  button("▶").click();
+  press("▶");
   await sleep(300);
   r.stepped = where() !== r.at || true;
   if (!r.order || r.wide > innerWidth) fail("the phone", r);

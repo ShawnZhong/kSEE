@@ -138,10 +138,10 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
     let mut top = use_signal(|| 0.0f64);
     let mut view = use_signal(|| 600.0f64);
     let mut handle = use_signal(|| None::<std::rc::Rc<MountedData>>);
-    // (The marked line in the middle, as it changes, or the file.)
-    let shown = path.clone();
-    use_effect(use_reactive!(|(line, shown)| {
-        let _ = &shown;
+    // (The marked line in the middle, as it changes, or the file, once it is loaded.)
+    let loaded = text.read().clone().flatten().map(|f| Rc::as_ptr(&f) as usize);
+    use_effect(use_reactive!(|(line, loaded)| {
+        let _ = loaded;
         if let Some(h) = handle() {
             let y = ((line as f64 - 1.0) * LINE - view() / 2.0).max(0.0);
             spawn(async move { let _ = h.scroll(PixelsVector2D::new(0.0, y), ScrollBehavior::Instant).await; });

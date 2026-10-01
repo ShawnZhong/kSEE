@@ -238,7 +238,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     let on = calls.contains(&(first, inlined));
                     let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
                     let bg = if found { "var(--found)".to_string() } else { color(bar.file.as_deref(), on) };
-                    let class = format!("bar{}{}", if on { " on" } else { "" }, if lit == Some((first, inlined)) { " lit" } else { "" });
+                    let class = format!("bar{}{}{}", if on { " on" } else { "" }, if found { " found" } else { "" }, if lit == Some((first, inlined)) { " lit" } else { "" });
                     let (name, label) = (bar.name.clone(), bar.label.clone());
                     let wide = (e - a) as f64 * px >= 24.0;
                     rsx! {
