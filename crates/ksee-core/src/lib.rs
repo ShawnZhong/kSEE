@@ -9,6 +9,7 @@
 //! * [`view`]: what the page shows of it.
 //! * [`program`]: a syscall's arguments as the page writes them (C, with the
 //!   kernel's types).
+//! * [`highlight`]: the kernel's source, colored.
 //!
 //! `no_std`, so that the same code runs in the wasm runtime
 //! (crates/ksee-runtime) and natively (crates/ksee-cli, tests).
@@ -19,6 +20,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod arch;
+pub mod highlight;
 pub mod program;
 pub mod mem;
 pub mod module;

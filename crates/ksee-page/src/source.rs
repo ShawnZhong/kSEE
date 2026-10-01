@@ -17,7 +17,7 @@ use ksee_core::view::{Frame, Object};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::highlight::{self, Kind, Piece};
+use ksee_core::highlight::{self, Kind, Piece};
 use crate::machine;
 use crate::state::{Derived, Ui};
 
@@ -147,8 +147,9 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
     let loaded = text.read().clone().flatten().map(|f| Rc::as_ptr(&f) as usize);
     use_effect(use_reactive!(|(line, loaded)| {
         let _ = loaded;
-        if let Some(h) = handle() {
-            let y = ((line as f64 - 1.0) * LINE - view() / 2.0).max(0.0);
+        // (Read, not followed: a scroll is no reason to centre it again.)
+        if let Some(h) = handle.peek().clone() {
+            let y = ((line as f64 - 1.0) * LINE - *view.peek() / 2.0).max(0.0);
             spawn(async move { let _ = h.scroll(PixelsVector2D::new(0.0, y), ScrollBehavior::Instant).await; });
         }
     }));

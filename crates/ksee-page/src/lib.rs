@@ -17,7 +17,6 @@ use wasm_bindgen::prelude::*;
 
 mod chart;
 mod editor;
-mod highlight;
 mod layout;
 mod lesson;
 mod panels;

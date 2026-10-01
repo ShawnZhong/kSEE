@@ -272,10 +272,11 @@ fn Trace() -> Element {
     let cur = d.moment.cloned().map(|(i, _)| i);
     // (The cursor's row in view, as it moves out of it.)
     use_effect(use_reactive!(|(cur,)| {
-        let (Some(h), Some(i)) = (handle(), cur) else { return };
-        let y = i as f64 * ROW;
-        if y < top() || y + ROW > top() + view() {
-            let to = (y - view() / 2.0).max(0.0);
+        // (Read, not followed: a scroll is no reason to bring the cursor back.)
+        let (Some(h), Some(i)) = (handle.peek().clone(), cur) else { return };
+        let (y, top, view) = (i as f64 * ROW, *top.peek(), *view.peek());
+        if y < top || y + ROW > top + view {
+            let to = (y - view / 2.0).max(0.0);
             spawn(async move { let _ = h.scroll(PixelsVector2D::new(0.0, to), ScrollBehavior::Instant).await; });
         }
     }));

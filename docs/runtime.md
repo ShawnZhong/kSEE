@@ -86,8 +86,7 @@ its stack) is computed once each time they change (memos).
 | editor.rs | a line written in place: what fits at the cursor (`Machine::complete`), the signature, why a line cannot be made (`Machine::can_make`) |
 | chart.rs | the timeline: the overview, the window as a stack chart (`View::chart`: DOM bars, a run of a call over its columns each; zoom, pan, a tip, a click: the cursor there, that frame), the task strip, the transport; find a function |
 | stack.rs | stepping (into, over, out: `view::step`; on into the task's next syscall), the keys; the Stack: frames, values that open (as memory was then), who wrote a value |
-| source.rs | the source of the frame shown (the site's src/): the whole file, only the lines in view made; the line it runs, its values; those that ran in the call, what each stored; a name's value, its definition |
-| highlight.rs | C, colored: a line's pieces (keywords, types, strings, comments, numbers, names) |
+| source.rs | the source of the frame shown (the site's src/): the whole file, only the lines in view made; the line it runs, its values; those that ran in the call, what each stored; a name's value, its definition; colored by ksee-core's highlight.rs (a line's pieces: keywords, types, strings, comments, numbers, preprocessor lines, names) |
 | panels.rs | the tabs: Stack, Tasks (a tree, each task_struct to open), Objects (what the call changed, `View::objects`), Console, Trace (`View::raw`, only the rows in view made) |
 | layout.rs | the splits: the lesson's column, the chart's height, the tabs' column, dragged (kept in the browser's storage) |
 | state.rs | the state and what it makes |

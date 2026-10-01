@@ -139,7 +139,7 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 /* The source: the lines that ran, the function, the cursor's line and its values */
 .source { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); }
 .srcbar { display: flex; gap: 8px; padding: 3px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; color: var(--dim); flex: none; }
-.source .scroll { flex: 1; overflow: auto; min-height: 0; }
+.source .scroll { flex: 1; overflow: auto; min-height: 0; overflow-anchor: none; }
 .code .ln { white-space: pre; padding-right: 10px; height: 17px; line-height: 17px; overflow: hidden; }
 .code .ln.ran { background: var(--ran); }
 .code .ln.infn { box-shadow: inset 3px 0 var(--accent); }
@@ -188,7 +188,7 @@ table.objs tr.later { opacity: .45; }
 .obj tr.same td { color: var(--dim); }
 .obj tr.later td { opacity: .4; }
 /* The Trace: a row a record, only those in view made */
-.trace { display: block; position: relative; }
+.trace { display: block; position: relative; overflow-anchor: none; }
 .trace .raw { position: relative; font-size: 11px; }
 .trace .rows { position: absolute; left: 0; right: 0; }
 .trace .row { height: 18px; line-height: 18px; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
