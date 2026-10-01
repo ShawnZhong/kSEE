@@ -72,6 +72,7 @@ call, and the machine is quiet at once.
 
 ## Programs
 
+<<<<<<< HEAD
 Programs are **position-independent** wasm modules (`-fPIC -pie`) that
 import the kernel's memory: as on any NOMMU system, a program lives in
 pages the kernel gives it, and its pointers are kernel addresses.
@@ -84,7 +85,7 @@ which the task calls when it returns to user mode. A syscall is a plain
 wasm call into the kernel's `syscall` export (kernel/syscall.c). Its
 `sys_call_table` entries are weak: one this kernel does not build has
 none, NULL, and returns -ENOSYS; so the table says which syscalls there
-are, and `ksee pack` reads them from it (the page offers only those).
+are, and the build's pack reads them from it (the page offers only those).
 
 So `copy_from_user`/`copy_to_user` are plain copies, recorded like any
 other, and a program's buffers are in the recording's memory. `access_ok`

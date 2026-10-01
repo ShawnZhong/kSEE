@@ -23,7 +23,7 @@ Every function gets:
   optimizer removed is known to be missing, not misread, a word each, two
   for one wider than 32 bits) and its **frame base** (the stack pointer
   after its prologue: its locals in memory are at their DWARF offsets from
-  it). The entry block's first line is the function's signature, so a call
+  it, which the build's pack writes, see below). The entry block's first line is the function's signature, so a call
   begins there, before its first statement;
 - before each **return**, a return record with the value;
 - where the code sets a **named variable it keeps in a wasm local**, not
@@ -106,7 +106,7 @@ concatenated by wasm-ld):
 
 The plugin cannot say the rest itself: a local's frame offset is the
 backend's (after the pass), a global's address the linker's, and a type is
-one across all the units. `ksee pack` (crates/ksee-cli) reads the kernel's
+one across all the units. The build's pack (crates/ksee-cli/src/pack) reads the kernel's
 DWARF and adds `ksee.types`: the types (deduplicated across units), globals,
 each function's parameters with their types (`P`, as C declares them) and
 its locals with their types and, those in memory, their offsets from the

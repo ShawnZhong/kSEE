@@ -10,7 +10,7 @@ shape everything), then the doc for the part you touch ([docs/](docs/README.md))
 - **Rules, not cases.** No special case for one syscall, function, struct
   or example: find the rule the data already says (the types, the
   recording, the debug info), or ask. Kernel names belong to the kernel,
-  `ksee pack` and ksee-core's arch.rs, never to the page.
+  the build's pack and ksee-core's arch.rs, never to the page.
 - **Nothing is fixed.** Every decision, earlier ones included (this file's
   too), can be revisited: propose what seems right, with the reason. There
   is no compatibility to keep: nothing outside this repository depends on
@@ -25,5 +25,6 @@ shape everything), then the doc for the part you touch ([docs/](docs/README.md))
   patch` writes linux.patch from it (never the build): commit that.
 - **Before you finish:** `./ksee.sh test` (`--ui` with `$CHROME` runs the
   page too; the tests check what the page shows). Commit small. Use the page
-  as a user would (`ksee shot` for a screenshot); measure before claiming a
-  cost. The docs and README describe the current state: change them with the code.
+  as a user would (`./ksee.sh shot OUT.png --at=#ex=…` for a
+  screenshot); measure before claiming a cost. The docs and README describe
+  the current state: change them with the code.
