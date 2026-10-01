@@ -15,6 +15,7 @@ use ksee_runtime::machine::Machine;
 use wasm_bindgen::prelude::*;
 
 mod chart;
+mod editor;
 mod lesson;
 mod panels;
 mod source;
@@ -52,14 +53,18 @@ pub fn mount(root: &str, machine: Machine, examples: JsValue) -> Result<(), JsVa
 
 #[component]
 fn App() -> Element {
-    let ui = use_context_provider(Ui::new);
+    let ui = use_context_provider(|| {
+        let ui = Ui::new();
+        lesson::from_url(ui);
+        ui
+    });
     let derived = state::Derived::new(ui);
     use_context_provider(|| derived);
     rsx! {
         lesson::Header {}
         main { class: "page",
             article { class: "lesson", lesson::Lesson {} }
-            section { class: "work",
+            section { class: "work", tabindex: "0", onkeydown: move |e| stack::key(ui, &e),
                 if ui.call.read().is_some() {
                     chart::Chart {}
                     stack::Transport {}

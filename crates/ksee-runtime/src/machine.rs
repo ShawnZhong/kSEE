@@ -213,6 +213,19 @@ impl Machine {
         k(|k| k.lines.set(line + 1));
         Ok(made)
     }
+
+    /// Whether line `text` can be made as line `line` (with the names of
+    /// the lines before it): why not, if not; nothing made.
+    pub fn can_make(&self, text: &str, line: usize) -> Result<(), String> {
+        plan(text, line).map(|_| ())
+    }
+
+    /// What fits at the cursor `at` of `text`, line `line` of the program
+    /// (ksee_core::program::completions; `common`: the syscalls first).
+    pub fn complete(&self, text: &str, at: usize, line: usize, common: &[String]) -> Vec<ksee_core::program::Completion> {
+        let c = ksee_core::program::context(text, at);
+        k(|k| ksee_core::program::completions(&tables().types, &c, &k.names.borrow().before(line), common))
+    }
 }
 
 #[wasm_bindgen]
@@ -221,7 +234,7 @@ impl Machine {
     /// names of the lines before it: its statement (Machine::statement),
     /// or why it cannot be made; nothing made.
     pub fn check(&self, text: &str, line: usize) -> Result<JsValue, JsValue> {
-        plan(text, line)?;
+        self.can_make(text, line)?;
         self.statement(text)
     }
 

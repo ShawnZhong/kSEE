@@ -32,7 +32,9 @@ pub struct Example {
 pub enum Outcome {
     Declared(String),
     Assigned(String),
-    Call { id: u32, ret: Option<f64>, how: Option<String> },
+    /// (`during`: the line during which it finished, if a later one's;
+    /// `changed`: the variables it changed, as they are then.)
+    Call { id: u32, ret: Option<f64>, how: Option<String>, during: Option<usize>, changed: Vec<String> },
     Failed(String),
 }
 
@@ -59,7 +61,9 @@ async fn run(mut ui: Ui, lines: Vec<String>) {
         return;
     }
     ui.console.set(String::new());
-    for line in &lines {
+    // (The variables so far: their name, type, address, count, and as they were shown last.)
+    let mut vars: Vec<(String, u32, u32, Option<u32>, u32, String)> = Vec::new();
+    for (j, line) in lines.iter().enumerate() {
         let made = match m.make(line) {
             Ok(made) => made,
             Err(e) => {
@@ -68,25 +72,47 @@ async fn run(mut ui: Ui, lines: Vec<String>) {
             }
         };
         if let Some(v) = made.decl {
-            ui.outcomes.write().push(Outcome::Declared(m.show(v.ty, v.addr, v.count)));
+            let shown = m.show(v.ty, v.addr, v.count);
+            vars.push((v.name, v.ty, v.addr, v.count, v.size * v.count.unwrap_or(1), shown.clone()));
+            ui.outcomes.write().push(Outcome::Declared(shown));
             continue;
         }
         if let Some(shown) = made.assigned {
             ui.outcomes.write().push(Outcome::Assigned(shown));
             continue;
         }
-        ui.outcomes.write().push(Outcome::Call { id: made.id.unwrap_or(0), ret: None, how: None });
+        ui.outcomes.write().push(Outcome::Call { id: made.id.unwrap_or(0), ret: None, how: None, during: None, changed: Vec::new() });
         let Ok(news) = JsFuture::from(m.quiet()).await else { return };
         m.snapshot();
         ui.version += 1;
         ui.console.write().push_str(&m.console());
         let news: News = serde_wasm_bindgen::from_value(news).unwrap_or(News { finished: Vec::new() });
         for f in news.finished {
-            for o in ui.outcomes.write().iter_mut() {
-                if let Outcome::Call { id, ret, how } = o && *id == f.id {
-                    (*ret, *how) = (Some(f.ret), Some(f.how.clone()));
+            for (k, o) in ui.outcomes.write().iter_mut().enumerate() {
+                if let Outcome::Call { id, ret, how, during, .. } = o && *id == f.id {
+                    (*ret, *how, *during) = (Some(f.ret), Some(f.how.clone()), (k != j).then_some(j));
                 }
             }
+        }
+        // (The variables the line's call changed, by now; one passed as records of a
+        // variable length, as its parameter's type reads them: a directory's entries.)
+        let (call, args) = match statement(line).map(|s| s.line) {
+            Ok(Line::Call { call, texts, .. }) => (call, texts),
+            _ => (String::new(), Vec::new()),
+        };
+        let ret = match ui.outcomes.read().get(j) { Some(Outcome::Call { ret, .. }) => *ret, _ => None };
+        let mut changed = Vec::new();
+        for (name, ty, addr, count, size, last) in vars.iter_mut() {
+            let now = m.show(*ty, *addr, *count);
+            if now != *last {
+                let records = args.iter().position(|a| a == name).zip(ret.filter(|r| *r > 0.0))
+                    .and_then(|(k, r)| m.as_records(&call, k, *addr, (r as u32).min(*size)));
+                changed.push(format!("{name} = {}", records.unwrap_or_else(|| now.clone())));
+                *last = now;
+            }
+        }
+        if let Some(Outcome::Call { changed: c, .. }) = ui.outcomes.write().get_mut(j) {
+            *c = changed;
         }
     }
     let ex = &examples()[(ui.lesson)()];
@@ -135,6 +161,44 @@ fn follow(mut ui: Ui, target: &str) {
     }
 }
 
+/// The URL's state: #ex=NAME (the lesson), &p=LINES (its program, if
+/// changed: its lines separated by `;`).
+fn hash() -> (Option<String>, Option<String>) {
+    let h = web_sys::window().and_then(|w| w.location().hash().ok()).unwrap_or_default();
+    let mut ex = None;
+    let mut p = None;
+    for kv in h.trim_start_matches('#').split('&') {
+        let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+        let v = js_sys::decode_uri_component(v).ok().and_then(|v| v.as_string()).unwrap_or_default();
+        match k {
+            "ex" => ex = Some(v),
+            "p" => p = Some(v),
+            _ => {}
+        }
+    }
+    (ex, p)
+}
+
+/// The lesson and program the URL says, at first.
+pub fn from_url(mut ui: Ui) {
+    let (ex, p) = hash();
+    let all = examples();
+    if let Some(k) = ex.and_then(|n| all.iter().position(|e| e.name == n)) {
+        ui.lesson.set(k);
+        ui.program.set(p.map_or_else(|| all[k].steps.clone(), |p| machine().program_lines(&p)));
+    }
+}
+
+/// The URL, as the lesson and its program are.
+fn to_url(ui: Ui) {
+    let ex = &examples()[(ui.lesson)()];
+    let program = (ui.program)();
+    let p = if program == ex.steps { String::new() } else { format!("&p={}", js_sys::encode_uri_component(&program.join("; "))) };
+    if let Some(h) = web_sys::window().and_then(|w| w.history().ok()) {
+        let _ = h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&format!("#ex={}{p}", ex.name)));
+    }
+}
+
 #[component]
 pub fn Header() -> Element {
     let mut ui = use_context::<Ui>();
@@ -166,6 +230,7 @@ pub fn Lesson() -> Element {
     // (The program, made again as it changes: a lesson opened, a try.)
     use_effect(move || {
         let lines = (ui.program)();
+        to_url(ui);
         spawn(run(ui, lines));
     });
     let all = examples();
@@ -191,28 +256,53 @@ pub fn Lesson() -> Element {
         }
         ol { class: "cells",
             for (j , line) in program.iter().enumerate() {
-                Cell { key: "{j}", line: line.clone(), outcome: outcomes.get(j).cloned(), call: calls[j] }
+                Cell { key: "{j}:{line}", j, line: line.clone(), outcome: outcomes.get(j).cloned(), call: calls[j] }
                 if mine {
                     for p in ex.text.iter().filter(|p| calls[j].is_some() && first(p) == calls[j]) { Paragraph { text: p.clone() } }
                 }
+            }
+            li { class: "cell add",
+                crate::editor::Editor { key: "{program.len()}", text: String::new(), line: program.len(), placeholder: "add a call…", common: common(),
+                    done: move |t: String| if !t.is_empty() { let mut ui = ui; ui.program.write().push(t); },
+                    focus: move |_| {} }
             }
         }
     }
 }
 
-/// A program's line: what it did, and, a call, its recording selected as
-/// it is clicked.
+/// A program's line `j` (written in place: Enter makes the program again,
+/// the line changed, or removed if emptied): what it did; a call, its
+/// recording selected as it gets the focus.
 #[component]
-fn Cell(line: String, outcome: Option<Outcome>, call: Option<usize>) -> Element {
+fn Cell(j: usize, line: String, outcome: Option<Outcome>, call: Option<usize>) -> Element {
     let ui = use_context::<Ui>();
     let selected = call.is_some() && call.and_then(|n| call_of(ui, n)) == (ui.call)();
     rsx! {
         li { class: if selected { "cell on" } else { "cell" },
-            onclick: move |_| if let Some(k) = call.and_then(|n| call_of(ui, n)) { ui.select(k) },
-            code { "{line}" }
+            crate::editor::Editor { text: line.clone(), line: j, placeholder: "", common: common(),
+                done: move |t: String| {
+                    let mut ui = ui;
+                    let mut p = ui.program.write();
+                    if t.is_empty() { p.remove(j); } else { p[j] = t; }
+                },
+                focus: move |_| if let Some(k) = call.and_then(|n| call_of(ui, n)) { ui.select(k) } }
             span { class: "result", {said(outcome.as_ref())} }
         }
+        if let Some(Outcome::Call { changed, .. }) = &outcome && !changed.is_empty() {
+            div { class: "changed mono dim", "{changed.join(\"   \")}" }
+        }
     }
+}
+
+/// The syscalls the lessons make: listed first.
+fn common() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for l in examples().iter().flat_map(|e| e.steps.iter()) {
+        if let Ok(s) = statement(l) && let Line::Call { call, .. } = s.line && !out.contains(&call) {
+            out.push(call);
+        }
+    }
+    out
 }
 
 /// An outcome as its line says it.
@@ -223,9 +313,14 @@ fn said(o: Option<&Outcome>) -> String {
         Some(Outcome::Assigned(v)) => format!("→ {v}"),
         Some(Outcome::Failed(e)) => e.clone(),
         Some(Outcome::Call { ret: None, .. }) => "… blocked".into(),
-        Some(Outcome::Call { how: Some(h), .. }) if h == "exited" => "(no return: it exited)".into(),
-        Some(Outcome::Call { ret: Some(r), .. }) => format!("= {}", machine().result(*r)),
+        Some(Outcome::Call { how: Some(h), during, .. }) if h != "returned" => format!("(no return: {}{})", if h == "exec" { "it ran a program" } else { "it exited" }, later(*during)),
+        Some(Outcome::Call { ret: Some(r), during, .. }) => format!("= {}{}", machine().result(*r), later(*during)),
     }
+}
+
+/// " (during line N)", for a call that finished as a later line ran.
+fn later(during: Option<usize>) -> String {
+    during.map_or(String::new(), |j| format!(" (during line {})", j + 1))
 }
 
 #[component]

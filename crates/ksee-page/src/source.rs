@@ -47,20 +47,26 @@ pub fn Source() -> Element {
     rsx! {
         div { class: "source",
             div { class: "srchead mono dim", "{path}" }
-            Code { key: "{path}", path: path.clone(), from, to, line }
+            Code { key: "{path}", path: path.clone(), from, to, line, ran: ran(ui, &path) }
         }
     }
 }
 
 /// File `path`'s lines `from..=to`, line `line` marked (and in view).
+/// The lines of `file` the call selected ran.
+fn ran(ui: Ui, file: &str) -> Vec<u32> {
+    let k = (ui.call)();
+    machine().view(|v| v.coverage(file, k)).into_iter().map(|c| c.line).collect()
+}
+
 #[component]
-fn Code(path: String, from: u32, to: u32, line: u32) -> Element {
+fn Code(path: String, from: u32, to: u32, line: u32, ran: Vec<u32>) -> Element {
     let text = use_resource(move || file(path.clone()));
     let Some(all) = text.read().clone().flatten() else { return rsx! { p { class: "dim pad", "…" } } };
     rsx! {
         div { class: "code mono",
             for n in from..=to.min(all.len() as u32) {
-                div { key: "{n}", class: if n == line { "ln now" } else { "ln" },
+                div { key: "{n}", class: if n == line { "ln now" } else if ran.contains(&n) { "ln ran" } else { "ln" },
                     onmounted: move |e| async move { if n == line { let _ = e.scroll_to(ScrollBehavior::Smooth).await; } },
                     span { class: "no", "{n}" }
                     "{all[n as usize - 1]}"

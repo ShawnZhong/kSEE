@@ -41,6 +41,22 @@ fn step(lines: &[Line], k: usize, dir: isize, how: How) -> Option<usize> {
     None
 }
 
+/// A key's step: ← → a line (Shift: over the calls; Alt: out of the
+/// function).
+pub fn key(ui: Ui, e: &KeyboardEvent) {
+    let dir = match e.key() {
+        Key::ArrowLeft => -1,
+        Key::ArrowRight => 1,
+        _ => return,
+    };
+    let m = e.modifiers();
+    let how = if m.alt() { How::Out } else if m.shift() { How::Over } else { How::Into };
+    if let Some(j) = step(&ui.lines(), (ui.cursor)(), dir, how) {
+        e.prevent_default();
+        ui.go(j);
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum How {
     Into,
@@ -104,7 +120,7 @@ pub fn Stack() -> Element {
 
 /// A value's row, and, opened, its members' (read as memory was at record `i`).
 #[component]
-fn Value(o: Object, path: String, depth: usize, i: usize) -> Element {
+pub fn Value(o: Object, path: String, depth: usize, i: usize) -> Element {
     let mut open = use_context::<Signal<BTreeSet<String>>>();
     let is_open = open.read().contains(&path);
     let can = o.children.is_some() || o.open.is_some();

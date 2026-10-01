@@ -52,19 +52,25 @@ fn Objects() -> Element {
     }
 }
 
-/// The tasks at the cursor: who each is, and what it is doing.
+/// The tasks at the cursor: who each is, what it is doing, and its
+/// task_struct (opened: its fields, the key ones first, as memory was then).
 #[component]
 fn Tasks() -> Element {
     let ui = use_context::<Ui>();
     let i = ui.lines().get((ui.cursor)()).map_or(0, |l| l.i);
-    let tasks = machine().view(|v| v.tasks(i));
+    let m = machine();
+    let tasks = m.view(|v| v.tasks(i));
     rsx! {
-        table { class: "vals",
-            for t in tasks {
-                tr {
-                    td { class: "mono", "{t.task.comm.clone().unwrap_or_default()}({t.task.pid.unwrap_or(0)})" }
-                    td { {state(t.state)} }
-                    td { class: "dim mono", "{t.syscall.clone().unwrap_or_default()} {t.func.clone().unwrap_or_default()}" }
+        for t in tasks {
+            {
+                let fields = m.at_moment(i, |v, mem| v.task_fields(mem, t.task.addr)).fields;
+                let task = ksee_core::view::Object { name: format!("{}({})", t.task.comm.clone().unwrap_or_default(), t.task.pid.unwrap_or(0)),
+                    ty: "struct task_struct".into(), children: Some(fields), ..Default::default() };
+                rsx! {
+                    div { class: "obj",
+                        div { class: "fhead", span { class: "dim", "{state(t.state)} " } span { class: "dim mono", "{t.syscall.clone().unwrap_or_default()} {t.func.clone().unwrap_or_default()}" } }
+                        table { class: "vals", crate::stack::Value { o: task, path: format!("task/{}", t.task.addr), depth: 0, i } }
+                    }
                 }
             }
         }

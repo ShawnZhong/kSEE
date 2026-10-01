@@ -86,6 +86,8 @@ pub struct Ui {
     pub frame: Signal<Option<usize>>,
     pub tab: Signal<Tab>,
     pub console: Signal<String>,
+    /// The text looked for in the functions' names (the chart's bars).
+    pub find: Signal<String>,
     /// The lesson open (an index in the examples), the program made for
     /// it (its own, or a try), and how each of its lines went.
     pub lesson: Signal<usize>,
@@ -102,6 +104,7 @@ impl Ui {
             frame: Signal::new(None),
             tab: Signal::new(Tab::Stack),
             console: Signal::new(String::new()),
+            find: Signal::new(String::new()),
             lesson: Signal::new(0),
             program: Signal::new(crate::examples().first().map(|e| e.steps.clone()).unwrap_or_default()),
             outcomes: Signal::new(Vec::new()),

@@ -4,7 +4,7 @@ use super::*;
 
 /// A value in memory. Aggregates beyond the requested depth have no
 /// children yet (`open` says what to ask for them).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Object {
     pub name: String,

@@ -260,8 +260,7 @@ impl Machine {
     /// (ksee_core::program::completions; `common`: the syscalls to list
     /// first): [{ text, label, detail, name }].
     pub fn completions(&self, text: &str, at: usize, line: usize, common: Vec<String>) -> JsValue {
-        let c = ksee_core::program::context(text, at);
-        k(|k| to_js(&ksee_core::program::completions(&tables().types, &c, &k.names.borrow().before(line), &common)))
+        to_js(&self.complete(text, at, line, &common))
     }
 
     /// A call's result as the page says it (Types::result): "3", "0x1d20000", "-2 (ENOENT)".
