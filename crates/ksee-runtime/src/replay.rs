@@ -41,6 +41,14 @@ impl Machine {
         f(&View { tables: tables(), rec: &rec, now: &Direct })
     }
 
+    /// Run `f` on a view of the last snapshot and on memory as it was
+    /// after record `i`: the views of a moment (its stack's values).
+    pub fn at_moment<T>(&self, i: usize, f: impl FnOnce(&View, &dyn Memory) -> T) -> T {
+        let rec = self.rec.borrow();
+        let mem = rec.memory_at(&Direct, i);
+        f(&View { tables: tables(), rec: &rec, now: &Direct }, &mem)
+    }
+
     /// Run `f` on memory as the views should see it (see memory_at).
     fn with_memory<T>(&self, f: impl FnOnce(&dyn Memory) -> T) -> T {
         let Some(at) = *self.past.borrow() else { return f(&Direct) };

@@ -11,8 +11,10 @@ crate-type = ["cdylib"]
 [dependencies]
 ksee-core = { path = "../ksee-core", features = ["serde"] }
 ksee-runtime = { path = "../ksee-runtime" }
-dioxus = { version = "0.7.10", default-features = false, features = ["web", "macro", "html", "signals", "hooks", "launch"] }
+dioxus = { version = "0.7.10", default-features = false, features = ["web", "macro", "html", "signals", "hooks", "launch", "mounted"] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6.5"
 wasm-bindgen = "0.2.128"
 wasm-bindgen-futures = "0.4.78"
+js-sys = "0.3.105"
+web-sys = { version = "0.3.105", features = ["Window", "Response"] }

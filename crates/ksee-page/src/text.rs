@@ -1,7 +1,5 @@
-//! A lesson's paragraphs: text with `code` and [links](call:function) into
-//! the recording (see web/examples.js for what a link names).
-
-use dioxus::prelude::*;
+//! A lesson's paragraphs: text with `code` and [links](target) into the
+//! recording (see lesson::follow for what a target names).
 
 /// A piece of a paragraph.
 #[derive(Clone, PartialEq, Debug)]
@@ -21,22 +19,18 @@ pub fn pieces(p: &str) -> Vec<Piece> {
         if next > 0 {
             out.push(Piece::Text(rest[..next].into()));
             rest = &rest[next..];
-            continue;
-        }
-        if let Some(r) = rest.strip_prefix('`') && let Some(end) = r.find('`') {
+        } else if let Some(r) = rest.strip_prefix('`') && let Some(end) = r.find('`') {
             out.push(Piece::Code(r[..end].into()));
             rest = &r[end + 1..];
-            continue;
-        }
-        if let Some(r) = rest.strip_prefix('[') && let Some(close) = r.find("](") && let Some(end) = r[close..].find(')') {
+        } else if let Some(r) = rest.strip_prefix('[') && let Some(close) = r.find("](") && let Some(end) = r[close..].find(')') {
             let (label, target) = (&r[..close], &r[close + 2..close + end]);
             let call = target.split(':').next().and_then(|n| n.parse().ok());
             out.push(Piece::Link { label: label.into(), target: target.into(), call });
             rest = &r[close + end + 1..];
-            continue;
+        } else {
+            out.push(Piece::Text(rest[..1].into()));
+            rest = &rest[1..];
         }
-        out.push(Piece::Text(rest[..1].into()));
-        rest = &rest[1..];
     }
     out
 }
@@ -47,19 +41,4 @@ pub fn calls(p: &str) -> Vec<usize> {
         Piece::Link { call, .. } => call,
         _ => None,
     }).collect()
-}
-
-#[component]
-pub fn Paragraph(text: String) -> Element {
-    rsx! {
-        p { class: "para",
-            for x in pieces(&text) {
-                match x {
-                    Piece::Text(t) => rsx! { "{t}" },
-                    Piece::Code(c) => rsx! { code { "{c}" } },
-                    Piece::Link { label, target, .. } => rsx! { a { class: "link", title: "{target}", "{label}" } },
-                }
-            }
-        }
-    }
 }
