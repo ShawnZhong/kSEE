@@ -10,7 +10,7 @@ use alloc::collections::BTreeMap;
 use crate::arch;
 use crate::recording::Recording;
 use crate::stack::{self, LineStep};
-use crate::tables::{Loc, Step, Tables, Var};
+use crate::tables::{Loc, Tables, Var};
 use crate::trace::Record;
 use crate::types::{num, Kind, Types};
 use crate::Memory;
@@ -61,34 +61,6 @@ pub struct SyscallSummary {
     pub last: Option<usize>,
 }
 
-/// A record's kind, as the page names it ("store").
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecordKind {
-    Block,
-    Return,
-    Store,
-    Compare,
-    Var,
-    Task,
-}
-
-/// Where the kernel was at record `i`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct At {
-    pub i: usize,
-    /// Its record's kind (a block 0's: Block).
-    pub kind: RecordKind,
-    pub func: String,
-    pub file: Option<String>,
-    pub line: Option<u32>,
-    /// The function the code there is inlined from, if.
-    pub inlined: Option<String>,
-    pub task: Task,
-    /// The syscall in progress on the task (its index), if any.
-    pub syscall: Option<usize>,
-    /// A return's value (truncated to 32 bits).
-    pub value: Option<i64>,
-}
 
 /// A stack chart (View::chart): its columns, and the bars they stack.
 #[derive(Debug, Default)]
@@ -384,50 +356,6 @@ impl View<'_> {
             matches!(self.rec.records[j], Record::Return { func, .. } if func == switch) && self.rec.tasks.get(j) == Some(&next)
         }).or(call.last).unwrap_or(usize::MAX);
         (i <= end).then_some((self.task(prev, i), self.task(next, i)))
-    }
-
-    /// Where the kernel was at record `i`: a block's line; for a store, its
-    /// line; for a return, the line its frame was at, the record before
-    /// (where it returned from); else the line its task was at.
-    pub fn at(&self, i: usize) -> Option<At> {
-        let t = self.tables;
-        let (records, tasks) = (&self.rec.records, &self.rec.tasks);
-        // (The innermost call of `i`'s task at record `j`, and the line it was at.)
-        let top = |j: usize| self.rec.calls.stack_at(t, j, None).pop().map(|c| (c.func, c.step));
-        let located = |func: u32, step: Option<Step>| (step.map(|s| s.loc).or(t.functions.get(&func).map(|f| f.loc)), step.and_then(|s| s.inlined));
-        let (kind, func, (loc, inlined)) = match *records.get(i)? {
-            Record::Block { func, n } => {
-                let b = t.block(func, n);
-                (RecordKind::Block, func, (b.map(|b| b.loc()), b.and_then(|b| b.steps.first()?.inlined)))
-            }
-            Record::Return { func, .. } => {
-                let prev = (0..i).rev().find(|&j| tasks[j] == tasks[i]);
-                (RecordKind::Return, func, located(func, prev.and_then(top).and_then(|(_, s)| s)))
-            }
-            // (A store, a comparison: on its line, the record's, see line_at.)
-            r @ (Record::Store { .. } | Record::Compare { .. }) => {
-                let kind = if matches!(r, Record::Store { .. }) { RecordKind::Store } else { RecordKind::Compare };
-                match self.rec.line_at(t, i) {
-                    Some(l) => (kind, l.func, (Some(l.loc), l.inlined)),
-                    None => (kind, 0, (None, None)),
-                }
-            }
-            r @ (Record::Task { .. } | Record::Var { .. }) => {
-                let (func, step) = top(i).unwrap_or((0, None));
-                let kind = if matches!(r, Record::Task { .. }) { RecordKind::Task } else { RecordKind::Var };
-                (kind, func, located(func, step))
-            }
-        };
-        Some(At {
-            i, kind,
-            func: t.functions.get(&func).map_or(String::new(), |f| f.name.clone()),
-            file: loc.map(|l| t.file(l).to_string()),
-            line: loc.map(|l| l.line),
-            inlined: self.inlined_from(inlined),
-            task: self.task(self.rec.tasks[i], i),
-            syscall: self.rec.syscall_at(i),
-            value: match records[i] { Record::Return { value, .. } => Some(value), _ => None },
-        })
     }
 
     /// A stack chart of records `first..=last` in `n` columns, each a

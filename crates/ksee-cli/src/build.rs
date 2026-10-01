@@ -302,7 +302,7 @@ mod tests {
     fn entries(archive: &[u8]) -> Vec<(String, u32, Vec<u8>)> {
         let mut entries = Vec::new();
         let mut at = 0;
-        let mut align = |at: usize| {
+        let align = |at: usize| {
             let mut at = at;
             while at % 4 != 0 {
                 assert_eq!(archive[at], 0);

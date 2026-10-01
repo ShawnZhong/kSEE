@@ -9,6 +9,7 @@
 //! cursor there. Find a function by any part of its name.
 
 use dioxus::prelude::*;
+use ksee_core::trace::Record;
 use ksee_core::view::Chart;
 
 use crate::machine;
@@ -279,7 +280,7 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
         let frame = v.call_stack(first, None, 0, mem, first).into_iter().find(|f| !f.inlined);
         let args: Vec<(String, String)> = frame.as_ref().and_then(|f| f.args.clone()).unwrap_or_default().into_iter()
             .map(|a| (a.name, a.value.unwrap_or_else(|| "{…}".into()))).collect();
-        let ret = v.rec.calls.call_end(first).and_then(|end| v.at(end)).filter(|a| a.kind == ksee_core::view::RecordKind::Return).and_then(|a| a.value);
+        let ret = v.rec.calls.call_end(first).and_then(|end| match v.rec.records.get(end) { Some(&Record::Return { value, .. }) => Some(value), _ => None });
         let ret = ret.map(|r| format!(" = {}", v.tables.types.result(r))).unwrap_or_default();
         match v.rec.syscalls.binary_search_by_key(&first, |s| s.first).ok().map(|k| &v.rec.syscalls[k]) {
             Some(s) => {

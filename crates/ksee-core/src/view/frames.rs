@@ -302,12 +302,6 @@ impl View<'_> {
         k.and_then(|k| self.tables.inlines.get(k as usize)).map_or(&[], Vec::as_slice)
     }
 
-    /// The function code of inline chain `k` is inlined from (the innermost),
-    /// if it is inlined.
-    pub(super) fn inlined_from(&self, k: Option<u32>) -> Option<String> {
-        self.chain(k).first().map(|&(f, _)| self.inline_name(f))
-    }
-
     /// Inlined function `k`'s name (Tables::names).
     pub(crate) fn inline_name(&self, k: u32) -> String {
         self.tables.names.get(k as usize).cloned().unwrap_or_default()

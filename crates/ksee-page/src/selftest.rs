@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use ksee_core::program::{statement, Line as Stmt};
-use ksee_core::view::{Frame, Object, RecordKind, RegionKind, SyscallSummary};
+use ksee_core::trace::Record;
+use ksee_core::view::{Frame, Object, RegionKind, SyscallSummary};
 use ksee_runtime::machine::Machine;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -308,8 +309,8 @@ pub async fn self_test() -> bool {
     }
     t.check("line steps sit at their first store: some line is at a record past its block's, none before it, and a store is on its line",
             read_steps.iter().any(|s| s.at > s.i) && read_steps.iter().all(|s| s.at >= s.i)
-            && read_steps.iter().any(|s| s.at > s.i && m.view(|v| v.at(s.at)).and_then(|a| a.line) == Some(s.line)));
-    if let Some(s5) = read_steps.iter().find(|x| x.func == "ksys_read" && m.view(|v| v.at(x.i)).is_some_and(|a| a.kind == RecordKind::Block)) {
+            && read_steps.iter().any(|s| s.at > s.i && m.view(|v| v.line_of(s.at + 1)) == Some((s.i, s.nth))));
+    if let Some(s5) = read_steps.iter().find(|x| x.func == "ksys_read" && m.view(|v| matches!(v.rec.records.get(x.i), Some(Record::Block { .. })))) {
         let next = m.run_of(&s5.file, s5.line, s5.i - 1, 1);
         let back = m.run_of(&s5.file, s5.line, s5.i + 1, -1);
         t.check(format!("run to {}:{}, forward and back: its run", s5.file, s5.line), next == Some(s5.i) && back == Some(s5.i));
@@ -357,9 +358,8 @@ pub async fn self_test() -> bool {
         let stack = t.stack(at, None, at);
         let ops = m.view(|v| v.objects(op.first, oplast));
         t.check("a store through the task's files is named", ops.iter().any(|n| n.what.ends_with("->files") && n.changes.iter().any(|d| d.member == "next_fd")));
-        let dso = m.view(|v| v.at(at));
         let dso_def = def("do_sys_openat2");
-        t.check("a call begins at its signature line", dso.as_ref().zip(dso_def.as_ref()).is_some_and(|(a, d)| a.line == Some(d.line) && a.file.as_deref() == Some(&d.file)));
+        t.check("a call begins at its signature line", stack.first().zip(dso_def.as_ref()).is_some_and(|(a, d)| a.line == Some(d.line) && a.file.as_deref() == Some(&d.file)));
         let e = stack.last();
         let args: Vec<String> = e.map(|e| e.args.clone().unwrap_or_default().iter().map(|a| value(Some(a))).collect()).unwrap_or_default();
         t.check(format!("the entry frame: the syscall {:?}({})", e.and_then(|e| e.syscall.clone()), args.join(", ")),
