@@ -301,12 +301,11 @@ fn alloc(tid: u32, len: u32) -> Result<u32, String> {
     })
 }
 
-/// What a line made (Machine::make): a variable, what memory holds now,
-/// or a call asked (its id, its runner).
+/// What a line made (Machine::make): a variable, or a call asked (its
+/// id, its runner).
 #[derive(Default)]
 pub struct Made {
     pub decl: Option<Var>,
-    pub assigned: Option<String>,
     pub id: Option<u32>,
     pub tid: Option<u32>,
 }

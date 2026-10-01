@@ -31,7 +31,6 @@ pub struct Example {
 #[derive(Clone, PartialEq)]
 pub enum Outcome {
     Declared(String),
-    Assigned(String),
     /// (`during`: the line during which it finished, if a later one's;
     /// `changed`: the variables it changed, as they are then.)
     Call { id: u32, ret: Option<i64>, how: Option<String>, during: Option<usize>, changed: Vec<String> },
@@ -65,10 +64,6 @@ async fn run(mut ui: Ui, lines: Vec<String>) {
             let shown = m.show(v.ty, v.addr, v.count);
             vars.push((v.name, v.ty, v.addr, v.count, v.size * v.count.unwrap_or(1), shown.clone()));
             ui.outcomes.write().push(Outcome::Declared(shown));
-            continue;
-        }
-        if let Some(shown) = made.assigned {
-            ui.outcomes.write().push(Outcome::Assigned(shown));
             continue;
         }
         ui.outcomes.write().push(Outcome::Call { id: made.id.unwrap_or(0), ret: None, how: None, during: None, changed: Vec::new() });
@@ -445,7 +440,6 @@ fn said(o: Option<&Outcome>) -> String {
     match o {
         None => "…".into(),
         Some(Outcome::Declared(v)) => format!("= {v}"),
-        Some(Outcome::Assigned(v)) => format!("→ {v}"),
         Some(Outcome::Failed(e)) => e.clone(),
         Some(Outcome::Call { ret: None, .. }) => "… blocked".into(),
         Some(Outcome::Call { how: Some(h), during, .. }) if h != "returned" => format!("(no return: {}{})", if h == "exec" { "it ran a program" } else { "it exited" }, later(*during)),

@@ -16,7 +16,7 @@ use crate::types::Types;
 #[derive(Debug)]
 pub enum Lowered {
     Decl(Decl),
-    Assign { addr: u32, ty: u32, count: Option<u32>, bytes: Vec<u8> },
+    Assign { addr: u32, bytes: Vec<u8> },
     Call { nr: u32, args: Vec<Arg>, result: Option<(String, String)> },
 }
 
@@ -38,7 +38,7 @@ pub fn lower(text: &str, types: &Types, env: &dyn Env, main: Option<u32>, runner
         Line::Assign { target, value } => {
             // (As a declaration's value: an expression, "…" or {…}; an array's, whole.)
             let (addr, ty, count) = lvalue(&target, types, env)?;
-            Lowered::Assign { addr, ty, count, bytes: types.assign(ty, count, &value, env)? }
+            Lowered::Assign { addr, bytes: types.assign(ty, count, &value, env)? }
         }
         Line::Call { result, call, args, texts } => {
             let nr = types.syscalls.iter().find(|(_, n)| **n == call).map(|(&nr, _)| nr)
