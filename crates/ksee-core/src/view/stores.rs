@@ -105,7 +105,7 @@ impl View<'_> {
     pub(crate) fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
         let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
         let from = self.rec.copied_from(i, addr);
-        let old = old.map_or_else(|| Missing::NotKept.text().into(), num);
+        let old = old.map_or_else(|| Missing::NotRecorded.text().into(), num);
         Some(Write { i, addr, old, task: self.task(self.rec.tasks[i], i), at: line.map(|s| self.line_only(&s)), from })
     }
 
@@ -176,7 +176,7 @@ impl View<'_> {
                 Some(leaf) => (self.value(r.addr, leaf, w.i.saturating_sub(1)), self.value(r.addr, leaf, w.i)),
                 None => {
                     let Record::Store { old, .. } = self.rec.records[w.i] else { unreachable!() };
-                    (old.map_or_else(|| Missing::NotKept.text().into(), num), num(self.wrote(w.i)))
+                    (old.map_or_else(|| Missing::NotRecorded.text().into(), num), num(self.wrote(w.i)))
                 }
             };
             Change { member, before, after }

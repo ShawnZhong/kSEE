@@ -38,14 +38,10 @@ pub struct Target {
 pub enum Missing {
     /// Not stored to yet.
     Uninitialized,
-    /// Kept in a wasm local the recording never saw set (a variable set
-    /// before the trace began, or one the probes do not follow): its
-    /// value then is not known, but the variable is not uninitialized.
+    /// The recording doesn't have it.
     NotRecorded,
     /// The optimizer took it away.
     OptimizedOut,
-    /// What a store overwrote, when its record does not have it.
-    NotKept,
 }
 
 impl Missing {
@@ -55,8 +51,14 @@ impl Missing {
             Missing::Uninitialized => "(uninitialized)",
             Missing::NotRecorded => "(not recorded)",
             Missing::OptimizedOut => "(optimized out)",
-            Missing::NotKept => "(not kept)",
         }
+    }
+}
+
+impl Object {
+    /// Without a value, for `why`.
+    pub(crate) fn missing(self, why: Missing) -> Object {
+        Object { value: Some(why.text().into()), none: Some(why), children: None, open: None, ..self }
     }
 }
 

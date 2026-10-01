@@ -255,7 +255,7 @@ impl View<'_> {
             let arg = t.types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
             // (Not passed any more: the optimizer took it away.)
             if known >> k & 1 == 0 {
-                return Object { value: Some(Missing::OptimizedOut.text().into()), none: Some(Missing::OptimizedOut), children: None, open: None, ..arg };
+                return arg.missing(Missing::OptimizedOut);
             }
             arg
         }).collect()
@@ -270,7 +270,6 @@ impl View<'_> {
     /// the trace began, or not followed: not uninitialized).
     fn locals(&self, func: u32, frame: u32, mem: &dyn Memory, first: usize, at: usize, set: &[Object]) -> Vec<Object> {
         let types = &self.tables.types;
-        let not = |o: Object, why: Missing| Object { value: Some(why.text().into()), none: Some(why), children: None, open: None, ..o };
         // (A name once: two variables of one name, in two of its scopes, are
         // one to the recording, which knows a variable by its name.)
         let mut seen = alloc::collections::BTreeSet::new();
@@ -278,10 +277,10 @@ impl View<'_> {
             Some(off) => {
                 let addr = frame.wrapping_add(*off);
                 let o = types.object(mem, var, addr, *ty, 0);
-                if self.rec.stores().written(addr, types.size_of(*ty).max(1), first, at) { o } else { not(o, Missing::Uninitialized) }
+                if self.rec.stores().written(addr, types.size_of(*ty).max(1), first, at) { o } else { o.missing(Missing::Uninitialized) }
             }
             None => set.iter().find(|o| &o.name == var).cloned()
-                .unwrap_or_else(|| not(types.object(&Arg(&[0; 8], mem), var, 0, *ty, 0), Missing::NotRecorded)),
+                .unwrap_or_else(|| types.object(&Arg(&[0; 8], mem), var, 0, *ty, 0).missing(Missing::NotRecorded)),
         }).collect()
     }
 
