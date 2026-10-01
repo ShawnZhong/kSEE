@@ -222,10 +222,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
                         rsx! {
                             div { key: "{n}", class,
                                 span { class: "no", title: "{count}",
-                                    onclick: move |e| {
-                                        let dir = if e.modifiers().shift() { -1 } else { 1 };
-                                        if let Some(j) = machine().run_of(&file, n, i, dir) { ui.go_record(j, None); }
-                                    },
+                                    onclick: move |e| ui.run_to(&file, n, if e.modifiers().shift() { -1 } else { 1 }),
                                     "{n}" }
                                 for (k , p) in pieces.iter().enumerate() {
                                     if p.kind.is_ident() {

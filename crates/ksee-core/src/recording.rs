@@ -169,19 +169,6 @@ impl Recording {
         self.syscalls.iter().position(|s| s.task == task && s.first <= i && s.last.is_none_or(|l| i <= l))
     }
 
-    /// The next (dir > 0) or previous block record from `i` whose block
-    /// runs line `line` of `file` (its own code or code inlined into it).
-    pub fn run_of(&self, t: &Tables, file: &str, line: u32, i: usize, dir: i32) -> Option<usize> {
-        let files: Vec<u32> = (0..t.files.len() as u32).filter(|&k| t.files[k as usize] == file).collect();
-        let at = |l: &crate::tables::Loc| l.line == line && files.contains(&l.file);
-        // (The blocks that run it.)
-        // (Its own code, or code inlined at it: Tables::runs.)
-        let blocks: alloc::collections::BTreeSet<(u32, u32)> = t.blocks.keys()
-            .filter(|&&(f, n)| t.runs(f, n).any(|l| at(&l))).copied().collect();
-        let hit = |j: usize| matches!(self.records[j], Record::Block { func, n } if blocks.contains(&(func, n)));
-        if dir > 0 { (i + 1..self.records.len()).find(|&j| hit(j)) } else { (0..i.min(self.records.len())).rev().find(|&j| hit(j)) }
-    }
-
     /// The first call of function `name` in records `first..=last` (of the
     /// task at address `task`, or any): its record (see calls).
     pub fn first_call(&self, t: &Tables, name: &str, first: usize, last: usize, task: Option<u32>) -> Option<usize> {

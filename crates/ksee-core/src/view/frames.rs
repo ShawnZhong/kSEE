@@ -82,6 +82,22 @@ pub fn step(lines: &[Line], k: usize, dir: isize, over: bool) -> Option<usize> {
     None
 }
 
+/// The next (`dir` 1) or previous (`dir` -1) run of `file`'s `line`, from
+/// line `k` of the recording's ordered `lines`.
+pub fn run_to(lines: &[Line], k: usize, file: &str, line: u32, dir: isize) -> Option<usize> {
+    if dir == 0 {
+        return None;
+    }
+    let mut j = k.checked_add_signed(dir)?;
+    while j < lines.len() {
+        if lines[j].file == file && lines[j].line == line {
+            return Some(j);
+        }
+        j = j.checked_add_signed(dir)?;
+    }
+    None
+}
+
 impl View<'_> {
     /// Line step `s` as the page has it, with the comparisons it made.
     fn line(&self, s: &LineStep) -> Line {

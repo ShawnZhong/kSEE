@@ -512,6 +512,21 @@ fn steps_go_into_or_over() {
 }
 
 #[test]
+fn run_to_finds_an_exact_line_step() {
+    let line = |i, nth, cut, file: &str, line| Line { i, at: i, nth, cut, func: String::new(), file: file.into(), line, inlined: None, depth: 0, inl: 0, run: 1,
+                                                         tests: Vec::new(), ret: None, called: None };
+    // Two lines share block record 0; h's line is an inline stop there; f's
+    // line 3 resumes at g's Return record 2; then f's line 2 runs again.
+    let lines = [line(0, 0, 0, "f.c", 1), line(0, 1, 0, "f.c", 2), line(0, 1, 1, "h.c", 3),
+                 line(1, 0, 0, "g.c", 10), line(2, 0, 0, "f.c", 3), line(4, 0, 0, "f.c", 2)];
+    assert_eq!(run_to(&lines, 0, "f.c", 2, 1), Some(1));
+    assert_eq!(run_to(&lines, 1, "h.c", 3, 1), Some(2));
+    assert_eq!(run_to(&lines, 1, "f.c", 3, 1), Some(4));
+    assert_eq!((run_to(&lines, 1, "f.c", 2, 1), run_to(&lines, 5, "f.c", 2, -1)), (Some(5), Some(1)));
+    assert_eq!((run_to(&lines, 5, "f.c", 1, 1), run_to(&lines, 0, "f.c", 1, -1), run_to(&lines, 0, "f.c", 1, 0)), (None, None, None));
+}
+
+#[test]
 fn an_inlined_call_is_stepped_into_as_a_call_is() {
     // f (1) runs line 1, then g's line 30 inlined in h inlined in f (h at
     // f's line 2, g at h's line 3), then f's line 4: the lines calling h

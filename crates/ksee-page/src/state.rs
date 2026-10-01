@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use ksee_core::view::{Chart, Frame, Line, SyscallSummary};
+use ksee_core::view::{run_to, Chart, Frame, Line, SyscallSummary};
 
 use crate::machine;
 
@@ -232,6 +232,16 @@ impl Ui {
         if let Some(call) = self.call() {
             self.peek.set(None);
             self.at.set(Some(Moment { call, line: k, frame: None }));
+        }
+    }
+
+    /// The cursor at the next (`dir` 1) or previous (`dir` -1) run of
+    /// `file`'s `line`, within its call.
+    pub fn run_to(self, file: &str, line: u32, dir: isize) {
+        let Some(at) = self.at.peek().clone() else { return };
+        let lines = Ui::lines_of(at.call);
+        if let Some(k) = run_to(&lines, at.line, file, line, dir) {
+            self.go(k);
         }
     }
 

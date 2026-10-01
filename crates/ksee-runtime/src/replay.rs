@@ -37,12 +37,6 @@ impl Machine {
         rec.syscalls.iter().position(|s| s.nr == nr && s.task == task && rec.ids[s.first] >= from)
     }
 
-    /// The next (dir > 0) or previous record from `i` that runs line `line`
-    /// of `file` (see Recording::run_of): "run to" a line.
-    pub fn run_of(&self, file: &str, line: u32, i: usize, dir: i32) -> Option<usize> {
-        self.rec.borrow().run_of(tables(), file, line, i, dir)
-    }
-
     /// The first call of function `name` in records `first..=last` (of the
     /// task at address `task`, or any): its record.
     pub fn first_call(&self, name: &str, first: usize, last: usize, task: Option<u32>) -> Option<usize> {

@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use ksee_core::program::{statement, Line as Stmt};
 use ksee_core::trace::Record;
-use ksee_core::view::{Frame, Object, RegionKind, SyscallSummary};
+use ksee_core::view::{run_to, Frame, Object, RegionKind, SyscallSummary};
 use ksee_runtime::machine::Machine;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -310,11 +310,11 @@ pub async fn self_test() -> bool {
     t.check("line steps sit at their first store: some line is at a record past its block's, none before it, and a store is on its line",
             read_steps.iter().any(|s| s.at > s.i) && read_steps.iter().all(|s| s.at >= s.i)
             && read_steps.iter().any(|s| s.at > s.i && m.view(|v| v.line_of(s.at + 1)) == Some((s.i, s.nth))));
-    if let Some(s5) = read_steps.iter().find(|x| x.func == "ksys_read" && m.view(|v| matches!(v.rec.records.get(x.i), Some(Record::Block { .. })))) {
-        let next = m.run_of(&s5.file, s5.line, s5.i - 1, 1);
-        let back = m.run_of(&s5.file, s5.line, s5.i + 1, -1);
-        t.check(format!("run to {}:{}, forward and back: its run", s5.file, s5.line), next == Some(s5.i) && back == Some(s5.i));
-    }
+    let exact = read_steps.iter().enumerate().skip(1).find(|(k, s)| {
+        s.i == read_steps[k - 1].i || m.view(|v| matches!(v.rec.records.get(s.i), Some(Record::Return { .. })))
+    });
+    let exact_run = exact.is_some_and(|(k, s)| run_to(&read_steps, k - 1, &s.file, s.line, 1) == Some(k));
+    t.check("run to a line sharing a record or resumed at a return: its exact step", exact_run);
     let ksys_last = read_steps.iter().rev().find(|x| x.func == "ksys_read").map_or(0, |x| x.i);
     let pos = |i: usize| t.stack(i, None, i).iter().find(|c| c.func == "ksys_read").map(|f| value(local(f, "pos")));
     t.check("a local on the stack, as it was: ksys_read's pos, 0 then 26", pos(in_read).as_deref() == Some("0") && pos(ksys_last).as_deref() == Some("26"));

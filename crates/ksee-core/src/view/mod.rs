@@ -23,7 +23,7 @@ mod value;
 #[cfg(test)]
 mod tests;
 
-pub use frames::{step, Called, Frame, Line};
+pub use frames::{run_to, step, Called, Frame, Line};
 pub use objects::{Diff, Group, Node, Run};
 pub use stores::{RegionKind, Write};
 pub use stores::{Named, Note, Region, Wrote};
