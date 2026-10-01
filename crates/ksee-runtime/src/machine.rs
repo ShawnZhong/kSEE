@@ -195,9 +195,10 @@ impl Machine {
                 k(|k| k.names.borrow_mut().set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
                 made.decl = Some(Var { name: d.name, addr, ty: d.ty, count: d.count, size: tables().types.size_of(d.ty) });
             }
-            Lowered::Assign { addr, ty, count, bytes } => {
+            // (An assignment says nothing new: memory as it is now is what
+            // was just written, so the program's outcome reports nothing.)
+            Lowered::Assign { addr, bytes, .. } => {
                 write_logged(addr, &bytes);
-                made.assigned = Some(tables().types.show(&Direct, addr, ty, count));
             }
             Lowered::Call { nr, args, result } => (made.id, made.tid) = (Some(call(tid, nr, &args, line, result)?), Some(tid)),
         }

@@ -81,7 +81,7 @@ fn declarations_are_a_programs_memory() {
     }
     let mem = M([fds.bytes.clone(), d.bytes.clone(), b"hi\0".to_vec()].concat());
     assert_eq!(t.show(&mem, 0, 7, Some(2)), "{3, 4}");
-    assert_eq!(t.show(&mem, 8, 2, None), "{tv_nsec = 30000000}");
+    assert_eq!(t.show(&mem, 8, 2, None), "{tv_nsec = 0x1c9c380}");
     assert_eq!(t.show(&mem, 24, 4, Some(3)), "\"hi\"");
     // As data (for JavaScript), and assigned from a literal.
     assert_eq!(t.value(&mem, 0, 7, Some(2)), Value::List(alloc::vec![Value::Int(3), Value::Int(4)]));
@@ -190,7 +190,7 @@ fn a_struct_summary_is_short() {
     }
     let mut bytes = alloc::vec![0u8; 36];
     bytes[8..12].copy_from_slice(&65536u32.to_le_bytes());
-    assert_eq!(t.show(&M(bytes), 0, 3, None), "{flags = 65536}");
+    assert_eq!(t.show(&M(bytes), 0, 3, None), "{flags = 0x10000}");
     // All zero: {0}. Past 4 nonzero fields: capped with ….
     assert_eq!(t.show(&M(alloc::vec![0u8; 36]), 0, 3, None), "{0}");
     let mut many = alloc::vec![0u8; 36];
@@ -198,6 +198,22 @@ fn a_struct_summary_is_short() {
         many[at..at + 4].copy_from_slice(&1u32.to_le_bytes());
     }
     assert_eq!(t.show(&M(many), 0, 3, None), "{sq_entries = 1, cq_entries = 1, flags = 1, cpu = 1, …}");
+}
+
+#[test]
+fn a_union_summary_is_its_first_member() {
+    // union u { int addr; int splice_off_in; } with 0x1d20010: the members
+    // alias the same bytes, so only the first is shown, in hex.
+    let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t2\tunion\tu\t4\nM\t2\taddr\t0\t0\t1\nM\t2\tsplice_off_in\t0\t0\t1\n");
+    struct M(Vec<u8>);
+    impl Memory for M {
+        fn read(&self, addr: u32, buf: &mut [u8]) {
+            buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
+        }
+    }
+    let mut bytes = alloc::vec![0u8; 4];
+    bytes[0..4].copy_from_slice(&0x1d20010u32.to_le_bytes());
+    assert_eq!(t.show(&M(bytes), 0, 2, None), "{addr = 0x1d20010}");
 }
 
 #[test]

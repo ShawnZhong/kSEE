@@ -193,10 +193,12 @@ impl Types {
                 k @ (Kind::Struct(_) | Kind::Union(_)) => {
                     // (Short: no zero or empty scalars, no nested aggregates
                     // (openable in the tree), at most 4 fields, then …; an
-                    // all-zero struct is {0}.)
+                    // all-zero struct is {0}. A union's members alias the
+                    // same bytes: only its first.)
+                    let union = matches!(k, Kind::Union(_));
                     let mut fields: Vec<String> = Vec::new();
-                    for m in self.members(k).iter().filter(|m| m.bit_size == 0) {
-                        let v = self.print(mem, addr + m.bit_offset / 8, m.ty, 0, 0);
+                    for m in self.members(k).iter().filter(|m| m.bit_size == 0).take(if union { 1 } else { usize::MAX }) {
+                        let v = self.summary_scalar(mem, addr + m.bit_offset / 8, m.ty);
                         if v.starts_with('{') || matches!(v.as_str(), "0" | "0x0" | "0.0" | "NULL" | "\"\"") {
                             continue;
                         }
@@ -214,6 +216,26 @@ impl Types {
                 }
                 _ => self.print(mem, addr, ty, 0, 0),
             },
+        }
+    }
+
+    /// A scalar member's value for a one-line summary: an integer in hex
+    /// past 0xffff (types::num: an address, a flag word), as everywhere
+    /// else; anything else as print says it.
+    fn summary_scalar(&self, mem: &dyn Memory, addr: u32, ty: u32) -> String {
+        let id = self.resolve(ty);
+        match self.get(id).kind {
+            Kind::Base(Base::Signed | Base::Unsigned) => {
+                let bits = self.size_of(id).clamp(1, 8) * 8;
+                let u = self.read_int(mem, addr, self.size_of(id).min(8), 0, 0);
+                let v = if matches!(self.get(id).kind, Kind::Base(Base::Signed)) {
+                    ((u << (64 - bits)) as i64) >> (64 - bits)
+                } else {
+                    u as i64
+                };
+                if v < 0 { alloc::format!("{v}") } else { crate::types::num(v as u64) }
+            }
+            _ => self.print(mem, addr, ty, 0, 0),
         }
     }
 
