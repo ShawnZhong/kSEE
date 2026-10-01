@@ -27,7 +27,6 @@ pub mod mem;
 pub mod module;
 pub mod recording;
 pub mod stack;
-pub mod syscalls;
 pub mod tables;
 pub mod text;
 pub mod task;
