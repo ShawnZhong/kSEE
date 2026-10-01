@@ -54,6 +54,8 @@ pub fn named(t: &TaskRef) -> String {
 struct Tip {
     x: f64,
     y: f64,
+    /// (The bar's call it says: its first record, inlined or not.)
+    call: (usize, bool),
     lines: Vec<(String, &'static str)>,
 }
 
@@ -157,7 +159,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let chart = d.chart.cloned();
     let mut pan = use_signal(|| None::<Pan>);
     let mut width = use_signal(|| 1000.0f64);
-    // (The pointer's x over the chart (px), while it is over a bar: the line is there.)
+    // (The pointer's x over the chart (px), while it is over it: the line is there.)
     let mut hover = use_signal(|| None::<f64>);
     let n = chart.cols.len().max(1);
     let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
@@ -187,8 +189,19 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     }));
     let calls: Vec<(usize, bool)> = d.stack.read().iter().map(|f| (f.first, f.inlined)).collect();
     let find = (ui.find)().to_lowercase();
-    // (The bar outlined: the frame shown's call.)
-    let lit = d.stack.read().get(d.shown.cloned()).map(|f| (f.first, f.inlined));
+    // (The bar outlined: the one under the pointer, else the frame shown's call.)
+    let lit = match (ui.peek)() {
+        Some(p) => p.call,
+        None => d.stack.read().get(d.shown.cloned()).map(|f| (f.first, f.inlined)),
+    };
+    let height = (depth as f64 * row).max(room);
+    // (What is under the pointer, at x, y in the chart: its column, and the bar there, if
+    // one: its depth from the outermost.)
+    let hit = move |chart: &Chart, x: f64, y: f64| -> Option<(usize, Option<usize>)> {
+        let k = ((x / width() * chart.cols.len() as f64).max(0.0) as usize).min(chart.cols.len().checked_sub(1)?);
+        let dd = ((height - y) / row).floor();
+        Some((k, (dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len()).then_some(dd as usize)))
+    };
     let pct = |k: usize| k as f64 * 100.0 / n as f64;
     let px = width() / n as f64;
     // (Zoom: the window narrowed or widened around the pointer's step.)
@@ -205,7 +218,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         ui.win.set(Some(m.view(|v| (v.rec.record_of(na), v.rec.record_of(nb)))));
     };
     rsx! {
-        div { class: "chart", style: "height: {(depth as f64 * row).max(room)}px",
+        div { class: "chart", style: "height: {height}px",
             onresize: move |e| if let Ok(s) = e.get_content_box_size() { width.set(s.width.max(1.0)) },
             onwheel: move |e| {
                 e.prevent_default();
@@ -218,61 +231,68 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 let (sa, sb) = machine().view(|v| (v.rec.step_of(a), v.rec.step_of(b)));
                 pan.set(Some(Pan { x: e.client_coordinates().x, a: sa, b: sb, moved: false }));
             },
-            onpointermove: move |e| {
-                let Some(mut p) = pan() else { return };
-                let dx = e.client_coordinates().x - p.x;
-                if dx.abs() < 4.0 && !p.moved { return }
-                p.moved = true;
-                pan.set(Some(p));
-                let m = machine();
-                let total = m.view(|v| v.rec.steps().max(1));
-                let shift = (dx / width() * (p.b - p.a) as f64) as isize;
-                let na = (p.a as isize - shift).clamp(0, (total - 1 - (p.b - p.a)) as isize) as usize;
-                let mut ui = ui;
-                ui.win.set(Some(m.view(|v| (v.rec.record_of(na), v.rec.record_of(na + (p.b - p.a))))));
+            onpointermove: {
+                let chart = chart.clone();
+                move |e: PointerEvent| {
+                    let mut ui = ui;
+                    // (A drag: the window panned.)
+                    if let Some(mut p) = pan() {
+                        let dx = e.client_coordinates().x - p.x;
+                        if dx.abs() >= 4.0 || p.moved {
+                            p.moved = true;
+                            pan.set(Some(p));
+                            let m = machine();
+                            let total = m.view(|v| v.rec.steps().max(1));
+                            let shift = (dx / width() * (p.b - p.a) as f64) as isize;
+                            let na = (p.a as isize - shift).clamp(0, (total - 1 - (p.b - p.a)) as isize) as usize;
+                            ui.win.set(Some(m.view(|v| (v.rec.record_of(na), v.rec.record_of(na + (p.b - p.a))))));
+                            return;
+                        }
+                    }
+                    // (Else the moment under the pointer shown, the line at it; over a bar, what its call was.)
+                    let at = e.element_coordinates();
+                    hover.set(Some(at.x));
+                    let Some((k, dd)) = hit(&chart, at.x, at.y) else { return };
+                    let call = dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]).map(|b| (b.first, b.inlined));
+                    let peek = Some(Peek { i: chart.cols[k].i, call });
+                    if (ui.peek)() != peek { ui.peek.set(peek); }
+                    let p = e.client_coordinates();
+                    match dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]) {
+                        None => if tip().is_some() { tip.set(None) },
+                        Some(b) => match tip() {
+                            Some(t) if t.call == (b.first, b.inlined) => tip.set(Some(Tip { x: p.x, y: p.y, ..t })),
+                            _ => tip.set(Some(Tip { x: p.x, y: p.y, call: (b.first, b.inlined), lines: said(b.first, b.inlined, &b.name) })),
+                        },
+                    }
+                }
             },
             onpointerup: move |_| pan.set(None),
+            // (A click, not a drag: the cursor at the moment under it, on the bar's frame there.)
+            onclick: {
+                let chart = chart.clone();
+                move |e: MouseEvent| {
+                    if pan().is_some_and(|p| p.moved) { return }
+                    let at = e.element_coordinates();
+                    let Some((k, dd)) = hit(&chart, at.x, at.y) else { return };
+                    let mut ui = ui;
+                    ui.peek.set(None);
+                    ui.go_record(chart.cols[k].i, dd.map(|dd| chart.cols[k].frames.len() - 1 - dd));
+                }
+            },
             onmouseleave: move |_| { let mut ui = ui; ui.peek.set(None); tip.set(None); pan.set(None); hover.set(None); },
             for (dd , a , e , b) in runs {
                 {
                     let bar = &chart.bars[b];
                     let (first, inlined) = (bar.first, bar.inlined);
-                    // (The moments of the columns it is over, and their stacks' depths:
-                    // the pointer's column is the moment shown, and clicked.)
-                    let cols: std::rc::Rc<[(usize, usize)]> = chart.cols[a..e].iter().map(|c| (c.i, c.frames.len())).collect();
-                    let at = move |x: f64| cols[((x / px).max(0.0) as usize).min(cols.len() - 1)];
-                    let (enter, click) = (at.clone(), at.clone());
                     let on = calls.contains(&(first, inlined));
                     let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
                     let bg = if found { "var(--found)".to_string() } else { color(bar.file.as_deref(), on) };
                     let class = format!("bar{}{}{}", if on { " on" } else { "" }, if found { " found" } else { "" }, if lit == Some((first, inlined)) { " lit" } else { "" });
-                    let (name, label) = (bar.name.clone(), bar.label.clone());
+                    let label = bar.label.clone();
                     let wide = (e - a) as f64 * px >= 24.0;
                     rsx! {
                         div { class,
                             style: "left: {pct(a)}%; width: {pct(e - a)}%; bottom: {dd as f64 * row}px; height: {row - 1.0}px; line-height: {row - 1.0}px; background: {bg}",
-                            onmouseenter: move |ev| {
-                                let mut ui = ui;
-                                ui.peek.set(Some(Peek { i: enter(ev.element_coordinates().x).0, first, inlined }));
-                                hover.set(Some(a as f64 * px + ev.element_coordinates().x));
-                                let p = ev.client_coordinates();
-                                tip.set(Some(Tip { x: p.x, y: p.y, lines: said(first, inlined, &name) }));
-                            },
-                            onmousemove: move |ev| {
-                                let mut ui = ui;
-                                let peek = Some(Peek { i: at(ev.element_coordinates().x).0, first, inlined });
-                                if (ui.peek)() != peek { ui.peek.set(peek); }
-                                hover.set(Some(a as f64 * px + ev.element_coordinates().x));
-                                let p = ev.client_coordinates();
-                                if let Some(mut t) = tip() { t.x = p.x; t.y = p.y; tip.set(Some(t)); }
-                            },
-                            onclick: move |ev| {
-                                if pan().is_some_and(|p| p.moved) { return }
-                                let mut ui = ui;
-                                ui.peek.set(None);
-                                let (i, deep) = click(ev.element_coordinates().x);
-                                ui.go_record(i, Some(deep - 1 - dd));
-                            },
                             if wide { "{label}" }
                         }
                     }

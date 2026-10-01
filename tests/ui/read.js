@@ -39,7 +39,9 @@
   if (where() === before) fail("→", [before, where()]);
   // (A click on a bar: the cursor there, that frame chosen.)
   const bar = $$(".chart .bar").find((b) => b.textContent.startsWith("vfs_read"));
-  bar.click(); await sleep(300);
+  const box = bar.getBoundingClientRect();
+  document.querySelector(".chart").dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }));
+  await sleep(300);
   r.clicked = [bar.textContent, where(), document.querySelector("tr.frame.on a")?.textContent];
   if (r.clicked[2] !== "vfs_read") fail("a click on a bar", r.clicked);
   // (Find: its bars lit; Enter, the cursor in it.)

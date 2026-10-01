@@ -121,9 +121,9 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
 .flamescroll { height: var(--chart); overflow: hidden auto; overscroll-behavior: contain; display: flex; flex-direction: column-reverse; }
 .chart { position: relative; flex: none; cursor: crosshair; }
-.chart .bar { position: absolute; padding: 0 3px; font: 11px var(--mono); overflow: hidden; white-space: nowrap; color: #1f2328; box-shadow: inset -1px 0 var(--panel); }
+.chart .bar { pointer-events: none; position: absolute; padding: 0 3px; font: 11px var(--mono); overflow: hidden; white-space: nowrap; color: #1f2328; box-shadow: inset -1px 0 var(--panel); }
 .chart .bar.on { color: #fff; }
-.chart .bar:hover, .chart .bar.lit { outline: 1.5px solid var(--fg); outline-offset: -1.5px; z-index: 2; }
+.chart .bar.lit { outline: 1.5px solid var(--fg); outline-offset: -1.5px; z-index: 2; }
 .chart .now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--fg); pointer-events: none; z-index: 3; }
 .strip { position: relative; height: 12px; }
 .strip .run { position: absolute; top: 0; height: 12px; font: 10px/12px var(--mono); overflow: hidden; white-space: nowrap; padding: 0 3px; color: #1f2328; box-shadow: inset -1px 0 var(--panel); }
