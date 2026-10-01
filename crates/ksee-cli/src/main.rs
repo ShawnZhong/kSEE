@@ -13,6 +13,8 @@
 //!                            page, in OUT: OUT/vmlinux, with the kernel's
 //!                            types and syscalls from DWARF, without DWARF;
 //!                            and OUT/src, the sources its probes refer to
+//!   ksee patch               write linux.patch from linux/ (the port, as it
+//!                            differs from the release)
 //!   ksee serve [DIR] [--port=N]
 //!                            serve DIR (target/site: the page, as built) for
 //!                            a browser
@@ -70,6 +72,7 @@ fn main() -> ExitCode {
             }
         }
         ["pack", kernel, out] => pack::pack(Path::new(kernel), Path::new(out)),
+        ["patch"] => build::patch(),
         ["serve", ref dir @ ..] if dir.len() <= 1 => {
             let dir = Path::new(dir.first().copied().unwrap_or(build::SITE));
             serve::serve(dir, port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
@@ -82,7 +85,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!("usage: ksee [build | test [--ui] | shot OUT.png [--test=NAME | --eval=JS] [--at=#HASH] [--url=URL] [--wait=MS] [--size=WxH] \
-                       | deploy | serve [DIR] [--port=N] | pack KERNEL OUT | type VMLINUX NAME]");
+                       | deploy | serve [DIR] [--port=N] | pack KERNEL OUT | patch | type VMLINUX NAME]");
             return ExitCode::from(2);
         }
     }

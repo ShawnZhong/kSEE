@@ -3,7 +3,7 @@
 //! its output is older than its inputs.
 //!
 //!   linux/                 Linux, the stable tree's LINUX_TAG, fetched once, with linux.patch applied
-//!   linux.patch            the port: linux/ as it differs from the release (written again as it changes)
+//!   linux.patch            the port: linux/ as it differs from the release (written by `ksee patch`)
 //!   plugin/ksee-trace.so   the LLVM pass that instruments the kernel
 //!   linux/vmlinux          the kernel, instrumented (kbuild)
 //!
@@ -265,11 +265,8 @@ const LINUX_TAG: &str = "v7.2.7";
 const LINUX_COMMIT: &str = "f42acb3678424d1e08f6ed27c0d8ba8a125e14d6";
 
 /// linux/: the release, fetched (a shallow git repo: its one commit) and
-/// linux.patch applied, the first time; then linux.patch, written from it
-/// again when it changes: the port, all of it (the files new too) as it
-/// differs from the release.
+/// linux.patch applied, the first time.
 fn linux() {
-    let git = |args: &[&str]| output(Command::new("git").arg("-C").arg("linux").args(args));
     if !Path::new("linux/Makefile").exists() {
         eprintln!("+ (fetch) {LINUX_TREE} {LINUX_TAG} -> linux/");
         std::fs::create_dir_all("linux").unwrap_or_else(|e| crate::fail(&format!("linux/: {e}")));
@@ -281,14 +278,20 @@ fn linux() {
         }
         git(&["checkout", LINUX_TAG]);
         git(&["apply", "../linux.patch"]);
-        return;
     }
+}
+
+/// linux.patch: the port, all of it (the files new too) as linux/ differs
+/// from the release. Written by `ksee patch`, never by `ksee build`.
+pub fn patch() {
     git(&["add", "-A", "--intent-to-add"]);
     let diff = git(&["diff", "--no-color", LINUX_TAG]);
-    if std::fs::read("linux.patch").ok().as_deref() != Some(&diff[..]) {
-        eprintln!("+ (patch) linux -> linux.patch");
-        std::fs::write("linux.patch", &diff).unwrap_or_else(|e| crate::fail(&format!("linux.patch: {e}")));
-    }
+    eprintln!("+ (patch) linux -> linux.patch");
+    std::fs::write("linux.patch", &diff).unwrap_or_else(|e| crate::fail(&format!("linux.patch: {e}")));
+}
+
+fn git(args: &[&str]) -> Vec<u8> {
+    output(Command::new("git").arg("-C").arg("linux").args(args))
 }
 
 /// wasm-bindgen's glue for `wasm`, in `out` (the crate, at ksee-page's
