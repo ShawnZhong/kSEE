@@ -9,14 +9,9 @@
 //!                            the page in Chromium, after a script (or one
 //!                            of the tests), as a screenshot
 //!   ksee deploy              build, then push the page to origin's gh-pages
-//!   ksee pack KERNEL OUT     prepare the kernel tree KERNEL (built) for the
-//!                            page, in OUT: OUT/vmlinux, with the kernel's
-//!                            types and syscalls from DWARF, without DWARF;
-//!                            and OUT/src, the sources its probes refer to
 //!   ksee patch               write linux.patch from linux/ (the port, as it
 //!                            differs from the release)
-//!   ksee serve [DIR] [--port=N]
-//!                            serve DIR (target/site: the page, as built) for
+//!   ksee serve [--port=N]    serve target/site (the page, as built) for
 //!                            a browser
 mod build;
 mod chrome;
@@ -67,15 +62,13 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         }
-        ["pack", kernel, out] => pack::pack(Path::new(kernel), Path::new(out)),
         ["patch"] => build::patch(),
-        ["serve", ref dir @ ..] if dir.len() <= 1 => {
-            let dir = Path::new(dir.first().copied().unwrap_or(build::SITE));
-            serve::serve(dir, port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
+        ["serve"] => {
+            serve::serve(Path::new(build::SITE), port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
         }
         _ => {
             eprintln!("usage: ksee [build | test [--ui] | shot OUT.png [--test=NAME | --eval=JS] [--at=#HASH] [--url=URL] [--wait=MS] [--size=WxH] \
-                       | deploy | serve [DIR] [--port=N] | pack KERNEL OUT | patch]");
+                       | deploy | serve [--port=N] | patch]");
             return ExitCode::from(2);
         }
     }
