@@ -37,12 +37,11 @@ impl<T> std::ops::Deref for Shared<T> {
 }
 
 /// The moment under the pointer, over the chart: a column's record, and
-/// the bar there, if one (its call's first record; code inlined into it,
-/// or not).
-#[derive(Clone, Copy, PartialEq)]
+/// the bar there, if one (its call's first record and function).
+#[derive(Clone, PartialEq)]
 pub struct Peek {
     pub i: usize,
-    pub call: Option<(usize, bool)>,
+    pub call: Option<(usize, String)>,
 }
 
 /// What the state makes, computed once each time what it depends on
@@ -93,7 +92,7 @@ impl Derived {
             Shared(Rc::new(moment().map_or_else(Vec::new, |(i, nth)| machine().at_moment(i, |v, mem| v.call_stack(i, nth, mem, i)))))
         });
         let shown = use_memo(move || match (ui.peek)() {
-            Some(p) => p.call.and_then(|c| stack.read().iter().position(|f| (f.first, f.inlined) == c)).unwrap_or(0),
+            Some(p) => p.call.and_then(|c| stack.read().iter().position(|f| f.first == c.0 && f.func == c.1)).unwrap_or(0),
             None => (ui.frame)().unwrap_or(0),
         });
         Derived { syscall, lines, window, chart, moment, stack, shown }

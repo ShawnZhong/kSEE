@@ -36,8 +36,8 @@ fn task_color(pid: i32) -> String {
 struct Tip {
     x: f64,
     y: f64,
-    /// (The bar's call it says: its first record, inlined or not.)
-    call: (usize, bool),
+    /// (The bar's call it says: its first record and function.)
+    call: (usize, String),
     lines: Vec<(String, &'static str)>,
 }
 
@@ -169,12 +169,12 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let (sa, sb, s) = (v.rec.step_of(wa), v.rec.step_of(wb), v.rec.step_of(i));
         (s - sa) as f64 * 100.0 / (sb - sa + 1) as f64
     }));
-    let calls: Vec<(usize, bool)> = d.stack.read().iter().map(|f| (f.first, f.inlined)).collect();
+    let calls: Vec<(usize, String)> = d.stack.read().iter().map(|f| (f.first, f.func.clone())).collect();
     let find = (ui.find)().to_lowercase();
     // (The bar outlined: the one under the pointer, else the frame shown's call.)
     let lit = match (ui.peek)() {
         Some(p) => p.call,
-        None => d.stack.read().get(d.shown.cloned()).map(|f| (f.first, f.inlined)),
+        None => d.stack.read().get(d.shown.cloned()).map(|f| (f.first, f.func.clone())),
     };
     let height = (depth as f64 * row).max(room);
     // (What is under the pointer, at x, y in the chart: its column, and the bar there, if
@@ -235,15 +235,15 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     let at = e.element_coordinates();
                     hover.set(Some(at.x));
                     let Some((k, dd)) = hit(&chart, at.x, at.y) else { return };
-                    let call = dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]).map(|b| (b.first, b.inlined));
+                    let call = dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]).map(|b| (b.first, b.name.clone()));
                     let peek = Some(Peek { i: chart.cols[k].i, call });
                     if (ui.peek)() != peek { ui.peek.set(peek); }
                     let p = e.client_coordinates();
                     match dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]) {
                         None => if tip().is_some() { tip.set(None) },
                         Some(b) => match tip() {
-                            Some(t) if t.call == (b.first, b.inlined) => tip.set(Some(Tip { x: p.x, y: p.y, ..t })),
-                            _ => tip.set(Some(Tip { x: p.x, y: p.y, call: (b.first, b.inlined), lines: said(b.first, b.inlined, &b.name) })),
+                            Some(t) if t.call.0 == b.first && t.call.1 == b.name => tip.set(Some(Tip { x: p.x, y: p.y, ..t })),
+                            _ => tip.set(Some(Tip { x: p.x, y: p.y, call: (b.first, b.name.clone()), lines: said(b.first, &b.name, b.inlined) })),
                         },
                     }
                 }
@@ -265,11 +265,11 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             for (dd , a , e , b) in runs {
                 {
                     let bar = &chart.bars[b];
-                    let (first, inlined) = (bar.first, bar.inlined);
-                    let on = calls.contains(&(first, inlined));
+                    let id = (bar.first, bar.name.clone());
+                    let on = calls.contains(&id);
                     let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
                     let bg = if found { "var(--found)".to_string() } else { ksee_core::arch::color(bar.file.as_deref(), on) };
-                    let class = format!("bar{}{}{}", if on { " on" } else { "" }, if found { " found" } else { "" }, if lit == Some((first, inlined)) { " lit" } else { "" });
+                    let class = format!("bar{}{}{}", if on { " on" } else { "" }, if found { " found" } else { "" }, if lit.as_ref().is_some_and(|l| l.0 == id.0 && l.1 == id.1) { " lit" } else { "" });
                     let label = bar.label.clone();
                     let wide = (e - a) as f64 * px >= 24.0;
                     rsx! {
@@ -291,7 +291,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
 /// What a bar's call was: a syscall's entry, the syscall with its
 /// arguments and result, and who made it; a function, what it returned and
 /// its arguments; code inlined, its function.
-fn said(first: usize, inlined: bool, name: &str) -> Vec<(String, &'static str)> {
+fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> {
     if inlined {
         return vec![(format!("{name} (inlined)"), "")];
     }
