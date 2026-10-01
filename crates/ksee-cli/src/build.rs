@@ -125,7 +125,15 @@ pub fn build() {
             .args(args);
         c
     };
-    if stale("linux/.config", &["linux/arch/wasm/configs/defconfig", "linux/arch/wasm/Kconfig", "linux/arch/wasm/Kconfig.debug"]) {
+    // (Every Kconfig the port has: a new one re-runs defconfig too.)
+    let mut config = vec!["linux/arch/wasm/configs/defconfig".to_string()];
+    for e in std::fs::read_dir("linux/arch/wasm").into_iter().flatten().flatten() {
+        let n = e.file_name().to_string_lossy().into_owned();
+        if n.starts_with("Kconfig") {
+            config.push(format!("linux/arch/wasm/{n}"));
+        }
+    }
+    if stale("linux/.config", &config.iter().map(String::as_str).collect::<Vec<_>>()) {
         run(&mut kmake(&["defconfig"]));
     }
     run(&mut kmake(&[]));
