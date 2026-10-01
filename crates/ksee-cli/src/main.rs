@@ -18,8 +18,6 @@
 //!   ksee serve [DIR] [--port=N]
 //!                            serve DIR (target/site: the page, as built) for
 //!                            a browser
-//!   ksee type VMLINUX NAME   the layout of a kernel struct, union, enum or
-//!                            typedef
 mod build;
 mod chrome;
 mod deploy;
@@ -28,8 +26,6 @@ mod serve;
 
 use std::path::Path;
 use std::process::ExitCode;
-
-use ksee_core::{module, types::Types};
 
 fn read(p: &Path) -> Vec<u8> {
     std::fs::read(p).unwrap_or_else(|e| fail(&format!("{}: {e}", p.display())))
@@ -77,15 +73,9 @@ fn main() -> ExitCode {
             let dir = Path::new(dir.first().copied().unwrap_or(build::SITE));
             serve::serve(dir, port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
         }
-        ["type", vmlinux, name] => {
-            let image = read(Path::new(vmlinux));
-            let types = Types::parse(&String::from_utf8_lossy(&module::custom_section(&image, "ksee.types")));
-            let Some(id) = types.find(name) else { fail(&format!("{name}: no such type")) };
-            print!("{}", types.layout(id));
-        }
         _ => {
             eprintln!("usage: ksee [build | test [--ui] | shot OUT.png [--test=NAME | --eval=JS] [--at=#HASH] [--url=URL] [--wait=MS] [--size=WxH] \
-                       | deploy | serve [DIR] [--port=N] | pack KERNEL OUT | patch | type VMLINUX NAME]");
+                       | deploy | serve [DIR] [--port=N] | pack KERNEL OUT | patch]");
             return ExitCode::from(2);
         }
     }
