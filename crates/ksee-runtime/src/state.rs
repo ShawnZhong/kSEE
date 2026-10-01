@@ -154,10 +154,13 @@ impl Direct {
     }
 }
 
+/// A wasm memory page, in bytes.
+pub(crate) const PAGE_BYTES: u32 = 65536;
+
 impl Memory for Direct {
     /// Reads outside memory (a stale pointer in the trace, say) give zeros.
     fn read(&self, addr: u32, buf: &mut [u8]) {
-        let size = core::arch::wasm32::memory_size(0) as u64 * 65536;
+        let size = core::arch::wasm32::memory_size(0) as u64 * PAGE_BYTES as u64;
         if addr as u64 + buf.len() as u64 > size {
             buf.fill(0);
             return;

@@ -65,7 +65,7 @@ impl Machine {
         let memory: WebAssembly::Memory = wasm_bindgen::memory().unchecked_into();
         let have = Uint8Array::new(&memory.buffer()).length();
         if have < ram {
-            memory.grow((ram - have).div_ceil(65536));
+            memory.grow((ram - have).div_ceil(PAGE_BYTES));
         }
         k(|k| k.ram.set(ram));
 
