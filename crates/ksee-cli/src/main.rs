@@ -31,7 +31,6 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let port = args.iter().find_map(|a| a.strip_prefix("--port=")?.parse().ok()).unwrap_or(8000);
     let ui = args.iter().any(|a| a == "--ui");
-    let opt = |k: &str| args.iter().find_map(|a| a.strip_prefix(&format!("--{k}=")).map(String::from));
     let args: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
     match args[..] {
         [] => {
