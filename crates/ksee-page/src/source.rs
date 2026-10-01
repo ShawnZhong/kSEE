@@ -98,20 +98,33 @@ fn value_of(e: &str, f: &Frame, i: usize) -> Option<Object> {
     m.at_moment(i, |v, mem| {
         let mut o = f.args.iter().flatten().chain(f.locals.iter().flatten()).find(|o| o.name == path[0]).cloned()
             .or_else(|| v.tables.types.globals.get(path[0]).map(|&(a, ty)| v.tables.types.object(mem, path[0], a, ty, 1)))?;
+        let kids = |o: &Object| o.children.clone().or_else(|| o.open.and_then(|t| v.tables.types.object(mem, &o.name, t.addr, t.ty, 1).children));
         for field in &path[1..] {
-            let kids = o.children.clone().or_else(|| o.open.and_then(|t| v.tables.types.object(mem, &o.name, t.addr, t.ty, 1).children))?;
-            o = kids.into_iter().find(|c| c.name == *field)?;
+            o = kids(&o)?.into_iter().find(|c| c.name == *field)?;
         }
+        // (Its members, or what it points to: the tip shows them.)
+        o.children = kids(&o);
         Some(o)
     })
 }
 
-/// The tip over a name: its value.
+/// The tip over a name: its value, then its members' (or what it points to).
 #[derive(Clone, PartialEq)]
 struct Tip {
     x: f64,
     y: f64,
-    text: String,
+    lines: Vec<String>,
+}
+
+/// What the tip over expression `e` says: its value, then its members'
+/// (the first 16).
+fn said(e: &str, o: &Object) -> Vec<String> {
+    let value = |o: &Object| o.value.clone().unwrap_or_else(|| "{…}".into());
+    let kids = o.children.as_deref().unwrap_or_default();
+    std::iter::once(format!("{e} = {}", value(o)))
+        .chain(kids.iter().take(16).map(|c| format!("{} = {}", c.name, value(c))))
+        .chain((kids.len() > 16).then(|| format!("… {} more", kids.len() - 16)))
+        .collect()
 }
 
 /// A line's height (px), and how many lines are made past the view.
@@ -198,7 +211,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
                                                 span { class: if has { "nm val" } else { "nm" },
                                                     onmouseenter: move |ev| {
                                                         let pt = ev.client_coordinates();
-                                                        tip.set(value_of(&e, &frame, i).map(|o| Tip { x: pt.x, y: pt.y, text: format!("{e} = {}", o.value.unwrap_or_else(|| "{…}".into())) }));
+                                                        tip.set(value_of(&e, &frame, i).map(|o| Tip { x: pt.x, y: pt.y, lines: said(&e, &o) }));
                                                     },
                                                     onclick: move |ev| if ev.modifiers().ctrl() || ev.modifiers().meta() {
                                                         // (Its definition: a function, a type, a global; a member, of the one struct with it.)
@@ -227,7 +240,9 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
             }
         }
         if let Some(t) = tip() {
-            div { class: "tip", style: "left: {t.x + 12.0}px; top: {t.y + 14.0}px", "{t.text}" }
+            div { class: "tip", style: "left: {t.x + 12.0}px; top: {t.y + 14.0}px",
+                for (k , l) in t.lines.into_iter().enumerate() { div { class: if k > 0 { "f" } else { "" }, "{l}" } }
+            }
         }
     }
 }
