@@ -1,5 +1,5 @@
 diff --git a/Makefile b/Makefile
-index c28f11c61..8edb0b52a 100644
+index c28f11c61..9454be91d 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -1377,7 +1377,8 @@ PHONY += vmlinux
@@ -7,19 +7,17 @@ index c28f11c61..8edb0b52a 100644
  vmlinux: private _LDFLAGS_vmlinux := $(LDFLAGS_vmlinux)
  vmlinux: export LDFLAGS_vmlinux = $(_LDFLAGS_vmlinux)
 -vmlinux: vmlinux.o $(KBUILD_LDS) modpost
-+# (wasm: no modules, and modpost cannot read wasm objects anyway.)
++# wasm has no modules, and modpost cannot read wasm objects.
 +vmlinux: vmlinux.o $(KBUILD_LDS) $(if $(filter-out wasm,$(SRCARCH)),modpost)
  	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.vmlinux
  
  # The actual objects are generated when descending,
-@@ -1415,7 +1416,10 @@ archprepare: outputmakefile archheaders archscripts scripts include/config/kerne
+@@ -1415,7 +1416,7 @@ archprepare: outputmakefile archheaders archscripts scripts include/config/kerne
  	include/generated/rustc_cfg remove-stale-files
  
  prepare0: archprepare
-+# (wasm: no modules, and modpost cannot read wasm objects anyway.)
-+ifneq ($(SRCARCH),wasm)
- 	$(Q)$(MAKE) $(build)=scripts/mod
-+endif
+-	$(Q)$(MAKE) $(build)=scripts/mod
++	$(if $(filter-out wasm,$(SRCARCH)),$(Q)$(MAKE) $(build)=scripts/mod)
  	$(Q)$(MAKE) $(build)=. prepare
  
  # All the preparing..
@@ -1864,24 +1862,6 @@ index b67636b28..b37824b5c 100644
  # This is only for i386 UM builds, which need the 32-bit target not -m32
  CLANG_TARGET_FLAGS_i386		:= i386-linux-gnu
  CLANG_TARGET_FLAGS_um		:= $(CLANG_TARGET_FLAGS_$(SUBARCH))
-diff --git a/scripts/Makefile.vmlinux b/scripts/Makefile.vmlinux
-index fcae1e432..383c3a033 100644
---- a/scripts/Makefile.vmlinux
-+++ b/scripts/Makefile.vmlinux
-@@ -110,10 +110,11 @@ vmlinux: vmlinux.unstripped FORCE
- #   depmod: ERROR: kmod_builtin_iter_next: unexpected string without modname prefix
- #
- # Strip the trailing padding bytes after extracting .modinfo to comply with
--# what kmod expects to parse.
-+# what kmod expects to parse. (wasm has no modules, so nothing is padded:
-+# skip the strip, which BSD sed cannot spell.)
- quiet_cmd_modules_builtin_modinfo = GEN     $@
-       cmd_modules_builtin_modinfo = $(cmd_objcopy); \
--                                    sed -i 's/\x00\+$$/\x00/g' $@; \
-+                                    $(if $(filter-out wasm,$(SRCARCH)),sed -i 's/\x00\+$$/\x00/g' $@) \
-                                     chmod -x $@
- 
- OBJCOPYFLAGS_modules.builtin.modinfo := -j .modinfo -O binary
 diff --git a/usr/gen_init_cpio.c b/usr/gen_init_cpio.c
 index b7296edc6..f5ac25821 100644
 --- a/usr/gen_init_cpio.c
