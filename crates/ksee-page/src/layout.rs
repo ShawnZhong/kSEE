@@ -14,7 +14,7 @@ pub struct Sizes {
 
 impl Default for Sizes {
     fn default() -> Self {
-        Sizes { left: 420.0, chart: 230.0, right: 420.0 }
+        Sizes { left: 340.0, chart: 190.0, right: 380.0 }
     }
 }
 
@@ -41,7 +41,7 @@ fn storage() -> Option<web_sys::Storage> {
 impl Sizes {
     /// As kept, else the default.
     pub fn kept() -> Sizes {
-        let v: Vec<f64> = storage().and_then(|s| s.get_item("ksee.sizes").ok().flatten())
+        let v: Vec<f64> = storage().and_then(|s| s.get_item("ksee.layout").ok().flatten())
             .map(|t| t.split(',').filter_map(|x| x.parse().ok()).collect()).unwrap_or_default();
         match v[..] {
             [left, chart, right] => Sizes { left, chart, right },
@@ -51,7 +51,7 @@ impl Sizes {
 
     fn keep(&self) {
         if let Some(s) = storage() {
-            let _ = s.set_item("ksee.sizes", &format!("{},{},{}", self.left, self.chart, self.right));
+            let _ = s.set_item("ksee.layout", &format!("{},{},{}", self.left, self.chart, self.right));
         }
     }
 

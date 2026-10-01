@@ -34,11 +34,3 @@ pub fn pieces(p: &str) -> Vec<Piece> {
     }
     out
 }
-
-/// The calls paragraph `p` links to, in order.
-pub fn calls(p: &str) -> Vec<usize> {
-    pieces(p).into_iter().filter_map(|x| match x {
-        Piece::Link { call, .. } => call,
-        _ => None,
-    }).collect()
-}

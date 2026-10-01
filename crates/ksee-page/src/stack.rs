@@ -32,7 +32,7 @@ pub fn moment() -> usize {
 
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
 /// lines, into its task's syscall after it (or before).
-fn walk(ui: Ui, dir: isize, how: Move) {
+pub fn walk(ui: Ui, dir: isize, how: Move) {
     let lines = ui.lines();
     if let Some(j) = step(&lines, (ui.cursor)(), dir, how) {
         ui.go(j);
@@ -53,52 +53,31 @@ fn walk(ui: Ui, dir: isize, how: Move) {
     }
 }
 
+/// The frame chosen, `dir` up the Stack (-1: the callee) or down (1: the caller).
+pub fn frame(mut ui: Ui, dir: isize) {
+    let n = consume_context::<Derived>().stack.read().len();
+    let k = (ui.frame)().unwrap_or(0);
+    ui.frame.set(Some(k.saturating_add_signed(dir).min(n.saturating_sub(1))));
+}
+
 /// The work area's keys: ← → a line (Shift: over the calls; Alt: out of
 /// the function); ↑ ↓ the frame up (its callee) or down (its caller).
-pub fn key(mut ui: Ui, e: &KeyboardEvent) {
+pub fn key(ui: Ui, e: &KeyboardEvent) {
     let m = e.modifiers();
     let how = if m.alt() { Move::Out } else if m.shift() { Move::Over } else { Move::Into };
     match e.key() {
         Key::ArrowLeft => walk(ui, -1, how),
         Key::ArrowRight => walk(ui, 1, how),
-        Key::ArrowUp | Key::ArrowDown => {
-            let n = consume_context::<Derived>().stack.read().len();
-            let k = (ui.frame)().unwrap_or(0);
-            let k = if e.key() == Key::ArrowUp { k.saturating_sub(1) } else { (k + 1).min(n.saturating_sub(1)) };
-            ui.frame.set(Some(k));
-        }
+        Key::ArrowUp => frame(ui, -1),
+        Key::ArrowDown => frame(ui, 1),
         _ => return,
     }
     e.prevent_default();
 }
 
-#[component]
-pub fn Transport() -> Element {
-    let ui = use_context::<Ui>();
-    let lines = ui.lines();
-    let k = (ui.cursor)();
-    let here = lines.get(k);
-    let place = here.map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
-    // (A step that lands after a call: what it returned.)
-    let returned = here.and_then(|l| l.called.as_ref()).filter(|c| c.at <= here.map_or(0, |l| l.at))
-        .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value))).unwrap_or_default();
-    let button = |label: &'static str, title: &'static str, dir: isize, how: Move| {
-        rsx! { button { title, onclick: move |_| walk(ui, dir, how), "{label}" } }
-    };
-    rsx! {
-        div { class: "transport",
-            {button("◀ out", "back, to where this function was called (Alt ←)", -1, Move::Out)}
-            {button("◀ over", "back, over the calls this function made (Shift ←)", -1, Move::Over)}
-            {button("◀", "the line before (←)", -1, Move::Into)}
-            {button("▶", "the next line (→)", 1, Move::Into)}
-            {button("over ▶", "the next line of this function, over the calls it makes (Shift →)", 1, Move::Over)}
-            {button("out ▶", "on, to the line after this function returns (Alt →)", 1, Move::Out)}
-            span { class: "where mono", "{place}" }
-            span { class: "dim", "{returned} · line {k + 1} of {lines.len()}" }
-        }
-    }
-}
-
+/// The calls at the moment shown, innermost first, at the bottom of the
+/// pane: the frame chosen open, its arguments and locals as memory was
+/// then; a click on another, it chosen. Then the task running.
 #[component]
 pub fn Stack() -> Element {
     let mut ui = use_context::<Ui>();
@@ -108,27 +87,29 @@ pub fn Stack() -> Element {
     let task = machine().view(|v| v.rec.tasks.get(i).map(|&t| v.task(t, i)));
     let mut open = use_context::<Signal<BTreeSet<String>>>();
     rsx! {
-        div { class: "frames",
-            for (k , f) in frames.iter().cloned().enumerate() {
-                div { class: if k == chosen { "frame on" } else { "frame" },
-                    div { class: "fhead", onclick: move |_| ui.frame.set(Some(k)),
-                        b { class: "mono", "{f.func}" }
-                        if let Some(s) = &f.syscall { span { class: "dim", " · {s}" } }
-                        if f.inlined { span { class: "dim", " · inlined" } }
-                        span { class: "dim mono", " {f.file.clone().unwrap_or_default()}:{f.line.unwrap_or(0)}" }
+        div { class: "stack",
+            table { class: "objs",
+                for (k , f) in frames.iter().cloned().enumerate() {
+                    tr { class: if k == chosen { "frame on" } else { "frame" }, onclick: move |_| ui.frame.set(Some(k)),
+                        td { colspan: "3",
+                            a { class: "mono", "{f.func}" }
+                            span { class: "dim mono", " {f.file.clone().unwrap_or_default()}:{f.line.unwrap_or(0)}" }
+                            if f.inlined { span { class: "dim", " · inlined" } }
+                            if let Some(s) = &f.syscall { span { class: "dim", " · {s}" } }
+                        }
                     }
-                    table { class: "vals",
+                    if k == chosen {
                         for o in f.args.clone().unwrap_or_default().into_iter().chain(f.locals.clone().unwrap_or_default()) {
-                            Value { o: o.clone(), path: format!("{k}.{}", o.name), depth: 0, i }
+                            Value { o: o.clone(), path: format!("{k}.{}", o.name), depth: 1, i }
                         }
                     }
                 }
             }
             if let Some(t) = task {
-                div { class: "fhead dim", "current task: "
-                    a { title: "its task_struct, in Tasks",
+                div { class: "current dim", "current task: "
+                    a { class: "mono", title: "its task_struct, in Tasks",
                         onclick: move |_| { ui.tab.set(Tab::Tasks); open.write().insert(format!("task/{}", t.addr)); },
-                        "{t.comm.clone().unwrap_or_default()}({t.pid.unwrap_or(0)})" }
+                        "{crate::chart::named(&t)}" }
                 }
             }
         }
@@ -172,14 +153,14 @@ pub fn Value(o: Object, path: String, depth: usize, i: usize) -> Element {
     let (addr, size) = (o.addr, o.size.clamp(1, 8));
     rsx! {
         tr { class: if o.none.is_some() { "none" } else { "" },
-            td { class: "mono", style: "padding-left: {depth * 14 + 4}px",
+            td { class: "fname", style: "padding-left: {depth * 14}px",
                 if can { a { class: "tw", onclick: move |_| { let mut s = open.write(); if !s.remove(&p) { s.insert(p.clone()); } }, if is_open { "▾ " } else { "▸ " } } }
                 "{o.name}"
             }
-            td { class: "mono val", title: "{wrote}",
+            td { class: "fval", title: "{wrote}",
                 onmouseenter: move |_| if addr != 0 { wrote.set(origin(addr, size, i)) },
                 "{value}" }
-            td { class: "dim mono", "{o.ty}" }
+            td { class: "ftype", "{o.ty}" }
         }
         for c in kids.unwrap_or_default() {
             Value { o: c.clone(), path: format!("{path}.{}", c.name), depth: depth + 1, i }

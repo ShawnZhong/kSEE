@@ -76,8 +76,9 @@ pub fn Source() -> Element {
     let i = crate::stack::moment();
     rsx! {
         div { class: "source",
-            div { class: "head mono",
+            div { class: "srcbar mono",
                 span { "{path}" }
+                if !def_of { span { " · {f.func}" } }
                 if def_of { a { onclick: move |_| seen.set(None), "back to the cursor" } }
             }
             Code { path: path.clone(), from, to, line, here: !def_of, frame: f, i, seen }

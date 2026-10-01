@@ -1,33 +1,52 @@
-//! The timeline: an overview of the whole recording (which task ran when,
-//! the window marked), and the window as a stack chart: columns of moments,
-//! each its task's stack, the outermost at the bottom; a bar a call (or code
-//! inlined into one) over the columns it is on, colored by the kernel's part
-//! it is in; the task strip under it. The wheel zooms, a drag pans; hover a
-//! bar: the moment shown everywhere, and what the call was; click it: the
-//! cursor there. Find a function by any part of its name.
+//! The timeline. On top, an overview of the whole recording: which task
+//! ran when, where each syscall starts, the window shown below, the cursor.
+//! Below, the window as a stack chart: columns of moments, each its task's
+//! stack, the outermost at the bottom; a bar a call (or code inlined into
+//! one) over the columns it is on, colored by the kernel's part it is in,
+//! the calls at the cursor darker; the task strip under it; then the
+//! transport. The wheel zooms, a drag pans; hover a bar: the moment shown
+//! everywhere, and what the call was; click it: the cursor there. Find a
+//! function by any part of its name.
 
 use dioxus::prelude::*;
-use ksee_core::view::Chart;
+use ksee_core::view::{Chart, Move, TaskRef};
 
 use crate::machine;
 use crate::state::{Derived, Peek, Shared, Ui};
 
-/// Columns, the overview's buckets, and a row's height (px).
-pub const COLUMNS: usize = 300;
+/// The overview's buckets.
 const BUCKETS: usize = 240;
-/// A row's height (px): as tall as fits the chart's room, 9 to 17.
-const ROW: f64 = 17.0;
-const MIN_ROW: f64 = 9.0;
+/// A row's height (px): as tall as fits the chart's room, 11 to 15 (deeper,
+/// the chart scrolls).
+const ROW: f64 = 15.0;
+const MIN_ROW: f64 = 11.0;
 
-/// Where file `file` is in the kernel (arch::AREAS): its color's class.
-pub fn area(file: Option<&str>) -> &'static str {
-    let file = file.unwrap_or("");
-    ksee_core::arch::AREAS.iter().find(|(p, _)| file.starts_with(p)).map_or("other", |(_, n)| n)
+/// A task's hue, by its pid (the strip, the overview, the program's lanes).
+pub fn hue(pid: i32) -> i32 {
+    pid * 137 % 360
 }
 
-/// A task's color, by its pid.
-fn hue(pid: i32) -> String {
-    format!("hsl({} 55% 72%)", pid * 47 % 360)
+/// A task's color: the idle task's (0) pale.
+fn task_color(pid: i32) -> String {
+    format!("hsl({} 50% {}%)", hue(pid), if pid == 0 { 85 } else { 62 })
+}
+
+/// The color of a call in file `file`: a hue for each of the kernel's
+/// parts (arch::AREAS) in order, the last (arch), and none, gray; `on` (at
+/// the cursor), darker.
+fn color(file: Option<&str>, on: bool) -> String {
+    const HUES: [i32; 7] = [210, 135, 28, 48, 280, 175, 330];
+    let file = file.unwrap_or("");
+    let l = if on { 50 } else { 74 };
+    match ksee_core::arch::AREAS.iter().position(|(p, _)| file.starts_with(p)).and_then(|k| HUES.get(k)) {
+        Some(h) => format!("hsl({h} {}% {l}%)", if on { 65 } else { 55 }),
+        None => format!("hsl(0 0% {}%)", l + 5),
+    }
+}
+
+/// A task as the page names it: comm(pid).
+pub fn named(t: &TaskRef) -> String {
+    format!("{}({})", t.comm.clone().unwrap_or_default(), t.pid.unwrap_or(0))
 }
 
 /// What the tip over a bar says: lines, where.
@@ -40,66 +59,84 @@ struct Tip {
 
 #[component]
 pub fn Timeline() -> Element {
-    let ui = use_context::<Ui>();
-    let d = use_context::<Derived>();
+    let mut ui = use_context::<Ui>();
     let tip = use_signal(|| None::<Tip>);
-    let (a, b) = (d.window)();
-    let m = machine();
-    let steps = m.view(|v| (v.rec.step_of(a), v.rec.step_of(b)));
+    let title = ui.syscall().map(|s| format!("{} by {}", s.name, named(&s.task))).unwrap_or_default();
     rsx! {
-        div { class: "chartbox",
-            div { class: "head",
+        section { class: "history",
+            Overview {}
+            div { class: "flamehead",
+                span { class: "dim", "{title}"
+                    if ui.syscall().is_some() { " · " a { title: "the window at the call selected", onclick: move |_| zoom_to(ui), "zoom" } }
+                    if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.win.set(None), "whole" } }
+                }
                 Find {}
-                if (ui.win)().is_some() { a { onclick: move |_| { let mut ui = ui; ui.win.set(None); }, title: "the window at the call selected", "zoom" } }
-                a { onclick: move |_| { let mut ui = ui; ui.win.set(Some((0, machine().records().saturating_sub(1)))); }, title: "the whole recording", "whole" }
-                span { class: "dim", "steps {steps.0}–{steps.1}" }
                 span { class: "legend",
-                    for (_ , n) in ksee_core::arch::AREAS.iter() { span { i { class: "{n}" } "{n}" } }
+                    for (p , n) in ksee_core::arch::AREAS.iter() { span { i { style: "background: {color(Some(p), false)}" } "{n}" } }
                 }
             }
-            Overview {}
-            Bars { tip }
+            div { class: "flamescroll", Bars { tip } }
             Strip {}
+            Transport {}
         }
         if let Some(t) = tip() {
-            div { class: "tip", style: "left: {t.x + 14.0}px; top: {t.y + 14.0}px",
+            div { class: "tip", style: "left: {t.x + 14.0}px; top: {t.y + 16.0}px",
                 for (l , c) in t.lines { div { class: c, "{l}" } }
             }
         }
     }
 }
 
-/// The whole recording, in buckets of steps: who ran in each; the window,
-/// marked. A click: the window there, as wide as it is.
+/// The window at the call selected, with a little room either side.
+fn zoom_to(mut ui: Ui) {
+    let Some(s) = ui.syscall() else { return };
+    let m = machine();
+    let w = m.view(|v| {
+        let (a, b) = (v.rec.step_of(s.first), v.rec.step_of(s.last.unwrap_or(v.rec.len().saturating_sub(1))));
+        let p = ((b - a) / 50).max(4);
+        (v.rec.record_of(a.saturating_sub(p)), v.rec.record_of((b + p).min(v.rec.steps().saturating_sub(1))))
+    });
+    ui.win.set(Some(w));
+}
+
+/// The whole recording, in buckets of steps: who ran in each, each
+/// syscall's start, the window and the cursor. A click: the window there,
+/// as wide as it is.
 #[component]
 fn Overview() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     (ui.version)();
+    let mut width = use_signal(|| 1000.0f64);
     let m = machine();
-    let (n, tasks, (wa, wb)) = m.view(|v| {
+    let cursor = d.moment.cloned().map(|(i, _)| i);
+    let (n, tasks, starts, (wa, wb), at) = m.view(|v| {
         let n = v.rec.steps().max(1);
-        let tasks: Vec<Option<i32>> = (0..BUCKETS).map(|k| {
+        let tasks: Vec<i32> = (0..BUCKETS).map(|k| {
             let i = v.rec.record_of(k * n / BUCKETS);
-            v.rec.tasks.get(i).and_then(|&t| v.task(t, i).pid)
+            v.rec.tasks.get(i).and_then(|&t| v.task(t, i).pid).unwrap_or(0)
         }).collect();
+        let starts: Vec<usize> = v.rec.syscalls.iter().map(|s| v.rec.step_of(s.first)).collect();
         let (a, b) = (d.window)();
-        (n, tasks, (v.rec.step_of(a), v.rec.step_of(b)))
+        (n, tasks, starts, (v.rec.step_of(a), v.rec.step_of(b)), cursor.map(|i| v.rec.step_of(i)))
     });
     let pct = |s: usize| s as f64 * 100.0 / n as f64;
     rsx! {
         div { class: "overview", title: "the whole recording: click to move the window there",
+            onresize: move |e| if let Ok(s) = e.get_content_box_size() { width.set(s.width.max(1.0)) },
+            onclick: move |e| {
+                let mut ui = ui;
+                let x = e.element_coordinates().x / width();
+                let (s, half) = ((x * n as f64) as usize, (wb - wa) / 2);
+                let m = machine();
+                ui.win.set(Some(m.view(|v| (v.rec.record_of(s.saturating_sub(half)), v.rec.record_of((s + half).min(n - 1))))));
+            },
             for (k , pid) in tasks.into_iter().enumerate() {
-                div { class: "b", style: "left: {k as f64 * 100.0 / BUCKETS as f64}%; width: {100.0 / BUCKETS as f64}%; background: {hue(pid.unwrap_or(0))}",
-                    onclick: move |_| {
-                        let mut ui = ui;
-                        let m = machine();
-                        let (s, half) = (k * n / BUCKETS, (wb - wa) / 2);
-                        let (a, b) = m.view(|v| (v.rec.record_of(s.saturating_sub(half)), v.rec.record_of((s + half).min(n - 1))));
-                        ui.win.set(Some((a, b)));
-                    } }
+                div { class: "b", style: "left: {k as f64 * 100.0 / BUCKETS as f64}%; width: {100.0 / BUCKETS as f64 + 0.1}%; background: {task_color(pid)}" }
             }
+            for s in starts { div { class: "start", style: "left: {pct(s)}%" } }
             div { class: "win", style: "left: {pct(wa)}%; width: {pct(wb.saturating_sub(wa)).max(0.3)}%" }
+            if let Some(s) = at { div { class: "at", style: "left: {pct(s)}%" } }
         }
     }
 }
@@ -122,10 +159,9 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let mut width = use_signal(|| 1000.0f64);
     let n = chart.cols.len().max(1);
     let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
-    // (The rows thinner to fit the chart's room, its head, overview and strip aside; deeper, it scrolls.)
-    let room = use_context::<Signal<crate::layout::Sizes>>()().chart - 64.0;
+    // (The rows thinner to fit the chart's room; deeper, it scrolls.)
+    let room = use_context::<Signal<crate::layout::Sizes>>()().chart;
     let row = (room / depth.max(1) as f64).clamp(MIN_ROW, ROW).floor();
-    let labels = row >= 12.0;
     // (Each row's runs: a bar over the columns it is on, in a row.)
     let mut runs = Vec::new();
     for dd in 0..depth {
@@ -140,14 +176,19 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             k = e;
         }
     }
-    let lines = ui.lines();
-    let cursor = lines.get((ui.cursor)()).map(|l| l.i);
-    let col = |i: usize| chart.cols.iter().rposition(|c| c.i <= i);
-    let now = cursor.and_then(col);
+    let cursor = d.moment.cloned().map(|(i, _)| i);
+    let (wa, wb) = (d.window)();
+    // (Where the cursor is, across the window (%); the calls on its stack.)
+    let now = cursor.filter(|&i| i >= wa && i <= wb).map(|i| machine().view(|v| {
+        let (sa, sb, s) = (v.rec.step_of(wa), v.rec.step_of(wb), v.rec.step_of(i));
+        (s - sa) as f64 * 100.0 / (sb - sa + 1) as f64
+    }));
+    let calls: Vec<(usize, bool)> = d.stack.read().iter().map(|f| (f.first, f.inlined)).collect();
     let find = (ui.find)().to_lowercase();
     // (The bar outlined: the frame shown's call.)
     let lit = d.stack.read().get(d.shown.cloned()).map(|f| (f.first, f.inlined));
     let pct = |k: usize| k as f64 * 100.0 / n as f64;
+    let px = width() / n as f64;
     // (Zoom: the window narrowed or widened around the pointer's step.)
     let zoom = move |x: f64, by: f64| {
         let mut ui = ui;
@@ -162,14 +203,15 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         ui.win.set(Some(m.view(|v| (v.rec.record_of(na), v.rec.record_of(nb)))));
     };
     rsx! {
-        div { class: "chart", style: "height: {depth as f64 * row}px",
-            onmounted: move |e| async move { if let Ok(r) = e.get_client_rect().await { width.set(r.size.width); } },
+        div { class: "chart", style: "height: {(depth as f64 * row).max(room)}px",
+            onresize: move |e| if let Ok(s) = e.get_content_box_size() { width.set(s.width.max(1.0)) },
             onwheel: move |e| {
                 e.prevent_default();
                 let dy = e.delta().strip_units().y;
                 zoom(e.element_coordinates().x, if dy > 0.0 { 1.25 } else { 0.8 });
             },
             onpointerdown: move |e| {
+                tip.set(None);
                 let (a, b) = (d.window)();
                 let (sa, sb) = machine().view(|v| (v.rec.step_of(a), v.rec.step_of(b)));
                 pan.set(Some(Pan { x: e.client_coordinates().x, a: sa, b: sb, moved: false }));
@@ -193,12 +235,15 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 {
                     let bar = &chart.bars[b];
                     let (i, deep, first, inlined) = (chart.cols[a].i, chart.cols[a].frames.len(), bar.first, bar.inlined);
-                    let class = if !find.is_empty() && bar.name.to_lowercase().contains(&find) { "bar found".to_string() } else { format!("bar {}", area(bar.file.as_deref())) };
-                    let class = if lit == Some((first, inlined)) { format!("{class} lit") } else { class };
+                    let on = calls.contains(&(first, inlined));
+                    let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
+                    let bg = if found { "var(--found)".to_string() } else { color(bar.file.as_deref(), on) };
+                    let class = format!("bar{}{}", if on { " on" } else { "" }, if lit == Some((first, inlined)) { " lit" } else { "" });
                     let (name, label) = (bar.name.clone(), bar.label.clone());
+                    let wide = (e - a) as f64 * px >= 24.0;
                     rsx! {
                         div { class,
-                            style: "left: {pct(a)}%; width: {pct(e - a)}%; bottom: {dd as f64 * row}px; height: {row - 1.0}px; line-height: {row - 1.0}px",
+                            style: "left: {pct(a)}%; width: {pct(e - a)}%; bottom: {dd as f64 * row}px; height: {row - 1.0}px; line-height: {row - 1.0}px; background: {bg}",
                             onmouseenter: move |ev| {
                                 let mut ui = ui;
                                 ui.peek.set(Some(Peek { i, first, inlined }));
@@ -215,12 +260,12 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                                 ui.peek.set(None);
                                 ui.go_record(i, Some(deep - 1 - dd));
                             },
-                            if labels { "{label}" }
+                            if wide { "{label}" }
                         }
                     }
                 }
             }
-            if let Some(k) = now { div { class: "now", style: "left: {pct(k)}%" } }
+            if let Some(x) = now { div { class: "now", style: "left: {x}%" } }
         }
     }
 }
@@ -245,7 +290,7 @@ fn said(first: usize, inlined: bool, name: &str) -> Vec<(String, &'static str)> 
                 let ret = s.ret.map(|r| v.tables.types.result(r as i64)).unwrap_or_else(|| "…".into());
                 let shown: Vec<String> = args.iter().map(|(_, x)| x.clone()).collect();
                 vec![(format!("{}({}) = {ret}", v.tables.types.syscall_name(s.nr), shown.join(", ")), ""),
-                     (format!("a syscall by {}({})", task.comm.unwrap_or_default(), task.pid.unwrap_or(0)), "dim")]
+                     (format!("a syscall by {}", named(&task)), "dim")]
             }
             None => std::iter::once((format!("{name}{ret}"), "")).chain(args.into_iter().map(|(n, x)| (format!("{n} = {x}"), "f"))).collect(),
         }
@@ -273,10 +318,37 @@ fn Strip() -> Element {
             for (a , e , task) in runs {
                 {
                     let t = m.view(|v| v.task(task, chart.cols[e - 1].i));
-                    let name = format!("{}({})", t.comm.unwrap_or_default(), t.pid.unwrap_or(0));
-                    rsx! { div { class: "run", title: "{name}", style: "left: {pct(a)}%; width: {pct(e - a)}%; background: {hue(t.pid.unwrap_or(0))}", "{name}" } }
+                    let name = named(&t);
+                    rsx! { div { class: "run", title: "{name}", style: "left: {pct(a)}%; width: {pct(e - a)}%; background: {task_color(t.pid.unwrap_or(0))}", "{name}" } }
                 }
             }
+        }
+    }
+}
+
+/// Under the strip: steps through the call's lines (◀ ▶; Shift: over the
+/// calls, Alt: out of the function, as ← → are), the frame up or down the
+/// Stack (▲ ▼, as ↑ ↓), and where the cursor is.
+#[component]
+fn Transport() -> Element {
+    let ui = use_context::<Ui>();
+    let lines = ui.lines();
+    let here = lines.get((ui.cursor)());
+    let s = ui.syscall();
+    let task = s.as_ref().map(|s| named(&s.task)).unwrap_or_default();
+    let place = here.map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
+    let call = s.as_ref().map(|s| format!(" · in {}", s.name)).unwrap_or_default();
+    // (A step that lands after a call: what it returned.)
+    let returned = here.and_then(|l| l.called.as_ref()).filter(|c| c.at <= here.map_or(0, |l| l.at))
+        .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value))).unwrap_or_default();
+    let how = |e: &MouseEvent| if e.modifiers().alt() { Move::Out } else if e.modifiers().shift() { Move::Over } else { Move::Into };
+    rsx! {
+        div { class: "transport",
+            button { title: "the line before (←); Shift: back over the calls; Alt: out, to where the function was called", onclick: move |e| crate::stack::walk(ui, -1, how(&e)), "◀" }
+            button { title: "the next line (→); Shift: over the calls; Alt: out, past the function's return", onclick: move |e| crate::stack::walk(ui, 1, how(&e)), "▶" }
+            button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| crate::stack::frame(ui, -1), "▲" }
+            button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| crate::stack::frame(ui, 1), "▼" }
+            span { class: "where mono dim", "{task} · {place}{call}{returned}" }
         }
     }
 }
@@ -294,9 +366,12 @@ fn Find() -> Element {
     };
     let count = calls.len();
     rsx! {
-        input { class: "find", placeholder: "find a function…", value: "{ui.find}",
+        input { class: "find mono", placeholder: "find a function…", value: "{ui.find}", spellcheck: false,
+            title: "any part of a function's name (its bars colored as you type): Enter, its next call after the cursor; Shift+Enter, the one before; Esc clears",
             oninput: move |e| ui.find.set(e.value()),
-            onkeydown: move |e| if e.key() == Key::Enter && !calls.is_empty() {
+            onkeydown: move |e| {
+                if e.key() == Key::Escape { ui.find.set(String::new()); return }
+                if e.key() != Key::Enter || calls.is_empty() { return }
                 let here = consume_context::<Derived>().moment.cloned().map_or(0, |(i, _)| i);
                 let to = if e.modifiers().shift() {
                     calls.iter().rev().find(|&&c| c < here).or(calls.last())
@@ -313,6 +388,6 @@ fn Find() -> Element {
                     }
                 }
             } }
-        if !w.is_empty() { span { class: "dim", "{count} calls" } }
+        if !w.is_empty() { span { class: "dim", if count == 0 { "none in the recording" } else { "{count} calls" } } }
     }
 }

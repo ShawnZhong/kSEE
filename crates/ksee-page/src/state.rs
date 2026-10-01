@@ -10,6 +10,9 @@ use ksee_core::view::{Chart, Frame, Line, SyscallSummary};
 
 use crate::machine;
 
+/// The chart's columns: moments across its window.
+const COLUMNS: usize = 400;
+
 /// A value computed once and shared (a memo's: compared by identity, not
 /// by content).
 pub struct Shared<T>(pub Rc<T>);
@@ -72,11 +75,11 @@ impl Derived {
         let window = use_memo(move || {
             (ui.version)();
             let end = machine().records().saturating_sub(1);
-            (ui.win)().or_else(|| syscall.cloned().map(|s| (s.first, s.last.unwrap_or(end)))).unwrap_or((0, end))
+            (ui.win)().unwrap_or((0, end))
         });
         let chart = use_memo(move || {
             let (a, b) = window();
-            Shared(Rc::new(machine().view(|v| v.chart(a, b, crate::chart::COLUMNS))))
+            Shared(Rc::new(machine().view(|v| v.chart(a, b, COLUMNS))))
         });
         let moment = use_memo(move || match (ui.peek)() {
             Some(p) => Some((p.i, None)),
@@ -109,7 +112,7 @@ pub struct Ui {
     pub call: Signal<Option<usize>>,
     pub cursor: Signal<usize>,
     pub frame: Signal<Option<usize>>,
-    /// The chart's window (records; none: the call selected's), and the
+    /// The chart's window (records; none: the whole recording), and the
     /// moment under the pointer, if it is over the chart.
     pub win: Signal<Option<(usize, usize)>>,
     pub peek: Signal<Option<Peek>>,
@@ -153,7 +156,7 @@ impl Ui {
     }
 
     /// Syscall `k`'s lines (its task's), as the snapshot has them.
-    fn lines_of(k: usize) -> Vec<Line> {
+    pub fn lines_of(k: usize) -> Vec<Line> {
         let m = machine();
         m.view(|v| {
             let Some(s) = v.syscalls().into_iter().nth(k) else { return Vec::new() };
@@ -163,10 +166,13 @@ impl Ui {
 
     /// Select call `k` (an index in the syscalls), the cursor at its own
     /// code's first line (past the syscall entry's), on its innermost
-    /// frame; the chart's window, its records.
+    /// frame; the chart's window the whole recording, unless it has the call.
     pub fn select(mut self, k: usize) {
         self.call.set(Some(k));
-        self.win.set(None);
+        let s = machine().view(|v| v.syscalls().into_iter().nth(k));
+        if let (Some((a, b)), Some(s)) = ((self.win)(), s) && (s.first < a || s.last.is_none_or(|l| l > b)) {
+            self.win.set(None);
+        }
         // (Its lines, now: the memo's are the call's before until it runs again.)
         let own = Ui::lines_of(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
         self.go(own.unwrap_or(0));
