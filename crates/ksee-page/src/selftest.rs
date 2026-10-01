@@ -170,7 +170,7 @@ pub async fn self_test() -> bool {
     let s = t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await.s;
     t.check("mkdirat ran vfs_mkdir", t.ran(&s, "vfs_mkdir"));
     let nap = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {0, 30000000}, NULL)").await.s.unwrap();
-    let idle = m.view(|v| v.chart(nap.first, nap.last.unwrap_or(0), 50).cols.iter().any(|c| v.task(c.task, nap.first).comm.as_deref() == Some("swapper/0")));
+    let idle = m.view(|v| v.chart(v.rec.step_of(nap.first), v.rec.step_of(nap.last.unwrap_or(0)), 50).cols.iter().any(|c| v.task(c.task, nap.first).comm.as_deref() == Some("swapper/0")));
     t.check("sleeping switched to the idle task and back", t.ran(&Some(nap.clone()), "__schedule") && idle);
     let long = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {2, 0}, NULL)").await;
     t.check("a 2 s sleep returns (the clock skipped ahead)", long.how.as_deref() == Some("returned") && long.ret == Some(0));
@@ -188,7 +188,7 @@ pub async fn self_test() -> bool {
     }
     t.check("fs/read_write.c coverage", m.view(|v| v.coverage("fs/read_write.c", wi)).iter().any(|l| l.count > 0));
     let wlast = t.last(&w);
-    let chart = m.view(|v| v.chart(w.first, wlast, 200));
+    let chart = m.view(|v| v.chart(v.rec.step_of(w.first), v.rec.step_of(wlast), 200));
     t.check("a stack chart of write's records", chart.cols.len() == 200 && chart.cols[0].task == w.task.addr && chart.bars.len() > 10);
     let steps = m.view(|v| v.lines(w.first, wlast, w.task.addr));
     t.check("write, line by line (inlined lines too)", steps.len() > 50 && steps.iter().any(|x| x.inlined.is_some()));
