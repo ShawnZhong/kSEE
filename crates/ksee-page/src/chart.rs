@@ -140,6 +140,9 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let d = use_context::<Derived>();
     let chart = d.chart.cloned();
     let mut pan = use_signal(|| None::<Pan>);
+    // (Latched through pointer-up: a click fires after it, when pan is
+    // already none — so a drag never ends in a click.)
+    let mut dragged = use_signal(|| false);
     let mut width = use_signal(|| 1000.0f64);
     // (The pointer's x over the chart (px), while it is over it: the line is there.)
     let mut hover = use_signal(|| None::<f64>);
@@ -209,6 +212,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             },
             onpointerdown: move |e| {
                 tip.set(None);
+                dragged.set(false);
                 let (a, b) = (d.window)();
                 let (sa, sb) = machine().view(|v| (v.rec.step_of(a), v.rec.step_of(b)));
                 pan.set(Some(Pan { x: e.client_coordinates().x, a: sa, b: sb, moved: false }));
@@ -222,11 +226,14 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                         let dx = e.client_coordinates().x - p.x;
                         if dx.abs() >= 4.0 || p.moved {
                             p.moved = true;
+                            dragged.set(true);
                             pan.set(Some(p));
                             let m = machine();
                             let total = m.view(|v| v.rec.steps().max(1));
                             let shift = (dx / width() * (p.b - p.a) as f64) as isize;
-                            let na = (p.a as isize - shift).clamp(0, (total - 1 - (p.b - p.a)) as isize) as usize;
+                            // (Saturated: the window can be the whole recording.)
+                            let max = (total - 1).saturating_sub(p.b - p.a);
+                            let na = (p.a as isize - shift).clamp(0, max as isize) as usize;
                             ui.win.set(Some(m.view(|v| (v.rec.record_of(na), v.rec.record_of(na + (p.b - p.a))))));
                             return;
                         }
@@ -249,19 +256,37 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 }
             },
             onpointerup: move |_| pan.set(None),
-            // (A click, not a drag: the cursor at the moment under it, on the bar's frame there.)
+            // (A click, not a drag: the hovered preview committed — the
+            // moment and bar under the pointer, not re-derived beside them.)
             onclick: {
                 let chart = chart.clone();
                 move |e: MouseEvent| {
-                    if pan().is_some_and(|p| p.moved) { return }
-                    let at = e.element_coordinates();
-                    let Some((k, dd)) = hit(&chart, at.x, at.y) else { return };
+                    if dragged() { dragged.set(false); return }
                     let mut ui = ui;
+                    match (ui.peek)() {
+                        Some(p) => {
+                            // (The hovered bar's frame, from the innermost.)
+                            let frame = p.call.and_then(|(first, name)| {
+                                chart.cols.iter().find(|c| c.i == p.i).and_then(|c| {
+                                    c.frames.iter().position(|&b| {
+                                        chart.bars.get(b as usize).is_some_and(|bar| bar.first == first && bar.name == name)
+                                    }).map(|dd| c.frames.len() - 1 - dd)
+                                })
+                            });
+                            ui.go_record(p.i, frame);
+                        }
+                        // (No hover yet — the pointer never moved: what is under it.)
+                        None => {
+                            let at = e.element_coordinates();
+                            let Some((k, dd)) = hit(&chart, at.x, at.y) else { return };
+                            ui.go_record(chart.cols[k].i, dd.map(|dd| chart.cols[k].frames.len() - 1 - dd));
+                        }
+                    }
                     ui.peek.set(None);
-                    ui.go_record(chart.cols[k].i, dd.map(|dd| chart.cols[k].frames.len() - 1 - dd));
+                    hover.set(None);
                 }
             },
-            onmouseleave: move |_| { let mut ui = ui; ui.peek.set(None); tip.set(None); pan.set(None); hover.set(None); },
+            onmouseleave: move |_| { let mut ui = ui; ui.peek.set(None); tip.set(None); pan.set(None); dragged.set(false); hover.set(None); },
             for (dd , a , e , b) in runs {
                 {
                     let bar = &chart.bars[b];
