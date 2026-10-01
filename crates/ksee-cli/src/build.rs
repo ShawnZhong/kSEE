@@ -125,7 +125,7 @@ pub fn build() {
             .args(args);
         c
     };
-    if stale("linux/.config", &["linux/arch/wasm/configs/defconfig"]) {
+    if stale("linux/.config", &["linux/arch/wasm/configs/defconfig", "linux/arch/wasm/Kconfig", "linux/arch/wasm/Kconfig.debug"]) {
         run(&mut kmake(&["defconfig"]));
     }
     run(&mut kmake(&[]));
