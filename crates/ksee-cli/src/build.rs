@@ -196,7 +196,8 @@ const LINUX_TAG: &str = "v7.2.7";
 const LINUX_COMMIT: &str = "f42acb3678424d1e08f6ed27c0d8ba8a125e14d6";
 
 /// linux/: the release, fetched (a shallow git repo: its one commit) and
-/// linux.patch applied, the first time.
+/// linux.patch applied, the first time (only then: to re-apply an updated
+/// patch, remove linux/ first).
 fn linux() {
     if !Path::new("linux/Makefile").exists() {
         eprintln!("+ (fetch) {LINUX_TREE} {LINUX_TAG} -> linux/");
@@ -215,8 +216,14 @@ fn linux() {
 /// linux.patch: the port, all of it (the files new too) as linux/ differs
 /// from the release. Written by `ksee patch`, never by `ksee build`.
 pub fn patch() {
+    if !Path::new("linux/Makefile").exists() {
+        crate::fail("no linux/: run ./ksee.sh build first");
+    }
     git(&["add", "-A", "--intent-to-add"]);
     let diff = git(&["diff", "--no-color", LINUX_TAG]);
+    if std::fs::read("linux.patch").ok().as_deref() == Some(&diff[..]) {
+        return;
+    }
     eprintln!("+ (patch) linux -> linux.patch");
     std::fs::write("linux.patch", &diff).unwrap_or_else(|e| crate::fail(&format!("linux.patch: {e}")));
 }
