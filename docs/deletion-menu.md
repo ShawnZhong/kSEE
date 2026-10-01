@@ -2,18 +2,18 @@
 
 ## Score — net lines removed since f190b53 (excl. linux.patch, Cargo.lock)
 
-- Committed (67cfe65) vs f190b53: +2889 / −1960 → net **+929 added**
-  (1960 lines deleted, 2889 added).
+- Committed (6af9583) vs f190b53: +2924 / −1972 → net **+952 added**
+  (1972 lines deleted, 2924 added).
 - Working state vs f190b53, tracked files: same as committed (main tree
   clean; only this file's update on top).
 - This file, docs/deletion-menu.md: +120.
-- Net removed: **−929** (the tree grew 929 lines since the base; deletions
+- Net removed: **−952** (the tree grew 952 lines since the base; deletions
   are outpacing additions commit by commit — see the deletion log below).
 
 Method: `git diff f190b53 --numstat -- . ':!linux.patch' ':!Cargo.lock'`
 (insertions vs deletions; net removed = deletions − insertions).
 `linux/` and `target/` are untracked/ignored, so they never count.
-Stamped 2026-10-01 ~10:40 UTC at 67cfe65 (main clean). Re-stamp with the
+Stamped 2026-10-01 ~10:50 UTC at 6af9583 (main clean). Re-stamp with the
 same command after the tree settles.
 
 ## 1. Inventory — line cost at HEAD
@@ -41,8 +41,8 @@ chrome.rs 71, deploy.rs 38.
 Rest: plugin/ksee-trace.cpp 711, web/index.html 237 + web/ksee.js 22,
 user/init.c 59 + user/prog.c 68 + user/syscall.h 14.
 Docs (handbooks): design 118, kernel 190, recording 121, replay 171,
-runtime 145, research 57, README 37, info-proposals 132, ui-proposals 111
-(~1082); README.md 118, AGENTS.md 28, ksee.sh 10, setup.sh 24.
+runtime 145, research 57, README 37, info-proposals 132, ui-proposals 113
+(~1084); README.md 118, AGENTS.md 28, ksee.sh 10, setup.sh 24.
 Background: docs/related/ 2133 (README 51, emulators 301,
 hardwarejs-brintos 375, joelseverin-linux-wasm 480, linuxontab 234,
 tombl-linux 266, wasmlinux-lkl 426).
@@ -79,7 +79,7 @@ linked).
 |---|---|---|---|---|
 | — | ~~Dead `fn read`, cli main.rs:21-23~~ WITHDRAWN | 0 | my grep was scoped to main.rs only; `crate::read` has live callers in build.rs:367, pack/mod.rs:16, pack/constants.rs:44 | RETRACTED — apologies to cli-refactorer-2 |
 | — | Stale shot clause, docs/README.md:25-27 | ~2 | zero (shot dropped) | LANDED by owner (also reworded the `ksee pack` half; verified in tree) |
-| — | Stale shot mention, info-proposals.md:9 | ~1 | zero (reword) | SENT info-designer |
+| — | Stale shot mention, info-proposals.md:9 | ~1 | zero (reword) | LANDED 6af9583 by owner ("selftest/uitest PASS"; verified in tree) |
 | J1 | docs/related/, all 2133 lines | ~2133 | pre-port background only; in git history if ever needed | USER DECIDES |
 | J2 | Trace tab (View::raw ~50 + Trace comp ~47 + tests) | ~110 | only raw-record surface; comparisons live only here | LANDED 4d93312 (−164: tab, panel, CSS, View::raw + tests, docs mentions). Zero leftover refs (verified by grep). Lesson impact: none — lessons never linked `:trace`; only `:objects` (8), `:console` (1), `:any` (5) |
 | J3 | Completions (complete.rs 61 + editor.rs 104 + tests) | ~175 | typing UX, core to Your-own | USER DECIDES |
@@ -103,7 +103,8 @@ fns have callers — verified).
   pack/mod.rs:16, pack/constants.rs:44 — withdrawn with apologies.
   /private/tmp/ksee-cli2 is the owner's active workspace, not stale;
   no action there.
-- info-designer: stale shot mention (docs/info-proposals.md:9, reword).
+- info-designer: stale shot mention (docs/info-proposals.md:9) — LANDED
+  6af9583 by the owner; verified in tree.
 
 ## 5. Judgement calls for the user (morning)
 
