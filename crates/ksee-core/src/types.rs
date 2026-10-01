@@ -370,10 +370,10 @@ impl Types {
                     Base::Char => write!(&mut out, "{}", signed(v, bits.max(1))),
                     Base::Float if size == 4 => write!(&mut out, "{}", f32::from_bits(v as u32)),
                     Base::Float => write!(&mut out, "{}", f64::from_bits(v)),
-                    // Unsigned: decimal, but flags in hex and file modes in octal.
+                    // Unsigned: as num, but flags in hex and file modes in octal.
                     _ if v > 9 && self.is_flags(ty) => write!(&mut out, "{v:#x}"),
                     _ if v > 7 && crate::arch::OCTAL_TYPES.contains(&self.name(ty).as_str()) => write!(&mut out, "0{v:o}"),
-                    _ => write!(&mut out, "{v}"),
+                    _ => write!(&mut out, "{}", num(v)),
                 };
             }
             Kind::Enum(values) => {
