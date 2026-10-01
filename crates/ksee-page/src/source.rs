@@ -64,6 +64,7 @@ pub fn Source() -> Element {
     };
     // (The function's lines, where its file has them.)
     let def = machine().view(|v| v.definition(&f.func)).filter(|d| d.file == path && d.line <= line && !def_of);
+    let sealed = def.as_ref().is_some_and(|d| d.sealed);
     let (from, to) = def.map_or((line, line), |d| (d.line, d.last.unwrap_or(line).max(line)));
     let i = crate::stack::moment();
     rsx! {
@@ -71,6 +72,7 @@ pub fn Source() -> Element {
             div { class: "srcbar mono",
                 span { "{path}" }
                 if !def_of { span { " · {f.func}" } }
+                if sealed { span { title: "it loops, writes nothing and calls nothing: only its call and its return are recorded, not each turn", " · sealed: a box, its turns not recorded" } }
                 if def_of { a { onclick: move |_| seen.set(None), "back to the cursor" } }
             }
             Code { path: path.clone(), from, to, line, here: !def_of, frame: f, i, seen }
@@ -174,7 +176,10 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
     let shown = d.shown.read().as_ref().and_then(|m| d.lines.read().get(m.line).cloned());
     let values: Vec<String> = if here && line >= 1 && (line as usize) <= total {
         let words: Vec<&str> = src.pieces[line as usize - 1].iter().filter(|p| p.kind.is_ident()).map(|p| p.text.as_str()).collect();
-        let returned = shown.as_ref().and_then(|l| l.called.as_ref().filter(|c| c.at <= l.at).map(|c| format!("{} → {}", c.func, machine().result(c.value))));
+        // (A call made on this line or the one before it, returned by now.)
+        let before = d.shown.read().as_ref().and_then(|m| d.lines.read().get(m.line.checked_sub(1)?).cloned());
+        let returned = shown.as_ref().and_then(|l| [Some(l), before.as_ref()].into_iter().flatten().find_map(|c| c.called.as_ref())
+            .filter(|c| c.at <= l.at).map(|c| format!("{} → {}", c.func, machine().result(c.value))));
         frame.args.iter().flatten().chain(frame.locals.iter().flatten())
             .filter(|o| words.contains(&o.name.as_str()) && o.none != Some(ksee_core::view::Missing::NotRecorded))
             .map(|o| format!("{} = {}", o.name, o.value.clone().unwrap_or_else(|| "{…}".into())))
