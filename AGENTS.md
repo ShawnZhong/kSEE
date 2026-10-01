@@ -12,9 +12,13 @@ shape everything), then the doc for the part you touch ([docs/](docs/README.md))
   recording, the debug info), or ask. Kernel names belong to the kernel,
   the build's pack and ksee-core's arch.rs, never to the page.
 - **Nothing is fixed.** Every decision, earlier ones included (this file's
-  too), can be revisited: propose what seems right, with the reason. There
-  is no compatibility to keep: nothing outside this repository depends on
-  its formats or APIs, so change them all together and drop the old. Ask
+  too), can be revisited, and you are free to change anything: a struct,
+  a module, a format, the recording, the plugin, the page's state.
+  Large-scale refactoring is welcome when it makes the code smaller or
+  clearer: a type holding fields its users don't need, two paths doing
+  one thing, a layer that only passes things on. There is no
+  compatibility to keep: nothing outside this repository depends on its
+  formats or APIs, so change them all together and drop the old. Ask
   before a new mode, language or dependency.
 - **Rust does the work** in ksee-core, unit-tested on made-up records; the
   page (crates/ksee-page) only lays out what the Machine and the views
