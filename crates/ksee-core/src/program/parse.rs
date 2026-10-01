@@ -389,7 +389,6 @@ pub fn lines(text: &str) -> Vec<&str> {
 /// the word at the cursor, and where it starts; in the arguments, which
 /// one (from 0). Offsets in UTF-16 units, as the page's text has them.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Context {
     pub call: String,
     pub call_start: usize,

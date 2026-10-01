@@ -9,9 +9,7 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ksee-core = { path = "../ksee-core", features = ["serde"] }
-serde-wasm-bindgen = "0.6.5"
-serde = { version = "1", features = ["derive"] }
+ksee-core = { path = "../ksee-core" }
 wasm-bindgen = "0.2.128"
 wasm-bindgen-futures = "0.4.78"
 js-sys = "0.3.105"

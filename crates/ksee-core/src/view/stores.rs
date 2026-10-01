@@ -18,7 +18,6 @@ use super::*;
 /// order.
 /// What a region is (see Region), as the page names it ("object").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub enum RegionKind {
     Task,
     Object,
@@ -79,7 +78,6 @@ pub(super) struct Change {
 /// thing it wrote, said `short` and in `full`; its last write at record
 /// `i`.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Note {
     pub line: u32,
     pub i: usize,
@@ -93,7 +91,6 @@ pub struct Note {
 /// copied what was at another address (a value loaded and stored as it
 /// is, a memcpy), that address.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Write {
     pub i: usize,
     pub addr: u32,

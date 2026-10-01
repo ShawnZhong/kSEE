@@ -5,7 +5,6 @@ use super::*;
 /// A value in memory. Aggregates beyond the requested depth have no
 /// children yet (`open` says what to ask for them).
 #[derive(Debug, Clone, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Object {
     pub name: String,
     pub ty: String,
@@ -29,7 +28,6 @@ const SHOWN: u32 = 64;
 
 /// What a pointer points to: its type's id, and its address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Target {
     pub ty: u32,
     pub addr: u32,
@@ -37,15 +35,12 @@ pub struct Target {
 
 /// Why a value has none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub enum Missing {
     /// Not stored to yet.
     Uninitialized,
     /// The optimizer took it away.
-    #[cfg_attr(feature = "serde", serde(rename = "optimized out"))]
     OptimizedOut,
     /// What a store overwrote, when its record does not have it.
-    #[cfg_attr(feature = "serde", serde(rename = "not kept"))]
     NotKept,
 }
 

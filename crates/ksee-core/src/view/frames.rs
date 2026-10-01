@@ -7,7 +7,6 @@ use super::*;
 /// A call a line made: its function, what it returned, and where (its
 /// Return record).
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Called {
     pub func: String,
     pub value: i64,
@@ -17,7 +16,6 @@ pub struct Called {
 /// A source line the kernel ran (see stack::lines), at record `i`, the
 /// `nth` of the lines it runs there (see call_stack).
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Line {
     pub i: usize,
     /// The record the line is at: its first store's, else `i` (LineStep::at).
@@ -50,7 +48,6 @@ pub struct Line {
 /// A call on a stack, with its arguments (32 bits each: wider ones lose
 /// their high half) and its locals in memory.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Frame {
     pub func: String,
     /// The call's first record (its block 0).
@@ -185,12 +182,6 @@ impl View<'_> {
             out.push(Frame { args, locals, syscall, ..frame(name, false, at) });
         }
         out
-    }
-
-    /// Variable `var` of the function running at record `i` (a Var
-    /// record's).
-    pub(super) fn var_at(&self, i: usize, var: u32) -> Option<&Var> {
-        self.tables.vars.get(&(self.rec.calls.func_at(i)?, var))
     }
 
     /// The variables call `c` keeps in wasm locals (Record::Var), by record

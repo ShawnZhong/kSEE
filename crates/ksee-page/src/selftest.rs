@@ -13,7 +13,8 @@ use ksee_runtime::machine::Machine;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::lesson::{Example, Finished, News};
+use crate::lesson::Example;
+use ksee_runtime::Finished;
 use crate::text::{self, Piece};
 
 fn log(s: &str) {
@@ -61,10 +62,10 @@ impl T {
 
     /// The kernel run until it is quiet: the calls finished meanwhile kept.
     async fn quiet(&mut self) {
-        let news = JsFuture::from(self.m.quiet()).await.ok().and_then(|n| serde_wasm_bindgen::from_value::<News>(n).ok()).unwrap_or_default();
+        let finished = self.m.quiet().await.unwrap_or_default();
         self.m.snapshot();
         self.console();
-        for f in news.finished {
+        for f in finished {
             self.fin.insert(f.id, f);
         }
     }
@@ -88,8 +89,8 @@ impl T {
         }
         let Some(id) = made.id else { return Made { id: None, how: None, ret: None, s: None, var: None } };
         self.quiet().await;
-        let f = self.fin.get(&id).cloned();
-        Made { id: Some(id), how: f.as_ref().map(|f| f.how.clone()), ret: f.map(|f| f.ret as i64), s: self.syscall(id), var: None }
+        let f = self.fin.get(&id);
+        Made { id: Some(id), how: f.map(|f| f.how.to_string()), ret: f.map(|f| f.ret), s: self.syscall(id), var: None }
     }
 
     fn last(&self, s: &SyscallSummary) -> usize {
@@ -280,7 +281,7 @@ pub async fn self_test(machine: Machine, examples: JsValue) -> Result<bool, JsVa
         t.line("pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0)").await;
         let reading = t.line("thread: read(fds[0], buf, 8)").await;
         let wrote = t.line("write(fds[1], \"ok\", 2)").await;
-        let later = reading.id.and_then(|id| t.fin.get(&id)).map(|f| f.ret as i64);
+        let later = reading.id.and_then(|id| t.fin.get(&id)).map(|f| f.ret);
         t.check(format!("a blocked read, woken: wrote {:?}, read {later:?}: buf = {}", wrote.ret, t.show(buf)),
                 reading.how.is_none() && wrote.ret == Some(2) && later == Some(2) && t.show(buf) == "\"ok\"");
         let name = t.line("char name[16] = \"ksee\"").await.var.unwrap();
@@ -435,15 +436,15 @@ pub async fn self_test(machine: Machine, examples: JsValue) -> Result<bool, JsVa
     t.check("/tmp is there before", again == Some(-17));
     // (Restarted while a call is under way, its quiet not come: the calls after it still finish.)
     let _ = m.make("getpid()");
-    let ignore = Closure::<dyn FnMut(JsValue)>::new(|_| {});
-    let _ = m.quiet().catch(&ignore);
-    ignore.forget();
+    // (Its quiet waited for, as the restart comes: the restart rejects it.)
+    let waiting = m.clone();
+    wasm_bindgen_futures::spawn_local(async move { let _ = waiting.quiet().await; });
+    sleep(0).await;
     let _ = m.restart().await;
     let after = t.line("getpid()").await.ret;
     t.check(format!("a call after a restart cut one short finishes ({after:?})"), after == m.main().map(|p| p as i64));
     let pid = t.line("getpid()").await.ret;
-    let names = js_sys::Array::from(&m.names_before(usize::MAX)).length();
-    t.check("restarted: the program ready again, its names gone", m.runners().contains(&m.main().unwrap_or(0)) && pid == m.main().map(|p| p as i64) && names == 0);
+    t.check("restarted: the program ready again, its names gone", m.runners().contains(&m.main().unwrap_or(0)) && pid == m.main().map(|p| p as i64) && m.names_before(usize::MAX).is_empty());
     let made = t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await.ret;
     t.check("... on a fresh kernel: /tmp is not there", made == Some(0));
     // Deterministic: the same calls on a fresh kernel make the same recording, record for record.
@@ -452,7 +453,7 @@ pub async fn self_test(machine: Machine, examples: JsValue) -> Result<bool, JsVa
         let mut runs = Vec::new();
         for _ in 0..2 {
             let ids = t.program(&ex.steps).await;
-            let seen: Vec<_> = ids.iter().flatten().map(|&id| t.syscall(id).map(|s| (s.id, s.first, s.last, t.fin.get(&id).map(|f| f.ret as i64)))).collect();
+            let seen: Vec<_> = ids.iter().flatten().map(|&id| t.syscall(id).map(|s| (s.id, s.first, s.last, t.fin.get(&id).map(|f| f.ret)))).collect();
             runs.push((m.records(), seen));
         }
         t.check(format!("deterministic: the same calls, the same records ({name}: {} records)", runs[0].0), runs[0] == runs[1]);
@@ -461,7 +462,7 @@ pub async fn self_test(machine: Machine, examples: JsValue) -> Result<bool, JsVa
     {
         let lines = ["pid_t child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0)".to_string(), "child: execve(\"/bin/prog\", {\"prog\", \"-x\", NULL}, NULL)".to_string()];
         let ids = t.program(&lines).await;
-        let how = ids[1].and_then(|id| t.fin.get(&id)).map(|f| f.how.clone());
+        let how = ids[1].and_then(|id| t.fin.get(&id)).map(|f| f.how.to_string());
         t.check(format!("an execve with argv runs the program ({how:?})"), how.as_deref() == Some("exec") && !t.out.contains("NULL argv"));
     }
     // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts).

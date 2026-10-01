@@ -24,7 +24,8 @@ sched.rs         the tasks: switch_task, idle (suspending), spawn_task
 imports.rs       the kernel's imports (the frequent ones: direct exports)
 programs.rs      user programs (in kernel memory), their tasks' stack
                  pointers; the runners, which make the page's calls
-replay.rs        views of the recording (ksee_core::view, as JS values)
+replay.rs        the last snapshot: views of it (ksee_core::view), at a
+                 moment's memory too (at_moment), the page's lookups
 state.rs         the machine's state in the runtime
 ```
 
@@ -39,11 +40,11 @@ never resumed), let what it had under way end, and boot again.
 **The page and the kernel** talk through memory and promises: the page
 raises interrupts (a bit, and a wake-up of idle), and asks a runner (the program,
 or a thread or child of it: see [kernel.md](kernel.md)) for a syscall
-(a line of the program, `Machine.run`: it writes the call into the runner's
+(a line of the program, `Machine::make`: it writes the call into the runner's
 request and rings the runner, which waits in a futex on its number; the
 runner records the syscall it then makes, `ksee.begin` to `ksee.end`); it
-reads the console's output. `Machine.quiet()` is a promise of
-the kernel **quiet** (idle, until the page's input), with the calls
+reads the console's output. `Machine::quiet` waits for
+the kernel **quiet** (idle, until the page's input), and gives the calls
 finished meanwhile: returned (`ksee.end`, with the result), ended by an
 execve (the new program's `ksee.ready`) or by their task's exit.
 A call may not have finished then: it blocks (a futex's wait, a pipe's
@@ -90,11 +91,11 @@ cursor) is computed once each time they change (memos).
 | text.rs | a lesson's paragraphs: text, `code`, links |
 
 A program is a small language, parsed, evaluated and laid out in the core
-(crates/ksee-core/src/program/), a line made by `Machine.run`, checked
-first by `Machine.check` (the editor's: nothing made). Its names are the
-Machine's: each line sees those of the lines before it (a variable's, a
-call's result once it returns; a clone's, its child runner as it starts:
-`Machine.names_before`, the completions' and the hovers'). A call's arguments are numbers, the kernel's constants
+(crates/ksee-core/src/program/), a line made by `Machine::make`, checked
+first by `Machine::can_make` (the editor's: nothing made). Its names are
+the Machine's: each line sees those of the lines before it (a variable's,
+a call's result once it returns; a clone's, its child runner as it
+starts: `Machine::names_before`, the completions'). A call's arguments are numbers, the kernel's constants
 with `| ^ & << >> + - * /`, `- ~`, strings, results by name,
 and compound literals laid out by the parameter's type (a struct,
 positional or by member; an array; argv for a `char **`); and a line can
@@ -106,22 +107,23 @@ the kernel pins must be), its name then its address (`&ts` too; `fds[1]` an elem
 `rings->sq.tail`, through a result typed as a pointer; a line `target =
 value` writes one, recorded, with what a declaration's value may be: an
 array whole too),
-`Machine.show` printing it as C writes it. A call's strings and compound literals go
+`Machine::show` printing it as C writes it. A call's strings and compound literals go
 in the same memory, as unnamed variables (a C literal's, there for as long
 as the program).
 ksee pack evaluates the UAPI headers' constants with the same evaluator.
 
-Every view asks the Machine for the moment at the cursor: `at(i)` (every
-record located: a store at its line, a return at the line it returned
-from), `call_stack(i, nth)`, `line_steps`, `chart`,
-`tasks(i)` (each task, where it is), `memory_at(i)` then `object` /
-`global` (memory as it was), `origin` (who last wrote a value, back through its copies), `objects`
+The page asks the views (ksee_core::view, through `Machine::view`, or
+`Machine::at_moment` for memory as it was then) for the moment at the
+cursor: `at(i)` (every record located: a store at its line, a return at
+the line it returned from), `call_stack(i, nth)`, `lines`, `chart`,
+`tasks(i)` (each task, where it is), `object` (memory as it was),
+`origin` (who last wrote a value, back through its copies), `objects`
 (what a call did) and `notes` (the source's notes by line), their stores
 (named once per span and snapshot) named as the code names what they
 hit: the structs the calls' arguments point to, the task, locals, the
 kernel's globals by address, the machine's own variables apart: "file
-in vfs_read"; else by its address; `raw` (records as text), `run_of` (a line's next or
-last run), `definition`.
+in vfs_read"; else by its address; `run_of` (a line's next or last run),
+`definition`.
 
 ## Tests
 

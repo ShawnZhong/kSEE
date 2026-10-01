@@ -22,3 +22,5 @@ mod programs;
 mod replay;
 mod sched;
 mod state;
+
+pub use state::Finished;

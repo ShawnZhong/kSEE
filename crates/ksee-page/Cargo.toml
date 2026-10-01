@@ -9,7 +9,7 @@ publish.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-ksee-core = { path = "../ksee-core", features = ["serde"] }
+ksee-core = { path = "../ksee-core" }
 ksee-runtime = { path = "../ksee-runtime" }
 dioxus = { version = "0.7.10", default-features = false, features = ["web", "macro", "html", "signals", "hooks", "launch", "mounted"] }
 serde = { version = "1", features = ["derive"] }

@@ -1556,9 +1556,6 @@ dependencies = [
 [[package]]
 name = "ksee-core"
 version = "0.1.0"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "ksee-page"
@@ -1581,8 +1578,6 @@ version = "0.1.0"
 dependencies = [
  "js-sys",
  "ksee-core",
- "serde",
- "serde-wasm-bindgen",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

@@ -8,7 +8,6 @@ use super::stores::{Leaf, RegionKind};
 /// it returns (see View::objects): as the Stores name it (`what`, `kind`,
 /// `ty`, `id`, `addr`, `size`), and the members the call wrote.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Node {
     /// What to call it: an object a pointer reaches, its type's own name
     /// ("file": which variable names it is only how a function does); the
@@ -22,10 +21,8 @@ pub struct Node {
     pub ty: String,
     pub id: u32,
     pub addr: u32,
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub size: u32,
     pub changes: Vec<Diff>,
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub depth: u32,
     /// What happened to it (Group).
     pub group: Group,
@@ -44,7 +41,6 @@ pub struct Node {
 /// call did), or as it began (every change undone by the end: a lock
 /// taken and released, a count taken and dropped).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub enum Group {
     Changed,
     Same,
@@ -55,7 +51,6 @@ pub enum Group {
 /// dropped), a pointer into another node as it ends: `to`, its index; and
 /// how, in `runs`: a run a function writing it in turn, in order.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Diff {
     pub member: String,
     pub before: String,
@@ -68,7 +63,6 @@ pub struct Diff {
 /// `writes` of them, the first at record `first`, the last at `last`, by
 /// the code at `at`.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Run {
     pub before: String,
     pub after: String,

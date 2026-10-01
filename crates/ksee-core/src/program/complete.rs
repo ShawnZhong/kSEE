@@ -13,7 +13,6 @@ use crate::types::Types;
 /// context's call_start; else from its word_start), shown as `label` and
 /// `detail`.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Completion {
     pub text: String,
     pub label: String,

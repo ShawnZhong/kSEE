@@ -23,16 +23,6 @@ fn known(name: &str) -> Option<i64> {
 }
 
 #[test]
-fn a_lines_names_with_their_fields() {
-    let got: Vec<_> = names("if (file->f_mode & FMODE_READ) x = a.b->c; // é 12").into_iter().map(|n| (n.expr, n.start, n.at, n.member)).collect();
-    assert_eq!(got, [("file".into(), 4, 4, false), ("file->f_mode".into(), 4, 10, true), ("FMODE_READ".into(), 19, 19, false),
-                     ("x".into(), 31, 31, false), ("a".into(), 35, 35, false), ("a.b".into(), 35, 37, true), ("a.b->c".into(), 35, 40, true)]);
-    // (A field's: the expression it is a field of.)
-    let parents: Vec<_> = names("a.b->c = x").into_iter().map(|n| n.parent).collect();
-    assert_eq!(parents, [None, Some("a".into()), Some("a.b".into()), None]);
-}
-
-#[test]
 fn a_line_is_a_call_or_a_declaration() {
     let o = |s: &str| Some(s.to_string());
     let call = |t: &str| match statement(t).unwrap() {

@@ -93,7 +93,7 @@ parameter's type says: here a struct timespec), `{"init", NULL}` (an
 array of strings, for a char **: argv), `fd` (a result, declared: `int fd = openat(…)`), `buf` (a
 variable: its address), `fds[1]`, `mem + 65536`, `rings->sq.tail` (a line can assign to one:
 `rings->sq.tail = 1`); see
-crates/ksee-core/src/program/ (Machine.statement parses a line). /init mounts an ext4 disk on /mnt (an
+crates/ksee-core/src/program/. /init mounts an ext4 disk on /mnt (an
 image in the initramfs, through the loop device), with files for the
 examples to start from: `/mnt/note.txt`, `/mnt/dir/a.txt`; the root, an
 in-memory file system (ramfs: no tmpfs without an MMU), has `/note.txt`.

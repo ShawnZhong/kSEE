@@ -5,7 +5,6 @@
 use dioxus::prelude::*;
 use ksee_core::program::{statement, Line};
 use serde::Deserialize;
-use wasm_bindgen_futures::JsFuture;
 
 use crate::state::{Tab, Ui};
 use crate::text::{self, Piece};
@@ -34,21 +33,10 @@ pub enum Outcome {
     Assigned(String),
     /// (`during`: the line during which it finished, if a later one's;
     /// `changed`: the variables it changed, as they are then.)
-    Call { id: u32, ret: Option<f64>, how: Option<String>, during: Option<usize>, changed: Vec<String> },
+    Call { id: u32, ret: Option<i64>, how: Option<String>, during: Option<usize>, changed: Vec<String> },
     Failed(String),
 }
 
-/// The kernel quiet's news (Machine::quiet): the calls finished since.
-#[derive(Deserialize, Default)]
-pub(crate) struct News {
-    pub finished: Vec<Finished>,
-}
-#[derive(Deserialize, Clone)]
-pub(crate) struct Finished {
-    pub id: u32,
-    pub how: String,
-    pub ret: f64,
-}
 
 /// Make `lines` on a fresh kernel, one after another (a call: then the
 /// kernel run until it is quiet), each line's outcome as it goes; then a
@@ -83,15 +71,14 @@ async fn run(mut ui: Ui, lines: Vec<String>) {
             continue;
         }
         ui.outcomes.write().push(Outcome::Call { id: made.id.unwrap_or(0), ret: None, how: None, during: None, changed: Vec::new() });
-        let Ok(news) = JsFuture::from(m.quiet()).await else { return };
+        let Ok(finished) = m.quiet().await else { return };
         m.snapshot();
         ui.version += 1;
         ui.console.write().push_str(&m.console());
-        let news: News = serde_wasm_bindgen::from_value(news).unwrap_or(News { finished: Vec::new() });
-        for f in news.finished {
+        for f in finished {
             for (k, o) in ui.outcomes.write().iter_mut().enumerate() {
                 if let Outcome::Call { id, ret, how, during, .. } = o && *id == f.id {
-                    (*ret, *how, *during) = (Some(f.ret), Some(f.how.clone()), (k != j).then_some(j));
+                    (*ret, *how, *during) = (Some(f.ret), Some(f.how.to_string()), (k != j).then_some(j));
                 }
             }
         }
@@ -106,7 +93,7 @@ async fn run(mut ui: Ui, lines: Vec<String>) {
         for (name, ty, addr, count, size, last) in vars.iter_mut() {
             let now = m.show(*ty, *addr, *count);
             if now != *last {
-                let records = args.iter().position(|a| a == name).zip(ret.filter(|r| *r > 0.0))
+                let records = args.iter().position(|a| a == name).zip(ret.filter(|r| *r > 0))
                     .and_then(|(k, r)| m.as_records(&call, k, *addr, (r as u32).min(*size)));
                 changed.push(format!("{name} = {}", records.unwrap_or_else(|| now.clone())));
                 *last = now;

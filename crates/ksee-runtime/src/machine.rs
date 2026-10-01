@@ -14,7 +14,6 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::imports;
-use crate::replay::to_js;
 use crate::js;
 use crate::sched;
 use crate::state::*;
@@ -28,8 +27,6 @@ pub struct Machine {
     initrd: Vec<u8>,
     /// The last snapshot of the trace.
     pub(crate) rec: RefCell<Recording>,
-    /// The moment the views show memory at (a record), or None: now.
-    pub(crate) past: RefCell<Option<usize>>,
 }
 
 /// Where the initramfs goes: at the top of RAM (page-aligned).
@@ -88,7 +85,7 @@ impl Machine {
             cmdline += &format!(" initrd={:#x},{}", initrd_at(ram, &initrd), initrd.len());
         }
         k(|k| *k.cmdline.borrow_mut() = cmdline.trim().as_bytes().to_vec());
-        let m = Machine { module, initrd, rec: Default::default(), past: Default::default() };
+        let m = Machine { module, initrd, rec: Default::default() };
         m.boot().await?;
         Ok(m)
     }
@@ -133,11 +130,14 @@ impl Machine {
         sched::boot(&kernel)?;
         // (Quiet, with the program ready.)
         while k(|k| k.main.get()).is_none() {
-            JsFuture::from(self.quiet()).await?;
+            self.quiet().await?;
         }
         Ok(())
     }
 
+}
+
+impl Machine {
     /// Start the kernel again, from scratch: the machine stopped (its tasks
     /// dropped, and what it had under way let end: it only suspends, for
     /// ever), the runtime's state emptied, and a new boot.
@@ -153,7 +153,6 @@ impl Machine {
             let _ = fail.call1(&JsValue::NULL, &"the kernel started again".into());
         }
         *self.rec.borrow_mut() = Default::default();
-        *self.past.borrow_mut() = None;
         self.boot().await
     }
 
@@ -177,22 +176,14 @@ impl Machine {
 
     // ---- The page's program, a line at a time ----
 
-    /// Make line `text` of the program (ksee_core::program::statement), the
-    /// next: a variable declared, in its runner's process's own memory ({
-    /// decl: { name, addr, ty, count, size (an element's) } }: its name
-    /// then its address); memory written ({ assigned: what it holds then,
-    /// as C writes it }); or a syscall asked of its runner ({ id, tid }: it
-    /// finishes when it returns, or, when it blocks, later, as another call
-    /// wakes it: see quiet). The host's writes are recorded, as a call's
-    /// are; a call from its runner's begin to its end (user/prog.c): the
-    /// syscall, entry to return, and whatever the kernel does meanwhile.
-    pub fn run(&self, text: &str) -> Result<JsValue, JsValue> {
-        Ok(to_js(&self.make(text)?))
-    }
-}
-
-impl Machine {
-    /// Make line `text` of the program, the next (see run): what it made.
+    /// Make line `text` of the program (ksee_core::program::statement),
+    /// the next: a variable declared, in its runner's process's own memory
+    /// (its name then its address); memory written; or a syscall asked of
+    /// its runner (it finishes when it returns, or, when it blocks, later,
+    /// as another call wakes it: see quiet). The host's writes are recorded,
+    /// as a call's are; a call from its runner's begin to its end
+    /// (user/prog.c): the syscall, entry to return, and whatever the kernel
+    /// does meanwhile.
     pub fn make(&self, text: &str) -> Result<Made, String> {
         let line = k(|k| k.lines.get());
         let (tid, plan) = plan(text, line)?;
@@ -226,40 +217,23 @@ impl Machine {
         let c = ksee_core::program::context(text, at);
         k(|k| ksee_core::program::completions(&tables().types, &c, &k.names.borrow().before(line), common))
     }
-}
 
-#[wasm_bindgen]
-impl Machine {
-    /// Line `text` (see run) as it would be made as line `line`, with the
-    /// names of the lines before it: its statement (Machine::statement),
-    /// or why it cannot be made; nothing made.
-    pub fn check(&self, text: &str, line: usize) -> Result<JsValue, JsValue> {
-        self.can_make(text, line)?;
-        self.statement(text)
+    /// The names line `line` sees (see make): a variable's, a result's.
+    pub fn names_before(&self, line: usize) -> Vec<String> {
+        k(|k| k.names.borrow().before(line).into_iter().map(|(name, _)| name.to_string()).collect())
     }
 
-    /// The names line `line` sees (see run): [{ name, value, pointer } (a
-    /// result), or { name, addr, ty, count, size } (a variable: `size` all
-    /// of it)].
-    pub fn names_before(&self, line: usize) -> JsValue {
-        let names: Vec<Named> = k(|k| k.names.borrow().before(line).into_iter().map(|(name, sym)| match *sym {
-            Sym::Value { v, to } => Named::Result { name: name.into(), value: v as f64, pointer: to.is_some() },
-            Sym::Var { addr, ty, count } => Named::Var(Var { name: name.into(), addr, ty, count, size: tables().types.size_of(ty) * count.unwrap_or(1) }),
-        }).collect());
-        to_js(&names)
-    }
-
-    /// A promise of the kernel quiet (now, or once it is): { finished: [the
-    /// calls finished since the last time: { id, tid, how ("returned",
-    /// "exec": an execve, the new program running; "exited": its task),
-    /// ret }], runners: [the runners' tids] }.
-    pub fn quiet(&self) -> Promise {
-        Promise::new(&mut |ok, fail| {
+    /// The kernel quiet (now, or once it is): the calls finished since the
+    /// last time (Finished: "returned"; "exec", an execve, the new program
+    /// running; "exited", its task); an error if it started again meanwhile.
+    pub async fn quiet(&self) -> Result<Vec<Finished>, JsValue> {
+        JsFuture::from(Promise::new(&mut |ok, fail| {
             k(|k| k.quiet_waiters.borrow_mut().push((ok, fail)));
             if sched::quiet() {
                 settle();
             }
-        })
+        })).await?;
+        Ok(k(|k| k.finished.take()))
     }
 
     /// A program's variable (of type `ty`, an array of `count` if given, at
@@ -326,9 +300,9 @@ fn alloc(tid: u32, len: u32) -> Result<u32, String> {
     })
 }
 
-/// What a line made (Machine::run): a variable, what memory holds now, or
-/// a call asked (its id, its runner).
-#[derive(serde::Serialize, Default)]
+/// What a line made (Machine::make): a variable, what memory holds now,
+/// or a call asked (its id, its runner).
+#[derive(Default)]
 pub struct Made {
     pub decl: Option<Var>,
     pub assigned: Option<String>,
@@ -337,24 +311,13 @@ pub struct Made {
 }
 
 /// A variable of the program's: memory of type `ty` (an array of `count`)
-/// at `addr`; `size`, an element's (Machine::run's) or all of it
-/// (names_before's).
-#[derive(serde::Serialize)]
+/// at `addr`; `size`, an element's.
 pub struct Var {
     pub name: String,
     pub addr: u32,
     pub ty: u32,
     pub count: Option<u32>,
     pub size: u32,
-}
-
-/// A name a line sees (Machine::names_before): a result's value (a
-/// pointer?), or a variable.
-#[derive(serde::Serialize)]
-#[serde(untagged)]
-enum Named {
-    Result { name: String, value: f64, pointer: bool },
-    Var(Var),
 }
 
 /// What a line of the program makes (see Machine::run), checked: a
@@ -486,13 +449,7 @@ pub(crate) fn settle() {
     if waiters.is_empty() {
         return;
     }
-    #[derive(serde::Serialize)]
-    struct News {
-        finished: Vec<Finished>,
-        runners: Vec<u32>,
-    }
-    let news = to_js(&k(|k| News { finished: k.finished.take(), runners: k.runners.borrow().keys().copied().collect() }));
     for (ok, _) in waiters {
-        let _ = ok.call1(&JsValue::NULL, &news);
+        let _ = ok.call0(&JsValue::NULL);
     }
 }

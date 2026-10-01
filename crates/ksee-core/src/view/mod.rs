@@ -1,5 +1,5 @@
-//! Views of a recording, for the page (serializable with the "serde"
-//! feature): what it shows, by name rather than by id.
+//! Views of a recording, for the page: what it shows, by name rather than
+//! by id.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -16,8 +16,6 @@ use crate::trace::Record;
 use crate::types::{Kind, Types};
 use crate::Memory;
 
-#[cfg(feature = "serde")]
-use serde::Serialize;
 
 mod frames;
 mod objects;
@@ -33,7 +31,6 @@ pub use value::{Missing, Object, Target};
 
 /// Who a task was, at a record (see View::task).
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct TaskRef {
     pub addr: u32,
     pub pid: Option<i32>,
@@ -41,7 +38,6 @@ pub struct TaskRef {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SyscallSummary {
     pub index: usize,
     /// Its first record's id (see Recording::ids): the same in later
@@ -61,7 +57,6 @@ pub struct SyscallSummary {
 /// A record's kind, as the page names it ("store"): a block 0 with its
 /// arguments is a call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub enum RecordKind {
     Call,
     Block,
@@ -74,7 +69,6 @@ pub enum RecordKind {
 
 /// Where the kernel was at record `i`.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct At {
     pub i: usize,
     /// Its record's kind (a block 0's: Block).
@@ -93,7 +87,6 @@ pub struct At {
 
 /// A stack chart (View::chart): its columns, and the bars they stack.
 #[derive(Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Chart {
     pub bars: Vec<Bar>,
     pub cols: Vec<Column>,
@@ -102,7 +95,6 @@ pub struct Chart {
 /// A column: its record, the task running there, and its stack then, as
 /// bars (indexes in Chart::bars), outermost first.
 #[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Column {
     pub i: usize,
     pub task: u32,
@@ -113,7 +105,6 @@ pub struct Column {
 /// function's name (the inlined one's), what the bar says (a syscall's
 /// entry with the syscall: "wasm_syscall · read"), and the call's file.
 #[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Bar {
     pub first: usize,
     pub name: String,
@@ -127,7 +118,6 @@ pub struct Bar {
 /// its own file), and whether only its call and returns are recorded
 /// (tables::Function::sealed).
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Place {
     pub name: String,
     pub file: String,
@@ -152,7 +142,6 @@ fn constant_name(constants: &BTreeMap<String, i64>, prefixes: &[&str], v: i64) -
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct LineCount {
     pub line: u32,
     pub count: u64,
@@ -161,7 +150,6 @@ pub struct LineCount {
 /// A task's fields: the key ones first (arch::TASK_FIELDS, in that
 /// order), then the others.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct TaskFields {
     pub fields: Vec<Object>,
 }
@@ -172,7 +160,6 @@ pub struct TaskFields {
 /// outermost call (what it does: off the CPU, its innermost is always the
 /// switch).
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct TaskAt {
     pub task: TaskRef,
     /// The task it sits under (its task_struct's address): a thread, its
@@ -187,7 +174,6 @@ pub struct TaskAt {
 
 /// What the scheduler has a task doing then.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub enum TaskState {
     /// On the CPU.
     Running,
@@ -380,57 +366,6 @@ impl View<'_> {
         })
     }
 
-    /// Records `from..=to` as text, a line each, as the recording has them
-    /// (the raw trace): "call ksys_read(fd=3, buf=0x1cefed0, count=64)
-    /// fs/read_write.c:710 frame=0x1ce000" (the block 0 and the Args record
-    /// after it, as one line), "block ksys_read #3 fs/read_write.c:712",
-    /// "store 0x1ce0020 [8] 0 → 26", "return ksys_read = 26"; a task switch
-    /// as a line of its own. Each with its kind (RecordKind).
-    pub fn raw(&self, from: usize, to: usize) -> Vec<(usize, RecordKind, String)> {
-        let (t, rec) = (self.tables, self.rec);
-        let mut out = Vec::new();
-        for i in from..=to.min(last_record(rec)) {
-            if i > 0 && rec.tasks.get(i) != rec.tasks.get(i - 1) {
-                let task = self.task(rec.tasks[i], i);
-                out.push((i, RecordKind::Task, format!("── {}({}) runs", task.comm.unwrap_or_default(), task.pid.unwrap_or(0))));
-            }
-            let (kind, text) = match rec.records[i] {
-                Record::Block { func, n } => {
-                    let loc = t.block(func, n).map_or(String::new(), |b| format!(" {}:{}", t.file(b.loc()), b.loc().line));
-                    // (A call: with its arguments, the record after.)
-                    if let (0, Some((words, frame))) = (n, rec.args.get(i)) {
-                        let params = t.types.params.get(&func);
-                        let each = t.values(func, words).into_iter().enumerate().map(|(k, v)| {
-                            let name = params.and_then(|p| p.get(k)).map_or(format!("{k}"), |p| p.0.clone());
-                            format!("{name}={}", num(v))
-                        });
-                        (RecordKind::Call, format!("call {}({}){loc} frame={frame:#x}", self.name(func), each.collect::<Vec<_>>().join(", ")))
-                    } else {
-                        (RecordKind::Block, format!("block {} #{n}{loc}", self.name(func)))
-                    }
-                }
-                Record::Return { func, value } => (RecordKind::Return, format!("return {} = {}", self.name(func), value)),
-                Record::Task { .. } => continue, // (the task's line is above)
-                // (As its type says: a pointer in hex, a string's text, an enumerator.)
-                Record::Var { var, value, .. } => {
-                    let v = self.var_at(i, var);
-                    let shown = v.and_then(|v| self.var_object(v, value, self.now)).and_then(|o| o.value).unwrap_or_else(|| num(value));
-                    (RecordKind::Var, format!("var {} = {shown}", v.map_or("?", |v| v.name.as_str())))
-                }
-                r @ Record::Compare { .. } => (RecordKind::Compare, format!("compare {}", compared(&r).unwrap_or_default())),
-                Record::Store { addr, size, old, from, .. } => {
-                    let from = from.map_or(String::new(), |f| format!(" ← {f:#x}"));
-                    (RecordKind::Store, match old {
-                        None => format!("store {addr:#x} [{size} bytes] (old contents not kept){from}"),
-                        Some(old) => format!("store {addr:#x} [{size}] {} → {}{from}", num(old), num(self.wrote(i))),
-                    })
-                }
-            };
-            out.push((i, kind, text));
-        }
-        out
-    }
-
     /// A stack chart of records `first..=last` in `n` columns, each a
     /// moment spread evenly over the steps (Recording::columns): the task
     /// there and its call stack then, outermost first, each call and the
@@ -464,15 +399,6 @@ impl View<'_> {
             chart.cols.push(Column { i, task: rec.tasks.get(i).copied().unwrap_or(0), frames });
         }
         chart
-    }
-
-    /// The task running at the start of each of `n` buckets of the recording.
-    pub fn timeline(&self, n: usize) -> Vec<TaskRef> {
-        let steps = self.rec.steps().max(1);
-        (0..n).filter_map(|b| {
-            let i = self.rec.record_of(b * steps / n);
-            Some(self.task(*self.rec.tasks.get(i)?, i))
-        }).collect()
     }
 
     /// Where `name` is defined: an instrumented function (its source), else
