@@ -22,4 +22,4 @@ web-sys = { version = "0.3.105", features = ["Window", "Response", "Document", "
 [features]
 # (The tests run in the page: the kernel's (selftest.rs), the page's (uitest.rs).)
 selftest = ["web-sys/HtmlElement", "web-sys/HtmlInputElement", "web-sys/Event", "web-sys/EventInit", "web-sys/KeyboardEvent",
-            "web-sys/KeyboardEventInit", "web-sys/MouseEvent", "web-sys/MouseEventInit", "web-sys/DomRect", "web-sys/NodeList"]
+            "web-sys/KeyboardEventInit", "web-sys/MouseEvent", "web-sys/MouseEventInit", "web-sys/DomRect", "web-sys/NodeList", "web-sys/Request", "web-sys/RequestInit"]

@@ -10,14 +10,23 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Document, Element, Event, EventInit, HtmlElement, HtmlInputElement, HtmlTextAreaElement, KeyboardEvent, KeyboardEventInit,
               MouseEvent, MouseEventInit};
 
-/// The tests, for the driver: `window.ksee_test(name)` (a promise), once
-/// the page has the Machine (`mount`).
-pub fn expose() {
-    let run = Closure::<dyn Fn(String) -> Promise>::new(|name: String| {
-        wasm_bindgen_futures::future_to_promise(async move { run_test(name).await.map(JsValue::from) })
+/// The test the URL names (`#…test=NAME`, set by chrome.rs), started: its
+/// outcome POSTed to the server's /result, `ok` or `fail` then its log.
+pub fn start() -> Option<String> {
+    let hash = web_sys::window()?.location().hash().ok()?;
+    let name = hash.trim_start_matches('#').split('&').find_map(|kv| kv.strip_prefix("test="))?.to_string();
+    let run = name.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        let body = match run_test(run).await {
+            Ok(report) => format!("ok\n{report}"),
+            Err(e) => format!("fail\n{}", e.as_string().unwrap_or_default()),
+        };
+        let init = web_sys::RequestInit::new();
+        init.set_method("POST");
+        init.set_body(&body.into());
+        let _ = JsFuture::from(web_sys::window().unwrap().fetch_with_str_and_init("/result", &init)).await;
     });
-    let _ = js_sys::Reflect::set(&web_sys::window().unwrap(), &"ksee_test".into(), run.as_ref());
-    run.forget();
+    Some(name)
 }
 
 /// Test `name` (kernel, read, back, pipe, phone; the page each needs

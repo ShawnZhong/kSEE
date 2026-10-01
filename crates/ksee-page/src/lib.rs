@@ -76,10 +76,10 @@ pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsVa
     EXAMPLES.with_borrow_mut(|e| *e = examples);
     // (The tests, for the driver; the kernel's take the Machine instead: uitest.rs.)
     #[cfg(feature = "selftest")]
-    uitest::expose();
-    #[cfg(feature = "selftest")]
-    if web_sys::window().and_then(|w| w.location().hash().ok()).as_deref() == Some("#selftest") {
-        return Ok(());
+    if let Some(name) = uitest::start() {
+        if name == "kernel" {
+            return Ok(());
+        }
     }
     dioxus::LaunchBuilder::web().with_cfg(dioxus::web::Config::new().rootname(root)).launch(App);
     Ok(())
