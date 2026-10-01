@@ -104,6 +104,13 @@ impl View<'_> {
                called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }) }
     }
 
+    /// The line record `i` is on, if it has one of its own (a store, a
+    /// comparison, a variable set): its block's record and which of its
+    /// lines (Line::i, Line::nth).
+    pub fn line_of(&self, i: usize) -> Option<(usize, u32)> {
+        self.rec.line_at(self.tables, i).map(|s| (s.record, s.nth))
+    }
+
     /// The source lines run in records `first..=last` of the task at `task`.
     pub fn lines(&self, first: usize, last: usize, task: u32) -> Vec<Line> {
         self.rec.lines(self.tables, first, last, task).iter().map(|s| self.line(s)).collect()

@@ -1,7 +1,7 @@
 //! The source of the frame shown (the kernel's, as the build copied it to
 //! the site's src/), colored (highlight.rs): the whole file, scrolling (only
 //! the lines in view made: a line's height is fixed), the function's lines
-//! edged and the one it runs marked, in the middle, with its values under it as they are before it runs;
+//! edged and the one it runs marked, with its values at its end as they are before it runs;
 //! the lines that ran in the call selected (hover a line's number: how
 //! often), each with what it stored so far (a click: that write); a name's
 //! value at the moment shown, hovered (Ctrl+click: its definition). A
@@ -134,11 +134,11 @@ const MARGIN: usize = 30;
 const KEEP: f64 = 3.0;
 
 /// Where to scroll for line `line` to be in view, the view at `top`, `view`
-/// high: nowhere while it is (and its values row) clear of the edges; else
+/// high: nowhere while it is clear of the edges; else
 /// with it a third of the way down, the lines after it in view.
 fn place(line: u32, top: f64, view: f64) -> Option<f64> {
     let y = (line as f64 - 1.0) * LINE;
-    let clear = y >= top + KEEP * LINE && y + (KEEP + 2.0) * LINE <= top + view;
+    let clear = y >= top + KEEP * LINE && y + (KEEP + 1.0) * LINE <= top + view;
     (!clear).then(|| (y - view / 3.0).max(0.0))
 }
 
@@ -167,23 +167,24 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
     let Some(src) = text.read().clone().flatten() else { return rsx! { div { class: "scroll", p { class: "dim pad", "…" } } } };
     let (counts, notes) = ran(ui, &path);
     let total = src.text.len();
-    // (The cursor's line: the frame's values its names have, as they are
-    // before it runs; then what it compared, which way its branch went.)
+    // (The cursor's line, at its end: the frame's values its names have, as
+    // they are before it runs; what it compared, which way its branch went;
+    // the call it made, once returned, what it returned.)
     let d = use_context::<Derived>();
-    let tests = d.shown.read().as_ref().and_then(|m| d.lines.read().get(m.line).map(|l| l.tests.clone())).unwrap_or_default();
+    let shown = d.shown.read().as_ref().and_then(|m| d.lines.read().get(m.line).cloned());
     let values: Vec<String> = if here && line >= 1 && (line as usize) <= total {
         let words: Vec<&str> = src.pieces[line as usize - 1].iter().filter(|p| p.kind.is_ident()).map(|p| p.text.as_str()).collect();
+        let returned = shown.as_ref().and_then(|l| l.called.as_ref().filter(|c| c.at <= l.at).map(|c| format!("{} → {}", c.func, machine().result(c.value))));
         frame.args.iter().flatten().chain(frame.locals.iter().flatten())
             .filter(|o| words.contains(&o.name.as_str()) && o.none != Some(ksee_core::view::Missing::NotRecorded))
-            .map(|o| format!("{} = {}", o.name, o.value.clone().unwrap_or_else(|| "{…}".into()))).chain(tests).collect()
+            .map(|o| format!("{} = {}", o.name, o.value.clone().unwrap_or_else(|| "{…}".into())))
+            .chain(shown.map(|l| l.tests).unwrap_or_default()).chain(returned).collect()
     } else { Vec::new() };
-    let extra = if values.is_empty() { 0 } else { 1 };
     let names: Vec<String> = frame.args.iter().flatten().chain(frame.locals.iter().flatten()).map(|o| o.name.clone()).collect();
     // (The lines in view, and a margin: the rest, spacers.)
     let first = ((top() / LINE) as usize).saturating_sub(MARGIN).min(total);
     let last = ((((top() + view()) / LINE) as usize) + MARGIN).min(total);
-    let below = (total - last) as f64 * LINE + if (line as usize) > last { extra as f64 * LINE } else { 0.0 };
-    let above = first as f64 * LINE + if (line as usize) <= first && line > 0 { extra as f64 * LINE } else { 0.0 };
+    let (above, below) = (first as f64 * LINE, (total - last) as f64 * LINE);
     rsx! {
         div { class: "scroll",
             onmounted: move |e| async move {
@@ -243,12 +244,12 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
                                         span { class: p.kind.class(), "{p.text}" }
                                     }
                                 }
+                                if is_here && !values.is_empty() {
+                                    span { class: "values", title: "{values.join(\"\n\")}", "{values.join(\"   \")}" }
+                                }
                                 if let Some((short, full, at)) = note {
                                     a { class: "stored", title: "{full}", onclick: move |_| ui.go_record(at, None), "{short}" }
                                 }
-                            }
-                            if is_here && !values.is_empty() {
-                                div { key: "{n}:values", class: "values", span { class: "no" } "{values.join(\"   \")}" }
                             }
                         }
                     }

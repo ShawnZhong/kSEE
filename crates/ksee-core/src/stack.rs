@@ -302,7 +302,8 @@ impl Calls {
                 let same = into.iter().rev().zip(before.iter().rev()).take_while(|(a, b)| a == b).count();
                 for level in (0..into.len() - same).rev() {
                     let (loc, outer) = (into[level].1, &into[level + 1..]);
-                    if !out.last().is_some_and(|l| l.loc == loc && &chain(l.inlined)[l.cut as usize..] == outer) {
+                    // (A site with no line, the compiler's own: no step, as for lines.)
+                    if loc.line != 0 && !out.last().is_some_and(|l| l.loc == loc && &chain(l.inlined)[l.cut as usize..] == outer) {
                         out.push(LineStep { loc, cut: level as u32 + 1, ..step });
                     }
                 }

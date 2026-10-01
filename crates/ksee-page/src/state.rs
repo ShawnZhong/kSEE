@@ -221,9 +221,14 @@ impl Ui {
     /// The moment at record `i` (in the chart), on frame `frame` there:
     /// the call it is in, its line there (the last at or before it).
     pub fn moment_at(&self, i: usize, frame: Option<(usize, String)>) -> Option<Moment> {
-        let call = machine().view(|v| v.rec.syscall_at(i))?;
+        let (call, own) = machine().view(|v| (v.rec.syscall_at(i), v.line_of(i)));
+        let call = call?;
         let shown = consume_context::<Derived>().shown.peek().as_ref().map(|m| m.call);
-        let line = |lines: &[Line]| lines.iter().rposition(|l| l.i <= i).unwrap_or(0);
+        // (A write, a comparison: its own line; a block: its first line; else the last before.)
+        let line = |lines: &[Line]| match own {
+            Some((r, nth)) => lines.iter().rposition(|l| l.i == r && l.nth <= nth),
+            None => lines.iter().position(|l| l.i == i),
+        }.or_else(|| lines.iter().rposition(|l| l.i <= i)).unwrap_or(0);
         let line = if shown == Some(call) { line(&self.lines()) } else { line(&Ui::lines_of(call)) };
         Some(Moment { call, line, frame })
     }
