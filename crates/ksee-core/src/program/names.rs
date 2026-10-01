@@ -2,6 +2,7 @@
 //! program's), or a call's result once it has one; each by the line that
 //! made it, so that a line sees only the names of the lines before it.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -33,11 +34,10 @@ impl Names {
 
     /// The names line `line` sees, each once, as get has them.
     pub fn before(&self, line: usize) -> Vec<(&str, &Sym)> {
-        use alloc::collections::BTreeMap;
-        // (One pass: each name once, in first-seen order, standing for what
-        // its last line before `line` made it, as get has it. A call's
-        // result is set when it returns, so lines may finish out of order:
-        // the greatest line wins, not the last set.)
+        // (One pass, each lookup O(log m): each name once, in first-seen
+        // order, standing for what its last line before `line` made it, as
+        // get has it. A call's result is set when it returns, so lines may
+        // finish out of order: the greatest line wins, not the last set.)
         let mut at: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
         let mut out: Vec<(&str, &Sym)> = Vec::new();
         for (n, l, s) in self.0.iter().filter(|e| e.1 < line) {

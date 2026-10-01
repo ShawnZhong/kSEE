@@ -239,10 +239,8 @@ fn a_line_is_lowered_to_what_it_makes() {
 
 #[test]
 fn a_calls_words_put_buffers_in_memory() {
-    // A number as it is; bytes and strings put in memory (at 0x100, 0x104),
-    // past the words: byte-identical to what the machine wrote.
-    // A number as it is; bytes and strings put in memory (at 0x100, 0x104),
-    // past the words: byte-identical to what the machine wrote.
+    // A number as it is; bytes and strings put in memory (at 0x100, 0x103,
+    // 0x108), past the words: byte-identical to what the machine wrote.
     let mut heap = Vec::new();
     let mut put = |b: &[u8]| -> Result<u32, alloc::string::String> {
         let at = 0x100 + heap.len() as u32;

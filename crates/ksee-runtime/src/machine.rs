@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use js_sys::{Function, Promise, Uint8Array, WebAssembly};
 use ksee_core::recording::Recording;
 use ksee_core::tables::Tables;
-use ksee_core::program::{Arg, Sym};
+use ksee_core::program::{lower, Arg, Lowered, Sym};
 use ksee_core::{trace, Memory};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -185,10 +185,8 @@ impl Machine {
     /// (user/prog.c): the syscall, entry to return, and whatever the kernel
     /// does meanwhile.
     pub fn make(&self, text: &str) -> Result<Made, String> {
-        use ksee_core::program::{lower, Lowered};
         let line = k(|k| k.lines.get());
-        let (tid, plan) = lower(text, &tables().types, &Seen(line),
-                                k(|k| k.main.get()), &k(|k| k.runners.borrow().keys().copied().collect::<Vec<_>>()))?;
+        let (tid, plan) = lower(text, &tables().types, &Seen(line), self.main(), &self.runners())?;
         let mut made = Made::default();
         match plan {
             Lowered::Decl(d) => {
@@ -210,8 +208,7 @@ impl Machine {
     /// Whether line `text` can be made as line `line` (with the names of
     /// the lines before it): why not, if not; nothing made.
     pub fn can_make(&self, text: &str, line: usize) -> Result<(), String> {
-        ksee_core::program::lower(text, &tables().types, &Seen(line),
-                                  k(|k| k.main.get()), &k(|k| k.runners.borrow().keys().copied().collect::<Vec<_>>())).map(|_| ())
+        ksee_core::program::lower(text, &tables().types, &Seen(line), self.main(), &self.runners()).map(|_| ())
     }
 
     /// What fits at the cursor `at` of `text`, line `line` of the program

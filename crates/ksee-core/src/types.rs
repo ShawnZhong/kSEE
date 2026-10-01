@@ -516,7 +516,7 @@ fn or_anon(name: &str) -> &str {
 
 /// A number as the page shows one: in hex past 0xffff (an address, a flag
 /// word).
-pub fn num(v: u64) -> String {
+pub(crate) fn num(v: u64) -> String {
     if v > 0xffff { alloc::format!("{v:#x}") } else { v.to_string() }
 }
 

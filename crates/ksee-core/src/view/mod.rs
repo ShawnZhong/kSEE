@@ -40,7 +40,7 @@ pub struct Task {
 impl Task {
     /// As the page names it: comm(pid).
     pub fn named(&self) -> String {
-        format!("{}({})", self.comm.clone().unwrap_or_default(), self.pid.unwrap_or(0))
+        format!("{}({})", self.comm.as_deref().unwrap_or_default(), self.pid.unwrap_or(0))
     }
 }
 
