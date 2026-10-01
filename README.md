@@ -113,5 +113,6 @@ examples to start from: `/mnt/note.txt`, `/mnt/dir/a.txt`; the root, an
 in-memory file system (ramfs: no tmpfs without an MMU), has `/note.txt`.
 
 `./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs
-the page itself (tests/ui/: the read example, a changed program from the
-URL, the pipe example, the read example on a phone's screen), and saves screenshots in `target/`. The build is `ksee build` (crates/ksee-cli/src/build.rs).
+the page itself (its own tests, crates/ksee-page/src/uitest.rs: the read
+example, a changed program from the URL, the pipe example, the read
+example on a phone's screen), and saves screenshots in `target/`. The build is `ksee build` (crates/ksee-cli/src/build.rs).

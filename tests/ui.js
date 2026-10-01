@@ -1,31 +1,39 @@
-// The page in headless Chromium (./ksee.sh test --ui): serve the site (target/site), load it,
-// go through examples, fail on any exception (or if the script throws), and
-// save a screenshot. Options look at another page, or run another script
-// (--eval; --back, --pipe, --phone: tests/ui/back.js, pipe.js, phone.js;
-// by default read.js).
-//   deno run -A tests/ui.js OUT.png [--url=URL] [--at=PATH] [--wait=ms] [--eval=JS | --back | --pipe | --phone] [--size=WxH]
+// The page in headless Chromium, driven over CDP: serve the site, load it,
+// fail on any exception, save a screenshot. --test=NAME runs one of the
+// page's own tests (crates/ksee-page/src/uitest.rs: read, back, pipe,
+// phone), on the site built with them (target/test/site, see ./ksee.sh
+// test), each on the page and screen it needs; --eval runs a script of
+// one's own instead (to look at the page as a user would).
+//   deno run -A tests/ui.js OUT.png [--test=NAME | --eval=JS] [--url=URL] [--at=#HASH] [--wait=ms] [--size=WxH]
 // $CHROME: a Chromium binary (e.g. Playwright's chrome-headless-shell).
 const [out] = Deno.args.filter((a) => !a.startsWith("--"));
 const opt = (k, d) => Deno.args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
-const phone = Deno.args.includes("--phone");
-const [w, h] = opt("size", phone ? "390x844" : "1500x900").split("x").map(Number);
+const test = opt("test", null);
+// (Each test's page, and screen: back, the write example with its program changed in the URL.)
+const back = 'int fd = openat(AT_FDCWD, "/note.txt", O_WRONLY | O_APPEND); write(fd, "changed;\\n", 9)';
+const tests = { read: ["#ex=read"], back: [`#ex=write&p=${encodeURIComponent(back)}`], pipe: ["#ex=pipe"], phone: ["#ex=read", "390x844"] };
+if (test && !tests[test]) {
+  console.log(`no test ${test}: ${Object.keys(tests).join(", ")}`);
+  Deno.exit(2);
+}
+const [at, size] = test ? tests[test] : [opt("at", ""), null];
+const [w, h] = opt("size", size ?? "1500x900").split("x").map(Number);
 const port = 9333;
 let exceptions = 0;
-// Serve the site unless given a URL.
+// Serve the site (the one with the tests, for one) unless given a URL.
 let server = null, url = opt("url", "");
 if (!url) {
+  const site = new URL(test ? "../target/test/site" : "../target/site", import.meta.url).pathname;
   server = new Deno.Command(new URL("../target/release/ksee", import.meta.url).pathname,
-    { args: ["serve", new URL("../target/site", import.meta.url).pathname, "--port=8199"], stdout: "null", stderr: "null" }).spawn();
-  // (By default the read example: see tests/ui/read.js.)
-  url = `http://127.0.0.1:8199/${opt("at", Deno.args.some((a) => a.startsWith("--eval") || a === "--back") ? ""
-    : Deno.args.includes("--pipe") ? "#ex=pipe" : "#ex=read")}`;
-  await new Promise((r) => setTimeout(r, 500));
+    { args: ["serve", site, "--port=8199"], stdout: "null", stderr: "null" }).spawn();
+  url = `http://127.0.0.1:8199/${at}`;
+  // (Exited: it could not serve, the port taken (another left running?).)
+  const gone = await Promise.race([server.status, new Promise((r) => setTimeout(() => r(null), 500))]);
+  if (gone) {
+    console.log("ksee serve exited: is port 8199 taken?");
+    Deno.exit(2);
+  }
 }
-// --back: the page opened with a program changed (examples.js, the URL's
-// p=): the write example, its first call, then another instead of its
-// second.
-const back = 'int fd = openat(AT_FDCWD, "/note.txt", O_WRONLY | O_APPEND); write(fd, "changed;\\n", 9)';
-if (Deno.args.includes("--back")) url += `#ex=write&p=${encodeURIComponent(back)}`;
 if (!Deno.env.get("CHROME")) {
   console.log("set CHROME to a (headless) Chromium binary");
   Deno.exit(2);
@@ -64,10 +72,8 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url });
 await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
-// The script to run in the page: tests/ui/NAME.js (read, the default;
-// back; pipe; phone), after tests/ui/lib.js; or --eval's.
-const page = (name) => Deno.readTextFileSync(new URL(`ui/${name}.js`, import.meta.url));
-const script = opt("eval", null) ?? page("lib") + page(Deno.args.includes("--back") ? "back" : Deno.args.includes("--pipe") ? "pipe" : phone ? "phone" : "read");
+// The script: the page's test (its report, or an exception saying what failed), or --eval's.
+const script = test ? `import(new URL("pkg/ksee_page.js", location.href)).then((p) => p.ui_test(${JSON.stringify(test)}))` : opt("eval", null);
 
 if (script) {
   const r = await send("Runtime.evaluate", { expression: script, awaitPromise: true, returnByValue: true });

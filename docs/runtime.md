@@ -141,15 +141,16 @@ in vfs_read"; else by its address; `run_of` (a line's next or last run),
   the program make syscalls, recorded (and every example's), and checks what the
   recordings show: stacks with arguments, lines, memory as it was, who
   wrote a value, tasks, the examples' links.
-- tests/ui.js: the page in headless Chromium over CDP, a script from
-  tests/ui/ run in it (after lib.js): read.js, the read example (its
-  subject call selected, its links, each landing in its function; stepping
-  into, over, out, and by key; a click on a bar; find; Objects, a
-  task_struct opened, the Trace; a line changed, a try and back; the next lesson);
-  back.js, a changed program from the URL; pipe.js, two processes, a call
-  that blocks, what calls changed; phone.js, the read example at 390x844,
-  the panes one under another. Fails on any exception; saves a screenshot in
-  target/.
+- crates/ksee-page/src/uitest.rs: the page's tests, in it (built with the
+  selftest feature, target/test/site), what a user does through its DOM:
+  read, the read example (its subject call selected, its links, each
+  landing in its function; stepping into, over, out, and by key; a click
+  on the chart; find; Objects, a task_struct opened, the Trace; a line
+  changed, a try and back; the next lesson); back, a changed program from
+  the URL; pipe, two processes, a call that blocks, what calls changed;
+  phone, the read example at 390x844, the panes one under another.
+  tests/ui.js drives headless Chromium over CDP to run one (`--test=NAME`),
+  fails on any exception, and saves a screenshot in target/.
 
 `./ksee.sh test --ui` runs them all, the page's too (`$CHROME`: a headless
 Chromium).

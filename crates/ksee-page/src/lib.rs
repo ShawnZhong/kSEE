@@ -26,6 +26,8 @@ mod source;
 mod stack;
 mod state;
 mod text;
+#[cfg(feature = "selftest")]
+mod uitest;
 
 pub use lesson::Example;
 use state::Ui;
