@@ -237,12 +237,19 @@ fn site() {
 }
 
 /// Build, then: core's unit tests, and under Deno tests/web.js (the kernel, its
-/// recordings, every example); with `ui`, also tests/ui.js (the page in
-/// headless Chromium, $CHROME: the read example, a changed program, the
-/// pipe example, a phone's screen).
+/// recordings, every example: the page's module built with its tests,
+/// crates/ksee-page's selftest, in target/test/); with `ui`, also
+/// tests/ui.js (the page in headless Chromium, $CHROME: the read example, a
+/// changed program, the pipe example, a phone's screen).
 pub fn test(ui: bool) {
     build();
     run(Command::new("cargo").args(["test", "-q", "-p", "ksee-core"]));
+    // (Its own target directory: the site's module, built without them, stays as it is.)
+    run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-page", "--features", "selftest",
+        "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));
+    run(Command::new("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", "target/test/pkg",
+        "target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm"]));
+    std::fs::copy("web/ksee.js", "target/test/ksee.js").unwrap_or_else(|e| crate::fail(&format!("target/test/ksee.js: {e}")));
     run(Command::new("deno").args(["run", "--allow-read", "tests/web.js"]));
     if ui {
         run(Command::new("deno").args(["run", "-A", "tests/ui.js", "target/ui.png"]));

@@ -18,6 +18,8 @@ mod chart;
 mod editor;
 mod lesson;
 mod panels;
+#[cfg(feature = "selftest")]
+mod selftest;
 mod source;
 mod stack;
 mod state;

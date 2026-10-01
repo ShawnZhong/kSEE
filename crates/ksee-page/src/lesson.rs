@@ -38,15 +38,16 @@ pub enum Outcome {
     Failed(String),
 }
 
-#[derive(Deserialize)]
-struct News {
-    finished: Vec<Finished>,
+/// The kernel quiet's news (Machine::quiet): the calls finished since.
+#[derive(Deserialize, Default)]
+pub(crate) struct News {
+    pub finished: Vec<Finished>,
 }
-#[derive(Deserialize)]
-struct Finished {
-    id: u32,
-    how: String,
-    ret: f64,
+#[derive(Deserialize, Clone)]
+pub(crate) struct Finished {
+    pub id: u32,
+    pub how: String,
+    pub ret: f64,
 }
 
 /// Make `lines` on a fresh kernel, one after another (a call: then the
