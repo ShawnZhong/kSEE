@@ -157,6 +157,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let chart = d.chart.cloned();
     let mut pan = use_signal(|| None::<Pan>);
     let mut width = use_signal(|| 1000.0f64);
+    // (The pointer's x over the chart (px), while it is over a bar: the line is there.)
+    let mut hover = use_signal(|| None::<f64>);
     let n = chart.cols.len().max(1);
     let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
     // (The rows thinner to fit the chart's room; deeper, it scrolls.)
@@ -230,7 +232,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 ui.win.set(Some(m.view(|v| (v.rec.record_of(na), v.rec.record_of(na + (p.b - p.a))))));
             },
             onpointerup: move |_| pan.set(None),
-            onmouseleave: move |_| { let mut ui = ui; ui.peek.set(None); tip.set(None); pan.set(None); },
+            onmouseleave: move |_| { let mut ui = ui; ui.peek.set(None); tip.set(None); pan.set(None); hover.set(None); },
             for (dd , a , e , b) in runs {
                 {
                     let bar = &chart.bars[b];
@@ -252,6 +254,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                             onmouseenter: move |ev| {
                                 let mut ui = ui;
                                 ui.peek.set(Some(Peek { i: enter(ev.element_coordinates().x).0, first, inlined }));
+                                hover.set(Some(a as f64 * px + ev.element_coordinates().x));
                                 let p = ev.client_coordinates();
                                 tip.set(Some(Tip { x: p.x, y: p.y, lines: said(first, inlined, &name) }));
                             },
@@ -259,6 +262,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                                 let mut ui = ui;
                                 let peek = Some(Peek { i: at(ev.element_coordinates().x).0, first, inlined });
                                 if (ui.peek)() != peek { ui.peek.set(peek); }
+                                hover.set(Some(a as f64 * px + ev.element_coordinates().x));
                                 let p = ev.client_coordinates();
                                 if let Some(mut t) = tip() { t.x = p.x; t.y = p.y; tip.set(Some(t)); }
                             },
@@ -274,7 +278,10 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     }
                 }
             }
-            if let Some(x) = now { div { class: "now", style: "left: {x}%" } }
+            match hover() {
+                Some(x) => rsx! { div { class: "now", style: "left: {x}px" } },
+                None => rsx! { if let Some(x) = now { div { class: "now", style: "left: {x}%" } } },
+            }
         }
     }
 }
