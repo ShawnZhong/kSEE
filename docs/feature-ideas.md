@@ -132,7 +132,7 @@ this shows only the first hop, so it never sprawls.
 ### 8. Admit where old bytes were not kept (bulk stores, `old: None`)
 
 Bulk writes past 4096 bytes log where and how much, not what
-(`replay.md`; Trace says `store 0x… [8192 bytes] (old contents not kept)`).
+(`replay.md`: `store 0x… [8192 bytes] (old contents not kept)`).
 Source notes (`Note.short`: `f_pos: 0 → 26`) never carry the caveat, so
 stepping back over a big write silently shows today's bytes as yesterday's.
 
@@ -144,7 +144,7 @@ buf: … → …  (earlier bytes not kept; going back shows them as now)
 
 Page-only: when any write behind a note has `old: None`, append the short
 parenthetical (~8 lines in `source.rs` `ran`, threading one bool out of
-`View::notes`' writes — or cheaper: check `View::raw` range once). Honesty
+`View::notes`' writes). Honesty
 at the one place the learner could otherwise misread the past.
 
 ## What was checked and left out
