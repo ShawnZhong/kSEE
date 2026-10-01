@@ -23,9 +23,8 @@ The build and the commands:
   `./setup.sh` installs what it needs (LLVM, GNU make and sed, mkfs.ext4,
   Rust + its wasm target; Chromium in $CHROME for the tests).
 - `ksee test [--ui]`: the kernel's tests, the page's too with `--ui`
-  ([runtime.md](runtime.md): what each checks); `ksee shot` looks at the
-  page as it is built; `ksee patch` writes linux.patch from linux/
-  ([kernel.md](kernel.md): the port); `ksee pack` prepares the kernel for
+  ([runtime.md](runtime.md): what each checks); `ksee patch` writes linux.patch from linux/
+  ([kernel.md](kernel.md): the port); the build's pack prepares the kernel for
   the page ([recording.md](recording.md): what it adds).
 
 Background:
