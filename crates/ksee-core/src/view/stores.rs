@@ -186,7 +186,10 @@ impl View<'_> {
     /// The stores in records `first..=last` (a call's), and the variables
     /// set there, in order, each by what the code names that it hit (see
     /// Region): a call's pointer argument to a struct, a local, the task
-    /// running, a global of the kernel's; else by its address.
+    /// running, a global of the kernel's; else by its address. The last
+    /// span asked for, kept: a render asks the same span again (objects,
+    /// each line's notes, origins), and naming it again each time would
+    /// cost the span's records over.
     pub fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Named> {
         if let Some((span, got)) = &*self.rec.named.borrow() && *span == (first, last) {
             return got.clone();
@@ -252,7 +255,7 @@ impl View<'_> {
 
     /// (The work of stores: see it.)
     fn name_stores(&self, first: usize, last: usize) -> Named {
-        let (t, types) = (self.tables, &self.tables.types);
+        let types = &self.tables.types;
         // (The objects: what (as the code names it: "file in vfs_read"),
         // type, address, size, and for a call's local or frame its life (the
         // call's records: its slots are other calls' before and after). The
@@ -269,40 +272,45 @@ impl View<'_> {
                 regions.push(Region { what, within, kind, ty, addr, size: size.unwrap_or_else(|| types.size_of(ty)), life, depth });
             }
         };
-        if let Some(ty) = types.find(arch::TASK) {
-            // (By its name, "prog(19)": the task running as the span begins,
-            // which another may follow in it; not "current".)
-            let who = self.task(task, first);
-            let who = who.named();
-            add((who.clone(), None), RegionKind::Task, ty, task, None, None, None);
-            // (And what its pointer members point to, as the span ends:
-            // current->files, ->fs, ->mm: "files->next_fd" through a local
-            // the optimizer kept in a register is reached this way.)
-            let end = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
-            if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
-                for mb in members.iter().filter(|mb| mb.bit_size == 0) {
-                    if let Some(to) = types.struct_target(mb.ty) {
-                        add((format!("{who}->{}", mb.name), None), RegionKind::Object, to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None, None);
-                    }
+        self.task_regions(task, first, last, &mut add);
+        self.call_regions(first, last, &mut add);
+        let mut writes = self.store_writes(first, last, &mut regions);
+        writes.extend(self.var_writes(first, last, &mut regions));
+        writes.sort_by_key(|w| w.i);
+        Named { regions, writes }
+    }
+
+    /// The task running as the span begins, by its name ("prog(19)"), and
+    /// what its pointer members point to as the span ends.
+    fn task_regions(&self, task: u32, first: usize, last: usize,
+                    add: &mut impl FnMut((String, Option<String>), RegionKind, u32, u32, Option<u32>, Option<usize>, Option<usize>)) {
+        let types = &self.tables.types;
+        let Some(ty) = types.find(arch::TASK) else { return };
+        // (By its name, "prog(19)": the task running as the span begins,
+        // which another may follow in it; not "current".)
+        let who = self.task(task, first);
+        let who = who.named();
+        add((who.clone(), None), RegionKind::Task, ty, task, None, None, None);
+        // (And what its pointer members point to, as the span ends:
+        // current->files, ->fs, ->mm: "files->next_fd" through a local
+        // the optimizer kept in a register is reached this way.)
+        let end = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
+        if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
+            for mb in members.iter().filter(|mb| mb.bit_size == 0) {
+                if let Some(to) = types.struct_target(mb.ty) {
+                    add((format!("{who}->{}", mb.name), None), RegionKind::Object, to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None, None);
                 }
             }
         }
+    }
+
+    /// What the calls' code names in records `first..=last`: a call's
+    /// pointer argument to a struct, its locals, and what its wasm-local
+    /// variables point to.
+    fn call_regions(&self, first: usize, last: usize,
+                    add: &mut impl FnMut((String, Option<String>), RegionKind, u32, u32, Option<u32>, Option<usize>, Option<usize>)) {
+        let (t, types) = (self.tables, &self.tables.types);
         let (records, calls, args) = (&self.rec.records, &self.rec.calls, &self.rec.args);
-        // (The call whose frame holds address `p`, seen from the call at
-        // record `i`: an object a pointer reaches on the stack lives as long
-        // as that call, the slot another's before and after; None: not on
-        // the stack.)
-        let frame_of = |i: usize, p: u32| {
-            let mut c = calls.call_from(i)?;
-            loop {
-                let parent = &calls.calls[c.parent? as usize];
-                let (below, above) = (args.get(c.first)?.1, args.get(parent.first)?.1);
-                if below <= p && p < above {
-                    return Some(c.first);
-                }
-                c = parent;
-            }
-        };
         let last = last.min(last_record(self.rec));
         for i in first..=last {
             let Record::Block { func, n: 0 } = records[i] else { continue };
@@ -313,7 +321,7 @@ impl View<'_> {
             for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
                 let v = v as u32;
                 if let Some(to) = types.struct_target(*ty) {
-                    add((pname.clone(), Some(f.name.clone())), kind(RegionKind::Object), to, v, None, frame_of(i, v), Some(i));
+                    add((pname.clone(), Some(f.name.clone())), kind(RegionKind::Object), to, v, None, Self::frame_of(calls, args, i, v), Some(i));
                 }
             }
             // (Where its pointers point as the call ends.)
@@ -324,7 +332,7 @@ impl View<'_> {
                 // through `struct files_struct *files = current->files`).)
                 if let Some(to) = types.struct_target(*ty) {
                     let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
-                    add((var.clone(), Some(f.name.clone())), kind(RegionKind::Object), to, v, None, frame_of(i, v), Some(i));
+                    add((var.clone(), Some(f.name.clone())), kind(RegionKind::Object), to, v, None, Self::frame_of(calls, args, i, v), Some(i));
                 }
             }
             // (One the code keeps in a wasm local, pointing at a struct
@@ -342,23 +350,38 @@ impl View<'_> {
             }
             for (v, value) in values {
                 if let Some(to) = self.var_ty(v).and_then(|ty| types.struct_target(ty)) {
-                    add((v.name.clone(), Some(v.function.clone())), kind(RegionKind::Object), to, value, None, frame_of(i, value), Some(i));
+                    add((v.name.clone(), Some(v.function.clone())), kind(RegionKind::Object), to, value, None, Self::frame_of(calls, args, i, value), Some(i));
                 }
             }
         }
+    }
+
+    /// The call whose frame holds address `p`, seen from the call at
+    /// record `i`: an object a pointer reaches on the stack lives as long
+    /// as that call, the slot another's before and after; None: not on
+    /// the stack.
+    fn frame_of(calls: &stack::Calls, args: &crate::trace::Args, i: usize, p: u32) -> Option<usize> {
+        let mut c = calls.call_from(i)?;
+        loop {
+            let parent = &calls.calls[c.parent? as usize];
+            let (below, above) = (args.get(c.first)?.1, args.get(parent.first)?.1);
+            if below <= p && p < above {
+                return Some(c.first);
+            }
+            c = parent;
+        }
+    }
+    /// Each store in records `first..=last` to the outermost region
+    /// holding its first byte (a global, or an address nothing names, gets
+    /// a region of its own).
+    fn store_writes(&self, first: usize, last: usize, regions: &mut Vec<Region>) -> Vec<Wrote> {
+        let (t, types) = (self.tables, &self.tables.types);
+        let records = &self.rec.records;
         // (The kernel's globals, by address, for the stores nothing else holds.)
         let mut globals: Vec<(u32, u32, &str, u32)> = types.globals.iter()
             .map(|(name, &(addr, ty))| (addr, types.size_of(ty), name.as_str(), ty)).filter(|g| g.1 > 0).collect();
         globals.sort_unstable();
-        // (Globals do not overlap: the one holding `addr` starts at the
-        // nearest start at or below it, of the names starting there.)
-        let global_at = |addr: u32| {
-            let k = globals.partition_point(|g| g.0 <= addr);
-            let start = globals[..k].last()?.0;
-            globals[..k].iter().rev().take_while(|g| g.0 == start).find(|g| addr < g.0.saturating_add(g.1)).copied()
-        };
-        // (Each store to the outermost region holding its first byte. The
-        // regions by address: a store's are those starting at most the
+        // (The regions by address: a store's are those starting at most the
         // largest one's size below it.)
         let mut by_start: Vec<usize> = (0..regions.len()).collect();
         by_start.sort_unstable_by_key(|&k| regions[k].addr);
@@ -378,7 +401,7 @@ impl View<'_> {
             let region = match hit {
                 Some(k) => k as u32,
                 None => {
-                    let r = match global_at(addr) {
+                    let r = match Self::global_at(&globals, addr) {
                         Some((gaddr, size, name, ty)) => {
                             let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
                             Region { what: name.into(), within: None, kind: if machine { RegionKind::Machine } else { RegionKind::Global }, ty: types.resolve(ty), addr: gaddr, size, life: None, depth: u32::MAX }
@@ -393,10 +416,26 @@ impl View<'_> {
             };
             writes.push(Wrote { i, region, at: self.rec.line_at(t, i), prev: None });
         }
-        // (And each variable kept in a wasm local, as the code sets it: from
-        // its value before, in its call, to its value then.)
+        writes
+    }
+
+    /// The global holding `addr` (globals do not overlap: the one starting
+    /// at the nearest start at or below it), if one does.
+    fn global_at<'a>(globals: &'a [(u32, u32, &'a str, u32)], addr: u32) -> Option<(u32, u32, &'a str, u32)> {
+        // (Of the names starting there, ...: the sorted globals.)
+        let k = globals.partition_point(|g| g.0 <= addr);
+        let start = globals[..k].last()?.0;
+        globals[..k].iter().rev().take_while(|g| g.0 == start).find(|g| addr < g.0.saturating_add(g.1)).copied()
+    }
+
+    /// Each variable the code keeps in a wasm local, as it sets it in
+    /// records `first..=last`: from its value before, in its call, to its
+    /// value then.
+    fn var_writes(&self, first: usize, last: usize, regions: &mut Vec<Region>) -> Vec<Wrote> {
+        let (t, calls, records) = (self.tables, &self.rec.calls, &self.rec.records);
         // (Each call's variable's region (none: of no type known), and its last set.)
         let mut vars: BTreeMap<(usize, u32), (Option<u32>, Option<usize>)> = BTreeMap::new();
+        let mut writes = Vec::new();
         for i in first..=last {
             let Record::Var { var, .. } = records[i] else { continue };
             let Some(c) = calls.call_at(i) else { continue };
@@ -408,7 +447,6 @@ impl View<'_> {
             let Some(region) = *region else { continue };
             writes.push(Wrote { i, region, at: self.rec.line_at(t, i), prev: prev.replace(i) });
         }
-        writes.sort_by_key(|w| w.i);
-        Named { regions, writes }
+        writes
     }
 }

@@ -83,8 +83,19 @@ impl View<'_> {
     /// node is in the order of the calls that name them, the outer first
     /// (then the first written first), each node followed by those under it.
     pub fn objects(&self, first: usize, last: usize) -> Vec<Node> {
-        let types = &self.tables.types;
         let named = self.stores(first, last);
+        let nodes = self.object_nodes(&named, first);
+        let mut nodes = self.object_diffs(nodes, last);
+        Self::order_nodes(&mut nodes);
+        let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
+        Self::link_nodes(&self.tables.types, &mem, nodes)
+    }
+
+    /// The objects the span's writes hit (the kernel's data: not a stack's,
+    /// nor the machine's plumbing): each one's writes by member, with the
+    /// member's leaf.
+    fn object_nodes(&self, named: &Named, first: usize) -> Vec<(Node, Vec<(String, Leaf, Vec<Wrote>)>)> {
+        let types = &self.tables.types;
         // (Each object's writes (its region's, and any other's of its
         // address and type), by member, in order; with the member's leaf.)
         let mut nodes: Vec<(Node, Vec<(String, Leaf, Vec<Wrote>)>)> = Vec::new();
@@ -126,11 +137,21 @@ impl View<'_> {
                 }
             }
         }
+        nodes
+    }
+
+    /// Each node's members' changes, from what they were to what they are
+    /// as the span ends (a member only ever written as it was, not; an
+    /// object with none, dropped); with each change a pointer into another
+    /// node as it ends.
+    fn object_diffs(&self, nodes: Vec<(Node, Vec<(String, Leaf, Vec<Wrote>)>)>, last: usize) -> Vec<(Node, Vec<Option<u32>>)> {
+        let types = &self.tables.types;
         // (Each member's changes; one only ever written as it was (memory
         // zeroed that was zero), not; an object with none, not. A pointer:
         // where it points as the span ends.)
         let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
-        let mut nodes: Vec<(Node, Vec<Option<u32>>)> = nodes.into_iter().filter_map(|(mut n, members)| {
+        let mut diffs: Vec<(Node, Vec<Option<u32>>)> = Vec::new();
+        for (mut n, members) in nodes {
             let mut points = Vec::new();
             for (member, leaf, writes) in members {
                 let before = |i: usize| self.value(n.addr, leaf, i.saturating_sub(1));
@@ -153,7 +174,7 @@ impl View<'_> {
                 n.changes.push(Diff { member, before: a, after: z, to: None, runs });
             }
             if n.changes.is_empty() {
-                return None;
+                continue;
             }
             // (Lasting, but every member as it was: its changes undone.)
             if n.changes.iter().all(|d| d.before == d.after) {
@@ -164,32 +185,47 @@ impl View<'_> {
             both.sort_by_key(|(d, _)| d.before == d.after);
             let points;
             (n.changes, points) = both.into_iter().unzip();
-            Some((n, points))
-        }).collect();
+            diffs.push((n, points));
+        }
+        diffs
+    }
+
+    /// Changed objects first, then those left as they were; in each, the
+    /// span's task's, then each other's in the order they first wrote; in
+    /// each, the outer calls first: the order shown, with each change's
+    /// target beside its node. Double names numbered ("slab #2").
+    fn order_nodes(nodes: &mut Vec<(Node, Vec<Option<u32>>)>) {
         // (What changed, then what was left as it was; in each, the span's
         // task's, then each other's in the order they first wrote; in each,
         // in the order of the calls that name them, the outer first, as a
         // call tree reads; within one call, the first written first. The
         // task first; globals last.)
         let mut tasks: Vec<Option<u32>> = alloc::vec![None];
-        for (n, _) in &nodes {
+        for (n, _) in &*nodes {
             let t = n.by.as_ref().map(|t| t.addr);
             if !tasks.contains(&t) {
                 tasks.push(t);
             }
         }
         nodes.sort_by_key(|n| (n.0.group == Group::Same, tasks.iter().position(|&t| t == n.0.by.as_ref().map(|t| t.addr)), n.0.depth));
-        let (mut nodes, points): (Vec<Node>, Vec<Vec<Option<u32>>>) = nodes.into_iter().unzip();
         // (One name for two (the slabs of two caches a callee named by one
         // parameter): the later numbered: "slab #2 in pfmemalloc_match".)
         let mut seen: BTreeMap<(String, Option<String>), u32> = BTreeMap::new();
-        for n in &mut nodes {
+        for n in nodes.iter_mut().map(|(n, _)| n) {
             let k = seen.entry((n.what.clone(), n.within.clone())).or_default();
             *k += 1;
             if *k > 1 {
                 n.what = format!("{} #{k}", n.what);
             }
         }
+    }
+
+    /// The nodes as the tree the page shows: each under the first of its
+    /// group and task that points to it, in display order, with each
+    /// change's target written.
+    fn link_nodes(types: &Types, mem: &dyn Memory, nodes: Vec<(Node, Vec<Option<u32>>)>) -> Vec<Node> {
+        let (nodes, points): (Vec<Node>, Vec<Vec<Option<u32>>>) = nodes.into_iter().unzip();
+        let mut nodes = nodes;
         let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
         // (Each node's pointers to the others of its group and task, as
         // memory is as the span ends: the tree each is shown as.)
