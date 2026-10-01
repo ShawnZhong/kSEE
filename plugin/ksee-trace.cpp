@@ -545,7 +545,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       words(B, v, w);
       Value *low = w[0];
       w.erase(w.begin());
-      record(B, low, KindVar << 28 | std::min(lineOf.lookup(t.I), (1u << 12) - 1) << 16 | it->second, w);
+      // (Its line: the one computing the value, if in this block; the
+      // record goes before the next instruction, a later line's.)
+      auto *D = dyn_cast<Instruction>(v);
+      unsigned line = lineOf.lookup(D && D->getParent() == t.I->getParent() ? D : t.I);
+      record(B, low, KindVar << 28 | std::min(line, (1u << 12) - 1) << 16 | it->second, w);
     }
 
   }
