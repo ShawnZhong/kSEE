@@ -43,7 +43,7 @@ thread_local! {
 
 /// The current task's thread id.
 fn tid() -> u32 {
-    tables().types.read_task(&Direct, current()).map_or(0, |t| t.pid as u32)
+    tables().types.read_task(&Direct, current()).map_or(0, |t| t.0 as u32)
 }
 
 fn value(g: &WebAssembly::Global) -> u32 {
