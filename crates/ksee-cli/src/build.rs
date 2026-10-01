@@ -22,11 +22,24 @@
 use std::path::Path;
 use std::process::Command;
 
+/// Runs `cmd`, said first, its output shown.
 pub fn run(cmd: &mut Command) {
+    eprintln!("+ {cmd:?}");
     let status = cmd.status().unwrap_or_else(|e| crate::fail(&format!("{:?}: {e}", cmd.get_program())));
     if !status.success() {
-        crate::fail(&format!("{:?} failed", cmd.get_program()));
+        crate::fail(&format!("{:?} failed: {status}", cmd.get_program()));
     }
+}
+
+/// Runs `cmd`, said first, for its stdout (its stderr shown).
+fn output(cmd: &mut Command) -> Vec<u8> {
+    eprintln!("+ {cmd:?}");
+    let out = cmd.stderr(std::process::Stdio::inherit()).output()
+        .unwrap_or_else(|e| crate::fail(&format!("{:?}: {e}", cmd.get_program())));
+    if !out.status.success() {
+        crate::fail(&format!("{:?} failed: {}", cmd.get_program(), out.status));
+    }
+    out.stdout
 }
 
 /// The site: what the page loads.
@@ -44,11 +57,15 @@ pub fn build() {
 
     if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
         eprintln!("  PLUGIN  plugin/ksee-trace.so");
-        let flags = Command::new("llvm-config").arg("--cxxflags").output()
-            .unwrap_or_else(|e| crate::fail(&format!("llvm-config: {e}"))).stdout;
-        run(Command::new("clang++")
-            .args(["-shared", "-fPIC", "-O2", "plugin/ksee-trace.cpp", "-o", "plugin/ksee-trace.so"])
-            .args(String::from_utf8_lossy(&flags).split_whitespace()));
+        let flags = output(Command::new("llvm-config").arg("--cxxflags"));
+        let mut plugin = Command::new("clang++");
+        plugin.args(["-shared", "-fPIC", "-O2", "plugin/ksee-trace.cpp", "-o", "plugin/ksee-trace.so"]);
+        // (macOS links -shared eagerly: leave the LLVM symbols to clang,
+        // which loads the pass.)
+        if cfg!(target_os = "macos") {
+            plugin.arg("-Wl,-undefined,dynamic_lookup");
+        }
+        run(plugin.args(String::from_utf8_lossy(&flags).split_whitespace()));
     }
 
     // A hash of the plugin in the flags makes kbuild rebuild the kernel
@@ -59,7 +76,7 @@ pub fn build() {
     // own choices would hide calls, with their arguments, as inlined code.)
     let kmake = |args: &[&str]| {
         let mut c = Command::new("make");
-        c.args(["-s", "-C", "linux", "ARCH=wasm", "LLVM=1",
+        c.args(["-C", "linux", "ARCH=wasm", "LLVM=1",
                 &format!("KCFLAGS=-g -finline-hint-functions -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
             .args(args);
         c
@@ -75,7 +92,7 @@ pub fn build() {
     site();
     // (The runtime and the page, one module: the page calls the Machine.)
     eprintln!("  RUNTIME {SITE}/pkg");
-    run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-page",
+    run(Command::new("cargo").args(["build", "--release", "-p", "ksee-page",
         "--target", "wasm32-unknown-unknown"]));
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
 
@@ -118,17 +135,13 @@ pub fn build() {
                 .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", p.display())));
         }
         // (Initialized in full: no background work after the mount, ext4lazyinit's.)
-        run(Command::new("mkfs.ext4").args(["-q", "-F", "-b", "1024", "-L", "ksee", "-N", "32", "-d", &files,
+        run(Command::new("mkfs.ext4").args(["-F", "-b", "1024", "-L", "ksee", "-N", "32", "-d", &files,
                                             "-E", "lazy_itable_init=0,lazy_journal_init=0", &disk, "2M"]));
         // (The list's paths are relative to the dir.)
         let tool = Path::new("linux/usr/gen_init_cpio").canonicalize()
             .unwrap_or_else(|e| crate::fail(&format!("linux/usr/gen_init_cpio: {e}")));
-        let cpio = Command::new(tool).arg(Path::new("user/initramfs.list").canonicalize().unwrap()).current_dir(dir).output()
-            .unwrap_or_else(|e| crate::fail(&format!("gen_init_cpio: {e}")));
-        if !cpio.status.success() {
-            crate::fail(&format!("gen_init_cpio: {}", String::from_utf8_lossy(&cpio.stderr)));
-        }
-        std::fs::write(&cpio_out, cpio.stdout).unwrap_or_else(|e| crate::fail(&format!("{cpio_out}: {e}")));
+        let cpio = output(Command::new(tool).arg(Path::new("user/initramfs.list").canonicalize().unwrap()).current_dir(dir));
+        std::fs::write(&cpio_out, cpio).unwrap_or_else(|e| crate::fail(&format!("{cpio_out}: {e}")));
         gzip(&cpio_out, &format!("{SITE}/initramfs.cpio.gz"));
     }
     examples();
@@ -145,24 +158,17 @@ const LINUX_COMMIT: &str = "f42acb3678424d1e08f6ed27c0d8ba8a125e14d6";
 /// again when it changes: the port, all of it (the files new too) as it
 /// differs from the release.
 fn linux() {
-    let git = |args: &[&str]| {
-        let out = Command::new("git").arg("-C").arg("linux").args(args).output()
-            .unwrap_or_else(|e| crate::fail(&format!("git: {e}")));
-        if !out.status.success() {
-            crate::fail(&format!("git {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr)));
-        }
-        out.stdout
-    };
+    let git = |args: &[&str]| output(Command::new("git").arg("-C").arg("linux").args(args));
     if !Path::new("linux/Makefile").exists() {
         eprintln!("  LINUX   linux/ ({LINUX_TAG}, from the stable tree; linux.patch)");
         std::fs::create_dir_all("linux").unwrap_or_else(|e| crate::fail(&format!("linux/: {e}")));
-        git(&["init", "-q"]);
-        git(&["fetch", "-q", "--depth=1", LINUX_TREE, "tag", LINUX_TAG]);
+        git(&["init"]);
+        git(&["fetch", "--depth=1", LINUX_TREE, "tag", LINUX_TAG]);
         let commit = git(&["rev-parse", &format!("{LINUX_TAG}^{{commit}}")]);
         if String::from_utf8_lossy(&commit).trim() != LINUX_COMMIT {
             crate::fail(&format!("{LINUX_TAG}: not {LINUX_COMMIT}"));
         }
-        git(&["checkout", "-q", LINUX_TAG]);
+        git(&["checkout", LINUX_TAG]);
         git(&["apply", "../linux.patch"]);
         return;
     }
@@ -245,9 +251,9 @@ fn site() {
 /// target/.
 pub fn test(ui: bool) {
     build();
-    run(Command::new("cargo").args(["test", "-q", "-p", "ksee-core", "-p", "ksee-cli"]));
+    run(Command::new("cargo").args(["test", "-p", "ksee-core", "-p", "ksee-cli"]));
     // (Its own target directory: the site's module, built without them, stays as it is.)
-    run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-page", "--features", "selftest",
+    run(Command::new("cargo").args(["build", "--release", "-p", "ksee-page", "--features", "selftest",
         "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));
     bindgen("target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm", "target/test/pkg");
     // (The site with the tests: the site's files, its module the one built with them.)
