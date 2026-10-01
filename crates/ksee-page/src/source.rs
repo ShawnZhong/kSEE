@@ -67,8 +67,14 @@ fn Code(path: String, from: u32, to: u32, line: u32, ran: Vec<u32>) -> Element {
     rsx! {
         div { class: "code mono",
             for n in from..=to.min(all.len() as u32) {
-                div { key: "{n}", class: if n == line { "ln now" } else if ran.contains(&n) { "ln ran" } else { "ln" },
-                    onmounted: move |e| async move { if n == line { let _ = e.scroll_to(ScrollBehavior::Smooth).await; } },
+                // (Keyed by whether it is the cursor's too: the one that becomes it mounts again, and comes into view.)
+                div { key: "{n}:{n == line}", class: if n == line { "ln now" } else if ran.contains(&n) { "ln ran" } else { "ln" },
+                    onmounted: move |e| async move {
+                        if n == line {
+                            let middle = ScrollToOptions { behavior: ScrollBehavior::Smooth, vertical: ScrollLogicalPosition::Center, horizontal: ScrollLogicalPosition::Nearest };
+                            let _ = e.scroll_to_with_options(middle).await;
+                        }
+                    },
                     span { class: "no", "{n}" }
                     "{all[n as usize - 1]}"
                 }
