@@ -67,7 +67,7 @@ impl Machine {
         if have < ram {
             memory.grow((ram - have).div_ceil(PAGE_BYTES));
         }
-        k(|k| k.ram.set(ram));
+        k_mut(|k| k.ram = ram);
 
         let bytes = fetch_bytes(&url).await?;
         let module: WebAssembly::Module =
@@ -84,7 +84,7 @@ impl Machine {
         if !initrd.is_empty() {
             cmdline += &format!(" initrd={:#x},{}", initrd_at(ram, &initrd), initrd.len());
         }
-        k(|k| *k.cmdline.borrow_mut() = cmdline.trim().as_bytes().to_vec());
+        k_mut(|k| k.cmdline = cmdline.trim().as_bytes().to_vec());
         let m = Machine { module, initrd, rec: Default::default() };
         m.boot().await?;
         Ok(m)
@@ -94,7 +94,7 @@ impl Machine {
     /// instance (instantiating initializes its data), and its boot CPU; done
     /// once the program (user/prog.c) is ready for calls.
     async fn boot(&self) -> Result<(), JsValue> {
-        let ram = k(|k| k.ram.get());
+        let ram = k(|k| k.ram);
         unsafe { core::ptr::write_bytes(KERNEL_BASE as *mut u8, 0, (ram - KERNEL_BASE) as usize) };
         if !self.initrd.is_empty() {
             let at = initrd_at(ram, &self.initrd) as usize;
@@ -106,30 +106,28 @@ impl Machine {
         let global = |name: &str| js::get(&js::get(&kernel, name), "value").as_f64().unwrap_or(0.0) as u32;
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         let trace = trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32;
-        k(|k| {
-            k.trace.set(trace);
-            k.current.set(global("__current_task"));
-            k.pending.set(global("wasm_irq_pending"));
-            k.deadline.set(global("wasm_timer_deadline"));
-            k.clock.set(0);
-            k.waiting.set(Some(0));
-            k.booting.set(true);
-            k.halted.set(None);
+        let (current, pending, deadline) = (global("__current_task"), global("wasm_irq_pending"), global("wasm_timer_deadline"));
+        k_mut(|k| {
+            (k.trace, k.current, k.pending, k.deadline) = (trace, current, pending, deadline);
+            k.clock = 0;
+            k.waiting = Some(0);
+            k.booting = true;
+            k.halted = None;
             // (Nothing of a machine before it: its console, runners, calls, the program's names.)
-            k.console_out.borrow_mut().clear();
-            k.doorbell.borrow_mut().clear();
-            k.runners.borrow_mut().clear();
-            k.main.set(None);
-            k.heaps.borrow_mut().clear();
-            k.calls.borrow_mut().clear();
-            k.finished.borrow_mut().clear();
-            *k.names.borrow_mut() = Default::default();
-            k.lines.set(0);
+            k.console_out.clear();
+            k.doorbell.clear();
+            k.runners.clear();
+            k.main = None;
+            k.heaps.clear();
+            k.calls.clear();
+            k.finished.clear();
+            k.names = Default::default();
+            k.lines = 0;
         });
         crate::programs::instantiated(&kernel);
         sched::boot(&kernel)?;
         // (Quiet, with the program ready.)
-        while k(|k| k.main.get()).is_none() {
+        while k(|k| k.main).is_none() {
             self.quiet().await?;
         }
         Ok(())
@@ -149,7 +147,7 @@ impl Machine {
         })).await?;
         sched::stop();
         // (What waits for the old machine gives up.)
-        for (_, fail) in k(|k| k.quiet_waiters.take()) {
+        for (_, fail) in k_mut(|k| std::mem::take(&mut k.quiet_waiters)) {
             let _ = fail.call1(&JsValue::NULL, &"the kernel started again".into());
         }
         *self.rec.borrow_mut() = Default::default();
@@ -158,19 +156,19 @@ impl Machine {
 
     /// Console output since the last call.
     pub fn console(&self) -> String {
-        let out = k(|k| k.console_out.take());
+        let out = k_mut(|k| std::mem::take(&mut k.console_out));
         String::from_utf8_lossy(&out).into_owned()
     }
 
     /// The halt code once the kernel has halted.
     pub fn halted(&self) -> Option<i32> {
-        k(|k| k.halted.get())
+        k(|k| k.halted)
     }
 
     /// Decode the trace ring (again). The views use the last snapshot.
     pub fn snapshot(&self) {
         let t = tables();
-        let (records, ids, args) = trace::ring(&Direct, k(|k| k.trace.get()), t.ring_words);
+        let (records, ids, args) = trace::ring(&Direct, k(|k| k.trace), t.ring_words);
         *self.rec.borrow_mut() = Recording::new(t, records, ids, args);
     }
 
@@ -185,14 +183,14 @@ impl Machine {
     /// (user/prog.c): the syscall, entry to return, and whatever the kernel
     /// does meanwhile.
     pub fn make(&self, text: &str) -> Result<Made, String> {
-        let line = k(|k| k.lines.get());
+        let line = k(|k| k.lines);
         let (tid, plan) = lower(text, &tables().types, &Seen(line), self.main(), &self.runners())?;
         let mut made = Made::default();
         match plan {
             Lowered::Decl(d) => {
                 let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
                 write_logged(addr, &d.bytes);
-                k(|k| k.names.borrow_mut().set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
+                k_mut(|k| k.names.set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
                 made.decl = Some(Var { name: d.name, addr, ty: d.ty, count: d.count, size: tables().types.size_of(d.ty) });
             }
             // (An assignment says nothing new: memory as it is now is what
@@ -202,7 +200,7 @@ impl Machine {
             }
             Lowered::Call { nr, args, result } => (made.id, made.tid) = (Some(call(tid, nr, &args, line, result)?), Some(tid)),
         }
-        k(|k| k.lines.set(line + 1));
+        k_mut(|k| k.lines = line + 1);
         Ok(made)
     }
 
@@ -216,12 +214,12 @@ impl Machine {
     /// (ksee_core::program::completions; `common`: the syscalls first).
     pub fn complete(&self, text: &str, at: usize, line: usize, common: &[String]) -> Vec<ksee_core::program::Completion> {
         let c = ksee_core::program::context(text, at);
-        k(|k| ksee_core::program::completions(&tables().types, &c, &k.names.borrow().before(line), common))
+        k(|k| ksee_core::program::completions(&tables().types, &c, &k.names.before(line), common))
     }
 
     /// The names line `line` sees (see make): a variable's, a result's.
     pub fn names_before(&self, line: usize) -> Vec<String> {
-        k(|k| k.names.borrow().before(line).into_iter().map(|(name, _)| name.to_string()).collect())
+        k(|k| k.names.before(line).into_iter().map(|(name, _)| name.to_string()).collect())
     }
 
     /// The kernel quiet (now, or once it is): the calls finished since the
@@ -229,12 +227,12 @@ impl Machine {
     /// running; "exited", its task); an error if it started again meanwhile.
     pub async fn quiet(&self) -> Result<Vec<Finished>, JsValue> {
         JsFuture::from(Promise::new(&mut |ok, fail| {
-            k(|k| k.quiet_waiters.borrow_mut().push((ok, fail)));
+            k_mut(|k| k.quiet_waiters.push((ok, fail)));
             if sched::quiet() {
                 settle();
             }
         })).await?;
-        Ok(k(|k| k.finished.take()))
+        Ok(k_mut(|k| std::mem::take(&mut k.finished)))
     }
 
     /// A program's variable (of type `ty`, an array of `count` if given, at
@@ -258,19 +256,19 @@ impl Machine {
     /// The program's own runner (user/prog.c's main thread), its tid: the
     /// one the page's calls are made by unless they say another.
     pub fn main(&self) -> Option<u32> {
-        k(|k| k.main.get())
+        k(|k| k.main)
     }
 
     /// The runners' thread ids.
     pub fn runners(&self) -> Vec<u32> {
-        k(|k| k.runners.borrow().keys().copied().collect())
+        k(|k| k.runners.keys().copied().collect())
     }
 }
 
 /// Write `bytes` at `addr` into kernel memory, as the host: recorded (as a
 /// call's writes into its request are), so memory as it was stays exact.
 fn write_logged(addr: u32, bytes: &[u8]) {
-    let trace = k(|k| k.trace.get());
+    let trace = k(|k| k.trace);
     // (Stores recorded from the first write of the host's on, a variable
     // declared before any call (see programs::on_off: after the boot,
     // what it left for later runs unrecorded): memory as it was exact from
@@ -286,10 +284,9 @@ fn write_logged(addr: u32, bytes: &[u8]) {
 /// its process's): their address, on 16 bytes; a page or more, on a page
 /// (as mmap gives it: memory the kernel can pin, a ring's).
 fn alloc(tid: u32, len: u32) -> Result<u32, String> {
-    k(|k| {
-        let base = k.runners.borrow().get(&tid).ok_or_else(|| format!("no runner {tid}"))?.heap;
-        let mut heaps = k.heaps.borrow_mut();
-        let (next, end) = heaps.get_mut(&base).ok_or("no memory")?;
+    k_mut(|k| {
+        let base = k.runners.get(&tid).ok_or_else(|| format!("no runner {tid}"))?.heap;
+        let (next, end) = k.heaps.get_mut(&base).ok_or("no memory")?;
         let page = ksee_core::arch::PAGE;
         let align = if len >= page { page } else { 16 };
         let at = (*next + align - 1) & !(align - 1);
@@ -323,13 +320,13 @@ pub struct Var {
 /// Have runner `tid` make syscall `nr` with `args`, for line `line` (its
 /// result named `result`): the call's id.
 fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, String)>) -> Result<u32, String> {
-    let Some(Runner { task, req, .. }) = k(|k| k.runners.borrow().get(&tid).copied()) else {
-        return Err(format!("no runner {tid}"));
-    };
-    if k(|k| k.in_flight(tid).is_some()) {
-        return Err(format!("{tid} is still making its call"));
-    }
-    let id = k(|k| k.asked.get() + 1);
+    let (Runner { task, req, .. }, id) = k(|k| {
+        let runner = k.runners.get(&tid).copied().ok_or_else(|| format!("no runner {tid}"))?;
+        if k.in_flight(tid).is_some() {
+            return Err(format!("{tid} is still making its call"));
+        }
+        Ok((runner, k.asked + 1))
+    })?;
     // (A call's words as the buffers they point to are put in its program's
     // memory, recorded, as its variables are.)
     let mut put = |b: &[u8]| -> Result<u32, String> {
@@ -339,13 +336,13 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, St
     };
     let words = ksee_core::program::words(args, &mut put)?;
     let c = Call { id, tid, nr, task, line, result, ..Default::default() };
-    k(|k| {
-        k.asked.set(id);
-        k.calls.borrow_mut().insert(id, c);
-        // (The page waits for the kernel now: see Kernel::waiting.)
-        k.waiting.set(Some(k.clock.get()));
+    k_mut(|k| {
+        k.asked = id;
+        k.calls.insert(id, c);
+        // (The page waits for the kernel now: see State::waiting.)
+        k.waiting = Some(k.clock);
         // (Ring the runner: it waits on the request's number.)
-        k.doorbell.borrow_mut().push_back(task);
+        k.doorbell.push_back(task);
     });
     // (The call into the runner's request, in its memory, which is
     // kernel memory: recorded, as its strings are.)
@@ -365,7 +362,7 @@ impl ksee_core::program::Env for Seen {
         if let Some(&v) = tables().types.constants.get(n) {
             return Some(Sym::Value { v, to: None });
         }
-        k(|k| k.names.borrow().get(n, self.0).cloned())
+        k(|k| k.names.get(n, self.0).cloned())
     }
 
     fn memory(&self) -> Option<&dyn Memory> {
@@ -375,7 +372,7 @@ impl ksee_core::program::Env for Seen {
 
 /// The kernel is quiet: settle what waits for it (see Machine::quiet).
 pub(crate) fn settle() {
-    let waiters = k(|k| k.quiet_waiters.take());
+    let waiters = k_mut(|k| std::mem::take(&mut k.quiet_waiters));
     if waiters.is_empty() {
         return;
     }

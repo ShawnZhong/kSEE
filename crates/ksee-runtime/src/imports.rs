@@ -20,23 +20,22 @@ use ksee_core::Memory;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn console_write(p: *const u8, n: u32) {
-    k(|k| k.console_out.borrow_mut().extend_from_slice(unsafe { core::slice::from_raw_parts(p, n as usize) }));
+    k_mut(|k| k.console_out.extend_from_slice(unsafe { core::slice::from_raw_parts(p, n as usize) }));
 }
 
 /// doorbell: the next task to ring, or 0.
 #[unsafe(no_mangle)]
 pub extern "C" fn doorbell() -> u32 {
-    k(|k| k.doorbell.borrow_mut().pop_front().unwrap_or(0))
+    k_mut(|k| k.doorbell.pop_front().unwrap_or(0))
 }
 
 /// Copy the command line (NUL-terminated) to `buf`.
 #[unsafe(no_mangle)]
 pub extern "C" fn get_cmdline(buf: *mut u8, len: u32) -> u32 {
     k(|k| {
-        let cmd = k.cmdline.borrow();
-        let n = cmd.len().min(len as usize - 1);
+        let n = k.cmdline.len().min(len as usize - 1);
         unsafe {
-            core::ptr::copy_nonoverlapping(cmd.as_ptr(), buf, n);
+            core::ptr::copy_nonoverlapping(k.cmdline.as_ptr(), buf, n);
             *buf.add(n) = 0;
         }
         n as u32
@@ -45,17 +44,16 @@ pub extern "C" fn get_cmdline(buf: *mut u8, len: u32) -> u32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn memory_end() -> u32 {
-    k(|k| k.ram.get())
+    k(|k| k.ram)
 }
 
-/// The kernel's clock (ns): virtual (see Kernel::clock), a tick on at
+/// The kernel's clock (ns): virtual (see State::clock), a tick on at
 /// each read.
 #[unsafe(no_mangle)]
 pub extern "C" fn time_ns() -> u64 {
-    k(|k| {
-        let c = k.clock.get() + TICK_NS;
-        k.clock.set(c);
-        c
+    k_mut(|k| {
+        k.clock += TICK_NS;
+        k.clock
     })
 }
 
@@ -117,7 +115,7 @@ pub fn task(task: u32) {
 /// Append a record (pairs of words) to the kernel's trace ring (called
 /// while the kernel runs: no kernel code writes it meanwhile).
 fn ring_put(words: &[u32]) {
-    let (trace, size) = (k(|k| k.trace.get()), tables().ring_words);
+    let (trace, size) = (k(|k| k.trace), tables().ring_words);
     if trace == 0 || size == 0 {
         return;
     }
@@ -143,8 +141,11 @@ pub fn kernel() -> Object {
     js::set(&kernel, "idle", sched::suspending(func(Closure::<dyn FnMut() -> Promise>::new(sched::idle))));
     js::set(&kernel, "restart_task", sched::suspending(func(Closure::<dyn FnMut(u32, u32) -> Promise>::new(sched::restart_task))));
     js::set(&kernel, "halt", sched::suspending(func(Closure::<dyn FnMut(i32) -> Promise>::new(|code: i32| {
-        k(|k| k.halted.set(Some(code)));
-        for (_, fail) in k(|k| k.quiet_waiters.take()) {
+        let waiters = k_mut(|k| {
+            k.halted = Some(code);
+            std::mem::take(&mut k.quiet_waiters)
+        });
+        for (_, fail) in waiters {
             let _ = fail.call1(&JsValue::NULL, &format!("the kernel halted ({code})").into());
         }
         sched::never()

@@ -99,7 +99,7 @@ fn soon(f: impl FnOnce() + 'static) {
 fn on_error(p: &JsValue) {
     let catch: Function = js::get(p, "catch").unchecked_into();
     let _ = catch.call1(p, &Closure::once_into_js(|e: JsValue| {
-        if k(|k| k.halted.get()).is_none() {
+        if k(|k| k.halted).is_none() {
             web_sys::console::error_2(&"kernel:".into(), &js::get(&e, "stack"));
         }
     }));
@@ -163,7 +163,7 @@ pub fn switch_task(prev: u32, next: u32, dead: u32) -> Promise {
         return never();
     }
     // (A busy machine gets its timer interrupts too: at its switches.)
-    if deadline() <= k(|k| k.clock.get()) {
+    if deadline() <= k(|k| k.clock) {
         raise(IRQ_TIMER);
     }
     let sp = sp_get();
@@ -212,7 +212,7 @@ fn run(task: u32) {
 /// Set interrupt line `irq` pending (the kernel takes it when it next
 /// enables interrupts).
 fn raise(irq: u32) {
-    let p = k(|k| k.pending.get());
+    let p = k(|k| k.pending);
     Direct.write_u32(p, Direct.read_u32(p) | 1 << irq);
 }
 
@@ -269,7 +269,7 @@ fn timer_wakes(t: &ksee_core::types::Types, mem: &dyn ksee_core::Memory, tasks: 
 }
 
 fn sleeping() -> bool {
-    let tasks: Vec<u32> = k(|k| k.calls.borrow().values().filter(|c| !c.done).map(|c| c.task).collect());
+    let tasks: Vec<u32> = k(|k| k.calls.values().filter(|c| !c.done).map(|c| c.task).collect());
     timer_wakes(&tables().types, &Direct, &tasks)
 }
 
@@ -278,22 +278,23 @@ pub fn idle() -> Promise {
     if !running() {
         return never();
     }
-    if Direct.read_u32(k(|k| k.pending.get())) != 0 {
+    if Direct.read_u32(k(|k| k.pending)) != 0 {
         return Promise::resolve(&JsValue::NULL);
     }
     // The page waits: on to the timer's deadline, now. For a call, if its
     // runner sleeps on a timer (else it blocks: it waits for another call).
     let d = deadline();
-    let skip = k(|k| match k.waiting.get() {
+    let (waiting, booting) = k(|k| (k.waiting, k.booting));
+    let skip = match waiting {
         Some(since) if d != u64::MAX => {
-            let ok = if k.booting.get() { d.saturating_sub(since) < BOOT_NS } else { sleeping() };
+            let ok = if booting { d.saturating_sub(since) < BOOT_NS } else { sleeping() };
             if ok {
-                k.clock.set(k.clock.get().max(d));
+                k_mut(|k| k.clock = k.clock.max(d));
             }
             ok
         }
         _ => false,
-    });
+    };
     if skip {
         raise(IRQ_TIMER);
         return Promise::resolve(&JsValue::NULL);
@@ -302,7 +303,7 @@ pub fn idle() -> Promise {
     let mut wake = None;
     let p = Promise::new(&mut |ok, _| wake = Some(ok));
     S.with_borrow_mut(|s| s.idle = wake);
-    k(|k| k.booting.set(false));
+    k_mut(|k| k.booting = false);
     crate::machine::settle();
     p
 }

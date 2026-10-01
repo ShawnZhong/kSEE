@@ -1,8 +1,8 @@
-//! The machine's state in the runtime: one Kernel (what the kernel's
-//! imports and the page share; a thread-local, as the kernel's imports have
-//! no context to be given), and the probe tables.
+//! The machine's state in the runtime (what the kernel's imports and the
+//! page share; thread-local, as the kernel's imports have no context to be
+//! given), and the probe tables.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::OnceLock;
 
@@ -30,69 +30,67 @@ pub const IRQ_DOORBELL: u32 = 1;
 pub const TICK_NS: u64 = 1000;
 
 #[derive(Default)]
-pub struct Kernel {
+pub struct State {
     /// Addresses in kernel memory (each boot's): the trace (ksee_trace()),
     /// the variable holding the current task, the pending interrupts
     /// (wasm_irq_pending), and the timer's deadline (wasm_timer_deadline).
-    pub trace: Cell<u32>,
-    pub current: Cell<u32>,
-    pub pending: Cell<u32>,
-    pub deadline: Cell<u32>,
+    pub trace: u32,
+    pub current: u32,
+    pub pending: u32,
+    pub deadline: u32,
     /// End of the kernel's RAM, and its command line.
-    pub ram: Cell<u32>,
-    pub cmdline: RefCell<Vec<u8>>,
+    pub ram: u32,
+    pub cmdline: Vec<u8>,
     /// The kernel's clock (ns): virtual, so that a run is the same each
     /// time (it moves only as the kernel does: see TICK_NS and sched).
-    pub clock: Cell<u64>,
+    pub clock: u64,
     /// Whether the page waits for the kernel (a boot, a call; then idle
     /// skips to the next timer), since when (the clock); whether it boots.
-    pub waiting: Cell<Option<u64>>,
-    pub booting: Cell<bool>,
+    pub waiting: Option<u64>,
+    pub booting: bool,
     /// What waits for it to be quiet (Machine::quiet): settled with the
     /// calls finished since the last time (or rejected: it halted).
-    pub quiet_waiters: RefCell<Vec<(Function, Function)>>,
-    pub finished: RefCell<Vec<Finished>>,
+    pub quiet_waiters: Vec<(Function, Function)>,
+    pub finished: Vec<Finished>,
     /// The halt code, once the kernel has halted.
-    pub halted: Cell<Option<i32>>,
-    pub console_out: RefCell<Vec<u8>>,
+    pub halted: Option<i32>,
+    pub console_out: Vec<u8>,
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
-    pub doorbell: RefCell<VecDeque<u32>>,
+    pub doorbell: VecDeque<u32>,
     /// The runners ready for the page's calls (user/prog.c), by thread id.
-    pub runners: RefCell<BTreeMap<u32, Runner>>,
+    pub runners: BTreeMap<u32, Runner>,
     /// The program's own runner (user/prog.c's main thread: the page's
     /// calls' by default), once it is ready.
-    pub main: Cell<Option<u32>>,
+    pub main: Option<u32>,
     /// The programs' own memory (user/prog.c's heap: a process's, its
     /// threads' and vfork children's too, the same memory): what of each
     /// is handed out (its start -> (next free, end)).
-    pub heaps: RefCell<BTreeMap<u32, (u32, u32)>>,
+    pub heaps: BTreeMap<u32, (u32, u32)>,
     /// The calls asked (by id: see Machine::make), this boot's; and how many
     /// ever (the last id: ids are not used again, a boot after another's).
-    pub calls: RefCell<BTreeMap<u32, Call>>,
-    pub asked: Cell<u32>,
+    pub calls: BTreeMap<u32, Call>,
+    pub asked: u32,
     /// The page's program: its names (a variable's, a result's), and how
     /// many of its lines have been made (see Machine::make).
-    pub names: RefCell<ksee_core::program::Names>,
-    pub lines: Cell<usize>,
+    pub names: ksee_core::program::Names,
+    pub lines: usize,
 }
 
-impl Kernel {
+impl State {
     /// The call runner `tid` is making (asked, not done), if any: its id.
     pub fn in_flight(&self, tid: u32) -> Option<u32> {
-        self.calls.borrow().values().find(|c| c.tid == tid && !c.done).map(|c| c.id)
+        self.calls.values().find(|c| c.tid == tid && !c.done).map(|c| c.id)
     }
 
     /// Runner `tid` is one no more (its task exited, or it ran another
     /// program): its request, room and heap forgotten (a heap no runner has
     /// left, its process's gone: another's may come to the same address).
-    pub fn forget(&self, tid: u32) {
-        let mut runners = self.runners.borrow_mut();
-        if let Some(r) = runners.remove(&tid) && !runners.values().any(|o| o.heap == r.heap) {
-            self.heaps.borrow_mut().remove(&r.heap);
+    pub fn forget(&mut self, tid: u32) {
+        if let Some(r) = self.runners.remove(&tid) && !self.runners.values().any(|o| o.heap == r.heap) {
+            self.heaps.remove(&r.heap);
         }
-        drop(runners);
-        if self.main.get() == Some(tid) {
-            self.main.set(None); // (the program exited: /init starts it again)
+        if self.main == Some(tid) {
+            self.main = None; // (the program exited: /init starts it again)
         }
     }
 }
@@ -117,12 +115,17 @@ pub struct Finished {
 }
 
 thread_local! {
-    static K: Kernel = Kernel::default();
+    static K: RefCell<State> = RefCell::default();
 }
 
-/// Run `f` on the Kernel.
-pub fn k<T>(f: impl FnOnce(&Kernel) -> T) -> T {
-    K.with(f)
+/// Read the machine's state.
+pub fn k<T>(f: impl FnOnce(&State) -> T) -> T {
+    K.with_borrow(f)
+}
+
+/// Change the machine's state.
+pub fn k_mut<T>(f: impl FnOnce(&mut State) -> T) -> T {
+    K.with_borrow_mut(f)
 }
 
 /// A syscall a runner makes (user/prog.c): asked (written into its
@@ -171,19 +174,19 @@ impl Memory for Direct {
 
 /// The task running now (the kernel's __current_task).
 pub fn current() -> u32 {
-    Direct.read_u32(k(|k| k.current.get()))
+    Direct.read_u32(k(|k| k.current))
 }
 
 /// Whether the probes record now (the trace's `on` word, at either level:
 /// see programs::on_off).
 pub fn recording() -> bool {
-    let trace = k(|k| k.trace.get());
+    let trace = k(|k| k.trace);
     trace != 0 && Direct.read_u32(trace + ksee_core::trace::ON) != 0
 }
 
 /// The kernel's timer deadline (ns of its clock), u64::MAX if none.
 pub fn deadline() -> u64 {
-    let d = k(|k| k.deadline.get());
+    let d = k(|k| k.deadline);
     if d == 0 {
         return u64::MAX;
     }
