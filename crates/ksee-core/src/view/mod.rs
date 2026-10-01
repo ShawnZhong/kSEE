@@ -274,7 +274,7 @@ impl View<'_> {
             self.rec.names.borrow_mut().insert(key, task.clone());
             Some(task)
         });
-        Task { addr, pid: task.as_ref().map(|t| t.0), comm: task.map(|t| t.1) }
+        Task { addr, pid: task.as_ref().map(|t| t.pid), comm: task.map(|t| t.comm) }
     }
 
     /// The fields of the task at `addr`, in `mem` (memory as it was): the

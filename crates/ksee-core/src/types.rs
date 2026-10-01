@@ -45,6 +45,13 @@ pub struct Member {
     pub ty: u32,
 }
 
+/// A task's id and name, as its task_struct says them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskId {
+    pub pid: i32,
+    pub comm: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
     Void,
@@ -199,7 +206,7 @@ impl Types {
     }
 
     /// A task_struct's pid and comm, at `p` in `mem`.
-    pub fn read_task(&self, mem: &dyn Memory, p: u32) -> Option<(i32, String)> {
+    pub fn read_task(&self, mem: &dyn Memory, p: u32) -> Option<TaskId> {
         let (pid, comm) = (self.field(crate::arch::TASK, crate::arch::TASK_PID)?, self.field(crate::arch::TASK, crate::arch::TASK_COMM)?);
         if p == 0 {
             return None;
@@ -207,7 +214,7 @@ impl Types {
         let mut name = alloc::vec![0; comm.1 as usize];
         mem.read(p + comm.0, &mut name);
         let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
-        Some((mem.read_u32(p + pid.0) as i32, String::from_utf8_lossy(&name[..len]).into()))
+        Some(TaskId { pid: mem.read_u32(p + pid.0) as i32, comm: String::from_utf8_lossy(&name[..len]).into() })
     }
 
     /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY).
@@ -552,7 +559,7 @@ mod tests {
         let mut m = alloc::vec![0u8; 0x200];
         m[0x100..0x104].copy_from_slice(&7u32.to_le_bytes());
         m[0x104..0x108].copy_from_slice(b"ping");
-        assert_eq!(t.read_task(&Mem(m), 0x100), Some((7, "ping".into())));
+        assert_eq!(t.read_task(&Mem(m), 0x100), Some(TaskId { pid: 7, comm: "ping".into() }));
     }
 
     #[test]
