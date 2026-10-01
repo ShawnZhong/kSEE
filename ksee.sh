@@ -10,6 +10,11 @@
 #   ./ksee.sh type NAME    the layout of a kernel type (e.g. task_struct)
 set -e
 cd "$(dirname "$0")"
+# Homebrew's LLVM, GNU make and mkfs.ext4 (setup.sh), ahead of the system's.
+if command -v brew >/dev/null; then
+	b=$(brew --prefix)
+	PATH="$b/opt/llvm/bin:$b/opt/make/libexec/gnubin:$b/opt/e2fsprogs/sbin:$PATH"
+fi
 cargo build -q --release -p ksee-cli
 case "$1" in
 type) exec target/release/ksee type target/vmlinux "$2" ;;

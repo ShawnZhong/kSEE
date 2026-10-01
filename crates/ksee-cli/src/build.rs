@@ -18,13 +18,9 @@
 //! page unpacks them.)
 //!   examples.json          the examples (user/examples/*.json)
 //!
-//! $LLVM is the LLVM version suffix (default -23).
+//! The tools are the first on $PATH (ksee.sh puts Homebrew's first; setup.sh installs them).
 use std::path::Path;
 use std::process::Command;
-
-fn env(name: &str, default: &str) -> String {
-    std::env::var(name).unwrap_or_else(|_| default.into())
-}
 
 pub fn run(cmd: &mut Command) {
     let status = cmd.status().unwrap_or_else(|e| crate::fail(&format!("{:?}: {e}", cmd.get_program())));
@@ -44,14 +40,13 @@ fn stale(out: &str, inputs: &[&str]) -> bool {
 }
 
 pub fn build() {
-    let llvm = env("LLVM", "-23");
     linux();
 
     if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
         eprintln!("  PLUGIN  plugin/ksee-trace.so");
-        let flags = Command::new(format!("llvm-config{llvm}")).arg("--cxxflags").output()
-            .unwrap_or_else(|e| crate::fail(&format!("llvm-config{llvm}: {e}"))).stdout;
-        run(Command::new(format!("clang++{llvm}"))
+        let flags = Command::new("llvm-config").arg("--cxxflags").output()
+            .unwrap_or_else(|e| crate::fail(&format!("llvm-config: {e}"))).stdout;
+        run(Command::new("clang++")
             .args(["-shared", "-fPIC", "-O2", "plugin/ksee-trace.cpp", "-o", "plugin/ksee-trace.so"])
             .args(String::from_utf8_lossy(&flags).split_whitespace()));
     }
@@ -64,7 +59,7 @@ pub fn build() {
     // own choices would hide calls, with their arguments, as inlined code.)
     let kmake = |args: &[&str]| {
         let mut c = Command::new("make");
-        c.args(["-s", "-C", "linux", "ARCH=wasm", &format!("LLVM={llvm}"),
+        c.args(["-s", "-C", "linux", "ARCH=wasm", "LLVM=1",
                 &format!("KCFLAGS=-g -finline-hint-functions -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
             .args(args);
         c
@@ -82,8 +77,7 @@ pub fn build() {
     eprintln!("  RUNTIME {SITE}/pkg");
     run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-page",
         "--target", "wasm32-unknown-unknown"]));
-    run(Command::new("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", &format!("{SITE}/pkg"),
-        "target/wasm32-unknown-unknown/release/ksee_page.wasm"]));
+    bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
 
     // (Packed again for a new kernel, or a new pack: this program.)
     let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
@@ -103,7 +97,7 @@ pub fn build() {
         eprintln!("  INIT    {SITE}/initramfs.cpio.gz");
         std::fs::create_dir_all(dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
         for p in programs {
-            run(Command::new(format!("clang{llvm}"))
+            run(Command::new("clang")
                 // (Position-independent, in the kernel's memory: see binfmt_wasm.c.)
                 .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-fPIC", "-Wl,-pie",
                        "-Wl,--experimental-pic", "-Wl,--import-memory", "-Wl,--no-entry",
@@ -180,6 +174,13 @@ fn linux() {
     }
 }
 
+/// wasm-bindgen's glue for `wasm`, in `out` (the crate, at ksee-page's
+/// wasm-bindgen version: the two must match).
+fn bindgen(wasm: &str, out: &str) {
+    wasm_bindgen_cli_support::Bindgen::new().input_path(wasm).web(true).and_then(|b| b.typescript(false).generate(out))
+        .unwrap_or_else(|e| crate::fail(&format!("wasm-bindgen {wasm}: {e}")));
+}
+
 fn gzip(from: &str, to: &str) {
     let out = std::fs::File::create(to).unwrap_or_else(|e| crate::fail(&format!("{to}: {e}")));
     run(Command::new("gzip").args(["-9nc", from]).stdout(out));
@@ -252,8 +253,7 @@ pub fn test(ui: bool) {
     // (Its own target directory: the site's module, built without them, stays as it is.)
     run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-page", "--features", "selftest",
         "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));
-    run(Command::new("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", "target/test/pkg",
-        "target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm"]));
+    bindgen("target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm", "target/test/pkg");
     // (The site with the tests: the site's files, its module the one built with them.)
     let site = Path::new("target/test/site");
     let _ = std::fs::remove_dir_all(site);
