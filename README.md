@@ -27,12 +27,11 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
   the kernel, then mounts the page); the build puts them, with what they
   load, in `target/site/` (served, and deployed)
 - `user/`: `init.c` (sets up, starts the program), `prog.c` (the page's program: it makes its syscalls), `syscall.h` (a syscall, as arch/wasm makes one: no C library), `examples/`
-- `tests/`: the page's tests (see below)
 
 ## Running
 
     ./ksee.sh              # build what changed, serve http://127.0.0.1:8000/
-    ./ksee.sh test         # under Deno: syscalls, and what their recordings show
+    ./ksee.sh test         # in Chromium ($CHROME): syscalls, and what their recordings show
     ./ksee.sh deploy       # build, then push the page to gh-pages (GitHub Pages)
     ./ksee.sh type task_struct
 
@@ -112,7 +111,7 @@ image in the initramfs, through the loop device), with files for the
 examples to start from: `/mnt/note.txt`, `/mnt/dir/a.txt`; the root, an
 in-memory file system (ramfs: no tmpfs without an MMU), has `/note.txt`.
 
-`./ksee.sh test --ui` (with `$CHROME` set to a headless Chromium) also runs
-the page itself (its own tests, crates/ksee-page/src/uitest.rs: the read
+`./ksee.sh test` runs the tests in a headless Chromium (`$CHROME`); `--ui`
+also runs the page itself (its own tests, crates/ksee-page/src/uitest.rs: the read
 example, a changed program from the URL, the pipe example, the read
 example on a phone's screen), and saves screenshots in `target/`. The build is `ksee build` (crates/ksee-cli/src/build.rs).

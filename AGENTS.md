@@ -25,6 +25,6 @@ shape everything), then the doc for the part you touch ([docs/](docs/README.md))
   build` writes linux.patch again from it: commit that.
 - **Before you finish:** `./ksee.sh test` (`--ui` with `$CHROME` runs the
   page too; the tests check what the page shows). Commit small. Use the page
-  as a user would (`deno run -A tests/ui.js OUT.png --eval=…` for a
+  as a user would (`./ksee.sh shot OUT.png --at=#ex=… --eval=…` for a
   screenshot); measure before claiming a cost. The docs and README describe
   the current state: change them with the code.

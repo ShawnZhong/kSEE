@@ -59,7 +59,7 @@ in the recording. A boot is done when the program (/bin/prog) is ready and the k
 kernel's clock is virtual (see [kernel.md](kernel.md)), the page's input
 arrives only while the kernel idles, and one thread runs one task at a
 time. So the same calls on a fresh kernel make the same recording, record
-for record (tests/web.js checks it): going back (making calls again) comes
+for record (the kernel's tests check it): going back (making calls again) comes
 back to the very same state.
 
 **Imports**: the frequent ones (`console_write`, `time_ns`, `spawn_task`,
@@ -135,22 +135,26 @@ in vfs_read"; else by its address; `run_of` (a line's next or last run),
   only, as the runtime is), run under Node by wasm-bindgen-test-runner:
   what the page works out itself (a paragraph's pieces, a line's lane, a
   call's color).
-- tests/web.js (Deno, with the page's own ksee.js): runs the page's
-  module built with its selftest (crates/ksee-page/src/selftest.rs, the
-  Machine as the page calls it): boots the kernel, has
-  the program make syscalls, recorded (and every example's), and checks what the
-  recordings show: stacks with arguments, lines, memory as it was, who
-  wrote a value, tasks, the examples' links.
-- crates/ksee-page/src/uitest.rs: the page's tests, in it (built with the
-  selftest feature, target/test/site), what a user does through its DOM:
-  read, the read example (its subject call selected, its links, each
-  landing in its function; stepping into, over, out, and by key; a click
-  on the chart; find; Objects, a task_struct opened, the Trace; a line
-  changed, a try and back; the next lesson); back, a changed program from
-  the URL; pipe, two processes, a call that blocks, what calls changed;
-  phone, the read example at 390x844, the panes one under another.
-  tests/ui.js drives headless Chromium over CDP to run one (`--test=NAME`),
-  fails on any exception, and saves a screenshot in target/.
+- crates/ksee-page/src/selftest.rs: the kernel's tests, in the page's
+  module (the Machine as the page calls it; the page not mounted:
+  `#selftest`): boots the kernel, has the program make syscalls, recorded
+  (and every example's), and checks what the recordings show: stacks with
+  arguments, lines, memory as it was, who wrote a value, tasks, the
+  examples' links.
+- crates/ksee-page/src/uitest.rs: the page's tests, in it, what a user
+  does through its DOM: read, the read example (its subject call
+  selected, its links, each landing in its function; stepping into, over,
+  out, and by key; a click on the chart; find; Objects, a task_struct
+  opened, the Trace; a line changed, a try and back; the next lesson);
+  back, a changed program from the URL; pipe, two processes, a call that
+  blocks, what calls changed; phone, the read example at 390x844, the
+  panes one under another.
 
-`./ksee.sh test --ui` runs them all, the page's too (`$CHROME`: a headless
-Chromium).
+Both run in headless Chromium (`$CHROME`), in the page built with them
+(the selftest feature: target/test/site), driven by `ksee`
+(crates/ksee-cli/src/chrome.rs: CDP over Chromium's debugging pipe), each
+on the page and screen it needs: `window.ksee_test(name)`, failing on
+what it says or on any exception. `./ksee.sh test` runs the kernel's,
+`--ui` the page's too (a screenshot each in target/); `ksee shot OUT.png
+--test=NAME` runs one, and `ksee shot OUT.png [--at=#ex=pipe]
+[--eval=JS]` looks at the page as it is built.

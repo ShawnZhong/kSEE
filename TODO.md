@@ -20,8 +20,8 @@ better looking. The Rust page now follows its layout and style:
   (`View::raw`, tested).
 
 Compare the two side by side with
-`deno run -A tests/ui.js OUT.png --url=https://shawnzhong.com/kSEE/#ex=pipe`
-against `--at='#ex=pipe'` (with `CHROME` set). `./ksee.sh test --ui` passes.
+`ksee shot OUT.png --url=https://shawnzhong.com/kSEE/#ex=pipe`
+against `ksee shot OUT.png --at='#ex=pipe'` (with `CHROME` set). `./ksee.sh test --ui` passes.
 
 ## Left to do
 

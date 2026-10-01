@@ -1,5 +1,5 @@
-//! The kernel's tests, in the page's module (feature `selftest`, which
-//! tests/web.js builds and runs): the program makes syscalls, recorded, as
+//! The kernel's tests, in the page's module (feature `selftest`: `ksee
+//! test` builds it and runs them in Chromium, see uitest.rs): the program makes syscalls, recorded, as
 //! the page's lessons do, and the checks are of what the recordings show,
 //! through the views the page uses; then every lesson and try, on a fresh
 //! kernel each, its calls finished and its links found.
@@ -13,7 +13,6 @@ use ksee_runtime::machine::Machine;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::lesson::Example;
 use ksee_runtime::Finished;
 use crate::text::{self, Piece};
 
@@ -141,12 +140,12 @@ fn value(o: Option<&Object>) -> String {
     o.and_then(|o| o.value.clone()).unwrap_or_default()
 }
 
-/// Run the tests on the booted `machine`, with the lessons (examples.json):
-/// whether all passed (each check is logged, "ok: …" or "FAIL: …").
-#[wasm_bindgen]
-pub async fn self_test(machine: Machine, examples: JsValue) -> Result<bool, JsValue> {
-    let examples: Vec<Example> = serde_wasm_bindgen::from_value(examples)?;
-    let mut t = T { m: Rc::new(machine), failed: false, out: String::new(), fin: BTreeMap::new() };
+/// Run the tests on the booted Machine, with the lessons (both as `mount`
+/// was given them: the page not mounted, see lib.rs): whether all passed
+/// (each check is logged, "ok: …" or "FAIL: …").
+pub async fn self_test() -> bool {
+    let examples = crate::examples();
+    let mut t = T { m: crate::machine(), failed: false, out: String::new(), fin: BTreeMap::new() };
     let m = t.m.clone();
     let main = m.main().unwrap_or(0);
     t.check(format!("the program ready: a runner ({main}), not /init"), main > 1 && m.runners().contains(&main));
@@ -480,5 +479,5 @@ pub async fn self_test(machine: Machine, examples: JsValue) -> Result<bool, JsVa
     if t.failed {
         log(&t.out);
     }
-    Ok(!t.failed)
+    !t.failed
 }

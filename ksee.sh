@@ -3,7 +3,9 @@
 # the rest and serves the page.
 #   ./ksee.sh              build, then serve http://127.0.0.1:8000/
 #   ./ksee.sh build        build
-#   ./ksee.sh test [--ui]  build, then run the tests
+#   ./ksee.sh test [--ui]  build, then run the tests (in Chromium, $CHROME)
+#   ./ksee.sh shot OUT.png [--at=#ex=read] [--eval=JS]
+#                          the page in Chromium, as a screenshot
 #   ./ksee.sh deploy       build, then push the page to gh-pages (GitHub Pages)
 #   ./ksee.sh type NAME    the layout of a kernel type (e.g. task_struct)
 set -e

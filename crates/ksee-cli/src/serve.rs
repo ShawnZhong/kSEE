@@ -7,13 +7,18 @@ use std::path::{Component, Path, PathBuf};
 pub fn serve(root: &Path, port: u16) -> std::io::Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", port))?;
     eprintln!("serving {} at http://127.0.0.1:{}/", root.display(), listener.local_addr()?.port());
+    serve_on(listener, root);
+    Ok(())
+}
+
+/// Serve `root` on `listener`, for ever.
+pub fn serve_on(listener: TcpListener, root: &Path) {
     for stream in listener.incoming().flatten() {
         let root = root.to_path_buf();
         std::thread::spawn(move || {
             let _ = handle(&root, stream);
         });
     }
-    Ok(())
 }
 
 fn handle(root: &Path, mut stream: TcpStream) -> std::io::Result<()> {

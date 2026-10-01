@@ -236,16 +236,16 @@ fn site() {
     }
 }
 
-/// Build, then: core's unit tests, the page's (wasm, under Node:
-/// wasm-bindgen-test-runner), and under Deno tests/web.js (the kernel, its
-/// recordings, every example: the page's module built with its tests,
-/// crates/ksee-page's selftest, in target/test/); with `ui`, also
-/// tests/ui.js (the page in headless Chromium, $CHROME, running its own
-/// tests, crates/ksee-page/src/uitest.rs: the read example, a changed
-/// program, the pipe example, a phone's screen).
+/// Build, then: core's and this command's unit tests, the page's (wasm,
+/// under Node: wasm-bindgen-test-runner), then the tests run in the page
+/// (crates/ksee-page built with them, as target/test/site) in headless
+/// Chromium ($CHROME, see chrome.rs): the kernel's (its recordings, every
+/// example); with `ui`, also the page's (the read example, a changed
+/// program, the pipe example, a phone's screen), a screenshot each in
+/// target/.
 pub fn test(ui: bool) {
     build();
-    run(Command::new("cargo").args(["test", "-q", "-p", "ksee-core"]));
+    run(Command::new("cargo").args(["test", "-q", "-p", "ksee-core", "-p", "ksee-cli"]));
     // (Not -q: the runner takes no flags.)
     run(Command::new("cargo").args(["test", "-p", "ksee-page", "--target", "wasm32-unknown-unknown"])
         .env("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER", "wasm-bindgen-test-runner"));
@@ -254,20 +254,19 @@ pub fn test(ui: bool) {
         "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));
     run(Command::new("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", "target/test/pkg",
         "target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm"]));
-    std::fs::copy("web/ksee.js", "target/test/ksee.js").unwrap_or_else(|e| crate::fail(&format!("target/test/ksee.js: {e}")));
-    run(Command::new("deno").args(["run", "--allow-read", "tests/web.js"]));
-    if ui {
-        // (The site with the page's tests: the site's files, its module the one built with them.)
-        let site = Path::new("target/test/site");
-        let _ = std::fs::remove_dir_all(site);
-        std::fs::create_dir_all(site).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", site.display())));
-        for e in std::fs::read_dir("target/site").into_iter().flatten().flatten() {
-            let name = e.file_name();
-            let from = if name == "pkg" { Path::new("../pkg").to_path_buf() } else { Path::new("../../site").join(&name) };
-            std::os::unix::fs::symlink(from, site.join(&name)).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", site.display())));
-        }
-        for test in ["read", "back", "pipe", "phone"] {
-            run(Command::new("deno").args(["run", "-A", "tests/ui.js", &format!("target/ui-{test}.png"), &format!("--test={test}")]));
+    // (The site with the tests: the site's files, its module the one built with them.)
+    let site = Path::new("target/test/site");
+    let _ = std::fs::remove_dir_all(site);
+    std::fs::create_dir_all(site).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", site.display())));
+    for e in std::fs::read_dir(SITE).into_iter().flatten().flatten() {
+        let name = e.file_name();
+        let from = if name == "pkg" { Path::new("../pkg").to_path_buf() } else { Path::new("../../site").join(&name) };
+        std::os::unix::fs::symlink(from, site.join(&name)).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", site.display())));
+    }
+    for &(name, ..) in crate::chrome::TESTS.iter().filter(|t| ui || t.0 == "kernel") {
+        let out = (name != "kernel").then(|| format!("target/ui-{name}.png").into());
+        if !crate::chrome::Shot::test(name, out).run() {
+            crate::fail(&format!("the {name} test failed"));
         }
     }
 }

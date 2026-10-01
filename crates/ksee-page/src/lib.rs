@@ -53,6 +53,13 @@ pub fn mount(root: &str, machine: Machine, examples: JsValue) -> Result<(), JsVa
     let examples: Vec<Example> = serde_wasm_bindgen::from_value(examples)?;
     MACHINE.with_borrow_mut(|m| *m = Some(Rc::new(machine)));
     EXAMPLES.with_borrow_mut(|e| *e = examples);
+    // (The tests, for the driver; the kernel's take the Machine instead: uitest.rs.)
+    #[cfg(feature = "selftest")]
+    uitest::expose();
+    #[cfg(feature = "selftest")]
+    if web_sys::window().and_then(|w| w.location().hash().ok()).as_deref() == Some("#selftest") {
+        return Ok(());
+    }
     dioxus::LaunchBuilder::web().with_cfg(dioxus::web::Config::new().rootname(root)).launch(App);
     Ok(())
 }

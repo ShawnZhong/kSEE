@@ -1,7 +1,7 @@
-//! The page's tests, run in it (`ui_test`, from tests/ui.js in headless
-//! Chromium, the page built with them: target/test/site): what a user
-//! does, through the page's DOM, and what it shows then. Each returns a
-//! report, or why it failed.
+//! The tests, run in the page built with them (target/test/site, in
+//! headless Chromium: `ksee test`, crates/ksee-cli/src/chrome.rs): the
+//! kernel's (selftest.rs), and the page's: what a user does, through its
+//! DOM, and what it shows then. Each returns a report, or why it failed.
 
 use js_sys::Promise;
 use wasm_bindgen::prelude::*;
@@ -10,11 +10,21 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Document, Element, Event, EventInit, HtmlElement, HtmlInputElement, HtmlTextAreaElement, KeyboardEvent, KeyboardEventInit,
               MouseEvent, MouseEventInit};
 
-/// Test `name` (read, back, pipe, phone; tests/ui.js opens the page each
-/// needs): its report, or an error saying what failed.
-#[wasm_bindgen]
-pub async fn ui_test(name: String) -> Result<String, JsValue> {
+/// The tests, for the driver: `window.ksee_test(name)` (a promise), once
+/// the page has the Machine (`mount`).
+pub fn expose() {
+    let run = Closure::<dyn Fn(String) -> Promise>::new(|name: String| {
+        wasm_bindgen_futures::future_to_promise(async move { run_test(name).await.map(JsValue::from) })
+    });
+    let _ = js_sys::Reflect::set(&web_sys::window().unwrap(), &"ksee_test".into(), run.as_ref());
+    run.forget();
+}
+
+/// Test `name` (kernel, read, back, pipe, phone; the page each needs
+/// opened: chrome.rs): its report, or an error saying what failed.
+async fn run_test(name: String) -> Result<String, JsValue> {
     let r = match name.as_str() {
+        "kernel" => kernel().await,
         "read" => read().await,
         "back" => back().await,
         "pipe" => pipe().await,
@@ -155,6 +165,13 @@ async fn wait(f: impl Fn() -> bool, n: usize, what: &str, detail: impl Fn() -> S
     check(ok, what, detail())
 }
 
+/// The kernel's tests (selftest.rs), once `mount` has the Machine (the
+/// page not mounted: #selftest).
+async fn kernel() -> Check {
+    until(|| crate::MACHINE.with_borrow(|m| m.is_some()), 600).await;
+    if crate::selftest::self_test().await { Ok("passed".into()) } else { Err("failed (see the log)".into()) }
+}
+
 /// The read example (#ex=read): its calls made, its subject (the read)
 /// selected; its links followed; stepping into, over, out, and by key; the
 /// chart (a click, find); Objects, Tasks and the Trace; a line changed, a
@@ -164,8 +181,10 @@ async fn read() -> Check {
     wait(|| done(3) && !all(".chart .bar").is_empty(), 300, "the calls made", || format!("{:?}", cells())).await?;
     let selected = one(".cell.on textarea").and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok()).map(|t| t.value()).unwrap_or_default();
     check(selected.starts_with("read("), "the subject call selected", &selected)?;
-    let drawn = [all(".chart .bar").len(), all(".strip .run").len(), all(".source .ln").len(), all("tr.frame").len()];
-    check(drawn.iter().all(|&n| n > 0), "drawn (bars, strip, source, frames)", drawn)?;
+    // (The source's file is fetched: drawn a moment later.)
+    let drawn = || [all(".chart .bar").len(), all(".strip .run").len(), all(".source .ln").len(), all("tr.frame").len()];
+    wait(|| drawn().iter().all(|&n| n > 0), 100, "drawn (bars, strip, source, frames)", || format!("{:?}", drawn())).await?;
+    let drawn = drawn();
     r.push(format!("drawn {drawn:?}"));
     // (The links: each in its function, the source at its line.)
     for name in ["ksys_read", "vfs_read", "filemap_read"] {

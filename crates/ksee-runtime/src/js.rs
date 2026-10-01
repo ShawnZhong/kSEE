@@ -1,4 +1,4 @@
-//! Web APIs, reached the same way from the page and Deno.
+//! Web APIs, as JS values.
 
 use js_sys::{Reflect, Uint8Array};
 use wasm_bindgen::JsValue;
