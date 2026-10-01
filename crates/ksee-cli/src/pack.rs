@@ -659,22 +659,11 @@ pub fn rewrite(image: &[u8], types: &str) -> Vec<u8> {
         }
     }
     let mut payload = Vec::new();
-    leb(&mut payload, "ksee.types".len() as u32);
+    module::leb(&mut payload, "ksee.types".len() as u32);
     payload.extend_from_slice(b"ksee.types");
     payload.extend_from_slice(types.as_bytes());
     out.push(0);
-    leb(&mut out, payload.len() as u32);
+    module::leb(&mut out, payload.len() as u32);
     out.extend_from_slice(&payload);
     out
-}
-
-fn leb(out: &mut Vec<u8>, mut v: u32) {
-    loop {
-        let b = (v & 0x7f) as u8;
-        v >>= 7;
-        out.push(if v == 0 { b } else { b | 0x80 });
-        if v == 0 {
-            break;
-        }
-    }
 }

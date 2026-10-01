@@ -93,18 +93,7 @@ fn dylink(module: &WebAssembly::Module) -> Option<(u32, u32)> {
     let sections = WebAssembly::Module::custom_sections(module, "dylink.0");
     let b = Uint8Array::new(&sections.get(0)).to_vec();
     let mut at = 0;
-    let mut leb = || {
-        let (mut v, mut shift) = (0u32, 0);
-        loop {
-            let byte = *b.get(at)?;
-            at += 1;
-            v |= ((byte & 0x7f) as u32) << shift;
-            shift += 7;
-            if byte & 0x80 == 0 {
-                return Some(v);
-            }
-        }
-    };
+    let mut leb = || ksee_core::module::uleb(&b, &mut at);
     // (Subsection 1, WASM_DYLINK_MEM_INFO, comes first.)
     let (kind, _len) = (leb()?, leb()?);
     if kind != 1 {

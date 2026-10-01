@@ -6,7 +6,8 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-fn uleb(buf: &[u8], pos: &mut usize) -> Option<u32> {
+/// An unsigned LEB128 value at `*pos` in `buf`, `*pos` past it.
+pub fn uleb(buf: &[u8], pos: &mut usize) -> Option<u32> {
     let (mut v, mut shift) = (0u32, 0);
     loop {
         let b = *buf.get(*pos)?;
@@ -16,6 +17,18 @@ fn uleb(buf: &[u8], pos: &mut usize) -> Option<u32> {
             return Some(v);
         }
         shift += 7;
+    }
+}
+
+/// `v` as unsigned LEB128, appended to `out`.
+pub fn leb(out: &mut Vec<u8>, mut v: u32) {
+    loop {
+        let b = (v & 0x7f) as u8;
+        v >>= 7;
+        out.push(if v == 0 { b } else { b | 0x80 });
+        if v == 0 {
+            break;
+        }
     }
 }
 
@@ -169,6 +182,17 @@ pub fn custom_section(module: &[u8], name: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn leb_round_trips() {
+        for v in [0, 1, 127, 128, 300, u32::MAX] {
+            let mut out = Vec::new();
+            leb(&mut out, v);
+            let mut p = 0;
+            assert_eq!(uleb(&out, &mut p), Some(v));
+            assert_eq!(p, out.len());
+        }
+    }
 
     #[test]
     fn a_modules_memory_table_and_names() {
