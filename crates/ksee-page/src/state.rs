@@ -106,10 +106,13 @@ impl Derived {
         let cursor = use_memo(move || {
             let at = (ui.at)()?;
             let place = |lines: &[Line]| {
-                // (A block's lines share its record: each a share of its step, in order.)
+                // (A block's lines share its record and its steps (one a
+                // line): each its share of them, in order.)
                 let i = lines.get(at.line)?.i;
                 let (k, n) = (lines[..at.line].iter().rev().take_while(|l| l.i == i).count(), lines.iter().filter(|l| l.i == i).count());
-                Some(machine().view(|v| v.rec.step_of(i)) as f64 + k as f64 / n as f64)
+                let (first, last) = machine().view(|v| (v.rec.blocks.partition_point(|&b| b < i), v.rec.step_of(i)));
+                let first = first.min(last);
+                Some(first as f64 + (last + 1 - first) as f64 * k as f64 / n as f64)
             };
             if shown().is_some_and(|s| s.call == at.call) { place(&lines.read()) } else { place(&Ui::lines_of(at.call)) }
         });

@@ -105,17 +105,25 @@ impl Recording {
         }
         let calls = stack::Calls::new(t, &records, &tasks);
         let syscalls = split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args, &calls);
-        let blocks: Vec<usize> = records.iter().enumerate().filter(|(_, r)| matches!(r, Record::Block { .. })).map(|(i, _)| i).collect();
+        // (A block is as many steps as the lines it runs: a call's width in
+        // the chart is how much of its code ran, line by line.)
+        let blocks: Vec<usize> = records.iter().enumerate().flat_map(|(i, r)| {
+            let lines = match *r {
+                Record::Block { func, n } => t.block(func, n).map_or(1, |b| b.steps.iter().filter(|s| s.loc.line != 0).count().max(1)),
+                _ => 0,
+            };
+            core::iter::repeat_n(i, lines)
+        }).collect();
         Recording { records, ids, args, tasks, syscalls, blocks, calls, stores: OnceCell::new(), names: Default::default(), named: Default::default() }
     }
 
-    /// How many steps (blocks) the recording has.
+    /// How many steps (a block's lines each) the recording has.
     pub fn steps(&self) -> usize {
         self.blocks.len()
     }
 
-    /// Record `i`'s step: the blocks up to it (its own included), so
-    /// records between two blocks are at the earlier one's step.
+    /// Record `i`'s step: the steps up to it (its own, its last line's,
+    /// included), so records between two blocks are at the earlier one's.
     pub fn step_of(&self, i: usize) -> usize {
         self.blocks.partition_point(|&b| b <= i).saturating_sub(1)
     }
