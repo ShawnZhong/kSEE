@@ -1,6 +1,6 @@
 // The default: the read example (#ex=read): its calls made, its subject
 // (the read) selected; its links followed; stepping into, over, out, and by
-// key; the chart (a click, find); Objects and Tasks; a line changed, a try
+// key; the chart (a click, find); Objects, Tasks and Trace; a line changed, a try
 // and back; the next lesson. Returns a report.
 (async () => {
   const r = {};
@@ -50,13 +50,17 @@
   if (!r.found || !$$("tr.frame a").some((b) => b.textContent === "copy_page_to_iter")) fail("find", [r.found, where()]);
   // (Objects: what the read changed, its file's position; Tasks: a task_struct opened.)
   $$(".tabs .tab").find((t) => t.textContent === "Objects").click(); await sleep(300);
-  r.objects = $$(".obj").map((o) => o.querySelector(".fhead").textContent);
+  r.objects = $$(".obj").map((o) => o.querySelector(".title").textContent);
   if (!$$(".obj td").some((td) => td.textContent === "f_pos")) fail("objects", r.objects);
   $$(".tabs .tab").find((t) => t.textContent === "Tasks").click(); await sleep(300);
   const rows = $$(".pane tr").length;
-  document.querySelector(".pane a.tw").click(); await sleep(300);
+  document.querySelector(".pane tr.frame a").click(); await sleep(300);
   r.tasks = [rows, $$(".pane tr").length];
   if (!(r.tasks[1] > r.tasks[0] + 5) || !$$(".pane td").some((td) => td.textContent === "comm")) fail("a task_struct opened", r.tasks);
+  // (Trace: the records around the cursor, its own marked.)
+  $$(".tabs .tab").find((t) => t.textContent === "Trace").click(); await sleep(300);
+  r.trace = [$$(".trace .row").length, document.querySelector(".trace .row.on")?.textContent ?? ""];
+  if (!r.trace[0] || !r.trace[1]) fail("the trace", r.trace);
   $$(".tabs .tab").find((t) => t.textContent === "Stack").click();
   // (A line changed: the program made again; 4 bytes read.)
   write(document.querySelectorAll("ol.steps .cell textarea")[2], "read(fd, buf, 4)");

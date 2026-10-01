@@ -447,3 +447,21 @@ fn steps_go_into_over_or_out() {
     assert_eq!((step(&lines, 3, -1, Move::Over), step(&lines, 2, -1, Move::Out), step(&lines, 0, -1, Move::Into)), (Some(0), Some(0), None));
     assert_eq!(step(&lines, 3, 1, Move::Into), None);
 }
+
+#[test]
+fn the_raw_trace_is_a_line_a_record() {
+    // f (1) is called (its arguments: none; its frame at 64), keeps x = 5
+    // in a wasm local, runs its block 1, and returns 3.
+    let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\t0\t1\tf\tx\t0\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:\n");
+    let r = [Record::Block { func: 1, n: 0 }, Record::Var { var: 0, line: 0, value: 5 }, Record::Block { func: 1, n: 1 }, Record::Return { func: 1, value: 3 }];
+    let mut args = Args::default();
+    args.push(0, &[64]);
+    let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
+    let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 128]) };
+    let raw = v.raw(0, 3);
+    let kinds: Vec<RecordKind> = raw.iter().map(|r| r.1).collect();
+    assert_eq!(kinds, [RecordKind::Call, RecordKind::Var, RecordKind::Block, RecordKind::Return]);
+    assert!(raw[0].2.starts_with("call f(") && raw[0].2.ends_with("frame=0x40"), "{}", raw[0].2);
+    assert_eq!((raw[1].2.as_str(), raw[3].2.as_str()), ("var x = 5", "return f = 3"));
+    assert!(raw[2].2.starts_with("block f #1"), "{}", raw[2].2);
+}

@@ -47,18 +47,10 @@ async fn file(file: String) -> Option<Rc<File>> {
     Some(f)
 }
 
-/// What the source shows instead of the cursor's place, until it moves: a
-/// definition (Ctrl+click), file and line.
-#[derive(Clone, PartialEq)]
-struct Seen {
-    file: String,
-    line: u32,
-}
-
 #[component]
 pub fn Source() -> Element {
     let d = use_context::<Derived>();
-    let mut seen = use_signal(|| None::<Seen>);
+    let mut seen = use_context::<Ui>().seen;
     // (The cursor moved: back to its place.)
     use_effect(move || {
         let _ = d.moment.read();
@@ -67,7 +59,7 @@ pub fn Source() -> Element {
     let Some(f) = crate::stack::shown() else { return rsx! { div { class: "source" } } };
     let (Some(path), Some(line)) = (f.file.clone(), f.line) else { return rsx! { div { class: "source" } } };
     let (path, line, def_of) = match seen() {
-        Some(s) => (s.file, s.line, true),
+        Some((file, line)) => (file, line, true),
         None => (path, line, false),
     };
     // (The function's lines, where its file has them.)
@@ -130,7 +122,7 @@ const MARGIN: usize = 30;
 /// its values under it, and kept in the middle), the function's `from..=to`
 /// edged.
 #[component]
-fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i: usize, seen: Signal<Option<Seen>>) -> Element {
+fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i: usize, seen: Signal<Option<(String, u32)>>) -> Element {
     let ui = use_context::<Ui>();
     let p = path.clone();
     let text = use_resource(use_reactive!(|(p,)| file(p)));
@@ -211,7 +203,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
                                                     onclick: move |ev| if ev.modifiers().ctrl() || ev.modifiers().meta() {
                                                         // (Its definition: a function, a type, a global; a member, of the one struct with it.)
                                                         let d = machine().view(|v| v.definition(&word).or_else(|| v.member_definition(None, &word)));
-                                                        if let Some(d) = d { seen.set(Some(Seen { file: d.file, line: d.line })); }
+                                                        if let Some(d) = d { seen.set(Some((d.file, d.line))); }
                                                     },
                                                     "{p.text}"
                                                 }

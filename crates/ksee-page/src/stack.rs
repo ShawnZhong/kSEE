@@ -107,8 +107,8 @@ pub fn Stack() -> Element {
             }
             if let Some(t) = task {
                 div { class: "current dim", "current task: "
-                    a { class: "mono", title: "its task_struct, in Tasks",
-                        onclick: move |_| { ui.tab.set(Tab::Tasks); open.write().insert(format!("task/{}", t.addr)); },
+                    a { class: "mono", title: "its task_struct, in Tasks (the task running: open there)",
+                        onclick: move |_| { ui.tab.set(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
                         "{crate::chart::named(&t)}" }
                 }
             }

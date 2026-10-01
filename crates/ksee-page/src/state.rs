@@ -118,6 +118,9 @@ pub struct Ui {
     pub peek: Signal<Option<Peek>>,
     pub tab: Signal<Tab>,
     pub console: Signal<String>,
+    /// What the source shows instead of the cursor's place, until it
+    /// moves: a definition (file, line).
+    pub seen: Signal<Option<(String, u32)>>,
     /// The text looked for in the functions' names (the chart's bars).
     pub find: Signal<String>,
     /// The lesson open (an index in the examples), the program made for
@@ -138,6 +141,7 @@ impl Ui {
             peek: Signal::new(None),
             tab: Signal::new(Tab::Stack),
             console: Signal::new(String::new()),
+            seen: Signal::new(None),
             find: Signal::new(String::new()),
             lesson: Signal::new(0),
             program: Signal::new(crate::examples().first().map(|e| e.steps.clone()).unwrap_or_default()),

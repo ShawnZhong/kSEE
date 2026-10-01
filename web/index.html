@@ -174,13 +174,31 @@ table.objs tr.frame.on td { background: var(--sel); }
 table.objs tr.frame a { font-weight: 600; }
 .tw { color: var(--dim); display: inline-block; width: 1.2em; cursor: pointer; }
 .current { padding: 6px 8px; border-top: 1px solid var(--line); font-size: 12px; }
-.obj { margin: 10px 10px 0; font: 11px/1.5 var(--mono); }
+table.objs tr.later { opacity: .45; }
+.stackhead { padding: 4px 12px; font-size: 11.5px; border-bottom: 1px solid var(--line); flex: none; }
+/* The Objects: a box per object, a row a run of writes (the moment's marked, those after it gray) */
+.objects { padding: 0 10px 12px; }
+.ohead { padding: 6px 2px 2px; font-size: 11.5px; }
+.obj { margin: 10px 0 0; font: 11px/1.5 var(--mono); }
 .obj.under { border-left: 2px solid var(--line); padding-left: 6px; }
-.fhead { padding: 1px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
-.vals { border-collapse: collapse; width: 100%; }
-.vals td { padding: 1px 6px; vertical-align: top; }
-.vals .val { overflow-wrap: anywhere; color: var(--accent); }
-.vals tr.none { color: var(--dim); }
+.obj .title { padding: 1px 4px; border-bottom: 1px solid var(--line); white-space: nowrap; width: max-content; min-width: 100%; }
+.obj td.fname { padding-left: 12px; }
+.obj tr { cursor: pointer; }
+.obj tr.on td { background: var(--at); }
+.obj tr.same td { color: var(--dim); }
+.obj tr.later td { opacity: .4; }
+/* The Trace: a row a record, only those in view made */
+.trace { display: block; position: relative; }
+.trace .raw { position: relative; font-size: 11px; }
+.trace .rows { position: absolute; left: 0; right: 0; }
+.trace .row { height: 18px; line-height: 18px; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.trace .row > span:first-child { display: inline-block; width: 5em; text-align: right; margin-right: 8px; }
+.trace .row:hover { background: var(--sel); }
+.trace .row.on { background: var(--at); }
+.trace .row.call > span:last-child { font-weight: 600; }
+.trace .row.store > span:last-child { color: var(--accent); }
+.trace .row.return > span:last-child { color: var(--kw); }
+.trace .row.task > span:last-child { color: var(--run); }
 .console { margin: 0; padding: 6px 12px; font: 11px var(--mono); white-space: pre-wrap; word-break: break-word; }
 
 /* A phone's screen: one under another, the page scrolling; no splits */
