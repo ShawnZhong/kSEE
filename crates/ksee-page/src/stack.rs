@@ -81,7 +81,7 @@ pub fn Transport() -> Element {
     let place = here.map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
     // (A step that lands after a call: what it returned.)
     let returned = here.and_then(|l| l.called.as_ref()).filter(|c| c.at <= here.map_or(0, |l| l.at))
-        .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value)));
+        .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value))).unwrap_or_default();
     let button = |label: &'static str, title: &'static str, dir: isize, how: Move| {
         rsx! { button { title, onclick: move |_| walk(ui, dir, how), "{label}" } }
     };
@@ -94,7 +94,7 @@ pub fn Transport() -> Element {
             {button("over ▶", "the next line of this function, over the calls it makes (Shift →)", 1, Move::Over)}
             {button("out ▶", "on, to the line after this function returns (Alt →)", 1, Move::Out)}
             span { class: "where mono", "{place}" }
-            span { class: "dim", "{returned.unwrap_or_default()} · line {k + 1} of {lines.len()}" }
+            span { class: "dim", "{returned} · line {k + 1} of {lines.len()}" }
         }
     }
 }
