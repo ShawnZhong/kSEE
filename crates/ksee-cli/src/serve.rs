@@ -61,6 +61,7 @@ fn mime(p: &Path) -> &'static str {
     match p.extension().and_then(|e| e.to_str()) {
         Some("html") => "text/html; charset=utf-8",
         Some("js" | "mjs") => "text/javascript",
+        Some("json") => "application/json",
         Some("wasm") => "application/wasm",
         Some("css") => "text/css",
         Some("gz") => "application/gzip",
@@ -68,5 +69,36 @@ fn mime(p: &Path) -> &'static str {
             Some("vmlinux") => "application/wasm",
             _ => "application/octet-stream",
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mime_kinds() {
+        let mime_of = |name: &str| mime(Path::new(name));
+        assert_eq!(mime_of("index.html"), "text/html; charset=utf-8");
+        assert_eq!(mime_of("ksee.js"), "text/javascript");
+        assert_eq!(mime_of("examples.json"), "application/json");
+        assert_eq!(mime_of("ksee_page_bg.wasm"), "application/wasm");
+        assert_eq!(mime_of("vmlinux"), "application/wasm");
+        assert_eq!(mime_of("vmlinux.gz"), "application/gzip");
+        assert_eq!(mime_of("note.txt"), "application/octet-stream");
+    }
+
+    #[test]
+    fn resolve_stays_inside_root() {
+        let root = std::env::temp_dir().join(format!("ksee-serve-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("index.html"), "hi").unwrap();
+        std::fs::write(root.join("sub").join("examples.json"), "{}").unwrap();
+        assert_eq!(resolve(&root, "/"), Some(root.join("index.html")));
+        assert_eq!(resolve(&root, "/sub/examples.json"), Some(root.join("sub").join("examples.json")));
+        assert_eq!(resolve(&root, "/../secret"), None);
+        assert_eq!(resolve(&root, "/missing"), None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
