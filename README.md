@@ -83,7 +83,7 @@ who last wrote it), Tasks (every task then, as a tree, what each is doing,
 its task_struct to open), Objects (what the call changed: each object,
 under the one that points to it, each member a function changed in turn,
 from what to what, a click: that write), Console (the kernel's log and the
-programs' output), Trace (the raw records). The splits between them drag
+programs' output). The splits between them drag
 (the sizes are kept).
 
 An example is one JSON file in user/examples/: a title, a question, `text`

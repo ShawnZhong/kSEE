@@ -183,7 +183,7 @@ async fn kernel() -> Check {
 
 /// The read example (#ex=read): its calls made, its subject (the read)
 /// selected; its links followed; stepping into, over, out, and by key; the
-/// chart (a click, find); Objects, Tasks and the Trace; a line changed, a
+/// chart (a click, find); Objects and Tasks; a line changed, a
 /// try and back; the next lesson.
 async fn read() -> Check {
     let mut r = Vec::new();
@@ -243,7 +243,7 @@ async fn read() -> Check {
     key(&find, "Enter");
     sleep(300).await;
     check(found > 0 && named("tr.frame a", "copy_page_to_iter").is_some(), "find", (found, place()))?;
-    // (Objects: what the read changed, its file's position; Tasks: a task_struct opened; the Trace.)
+    // (Objects: what the read changed, its file's position; Tasks: a task_struct opened.)
     tab("Objects").await;
     let objects: Vec<String> = all(".obj .title").iter().map(text).collect();
     check(named(".obj td", "f_pos").is_some(), "objects", &objects)?;
@@ -254,9 +254,6 @@ async fn read() -> Check {
     sleep(300).await;
     let opened = all(".pane tr").len();
     check(opened > rows + 5 && named(".pane td", "comm").is_some(), "a task_struct opened", (rows, opened))?;
-    tab("Trace").await;
-    let trace = (all(".trace .row").len(), one(".trace .row.on").map(|r| text(&r)).unwrap_or_default());
-    check(trace.0 > 0 && !trace.1.is_empty(), "the trace", &trace)?;
     tab("Stack").await;
     // (A line changed: the program made again; 4 bytes read.)
     write(all("ol.steps .cell textarea").get(2).ok_or("no third line")?, "read(fd, buf, 4)");

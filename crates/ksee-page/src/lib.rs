@@ -3,8 +3,8 @@
 //! then its program's lines, each with what it did, made one after another
 //! on a fresh kernel. Beside it, the recording: the timeline (chart.rs),
 //! the source where the cursor is (source.rs), and the tabs: the Stack,
-//! the tasks, the objects the call selected changed, the console, the
-//! trace (stack.rs, panels.rs). The state is three things (state.rs): the
+//! the tasks, the objects the call selected changed, and the console
+//! (stack.rs, panels.rs). The state is three things (state.rs): the
 //! call selected, the cursor in it (a line it ran), and the frame chosen on
 //! the Stack.
 

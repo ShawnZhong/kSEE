@@ -16,10 +16,10 @@ names the struct field and the component that does or does not read it.
 
 The recording has every deciding comparison (`Record::Compare`: operands,
 predicate, whether it held). Core computes them per line (`View::line` →
-`Line.tests`, e.g. `"18 >= 0 ✓"`). The page never reads `Line.tests`: the
-only place a comparison appears is the Trace tab's raw `compare …` row.
+`Line.tests`, e.g. `"18 >= 0 ✓"`). The page never reads `Line.tests`:
+no page view shows a comparison.
 The design goal's word is *why*: at an `if`, the learner should see the
-values the branch went by, next to the line, not only in the raw trace.
+values the branch went by, next to the line.
 
 Mock (read lesson, cursor on `vfs_read`'s read-access check):
 
@@ -99,10 +99,9 @@ recording names one. Defer until 1–4 land.
 
 ## Already covered — no action (the brief's examples, verified)
 
-- **Store old values.** Shown three ways: source notes (`f_pos: 0 → 26`,
-  `Note.short`, full text as hover, click goes to the write); Trace rows
-  (`store 0x… [8] 0 → 26`, `View::raw`); Stack value hover ("was …",
-  `View::origin` → `Write.old`). Nothing to add.
+- **Store old values.** Shown two ways: source notes (`f_pos: 0 → 26`,
+  `Note.short`, full text as hover, click goes to the write); Stack value
+  hover ("was …", `View::origin` → `Write.old`). Nothing to add.
 - **Syscall entry arguments.** The entry frame carries the syscall's name
   and typed, constant-named arguments (`Frame.syscall`, `syscall_args`);
   chart bar tips repeat them with the result. Covered.
@@ -114,14 +113,9 @@ recording names one. Defer until 1–4 land.
 
 ## Clutter: almost none
 
-Each pane earns its place against the design doc's layout. Two minor
-candidates, neither worth a removal diff on its own:
+Each pane earns its place against the design doc's layout. One minor
+candidate, not worth a removal diff on its own:
 
-- Trace call rows print `frame=0x1ce000`: a kernel address means nothing
-  to a learner (it is there for developers matching stack slots). If the
-  Trace tab is ever relaid out, drop the address; do not touch the tab's
-  purpose — it is the "what the views are built from" transparency view,
-  so its `block f #3` rows and `var x = 5` rows stay.
 - The transport's `· in {call}` repeats the lesson's selection, but it is
   the only orientation line when arriving via find or chart click. Keep.
 

@@ -89,7 +89,7 @@ its stack) is computed once each time they change (memos).
 | chart.rs | the timeline: the overview, the window as a stack chart, the task strip, the transport; find a function |
 | stack.rs | stepping (into, over, out; on into the task's next syscall), the keys; the Stack: frames, values that open (as memory was then), who wrote a value |
 | source.rs | the source of the frame shown (the site's src/): the whole file, only the lines in view made; the line it runs, its values; those that ran in the call, what each stored; a name's value, its definition |
-| panels.rs | the tabs: Stack, Tasks (a tree, each task_struct to open), Objects (what the call changed), Console, Trace |
+| panels.rs | the tabs: Stack, Tasks (a tree, each task_struct to open), Objects (what the call changed), Console |
 | layout.rs | the splits: the lesson's column, the chart's height, the tabs' column, dragged (kept in the browser's storage) |
 | state.rs | the state and what it makes |
 
@@ -133,7 +133,7 @@ line's next or last run), `definition`.
 - crates/ksee-page/src/uitest.rs: the page's tests, what a user does
   through its DOM: read (its subject call selected, its links, each
   landing in its function; stepping into, over, out, and by key; a click
-  on the chart; find; Objects, a task_struct opened, the Trace; a line
+  on the chart; find; Objects, a task_struct opened; a line
   changed, a try and back; the next lesson); back, a changed program from
   the URL; pipe, two processes, a call that blocks, what calls changed;
   phone, the read example at 390x844, the panes one under another.

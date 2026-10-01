@@ -58,7 +58,6 @@ SMP, no fork (threads and vfork, though): see Limits).
 │  (its calls) │                               │ Tasks        │
 │              │                               │ Objects      │
 │              │                               │ Console      │
-│              │                               │ Trace        │
 └──────────────┴───────────────────────────────┴──────────────┘
 ```
 

@@ -1,13 +1,12 @@
 //! Beside the source, a tab each: the Stack (stack.rs); the tasks at the
 //! moment shown; what the call selected did to the kernel's data (Objects);
-//! the kernel's console; the raw trace.
+//! the kernel's console.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use dioxus::html::geometry::PixelsVector2D;
 use dioxus::prelude::*;
-use ksee_core::view::{Group, Node, RecordKind, RegionKind, TaskState};
+use ksee_core::view::{Group, Node, RegionKind, TaskState};
 
 use crate::machine;
 use crate::state::{Derived, Shared, Tab, Ui};
@@ -27,14 +26,12 @@ pub fn Tabs() -> Element {
                 {head(Tab::Tasks, "Tasks", "every task at the cursor: what each is doing, its task_struct")}
                 {head(Tab::Objects, "Objects", "the objects the call selected changed, and how they point to each other")}
                 {head(Tab::Console, "Console", "the kernel's log and the programs' output")}
-                {head(Tab::Trace, "Trace", "the raw trace around the cursor: what the views are built from")}
             }
             match tab {
                 Tab::Stack => rsx! { div { class: "pane", crate::stack::Stack {} } },
                 Tab::Objects => rsx! { div { class: "pane", Objects {} } },
                 Tab::Tasks => rsx! { div { class: "pane", Tasks {} } },
                 Tab::Console => rsx! { div { class: "pane", pre { class: "console", "{ui.console}" } } },
-                Tab::Trace => rsx! { Trace {} },
             }
         }
     }
@@ -243,73 +240,6 @@ fn Tasks() -> Element {
                         }
                         for o in fields {
                             crate::stack::Value { o: o.clone(), path: format!("{p}.{}", o.name), depth: 1, i }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// A trace row's height (px), and how many are made past the view.
-const ROW: f64 = 18.0;
-const MARGIN: usize = 30;
-
-/// The raw trace, a line a record (View::raw), what every other view is
-/// built from: only the rows in view made; the cursor's marked, and kept
-/// in view; a click on a row, the cursor there.
-#[component]
-fn Trace() -> Element {
-    let ui = use_context::<Ui>();
-    let d = use_context::<Derived>();
-    let mut top = use_signal(|| 0.0f64);
-    let mut view = use_signal(|| 600.0f64);
-    let mut handle = use_signal(|| None::<Rc<MountedData>>);
-    (ui.version)();
-    let m = machine();
-    let n = m.records();
-    let cur = d.moment.cloned().map(|(i, _)| i);
-    // (The cursor's row in view, as it moves out of it.)
-    use_effect(use_reactive!(|(cur,)| {
-        // (Read, not followed: a scroll is no reason to bring the cursor back.)
-        let (Some(h), Some(i)) = (handle.peek().clone(), cur) else { return };
-        let (y, top, view) = (i as f64 * ROW, *top.peek(), *view.peek());
-        if y < top || y + ROW > top + view {
-            let to = (y - view / 2.0).max(0.0);
-            spawn(async move { let _ = h.scroll(PixelsVector2D::new(0.0, to), ScrollBehavior::Instant).await; });
-        }
-    }));
-    let from = ((top() / ROW) as usize).saturating_sub(MARGIN);
-    let to = ((top() + view()) / ROW) as usize + MARGIN;
-    let rows = if n == 0 { Vec::new() } else { m.view(|v| v.raw(from.min(n - 1), to.min(n - 1))) };
-    rsx! {
-        div { class: "stackhead dim", "the trace: {n} records" }
-        div { class: "pane trace mono",
-            onmounted: move |e| async move {
-                let h = e.data();
-                if let Ok(r) = h.get_client_rect().await { view.set(r.size.height); }
-                if let Some(i) = cur { let _ = h.scroll(PixelsVector2D::new(0.0, (i as f64 * ROW - view() / 2.0).max(0.0)), ScrollBehavior::Instant).await; }
-                handle.set(Some(h));
-            },
-            onscroll: move |e| { top.set(e.scroll_top()); view.set(e.client_height() as f64); },
-            div { class: "raw", style: "height: {n as f64 * ROW}px",
-                div { class: "rows", style: "top: {from as f64 * ROW}px",
-                    for (i , kind , text) in rows {
-                        {
-                            let k = match kind {
-                                RecordKind::Call => "call",
-                                RecordKind::Store => "store",
-                                RecordKind::Return => "return",
-                                RecordKind::Task => "task",
-                                _ => "",
-                            };
-                            rsx! {
-                                div { class: if cur == Some(i) && kind != RecordKind::Task { "row on {k}" } else { "row {k}" },
-                                    onclick: move |_| { let mut ui = ui; ui.peek.set(None); ui.go_record(i, None) },
-                                    span { class: "dim", "{i}" }
-                                    span { "{text}" }
-                                }
-                            }
                         }
                     }
                 }

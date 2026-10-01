@@ -106,7 +106,6 @@ pub enum Tab {
     Objects,
     Tasks,
     Console,
-    Trace,
 }
 
 #[derive(Clone, Copy)]

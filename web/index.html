@@ -176,7 +176,7 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .code a.stored:hover { color: var(--accent); }
 .code .values { white-space: pre; height: 17px; line-height: 17px; overflow: hidden; text-overflow: ellipsis; color: var(--dim); font-style: italic; background: var(--sel); }
 
-/* The tabs: the Stack, the Objects, the Tasks, the Console, the Trace */
+/* The tabs: the Stack, the Objects, the Tasks, the Console */
 .panels { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel); border-left: 1px solid var(--line); }
 .tabs { display: flex; padding: 0 4px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 600; flex: none; }
 .tab { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
@@ -208,18 +208,6 @@ table.objs tr.later { opacity: .45; }
 .obj tr.on td { background: var(--at); }
 .obj tr.same td { color: var(--dim); }
 .obj tr.later td { opacity: .4; }
-/* The Trace: a row a record, only those in view made */
-.trace { display: block; position: relative; overflow-anchor: none; }
-.trace .raw { position: relative; font-size: 11px; }
-.trace .rows { position: absolute; left: 0; right: 0; }
-.trace .row { height: 18px; line-height: 18px; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.trace .row > span:first-child { display: inline-block; width: 5em; text-align: right; margin-right: 8px; }
-.trace .row:hover { background: var(--sel); }
-.trace .row.on { background: var(--at); }
-.trace .row.call > span:last-child { font-weight: 600; }
-.trace .row.store > span:last-child { color: var(--accent); }
-.trace .row.return > span:last-child { color: var(--kw); }
-.trace .row.task > span:last-child { color: var(--run); }
 .console { margin: 0; padding: 6px 12px; font: 11px var(--mono); white-space: pre-wrap; word-break: break-word; }
 
 /* A phone's screen: one under another, the page scrolling; no splits */

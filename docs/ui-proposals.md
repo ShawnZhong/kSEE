@@ -78,7 +78,7 @@ lesson | work split.
   the same diff. The CSS in this diff styles `.topbar` fully and leaves
   every `.sidehead` rule in place, so the page looks right either way
   during the handoff.
-- `.transport`, `.find`, `.tabs`, `.trace .row`, `.cell textarea`,
+- `.transport`, `.find`, `.tabs`, `.cell textarea`,
   `.ptitle a`, `.explain a` selectors are untouched by this proposal.
 - Phone layout (`@media (max-width: 800px)`): the top bar keeps brand +
   `☰` + theme on one row; the lesson pager stays (small buttons, as

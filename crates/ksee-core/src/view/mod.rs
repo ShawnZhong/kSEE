@@ -61,11 +61,9 @@ pub struct SyscallSummary {
     pub last: Option<usize>,
 }
 
-/// A record's kind, as the page names it ("store"): a block 0 with its
-/// arguments is a call.
+/// A record's kind, as the page names it ("store").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordKind {
-    Call,
     Block,
     Return,
     Store,
@@ -425,57 +423,6 @@ impl View<'_> {
             syscall: self.rec.syscall_at(i),
             value: match records[i] { Record::Return { value, .. } => Some(value), _ => None },
         })
-    }
-
-    /// Records `from..=to` as text, a line each, as the recording has them
-    /// (the raw trace): "call ksys_read(fd=3, buf=0x1cefed0, count=64)
-    /// fs/read_write.c:710 frame=0x1ce000" (the block 0 and the Args record
-    /// after it, as one line), "block ksys_read #3 fs/read_write.c:712",
-    /// "store 0x1ce0020 [8] 0 → 26", "return ksys_read = 26"; a task switch
-    /// as a line of its own. Each with its kind (RecordKind).
-    pub fn raw(&self, from: usize, to: usize) -> Vec<(usize, RecordKind, String)> {
-        let (t, rec) = (self.tables, self.rec);
-        let mut out = Vec::new();
-        for i in from..=to.min(last_record(rec)) {
-            if i > 0 && rec.tasks.get(i) != rec.tasks.get(i - 1) {
-                let task = self.task(rec.tasks[i], i);
-                out.push((i, RecordKind::Task, format!("── {}({}) runs", task.comm.unwrap_or_default(), task.pid.unwrap_or(0))));
-            }
-            let (kind, text) = match rec.records[i] {
-                Record::Block { func, n } => {
-                    let loc = t.block(func, n).map_or(String::new(), |b| format!(" {}:{}", t.file(b.loc()), b.loc().line));
-                    // (A call: with its arguments, the record after.)
-                    if let (0, Some((words, frame))) = (n, rec.args.get(i)) {
-                        let params = t.types.params.get(&func);
-                        let each = t.values(func, words).into_iter().enumerate().map(|(k, v)| {
-                            let name = params.and_then(|p| p.get(k)).map_or(format!("{k}"), |p| p.0.clone());
-                            format!("{name}={}", num(v))
-                        });
-                        (RecordKind::Call, format!("call {}({}){loc} frame={frame:#x}", self.name(func), each.collect::<Vec<_>>().join(", ")))
-                    } else {
-                        (RecordKind::Block, format!("block {} #{n}{loc}", self.name(func)))
-                    }
-                }
-                Record::Return { func, value } => (RecordKind::Return, format!("return {} = {}", self.name(func), value)),
-                Record::Task { .. } => continue, // (the task's line is above)
-                // (As its type says: a pointer in hex, a string's text, an enumerator.)
-                Record::Var { var, value, .. } => {
-                    let v = self.tables.vars.get(&(self.rec.calls.func_at(i).unwrap_or(0), var));
-                    let shown = v.and_then(|v| self.var_object(v, value, self.now)).and_then(|o| o.value).unwrap_or_else(|| num(value));
-                    (RecordKind::Var, format!("var {} = {shown}", v.map_or("?", |v| v.name.as_str())))
-                }
-                r @ Record::Compare { .. } => (RecordKind::Compare, format!("compare {}", compared(&r).unwrap_or_default())),
-                Record::Store { addr, size, old, from, .. } => {
-                    let from = from.map_or(String::new(), |f| format!(" ← {f:#x}"));
-                    (RecordKind::Store, match old {
-                        None => format!("store {addr:#x} [{size} bytes] (old contents not kept){from}"),
-                        Some(old) => format!("store {addr:#x} [{size}] {} → {}{from}", num(old), num(self.wrote(i))),
-                    })
-                }
-            };
-            out.push((i, kind, text));
-        }
-        out
     }
 
     /// A stack chart of records `first..=last` in `n` columns, each a
