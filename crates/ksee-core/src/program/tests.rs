@@ -81,7 +81,7 @@ fn declarations_are_a_programs_memory() {
     }
     let mem = M([fds.bytes.clone(), d.bytes.clone(), b"hi\0".to_vec()].concat());
     assert_eq!(t.show(&mem, 0, 7, Some(2)), "{3, 4}");
-    assert_eq!(t.show(&mem, 8, 2, None), "{tv_sec = 0, tv_nsec = 30000000}");
+    assert_eq!(t.show(&mem, 8, 2, None), "{tv_nsec = 30000000}");
     assert_eq!(t.show(&mem, 24, 4, Some(3)), "\"hi\"");
     // As data (for JavaScript), and assigned from a literal.
     assert_eq!(t.value(&mem, 0, 7, Some(2)), Value::List(alloc::vec![Value::Int(3), Value::Int(4)]));
@@ -171,6 +171,33 @@ fn strings_and_argv() {
     // (No type known: no layout.)
     assert!(t.arg(&expression("{1, 2}").unwrap(), 0, &known).is_err());
     assert!(t.arg(&expression("{1}").unwrap(), 7, &known).unwrap_err().contains("not a pointer"));
+}
+
+#[test]
+fn a_struct_summary_is_short() {
+    // struct params { int sq_entries; int cq_entries; int flags; int cpu; int idle; int features;
+    //                 int wq_fd; struct inner resv; struct inner sq_off; } with flags = 65536:
+    // zero scalars omitted, nested aggregates omitted: "{flags = 65536}".
+    let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t2\tstruct\tinner\t4\nM\t2\ta\t0\t0\t1\n\
+                          T\t3\tstruct\tparams\t36\nM\t3\tsq_entries\t0\t0\t1\nM\t3\tcq_entries\t32\t0\t1\nM\t3\tflags\t64\t0\t1\n\
+                          M\t3\tcpu\t96\t0\t1\nM\t3\tidle\t128\t0\t1\nM\t3\tfeatures\t160\t0\t1\nM\t3\twq_fd\t192\t0\t1\n\
+                          M\t3\tresv\t224\t0\t2\nM\t3\tsq_off\t256\t0\t2\n");
+    struct M(Vec<u8>);
+    impl Memory for M {
+        fn read(&self, addr: u32, buf: &mut [u8]) {
+            buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
+        }
+    }
+    let mut bytes = alloc::vec![0u8; 36];
+    bytes[8..12].copy_from_slice(&65536u32.to_le_bytes());
+    assert_eq!(t.show(&M(bytes), 0, 3, None), "{flags = 65536}");
+    // All zero: {0}. Past 4 nonzero fields: capped with ….
+    assert_eq!(t.show(&M(alloc::vec![0u8; 36]), 0, 3, None), "{0}");
+    let mut many = alloc::vec![0u8; 36];
+    for at in [0, 4, 8, 12, 16, 20] {
+        many[at..at + 4].copy_from_slice(&1u32.to_le_bytes());
+    }
+    assert_eq!(t.show(&M(many), 0, 3, None), "{sq_entries = 1, cq_entries = 1, flags = 1, cpu = 1, …}");
 }
 
 #[test]

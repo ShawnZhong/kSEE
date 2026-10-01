@@ -190,11 +190,28 @@ impl Types {
             }
             Some(n) => format!("{{{}}}", (0..n.min(16)).map(|i| self.show(mem, addr + i * esize, ty, None)).collect::<Vec<_>>().join(", ")),
             None => match &self.get(self.resolve(ty)).kind {
-                k @ (Kind::Struct(_) | Kind::Union(_)) => format!("{{{}}}", self.members(k).iter().filter(|m| m.bit_size == 0)
-                    .map(|m| {
+                k @ (Kind::Struct(_) | Kind::Union(_)) => {
+                    // (Short: no zero or empty scalars, no nested aggregates
+                    // (openable in the tree), at most 4 fields, then …; an
+                    // all-zero struct is {0}.)
+                    let mut fields: Vec<String> = Vec::new();
+                    for m in self.members(k).iter().filter(|m| m.bit_size == 0) {
                         let v = self.print(mem, addr + m.bit_offset / 8, m.ty, 0, 0);
-                        format!("{} = {v}", m.name)
-                    }).collect::<Vec<_>>().join(", ")),
+                        if v.starts_with('{') || matches!(v.as_str(), "0" | "0x0" | "0.0" | "NULL" | "\"\"") {
+                            continue;
+                        }
+                        if fields.len() == 4 {
+                            fields.push("…".into());
+                            break;
+                        }
+                        fields.push(format!("{} = {v}", m.name));
+                    }
+                    if fields.is_empty() {
+                        "{0}".into()
+                    } else {
+                        format!("{{{}}}", fields.join(", "))
+                    }
+                }
                 _ => self.print(mem, addr, ty, 0, 0),
             },
         }
