@@ -4,10 +4,8 @@
 //!   ksee build               build the kernel, runtime and page (build.rs)
 //!   ksee test [--ui]         build, then run the tests (in Chromium,
 //!                            $CHROME; --ui: the page's too)
-//!   ksee shot OUT.png [--test=NAME | --eval=JS] [--at=#HASH] [--url=URL]
-//!                     [--wait=MS] [--size=WxH]
-//!                            the page in Chromium, after a script (or one
-//!                            of the tests), as a screenshot
+//!   ksee shot OUT.png [--at=#HASH] [--url=URL] [--wait=MS] [--size=WxH]
+//!                            the page in Chromium, as a screenshot
 //!   ksee deploy              build, then push the page to origin's gh-pages
 //!   ksee patch               write linux.patch from linux/ (the port, as it
 //!                            differs from the release)
@@ -46,14 +44,10 @@ fn main() -> ExitCode {
         ["test"] => build::test(ui),
         ["deploy"] => deploy::deploy(),
         ["shot", out] => {
-            let out = Some(Path::new(out).to_path_buf());
-            let mut shot = match opt("test") {
-                Some(name) => chrome::Shot::test(&name, out),
-                None => chrome::Shot { site: build::SITE.into(), url: None, hash: String::new(), size: (1500, 900), wait: 6000, eval: None, out },
-            };
+            let mut shot = chrome::Shot { out: Path::new(out).to_path_buf(), hash: String::new(),
+                size: (1500, 900), wait: 6000, url: None };
             shot.hash = opt("at").unwrap_or(shot.hash);
             shot.url = opt("url");
-            shot.eval = opt("eval").or(shot.eval);
             shot.wait = opt("wait").and_then(|w| w.parse().ok()).unwrap_or(shot.wait);
             if let Some((w, h)) = opt("size").and_then(|s| Some((s.split_once('x')?.0.parse().ok()?, s.split_once('x')?.1.parse().ok()?))) {
                 shot.size = (w, h);
@@ -67,7 +61,7 @@ fn main() -> ExitCode {
             serve::serve(Path::new(build::SITE), port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
         }
         _ => {
-            eprintln!("usage: ksee [build | test [--ui] | shot OUT.png [--test=NAME | --eval=JS] [--at=#HASH] [--url=URL] [--wait=MS] [--size=WxH] \
+            eprintln!("usage: ksee [build | test [--ui] | shot OUT.png [--at=#HASH] [--url=URL] [--wait=MS] [--size=WxH] \
                        | deploy | serve [--port=N] | patch]");
             return ExitCode::from(2);
         }

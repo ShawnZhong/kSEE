@@ -412,7 +412,7 @@ pub fn test(ui: bool) {
     }
     for &(name, ..) in crate::chrome::TESTS.iter().filter(|t| ui || t.0 == "kernel") {
         let out = (name != "kernel").then(|| format!("target/ui-{name}.png").into());
-        if !crate::chrome::Shot::test(name, out).run() {
+        if !crate::chrome::test(name, out) {
             crate::fail(&format!("the {name} test failed"));
         }
     }
