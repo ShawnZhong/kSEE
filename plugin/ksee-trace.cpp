@@ -371,13 +371,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
 
   // Whether `F` is sealed (see the top): it loops (a block reaches one that
   // dominates it), writes no memory, and calls nothing but intrinsics.
-  static bool sealed(Function &F, ArrayRef<Instruction *> writes) {
+  // (`DT`: built before any probe is added; adding calls changes no block.)
+  static bool sealed(Function &F, const DominatorTree &DT, ArrayRef<Instruction *> writes) {
     if (!writes.empty())
       return false;
     for (Instruction &I : instructions(F))
       if (isa<CallBase>(I) && !isa<IntrinsicInst>(I))
         return false;
-    DominatorTree DT(F);
     for (BasicBlock &BB : F)
       for (BasicBlock *S : successors(&BB))
         if (DT.dominates(S, &BB))
@@ -470,12 +470,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   // Each named variable, as the code sets it (`sets`: its debug records,
   // and the instructions before which it has their values): see the top.
   // Not a parameter as it is at the call, which the call record has.
-  void recordSets(Function &F, uint32_t id, DISubprogram *SP, ArrayRef<Value *> params,
+  void recordSets(Function &F, const DominatorTree &DT, uint32_t id, DISubprogram *SP, ArrayRef<Value *> params,
                   ArrayRef<std::pair<DbgVariableRecord *, Instruction *>> sets) {
     // (A debug record's value need not dominate it, as a use must: only one
     // that does.)
     std::map<std::pair<uint32_t, std::string>, unsigned> vars;
-    DominatorTree DT(F);
     // (A variable that only ever takes one value, where a set of it follows
     // another, surely: nothing new; only the sets no other dominates. Each
     // inline site's copy of a variable is a variable of its own.)
@@ -595,8 +594,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       }
     }
 
-    // (Sealed: the entry block's probe only, the call.)
-    bool seal = sealed(F, writes);
+    // (Sealed: the entry block's probe only, the call. The tree is built
+    // once, before any probe is added: adding calls changes no block, so it
+    // stays right for the sets too.)
+    DominatorTree DT(F);
+    bool seal = sealed(F, DT, writes);
     for (auto [n, BB] : enumerate(blocks)) {
       if (seal && n > 0)
         break;
@@ -619,7 +621,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     // (The variables first: one set just before a return is recorded
     // before the return's record, in its call.)
     if (!seal)
-      recordSets(F, id, SP, params, sets);
+      recordSets(F, DT, id, SP, params, sets);
 
     for (BasicBlock *BB : blocks)
       if (auto *R = dyn_cast<ReturnInst>(BB->getTerminator())) {
