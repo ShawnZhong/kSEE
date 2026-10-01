@@ -1,6 +1,9 @@
 //! A lesson's paragraphs: text with `code` and [links](target) into the
 //! recording (see lesson::follow for what a target names).
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// A piece of a paragraph.
 #[derive(Clone, PartialEq, Debug)]
 pub enum Piece {
@@ -38,9 +41,8 @@ pub fn pieces(p: &str) -> Vec<Piece> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wasm_bindgen_test::wasm_bindgen_test;
 
-    #[wasm_bindgen_test]
+    #[test]
     fn a_paragraphs_pieces() {
         let p = pieces("1. [vfs_read](2:vfs_read) reads `buf`; [try](try:1).");
         assert_eq!(p, [

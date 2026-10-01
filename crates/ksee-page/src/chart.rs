@@ -31,19 +31,6 @@ fn task_color(pid: i32) -> String {
     format!("hsl({} 50% {}%)", hue(pid), if pid == 0 { 85 } else { 62 })
 }
 
-/// The color of a call in file `file`: a hue for each of the kernel's
-/// parts (arch::AREAS) in order, the last (arch), and none, gray; `on` (at
-/// the cursor), darker.
-fn color(file: Option<&str>, on: bool) -> String {
-    const HUES: [i32; 7] = [210, 135, 28, 48, 280, 175, 330];
-    let file = file.unwrap_or("");
-    let l = if on { 50 } else { 74 };
-    match ksee_core::arch::AREAS.iter().position(|(p, _)| file.starts_with(p)).and_then(|k| HUES.get(k)) {
-        Some(h) => format!("hsl({h} {}% {l}%)", if on { 65 } else { 55 }),
-        None => format!("hsl(0 0% {}%)", l + 5),
-    }
-}
-
 /// A task as the page names it: comm(pid).
 pub fn named(t: &TaskRef) -> String {
     format!("{}({})", t.comm.clone().unwrap_or_default(), t.pid.unwrap_or(0))
@@ -74,7 +61,7 @@ pub fn Timeline() -> Element {
                 }
                 Find {}
                 span { class: "legend",
-                    for (p , n) in ksee_core::arch::AREAS.iter() { span { i { style: "background: {color(Some(p), false)}" } "{n}" } }
+                    for (p , n) in ksee_core::arch::AREAS.iter() { span { i { style: "background: {ksee_core::arch::color(Some(p), false)}" } "{n}" } }
                 }
             }
             div { class: "flamescroll", Bars { tip } }
@@ -286,7 +273,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     let (first, inlined) = (bar.first, bar.inlined);
                     let on = calls.contains(&(first, inlined));
                     let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
-                    let bg = if found { "var(--found)".to_string() } else { color(bar.file.as_deref(), on) };
+                    let bg = if found { "var(--found)".to_string() } else { ksee_core::arch::color(bar.file.as_deref(), on) };
                     let class = format!("bar{}{}{}", if on { " on" } else { "" }, if found { " found" } else { "" }, if lit == Some((first, inlined)) { " lit" } else { "" });
                     let label = bar.label.clone();
                     let wide = (e - a) as f64 * px >= 24.0;
@@ -425,20 +412,5 @@ fn Find() -> Element {
                 }
             } }
         if !w.is_empty() { span { class: "dim", if count == 0 { "none in the recording" } else { "{count} calls" } } }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use wasm_bindgen_test::wasm_bindgen_test;
-
-    #[wasm_bindgen_test]
-    fn a_calls_color_is_its_part_of_the_kernel() {
-        let (fs, arch) = (ksee_core::arch::AREAS[0].0, ksee_core::arch::AREAS.last().unwrap().0);
-        assert_eq!(super::color(Some(&format!("{fs}x.c")), false), "hsl(210 55% 74%)");
-        assert_eq!(super::color(Some(&format!("{fs}x.c")), true), "hsl(210 65% 50%)");
-        // (The last part, arch, and none: gray.)
-        assert_eq!(super::color(Some(&format!("{arch}x.c")), false), "hsl(0 0% 79%)");
-        assert_eq!(super::color(None, false), "hsl(0 0% 79%)");
     }
 }

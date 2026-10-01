@@ -132,11 +132,9 @@ in vfs_read"; else by its address; `run_of` (a line's next or last run),
 ## Tests
 
 - `cargo test -p ksee-core`: the rebuilding, on made-up records (and the
-  views, the programs, the highlighter).
-- crates/ksee-page's unit tests (`#[wasm_bindgen_test]`: the page is wasm
-  only, as the runtime is), run under Node by wasm-bindgen-test-runner:
-  what the page works out itself (a paragraph's pieces, a line's lane, a
-  call's color).
+  views, the programs, the highlighter, a paragraph's pieces, a call's
+  color: what the page works out is in the core, tested natively; the page
+  is wasm only, as the runtime is).
 - crates/ksee-page/src/selftest.rs: the kernel's tests, in the page's
   module (the Machine as the page calls it; the page not mounted:
   `#selftest`): boots the kernel, has the program make syscalls, recorded

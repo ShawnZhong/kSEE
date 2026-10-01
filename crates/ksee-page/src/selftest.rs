@@ -14,7 +14,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use ksee_runtime::Finished;
-use crate::text::{self, Piece};
+use ksee_core::text::{self, Piece};
 
 fn log(s: &str) {
     web_sys::console::log_1(&s.into());

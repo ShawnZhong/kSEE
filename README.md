@@ -30,6 +30,7 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
 
 ## Running
 
+    ./setup.sh             # once: LLVM, GNU make, mkfs.ext4, Rust (Homebrew or apt)
     ./ksee.sh              # build what changed, serve http://127.0.0.1:8000/
     ./ksee.sh test         # in Chromium ($CHROME): syscalls, and what their recordings show
     ./ksee.sh deploy       # build, then push the page to gh-pages (GitHub Pages)

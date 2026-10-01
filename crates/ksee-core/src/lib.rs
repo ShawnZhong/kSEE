@@ -10,6 +10,7 @@
 //! * [`program`]: a syscall's arguments as the page writes them (C, with the
 //!   kernel's types).
 //! * [`highlight`]: the kernel's source, colored.
+//! * [`text`]: a lesson's paragraphs, in pieces.
 //!
 //! `no_std`, so that the same code runs in the wasm runtime
 //! (crates/ksee-runtime) and natively (crates/ksee-cli, tests).
@@ -28,6 +29,7 @@ pub mod recording;
 pub mod stack;
 pub mod syscalls;
 pub mod tables;
+pub mod text;
 pub mod task;
 pub mod trace;
 pub mod types;

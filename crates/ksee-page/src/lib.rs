@@ -28,7 +28,6 @@ mod selftest;
 mod source;
 mod stack;
 mod state;
-mod text;
 #[cfg(feature = "selftest")]
 mod uitest;
 

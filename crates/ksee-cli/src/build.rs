@@ -237,8 +237,7 @@ fn site() {
     }
 }
 
-/// Build, then: core's and this command's unit tests, the page's (wasm,
-/// under Node: wasm-bindgen-test-runner), then the tests run in the page
+/// Build, then: core's and this command's unit tests, then the tests run in the page
 /// (crates/ksee-page built with them, as target/test/site) in headless
 /// Chromium ($CHROME, see chrome.rs): the kernel's (its recordings, every
 /// example); with `ui`, also the page's (the read example, a changed
@@ -247,9 +246,6 @@ fn site() {
 pub fn test(ui: bool) {
     build();
     run(Command::new("cargo").args(["test", "-q", "-p", "ksee-core", "-p", "ksee-cli"]));
-    // (Not -q: the runner takes no flags.)
-    run(Command::new("cargo").args(["test", "-p", "ksee-page", "--target", "wasm32-unknown-unknown"])
-        .env("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER", "wasm-bindgen-test-runner"));
     // (Its own target directory: the site's module, built without them, stays as it is.)
     run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-page", "--features", "selftest",
         "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));

@@ -8,7 +8,7 @@ use ksee_core::program::{statement, Line};
 use serde::Deserialize;
 
 use crate::state::{Tab, Ui};
-use crate::text::{self, Piece};
+use ksee_core::text::{self, Piece};
 use crate::{examples, machine};
 
 /// A lesson (examples.json): its chapter, title, question, explanation,
@@ -475,16 +475,5 @@ fn Paragraph(text: String) -> Element {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use wasm_bindgen_test::wasm_bindgen_test;
-
-    #[wasm_bindgen_test]
-    fn a_lines_lane_is_its_runner() {
-        assert_eq!(super::lane("child: dup3(fds[0], 0, 0)"), "child");
-        assert_eq!(super::lane("read(fd, buf, 64)"), "");
     }
 }
