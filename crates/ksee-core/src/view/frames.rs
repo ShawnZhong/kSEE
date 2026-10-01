@@ -42,9 +42,6 @@ pub struct Line {
     /// It made a call: the function, what it returned, and where (its
     /// return: the result is not known before).
     pub called: Option<Called>,
-    /// Inlined: the line of its function's own where the code is inlined
-    /// (the outermost inline site: `CLASS(fd_pos, f)(fd)`'s line).
-    pub site: Option<u32>,
 }
 
 /// A call on a stack, with its arguments (32 bits each: wider ones lose
@@ -104,7 +101,7 @@ impl View<'_> {
         let chain = &self.chain(s.inlined)[s.cut as usize..];
         Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
                inlined: chain.first().map(|&(f, _)| self.inline_name(f)), depth: s.depth, inl: chain.len() as u32, run: s.run, tests: Vec::new(), ret: s.ret,
-               called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }), site: chain.last().map(|&(_, l)| l.line) }
+               called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }) }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.
