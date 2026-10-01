@@ -52,10 +52,10 @@ button:disabled { color: var(--dim); cursor: default; opacity: .6; }
 .menu { position: absolute; top: 33px; left: 0; right: 0; bottom: 0; z-index: 10; overflow-y: auto; background: var(--panel);
   border-top: 1px solid var(--line); padding: 4px 0 12px; box-shadow: 0 6px 16px rgb(0 0 0 / .12); }
 .menu .chapter { margin: 12px 12px 2px; font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
-.menu .item { display: block; padding: 4px 12px 4px 10px; color: var(--fg); }
+.menu .item { display: block; position: relative; padding: 4px 12px 4px 30px; color: var(--fg); }
 .menu .item:hover { background: var(--sel); text-decoration: none; }
 .menu .item.on { background: var(--sel); font-weight: 600; }
-.menu .tick { display: inline-block; width: 20px; color: var(--run); }
+.menu .tick { position: absolute; left: 13px; color: var(--run); }
 
 /* A lesson: its chapter and place, title, question, explanation; the lessons before and next */
 .crumb { padding: 10px 12px 0; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
