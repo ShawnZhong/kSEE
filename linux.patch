@@ -1881,15 +1881,14 @@ index b7296edc6..f5ac25821 100644
   * Original work by Jeff Garzik
   *
 diff --git a/usr/initramfs_data.S b/usr/initramfs_data.S
-index cd67edc38..b85b5c0d1 100644
+index cd67edc38..6655e1ffe 100644
 --- a/usr/initramfs_data.S
 +++ b/usr/initramfs_data.S
-@@ -22,15 +22,22 @@
+@@ -22,11 +22,19 @@
    in the ELF header, as required by certain architectures.
  */
  
 -.section .init.ramfs,"a"
--__irf_start:
 +#ifdef __wasm__
 +#define SECTION_FLAGS "",@
 +#else
@@ -1897,19 +1896,18 @@ index cd67edc38..b85b5c0d1 100644
 +#endif
 +
 +.section .init.ramfs,SECTION_FLAGS
-+.Lirf_start:
+ __irf_start:
++.size __irf_start, 0
  .incbin "usr/initramfs_inc_data"
--__irf_end:
+ __irf_end:
 -.section .init.ramfs.info,"a"
-+.Lirf_end:
++.size __irf_end, 0
 +.section .init.ramfs.info,SECTION_FLAGS
  .globl __initramfs_size
  __initramfs_size:
  #ifdef CONFIG_64BIT
--	.quad __irf_end - __irf_start
-+	.quad .Lirf_end - .Lirf_start
+@@ -34,3 +42,4 @@ __initramfs_size:
  #else
--	.long __irf_end - __irf_start
-+	.long .Lirf_end - .Lirf_start
+ 	.long __irf_end - __irf_start
  #endif
 +.size __initramfs_size, . - __initramfs_size
