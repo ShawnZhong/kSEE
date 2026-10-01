@@ -73,6 +73,8 @@ fn reply(stream: &mut TcpStream, status: &str, kind: &str, body: &[u8]) -> std::
 }
 
 /// The file for a URL path, if it is inside `root` (index.html for dirs).
+/// (No decoding: a % in the path stays a %, so no URL smuggles a `..` past
+/// the components below.)
 fn resolve(root: &Path, url: &str) -> Option<PathBuf> {
     let mut p = root.to_path_buf();
     for c in Path::new(url.trim_start_matches('/')).components() {
@@ -108,6 +110,23 @@ mod tests {
     use super::*;
     use std::io::Write;
 
+    /// A scratch dir, removed on drop (even on panic).
+    struct Scratch(PathBuf);
+    impl Scratch {
+        fn new(name: &str) -> Scratch {
+            let dir = std::env::temp_dir().join(format!("ksee-{name}-{}-{}", std::process::id(),
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |t| t.subsec_nanos())));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Scratch(dir)
+        }
+    }
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     #[test]
     fn mime_kinds() {
         let mime_of = |name: &str| mime(Path::new(name));
@@ -122,27 +141,24 @@ mod tests {
 
     #[test]
     fn resolve_stays_inside_root() {
-        let root = std::env::temp_dir().join(format!("ksee-serve-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("sub")).unwrap();
-        std::fs::write(root.join("index.html"), "hi").unwrap();
-        std::fs::write(root.join("sub").join("examples.json"), "{}").unwrap();
-        assert_eq!(resolve(&root, "/"), Some(root.join("index.html")));
-        assert_eq!(resolve(&root, "/sub/examples.json"), Some(root.join("sub").join("examples.json")));
-        assert_eq!(resolve(&root, "/../secret"), None);
-        assert_eq!(resolve(&root, "/missing"), None);
-        let _ = std::fs::remove_dir_all(&root);
+        let root = Scratch::new("serve");
+        std::fs::create_dir_all(root.0.join("sub")).unwrap();
+        std::fs::write(root.0.join("index.html"), "hi").unwrap();
+        std::fs::write(root.0.join("sub").join("examples.json"), "{}").unwrap();
+        assert_eq!(resolve(&root.0, "/"), Some(root.0.join("index.html")));
+        assert_eq!(resolve(&root.0, "/sub/examples.json"), Some(root.0.join("sub").join("examples.json")));
+        assert_eq!(resolve(&root.0, "/../secret"), None);
+        assert_eq!(resolve(&root.0, "/missing"), None);
+        assert_eq!(resolve(&root.0, "/%2e%2e/secret"), None);
     }
 
     #[test]
     fn result_posts_reach_the_waiting_thread() {
-        let root = std::env::temp_dir().join(format!("ksee-serve-result-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = Scratch::new("result");
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let (tx, rx) = std::sync::mpsc::channel();
-        let site = root.clone();
+        let site = root.0.clone();
         std::thread::spawn(move || serve_on(listener, &site, Some(tx)));
         for (body, passed) in [("ok\nall good\n", true), ("fail\nwhat broke\n", false)] {
             let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
@@ -150,6 +166,5 @@ mod tests {
             let outcome = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
             assert_eq!((outcome.passed, outcome.log), (passed, body.split_once('\n').unwrap().1.into()));
         }
-        let _ = std::fs::remove_dir_all(&root);
     }
 }
