@@ -125,7 +125,7 @@ line's next or last run), `definition`.
   views, the programs, the highlighter, a paragraph's pieces: what the
   page works out is in the core, tested natively; the page is wasm only,
   as the runtime is).
-- crates/ksee-page/src/selftest.rs: the kernel's tests (`#selftest`, the
+- crates/ksee-page/src/selftest.rs: the kernel's tests (`#test=kernel`, the
   page not mounted): boots the kernel, has the program make syscalls,
   recorded (and every example's), and checks what the recordings show:
   stacks with arguments, lines, memory as it was, who wrote a value,
