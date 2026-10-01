@@ -196,13 +196,15 @@ impl Types {
                     // all-zero struct is {0}. A union's members alias the
                     // same bytes: only its first.)
                     let union = matches!(k, Kind::Union(_));
+                    // (At most this many fields, then ….)
+                    const SUMMARY_FIELDS: usize = 4;
                     let mut fields: Vec<String> = Vec::new();
                     for m in self.members(k).iter().filter(|m| m.bit_size == 0).take(if union { 1 } else { usize::MAX }) {
                         let v = self.summary_scalar(mem, addr + m.bit_offset / 8, m.ty);
                         if v.starts_with('{') || matches!(v.as_str(), "0" | "0x0" | "0.0" | "NULL" | "\"\"") {
                             continue;
                         }
-                        if fields.len() == 4 {
+                        if fields.len() == SUMMARY_FIELDS {
                             fields.push("…".into());
                             break;
                         }

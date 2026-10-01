@@ -64,12 +64,15 @@ pub fn lower(text: &str, types: &Types, env: &dyn Env, main: Option<u32>, runner
     }))
 }
 
+/// How many words a call is made with (the syscall ABI's six arguments).
+const MAX_ARGS: usize = 6;
+
 /// A call's `args` as the words it is made with: a number as it is; a
 /// buffer (bytes, a string's with its NUL; an array of strings, argv's) put
 /// in the program's memory by `put` (as its variables are: there for as
 /// long as the program), its address.
-pub fn words(args: &[Arg], put: &mut impl FnMut(&[u8]) -> Result<u32, String>) -> Result<[u32; 6], String> {
-    let mut words = [0u32; 6];
+pub fn words(args: &[Arg], put: &mut impl FnMut(&[u8]) -> Result<u32, String>) -> Result<[u32; MAX_ARGS], String> {
+    let mut words = [0u32; MAX_ARGS];
     for (w, a) in words.iter_mut().zip(args) {
         *w = match a {
             Arg::Number(v) => *v as u32,

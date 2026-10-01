@@ -514,10 +514,13 @@ fn or_anon(name: &str) -> &str {
     if name.is_empty() { "<anon>" } else { name }
 }
 
-/// A number as the page shows one: in hex past 0xffff (an address, a flag
-/// word).
+/// Above this, a number as the page shows one is in hex (an address, a
+/// flag word).
+const HEX_ABOVE: u64 = 0xffff;
+
+/// A number as the page shows one: in hex past HEX_ABOVE.
 pub(crate) fn num(v: u64) -> String {
-    if v > 0xffff { alloc::format!("{v:#x}") } else { v.to_string() }
+    if v > HEX_ABOVE { alloc::format!("{v:#x}") } else { v.to_string() }
 }
 
 /// Bytes as a C string literal: text as text, the rest escaped (\n, \t,
