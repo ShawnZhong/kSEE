@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
-use ksee_core::view::{step, Frame, Move, Object};
+use ksee_core::view::{step, Frame, Object};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 
@@ -35,11 +35,11 @@ pub fn moment() -> usize {
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
 /// lines, into its task's syscall after it (or before). The lines read
 /// from the Machine (the window's listener calls it, outside the page).
-pub fn walk(ui: Ui, dir: isize, how: Move) {
+pub fn walk(ui: Ui, dir: isize, over: bool) {
     let Some(at) = ui.at.peek().clone() else { return };
     let k = at.call;
     let lines = Ui::lines_of(k);
-    if let Some(j) = step(&lines, at.line, dir, how) {
+    if let Some(j) = step(&lines, at.line, dir, over) {
         ui.go(j);
         return;
     }
@@ -69,7 +69,7 @@ pub fn frame(mut ui: Ui, d: Derived, dir: isize) {
 }
 
 /// The page's keys, anywhere on it: one listener on the window; ← → a
-/// line (Shift: over the calls; Alt: out of the function); ↑ ↓ the frame
+/// line (Shift: over the calls); ↑ ↓ the frame
 /// up (its callee) or down (its caller). Not in text fields (the lesson's
 /// lines, find): arrows move the cursor there.
 pub fn listen(ui: Ui) {
@@ -90,10 +90,10 @@ pub fn listen(ui: Ui) {
             }
             let mut peek = ui.peek;
             peek.set(None);
-            let how = if e.alt_key() { Move::Out } else if e.shift_key() { Move::Over } else { Move::Into };
+            let over = e.shift_key();
             let arrow = match e.key().as_str() {
-                "ArrowLeft" => { walk(ui, -1, how); true }
-                "ArrowRight" => { walk(ui, 1, how); true }
+                "ArrowLeft" => { walk(ui, -1, over); true }
+                "ArrowRight" => { walk(ui, 1, over); true }
                 "ArrowUp" => { frame(ui, d, -1); true }
                 "ArrowDown" => { frame(ui, d, 1); true }
                 _ => false,

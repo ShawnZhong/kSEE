@@ -71,7 +71,7 @@ what the call was; a click goes there); the task strip under it (who ran
 when, an idle stretch, a worker that names itself); a box to find a
 function by any part of its name (its bars light up, Enter goes to the
 next). Under them the steps, as a debugger's: ◀ ▶ a line (← →), over the
-calls (Shift), out of the function (Alt); ▲ ▼ the frame (↑ ↓), and the
+calls (Shift); ▲ ▼ the frame (↑ ↓), and the
 cursor's place. Then the source at the cursor (the whole file, scrolling;
 the function's lines edged, those that ran in the call green, a line's
 number: how often, a click runs to its next run; what a line stored at its

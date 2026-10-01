@@ -9,7 +9,7 @@
 //! cursor there. Find a function by any part of its name.
 
 use dioxus::prelude::*;
-use ksee_core::view::{Chart, Move};
+use ksee_core::view::Chart;
 
 use crate::machine;
 use crate::state::{Derived, Shared, Ui};
@@ -165,11 +165,14 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     }
     let cursor = d.cursor.cloned();
     let (wa, wb) = (d.window)();
-    // (Where the cursor is, across the window (%); the calls on its stack.)
-    let now = cursor.filter(|&i| i >= wa && i <= wb).map(|i| machine().view(|v| {
+    // (Where a record is, across the window (%): the cursor's, solid; the
+    // moment under the pointer's, faint; the calls on its stack.)
+    let x = |i: usize| (i >= wa && i <= wb).then(|| machine().view(|v| {
         let (sa, sb, s) = (v.rec.step_of(wa), v.rec.step_of(wb), v.rec.step_of(i));
         (s - sa) as f64 * 100.0 / (sb - sa + 1) as f64
     }));
+    let now = cursor.and_then(x);
+    let peeked = ui.peek.read().as_ref().and(d.moment.cloned()).and_then(|(i, _)| x(i));
     let calls: Vec<(usize, String)> = d.stack.read().iter().map(|f| (f.first, f.func.clone())).collect();
     let find = (ui.find)().to_lowercase();
     // (The bar outlined: the one under the pointer, else the frame shown's call.)
@@ -285,6 +288,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     }
                 }
             }
+            if let Some(x) = peeked { div { class: "now peek", style: "left: {x}%" } }
             if let Some(x) = now { div { class: "now", style: "left: {x}%" } }
         }
     }
@@ -347,7 +351,7 @@ fn Strip() -> Element {
 }
 
 /// Under the strip: steps through the call's lines (◀ ▶; Shift: over the
-/// calls, Alt: out of the function, as ← → are), the frame up or down the
+/// calls, as ← → are), the frame up or down the
 /// Stack (▲ ▼, as ↑ ↓), and where the cursor is.
 #[component]
 fn Transport() -> Element {
@@ -364,11 +368,10 @@ fn Transport() -> Element {
     // (A step that lands after a call: what it returned.)
     let returned = here.and_then(|l| l.called.as_ref()).filter(|c| c.at <= here.map_or(0, |l| l.at))
         .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value))).unwrap_or_default();
-    let how = |e: &MouseEvent| if e.modifiers().alt() { Move::Out } else if e.modifiers().shift() { Move::Over } else { Move::Into };
     rsx! {
         div { class: "transport",
-            button { title: "the line before (←); Shift: back over the calls; Alt: out, to where the function was called", onclick: move |e| crate::stack::walk(ui, -1, how(&e)), "◀" }
-            button { title: "the next line (→); Shift: over the calls; Alt: out, past the function's return", onclick: move |e| crate::stack::walk(ui, 1, how(&e)), "▶" }
+            button { title: "the line before (←); Shift: back over the calls", onclick: move |e| crate::stack::walk(ui, -1, e.modifiers().shift()), "◀" }
+            button { title: "the next line (→); Shift: over the calls", onclick: move |e| crate::stack::walk(ui, 1, e.modifiers().shift()), "▶" }
             button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| crate::stack::frame(ui, d, -1), "▲" }
             button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| crate::stack::frame(ui, d, 1), "▼" }
             span { class: "where mono dim", "{task} · {place}{turn}{call}{returned}" }

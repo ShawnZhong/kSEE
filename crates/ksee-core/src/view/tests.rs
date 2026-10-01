@@ -496,14 +496,14 @@ fn a_chart_folds_into_runs() {
 }
 
 #[test]
-fn steps_go_into_over_or_out() {
+fn steps_go_into_or_over() {
     // f (depth 0) line 1, calls g (depth 1): lines 10, 11; then f's line 2.
     let line = |depth, line| Line { i: 0, at: 0, nth: 0, func: String::new(), file: String::new(), line, inlined: None, depth, inl: 0, run: 1,
                                    tests: Vec::new(), ret: None, called: None, site: None };
     let lines = [line(0, 1), line(1, 10), line(1, 11), line(0, 2)];
-    assert_eq!((step(&lines, 0, 1, Move::Into), step(&lines, 0, 1, Move::Over), step(&lines, 1, 1, Move::Out)), (Some(1), Some(3), Some(3)));
-    assert_eq!((step(&lines, 3, -1, Move::Over), step(&lines, 2, -1, Move::Out), step(&lines, 0, -1, Move::Into)), (Some(0), Some(0), None));
-    assert_eq!(step(&lines, 3, 1, Move::Into), None);
+    assert_eq!((step(&lines, 0, 1, false), step(&lines, 0, 1, true), step(&lines, 1, 1, true)), (Some(1), Some(3), Some(2)));
+    assert_eq!((step(&lines, 3, -1, true), step(&lines, 0, -1, false)), (Some(0), None));
+    assert_eq!(step(&lines, 3, 1, false), None);
 }
 
 #[test]

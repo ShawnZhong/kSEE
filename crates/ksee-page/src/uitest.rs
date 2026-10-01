@@ -91,13 +91,12 @@ fn click(e: &Element) {
     }
 }
 
-fn mouse(e: &Element, kind: &str, x: f64, y: f64, shift: bool, alt: bool) {
+fn mouse(e: &Element, kind: &str, x: f64, y: f64, shift: bool) {
     let init = MouseEventInit::new();
     init.set_bubbles(true);
     init.set_client_x(x as i32);
     init.set_client_y(y as i32);
     init.set_shift_key(shift);
-    init.set_alt_key(alt);
     let _ = e.dispatch_event(&MouseEvent::new_with_mouse_event_init_dict(kind, &init).unwrap());
 }
 
@@ -134,10 +133,10 @@ fn place() -> String {
     one(".transport .where").map(|w| text(&w)).and_then(|t| t.split(" · ").nth(1).map(String::from)).unwrap_or_default()
 }
 
-/// A click on a transport button, keys held (Shift: over the calls; Alt: out).
-fn press(label: &str, shift: bool, alt: bool) {
+/// A click on a transport button (Shift held: over the calls).
+fn press(label: &str, shift: bool) {
     if let Some(b) = named(".transport button", label) {
-        mouse(&b, "click", 0.0, 0.0, shift, alt);
+        mouse(&b, "click", 0.0, 0.0, shift);
     }
 }
 
@@ -202,24 +201,21 @@ async fn read() -> Check {
         check(ok, &format!("the link to {name}"), place())?;
         r.push(place());
     }
-    // (Stepping: on a line, over vfs_read's calls (no deeper), out of it.)
+    // (Stepping: on a line, back, and over vfs_read's calls (no deeper).)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     sleep(300).await;
     let at = place();
-    press("▶", false, false);
+    press("▶", false);
     sleep(200).await;
     let into = place();
-    press("◀", false, false);
+    press("◀", false);
     sleep(200).await;
     for _ in 0..3 {
-        press("▶", true, false);
+        press("▶", true);
         sleep(150).await;
     }
     let over = place();
-    press("▶", false, true);
-    sleep(200).await;
-    let out = place();
-    check(into != at && over.starts_with("vfs_read") && !out.starts_with("vfs_read"), "stepping", (&at, &into, &over, &out))?;
+    check(into != at && over.starts_with("vfs_read"), "stepping", (&at, &into, &over))?;
     // (Keys, on the work area: → a line.)
     let work = one(".work").ok_or("no work area")?;
     let _ = work.dyn_ref::<HtmlElement>().map(|w| w.focus());
@@ -230,7 +226,7 @@ async fn read() -> Check {
     // (A click on a bar: the cursor there, that frame chosen.)
     let bar = all(".chart .bar").into_iter().find(|b| text(b).starts_with("vfs_read")).ok_or("no vfs_read bar")?;
     let b = bar.get_bounding_client_rect();
-    mouse(&one(".chart").ok_or("no chart")?, "click", b.left() + b.width() / 2.0, b.top() + b.height() / 2.0, false, false);
+    mouse(&one(".chart").ok_or("no chart")?, "click", b.left() + b.width() / 2.0, b.top() + b.height() / 2.0, false);
     sleep(300).await;
     let chosen = one("tr.frame.on a").map(|a| text(&a)).unwrap_or_default();
     check(chosen == "vfs_read", "a click on a bar", (&chosen, place()))?;
@@ -316,7 +312,7 @@ async fn phone() -> Check {
     let screen = web_sys::window().unwrap().inner_width().ok().and_then(|w| w.as_f64()).unwrap_or(0.0) as i32;
     check(order && wide <= screen, "the phone", (order, wide, screen))?;
     let at = place();
-    press("▶", false, false);
+    press("▶", false);
     sleep(300).await;
     Ok(format!("{at} → {}", place()))
 }
