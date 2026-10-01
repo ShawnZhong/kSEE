@@ -42,7 +42,7 @@ struct Made {
 
 struct T {
     m: Rc<Machine>,
-    failed: bool,
+    failures: Vec<String>,
     /// The console's text so far.
     out: String,
     /// The calls finished, by id.
@@ -51,8 +51,11 @@ struct T {
 
 impl T {
     fn check(&mut self, what: impl AsRef<str>, ok: bool) -> bool {
-        log(&format!("{}: {}", if ok { "ok" } else { "FAIL" }, what.as_ref()));
-        self.failed |= !ok;
+        let what = what.as_ref();
+        log(&format!("{}: {what}", if ok { "ok" } else { "FAIL" }));
+        if !ok {
+            self.failures.push(what.into());
+        }
         ok
     }
 
@@ -144,9 +147,9 @@ fn value(o: Option<&Object>) -> String {
 /// Run the tests on the booted Machine, with the lessons (both as `mount`
 /// was given them: the page not mounted, see lib.rs): whether all passed
 /// (each check is logged, "ok: …" or "FAIL: …").
-pub async fn self_test() -> bool {
+pub async fn self_test() -> Result<(), String> {
     let examples = crate::examples();
-    let mut t = T { m: crate::machine(), failed: false, out: String::new(), fin: BTreeMap::new() };
+    let mut t = T { m: crate::machine(), failures: Vec::new(), out: String::new(), fin: BTreeMap::new() };
     let m = t.m.clone();
     let main = m.main().unwrap_or(0);
     t.check(format!("the program ready: a runner ({main}), not /init"), main > 1 && m.runners().contains(&main));
@@ -476,8 +479,10 @@ pub async fn self_test() -> bool {
     t.check("powered off", m.halted() == Some(0));
     t.console();
     t.check("no warning from the kernel (an execve has its argv)", !t.out.contains("NULL argv"));
-    if t.failed {
+    if t.failures.is_empty() {
+        Ok(())
+    } else {
         log(&t.out);
+        Err(t.failures.join("\n"))
     }
-    !t.failed
 }

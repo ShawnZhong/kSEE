@@ -73,7 +73,7 @@ fn Objects() -> Element {
     if nodes.is_empty() {
         return rsx! { p { class: "pad dim", "{title} changed nothing of the kernel's data" } };
     }
-    let cur = d.moment.cloned().map(|(i, _)| i);
+    let cur = d.line.cloned().map(|l| l.at);
     let mut depth = vec![0usize; nodes.len()];
     for k in 0..nodes.len() {
         depth[k] = nodes[k].under.map_or(0, |u| depth[u] + 1);
@@ -196,9 +196,9 @@ fn state(s: TaskState) -> (&'static str, &'static str) {
 fn Tasks() -> Element {
     let d = use_context::<Derived>();
     let mut open = use_context::<Signal<BTreeSet<String>>>();
-    let i = d.moment.cloned().map_or(0, |(i, _)| i);
+    let at = d.line.cloned().map_or(0, |l| l.at);
     let m = machine();
-    let list = m.view(|v| v.tasks(i));
+    let list = m.view(|v| v.tasks(at));
     // (Each under the task it sits under, if the list has it; siblings by pid.)
     let known: Vec<u32> = list.iter().map(|t| t.task.addr).collect();
     let up = |t: &ksee_core::view::TaskAt| t.up.filter(|u| known.contains(u));
@@ -225,7 +225,7 @@ fn Tasks() -> Element {
                     let (said, title) = state(t.state);
                     let place = if t.last.is_some() { t.syscall.clone().or(t.func.clone()).map_or(String::new(), |s| format!(" in {s}")) } else { String::new() };
                     let class = format!("frame{}{}", if running { " on" } else { "" }, if matches!(t.state, TaskState::Later | TaskState::Exited) { " later" } else { "" });
-                    let fields = if is_open { m.at_moment(i, |v, mem| v.task_fields(mem, t.task.addr)).fields } else { Vec::new() };
+                    let fields = if is_open { m.at_moment(at, |v, mem| v.task_fields(mem, t.task.addr)).fields } else { Vec::new() };
                     let name = t.task.named();
                     let q = p.clone();
                     rsx! {
@@ -239,7 +239,7 @@ fn Tasks() -> Element {
                             }
                         }
                         for o in fields {
-                            crate::stack::Value { o: o.clone(), path: format!("{p}.{}", o.name), depth: 1, i }
+                            crate::stack::Value { o: o.clone(), path: format!("{p}.{}", o.name), depth: 1, at }
                         }
                     }
                 }

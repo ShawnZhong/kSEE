@@ -50,8 +50,8 @@ pub struct Moment {
 /// What the state makes, computed once each time what it depends on
 /// changes: the moment shown (the pointer's, else the cursor's), its call
 /// (as the snapshot has it) and lines; the chart's window and the chart;
-/// the record the moment is at, its stack, and the frame shown on it; and
-/// where the cursor is, in steps (the chart's line: its line's share of
+/// its line, stack, and the frame shown on it; and where the cursor is, in
+/// steps (the chart's line: its line's share of
 /// its block's step).
 #[derive(Clone, Copy)]
 pub struct Derived {
@@ -60,7 +60,7 @@ pub struct Derived {
     pub lines: Memo<Shared<Vec<Line>>>,
     pub window: Memo<(usize, usize)>,
     pub chart: Memo<Shared<Chart>>,
-    pub moment: Memo<Option<(usize, Option<usize>)>>,
+    pub line: Memo<Option<Line>>,
     pub stack: Memo<Shared<Vec<Frame>>>,
     pub frame: Memo<usize>,
     pub cursor: Memo<Option<f64>>,
@@ -92,15 +92,12 @@ impl Derived {
             let (a, b) = window();
             Shared(Rc::new(if up() { machine().view(|v| v.chart(a, b, COLUMNS)) } else { Chart::default() }))
         });
-        let moment = use_memo(move || lines.read().get(shown()?.line).map(|l| (l.i, Some(l.nth as usize))));
+        let line = use_memo(move || lines.read().get(shown()?.line).cloned());
         // (Its values as they are just before the line runs: at its own
         // record, past what the lines before it in its stretch did.)
         let stack = use_memo(move || {
-            let line = shown().and_then(|m| lines.read().get(m.line).cloned());
-            let (at, cut) = line.map_or((None, 0), |l| (Some(l.at), l.cut as usize));
-            Shared(Rc::new(moment().map_or_else(Vec::new, |(i, nth)| {
-                let at = at.unwrap_or(i);
-                machine().at_moment(at, |v, mem| v.call_stack(i, nth, cut, mem, at))
+            Shared(Rc::new(line.cloned().map_or_else(Vec::new, |l| {
+                machine().at_moment(l.at, |v, mem| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, mem, l.at))
             })))
         });
         let frame = use_memo(move || shown().and_then(|m| m.frame).and_then(|(first, func)| stack.read().iter().position(|f| f.first == first && f.func == func)).unwrap_or(0));
@@ -117,7 +114,7 @@ impl Derived {
             };
             if shown().is_some_and(|s| s.call == at.call) { place(&lines.read()) } else { place(&Ui::lines_of(at.call)) }
         });
-        Derived { shown, syscall, lines, window, chart, moment, stack, frame, cursor }
+        Derived { shown, syscall, lines, window, chart, line, stack, frame, cursor }
     }
 }
 

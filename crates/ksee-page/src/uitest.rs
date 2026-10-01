@@ -178,7 +178,7 @@ async fn wait(f: impl Fn() -> bool, n: usize, what: &str, detail: impl Fn() -> S
 /// once booted (the page not mounted: #selftest).
 async fn kernel() -> Check {
     crate::boot().await?;
-    if crate::selftest::self_test().await { Ok("passed".into()) } else { Err("failed (see the log)".into()) }
+    crate::selftest::self_test().await.map(|()| "passed".into())
 }
 
 /// The read example (#ex=read): its calls made, its subject (the read)

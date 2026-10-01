@@ -27,11 +27,6 @@ pub fn shown() -> Option<Frame> {
     frames.get(k).or(frames.first()).cloned()
 }
 
-/// The record the moment shown is at.
-pub fn moment() -> usize {
-    use_context::<Derived>().moment.cloned().map_or(0, |(i, _)| i)
-}
-
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
 /// lines, into its task's syscall after it (or before). The lines read
 /// from the Machine (the window's listener calls it, outside the page).
@@ -115,9 +110,10 @@ pub fn listen(ui: Ui) {
 pub fn Stack() -> Element {
     let mut ui = use_context::<Ui>();
     let frames = frames();
-    let chosen = use_context::<Derived>().frame.cloned();
-    let i = moment();
-    let task = machine().view(|v| v.rec.tasks.get(i).map(|&t| v.task(t, i)));
+    let d = use_context::<Derived>();
+    let chosen = d.frame.cloned();
+    let at = d.line.cloned().map_or(0, |l| l.at);
+    let task = machine().view(|v| v.rec.tasks.get(at).map(|&t| v.task(t, at)));
     let mut open = use_context::<Signal<BTreeSet<String>>>();
     rsx! {
         div { class: "stack",
@@ -139,7 +135,7 @@ pub fn Stack() -> Element {
                     }
                     if k == chosen {
                         for o in f.args.clone().unwrap_or_default().into_iter().chain(f.locals.clone().unwrap_or_default()) {
-                            Value { o: o.clone(), path: format!("{k}.{}", o.name), depth: 1, i }
+                            Value { o: o.clone(), path: format!("{k}.{}", o.name), depth: 1, at }
                         }
                     }
                 }
@@ -156,11 +152,11 @@ pub fn Stack() -> Element {
 }
 
 /// Who last wrote the `len` bytes at `addr`, as memory was after record
-/// `i`, and back through the copies that brought them there.
-fn origin(addr: u32, len: u32, i: usize) -> String {
+/// `at`, and back through the copies that brought them there.
+fn origin(addr: u32, len: u32, at: usize) -> String {
     let m = machine();
     m.view(|v| {
-        let way = v.origin(addr, len, i, 8);
+        let way = v.origin(addr, len, at, 8);
         if way.is_empty() {
             return "not written in the recording".into();
         }
@@ -175,15 +171,15 @@ fn origin(addr: u32, len: u32, i: usize) -> String {
 }
 
 /// A value's row, and, opened, its members' (read as memory was at record
-/// `i`); hovered, who last wrote it.
+/// `at`); hovered, who last wrote it.
 #[component]
-pub fn Value(o: Object, path: String, depth: usize, i: usize) -> Element {
+pub fn Value(o: Object, path: String, depth: usize, at: usize) -> Element {
     let mut open = use_context::<Signal<BTreeSet<String>>>();
     let mut wrote = use_signal(String::new);
     let is_open = open.read().contains(&path);
     let can = o.children.is_some() || o.open.is_some();
     let kids = if is_open {
-        o.children.clone().or_else(|| o.open.and_then(|t| machine().at_moment(i, |v, mem| v.tables.types.object(mem, &o.name, t.addr, t.ty, 1).children)))
+        o.children.clone().or_else(|| o.open.and_then(|t| machine().at_moment(at, |v, mem| v.tables.types.object(mem, &o.name, t.addr, t.ty, 1).children)))
     } else {
         None
     };
@@ -199,12 +195,12 @@ pub fn Value(o: Object, path: String, depth: usize, i: usize) -> Element {
                 "{o.name}"
             }
             td { class: "fval", title: "{wrote}",
-                onmouseenter: move |_| if addr != 0 { wrote.set(origin(addr, size, i)) },
+                onmouseenter: move |_| if addr != 0 { wrote.set(origin(addr, size, at)) },
                 "{value}" }
             td { class: "ftype", "{o.ty}" }
         }
         for c in kids.unwrap_or_default() {
-            Value { o: c.clone(), path: format!("{path}.{}", c.name), depth: depth + 1, i }
+            Value { o: c.clone(), path: format!("{path}.{}", c.name), depth: depth + 1, at }
         }
     }
 }

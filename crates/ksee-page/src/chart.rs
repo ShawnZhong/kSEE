@@ -152,7 +152,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     // moment under the pointer's, faint; the calls on its stack.)
     let x = |s: f64| (s >= sa as f64 && s < (sb + 1) as f64).then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64);
     let now = cursor.and_then(x);
-    let peeked = ui.peek.read().as_ref().and(d.moment.cloned()).and_then(|(i, _)| x(machine().view(|v| v.rec.step_of(i)) as f64));
+    let peeked = ui.peek.read().as_ref().and(d.line.cloned()).and_then(|l| x(machine().view(|v| v.rec.step_of(l.i)) as f64));
     let calls: Vec<(usize, String)> = d.stack.read().iter().map(|f| (f.first, f.func.clone())).collect();
     let find = (ui.find)().to_lowercase();
     // (The bar outlined: the one under the pointer, else the frame shown's call.)
@@ -320,15 +320,14 @@ fn Strip() -> Element {
 fn Transport() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
-    let lines = ui.lines();
-    let here = use_context::<Derived>().shown.read().as_ref().and_then(|m| lines.get(m.line));
+    let here = d.line.cloned();
     let s = ui.syscall();
     let task = s.as_ref().map(|s| s.task.named()).unwrap_or_default();
-    let place = here.map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
+    let place = here.as_ref().map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
     // (A line that runs more than once in this call: which turn the cursor is on.)
-    let turn = here.filter(|l| l.run > 1).map(|l| format!(" · turn {}", l.run)).unwrap_or_default();
+    let turn = here.as_ref().filter(|l| l.run > 1).map(|l| format!(" · turn {}", l.run)).unwrap_or_default();
     // (A step that lands after a call: what it returned.)
-    let returned = here.and_then(|l| l.called.as_ref()).filter(|c| c.at <= here.map_or(0, |l| l.at))
+    let returned = here.as_ref().and_then(|l| l.called.as_ref()).filter(|c| c.at <= here.as_ref().map_or(0, |l| l.at))
         .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value))).unwrap_or_default();
     rsx! {
         div { class: "transport",
@@ -360,7 +359,7 @@ fn Find() -> Element {
             onkeydown: move |e| {
                 if e.key() == Key::Escape { ui.find.set(String::new()); return }
                 if e.key() != Key::Enter || calls.is_empty() { return }
-                let here = consume_context::<Derived>().moment.cloned().map_or(0, |(i, _)| i);
+                let here = consume_context::<Derived>().line.cloned().map_or(0, |l| l.i);
                 let to = if e.modifiers().shift() {
                     calls.iter().rev().find(|&&c| c < here).or(calls.last())
                 } else {

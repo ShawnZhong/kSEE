@@ -53,7 +53,7 @@ pub fn Source() -> Element {
     let mut seen = use_context::<Ui>().seen;
     // (The cursor moved: back to its place.)
     use_effect(move || {
-        let _ = d.moment.read();
+        let _ = d.line.read();
         seen.set(None);
     });
     let Some(f) = crate::stack::shown() else { return rsx! { div { class: "source" } } };
@@ -66,7 +66,7 @@ pub fn Source() -> Element {
     let def = machine().view(|v| v.definition(&f.func)).filter(|d| d.file == path && d.line <= line && !def_of);
     let sealed = def.as_ref().is_some_and(|d| d.sealed);
     let (from, to) = def.map_or((line, line), |d| (d.line, d.last.unwrap_or(line).max(line)));
-    let i = crate::stack::moment();
+    let at = d.line.cloned().map_or(0, |l| l.at);
     rsx! {
         div { class: "source",
             div { class: "srcbar mono",
@@ -75,29 +75,28 @@ pub fn Source() -> Element {
                 if sealed { span { title: "it loops, writes nothing and calls nothing: only its call and its return are recorded, not each turn", " · sealed: a box, its turns not recorded" } }
                 if def_of { a { onclick: move |_| seen.set(None), "back to the cursor" } }
             }
-            Code { path: path.clone(), from, to, line, here: !def_of, frame: f, i, seen }
+            Code { path: path.clone(), from, to, line, here: !def_of, frame: f, at, seen }
         }
     }
 }
 
 /// What the call selected did on each line of `file`: the lines that ran,
 /// how often; what each stored, its note and the write's record.
-fn ran(ui: Ui, file: &str) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
+fn ran(ui: Ui, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
     let m = machine();
     let k = ui.call();
     let counts = m.view(|v| v.coverage(file, k)).into_iter().map(|c| (c.line, c.count)).collect();
-    let cur = crate::stack::moment();
-    let notes = ui.syscall().map(|s| m.view(|v| v.notes(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), file, cur)))
+    let notes = ui.syscall().map(|s| m.view(|v| v.notes(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), file, at)))
         .unwrap_or_default().into_iter().map(|n| (n.line, (n.short, n.full, n.i))).collect();
     (counts, notes)
 }
 
 /// The value of expression `e` (a name, then fields: `file->f_pos`) at
-/// record `i`: an argument or local of frame `f`, else a global.
-fn value_of(e: &str, f: &Frame, i: usize) -> Option<Object> {
+/// record `at`: an argument or local of frame `f`, else a global.
+fn value_of(e: &str, f: &Frame, at: usize) -> Option<Object> {
     let path: Vec<&str> = e.split("->").flat_map(|p| p.split('.')).collect();
     let m = machine();
-    m.at_moment(i, |v, mem| {
+    m.at_moment(at, |v, mem| {
         let mut o = f.args.iter().flatten().chain(f.locals.iter().flatten()).find(|o| o.name == path[0]).cloned()
             .or_else(|| v.tables.types.globals.get(path[0]).map(|&(a, ty)| v.tables.types.object(mem, path[0], a, ty, 1)))?;
         let kids = |o: &Object| o.children.clone().or_else(|| o.open.and_then(|t| v.tables.types.object(mem, &o.name, t.addr, t.ty, 1).children));
@@ -148,7 +147,7 @@ fn place(line: u32, top: f64, view: f64) -> Option<f64> {
 /// its values under it, and kept in view), the function's `from..=to`
 /// edged.
 #[component]
-fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i: usize, seen: Signal<Option<(String, u32)>>) -> Element {
+fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, at: usize, seen: Signal<Option<(String, u32)>>) -> Element {
     let ui = use_context::<Ui>();
     let p = path.clone();
     let text = use_resource(use_reactive!(|(p,)| file(p)));
@@ -167,13 +166,13 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
         }
     }));
     let Some(src) = text.read().clone().flatten() else { return rsx! { div { class: "scroll", p { class: "dim pad", "…" } } } };
-    let (counts, notes) = ran(ui, &path);
+    let (counts, notes) = ran(ui, &path, at);
     let total = src.text.len();
     // (The cursor's line, at its end: the frame's values its names have, as
     // they are before it runs; what it compared, which way its branch went;
     // the call it made, once returned, what it returned.)
     let d = use_context::<Derived>();
-    let shown = d.shown.read().as_ref().and_then(|m| d.lines.read().get(m.line).cloned());
+    let shown = d.line.cloned();
     let values: Vec<String> = if here && line >= 1 && (line as usize) <= total {
         let words: Vec<&str> = src.pieces[line as usize - 1].iter().filter(|p| p.kind.is_ident()).map(|p| p.text.as_str()).collect();
         // (A call made on this line or this function's line before it, returned by now.)
@@ -235,7 +234,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
                                                 span { class: if has { format!("{} val", p.kind.class()) } else { p.kind.class().to_string() },
                                                     onmouseenter: move |ev| {
                                                         let pt = ev.client_coordinates();
-                                                        tip.set(value_of(&e, &frame, i).map(|o| Tip { x: pt.x, y: pt.y, lines: said(&e, &o) }));
+                                                        tip.set(value_of(&e, &frame, at).map(|o| Tip { x: pt.x, y: pt.y, lines: said(&e, &o) }));
                                                     },
                                                     onclick: move |ev| if ev.modifiers().ctrl() || ev.modifiers().meta() {
                                                         // (Its definition: a function, a type, a global; a member, of the one struct with it.)
