@@ -105,14 +105,12 @@ impl Recording {
         }
         let calls = stack::Calls::new(t, &records, &tasks);
         let syscalls = split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args, &calls);
-        // (A block is as many steps as the lines it runs: a call's width in
-        // the chart is how much of its code ran, line by line.)
-        let blocks: Vec<usize> = records.iter().enumerate().flat_map(|(i, r)| {
-            let lines = match *r {
-                Record::Block { func, n } => t.block(func, n).map_or(1, |b| b.steps.iter().filter(|s| s.loc.line != 0).count().max(1)),
-                _ => 0,
-            };
-            core::iter::repeat_n(i, lines)
+        // (A stretch of a block's lines (from its block, or a return into
+        // it) is as many steps as its lines: a call's width in the chart is
+        // how much of its code ran, line by line; a column, a line.)
+        let blocks: Vec<usize> = (0..records.len()).flat_map(|i| {
+            let lines = calls.lines_at(t, i);
+            core::iter::repeat_n(i, if matches!(records[i], Record::Block { .. }) { lines.max(1) } else { lines })
         }).collect();
         Recording { records, ids, args, tasks, syscalls, blocks, calls, stores: OnceCell::new(), names: Default::default(), named: Default::default() }
     }
@@ -134,11 +132,16 @@ impl Recording {
         self.blocks.get(k).copied().unwrap_or(self.records.len().saturating_sub(1))
     }
 
-    /// The records `n` columns of steps `from..=to` begin at, for a chart:
-    /// the k-th column's, at step from + k * span / n.
-    pub(crate) fn columns(&self, from: usize, to: usize, n: usize) -> Vec<usize> {
+    /// The moments `n` columns of steps `from..=to` are at, for a chart:
+    /// the k-th column's, step from + k * span / n: its record, and which
+    /// of the lines its stretch runs there.
+    pub(crate) fn columns(&self, from: usize, to: usize, n: usize) -> Vec<(usize, usize)> {
         let span = to.saturating_sub(from) + 1;
-        (0..n).map(|k| self.record_of(from + k * span / n)).collect()
+        (0..n).map(|k| {
+            let step = from + k * span / n;
+            let i = self.record_of(step);
+            (i, step.saturating_sub(self.blocks.partition_point(|&b| b < i)))
+        }).collect()
     }
 
     pub fn len(&self) -> usize {

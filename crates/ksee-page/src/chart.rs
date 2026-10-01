@@ -209,7 +209,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     let at = e.element_coordinates();
                     let Some((k, dd)) = hit(&chart, at.x, at.y) else { return };
                     let call = dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]).map(|b| (b.first, b.name.clone()));
-                    let peek = ui.moment_at(chart.cols[k].i, call);
+                    let peek = ui.moment_at(chart.cols[k].i, Some(chart.cols[k].nth), call);
                     if *ui.peek.peek() != peek { ui.peek.set(peek); }
                     let p = e.client_coordinates();
                     match dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]) {
@@ -232,7 +232,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     let peek = ui.peek.peek().clone().or_else(|| {
                         let (k, dd) = hit(&chart, at.x, at.y)?;
                         let call = dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]).map(|b| (b.first, b.name.clone()));
-                        ui.moment_at(chart.cols[k].i, call)
+                        ui.moment_at(chart.cols[k].i, Some(chart.cols[k].nth), call)
                     });
                     if peek.is_some() { ui.at.set(peek); }
                     ui.peek.set(None);

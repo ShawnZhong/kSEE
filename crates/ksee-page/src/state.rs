@@ -235,10 +235,10 @@ impl Ui {
         }
     }
 
-    /// The moment at record `i` (in the chart), on frame `frame` there:
+    /// The moment at record `i` (in the chart: its `nth` line), on frame `frame` there:
     /// the call it is in, its line there (the last at or before it).
-    pub fn moment_at(&self, i: usize, frame: Option<(usize, String)>) -> Option<Moment> {
-        let (call, own) = machine().view(|v| (v.rec.syscall_at(i), v.line_of(i)));
+    pub fn moment_at(&self, i: usize, nth: Option<usize>, frame: Option<(usize, String)>) -> Option<Moment> {
+        let (call, own) = machine().view(|v| (v.rec.syscall_at(i), v.line_of(i).or(nth.map(|n| (i, n as u32)))));
         let call = call?;
         let shown = consume_context::<Derived>().shown.peek().as_ref().map(|m| m.call);
         // (A write, a comparison: its own line; a block: its first line; else the last before.)
@@ -252,7 +252,7 @@ impl Ui {
 
     /// The cursor to record `i`, on frame `frame` (see `moment_at`).
     pub fn go_record(mut self, i: usize, frame: Option<(usize, String)>) {
-        if let Some(m) = self.moment_at(i, frame) {
+        if let Some(m) = self.moment_at(i, None, frame) {
             self.peek.set(None);
             self.at.set(Some(m));
         }

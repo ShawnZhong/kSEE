@@ -110,6 +110,8 @@ impl Chart {
 #[derive(Debug)]
 pub struct Column {
     pub i: usize,
+    /// Which of the lines its record's stretch runs it is at.
+    pub nth: usize,
     pub task: u32,
     pub frames: Vec<u32>,
 }
@@ -346,9 +348,9 @@ impl View<'_> {
             return chart;
         }
         let mut known: BTreeMap<(usize, Option<u32>), u32> = BTreeMap::new();
-        for i in rec.columns(first, last.min(rec.steps() - 1), n) {
+        for (i, nth) in rec.columns(first, last.min(rec.steps() - 1), n) {
             let mut frames = Vec::new();
-            for c in rec.calls.stack_at(t, i, None) {
+            for c in rec.calls.stack_at(t, i, Some(nth)) {
                 for (k, _) in self.nest(&c).into_iter().rev() {
                     let bar = *known.entry((c.first, k)).or_insert_with(|| {
                         let place = self.place(c.func);
@@ -365,7 +367,7 @@ impl View<'_> {
                     frames.push(bar);
                 }
             }
-            chart.cols.push(Column { i, task: rec.tasks.get(i).copied().unwrap_or(0), frames });
+            chart.cols.push(Column { i, nth, task: rec.tasks.get(i).copied().unwrap_or(0), frames });
         }
         chart
     }

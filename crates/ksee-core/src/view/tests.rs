@@ -487,9 +487,9 @@ fn a_chart_folds_into_runs() {
     let chart = Chart {
         bars: Vec::new(),
         cols: alloc::vec![
-            Column { i: 0, task: 7, frames: alloc::vec![0] },
-            Column { i: 1, task: 7, frames: alloc::vec![0, 1] },
-            Column { i: 2, task: 8, frames: alloc::vec![1] },
+            Column { i: 0, nth: 0, task: 7, frames: alloc::vec![0] },
+            Column { i: 1, nth: 0, task: 7, frames: alloc::vec![0, 1] },
+            Column { i: 2, nth: 0, task: 8, frames: alloc::vec![1] },
         ],
     };
     // (Each row's runs: row 0 has bar 0 over columns 0..2, then bar 1 at

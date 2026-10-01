@@ -201,10 +201,10 @@ pub async fn self_test() -> bool {
     t.check("and a bar of its own in the chart", chart.bars.iter().any(|b| b.inlined));
     t.check(format!("a syscall's entry says the syscall: {}", chart.bars[0].label), chart.bars[0].label == "wasm_syscall · write");
     {
-        // (Each column is a moment, its record: the Stack there has every call it draws.)
+        // (Each column is a moment, its record's line: the Stack there has every call it draws.)
         let (mut drawn, mut missing) = (0, Vec::new());
         for c in &chart.cols {
-            let frames = t.stack(c.i, None, c.i);
+            let frames = t.stack(c.i, Some(c.nth), c.i);
             for b in c.frames.iter().map(|&k| &chart.bars[k as usize]) {
                 drawn += 1;
                 if !frames.iter().any(|f| f.first == b.first && f.func == b.name && f.inlined == b.inlined) {
