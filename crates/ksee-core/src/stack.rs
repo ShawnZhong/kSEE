@@ -262,7 +262,7 @@ impl Calls {
             // (And if the call returns there, its value: its last line's.)
             let mut first_at: BTreeMap<u32, usize> = BTreeMap::new();
             let (mut ret, mut last) = (None, i);
-            for (j, r) in records.iter().enumerate().skip(i + 1) {
+            for (j, r) in records[i + 1..].iter().enumerate().map(|(k, r)| (i + 1 + k, r)) {
                 if tasks[j] != tk {
                     continue;
                 }
@@ -360,6 +360,36 @@ mod tests {
 
     fn call_end(records: &[Record], tasks: &[u32], first: usize) -> Option<usize> {
         Calls::new(&Tables::default(), records, tasks).call_end(first)
+    }
+
+    #[test]
+    fn lines_of_a_long_trace() {
+        // f's block 1 (lines 5, 6) 2000 times, each with its stores: the
+        // lines, each turn counted; a task switch in the middle names no
+        // lines of its own.
+        let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nL\t1\t0\t0:1\nL\t1\t1\t0:5;:6\n", "");
+        let st = |line| Record::Store { addr: 8, size: 4, old: Some(0), line, from: None };
+        let mut r = Vec::new();
+        let mut tasks = Vec::new();
+        r.push(b(1, 0));
+        tasks.push(7);
+        for k in 0..2000 {
+            r.push(b(1, 1));
+            tasks.push(7);
+            r.push(st(0));
+            tasks.push(7);
+            r.push(st(1));
+            tasks.push(7);
+            if k == 1000 {
+                r.push(b(9, 0));
+                tasks.push(8);
+            }
+        }
+        let got = lines(&t, &r, &tasks, 0, r.len() - 1, 7);
+        assert_eq!(got.len(), 1 + 2000 * 2);
+        assert_eq!(got[0].loc.line, 1);
+        assert_eq!(got.last().map(|s| (s.loc.line, s.run)), Some((6, 2000)));
+        assert!(got.iter().all(|s| s.at <= s.record + 2));
     }
 
     #[test]
