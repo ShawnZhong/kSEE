@@ -35,8 +35,9 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
     ./ksee.sh test [--ui]  # in Chromium ($CHROME): the kernel's tests; --ui also the page's (screenshots in target/)
     ./ksee.sh deploy       # build, then push the page to gh-pages (GitHub Pages)
 
-macOS: an `arm64e.x1` (tapi) link error means the SDK is newer than
-CommandLineTools — update them, or build against an older SDK.
+macOS: if linking fails with a `tapi … unknown architecture` error, remove
+SDKs newer than your Command Line Tools from
+/Library/Developer/CommandLineTools/SDKs.
 
 The page boots the kernel and opens the first lesson (or the one in the
 URL, `#ex=read`). On the left is the lesson; its head lists every lesson
