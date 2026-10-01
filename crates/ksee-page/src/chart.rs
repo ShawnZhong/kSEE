@@ -234,7 +234,12 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             for (dd , a , e , b) in runs {
                 {
                     let bar = &chart.bars[b];
-                    let (i, deep, first, inlined) = (chart.cols[a].i, chart.cols[a].frames.len(), bar.first, bar.inlined);
+                    let (first, inlined) = (bar.first, bar.inlined);
+                    // (The moments of the columns it is over, and their stacks' depths:
+                    // the pointer's column is the moment shown, and clicked.)
+                    let cols: std::rc::Rc<[(usize, usize)]> = chart.cols[a..e].iter().map(|c| (c.i, c.frames.len())).collect();
+                    let at = move |x: f64| cols[((x / px).max(0.0) as usize).min(cols.len() - 1)];
+                    let (enter, click) = (at.clone(), at.clone());
                     let on = calls.contains(&(first, inlined));
                     let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
                     let bg = if found { "var(--found)".to_string() } else { color(bar.file.as_deref(), on) };
@@ -246,18 +251,22 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                             style: "left: {pct(a)}%; width: {pct(e - a)}%; bottom: {dd as f64 * row}px; height: {row - 1.0}px; line-height: {row - 1.0}px; background: {bg}",
                             onmouseenter: move |ev| {
                                 let mut ui = ui;
-                                ui.peek.set(Some(Peek { i, first, inlined }));
+                                ui.peek.set(Some(Peek { i: enter(ev.element_coordinates().x).0, first, inlined }));
                                 let p = ev.client_coordinates();
                                 tip.set(Some(Tip { x: p.x, y: p.y, lines: said(first, inlined, &name) }));
                             },
                             onmousemove: move |ev| {
+                                let mut ui = ui;
+                                let peek = Some(Peek { i: at(ev.element_coordinates().x).0, first, inlined });
+                                if (ui.peek)() != peek { ui.peek.set(peek); }
                                 let p = ev.client_coordinates();
                                 if let Some(mut t) = tip() { t.x = p.x; t.y = p.y; tip.set(Some(t)); }
                             },
-                            onclick: move |_| {
+                            onclick: move |ev| {
                                 if pan().is_some_and(|p| p.moved) { return }
                                 let mut ui = ui;
                                 ui.peek.set(None);
+                                let (i, deep) = click(ev.element_coordinates().x);
                                 ui.go_record(i, Some(deep - 1 - dd));
                             },
                             if wide { "{label}" }
