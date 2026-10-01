@@ -503,3 +503,18 @@ fn the_raw_trace_is_a_line_a_record() {
     assert_eq!((raw[1].2.as_str(), raw[3].2.as_str()), ("var x = 5", "return f = 3"));
     assert!(raw[2].2.starts_with("block f #1"), "{}", raw[2].2);
 }
+
+#[test]
+fn a_context_switch_names_both_tasks() {
+    // f (1) runs on 0x100, switches (__switch_to, 2) to 0x200, which runs
+    // f: every record of the switch's call names prev and next; outside it,
+    // none.
+    let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\t__switch_to\t0:1\t3\n", "");
+    let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, Record::Return { func: 2, value: 0 }, Record::Block { func: 1, n: 0 }];
+    let mut args = Args::default();
+    args.push(1, &[0x100, 0x200, 0]);
+    let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
+    let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 16]) };
+    let at = |i| v.switch_at(i).map(|(p, n)| (p.addr, n.addr));
+    assert_eq!((at(0), at(1), at(2), at(3)), (None, Some((0x100, 0x200)), Some((0x100, 0x200)), None));
+}

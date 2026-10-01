@@ -365,6 +365,24 @@ impl View<'_> {
         }).collect()
     }
 
+    /// The context switch record `i` is in, if one: the task leaving (prev)
+    /// and the one arriving (next), as `__switch_to(prev, next)` has them —
+    /// so the page can name the handoff, not just who runs now. `i` any
+    /// record of the switch's call (its block 0 to its return, both
+    /// included). (The return runs on the next task's stack, so the call
+    /// itself never ends there: the span ends at its Return record.)
+    pub fn switch_at(&self, i: usize) -> Option<(Task, Task)> {
+        let switch = self.tables.find(arch::SWITCH)?;
+        let call = self.rec.calls.calls.iter().rev().find(|c| c.func == switch && c.first <= i)?;
+        let end = self.rec.records.iter().enumerate()
+            .find(|(j, r)| *j > call.first && matches!(r, Record::Return { func, .. } if *func == switch))
+            .map(|(j, _)| j).unwrap_or(usize::MAX);
+        (i <= end).then(|| {
+            let (args, _) = self.rec.args.get(call.first)?;
+            Some((self.task(args.first().copied()? as u32, i), self.task(args.get(1).copied()? as u32, i)))
+        }).flatten()
+    }
+
     /// Where the kernel was at record `i`: a block's line; for a store, its
     /// line; for a return, the line its frame was at, the record before
     /// (where it returned from); else the line its task was at.
