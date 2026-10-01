@@ -17,7 +17,7 @@ use ksee_core::view::{Frame, Object};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
-use ksee_core::highlight::{self, Kind, Piece};
+use ksee_core::highlight::{self, Piece};
 use crate::machine;
 use crate::state::{Derived, Ui};
 
@@ -158,7 +158,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
     let total = src.text.len();
     // (The cursor's line: the frame's values its names have, as they are before it runs.)
     let values: Vec<String> = if here && line >= 1 && (line as usize) <= total {
-        let words: Vec<&str> = src.pieces[line as usize - 1].iter().filter(|p| p.kind == Kind::Name).map(|p| p.text.as_str()).collect();
+        let words: Vec<&str> = src.pieces[line as usize - 1].iter().filter(|p| p.kind.is_ident()).map(|p| p.text.as_str()).collect();
         frame.args.iter().flatten().chain(frame.locals.iter().flatten()).filter(|o| words.contains(&o.name.as_str()))
             .map(|o| format!("{} = {}", o.name, o.value.clone().unwrap_or_else(|| "{…}".into()))).collect()
     } else { Vec::new() };
@@ -202,14 +202,14 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
                                     },
                                     "{n}" }
                                 for (k , p) in pieces.iter().enumerate() {
-                                    if p.kind == Kind::Name {
+                                    if p.kind.is_ident() {
                                         {
                                             let e = highlight::expr(&pieces, k);
                                             let has = names.contains(&e.split(['-', '.']).next().unwrap_or("").to_string());
                                             let frame = frame.clone();
                                             let word = p.text.clone();
                                             rsx! {
-                                                span { class: if has { "nm val" } else { "nm" },
+                                                span { class: if has { format!("{} val", p.kind.class()) } else { p.kind.class().to_string() },
                                                     onmouseenter: move |ev| {
                                                         let pt = ev.client_coordinates();
                                                         tip.set(value_of(&e, &frame, i).map(|o| Tip { x: pt.x, y: pt.y, lines: said(&e, &o) }));
