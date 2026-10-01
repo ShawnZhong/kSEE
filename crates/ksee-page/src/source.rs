@@ -130,9 +130,20 @@ fn said(e: &str, o: &Object) -> Vec<String> {
 /// A line's height (px), and how many lines are made past the view.
 const LINE: f64 = 17.0;
 const MARGIN: usize = 30;
+/// The lines kept between the marked line and the view's edges before it scrolls.
+const KEEP: f64 = 3.0;
+
+/// Where to scroll for line `line` to be in view, the view at `top`, `view`
+/// high: nowhere while it is (and its values row) clear of the edges; else
+/// with it a third of the way down, the lines after it in view.
+fn place(line: u32, top: f64, view: f64) -> Option<f64> {
+    let y = (line as f64 - 1.0) * LINE;
+    let clear = y >= top + KEEP * LINE && y + (KEEP + 2.0) * LINE <= top + view;
+    (!clear).then(|| (y - view / 3.0).max(0.0))
+}
 
 /// File `path`, scrolling: line `line` marked (`here`: the cursor's, with
-/// its values under it, and kept in the middle), the function's `from..=to`
+/// its values under it, and kept in view), the function's `from..=to`
 /// edged.
 #[component]
 fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i: usize, seen: Signal<Option<(String, u32)>>) -> Element {
@@ -143,13 +154,13 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
     let mut top = use_signal(|| 0.0f64);
     let mut view = use_signal(|| 600.0f64);
     let mut handle = use_signal(|| None::<std::rc::Rc<MountedData>>);
-    // (The marked line in the middle, as it changes, or the file, once it is loaded.)
+    // (The marked line in view, as it changes, or the file, once it is loaded:
+    // the view still while it is.)
     let loaded = text.read().clone().flatten().map(|f| Rc::as_ptr(&f) as usize);
     use_effect(use_reactive!(|(line, loaded)| {
         let _ = loaded;
-        // (Read, not followed: a scroll is no reason to centre it again.)
-        if let Some(h) = handle.peek().clone() {
-            let y = ((line as f64 - 1.0) * LINE - *view.peek() / 2.0).max(0.0);
+        // (Read, not followed: a scroll is no reason to move it again.)
+        if let (Some(h), Some(y)) = (handle.peek().clone(), place(line, *top.peek(), *view.peek())) {
             spawn(async move { let _ = h.scroll(PixelsVector2D::new(0.0, y), ScrollBehavior::Instant).await; });
         }
     }));
@@ -174,8 +185,9 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, i
             onmounted: move |e| async move {
                 let h = e.data();
                 if let Ok(r) = h.get_client_rect().await { view.set(r.size.height); }
-                let y = ((line as f64 - 1.0) * LINE - view() / 2.0).max(0.0);
-                let _ = h.scroll(PixelsVector2D::new(0.0, y), ScrollBehavior::Instant).await;
+                if let Some(y) = place(line, 0.0, view()) {
+                    let _ = h.scroll(PixelsVector2D::new(0.0, y), ScrollBehavior::Instant).await;
+                }
                 handle.set(Some(h));
             },
             onscroll: move |e| { top.set(e.scroll_top()); view.set(e.client_height() as f64); },
