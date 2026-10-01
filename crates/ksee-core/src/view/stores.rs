@@ -95,7 +95,7 @@ pub struct Write {
     pub i: usize,
     pub addr: u32,
     pub old: String,
-    pub task: TaskRef,
+    pub task: Task,
     pub at: Option<Line>,
     pub from: Option<u32>,
 }

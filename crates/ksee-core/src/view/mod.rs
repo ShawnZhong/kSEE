@@ -31,13 +31,13 @@ pub use value::{Missing, Object, Target};
 
 /// Who a task was, at a record (see View::task).
 #[derive(Debug, Clone, PartialEq)]
-pub struct TaskRef {
+pub struct Task {
     pub addr: u32,
     pub pid: Option<i32>,
     pub comm: Option<String>,
 }
 
-impl TaskRef {
+impl Task {
     /// As the page names it: comm(pid).
     pub fn named(&self) -> String {
         format!("{}({})", self.comm.clone().unwrap_or_default(), self.pid.unwrap_or(0))
@@ -50,7 +50,7 @@ pub struct SyscallSummary {
     /// Its first record's id (see Recording::ids): the same in later
     /// snapshots, where its index has moved on.
     pub id: u32,
-    pub task: TaskRef,
+    pub task: Task,
     /// Its name (its number, if this kernel's table has none: see
     /// Types::syscall_name).
     pub name: String,
@@ -85,7 +85,7 @@ pub struct At {
     pub line: Option<u32>,
     /// The function the code there is inlined from, if.
     pub inlined: Option<String>,
-    pub task: TaskRef,
+    pub task: Task,
     /// The syscall in progress on the task (its index), if any.
     pub syscall: Option<usize>,
     /// A return's value (truncated to 32 bits).
@@ -204,7 +204,7 @@ pub struct TaskFields {
 /// switch).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskAt {
-    pub task: TaskRef,
+    pub task: Task,
     /// The task it sits under (its task_struct's address): a thread, its
     /// thread group's leader; a process, its parent.
     pub up: Option<u32>,
@@ -260,7 +260,7 @@ impl View<'_> {
     /// Who the task at `addr` was at record `at`: its pid and comm as memory
     /// was then (a task renamed later, or one whose task_struct another has
     /// by now, as it was).
-    pub fn task(&self, addr: u32, at: usize) -> TaskRef {
+    pub fn task(&self, addr: u32, at: usize) -> Task {
         let t = self.tables;
         let at = at.min(last_record(self.rec));
         // (Read once per snapshot and per last write to its pid or comm by
@@ -274,7 +274,7 @@ impl View<'_> {
             self.rec.names.borrow_mut().insert(key, task.clone());
             Some(task)
         });
-        TaskRef { addr, pid: task.as_ref().map(|t| t.0), comm: task.map(|t| t.1) }
+        Task { addr, pid: task.as_ref().map(|t| t.0), comm: task.map(|t| t.1) }
     }
 
     /// The fields of the task at `addr`, in `mem` (memory as it was): the

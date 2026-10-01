@@ -28,7 +28,7 @@ pub struct Node {
     pub group: Group,
     /// Another task than the span's, if one made its first write (one the
     /// span woke, or that ran while it waited: a journal's thread).
-    pub by: Option<TaskRef>,
+    pub by: Option<Task>,
     /// The node it is shown under (of its group: its index), the first
     /// that points to it as the span ends, if any; and by which of its
     /// members ("f_inode"), unless its name says it ("prog(19)->files"
@@ -225,7 +225,6 @@ impl View<'_> {
     /// change's target written.
     fn link_nodes(types: &Types, mem: &dyn Memory, nodes: Vec<(Node, Vec<Option<u32>>)>) -> Vec<Node> {
         let (nodes, points): (Vec<Node>, Vec<Vec<Option<u32>>>) = nodes.into_iter().unzip();
-        let mut nodes = nodes;
         let within = |p: u32| nodes.iter().position(|n| n.addr <= p && p < n.addr.saturating_add(n.size));
         // (Each node's pointers to the others of its group and task, as
         // memory is as the span ends: the tree each is shown as.)
