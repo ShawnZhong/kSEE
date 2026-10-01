@@ -24,24 +24,75 @@
 use std::path::Path;
 use std::process::Command;
 
-/// Runs `cmd`, said first, its output shown.
-pub fn run(cmd: &mut Command) {
-    eprintln!("+ {cmd:?}");
-    let status = cmd.status().unwrap_or_else(|e| crate::fail(&format!("{:?}: {e}", cmd.get_program())));
-    if !status.success() {
-        crate::fail(&format!("{:?} failed: {status}", cmd.get_program()));
+/// `cmd` as a shell line: its program and arguments (quoted only past
+/// [A-Za-z0-9_./=:,+@%-]), `cd DIR &&` first when it runs elsewhere, and any
+/// environment set on it as `K=V`.
+fn shell(cmd: &Command) -> String {
+    let mut s = String::new();
+    for (k, v) in cmd.get_envs() {
+        if let Some(v) = v {
+            s.push_str(&word(&k.to_string_lossy()));
+            s.push('=');
+            s.push_str(&word(&v.to_string_lossy()));
+            s.push(' ');
+        }
+    }
+    if let Some(dir) = cmd.get_current_dir() {
+        s.push_str("cd ");
+        s.push_str(&word(&dir.to_string_lossy()));
+        s.push_str(" && ");
+    }
+    s.push_str(&word(&cmd.get_program().to_string_lossy()));
+    for a in cmd.get_args() {
+        s.push(' ');
+        s.push_str(&word(&a.to_string_lossy()));
+    }
+    s
+}
+
+/// A shell word, quoted only past [A-Za-z0-9_./=:,+@%-].
+fn word(w: &str) -> String {
+    if !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || "./=:,+@%-_".contains(c)) {
+        w.into()
+    } else {
+        format!("'{}'", w.replace('\'', "'\\''"))
     }
 }
 
-/// Runs `cmd`, said first, for its stdout (its stderr shown).
-fn output(cmd: &mut Command) -> Vec<u8> {
-    eprintln!("+ {cmd:?}");
-    let out = cmd.stderr(std::process::Stdio::inherit()).output()
-        .unwrap_or_else(|e| crate::fail(&format!("{:?}: {e}", cmd.get_program())));
-    if !out.status.success() {
-        crate::fail(&format!("{:?} failed: {}", cmd.get_program(), out.status));
+/// Runs `cmd`, said first, its output shown.
+pub fn run(cmd: &mut Command) {
+    eprintln!("+ {}", shell(cmd));
+    let status = cmd.status().unwrap_or_else(|e| crate::fail(&format!("{}: {e}", shell(cmd))));
+    if !status.success() {
+        crate::fail(&format!("{} failed: {status}", shell(cmd)));
     }
-    out.stdout
+}
+
+/// Runs `cmd`, said first, for its stdout (its stderr shown, its stdout said
+/// after when short, else its size).
+fn output(cmd: &mut Command) -> Vec<u8> {
+    eprintln!("+ {}", shell(cmd));
+    let out = cmd.stderr(std::process::Stdio::inherit()).output()
+        .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", shell(cmd))));
+    if !out.status.success() {
+        crate::fail(&format!("{} failed: {}", shell(cmd), out.status));
+    }
+    match String::from_utf8(out.stdout) {
+        Ok(s) if s.lines().count() <= 20 => {
+            if !s.is_empty() {
+                eprintln!("{s}");
+            }
+            s.into_bytes()
+        }
+        Ok(s) => {
+            eprintln!("({} bytes)", s.len());
+            s.into_bytes()
+        }
+        Err(e) => {
+            eprintln!("({} bytes)", e.as_bytes().len());
+            e.into_bytes()
+        }
+    }
 }
 
 /// The site: what the page loads.
@@ -113,7 +164,6 @@ pub fn build() {
     linux();
 
     if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
-        eprintln!("  PLUGIN  plugin/ksee-trace.so");
         let flags = output(Command::new(&t.llvm_config).arg("--cxxflags"));
         let mut plugin = Command::new(&t.cxx);
         plugin.args(["-shared", "-fPIC", "-O2", "plugin/ksee-trace.cpp", "-o", "plugin/ksee-trace.so"]);
@@ -143,14 +193,12 @@ pub fn build() {
     if stale("linux/.config", &["linux/arch/wasm/configs/defconfig"]) {
         run(&mut kmake(&["defconfig"]));
     }
-    eprintln!("  KERNEL  linux/vmlinux");
     run(&mut kmake(&[&format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()))]));
     // (Its UAPI headers: the pack's constants, the programs' syscalls.)
     run(&mut kmake(&["headers"]));
 
     site();
     // (The runtime and the page, one module: the page calls the Machine.)
-    eprintln!("  RUNTIME {SITE}/pkg");
     run(Command::new("cargo").args(["build", "--release", "-p", "ksee-page",
         "--target", "wasm32-unknown-unknown"]));
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
@@ -158,6 +206,7 @@ pub fn build() {
     // (Packed again for a new kernel, or a new pack: this program.)
     let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
     if stale("target/vmlinux", &["linux/vmlinux", &me]) {
+        eprintln!("+ (pack) linux -> {SITE}");
         crate::pack::pack(Path::new("linux"), Path::new(SITE));
         std::fs::rename(format!("{SITE}/vmlinux"), "target/vmlinux")
             .unwrap_or_else(|e| crate::fail(&format!("target/vmlinux: {e}")));
@@ -170,7 +219,6 @@ pub fn build() {
     let dir = "target/initramfs";
     let cpio_out = format!("{dir}/initramfs.cpio");
     if stale(&cpio_out, &inputs) {
-        eprintln!("  INIT    {SITE}/initramfs.cpio.gz");
         std::fs::create_dir_all(dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
         for p in programs {
             run(Command::new(&t.cc)
@@ -221,7 +269,7 @@ const LINUX_COMMIT: &str = "f42acb3678424d1e08f6ed27c0d8ba8a125e14d6";
 fn linux() {
     let git = |args: &[&str]| output(Command::new("git").arg("-C").arg("linux").args(args));
     if !Path::new("linux/Makefile").exists() {
-        eprintln!("  LINUX   linux/ ({LINUX_TAG}, from the stable tree; linux.patch)");
+        eprintln!("+ (fetch) {LINUX_TREE} {LINUX_TAG} -> linux/");
         std::fs::create_dir_all("linux").unwrap_or_else(|e| crate::fail(&format!("linux/: {e}")));
         git(&["init"]);
         git(&["fetch", "--depth=1", LINUX_TREE, "tag", LINUX_TAG]);
@@ -236,7 +284,7 @@ fn linux() {
     git(&["add", "-A", "--intent-to-add"]);
     let diff = git(&["diff", "--no-color", LINUX_TAG]);
     if std::fs::read("linux.patch").ok().as_deref() != Some(&diff[..]) {
-        eprintln!("  PATCH   linux.patch");
+        eprintln!("+ (patch) linux -> linux.patch");
         std::fs::write("linux.patch", &diff).unwrap_or_else(|e| crate::fail(&format!("linux.patch: {e}")));
     }
 }
@@ -244,6 +292,7 @@ fn linux() {
 /// wasm-bindgen's glue for `wasm`, in `out` (the crate, at ksee-page's
 /// wasm-bindgen version: the two must match).
 fn bindgen(wasm: &str, out: &str) {
+    eprintln!("+ (bindgen) {wasm} -> {out}");
     wasm_bindgen_cli_support::Bindgen::new().input_path(wasm).web(true).and_then(|b| b.typescript(false).generate(out))
         .unwrap_or_else(|e| crate::fail(&format!("wasm-bindgen {wasm}: {e}")));
 }
@@ -269,6 +318,7 @@ const EXAMPLES: &[(&str, &[&str])] = &[
 /// of syscalls for /init to make, one at a time), in the course's order,
 /// with their names and chapters (`group`); any other after them.
 fn examples() {
+    eprintln!("+ (examples) user/examples/*.json -> {SITE}/examples.json");
     let course: Vec<(&str, &str)> = EXAMPLES.iter().flat_map(|&(group, names)| names.iter().map(move |&n| (n, group))).collect();
     let mut index: Vec<(usize, String)> = std::fs::read_dir("user/examples").into_iter().flatten().flatten()
         .map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).map(|p| {
@@ -289,6 +339,7 @@ fn examples() {
 /// Links in the site to web/'s files (so an edit there needs no build), and
 /// none to files no longer there.
 fn site() {
+    eprintln!("+ (site) web/* -> {SITE}/");
     std::fs::create_dir_all(SITE).unwrap_or_else(|e| crate::fail(&format!("{SITE}: {e}")));
     for e in std::fs::read_dir(SITE).into_iter().flatten().flatten() {
         if e.path().is_symlink() && !e.path().exists() {
