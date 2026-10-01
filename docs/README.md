@@ -29,6 +29,7 @@ The build and the commands:
 
 Background:
 
+- [ideas.md](ideas.md): what was proposed and is still open, each a line
 - [research.md](research.md): directions surveyed and not built
   (counterfactual execution, ext4 feasibility numbers), so they are not
   re-done.
