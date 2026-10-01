@@ -1,5 +1,6 @@
 //! A span's stores, named as the code names what they hit (View::stores),
-//! printed where shown: the source's notes (View::notes), and who wrote a
+//! by the things they changed (View::things): printed where shown, the
+//! source's notes (View::notes) and Objects (objects.rs); and who wrote a
 //! value, back through its copies (View::origin).
 
 use super::*;
@@ -42,37 +43,39 @@ pub struct Region {
     pub depth: u32,
 }
 
-/// A span's stores and variable sets, in order, by the regions they hit.
+/// A span's stores and variable sets, in order, by the regions they hit;
+/// and by the things they wrote (Thing), once asked.
 #[derive(Debug, Default)]
 pub struct Named {
     pub regions: Vec<Region>,
     pub writes: Vec<Wrote>,
+    things: core::cell::OnceCell<Vec<Thing>>,
 }
 
 /// A store or a variable set: at record `i`, to `region`, on line `at`
-/// (Recording::line_at); a variable set's `prev`, the set of the same
-/// variable before it in the span.
+/// (Recording::line_at).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Wrote {
     pub i: usize,
     pub region: u32,
     pub at: Option<LineStep>,
-    pub prev: Option<usize>,
+}
+
+/// A thing a span's writes changed: a member of a region (a path: "f_pos",
+/// "f_path.dentry"; "" the region itself: a variable, or memory nothing
+/// names), with its leaf (a typed region's), and its writes, in order. The
+/// one path both the source's notes and Objects read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Thing {
+    pub region: u32,
+    pub member: String,
+    pub leaf: Option<Leaf>,
+    pub writes: Vec<Wrote>,
 }
 
 /// A member's scalar, as Types::leaf finds it: its type, its offset in the
 /// object, and its bits if a bitfield.
-pub(super) type Leaf = (u32, u32, Option<(u32, u32)>);
-
-/// A write, printed: the member it wrote (a path: "f_path.dentry"; "" the
-/// object itself), from `before` to
-/// `after`.
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct Change {
-    pub(super) member: String,
-    pub(super) before: String,
-    pub(super) after: String,
-}
+pub type Leaf = (u32, u32, Option<(u32, u32)>);
 
 /// What a source line stored (or set) by a moment (View::notes): each
 /// thing it wrote, said `short` and in `full`; its last write at record
@@ -164,23 +167,39 @@ impl View<'_> {
         v.and_then(|v| self.var_object(v, value, self.now)?.value).unwrap_or_default()
     }
 
-    /// Write `w` of `named`, printed: each member it wrote, from what to what.
-    pub(super) fn changes(&self, named: &Named, w: &Wrote) -> Vec<Change> {
-        let r = &named.regions[w.region as usize];
-        if r.kind == RegionKind::Var {
-            let before = w.prev.map_or_else(|| Missing::Uninitialized.text().into(), |p| self.var_value(p));
-            return alloc::vec![Change { member: String::new(), before, after: self.var_value(w.i) }];
-        }
-        self.members(r, w.i).into_iter().map(|(member, leaf)| {
-            let (before, after) = match leaf {
-                Some(leaf) => (self.value(r.addr, leaf, w.i.saturating_sub(1)), self.value(r.addr, leaf, w.i)),
-                None => {
-                    let Record::Store { old, .. } = self.rec.records[w.i] else { unreachable!() };
-                    (old.map_or_else(|| Missing::NotRecorded.text().into(), num), num(self.wrote(w.i)))
+    /// The things `named`'s writes changed, in the order first written.
+    pub fn things<'a>(&self, named: &'a Named) -> &'a [Thing] {
+        named.things.get_or_init(|| {
+            let mut things: Vec<Thing> = Vec::new();
+            for w in &named.writes {
+                let r = &named.regions[w.region as usize];
+                let members = if r.kind == RegionKind::Var { alloc::vec![(String::new(), None)] } else { self.members(r, w.i) };
+                for (member, leaf) in members {
+                    match things.iter_mut().find(|t| t.region == w.region && t.member == member) {
+                        Some(t) => t.writes.push(*w),
+                        None => things.push(Thing { region: w.region, member, leaf, writes: alloc::vec![*w] }),
+                    }
                 }
-            };
-            Change { member, before, after }
-        }).collect()
+            }
+            things
+        })
+    }
+
+    /// Thing `t`'s write `k` (of its writes), printed: from what to what (a
+    /// variable from its set before, in the span).
+    pub fn change(&self, named: &Named, t: &Thing, k: usize) -> (String, String) {
+        let (r, w) = (&named.regions[t.region as usize], &t.writes[k]);
+        if r.kind == RegionKind::Var {
+            let before = k.checked_sub(1).map_or_else(|| Missing::Uninitialized.text().into(), |p| self.var_value(t.writes[p].i));
+            return (before, self.var_value(w.i));
+        }
+        match t.leaf {
+            Some(leaf) => (self.value(r.addr, leaf, w.i.saturating_sub(1)), self.value(r.addr, leaf, w.i)),
+            None => {
+                let Record::Store { old, .. } = self.rec.records[w.i] else { unreachable!() };
+                (old.map_or_else(|| Missing::NotRecorded.text().into(), num), num(self.wrote(w.i)))
+            }
+        }
     }
 
     /// The stores in records `first..=last` (a call's), and the variables
@@ -207,38 +226,36 @@ impl View<'_> {
     pub fn notes(&self, first: usize, last: usize, file: &str, cur: usize) -> Vec<Note> {
         let named = self.stores(first, last);
         let files: Vec<u32> = (0..self.tables.files.len() as u32).filter(|&k| self.tables.files[k as usize] == file).collect();
-        // (Each line's things written, in the order first written: (region,
-        // member) -> its last write, how many; and the line's last write.)
-        let mut by: BTreeMap<u32, (Vec<((u32, String), (&Wrote, usize))>, usize)> = BTreeMap::new();
-        for w in named.writes.iter().take_while(|w| w.i <= cur) {
-            let Some(at) = w.at.filter(|at| files.contains(&at.loc.file)) else { continue };
-            let r = &named.regions[w.region as usize];
-            let members = if r.kind == RegionKind::Var { alloc::vec![String::new()] } else { self.members(r, w.i).into_iter().map(|(m, _)| m).collect() };
-            let (things, i) = by.entry(at.loc.line).or_default();
-            *i = w.i;
-            for m in members {
-                let key = (w.region, m);
-                match things.iter_mut().find(|(k, _)| *k == key) {
-                    Some((_, x)) => *x = (w, x.1 + 1),
-                    None => things.push((key, (w, 1))),
+        // (Each line's things, in the order first written there: the thing,
+        // its last write there by `cur`, how many; and the line's last write.)
+        let mut by: BTreeMap<u32, (Vec<(&Thing, usize, usize)>, usize)> = BTreeMap::new();
+        for t in self.things(&named) {
+            for (k, w) in t.writes.iter().enumerate().take_while(|(_, w)| w.i <= cur) {
+                let Some(at) = w.at.filter(|at| files.contains(&at.loc.file)) else { continue };
+                let (things, last) = by.entry(at.loc.line).or_default();
+                *last = (*last).max(w.i);
+                match things.iter_mut().find(|(x, _, _)| core::ptr::eq(*x, t)) {
+                    Some((_, at, n)) => (*at, *n) = (k, *n + 1),
+                    None => things.push((t, k, 1)),
                 }
             }
         }
-        by.into_iter().map(|(line, (things, i))| {
+        by.into_iter().map(|(line, (mut things, i))| {
+            things.sort_by_key(|(t, _, _)| t.writes.iter().find(|w| w.at.is_some_and(|a| a.loc.line == line)).map(|w| w.i));
             // (Short, a name once (two inlined copies' `sb` are one `sb` in
             // the text), each change it had once, the times added: "sb: NULL
             // → 0x1c49000, (uninitialized) → 0x1c49000 ×2".)
             let (mut short, mut full): (Vec<(String, Vec<(String, usize)>)>, Vec<String>) = (Vec::new(), Vec::new());
-            for ((region, member), (w, n)) in things {
-                let r = &named.regions[region as usize];
-                let Some(x) = self.changes(&named, w).into_iter().find(|x| x.member == member) else { continue };
+            for (t, k, n) in things {
+                let r = &named.regions[t.region as usize];
+                let (before, after) = self.change(&named, t, k);
                 let join = if r.kind == RegionKind::Object { "->" } else { "." };
                 // (The member after the name, the function it is in last: "filp->f_pos in vfs_read".)
                 let (expr, within) = (r.what.as_str(), r.within.as_ref().map_or(String::new(), |f| format!(" in {f}")));
-                let times = |n: usize| if n > 1 { format!(" ×{n}") } else { String::new() };
-                full.push(format!("{expr}{}{within}: {} → {}{}", if x.member.is_empty() { String::new() } else { format!("{join}{}", x.member) }, x.before, x.after, times(n)));
-                let name = if x.member.is_empty() { expr.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(expr) } else { &x.member };
-                let change = format!("{} → {}", x.before, x.after);
+                let times = if n > 1 { format!(" ×{n}") } else { String::new() };
+                full.push(format!("{expr}{}{within}: {before} → {after}{times}", if t.member.is_empty() { String::new() } else { format!("{join}{}", t.member) }));
+                let name = if t.member.is_empty() { expr.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(expr) } else { &t.member };
+                let change = format!("{before} → {after}");
                 let k = short.iter().position(|(s, _)| s == name).unwrap_or_else(|| (short.push((name.to_string(), Vec::new())), short.len() - 1).1);
                 match short[k].1.iter_mut().find(|(c, _)| *c == change) {
                     Some((_, k)) => *k += n,
@@ -277,7 +294,7 @@ impl View<'_> {
         let mut writes = self.store_writes(first, last, &mut regions);
         writes.extend(self.var_writes(first, last, &mut regions));
         writes.sort_by_key(|w| w.i);
-        Named { regions, writes }
+        Named { regions, writes, things: Default::default() }
     }
 
     /// The task running as the span begins, by its name ("prog(19)"), and
@@ -414,7 +431,7 @@ impl View<'_> {
                     })
                 }
             };
-            writes.push(Wrote { i, region, at: self.rec.line_at(t, i), prev: None });
+            writes.push(Wrote { i, region, at: self.rec.line_at(t, i) });
         }
         writes
     }
@@ -433,19 +450,19 @@ impl View<'_> {
     /// value then.
     fn var_writes(&self, first: usize, last: usize, regions: &mut Vec<Region>) -> Vec<Wrote> {
         let (t, calls, records) = (self.tables, &self.rec.calls, &self.rec.records);
-        // (Each call's variable's region (none: of no type known), and its last set.)
-        let mut vars: BTreeMap<(usize, u32), (Option<u32>, Option<usize>)> = BTreeMap::new();
+        // (Each call's variable's region (none: of no type known).)
+        let mut vars: BTreeMap<(usize, u32), Option<u32>> = BTreeMap::new();
         let mut writes = Vec::new();
         for i in first..=last {
             let Record::Var { var, .. } = records[i] else { continue };
             let Some(c) = calls.call_at(i) else { continue };
-            let (region, prev) = vars.entry((c.first, var)).or_insert_with(|| {
+            let region = *vars.entry((c.first, var)).or_insert_with(|| {
                 let v = t.vars.get(&(c.func, var));
                 let r = v.and_then(|v| Some(Region { what: v.name.clone(), within: Some(v.function.clone()), kind: RegionKind::Var, ty: self.var_ty(v)?, addr: 0, size: 0, life: None, depth: c.depth }));
-                (r.map(|r| (regions.push(r), regions.len() as u32 - 1).1), None)
+                r.map(|r| (regions.push(r), regions.len() as u32 - 1).1)
             });
-            let Some(region) = *region else { continue };
-            writes.push(Wrote { i, region, at: self.rec.line_at(t, i), prev: prev.replace(i) });
+            let Some(region) = region else { continue };
+            writes.push(Wrote { i, region, at: self.rec.line_at(t, i) });
         }
         writes
     }

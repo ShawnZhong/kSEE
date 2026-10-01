@@ -2,7 +2,7 @@
 //! changed, as a graph.
 
 use super::*;
-use super::stores::{Leaf, RegionKind};
+use super::stores::RegionKind;
 
 /// An object a span of records (a call) changed, which is still there when
 /// it returns (see View::objects): as the Stores name it (`what`, `kind`,
@@ -84,110 +84,73 @@ impl View<'_> {
     /// (then the first written first), each node followed by those under it.
     pub fn objects(&self, first: usize, last: usize) -> Vec<Node> {
         let named = self.stores(first, last);
-        let nodes = self.object_nodes(&named, first);
-        let mut nodes = self.object_diffs(nodes, last);
+        let mut nodes = self.object_nodes(&named, first, last);
         Self::order_nodes(&mut nodes);
         let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
         Self::link_nodes(&self.tables.types, &mem, nodes)
     }
 
-    /// The objects the span's writes hit (the kernel's data: not a stack's,
-    /// nor the machine's plumbing): each one's writes by member, with the
-    /// member's leaf.
-    fn object_nodes(&self, named: &Named, first: usize) -> Vec<(Node, Vec<(String, Leaf, Vec<Wrote>)>)> {
+    /// The objects the span's things are members of (the kernel's data:
+    /// not a stack's, nor the machine's plumbing), one per address and
+    /// type: each member from what it was to what it is as the span ends
+    /// (one only ever written as it was, not; an object with none, not),
+    /// with a pointer's target as it ends.
+    fn object_nodes(&self, named: &Named, first: usize, last: usize) -> Vec<(Node, Vec<Option<u32>>)> {
         let types = &self.tables.types;
-        // (Each object's writes (its region's, and any other's of its
-        // address and type), by member, in order; with the member's leaf.)
-        let mut nodes: Vec<(Node, Vec<(String, Leaf, Vec<Wrote>)>)> = Vec::new();
-        let mut leaves: BTreeMap<(u32, u32, u32), Vec<(String, Option<Leaf>)>> = BTreeMap::new();
+        let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
         let own = self.rec.tasks.get(first).copied();
-        for w in &named.writes {
-            let r = &named.regions[w.region as usize];
+        let mut nodes: Vec<(Node, Vec<Option<u32>>)> = Vec::new();
+        for t in self.things(named) {
+            let r = &named.regions[t.region as usize];
             // (The kernel's data, not a stack's: a call's locals, and what a
             // pointer reaches on a stack, are the Stack's.)
+            let Some((ty, off, _)) = t.leaf else { continue };
             if !matches!(r.kind, RegionKind::Object | RegionKind::Task | RegionKind::Global) || r.size == 0 || r.life.is_some() {
                 continue;
             }
-            let group = Group::Changed;
+            // (A run: one function's writes in a row; one that left it as it was, not.)
+            let func = |w: &Wrote| w.at.and_then(|s| self.tables.functions.get(&s.func)).map(|f| f.name.as_str());
+            let mut runs: Vec<Run> = Vec::new();
+            let mut k = 0;
+            for run in t.writes.chunk_by(|a, b| func(a) == func(b)) {
+                let (before, after) = (self.change(named, t, k).0, self.change(named, t, k + run.len() - 1).1);
+                runs.push(Run { before, after, writes: run.len(), first: run[0].i, last: run[run.len() - 1].i, at: run[run.len() - 1].at.map(|s| self.line_only(&s)) });
+                k += run.len();
+            }
+            let (a, z) = (runs[0].before.clone(), runs.last().expect("a run").after.clone());
+            runs.retain(|r| r.before != r.after);
+            if runs.is_empty() {
+                continue;
+            }
             let k = match nodes.iter().position(|(n, _)| n.addr == r.addr && n.id == r.ty) {
                 Some(k) => k,
                 None => {
-                    let task = self.rec.tasks[w.i];
-                    let by = (Some(task) != own).then(|| self.task(task, w.i));
-                    nodes.push((Node { label: match (r.kind, types.get(types.resolve(r.ty)).name.as_str()) {
-                                           (RegionKind::Object, name) if !name.is_empty() => name.to_string(),
-                                           _ => r.what.clone(),
-                                       },
-                                       what: r.what.clone(), within: r.within.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size, changes: Vec::new(),
-                                       depth: r.depth, group, by, under: None, via: None }, Vec::new()));
+                    let task = self.rec.tasks[t.writes[0].i];
+                    let label = match (r.kind, types.get(types.resolve(r.ty)).name.as_str()) {
+                        (RegionKind::Object, name) if !name.is_empty() => name.to_string(),
+                        _ => r.what.clone(),
+                    };
+                    nodes.push((Node { label, what: r.what.clone(), within: r.within.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size,
+                                       changes: Vec::new(), depth: r.depth, group: Group::Changed, by: (Some(task) != own).then(|| self.task(task, t.writes[0].i)),
+                                       under: None, via: None }, Vec::new()));
                     nodes.len() - 1
                 }
             };
-            // (A store's members (one may copy several), once per place.)
-            let Record::Store { addr, size, .. } = self.rec.records[w.i] else { continue };
-            let wrote = leaves.entry((w.region, addr, size)).or_insert_with(|| self.members(r, w.i)).clone();
-            let members = &mut nodes[k].1;
-            for (member, leaf) in wrote {
-                match members.iter_mut().find(|(m, _, _)| *m == member) {
-                    Some((_, _, ws)) => ws.push(*w),
-                    None => {
-                        let Some(leaf) = leaf else { continue };
-                        members.push((member, leaf, alloc::vec![*w]));
-                    }
-                }
-            }
+            let (n, points) = &mut nodes[k];
+            points.push(matches!(types.get(types.resolve(ty)).kind, Kind::Pointer(_)).then(|| mem.read_u32(n.addr.wrapping_add(off))));
+            n.changes.push(Diff { member: t.member.clone(), before: a, after: z, to: None, runs });
         }
-        nodes
-    }
-
-    /// Each node's members' changes, from what they were to what they are
-    /// as the span ends (a member only ever written as it was, not; an
-    /// object with none, dropped); with each change a pointer into another
-    /// node as it ends.
-    fn object_diffs(&self, nodes: Vec<(Node, Vec<(String, Leaf, Vec<Wrote>)>)>, last: usize) -> Vec<(Node, Vec<Option<u32>>)> {
-        let types = &self.tables.types;
-        // (Each member's changes; one only ever written as it was (memory
-        // zeroed that was zero), not; an object with none, not. A pointer:
-        // where it points as the span ends.)
-        let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
-        let mut diffs: Vec<(Node, Vec<Option<u32>>)> = Vec::new();
-        for (mut n, members) in nodes {
-            let mut points = Vec::new();
-            for (member, leaf, writes) in members {
-                let before = |i: usize| self.value(n.addr, leaf, i.saturating_sub(1));
-                let after = |i: usize| self.value(n.addr, leaf, i);
-                // (A run: one function's writes in a row; one that left it
-                // as it was, not.)
-                let func = |w: &Wrote| w.at.and_then(|s| self.tables.functions.get(&s.func)).map(|f| f.name.as_str());
-                let mut runs: Vec<Run> = Vec::new();
-                for run in writes.chunk_by(|a, b| func(a) == func(b)) {
-                    let (a, z) = (run[0], run[run.len() - 1]);
-                    runs.push(Run { before: before(a.i), after: after(z.i), writes: run.len(), first: a.i, last: z.i, at: z.at.map(|s| self.line_only(&s)) });
-                }
-                let (a, z) = (runs[0].before.clone(), runs.last().expect("a run").after.clone());
-                runs.retain(|r| r.before != r.after);
-                if runs.is_empty() {
-                    continue;
-                }
-                let (ty, off, _) = leaf;
-                points.push(matches!(types.get(types.resolve(ty)).kind, Kind::Pointer(_)).then(|| mem.read_u32(n.addr.wrapping_add(off))));
-                n.changes.push(Diff { member, before: a, after: z, to: None, runs });
-            }
-            if n.changes.is_empty() {
-                continue;
-            }
+        for (n, points) in &mut nodes {
             // (Lasting, but every member as it was: its changes undone.)
             if n.changes.iter().all(|d| d.before == d.after) {
                 n.group = Group::Same;
             }
             // (The members it ends with changed first, then those as they were.)
-            let mut both: Vec<(Diff, Option<u32>)> = n.changes.drain(..).zip(points).collect();
+            let mut both: Vec<(Diff, Option<u32>)> = n.changes.drain(..).zip(points.drain(..)).collect();
             both.sort_by_key(|(d, _)| d.before == d.after);
-            let points;
-            (n.changes, points) = both.into_iter().unzip();
-            diffs.push((n, points));
+            (n.changes, *points) = both.into_iter().unzip();
         }
-        diffs
+        nodes
     }
 
     /// Changed objects first, then those left as they were; in each, the

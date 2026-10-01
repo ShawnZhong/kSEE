@@ -18,10 +18,15 @@ fn named(what: &str, within: &Option<String>) -> String {
 /// Records `first..=last`'s writes, a member each: (record, what, kind, member, before, after).
 fn writes(v: &View, first: usize, last: usize) -> Vec<(usize, String, RegionKind, String, String, String)> {
     let n = v.stores(first, last);
-    n.writes.iter().flat_map(|w| {
-        let r = &n.regions[w.region as usize];
-        v.changes(&n, w).into_iter().map(|c| (w.i, named(&r.what, &r.within), r.kind, c.member, c.before, c.after))
-    }).collect()
+    let mut out: Vec<_> = v.things(&n).iter().flat_map(|t| {
+        let r = &n.regions[t.region as usize];
+        (0..t.writes.len()).map(|k| {
+            let (before, after) = v.change(&n, t, k);
+            (t.writes[k].i, named(&r.what, &r.within), r.kind, t.member.clone(), before, after)
+        }).collect::<Vec<_>>()
+    }).collect();
+    out.sort_by_key(|w| w.0);
+    out
 }
 
 #[test]
