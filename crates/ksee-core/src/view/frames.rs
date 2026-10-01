@@ -266,7 +266,8 @@ impl View<'_> {
     /// `first` has them at record `at`: one in memory at its offset from
     /// `frame`, uninitialized if its slot has not been stored to (its
     /// value then is its slot's leftovers, another call's); one in a wasm
-    /// local as `set` has it (Record::Var), else not set yet.
+    /// local as `set` has it (Record::Var), else not recorded (set before
+    /// the trace began, or not followed: not uninitialized).
     fn locals(&self, func: u32, frame: u32, mem: &dyn Memory, first: usize, at: usize, set: &[Object]) -> Vec<Object> {
         let types = &self.tables.types;
         let not = |o: Object, why: Missing| Object { value: Some(why.text().into()), none: Some(why), children: None, open: None, ..o };
@@ -280,7 +281,7 @@ impl View<'_> {
                 if self.rec.stores().written(addr, types.size_of(*ty).max(1), first, at) { o } else { not(o, Missing::Uninitialized) }
             }
             None => set.iter().find(|o| &o.name == var).cloned()
-                .unwrap_or_else(|| not(types.object(&Arg(&[0; 8], mem), var, 0, *ty, 0), Missing::Uninitialized)),
+                .unwrap_or_else(|| not(types.object(&Arg(&[0; 8], mem), var, 0, *ty, 0), Missing::NotRecorded)),
         }).collect()
     }
 

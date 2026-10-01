@@ -38,6 +38,10 @@ pub struct Target {
 pub enum Missing {
     /// Not stored to yet.
     Uninitialized,
+    /// Kept in a wasm local the recording never saw set (a variable set
+    /// before the trace began, or one the probes do not follow): its
+    /// value then is not known, but the variable is not uninitialized.
+    NotRecorded,
     /// The optimizer took it away.
     OptimizedOut,
     /// What a store overwrote, when its record does not have it.
@@ -49,6 +53,7 @@ impl Missing {
     pub fn text(self) -> &'static str {
         match self {
             Missing::Uninitialized => "(uninitialized)",
+            Missing::NotRecorded => "(not recorded)",
             Missing::OptimizedOut => "(optimized out)",
             Missing::NotKept => "(not kept)",
         }

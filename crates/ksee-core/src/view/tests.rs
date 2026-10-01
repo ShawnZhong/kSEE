@@ -27,7 +27,8 @@ fn writes(v: &View, first: usize, last: usize) -> Vec<(usize, String, RegionKind
 #[test]
 fn a_variable_in_a_wasm_local_has_its_last_value() {
     // f (1) keeps int x (variable 0, a local: no offset) in a wasm
-    // local: it takes 5, then 7.
+    // local: it takes 5, then 7. Before the first set, its value is not
+    // recorded (not uninitialized: the trace starts after it was set).
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\t0\t1\tf\tx\t0\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:\n");
     let r = [Record::Block { func: 1, n: 0 }, Record::Var { var: 0, line: 0, value: 5 }, Record::Block { func: 1, n: 1 }, Record::Var { var: 0, line: 0, value: 7 }];
     let mut args = Args::default();
@@ -36,7 +37,23 @@ fn a_variable_in_a_wasm_local_has_its_last_value() {
     let mem = Mem(alloc::vec![0; 128]);
     let v = View { tables: &t, rec: &rec, now: &mem };
     let x = |i| v.call_stack(i, None, &mem, i)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
-    assert_eq!((x(0), x(2), x(3)), (Some("(uninitialized)".into()), Some("5".into()), Some("7".into())));
+    assert_eq!((x(0), x(2), x(3)), (Some("(not recorded)".into()), Some("5".into()), Some("7".into())));
+}
+
+#[test]
+fn a_memory_slot_never_stored_to_is_uninitialized() {
+    // f (1) has int y at frame offset 4, never stored to: its slot holds
+    // another call's leftovers, so it reads as uninitialized (not merely
+    // unrecorded: memory starts unknown).
+    let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\ty:1:4\n");
+    let r = [Record::Block { func: 1, n: 0 }];
+    let mut args = Args::default();
+    args.push(0, &[32]);
+    let rec = Recording::new(&t, r.to_vec(), alloc::vec![0], args);
+    let mem = Mem(alloc::vec![0; 128]);
+    let v = View { tables: &t, rec: &rec, now: &mem };
+    let y = v.call_stack(0, None, &mem, 0)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "y").and_then(|o| o.value);
+    assert_eq!(y, Some("(uninitialized)".into()));
 }
 
 #[test]
