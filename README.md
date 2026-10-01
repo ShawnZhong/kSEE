@@ -22,7 +22,7 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
   language), `ksee-runtime` (wasm: boots the kernel and runs its tasks: the
   Machine), `ksee-page` (the page, in Dioxus: the same wasm module as the
   runtime, calling the Machine), `ksee-cli` (the `ksee` command: build,
-  test, serve, deploy, patch)
+  test, trace, serve, deploy, patch)
 - `web/`: `index.html` (the page's frame and style) and `ksee.js` (it loads
   the module and boots the kernel; the page shows meanwhile); the build puts them, with what they
   load, in `target/site/` (served, and deployed)
@@ -33,6 +33,7 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
     ./setup.sh             # once: LLVM, GNU make and sed, mkfs.ext4, Rust + wasm target (Homebrew or apt); Chromium in $CHROME for tests
     ./ksee.sh              # build what changed, serve http://127.0.0.1:8000/
     ./ksee.sh test [--ui]  # in Chromium ($CHROME): the kernel's tests; --ui also the page's
+    ./ksee.sh trace read   # a lesson as the page shows it, a line per step (→ through its call)
     ./ksee.sh deploy       # build, then push the page to gh-pages (GitHub Pages)
 
 macOS: if linking fails with a `tapi … unknown architecture` error, remove
