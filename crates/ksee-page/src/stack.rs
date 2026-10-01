@@ -7,6 +7,8 @@ use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
 use ksee_core::view::{step, Frame, Move, Object};
+use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::Closure;
 
 use crate::machine;
 use crate::state::{Derived, Shared, Tab, Ui};
@@ -31,48 +33,88 @@ pub fn moment() -> usize {
 }
 
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
-/// lines, into its task's syscall after it (or before).
+/// lines, into its task's syscall after it (or before). Context-free (the
+/// window's listener calls it): the lines read from the Machine, not the
+/// memos.
 pub fn walk(ui: Ui, dir: isize, how: Move) {
-    let lines = ui.lines();
+    let Some(k) = (ui.call)() else { return };
+    let lines = Ui::lines_of(k);
     if let Some(j) = step(&lines, (ui.cursor)(), dir, how) {
         ui.go(j);
         return;
     }
-    let (Some(s), Some(k)) = (ui.syscall(), (ui.call)()) else { return };
+    let task = machine().view(|v| v.syscalls().into_iter().nth(k).map(|s| s.task.addr));
+    let Some(task) = task else { return };
     let next = machine().view(|v| {
         let all = v.syscalls();
-        let mine: Vec<usize> = (0..all.len()).filter(|&j| all[j].task.addr == s.task.addr).collect();
+        let mine: Vec<usize> = (0..all.len()).filter(|&j| all[j].task.addr == task).collect();
         let at = mine.iter().position(|&j| j == k)?;
         mine.get(at.checked_add_signed(dir)?).copied()
     });
     if let Some(next) = next {
         ui.select(next);
         if dir < 0 {
-            ui.go(ui.lines().len().saturating_sub(1));
+            ui.go(Ui::lines_of(next).len().saturating_sub(1));
         }
     }
 }
 
+/// The stack's length at the moment shown (context-free: see `walk`).
+fn stack_len(ui: Ui) -> usize {
+    let Some(k) = (ui.call)() else { return 0 };
+    let lines = Ui::lines_of(k);
+    let peeked = (ui.peek)();
+    let i = peeked.as_ref().map_or_else(|| lines.get((ui.cursor)()).map_or(0, |l| l.i), |p| p.i);
+    let nth = if peeked.is_some() {
+        None
+    } else {
+        lines.get((ui.cursor)()).map(|l| l.nth as usize)
+    };
+    machine().at_moment(i, |v, mem| v.call_stack(i, nth, mem, i).len())
+}
+
 /// The frame chosen, `dir` up the Stack (-1: the callee) or down (1: the caller).
 pub fn frame(mut ui: Ui, dir: isize) {
-    let n = consume_context::<Derived>().stack.read().len();
+    let n = stack_len(ui);
     let k = (ui.frame)().unwrap_or(0);
     ui.frame.set(Some(k.saturating_add_signed(dir).min(n.saturating_sub(1))));
 }
 
-/// The work area's keys: ← → a line (Shift: over the calls; Alt: out of
-/// the function); ↑ ↓ the frame up (its callee) or down (its caller).
-pub fn key(ui: Ui, e: &KeyboardEvent) {
-    let m = e.modifiers();
-    let how = if m.alt() { Move::Out } else if m.shift() { Move::Over } else { Move::Into };
-    match e.key() {
-        Key::ArrowLeft => walk(ui, -1, how),
-        Key::ArrowRight => walk(ui, 1, how),
-        Key::ArrowUp => frame(ui, -1),
-        Key::ArrowDown => frame(ui, 1),
-        _ => return,
-    }
-    e.prevent_default();
+/// The page's keys, anywhere on it: one listener on the window; ← → a
+/// line (Shift: over the calls; Alt: out of the function); ↑ ↓ the frame
+/// up (its callee) or down (its caller). Not in text fields (the lesson's
+/// lines, find): arrows move the cursor there.
+pub fn listen(ui: Ui) {
+    use_hook(move || {
+        let Some(window) = web_sys::window() else { return };
+        let document = window.document();
+        let on = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
+            // (A field's own keys first: the editor's completion takes the arrows.)
+            if e.default_prevented() {
+                return;
+            }
+            if let Some(active) = document.as_ref().and_then(|d| d.active_element()) {
+                let tag = active.tag_name();
+                if tag == "TEXTAREA" || tag == "INPUT" {
+                    return;
+                }
+            }
+            let how = if e.alt_key() { Move::Out } else if e.shift_key() { Move::Over } else { Move::Into };
+            let arrow = match e.key().as_str() {
+                "ArrowLeft" => { walk(ui, -1, how); true }
+                "ArrowRight" => { walk(ui, 1, how); true }
+                "ArrowUp" => { frame(ui, -1); true }
+                "ArrowDown" => { frame(ui, 1); true }
+                _ => false,
+            };
+            if arrow {
+                e.prevent_default();
+            }
+        });
+        let _ = window.add_event_listener_with_callback("keydown", on.as_ref().unchecked_ref());
+        // (The page's life: never removed.)
+        on.forget();
+    });
 }
 
 /// The calls at the moment shown, innermost first, at the bottom of the

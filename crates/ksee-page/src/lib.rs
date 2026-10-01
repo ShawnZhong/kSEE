@@ -101,6 +101,8 @@ fn App() -> Element {
     use_context_provider(|| derived);
     let sizes = use_context_provider(|| Signal::new(layout::Sizes::kept()));
     use_context_provider(|| Signal::new(None::<layout::Drag>));
+    // (The arrow keys, anywhere on the page: one listener on the window.)
+    stack::listen(ui);
     rsx! {
         main { class: "page", style: "{sizes().style()}",
             aside { class: "side",
@@ -108,7 +110,7 @@ fn App() -> Element {
                 article { class: "lesson", lesson::Lesson {} }
             }
             layout::Handle { split: layout::Split::Left }
-            section { class: "work", tabindex: "0", onkeydown: move |e| stack::key(ui, &e),
+            section { class: "work",
                 if ui.call.read().is_some() {
                     chart::Timeline {}
                     layout::Handle { split: layout::Split::Chart }
