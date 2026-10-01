@@ -66,12 +66,12 @@ pub struct Kernel {
     /// threads' and vfork children's too, the same memory): what of each
     /// is handed out (its start -> (next free, end)).
     pub heaps: RefCell<BTreeMap<u32, (u32, u32)>>,
-    /// The calls asked (by id: see Machine::run), this boot's; and how many
+    /// The calls asked (by id: see Machine::make), this boot's; and how many
     /// ever (the last id: ids are not used again, a boot after another's).
     pub calls: RefCell<BTreeMap<u32, Call>>,
     pub asked: Cell<u32>,
     /// The page's program: its names (a variable's, a result's), and how
-    /// many of its lines have been made (see Machine::run).
+    /// many of its lines have been made (see Machine::make).
     pub names: RefCell<ksee_core::program::Names>,
     pub lines: Cell<usize>,
 }

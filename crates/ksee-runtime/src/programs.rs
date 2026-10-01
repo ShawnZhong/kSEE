@@ -220,7 +220,7 @@ fn on_off() {
 /// main thread, if `main`: see Machine::main), waiting for calls in a futex on
 /// the number in its request at `req` (user/prog.c's struct request, { nr, args[6] }: the host puts a
 /// call there, and rings); its program's own memory at `heap` (its
-/// variables and its calls' literals, see Machine::run). begin(), end(ret): around the call it makes: recorded from the
+/// variables and its calls' literals, see Machine::make). begin(), end(ret): around the call it makes: recorded from the
 /// one to the other; the result.
 fn runner_imports() -> Object {
     let ksee = Object::new();
