@@ -92,9 +92,15 @@ impl Derived {
             Shared(Rc::new(if up() { machine().view(|v| v.chart(a, b, COLUMNS)) } else { Chart::default() }))
         });
         let moment = use_memo(move || lines.read().get(shown()?.line).map(|l| (l.i, Some(l.nth as usize))));
+        // (Its values as they are just before the line runs: at its own
+        // record, past what the lines before it in its stretch did.)
         let stack = use_memo(move || {
-            let cut = shown().and_then(|m| lines.read().get(m.line).map(|l| l.cut as usize)).unwrap_or(0);
-            Shared(Rc::new(moment().map_or_else(Vec::new, |(i, nth)| machine().at_moment(i, |v, mem| v.call_stack(i, nth, cut, mem, i)))))
+            let line = shown().and_then(|m| lines.read().get(m.line).cloned());
+            let (at, cut) = line.map_or((None, 0), |l| (Some(l.at), l.cut as usize));
+            Shared(Rc::new(moment().map_or_else(Vec::new, |(i, nth)| {
+                let at = at.unwrap_or(i);
+                machine().at_moment(at, |v, mem| v.call_stack(i, nth, cut, mem, at))
+            })))
         });
         let frame = use_memo(move || shown().and_then(|m| m.frame).and_then(|(first, func)| stack.read().iter().position(|f| f.first == first && f.func == func)).unwrap_or(0));
         let cursor = use_memo(move || {
