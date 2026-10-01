@@ -18,64 +18,54 @@
 //! page unpacks them.)
 //!   examples.json          the examples (user/examples/*.json)
 //!
-//! The tools are setup.sh's (LLVM with lld's wasm-ld, GNU make, mkfs.ext4):
-//! found once by tools(), called by absolute path. Children that run their
-//! own tools (kbuild, clang's wasm link) get the dirs on their PATH.
+//! The tools setup.sh installs, first on every command's PATH.
 use std::path::Path;
 use std::process::Command;
+use std::sync::LazyLock;
 
-/// `cmd` as a shell line: its program and arguments (quoted only past
-/// [A-Za-z0-9_./=:,+@%-]), `cd DIR &&` first when it runs elsewhere, and any
-/// environment set on it as `K=V`.
-fn shell(cmd: &Command) -> String {
-    let mut s = String::new();
-    for (k, v) in cmd.get_envs() {
-        if let Some(v) = v {
-            s.push_str(&word(&k.to_string_lossy()));
-            s.push('=');
-            s.push_str(&word(&v.to_string_lossy()));
-            s.push(' ');
-        }
-    }
-    if let Some(dir) = cmd.get_current_dir() {
-        s.push_str("cd ");
-        s.push_str(&word(&dir.to_string_lossy()));
-        s.push_str(" && ");
-    }
-    s.push_str(&word(&cmd.get_program().to_string_lossy()));
-    for a in cmd.get_args() {
-        s.push(' ');
-        s.push_str(&word(&a.to_string_lossy()));
-    }
-    s
+/// setup.sh's dirs first, then the caller's PATH. macOS: brew's LLVM, lld,
+/// GNU make and sed, mkfs.ext4; Linux: the LLVM setup.sh installs.
+static PATH: LazyLock<String> = LazyLock::new(|| {
+    let dirs: Vec<String> = if cfg!(target_os = "macos") {
+        let brew = String::from_utf8_lossy(&output(Command::new("brew").arg("--prefix"))).trim().to_string();
+        ["opt/llvm/bin", "opt/lld/bin", "opt/make/libexec/gnubin", "opt/gnu-sed/libexec/gnubin", "opt/e2fsprogs/sbin"]
+            .iter().map(|d| format!("{brew}/{d}")).collect()
+    } else {
+        vec!["/usr/lib/llvm-23/bin".into()]
+    };
+    format!("{}:{}", dirs.join(":"), std::env::var("PATH").unwrap_or_default())
+});
+
+/// A command with the tools on its PATH.
+fn cmd(program: &str) -> Command {
+    let mut c = Command::new(program);
+    c.env("PATH", &*PATH);
+    c
 }
 
-/// A shell word, quoted only past [A-Za-z0-9_./=:,+@%-].
-fn word(w: &str) -> String {
-    if !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || "./=:,+@%-_".contains(c)) {
-        w.into()
-    } else {
-        format!("'{}'", w.replace('\'', "'\\''"))
-    }
+/// `cmd` as a line: its program and arguments, spaced.
+fn line(cmd: &Command) -> String {
+    std::iter::once(cmd.get_program()).chain(cmd.get_args())
+        .map(|s| s.to_string_lossy()).collect::<Vec<_>>().join(" ")
 }
 
 /// Runs `cmd`, said first, its output shown.
 pub fn run(cmd: &mut Command) {
-    eprintln!("+ {}", shell(cmd));
-    let status = cmd.status().unwrap_or_else(|e| crate::fail(&format!("{}: {e}", shell(cmd))));
+    eprintln!("+ {}", line(cmd));
+    let status = cmd.status().unwrap_or_else(|e| crate::fail(&format!("{}: {e}", line(cmd))));
     if !status.success() {
-        crate::fail(&format!("{} failed: {status}", shell(cmd)));
+        crate::fail(&format!("{} failed: {status}", line(cmd)));
     }
 }
 
 /// Runs `cmd`, said first, for its stdout (its stderr shown, its stdout said
 /// after when short, else its size).
 fn output(cmd: &mut Command) -> Vec<u8> {
-    eprintln!("+ {}", shell(cmd));
+    eprintln!("+ {}", line(cmd));
     let out = cmd.stderr(std::process::Stdio::inherit()).output()
-        .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", shell(cmd))));
+        .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", line(cmd))));
     if !out.status.success() {
-        crate::fail(&format!("{} failed: {}", shell(cmd), out.status));
+        crate::fail(&format!("{} failed: {}", line(cmd), out.status));
     }
     match String::from_utf8(out.stdout) {
         Ok(s) if s.lines().count() <= 20 => {
@@ -98,60 +88,6 @@ fn output(cmd: &mut Command) -> Vec<u8> {
 /// The site: what the page loads.
 pub const SITE: &str = "target/site";
 
-/// setup.sh's tools (LLVM with lld's wasm-ld, GNU make, mkfs.ext4): their
-/// paths, and the dirs for children that run their own tools (kbuild, clang's
-/// wasm link). Homebrew's on macOS, apt.llvm.org's on Linux.
-struct Tools {
-    path: String,
-    llvm_config: String,
-    cc: String,
-    cxx: String,
-    make: String,
-    mkfs: String,
-}
-
-fn tools() -> Tools {
-    // The first of `names` in `dir` (setup.sh installs it).
-    let tool = |dir: &str, names: &[&str]| names.iter().find_map(|n| {
-        Path::new(dir).join(n).is_file().then(|| format!("{dir}/{n}"))
-    }).unwrap_or_else(|| crate::fail(&format!("{dir}/{}: run setup.sh", names[0])));
-    let (llvm, lld, make, mkfs) = if cfg!(target_os = "macos") {
-        // (brew is at its default prefix; PATH lookup only as a fallback.)
-        let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].iter().find_map(|b| {
-            Path::new(b).is_file().then(|| b.to_string())
-        }).unwrap_or_else(|| "brew".into());
-        let brew = String::from_utf8_lossy(&output(Command::new(&brew).arg("--prefix"))).trim().to_string();
-        // (Homebrew's lld lands in its own dir, not llvm's bindir; make's
-        // gnubin dir only when brewed with it, else gmake in bin/.)
-        let dir_with = |dir: &str, name: &str| Path::new(&format!("{brew}/{dir}/{name}")).is_file().then(|| format!("{brew}/{dir}"));
-        let lld = dir_with("opt/lld/bin", "wasm-ld").or_else(|| dir_with("bin", "wasm-ld"))
-            .unwrap_or_else(|| crate::fail("wasm-ld: run setup.sh"));
-        let (make_dir, make_name) = dir_with("opt/make/libexec/gnubin", "make").map(|d| (d, "make"))
-            .or_else(|| dir_with("bin", "gmake").map(|d| (d, "gmake")))
-            .unwrap_or_else(|| crate::fail("GNU make: run setup.sh"));
-        let e2fs = format!("{brew}/opt/e2fsprogs/sbin");
-        (format!("{brew}/opt/llvm/bin"), lld, format!("{make_dir}/{make_name}"), tool(&e2fs, &["mkfs.ext4"]))
-    } else {
-        // The newest /usr/lib/llvm-*/bin (the plain names in its dir).
-        let mut best: Option<(u32, String)> = None;
-        for e in std::fs::read_dir("/usr/lib").into_iter().flatten().flatten() {
-            let n = e.file_name().to_string_lossy().into_owned();
-            if let Some(v) = n.strip_prefix("llvm-").and_then(|v| v.parse::<u32>().ok()) {
-                let dir = format!("/usr/lib/{n}/bin");
-                if Path::new(&dir).is_dir() && best.as_ref().is_none_or(|&(b, _)| v > b) {
-                    best = Some((v, dir));
-                }
-            }
-        }
-        let llvm = best.map(|(_, d)| d).unwrap_or_else(|| crate::fail("no /usr/lib/llvm-*/bin: run setup.sh"));
-        (llvm.clone(), llvm, "make".into(), "mkfs.ext4".into())
-    };
-    let path = format!("{}:{}:{}:{}:{}", lld, llvm, make.rsplit_once('/').map_or("", |(d, _)| d),
-        mkfs.rsplit_once('/').map_or("", |(d, _)| d), std::env::var("PATH").unwrap_or_default());
-    Tools { llvm_config: tool(&llvm, &["llvm-config"]), cc: tool(&llvm, &["clang"]), cxx: tool(&llvm, &["clang++"]),
-        make, mkfs, path }
-}
-
 /// Whether `out` is missing or older than any of `inputs`.
 fn stale(out: &str, inputs: &[&str]) -> bool {
     let time = |p: &str| std::fs::metadata(p).and_then(|m| m.modified()).ok();
@@ -160,12 +96,11 @@ fn stale(out: &str, inputs: &[&str]) -> bool {
 }
 
 pub fn build() {
-    let t = tools();
     linux();
 
     if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
-        let flags = output(Command::new(&t.llvm_config).arg("--cxxflags"));
-        let mut plugin = Command::new(&t.cxx);
+        let flags = output(cmd("llvm-config").arg("--cxxflags"));
+        let mut plugin = cmd("clang++");
         plugin.args(["-shared", "-fPIC", "-O2", "plugin/ksee-trace.cpp", "-o", "plugin/ksee-trace.so"]);
         // (macOS links -shared eagerly: leave the LLVM symbols to clang,
         // which loads the pass.)
@@ -181,11 +116,9 @@ pub fn build() {
     let plugin = Path::new("plugin/ksee-trace.so").canonicalize().unwrap();
     // (Inlining only what the source asks for, `inline`: the compiler's
     // own choices would hide calls, with their arguments, as inlined code.)
-    // (kbuild runs its own tools — clang, wasm-ld, llvm-ar — off PATH.)
     let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
     let kmake = |args: &[&str]| {
-        let mut c = Command::new(&t.make);
-        c.env("PATH", &t.path);
+        let mut c = cmd("make");
         c.args(["-C", "linux", "ARCH=wasm", "LLVM=1",
                 &format!("KCFLAGS=-g -finline-hint-functions -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
             .arg(&jobs)
@@ -201,7 +134,7 @@ pub fn build() {
 
     site();
     // (The runtime and the page, one module: the page calls the Machine.)
-    run(Command::new("cargo").args(["build", "--release", "-p", "ksee-page",
+    run(cmd("cargo").args(["build", "--release", "-p", "ksee-page",
         "--target", "wasm32-unknown-unknown"]));
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
 
@@ -223,10 +156,8 @@ pub fn build() {
     if stale(&cpio_out, &inputs) {
         std::fs::create_dir_all(dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
         for p in programs {
-            run(Command::new(&t.cc)
-                // (Position-independent, in the kernel's memory: see binfmt_wasm.c.
-                // clang finds wasm-ld off PATH.)
-                .env("PATH", &t.path)
+            run(cmd("clang")
+                // (Position-independent, in the kernel's memory: see binfmt_wasm.c.)
                 .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-fPIC", "-Wl,-pie",
                        "-Wl,--experimental-pic", "-Wl,--import-memory", "-Wl,--no-entry",
                        "-nostdinc", "-isystem", "linux/usr/include",
@@ -246,12 +177,12 @@ pub fn build() {
                 .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", p.display())));
         }
         // (Initialized in full: no background work after the mount, ext4lazyinit's.)
-        run(Command::new(&t.mkfs).args(["-F", "-b", "1024", "-L", "ksee", "-N", "32", "-d", &files,
+        run(cmd("mkfs.ext4").args(["-F", "-b", "1024", "-L", "ksee", "-N", "32", "-d", &files,
                                             "-E", "lazy_itable_init=0,lazy_journal_init=0", &disk, "2M"]));
         // (The list's paths are relative to the dir.)
         let tool = Path::new("linux/usr/gen_init_cpio").canonicalize()
             .unwrap_or_else(|e| crate::fail(&format!("linux/usr/gen_init_cpio: {e}")));
-        let cpio = output(Command::new(tool).arg(Path::new("user/initramfs.list").canonicalize().unwrap()).current_dir(dir));
+        let cpio = output(cmd(&tool.to_string_lossy()).arg(Path::new("user/initramfs.list").canonicalize().unwrap()).current_dir(dir));
         std::fs::write(&cpio_out, cpio).unwrap_or_else(|e| crate::fail(&format!("{cpio_out}: {e}")));
         gzip(&cpio_out, &format!("{SITE}/initramfs.cpio.gz"));
     }
@@ -291,7 +222,7 @@ pub fn patch() {
 }
 
 fn git(args: &[&str]) -> Vec<u8> {
-    output(Command::new("git").arg("-C").arg("linux").args(args))
+    output(cmd("git").arg("-C").arg("linux").args(args))
 }
 
 /// wasm-bindgen's glue for `wasm`, in `out` (the crate, at ksee-page's
@@ -304,7 +235,7 @@ fn bindgen(wasm: &str, out: &str) {
 
 fn gzip(from: &str, to: &str) {
     let out = std::fs::File::create(to).unwrap_or_else(|e| crate::fail(&format!("{to}: {e}")));
-    run(Command::new("gzip").args(["-9nc", from]).stdout(out));
+    run(cmd("gzip").args(["-9nc", from]).stdout(out));
 }
 
 /// The course: its chapters, each its examples (user/examples/NAME.json)
@@ -368,9 +299,9 @@ fn site() {
 /// target/.
 pub fn test(ui: bool) {
     build();
-    run(Command::new("cargo").args(["test", "-p", "ksee-core", "-p", "ksee-cli"]));
+    run(cmd("cargo").args(["test", "-p", "ksee-core", "-p", "ksee-cli"]));
     // (Its own target directory: the site's module, built without them, stays as it is.)
-    run(Command::new("cargo").args(["build", "--release", "-p", "ksee-page", "--features", "selftest",
+    run(cmd("cargo").args(["build", "--release", "-p", "ksee-page", "--features", "selftest",
         "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));
     bindgen("target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm", "target/test/pkg");
     // (The site with the tests: the site's files, its module the one built with them.)

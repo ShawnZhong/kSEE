@@ -1,12 +1,12 @@
 #!/bin/sh
 # What ./ksee.sh needs: LLVM (clang, lld's wasm-ld, the pass's headers),
-# GNU make, mkfs.ext4, Rust and its wasm target; from Homebrew (macOS) or
-# apt (Debian, Ubuntu: LLVM from apt.llvm.org). ./ksee.sh test also needs
+# GNU make and sed, mkfs.ext4, Rust and its wasm target; from Homebrew (macOS)
+# or apt (Debian, Ubuntu: LLVM from apt.llvm.org). ./ksee.sh test also needs
 # Chromium, in $CHROME.
 set -e
 cd "$(dirname "$0")"
 if command -v brew >/dev/null; then
-	brew install llvm lld make e2fsprogs
+	brew install llvm lld make gnu-sed e2fsprogs
 elif command -v apt-get >/dev/null; then
 	s=; [ "$(id -u)" = 0 ] || s=sudo
 	$s apt-get update
