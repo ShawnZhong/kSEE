@@ -127,7 +127,8 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
     let (Some(module), Some(table)) = (module, table) else { return 0 };
     let start = || -> Result<u32, JsValue> {
         let (_, entries) = dylink(&module).ok_or("no dylink.0")?;
-        let table_base = table.grow(entries)?;
+        // (Room for its table entries and the two below, grown once.)
+        let table_base = table.grow(entries + 2)?;
         let sp = global(top, true)?;
         let env = Object::new();
         js::set(&env, "memory", wasm_bindgen::memory());
@@ -156,13 +157,12 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
             relocs.call0(&JsValue::NULL)?;
         }
         // (Its entries, in the kernel's table, to call directly.)
-        let entry = |name: &str| -> Result<u32, JsValue> {
+        let entry = |at: u32, name: &str| -> Result<u32, JsValue> {
             let Ok(f) = js::get(&exports, name).dyn_into::<Function>() else { return Ok(0) };
-            let at = table.grow(1)?;
             table.set(at, &f)?;
             Ok(at)
         };
-        let (start, clone) = (entry("_start")?, entry("__wasm_clone_start")?);
+        let (start, clone) = (entry(table_base + entries, "_start")?, entry(table_base + entries + 1, "__wasm_clone_start")?);
         bulk(clone_entry, 4, 0, 0);
         Direct.write_u32(clone_entry, clone);
         PROGRAMS.with_borrow_mut(|u| u.users.insert(current(), User { sp, saved: top }));
