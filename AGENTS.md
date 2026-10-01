@@ -24,7 +24,5 @@ shape everything), then the doc for the part you touch ([docs/](docs/README.md))
   arch/wasm where possible, elsewhere only what the port needs; `ksee
   patch` writes linux.patch from it (never the build): commit that.
 - **Before you finish:** `./ksee.sh test` (`--ui` with `$CHROME` runs the
-  page too; the tests check what the page shows). Commit small. Use the page
-  as a user would (`./ksee.sh shot OUT.png --at=#ex=…` for a
-  screenshot); measure before claiming a cost. The docs and README describe
-  the current state: change them with the code.
+  page too; the tests check what the page shows). Commit small. The docs and
+  README describe the current state: change them with the code.

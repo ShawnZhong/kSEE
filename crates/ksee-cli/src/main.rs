@@ -4,8 +4,6 @@
 //!   ksee build               build the kernel, runtime and page (build.rs)
 //!   ksee test [--ui]         build, then run the tests (in Chromium,
 //!                            $CHROME; --ui: the page's too)
-//!   ksee shot OUT.png [--at=#HASH] [--url=URL] [--wait=MS] [--size=WxH]
-//!                            the page in Chromium, as a screenshot
 //!   ksee deploy              build, then push the page to origin's gh-pages
 //!   ksee patch               write linux.patch from linux/ (the port, as it
 //!                            differs from the release)
@@ -43,26 +41,12 @@ fn main() -> ExitCode {
         ["build"] => build::build(),
         ["test"] => build::test(ui),
         ["deploy"] => deploy::deploy(),
-        ["shot", out] => {
-            let mut shot = chrome::Shot { out: Path::new(out).to_path_buf(), hash: String::new(),
-                size: (1500, 900), wait: 6000, url: None };
-            shot.hash = opt("at").unwrap_or(shot.hash);
-            shot.url = opt("url");
-            shot.wait = opt("wait").and_then(|w| w.parse().ok()).unwrap_or(shot.wait);
-            if let Some((w, h)) = opt("size").and_then(|s| Some((s.split_once('x')?.0.parse().ok()?, s.split_once('x')?.1.parse().ok()?))) {
-                shot.size = (w, h);
-            }
-            if !shot.run() {
-                return ExitCode::FAILURE;
-            }
-        }
         ["patch"] => build::patch(),
         ["serve"] => {
             serve::serve(Path::new(build::SITE), port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
         }
         _ => {
-            eprintln!("usage: ksee [build | test [--ui] | shot OUT.png [--at=#HASH] [--url=URL] [--wait=MS] [--size=WxH] \
-                       | deploy | serve [--port=N] | patch]");
+            eprintln!("usage: ksee [build | test [--ui] | deploy | serve [--port=N] | patch]");
             return ExitCode::from(2);
         }
     }

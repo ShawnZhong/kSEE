@@ -400,8 +400,7 @@ fn site() {
 /// (crates/ksee-page built with them, as target/test/site) in headless
 /// Chromium ($CHROME, see chrome.rs): the kernel's (its recordings, every
 /// example); with `ui`, also the page's (the read example, a changed
-/// program, the pipe example, a phone's screen), a screenshot each in
-/// target/.
+/// program, the pipe example, a phone's screen).
 pub fn test(ui: bool) {
     build();
     run(cmd("cargo").args(["test", "-p", "ksee-core", "-p", "ksee-cli"]));
@@ -419,8 +418,7 @@ pub fn test(ui: bool) {
         std::os::unix::fs::symlink(from, site.join(&name)).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", site.display())));
     }
     for &(name, ..) in crate::chrome::TESTS.iter().filter(|t| ui || t.0 == "kernel") {
-        let out = (name != "kernel").then(|| format!("target/ui-{name}.png").into());
-        if !crate::chrome::test(name, out) {
+        if !crate::chrome::test(name) {
             crate::fail(&format!("the {name} test failed"));
         }
     }

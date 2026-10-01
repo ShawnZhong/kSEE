@@ -138,9 +138,8 @@ line's next or last run), `definition`.
   the URL; pipe, two processes, a call that blocks, what calls changed;
   phone, the read example at 390x844, the panes one under another.
 
-The kernel's run on `ksee test`, the page's too with `--ui` (a screenshot
-each in `target/`), all in headless Chromium (`$CHROME`), in the page
-built with them (the selftest feature: target/test/site): the page runs
-its test and POSTs `ok` or `fail` and its log to the server, which `ksee`
-(crates/ksee-cli/src/chrome.rs) waits for. `ksee shot OUT.png [--at=#HASH]`
-looks at the page as it is built (Chrome's own screenshot).
+The kernel's run on `ksee test`, the page's too with `--ui`, all in
+headless Chromium (`$CHROME`), in the page built with them (the selftest
+feature: target/test/site): the page runs its test and POSTs `ok` or
+`fail` and its log to the server, which `ksee`
+(crates/ksee-cli/src/chrome.rs) waits for.
