@@ -18,6 +18,13 @@
   --sel: #1f2d3d; --ran: #12301c; --miss: #f85149; --accent: #58a6ff;
   --at: #3d3207; --chg: #3a3000; --run: #3fb950; --found: #c86fd0;
   --kw: #d2a8ff; --ty: #79c0ff; --str: #a5d6ff; --com: #8b949e; --num: #79c0ff; --pp: #ffa657; --fn: #61afef; --fld: #e06c75; --mac: #e06c75; --bl: #d19a66; --esc: #56b6c2; } }
+/* The theme, kept (ksee.theme): Dark anywhere, even when the system is
+   light (the query above cannot do that); Light is the :root values. */
+:root[data-theme="dark"] {
+  --bg: #0d1117; --panel: #161b22; --fg: #e6edf3; --dim: #8b949e; --line: #30363d;
+  --sel: #1f2d3d; --ran: #12301c; --miss: #f85149; --accent: #58a6ff;
+  --at: #3d3207; --chg: #3a3000; --run: #3fb950; --found: #c86fd0;
+  --kw: #d2a8ff; --ty: #79c0ff; --str: #a5d6ff; --com: #8b949e; --num: #79c0ff; --pp: #ffa657; --fn: #61afef; --fld: #e06c75; --mac: #e06c75; --bl: #d19a66; --esc: #56b6c2; }
 
 /* The page */
 * { box-sizing: border-box; }
@@ -29,6 +36,7 @@ a:hover { text-decoration: underline; }
 button { font: inherit; font-size: 12px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg); cursor: pointer; }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { color: var(--dim); cursor: default; opacity: .6; }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dim { color: var(--dim); }
 .mono, code, textarea { font-family: var(--mono); font-size: 12px; }
 .pad { padding: 8px 12px; }
@@ -49,6 +57,19 @@ button:disabled { color: var(--dim); cursor: default; opacity: .6; }
 .sidehead b { font-size: 14px; }
 .sidehead .contents { margin-left: auto; }
 .sidehead .contents.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
+
+/* The top bar (the proposals doc): the page's global strip above
+   main.page — the brand, the lessons menu, the lesson pager, and the
+   theme toggle. The same header either as .sidehead (today, in the
+   lesson column) or as .topbar (after page-lesson moves it), so the
+   page looks right during the handoff. */
+.topbar { display: flex; gap: 4px; align-items: center; padding: 4px 8px 4px 12px; background: var(--panel);
+  border-bottom: 1px solid var(--line); flex: none; position: relative; }
+.topbar b { font-size: 14px; }
+.topbar .contents.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
+.topbar .theme { margin-left: auto; display: flex; gap: 2px; }
+.topbar .theme .on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
+.topbar .menu { position: absolute; top: 100%; left: 0; width: min(340px, 92vw); bottom: auto; max-height: 70dvh; }
 .menuback { position: fixed; inset: 0; z-index: 9; }
 .menu { position: absolute; top: 33px; left: 0; right: 0; bottom: 0; z-index: 10; overflow-y: auto; background: var(--panel);
   border-top: 1px solid var(--line); padding: 4px 0 12px; box-shadow: 0 6px 16px rgb(0 0 0 / .12); }
@@ -213,6 +234,7 @@ table.objs tr.later { opacity: .45; }
   .source, .panels { height: 70dvh; border-top: 1px solid var(--line); }
   .transport { flex-wrap: wrap; row-gap: 2px; }
   .transport button { padding: 4px 14px; }
+  .topbar { flex-wrap: wrap; row-gap: 2px; }
 }
 </style>
 </head>
