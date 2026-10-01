@@ -6,7 +6,7 @@ function, a store, a return, a context switch, sleep/wake. Mocks are text,
 on real lessons. Method: an inventory of `trace::Record` → `view::*` →
 `ksee-page` components, verified by grep (no `.tests`, `.ret`, `.run`,
 `.site`, or `sealed` read anywhere in `crates/ksee-page/src` outside
-selftest/uitest). The page builds and runs (`ksee shot` PASS, no
+selftest/uitest). The page builds and runs (selftest/uitest PASS, no
 exceptions); visual inspection was not possible here, so every claim below
 names the struct field and the component that does or does not read it.
 
