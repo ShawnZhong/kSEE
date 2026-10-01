@@ -1,7 +1,7 @@
 [package]
 name = "ksee-cli"
 version = "0.1.0"
-description = "kSEE command line: decode trace dumps offline"
+description = "kSEE command line: build, test and serve the page, pack the kernel for it"
 edition.workspace = true
 publish.workspace = true
 
