@@ -123,12 +123,13 @@ index 000000000..d124a8845
 +	$(Q)test -e .vmlinux.export.c || echo '/* no exports */' > .vmlinux.export.c
 diff --git a/arch/wasm/configs/defconfig b/arch/wasm/configs/defconfig
 new file mode 100644
-index 000000000..cef200e0b
+index 000000000..5a9cdd29f
 --- /dev/null
 +++ b/arch/wasm/configs/defconfig
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,61 @@
 +# CONFIG_LOCALVERSION_AUTO is not set
 +CONFIG_BLK_DEV_INITRD=y
++CONFIG_INITRAMFS_SOURCE="usr/empty.cpio"
 +# CONFIG_RD_GZIP is not set
 +# CONFIG_RD_BZIP2 is not set
 +# CONFIG_RD_LZMA is not set
@@ -1862,24 +1863,9 @@ index b67636b28..b37824b5c 100644
  # This is only for i386 UM builds, which need the 32-bit target not -m32
  CLANG_TARGET_FLAGS_i386		:= i386-linux-gnu
  CLANG_TARGET_FLAGS_um		:= $(CLANG_TARGET_FLAGS_$(SUBARCH))
-diff --git a/usr/gen_init_cpio.c b/usr/gen_init_cpio.c
-index b7296edc6..f5ac25821 100644
---- a/usr/gen_init_cpio.c
-+++ b/usr/gen_init_cpio.c
-@@ -14,6 +14,13 @@
- #include <ctype.h>
- #include <limits.h>
- 
-+// (macOS: no copy_file_range(2) or O_LARGEFILE; the read/write loop below
-+// copies as is, and off_t is 64-bit.)
-+#ifdef __APPLE__
-+#define copy_file_range(in, off_in, out, off_out, len, flags) ((ssize_t)-1)
-+#define O_LARGEFILE 0
-+#endif
-+
- /*
-  * Original work by Jeff Garzik
-  *
+diff --git a/usr/empty.cpio b/usr/empty.cpio
+new file mode 100644
+index 000000000..e69de29bb
 diff --git a/usr/initramfs_data.S b/usr/initramfs_data.S
 index cd67edc38..6655e1ffe 100644
 --- a/usr/initramfs_data.S

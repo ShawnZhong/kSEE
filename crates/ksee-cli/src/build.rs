@@ -158,7 +158,8 @@ pub fn build() {
     // The programs (/init, /bin/prog): plain C, no C library (their syscalls:
     // user/syscall.h), with the kernel's UAPI headers.
     let programs = ["init", "prog"];
-    let inputs = ["user/init.c", "user/prog.c", "user/syscall.h"];
+    // (And this command: the archive's entries are in it, cpio().)
+    let inputs = ["user/init.c", "user/prog.c", "user/syscall.h", "target/release/ksee"];
     let dir = "target/initramfs";
     let cpio_out = format!("{dir}/initramfs.cpio");
     if stale(&cpio_out, &inputs) {
@@ -252,26 +253,28 @@ fn gzip(from: &str, to: &str) {
     run(cmd("gzip").args(["-9nc", from]).stdout(out));
 }
 
-/// The initramfs, as a newc ("070701") archive: the programs, a note, and
-/// the disk image, with their modes; all times are 0.
+/// The initramfs, as a newc ("070701") archive: the console (the kernel
+/// opens it before init; the kernel's own initramfs is empty), the
+/// programs, a note, and the disk image, with their modes; all times are 0.
 fn cpio(dir: &Path) -> Vec<u8> {
     let file = |name: &str| std::fs::read(dir.join(name))
         .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", dir.join(name).display())));
-    // (Archive path, mode, data; a directory's data is empty.)
+    // (Archive path, mode, device (major, minor), data; a directory's data is empty.)
     let entries = [
-        ("/init", 0o100755, file("init.wasm")),
-        ("/note.txt", 0o100644, b"hello from memory\n".to_vec()),
-        ("/bin", 0o040755, Vec::new()),
-        ("/bin/prog", 0o100755, file("prog.wasm")),
-        ("/mnt", 0o040755, Vec::new()),
-        ("/disk.img", 0o100644, file("disk.img")),
+        ("/dev", 0o040755, (0, 0), Vec::new()),
+        ("/dev/console", 0o020600, (5, 1), Vec::new()),
+        ("/init", 0o100755, (0, 0), file("init.wasm")),
+        ("/note.txt", 0o100644, (0, 0), b"hello from memory\n".to_vec()),
+        ("/bin", 0o040755, (0, 0), Vec::new()),
+        ("/bin/prog", 0o100755, (0, 0), file("prog.wasm")),
+        ("/mnt", 0o040755, (0, 0), Vec::new()),
+        ("/disk.img", 0o100644, (0, 0), file("disk.img")),
+        ("TRAILER!!!", 0, (0, 0), Vec::new()),
     ];
     let mut out = Vec::new();
-    let mut entries: Vec<(&str, u32, Vec<u8>)> = entries.into_iter().collect();
-    entries.push(("TRAILER!!!", 0, Vec::new()));
-    for (i, (name, mode, data)) in entries.iter().enumerate() {
+    for (i, (name, mode, (major, minor), data)) in entries.iter().enumerate() {
         let nlink = if mode & 0o170000 == 0o040000 { 2 } else { 1 };
-        out.extend_from_slice(format!("070701{:08X}{mode:08X}0000000000000000{nlink:08X}00000000{:08X}00000003000000010000000000000000{:08X}00000000",
+        out.extend_from_slice(format!("070701{:08X}{mode:08X}0000000000000000{nlink:08X}00000000{:08X}0000000300000001{major:08X}{minor:08X}{:08X}00000000",
             i + 1, data.len(), name.len() + 1).as_bytes());
         out.extend_from_slice(name.as_bytes());
         // (The name's NUL, then pad the offset: the header is 110 bytes.
@@ -335,10 +338,10 @@ mod tests {
         std::fs::write(dir.join("disk.img"), b"disk").unwrap();
         let entries = entries(&cpio(&dir));
         assert_eq!(entries.iter().map(|e| (e.0.as_str(), e.1)).collect::<Vec<_>>(),
-            [("/init", 0o100755), ("/note.txt", 0o100644), ("/bin", 0o040755),
+            [("/dev", 0o040755), ("/dev/console", 0o020600), ("/init", 0o100755), ("/note.txt", 0o100644), ("/bin", 0o040755),
              ("/bin/prog", 0o100755), ("/mnt", 0o040755), ("/disk.img", 0o100644), ("TRAILER!!!", 0)]);
-        assert_eq!(entries[0].2.as_slice(), b"\0asm");
-        assert_eq!(entries[1].2.as_slice(), b"hello from memory\n");
+        assert_eq!(entries[2].2.as_slice(), b"\0asm");
+        assert_eq!(entries[3].2.as_slice(), b"hello from memory\n");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
