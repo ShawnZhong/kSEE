@@ -538,3 +538,24 @@ fn a_second_switch_supersedes_the_first() {
     assert_eq!((at(3), at(4), at(5), at(6)),
                (None, Some((0x200, 0x100)), Some((0x200, 0x100)), None));
 }
+
+#[test]
+fn a_nested_switch_keeps_its_own_handoff() {
+    // A (0x100) switches to B (0x200); B arrives, then switches to C
+    // (0x300), which arrives. While A stays suspended in its switch, B's
+    // own handoff is its own pair; F's span ends where B arrived, so no
+    // record answers A -> B once B runs.
+    let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\t__switch_to\t0:1\t3\n", "");
+    let r = [Record::Block { func: 2, n: 0 }, Record::Return { func: 2, value: 0 },
+             Record::Block { func: 2, n: 0 }, Record::Return { func: 2, value: 0 }, Record::Block { func: 1, n: 0 }];
+    let mut args = Args::default();
+    args.push(0, &[0x100, 0x200, 0]);
+    args.push(2, &[0x200, 0x300, 0]);
+    let rec = Recording::new(&t, r.to_vec(), (0..5).collect(), args);
+    assert_eq!(rec.tasks, [0x100, 0x200, 0x200, 0x300, 0x300]);
+    let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 16]) };
+    let at = |i| v.switch_at(i).map(|(p, n)| (p.addr, n.addr));
+    assert_eq!((at(0), at(1)), (Some((0x100, 0x200)), Some((0x100, 0x200))));
+    assert_eq!((at(2), at(3)), (Some((0x200, 0x300)), Some((0x200, 0x300))));
+    assert_eq!(at(4), None);
+}
