@@ -1,4 +1,4 @@
-//! A lesson: its chapter and place, title and question, the paragraphs
+//! A lesson: its title and question, the paragraphs
 //! that explain it, and its program, each line with what it did (in lanes,
 //! a column a runner, with more than one); made on a fresh kernel, a line
 //! at a time, as it opens.
@@ -204,21 +204,19 @@ const THEME: &str = "ksee.theme";
 fn Theme() -> Element {
     let storage = || web_sys::window().and_then(|w| w.local_storage().ok().flatten());
     let mut theme = use_signal(move || storage().and_then(|s| s.get_item(THEME).ok().flatten()).unwrap_or_default());
+    // (One button, round the three: the system's, light, dark.)
+    let (label, next) = match theme().as_str() { "light" => ("☀ Light", "dark"), "dark" => ("☾ Dark", ""), _ => ("◐ Auto", "light") };
     rsx! {
-        div { class: "theme", role: "group",
-            for (t , label , title) in [("", "Auto", "the system's"), ("light", "Light", "light"), ("dark", "Dark", "dark")] {
-                button { class: if theme() == t { "on" } else { "" }, title,
-                    onclick: move |_| {
-                        let root = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element());
-                        if let (Some(root), Some(s)) = (root, storage()) {
-                            let _ = if t.is_empty() { root.remove_attribute("data-theme").and(s.remove_item(THEME)) }
-                                    else { root.set_attribute("data-theme", t).and(s.set_item(THEME, t)) };
-                        }
-                        theme.set(t.into());
-                    },
-                    "{label}" }
-            }
-        }
+        button { class: "theme", title: "the colors: the system's, light or dark (a click: the next)",
+            onclick: move |_| {
+                let root = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element());
+                if let (Some(root), Some(s)) = (root, storage()) {
+                    let _ = if next.is_empty() { root.remove_attribute("data-theme").and(s.remove_item(THEME)) }
+                            else { root.set_attribute("data-theme", next).and(s.set_item(THEME, next)) };
+                }
+                theme.set(next.into());
+            },
+            "{label}" }
     }
 }
 
@@ -248,14 +246,19 @@ fn open(mut ui: Ui, k: usize) {
 pub fn Header() -> Element {
     let ui = use_context::<Ui>();
     let mut menu = use_signal(|| false);
-    let n = examples().len();
+    let all = examples();
     let at = (ui.lesson)();
+    // (Where the lesson is: its chapter, and which of its lessons.)
+    let group: Vec<usize> = (0..all.len()).filter(|&k| all[k].group == all[at].group).collect();
+    let place = group.iter().position(|&k| k == at).unwrap_or(0) + 1;
     rsx! {
         header { class: "topbar",
             b { title: "watch the Linux kernel run", "kSEE" }
             button { class: if menu() { "contents on" } else { "contents" }, title: "every lesson, by chapter", onclick: move |_| menu.toggle(), "☰ Lessons" }
             button { disabled: at == 0, title: "the lesson before", onclick: move |_| open(ui, at - 1), "◀" }
-            button { disabled: at + 1 >= n, title: "the next lesson", onclick: move |_| open(ui, at + 1), "▶" }
+            button { disabled: at + 1 >= all.len(), title: "the next lesson", onclick: move |_| open(ui, at + 1), "▶" }
+            span { class: "crumb", "{all[at].group} · {place} of {group.len()}" }
+            span { class: "keys dim", title: "← → a line (Shift: over the calls)\n↑ ↓ the frame, the callee or the caller\nhover the timeline: that moment; click: go there\ndrag or the wheel: move and zoom it\nCtrl+click a name: its definition", "keys" }
             Theme {}
             if menu() {
                 div { class: "menuback", onclick: move |_| menu.set(false) }
@@ -314,8 +317,6 @@ pub fn Lesson() -> Element {
     let all = examples();
     let at = (ui.lesson)();
     let ex = all[at].clone();
-    let group: Vec<usize> = (0..all.len()).filter(|&k| all[k].group == ex.group).collect();
-    let place = group.iter().position(|&k| k == at).unwrap_or(0) + 1;
     let program = (ui.program)();
     // (Each line's call number, from 1: the text's links name calls so.)
     let mut n = 0;
@@ -346,7 +347,6 @@ pub fn Lesson() -> Element {
     let after = (at + 1 < all.len()).then(|| (at + 1, all[at + 1].title.clone()));
     let grid = format!("--lanes: {}", lanes.len());
     rsx! {
-        div { class: "crumb", "{ex.group} · {place} of {group.len()}" }
         h1 { "{ex.title}" }
         p { class: "question", "{ex.question}" }
         if mine {
