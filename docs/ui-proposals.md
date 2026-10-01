@@ -58,13 +58,13 @@ lesson | work split.
   the attribute. Owner: page-lesson, about twenty lines next to the
   header (read once at mount, set on click).
 - The CSS contract, provided by this diff, so the toggle needs no
-  further CSS:
-  - `:root` holds the light values (unchanged);
-  - `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"])
-    { ... } }` keeps covering auto-dark (unchanged);
-  - new `:root[data-theme="dark"] { ...dark values... }` applies the
-    dark values unconditionally, so Dark works even when the OS is set
-    to light (the one case the media query can never cover).
+  further CSS: one set of variables in `:root` via `light-dark(light,
+  dark)` (light value first), with `color-scheme: light dark`; Auto is
+  the attribute absent (the system decides). Explicit
+  `:root[data-theme="light"] { color-scheme: light }` and
+  `:root[data-theme="dark"] { color-scheme: dark }` force each mode —
+  both directions work regardless of the OS setting, which the old
+  `@media (prefers-color-scheme: dark)` block could never do.
 - Nothing else reads the theme: charts, source colors, and tabs all go
   through the `--*` variables already.
 

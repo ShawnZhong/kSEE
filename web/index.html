@@ -6,25 +6,23 @@
 <title>kSEE — watch the Linux kernel run</title>
 <style>
 :root {
-  --bg: #fbfbfa; --panel: #fff; --fg: #1f2328; --dim: #6b7280; --line: #e3e3e0;
-  --sel: #e8f0fe; --ran: #dafbe1; --miss: #cf222e; --accent: #0969da;
-  --at: #fff3bf; --chg: #fff8c5; --run: #1a7f37; --found: #f0a6f7;
-  --kw: #8250df; --ty: #0550ae; --str: #0a3069; --com: #6e7781; --num: #0550ae; --pp: #953800;
-  --fn: #0000ff; --fld: #0000cc; --mac: #225566; --bl: #221199; --esc: #ee4400;
+  color-scheme: light dark;
+  --bg: light-dark(#fbfbfa, #0d1117); --panel: light-dark(#fff, #161b22); --fg: light-dark(#1f2328, #e6edf3);
+  --dim: light-dark(#6b7280, #8b949e); --line: light-dark(#e3e3e0, #30363d);
+  --sel: light-dark(#e8f0fe, #1f2d3d); --ran: light-dark(#dafbe1, #12301c); --miss: light-dark(#cf222e, #f85149);
+  --accent: light-dark(#0969da, #58a6ff);
+  --at: light-dark(#fff3bf, #3d3207); --chg: light-dark(#fff8c5, #3a3000); --run: light-dark(#1a7f37, #3fb950);
+  --found: light-dark(#f0a6f7, #c86fd0);
+  --kw: light-dark(#8250df, #d2a8ff); --ty: light-dark(#0550ae, #79c0ff); --str: light-dark(#0a3069, #a5d6ff);
+  --com: light-dark(#6e7781, #8b949e); --num: light-dark(#0550ae, #79c0ff); --pp: light-dark(#953800, #ffa657);
+  --fn: light-dark(#0000ff, #61afef); --fld: light-dark(#0000cc, #e06c75); --mac: light-dark(#225566, #e06c75);
+  --bl: light-dark(#221199, #d19a66); --esc: light-dark(#ee4400, #56b6c2);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #0d1117; --panel: #161b22; --fg: #e6edf3; --dim: #8b949e; --line: #30363d;
-  --sel: #1f2d3d; --ran: #12301c; --miss: #f85149; --accent: #58a6ff;
-  --at: #3d3207; --chg: #3a3000; --run: #3fb950; --found: #c86fd0;
-  --kw: #d2a8ff; --ty: #79c0ff; --str: #a5d6ff; --com: #8b949e; --num: #79c0ff; --pp: #ffa657; --fn: #61afef; --fld: #e06c75; --mac: #e06c75; --bl: #d19a66; --esc: #56b6c2; } }
-/* The theme, kept (ksee.theme): Dark anywhere, even when the system is
-   light (the query above cannot do that); Light is the :root values. */
-:root[data-theme="dark"] {
-  --bg: #0d1117; --panel: #161b22; --fg: #e6edf3; --dim: #8b949e; --line: #30363d;
-  --sel: #1f2d3d; --ran: #12301c; --miss: #f85149; --accent: #58a6ff;
-  --at: #3d3207; --chg: #3a3000; --run: #3fb950; --found: #c86fd0;
-  --kw: #d2a8ff; --ty: #79c0ff; --str: #a5d6ff; --com: #8b949e; --num: #79c0ff; --pp: #ffa657; --fn: #61afef; --fld: #e06c75; --mac: #e06c75; --bl: #d19a66; --esc: #56b6c2; }
+/* The theme, kept (ksee.theme): data-theme="light" forces light,
+   data-theme="dark" forces dark, absent follows the system. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 /* The page */
 * { box-sizing: border-box; }
