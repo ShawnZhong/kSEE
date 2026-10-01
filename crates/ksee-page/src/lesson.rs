@@ -321,8 +321,11 @@ pub fn Lesson() -> Element {
         h1 { "{ex.title}" }
         p { class: "question", "{ex.question}" }
         if mine {
-            div { class: "explain", for p in ex.text.iter() { Paragraph { text: p.clone() } } }
+            div { class: "explain", for p in ex.text.iter() { Paragraph { text: p.clone(), stale: false } } }
         } else {
+            // (A try: its own text kept, the lesson's still shown; its call
+            // links no longer apply.)
+            div { class: "explain", for p in ex.text.iter() { Paragraph { text: p.clone(), stale: true } } }
             p { class: "explain dim", "A try, not the lesson's own program." }
         }
         div { class: "pager",
@@ -456,7 +459,7 @@ fn later(during: Option<usize>) -> String {
 }
 
 #[component]
-fn Paragraph(text: String) -> Element {
+fn Paragraph(text: String, stale: bool) -> Element {
     let ui = use_context::<Ui>();
     rsx! {
         p { class: "para",
@@ -464,10 +467,16 @@ fn Paragraph(text: String) -> Element {
                 match x {
                     Piece::Text(t) => rsx! { "{t}" },
                     Piece::Code(c) => rsx! { code { "{c}" } },
-                    Piece::Link { label, target, .. } => {
+                    Piece::Link { label, target, call } => {
                         // (A try: a button; a function's place: its name, as code.)
                         let class = if target.starts_with("try:") { "try" } else if target.contains(':') { "place mono" } else { "" };
-                        rsx! { a { class, onclick: move |_| follow(ui, &target), "{label}" } }
+                        // (Stale (a try, not the lesson's own program): a call
+                        // link names a call it no longer has: dimmed, no link.)
+                        if stale && call.is_some() {
+                            rsx! { span { class: "dim", "{label}" } }
+                        } else {
+                            rsx! { a { class, onclick: move |_| follow(ui, &target), "{label}" } }
+                        }
                     }
                 }
             }
