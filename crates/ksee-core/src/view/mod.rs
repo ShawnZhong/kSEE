@@ -13,7 +13,7 @@ use crate::stack::{self, LineStep};
 use crate::tables::{Loc, Step, Tables, Var};
 use crate::task::read_task;
 use crate::trace::Record;
-use crate::types::{Kind, Types};
+use crate::types::{num, Kind, Types};
 use crate::Memory;
 
 
@@ -516,12 +516,6 @@ impl View<'_> {
         }
         lines.into_iter().map(|(line, count)| LineCount { line, count }).collect()
     }
-}
-
-/// A number as the page shows one: in hex past 0xffff (an address, a flag
-/// word).
-fn num(v: u64) -> String {
-    if v > 0xffff { format!("{v:#x}") } else { v.to_string() }
 }
 
 /// A comparison, its operands and whether it held: "18 >= 0 ✓" (signed

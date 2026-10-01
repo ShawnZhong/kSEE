@@ -239,8 +239,7 @@ impl Types {
     /// (ENOENT)".
     pub fn result(&self, v: i64) -> String {
         match v {
-            0x10000.. => alloc::format!("{v:#x}"),
-            0.. => alloc::format!("{v}"),
+            0.. => num(v as u64),
             _ => alloc::format!("{v} ({})", self.errno(-v).unwrap_or("an error")),
         }
     }
@@ -501,6 +500,12 @@ impl Types {
 
 fn or_anon(name: &str) -> &str {
     if name.is_empty() { "<anon>" } else { name }
+}
+
+/// A number as the page shows one: in hex past 0xffff (an address, a flag
+/// word).
+pub fn num(v: u64) -> String {
+    if v > 0xffff { alloc::format!("{v:#x}") } else { v.to_string() }
 }
 
 /// Bytes as a C string literal: text as text, the rest escaped (\n, \t,
