@@ -195,6 +195,33 @@ fn to_url(ui: Ui) {
     }
 }
 
+/// The theme kept in the browser's storage (none: the system's), as the
+/// page's head applies it before the page is drawn.
+const THEME: &str = "ksee.theme";
+
+/// The theme: the system's, light or dark, kept.
+#[component]
+fn Theme() -> Element {
+    let storage = || web_sys::window().and_then(|w| w.local_storage().ok().flatten());
+    let mut theme = use_signal(move || storage().and_then(|s| s.get_item(THEME).ok().flatten()).unwrap_or_default());
+    rsx! {
+        div { class: "theme", role: "group",
+            for (t , label , title) in [("", "Auto", "the system's"), ("light", "Light", "light"), ("dark", "Dark", "dark")] {
+                button { class: if theme() == t { "on" } else { "" }, title,
+                    onclick: move |_| {
+                        let root = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element());
+                        if let (Some(root), Some(s)) = (root, storage()) {
+                            let _ = if t.is_empty() { root.remove_attribute("data-theme").and(s.remove_item(THEME)) }
+                                    else { root.set_attribute("data-theme", t).and(s.set_item(THEME, t)) };
+                        }
+                        theme.set(t.into());
+                    },
+                    "{label}" }
+            }
+        }
+    }
+}
+
 /// The lessons opened before (kept in the browser's storage), by name.
 fn seen() -> Vec<String> {
     web_sys::window().and_then(|w| w.local_storage().ok().flatten()).and_then(|s| s.get_item("ksee.seen").ok().flatten())
@@ -224,15 +251,16 @@ pub fn Header() -> Element {
     let n = examples().len();
     let at = (ui.lesson)();
     rsx! {
-        header { class: "sidehead",
+        header { class: "topbar",
             b { title: "watch the Linux kernel run", "kSEE" }
             button { class: if menu() { "contents on" } else { "contents" }, title: "every lesson, by chapter", onclick: move |_| menu.toggle(), "☰ Lessons" }
             button { disabled: at == 0, title: "the lesson before", onclick: move |_| open(ui, at - 1), "◀" }
             button { disabled: at + 1 >= n, title: "the next lesson", onclick: move |_| open(ui, at + 1), "▶" }
-        }
-        if menu() {
-            div { class: "menuback", onclick: move |_| menu.set(false) }
-            Contents { close: move |_| menu.set(false) }
+            Theme {}
+            if menu() {
+                div { class: "menuback", onclick: move |_| menu.set(false) }
+                Contents { close: move |_| menu.set(false) }
+            }
         }
     }
 }

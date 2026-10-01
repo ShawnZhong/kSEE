@@ -268,7 +268,7 @@ async fn read() -> Check {
     wait(|| cells().len() == 3 && done(3), 300, "back to the lesson's program", || format!("{:?}", cells())).await?;
     // (The next lesson.)
     let title = one("h1").map(|h| text(&h)).unwrap_or_default();
-    click(all(".sidehead button").last().ok_or("no buttons")?);
+    click(&one(".topbar button[title='the next lesson']").ok_or("no next lesson")?);
     wait(|| one("h1").map(|h| text(&h)) != Some(title.clone()), 100, "the next lesson", || title.clone()).await?;
     Ok(r.join("; "))
 }

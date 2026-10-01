@@ -104,9 +104,9 @@ fn App() -> Element {
     // (The arrow keys, anywhere on the page: one listener on the window.)
     stack::listen(ui);
     rsx! {
+        lesson::Header {}
         main { class: "page", style: "{sizes().style()}",
             aside { class: "side",
-                lesson::Header {}
                 article { class: "lesson", lesson::Lesson {} }
             }
             layout::Handle { split: layout::Split::Left }

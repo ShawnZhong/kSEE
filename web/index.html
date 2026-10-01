@@ -50,26 +50,16 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .vsplit:hover, .hsplit:hover { background: var(--accent); opacity: .6; }
 .sheet { position: fixed; inset: 0; z-index: 50; }
 
-/* The lesson's head: the contents, the lesson before and the next */
-.sidehead { display: flex; gap: 4px; align-items: center; padding: 4px 8px 4px 12px; border-bottom: 1px solid var(--line); flex: none; }
-.sidehead b { font-size: 14px; }
-.sidehead .contents { margin-left: auto; }
-.sidehead .contents.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
-
-/* The top bar (the proposals doc): the page's global strip above
-   main.page — the brand, the lessons menu, the lesson pager, and the
-   theme toggle. The same header either as .sidehead (today, in the
-   lesson column) or as .topbar (after page-lesson moves it), so the
-   page looks right during the handoff. */
+/* The top bar, the page's own: the lessons (the contents, the one before and the next), the theme */
 .topbar { display: flex; gap: 4px; align-items: center; padding: 4px 8px 4px 12px; background: var(--panel);
   border-bottom: 1px solid var(--line); flex: none; position: relative; }
 .topbar b { font-size: 14px; }
 .topbar .contents.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
 .topbar .theme { margin-left: auto; display: flex; gap: 2px; }
 .topbar .theme .on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
-.topbar .menu { position: absolute; top: 100%; left: 0; width: min(340px, 92vw); bottom: auto; max-height: 70dvh; }
+.topbar .menu { top: 100%; left: 0; width: min(340px, 92vw); max-height: 70dvh; }
 .menuback { position: fixed; inset: 0; z-index: 9; }
-.menu { position: absolute; top: 33px; left: 0; right: 0; bottom: 0; z-index: 10; overflow-y: auto; background: var(--panel);
+.menu { position: absolute; z-index: 10; overflow-y: auto; background: var(--panel);
   border-top: 1px solid var(--line); padding: 4px 0 12px; box-shadow: 0 6px 16px rgb(0 0 0 / .12); }
 .menu .chapter { margin: 12px 12px 2px; font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
 .menu .item { display: block; position: relative; padding: 4px 12px 4px 30px; color: var(--fg); }
@@ -229,6 +219,11 @@ table.objs tr.later { opacity: .45; }
 </head>
 <body>
 <div id="root"></div>
+<script>
+// (The theme kept, before the page is drawn: lesson.rs's Theme.)
+const theme = localStorage.getItem("ksee.theme");
+if (theme) document.documentElement.dataset.theme = theme;
+</script>
 <script type="module">
 import { load, start } from "./ksee.js";
 import { mount } from "./pkg/ksee_page.js";
