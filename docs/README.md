@@ -15,6 +15,19 @@ How it works, part by part:
 - [runtime.md](runtime.md): the runtime (one wasm module in the kernel's
   memory), the page, the tests.
 
+The build and the commands:
+
+- `ksee.sh` builds the `ksee` command (crates/ksee-cli), then runs it:
+  `ksee` builds and serves the page; `ksee build` builds (the kernel, the
+  runtime and page, the programs, into target/site/);
+  `./setup.sh` installs what it needs (LLVM, GNU make and sed, mkfs.ext4,
+  Rust + its wasm target; Chromium in $CHROME for the tests).
+- `ksee test [--ui]`: the kernel's tests, the page's too with `--ui`
+  ([runtime.md](runtime.md): what each checks); `ksee shot` looks at the
+  page as it is built; `ksee patch` writes linux.patch from linux/
+  ([kernel.md](kernel.md): the port); `ksee pack` prepares the kernel for
+  the page ([recording.md](recording.md): what it adds).
+
 Background:
 
 - [research.md](research.md): directions surveyed and not built

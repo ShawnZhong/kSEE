@@ -73,27 +73,27 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
 - **The kernel** ([kernel.md](kernel.md)): a minimal `arch/wasm` for Linux
   7.2. One wasm instance, on the page's thread; a task is a call stack of
   it, which the host suspends and resumes at a context switch (JSPI).
-  /init sets up and starts the program (/bin/prog), which makes the
-  syscalls the page asks for, and so do its threads and children (runners: each waits, in a futex, on the request the page
-  writes into its memory; the doorbell interrupt wakes it).
+  /init mounts the disk and starts the program (/bin/prog), which makes
+  the syscalls the page asks for, and so do its threads and children
+  (runners: each waits, in a futex, on the request the page writes into
+  its memory; the doorbell interrupt wakes it).
 - **The recording** ([recording.md](recording.md)): an LLVM pass
   instruments every function the same way (blocks, calls with their
   arguments and frame base, returns, stores with old values and where a
   copy came from, the named variables kept in wasm locals as they are
-  set, the comparisons deciding branches) into one
-  ring, in full while a runner makes the syscall it was asked, stores
-  only in between (so memory as it was stays exact, but for bulk writes
-  past a page).
-- **Rebuilding the past** ([replay.md](replay.md)): from the records alone,
-  crates/ksee-core rebuilds which task ran, call stacks, lines within
-  blocks, syscalls, and memory as it was at any record.
+  set, the comparisons deciding branches) into one ring, in full while a
+  runner makes the syscall it was asked, stores only in between (so memory
+  as it was stays exact).
+- **Rebuilding the past** ([replay.md](replay.md)): from the records
+  alone, crates/ksee-core rebuilds which task ran, call stacks, lines
+  within blocks, syscalls, and memory as it was at any record.
 - **The runtime and the page** ([runtime.md](runtime.md)): one Rust wasm
-  module, on the kernel's memory, boots the kernel and reads it
-  directly; the page, in it (crates/ksee-page, Dioxus), lays out what the
-  core computes, calling the Machine directly.
-- **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel, the
-  runtime and the page, the programs, and the page's files (types from
-  DWARF, the sources), with web/ (its frame), into target/site/.
+  module, on the kernel's memory, boots the kernel and reads it directly;
+  the page, in it (crates/ksee-page, Dioxus), lays out what the core
+  computes, calling the Machine directly.
+- **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel,
+  the runtime and the page, the programs, and the page's files (types
+  from DWARF, the sources), with web/ (its frame), into target/site/.
 
 The choices that shape it:
 
@@ -110,10 +110,10 @@ The choices that shape it:
 
 - No MMU: no page tables, faults, copy-on-write or demand paging; no
   fork (threads and vfork, which share memory).
-- One CPU; no preemption (the kernel reschedules at its usual points).
+- One CPU; no preemption (the port selects `ARCH_NO_PREEMPT`).
 - Of the values in wasm locals, only the named variables', the
   comparisons that decide branches and where a copied value came from are
   recorded, not every intermediate.
 - A recording is a ring: the oldest records go when it is full.
-- No console input; no user signal handlers (a caught signal kills the
-  task).
+- No console input; no caught signal handlers (a signal that would stop
+  or kill still does).
