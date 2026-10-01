@@ -335,29 +335,6 @@ impl View<'_> {
         }).collect()
     }
 
-    /// The context switch record `i` is in, if one: the task leaving (prev)
-    /// and the one arriving (next), as `__switch_to(prev, next)` has them —
-    /// so the page can name the handoff, not just who runs now. `i` from the
-    /// switch's call (its block 0) to where its next runs (its Return there),
-    /// both included: the handoff, not the whole time prev stays suspended.
-    /// (The Return matched by task: Returns fire on the task running, so the
-    /// call's own is the first switch Return after it on next's task — never
-    /// just the first after it, another call's, when switches overlap. With
-    /// no such Return (next never runs again in the trace), the call's end
-    /// (where prev resumes), else open.)
-    pub fn switch_at(&self, i: usize) -> Option<(Task, Task)> {
-        let switch = self.tables.find(arch::SWITCH)?;
-        let call = self.rec.calls.calls.iter().rev().find(|c| c.func == switch && c.first <= i)?;
-        let (args, _) = self.rec.args.get(call.first)?;
-        let (prev, next) = (args.first().copied()? as u32, args.get(1).copied()? as u32);
-        // (Arrival is immediate: the scan short-circuits a record or two on;
-        // the whole trace only when next never runs.)
-        let end = (call.first + 1..self.rec.records.len()).find(|&j| {
-            matches!(self.rec.records[j], Record::Return { func, .. } if func == switch) && self.rec.tasks.get(j) == Some(&next)
-        }).or(call.last).unwrap_or(usize::MAX);
-        (i <= end).then_some((self.task(prev, i), self.task(next, i)))
-    }
-
     /// A stack chart of records `first..=last` in `n` columns, each a
     /// moment spread evenly over the steps (Recording::columns): the task
     /// there and its call stack then, outermost first, each call and the

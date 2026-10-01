@@ -5,8 +5,8 @@ history (docs/info-proposals.md, docs/feature-ideas.md,
 docs/deletion-menu.md, removed when this replaced them).
 
 Show more of what the recording has:
-- At a context switch, say who hands over to whom: `View::switch_at`
-  (built and tested, not shown).
+- At a context switch, say who hands over to whom (the switch call's
+  prev and next arguments).
 - A sealed function (its body not followed): say so in the source.
 - A task's row in Tasks: a link to where it last ran (`TaskAt.last`).
 - Objects: name the writer's line, not just its function (`Run.at`).
