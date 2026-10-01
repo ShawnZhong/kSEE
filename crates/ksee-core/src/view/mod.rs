@@ -335,18 +335,18 @@ impl View<'_> {
         }).collect()
     }
 
-    /// A stack chart of records `first..=last` in `n` columns, each a
+    /// A stack chart of steps `first..=last` in `n` columns, each a
     /// moment spread evenly over the steps (Recording::columns): the task
     /// there and its call stack then, outermost first, each call and the
     /// code inlined into it a bar (in `bars`, once each).
     pub fn chart(&self, first: usize, last: usize, n: usize) -> Chart {
         let (t, rec) = (self.tables, self.rec);
         let mut chart = Chart::default();
-        if rec.is_empty() || n == 0 || first > last {
+        if rec.steps() == 0 || n == 0 || first > last {
             return chart;
         }
         let mut known: BTreeMap<(usize, Option<u32>), u32> = BTreeMap::new();
-        for i in rec.columns(first, last.min(rec.len() - 1), n) {
+        for i in rec.columns(first, last.min(rec.steps() - 1), n) {
             let mut frames = Vec::new();
             for c in rec.calls.stack_at(t, i, None) {
                 for (k, _) in self.nest(&c).into_iter().rev() {

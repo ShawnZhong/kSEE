@@ -10,8 +10,9 @@ use ksee_core::view::{Chart, Frame, Line, SyscallSummary};
 
 use crate::machine;
 
-/// The chart's columns: moments across its window.
+/// The chart's columns: moments across its window; and the fewest steps it shows.
 const COLUMNS: usize = 400;
+const MIN_SPAN: usize = 20;
 
 /// A value computed once and shared (a memo's: compared by identity, not
 /// by content).
@@ -84,7 +85,7 @@ impl Derived {
         let up = move || matches!((ui.kernel)(), Some(Ok(())));
         let window = use_memo(move || {
             (ui.version)();
-            let end = if up() { machine().records().saturating_sub(1) } else { 0 };
+            let end = if up() { machine().view(|v| v.rec.steps()).saturating_sub(1) } else { 0 };
             (ui.win)().unwrap_or((0, end))
         });
         let chart = use_memo(move || {
@@ -136,7 +137,7 @@ pub struct Ui {
     /// pointer, if it is over the chart.
     pub at: Signal<Option<Moment>>,
     pub peek: Signal<Option<Moment>>,
-    /// The chart's window (records; none: the whole recording).
+    /// The chart's window (steps, both ends in; none: the whole recording).
     pub win: Signal<Option<(usize, usize)>>,
     pub tab: Signal<Tab>,
     /// The kernel: booting (none), up, or why it could not start.
@@ -208,15 +209,22 @@ impl Ui {
 
     /// The chart's window: call `k`, with a little room either side (its
     /// lines a step or so apart, not many to a column).
-    pub fn zoom(mut self, k: usize) {
-        let m = machine();
-        let w = m.view(|v| {
+    pub fn zoom(self, k: usize) {
+        let Some((a, b)) = machine().view(|v| {
             let s = v.syscalls().into_iter().nth(k)?;
-            let (a, b) = (v.rec.step_of(s.first), v.rec.step_of(s.last.unwrap_or(v.rec.len().saturating_sub(1))));
-            let p = ((b - a) / 50).max(4);
-            Some((v.rec.record_of(a.saturating_sub(p)), v.rec.record_of((b + p).min(v.rec.steps().saturating_sub(1)))))
-        });
-        self.win.set(w);
+            Some((v.rec.step_of(s.first), v.rec.step_of(s.last.unwrap_or(v.rec.len().saturating_sub(1)))))
+        }) else { return };
+        let room = ((b - a) / 50).max(4);
+        self.view(a as f64 - room as f64, b - a + 2 * room);
+    }
+
+    /// The chart's window: `span` steps from `start`, kept in the recording
+    /// (as wide, at its ends).
+    pub fn view(mut self, start: f64, span: usize) {
+        let total = machine().view(|v| v.rec.steps()).max(1);
+        let span = span.max(MIN_SPAN).min(total - 1);
+        let a = (start.max(0.0) as usize).min(total - 1 - span);
+        self.win.set(Some((a, a + span)));
     }
 
     /// The cursor to line `k` of its call, on its innermost frame.

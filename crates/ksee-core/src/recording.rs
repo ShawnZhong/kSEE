@@ -134,12 +134,11 @@ impl Recording {
         self.blocks.get(k).copied().unwrap_or(self.records.len().saturating_sub(1))
     }
 
-    /// The records `n` columns of steps `from..=to` (records) begin at, for
-    /// a chart: the k-th column's, at step from + k * span / n.
+    /// The records `n` columns of steps `from..=to` begin at, for a chart:
+    /// the k-th column's, at step from + k * span / n.
     pub(crate) fn columns(&self, from: usize, to: usize, n: usize) -> Vec<usize> {
-        let (a, b) = (self.step_of(from), self.step_of(to));
-        let span = b - a + 1;
-        (0..n).map(|k| self.record_of(a + k * span / n).max(from)).collect()
+        let span = to.saturating_sub(from) + 1;
+        (0..n).map(|k| self.record_of(from + k * span / n)).collect()
     }
 
     pub fn len(&self) -> usize {

@@ -20,6 +20,8 @@ const BUCKETS: usize = 240;
 /// A row's height (px): as tall as fits the chart's room, 11 to 15 (deeper,
 /// the chart scrolls).
 const ROW: f64 = 15.0;
+/// How much a wheel's turn (a pixel of it) zooms.
+const ZOOM: f64 = 0.002;
 const MIN_ROW: f64 = 11.0;
 
 /// A task's hue, by its pid (the strip, the overview, the program's lanes).
@@ -51,12 +53,8 @@ pub fn Timeline() -> Element {
     use_effect(move || {
         let Some(at) = d.cursor.cloned() else { return };
         let (a, b) = *d.window.peek();
-        let m = machine();
-        let (sa, sb, total) = m.view(|v| (v.rec.step_of(a), v.rec.step_of(b), v.rec.steps().max(1)));
-        if at < sa as f64 || at >= (sb + 1) as f64 {
-            let (span, at) = (sb - sa, at as usize);
-            let na = at.saturating_sub(span / 2).min(total.saturating_sub(span + 1));
-            ui.win.set(Some(m.view(|v| (v.rec.record_of(na), v.rec.record_of(na + span)))));
+        if at < a as f64 || at >= (b + 1) as f64 {
+            ui.view(at - ((b - a) / 2) as f64, b - a);
         }
     });
     let title = ui.syscall().map(|s| format!("{} by {}", s.name, s.task.named())).unwrap_or_default();
@@ -103,19 +101,15 @@ fn Overview() -> Element {
             v.rec.tasks.get(i).and_then(|&t| v.task(t, i).pid).unwrap_or(0)
         }).collect();
         let starts: Vec<usize> = v.rec.syscalls.iter().map(|s| v.rec.step_of(s.first)).collect();
-        let (a, b) = (d.window)();
-        (n, tasks, starts, (v.rec.step_of(a), v.rec.step_of(b)), cursor)
+        (n, tasks, starts, (d.window)(), cursor)
     });
     let pct = |s: usize| s as f64 * 100.0 / n as f64;
     rsx! {
         div { class: "overview", title: "the whole recording: click to move the window there",
             onresize: move |e| if let Ok(s) = e.get_content_box_size() { width.set(s.width.max(1.0)) },
             onclick: move |e| {
-                let mut ui = ui;
                 let x = e.element_coordinates().x / width();
-                let (s, half) = ((x * n as f64) as usize, (wb - wa) / 2);
-                let m = machine();
-                ui.win.set(Some(m.view(|v| (v.rec.record_of(s.saturating_sub(half)), v.rec.record_of((s + half).min(n - 1))))));
+                ui.view(x * n as f64 - ((wb - wa) / 2) as f64, wb - wa);
             },
             for (k , pid) in tasks.into_iter().enumerate() {
                 div { class: "b", style: "left: {k as f64 * 100.0 / BUCKETS as f64}%; width: {100.0 / BUCKETS as f64 + 0.1}%; background: {task_color(pid)}" }
@@ -153,10 +147,9 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let row = (room / depth.max(1) as f64).clamp(MIN_ROW, ROW).floor();
     let runs = chart.bar_runs();
     let cursor = d.cursor.cloned();
-    let (wa, wb) = (d.window)();
+    let (sa, sb) = (d.window)();
     // (Where a step is, across the window (%): the cursor's, solid; the
     // moment under the pointer's, faint; the calls on its stack.)
-    let (sa, sb) = machine().view(|v| (v.rec.step_of(wa), v.rec.step_of(wb)));
     let x = |s: f64| (s >= sa as f64 && s < (sb + 1) as f64).then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64);
     let now = cursor.and_then(x);
     let peeked = ui.peek.read().as_ref().and(d.moment.cloned()).and_then(|(i, _)| x(machine().view(|v| v.rec.step_of(i)) as f64));
@@ -174,33 +167,28 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     };
     let pct = |k: usize| k as f64 * 100.0 / n as f64;
     let px = width() / n as f64;
-    // (Zoom: the window narrowed or widened around the pointer's step.)
-    let zoom = move |x: f64, by: f64| {
-        let mut ui = ui;
+    // (The wheel: up and down zoom around the pointer's step, in
+    // proportion to how far it turned; left and right (or Shift) pan.)
+    let wheel = move |x: f64, dx: f64, dy: f64, shift: bool| {
         let (a, b) = (d.window)();
-        let m = machine();
-        let (sa, sb, total) = m.view(|v| (v.rec.step_of(a), v.rec.step_of(b), v.rec.steps().max(1)));
-        let span = (sb - sa).max(1) as f64;
-        let at = sa as f64 + span * (x / width()).clamp(0.0, 1.0);
-        let new = (span * by).clamp(20.0, total as f64);
-        let na = (at - (at - sa as f64) * new / span).max(0.0) as usize;
-        let nb = ((na as f64 + new) as usize).min(total - 1);
-        ui.win.set(Some(m.view(|v| (v.rec.record_of(na), v.rec.record_of(nb)))));
+        let (span, f) = ((b - a + 1) as f64, (x / width()).clamp(0.0, 1.0));
+        let (dx, dy) = if shift { (dy, 0.0) } else { (dx, dy) };
+        let new = span * (dy * ZOOM).exp();
+        ui.view(a as f64 + f * (span - new) + dx / width() * span, new as usize);
     };
     rsx! {
         div { class: "chart", style: "height: {height}px",
             onresize: move |e| if let Ok(s) = e.get_content_box_size() { width.set(s.width.max(1.0)) },
             onwheel: move |e| {
                 e.prevent_default();
-                let dy = e.delta().strip_units().y;
-                zoom(e.element_coordinates().x, if dy > 0.0 { 1.25 } else { 0.8 });
+                let d = e.delta().strip_units();
+                wheel(e.element_coordinates().x, d.x, d.y, e.modifiers().shift());
             },
             onpointerdown: move |e| {
                 tip.set(None);
                 dragged.set(false);
                 let (a, b) = (d.window)();
-                let (sa, sb) = machine().view(|v| (v.rec.step_of(a), v.rec.step_of(b)));
-                pan.set(Some(Pan { x: e.client_coordinates().x, a: sa, b: sb, moved: false }));
+                pan.set(Some(Pan { x: e.client_coordinates().x, a, b, moved: false }));
             },
             onpointermove: {
                 let chart = chart.clone();
@@ -213,13 +201,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                             p.moved = true;
                             dragged.set(true);
                             pan.set(Some(p));
-                            let m = machine();
-                            let total = m.view(|v| v.rec.steps().max(1));
-                            let shift = (dx / width() * (p.b - p.a) as f64) as isize;
-                            // (Saturated: the window can be the whole recording.)
-                            let max = (total - 1).saturating_sub(p.b - p.a);
-                            let na = (p.a as isize - shift).clamp(0, max as isize) as usize;
-                            ui.win.set(Some(m.view(|v| (v.rec.record_of(na), v.rec.record_of(na + (p.b - p.a))))));
+                            ui.view(p.a as f64 - dx / width() * (p.b - p.a + 1) as f64, p.b - p.a);
                             return;
                         }
                     }
@@ -386,12 +368,7 @@ fn Find() -> Element {
                 };
                 if let Some(&i) = to {
                     ui.go_record(i, None);
-                    // (Its window, around it, if outside.)
-                    let (a, b) = consume_context::<Derived>().window.cloned();
-                    if i < a || i > b {
-                        let half = (b - a) / 2;
-                        ui.win.set(Some((i.saturating_sub(half), i + half)));
-                    }
+
                 }
             } }
         if !w.is_empty() { span { class: "dim", if count == 0 { "none in the recording" } else { "{count} calls" } } }
