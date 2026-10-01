@@ -184,6 +184,8 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .tab.on { color: var(--fg); border-bottom-color: var(--accent); }
 .pane { overflow: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .stack { margin-top: auto; }
+/* (The console kept at its end as it grows, unless scrolled back.) */
+.pane:has(> .console) { flex-direction: column-reverse; }
 table.objs { border-collapse: collapse; width: max-content; min-width: 100%; font-family: var(--mono); font-size: 12px; }
 table.objs td { padding: 1px 8px; white-space: nowrap; }
 table.objs tr:hover { background: var(--sel); }
