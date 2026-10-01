@@ -236,7 +236,8 @@ fn site() {
     }
 }
 
-/// Build, then: core's unit tests, and under Deno tests/web.js (the kernel, its
+/// Build, then: core's unit tests, the page's (wasm, under Node:
+/// wasm-bindgen-test-runner), and under Deno tests/web.js (the kernel, its
 /// recordings, every example: the page's module built with its tests,
 /// crates/ksee-page's selftest, in target/test/); with `ui`, also
 /// tests/ui.js (the page in headless Chromium, $CHROME: the read example, a
@@ -244,6 +245,9 @@ fn site() {
 pub fn test(ui: bool) {
     build();
     run(Command::new("cargo").args(["test", "-q", "-p", "ksee-core"]));
+    // (Not -q: the runner takes no flags.)
+    run(Command::new("cargo").args(["test", "-p", "ksee-page", "--target", "wasm32-unknown-unknown"])
+        .env("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER", "wasm-bindgen-test-runner"));
     // (Its own target directory: the site's module, built without them, stays as it is.)
     run(Command::new("cargo").args(["build", "-q", "--release", "-p", "ksee-page", "--features", "selftest",
         "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));

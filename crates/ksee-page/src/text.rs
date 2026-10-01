@@ -34,3 +34,23 @@ pub fn pieces(p: &str) -> Vec<Piece> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn a_paragraphs_pieces() {
+        let p = pieces("1. [vfs_read](2:vfs_read) reads `buf`; [try](try:1).");
+        assert_eq!(p, [
+            Piece::Text("1. ".into()),
+            Piece::Link { label: "vfs_read".into(), target: "2:vfs_read".into(), call: Some(2) },
+            Piece::Text(" reads ".into()),
+            Piece::Code("buf".into()),
+            Piece::Text("; ".into()),
+            Piece::Link { label: "try".into(), target: "try:1".into(), call: None },
+            Piece::Text(".".into()),
+        ]);
+    }
+}

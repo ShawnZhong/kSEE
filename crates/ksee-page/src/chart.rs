@@ -427,3 +427,18 @@ fn Find() -> Element {
         if !w.is_empty() { span { class: "dim", if count == 0 { "none in the recording" } else { "{count} calls" } } }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn a_calls_color_is_its_part_of_the_kernel() {
+        let (fs, arch) = (ksee_core::arch::AREAS[0].0, ksee_core::arch::AREAS.last().unwrap().0);
+        assert_eq!(super::color(Some(&format!("{fs}x.c")), false), "hsl(210 55% 74%)");
+        assert_eq!(super::color(Some(&format!("{fs}x.c")), true), "hsl(210 65% 50%)");
+        // (The last part, arch, and none: gray.)
+        assert_eq!(super::color(Some(&format!("{arch}x.c")), false), "hsl(0 0% 79%)");
+        assert_eq!(super::color(None, false), "hsl(0 0% 79%)");
+    }
+}

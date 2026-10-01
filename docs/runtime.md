@@ -129,9 +129,15 @@ in vfs_read"; else by its address; `run_of` (a line's next or last run),
 
 ## Tests
 
-- `cargo test -p ksee-core`: the rebuilding, on made-up records.
-- tests/web.js (Deno, with the page's own ksee.js and tests/kernel.js, a
-  runner of programs as the page's): boots the kernel, has
+- `cargo test -p ksee-core`: the rebuilding, on made-up records (and the
+  views, the programs, the highlighter).
+- crates/ksee-page's unit tests (`#[wasm_bindgen_test]`: the page is wasm
+  only, as the runtime is), run under Node by wasm-bindgen-test-runner:
+  what the page works out itself (a paragraph's pieces, a line's lane, a
+  call's color).
+- tests/web.js (Deno, with the page's own ksee.js): runs the page's
+  module built with its selftest (crates/ksee-page/src/selftest.rs, the
+  Machine as the page calls it): boots the kernel, has
   the program make syscalls, recorded (and every example's), and checks what the
   recordings show: stacks with arguments, lines, memory as it was, who
   wrote a value, tasks, the examples' links.
@@ -139,7 +145,7 @@ in vfs_read"; else by its address; `run_of` (a line's next or last run),
   tests/ui/ run in it (after lib.js): read.js, the read example (its
   subject call selected, its links, each landing in its function; stepping
   into, over, out, and by key; a click on a bar; find; Objects, a
-  task_struct opened; a line changed, a try and back; the next lesson);
+  task_struct opened, the Trace; a line changed, a try and back; the next lesson);
   back.js, a changed program from the URL; pipe.js, two processes, a call
   that blocks, what calls changed; phone.js, the read example at 390x844,
   the panes one under another. Fails on any exception; saves a screenshot in

@@ -22,3 +22,6 @@ web-sys = { version = "0.3.105", features = ["Window", "Response", "Document", "
 [features]
 # The kernel's tests, in the page's module (tests/web.js runs them).
 selftest = []
+
+[dev-dependencies]
+wasm-bindgen-test = "=0.3.78"
