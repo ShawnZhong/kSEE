@@ -3,7 +3,7 @@
 // the recordings show.
 //   deno run --allow-read tests/web.js
 import { start } from "../target/site/ksee.js";
-import { kernel, runner } from "../target/site/kernel.js";
+import { kernel, runner } from "./kernel.js";
 
 const root = new URL("..", import.meta.url);
 const m = await start({

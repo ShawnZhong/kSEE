@@ -134,8 +134,9 @@ fn call_of(ui: Ui, n: usize) -> Option<usize> {
 }
 
 /// Follow link `target` of the lesson's text: `N` (its call N selected),
-/// `N:func` (the cursor at func's first line in it), `:objects` (and the
-/// tab that shows what it changed); `try:N`, its program made instead.
+/// `N:func` (the cursor at func's first line in it), and a tab to show
+/// (`:stack`, `:objects`, `:tasks`, `:console`); `try:N`, its program made
+/// instead.
 fn follow(mut ui: Ui, target: &str) {
     let parts: Vec<&str> = target.split(':').collect();
     if parts[0] == "try" {
@@ -156,8 +157,10 @@ fn follow(mut ui: Ui, target: &str) {
             ui.go(j);
         }
     }
-    if parts.contains(&"objects") {
-        ui.tab.set(Tab::Objects);
+    for (name, tab) in [("stack", Tab::Stack), ("objects", Tab::Objects), ("tasks", Tab::Tasks), ("console", Tab::Console)] {
+        if parts.contains(&name) {
+            ui.tab.set(tab);
+        }
     }
 }
 

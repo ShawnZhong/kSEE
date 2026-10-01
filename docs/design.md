@@ -88,10 +88,11 @@ crates/ksee-runtime (Rust → wasm) ──────────────�
   blocks, syscalls, and memory as it was at any record.
 - **The runtime and the page** ([runtime.md](runtime.md)): one Rust wasm
   module, on the kernel's memory, boots the kernel and reads it
-  directly; the page (web/) lays out what the core computes.
+  directly; the page, in it (crates/ksee-page, Dioxus), lays out what the
+  core computes, calling the Machine directly.
 - **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel, the
-  runtime, the programs, and the page's files (types from DWARF, the
-  sources, CodeMirror), with web/ (the page), into target/site/.
+  runtime and the page, the programs, and the page's files (types from
+  DWARF, the sources), with web/ (its frame), into target/site/.
 
 The choices that shape it:
 

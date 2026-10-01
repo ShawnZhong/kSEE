@@ -1,347 +1,79 @@
-// The default: the read example (#ex=read): its calls made by themselves; its explanation's links (the
-// Stack, a hover at each), stepping, the chart (hover, click), typing and changing calls,
-// another example; returns a report.
+// The default: the read example (#ex=read): its calls made, its subject
+// (the read) selected; its links followed; stepping into, over, out, and by
+// key; the chart (a click, find); Objects and Tasks; a line changed, a try
+// and back; the next lesson. Returns a report.
 (async () => {
-    const r = {};
-  // (All its calls made, the cursor at the explanation's first link.)
-  await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".explain a.place.on"));
-  r.first = [document.querySelector("#examples h1.lesson")?.textContent, line(lis()[0])];
-  // (The contents: every example, the one open marked.)
-  document.querySelector("#ex-head .contents").click();
-  r.examples = document.querySelectorAll("nav.lessons a").length;
-  // (The lesson ends with the example before and the next, by name, as the contents order them.)
-  const titles = [...document.querySelectorAll("nav.lessons a")].map((a) => a.textContent), lesson = titles.indexOf(r.first[0]);
-  r.pager = [...document.querySelectorAll(".pager a")].map((a) => a.textContent);
-  if (document.querySelector("nav.lessons a.on")?.textContent !== r.first[0] || r.pager.join("|") !== `← ${titles[lesson - 1]}|Next: ${titles[lesson + 1]} →`)
-    throw new Error("the contents: " + JSON.stringify(r));
-  document.querySelector("#ex-head .contents").click();
-  r.calls = lis().map(line);
-  // The explanation's links, each gone to: in the function, at its first line, the one selected (on top of the Stack).
-  r.notes = [];
-  const places = [...document.querySelectorAll(".explain a.place")];
-  for (const [k, a] of places.entries()) {
-    a.click();
-    await sleep(300);
-    r.notes.push([a.textContent, $("where").textContent.slice(0, 60), document.querySelector("#stack tr.frame")?.innerText.trim().split(/\s/)[0]]);
-    // (The first, in ksys_read: its first line's values, its arguments, not a global's.)
-    if (k === 0) r.site = document.querySelector(".cm-editor .values")?.textContent;
-    if (k === 0 && !/count = 64/.test(r.site ?? "")) throw new Error("the call site's values: " + JSON.stringify(r.site));
-    if (k === 1) r.stack = [...document.querySelectorAll("#stack tr.frame")].slice(0, 2).map((f) => f.innerText.trim());
-    if (k === 1) r.args = [...document.querySelectorAll("#stack tr")].slice(0, 3).map((f) => f.innerText.replace(/\s+/g, " ").trim());
-    if (a.textContent === "vfs_read") {
-      // (The link lands in vfs_read.)
-      r.hover = await ksee.src.hoverAt("file->f_mode & FMODE_READ", "f_mode");
-      // (The cursor's line, in vfs_read, carries its values at its end.)
-      r.values = document.querySelector(".cm-editor .values")?.textContent;
-      if (!/\w+ = /.test(r.values ?? "")) throw new Error("no values on the cursor's line: " + JSON.stringify([r.values, document.querySelector(".cm-editor .ln-cursor")?.textContent]));
-      // (A type name: its declaration's first lines.)
-      r.decl = await ksee.src.hoverAt("struct kiocb kiocb", "kiocb");
-    }
+  const r = {};
+  if (!(await until(() => done(3) && $$(".chart .bar").length, 300))) fail("the calls made", cells());
+  r.cells = cells();
+  r.selected = document.querySelector(".cell.on textarea")?.value;
+  if (!r.selected?.startsWith("read(")) fail("the subject call selected", r);
+  r.drawn = { bars: $$(".chart .bar").length, strip: $$(".strip .run").length, source: $$(".source .ln").length, frames: $$(".frame").length };
+  if (!r.drawn.bars || !r.drawn.strip || !r.drawn.source || !r.drawn.frames) fail("drawn", r);
+  // (The links: each in its function, the source at its line.)
+  r.links = [];
+  for (const name of ["ksys_read", "vfs_read", "filemap_read"]) {
+    $$(".para a.link").find((a) => a.textContent === name).click();
+    await until(() => where().startsWith(name) && document.querySelector(".source .ln.now"), 50);
+    r.links.push(where());
+    if (!where().startsWith(name) || !document.querySelector(".source .ln.now")) fail(`the link to ${name}`, r);
   }
-  if (!r.decl?.startsWith("include/linux/fs.h:") || !r.decl.includes("struct kiocb {")) throw new Error("no declaration on hover: " + JSON.stringify(r.decl));
-  if (r.notes.length < 3 || !r.notes.some(([n, w, top]) => n === "vfs_read" && top === "vfs_read" && w.includes("· vfs_read ")) || !r.hover) throw new Error("links: " + JSON.stringify(r.notes));
-  // Run to a line (the source's F4): the line where the cursor is, its next run
-  // (stepping on until a line that does run again), from the explanation's first link.
-  document.querySelector(".explain a.place")?.click(); await sleep(300);
-  let here, file, ln;
-  for (let k = 0; k < 40; k++) {
-    here = $("where").textContent;
-    [, file, ln] = here.match(/ (\S+):(\d+)/) ?? [];
-    // (A line with steps of its own later, not only an inline site: run to it.)
-    const cur = ksee.time.cursor();
-    if (file && ksee.m.run_of(file, Number(ln), cur, 1) != null && ksee.lineSteps().some((x) => x.file === file && x.line === Number(ln) && x.i > cur)) break;
-    $("step-fwd").click();
-  }
-  const was = ksee.time.cursor();
-  if (file) ksee.runTo(file, Number(ln), 1);
-  r.ranTo = [here, $("where").textContent, was, ksee.time.cursor()];
-  // (The same line, its next run; the where line may say what returned at one of them and not the other.)
-  const sameLine = (x) => x.replace(/ · \w+ returned [^·]*/, "").trim();
-  if (!file || !(r.ranTo[3] > was) || sameLine(r.ranTo[1]) !== sameLine(here)) throw new Error("run to: " + JSON.stringify(r.ranTo));
-  // Stepping at a level: from the explanation's first link (a known
-  // place: ksys_read's call site; every line), ↑ into ksys_read (the level
-  // its), "every line" and → by any line until a call is entered, the
-  // innermost clicked on the Stack (the level its), → within it, ↓ then →
-  // out of it (the Stack's calls, deep), so that the run is the same every
-  // time.
-  document.querySelector(".explain a.place").click();
+  // (Stepping: on a line, over vfs_read's calls (no deeper), out of it.)
+  $$(".para a.link").find((a) => a.textContent === "vfs_read").click();
   await sleep(300);
-  const depthNow = () => document.querySelectorAll("#stack tr.frame").length;
-  const press = (key) => dispatchEvent(new KeyboardEvent("keydown", { key }));
-  const frames = () => [...document.querySelectorAll("#stack tr.frame")].map((f) => f.innerText.trim().split("\n")[0].slice(0, 28));
-  if (ksee.level() != null) throw new Error("a link: a level " + JSON.stringify(ksee.level()));
-  press("ArrowDown"); // (from all, the innermost's level: ksys_read's, the link's)
-  if (ksee.level()?.func !== "ksys_read") throw new Error("↓: the level ksys_read's, not " + JSON.stringify(ksee.level()));
-  const d0 = depthNow(), trail = [[$("where").textContent, frames()]];
-  document.querySelector("#level a").click(); // (every line)
-  for (let k = 0; k < 200 && depthNow() <= d0; k++) press("ArrowRight");
-  document.querySelector("#stack tr.frame a").click(); // (a click only selects: the level stays all)
-  if (ksee.level() != null) throw new Error("a click set the level: " + JSON.stringify(ksee.level()));
-  press("ArrowDown"); // (from all: the call selected's level, the innermost's)
-  const d1 = depthNow();
-  trail.push([$("where").textContent, frames()]);
-  press("ArrowRight");
-  const d2 = depthNow();
-  trail.push([$("where").textContent, frames()]);
-  $("step-down").click(); // (the button is the key)
-  press("ArrowRight");
-  // (Back in the caller after the call returned: the where line says what it returned.)
-  r.returned = $("where").textContent;
-  if (!/\w+ returned /.test(r.returned)) throw new Error("after the return: " + JSON.stringify(r.returned));
-  // (↓: the row below, the caller, selected on the Stack; ↑: back up.)
-  dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
-  const onRow = () => [...document.querySelectorAll("#stack tr.frame")].findIndex((f) => f.classList.contains("on"));
-  if (onRow() !== 1) throw new Error("↓ did not select the caller: row " + onRow());
-  dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
-  if (onRow() !== 0) throw new Error("↑ did not select the callee: row " + onRow());
-  const d3 = depthNow();
-  trail.push([$("where").textContent, frames()]);
-  r.stepped = [d0, d1, d2, d3];
-  if (!(d1 > d0 && d2 <= d1 && d3 <= d2 && d3 < d1)) throw new Error("stepping: " + JSON.stringify(r.stepped) + " " + JSON.stringify(trail));
-  // (At vfs_read's level, stepping back: its sibling before it, the call
-  // ksys_read made first, at that level too; nothing deeper.)
-  {
-    const rd = ksee.m.syscalls().find((x) => x.name === "read");
-    ksee.select(rd);
-    const vfs = ksee.m.first_call("vfs_read", rd.first, rd.last, rd.task.addr);
-    ksee.time.go(vfs);
-    await sleep(100);
-    [...document.querySelectorAll("#stack tr.frame a")].find((f) => f.textContent.startsWith("vfs_read"))?.click();
-    press("ArrowDown"); // (from all: vfs_read's level, the call selected)
-    const lv = ksee.level(), seen = new Set();
-    for (let k = 0; k < 80; k++) {
-      press("ArrowLeft");
-      const s = ksee.stepNow();
-      if (!s || s.depth > lv.depth || (s.depth === lv.depth && s.inl > lv.inl)) throw new Error("deeper than the level: " + JSON.stringify([s, lv]));
-      if (s.depth === lv.depth && s.inl === lv.inl) seen.add(s.inlined ?? s.func);
-    }
-    r.siblings = [lv.func, ...seen];
-    if (![...seen].some((f) => f !== "vfs_read")) throw new Error("no sibling at vfs_read's level: " + JSON.stringify(r.siblings));
-  }
-  // (↑ ↓ by the level: ↓ from all the innermost row, ↓ a row down, ↑ back
-  // up, ↑ past the innermost all; and from the level, not the Stack's row,
-  // when the steps went shallower than it.)
-  {
-    const rd = ksee.m.syscalls().find((x) => x.name === "read");
-    ksee.select(rd);
-    ksee.time.go(ksee.m.first_call("filemap_read", rd.first, rd.last, rd.task.addr));
-    await sleep(100);
-    const nframes = () => ksee.stack.frames().length;
-    const rows = nframes(), lvl = () => ksee.level()?.row ?? "all", seq = [lvl()];
-    for (const key of ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp"]) (press(key), seq.push(lvl()));
-    r.levels = seq;
-    if (JSON.stringify(seq) !== JSON.stringify(["all", rows, rows - 1, rows, "all"])) throw new Error("↑ ↓ and the level: " + JSON.stringify([seq, rows]));
-    press("ArrowDown"); press("ArrowDown");
-    const at = ksee.level().row;
-    for (let k = 0; k < 200 && nframes() >= at; k++) press("ArrowRight");
-    if (nframes() >= at) throw new Error("no line shallower than the level " + at);
-    const now = nframes();
-    press("ArrowDown");
-    if (ksee.level()?.row !== Math.min(at - 1, now)) throw new Error("↓ from the level " + at + " (" + now + " rows now): " + JSON.stringify(ksee.level()));
-  }
-  // (→ after a click in the timeline: the line after the one shown, none
-  // skipped (the cursor at a line's moment is at that line, the first of
-  // those at it; between two, just before the next).)
-  {
-    const rd = ksee.m.syscalls().find((x) => x.name === "read");
-    ksee.select(rd);
-    const b = ksee.time.boxOf(ksee.m.first_call("vfs_read", rd.first, rd.last, rd.task.addr));
-    for (const t of ["pointerdown", "pointerup"]) $("chart").dispatchEvent(new PointerEvent(t, { clientX: b.x, clientY: b.y }));
-    document.querySelector("#level a")?.click(); // (every line)
-    const cur = ksee.time.cursor(), st = ksee.lineSteps(), first = st.findIndex((x) => x.at >= cur), want = st[first].at === cur ? first + 1 : first;
-    press("ArrowRight");
-    const got = st.indexOf(ksee.stepNow());
-    r.between = [cur, want, got];
-    if (got !== want) throw new Error("→ after a click: " + JSON.stringify(r.between));
-  }
-  r.chart = $("chart-title").textContent;
-  // (The read's own box: its syscall entry's.)
-  const read = ksee.m.syscalls().findLast((x) => x.name === "read" && x.task.pid === ksee.m.main() && x.last != null);
-  ksee.select(read); // (its box in the window: the tutorial may have ended in another call)
-  const box = ksee.time.boxOf(read.first), at = { clientX: box?.x, clientY: box?.y };
-  const cursorTitle = $("where").textContent; // (the cursor's: the view comes back to it)
-  $("chart").dispatchEvent(new PointerEvent("pointermove", at));
-  r.tip = document.querySelector(".tip:not([hidden])")?.innerText.replace(/\s+/g, " ").slice(0, 60);
-  // (Above the stack, at the top of the chart: the call on top then.)
-  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: box.x, clientY: $("chart").getBoundingClientRect().top + 2 }));
-  r.top = document.querySelector(".tip:not([hidden])")?.firstChild?.textContent;
-  if (!r.top) throw new Error("no call on top above the stack");
-  $("chart").dispatchEvent(new PointerEvent("pointermove", at));
-  await sleep(400);
-  // (The view follows the pointer: the hovered moment's file; back to the cursor's on leaving.)
-  r.hovered = [$("fn-title").textContent, $("where").textContent];
-  $("chart").dispatchEvent(new PointerEvent("pointerleave"));
-  await sleep(300);
-  if (r.hovered[1] === cursorTitle || $("where").textContent !== cursorTitle) throw new Error("hover: " + JSON.stringify([r.hovered, cursorTitle, $("where").textContent]));
-  for (const type of ["pointerdown", "pointerup"])
-    $("chart").dispatchEvent(new PointerEvent(type, at));
-  r.clicked = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
-  // (The click chose that call: the pointer wandering off, then leaving, comes back to it, not to the innermost.)
-  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: box.x, clientY: $("chart").getBoundingClientRect().top + 2 }));
-  await sleep(150);
-  $("chart").dispatchEvent(new PointerEvent("pointerleave"));
-  await sleep(150);
-  const back = [$("where").textContent.slice(0, 50), document.querySelector("#stack tr.frame.on")?.innerText.trim().slice(0, 50)];
-  if (back[0] !== r.clicked[0] || back[1] !== r.clicked[1]) throw new Error("leaving the timeline: " + JSON.stringify([r.clicked, back]));
-  // (A syscall's box: the syscall selected, entry to exit.)
-  const home = ksee.time.home();
-  if (home?.a !== read.first || home?.b !== read.last) throw new Error("the read's selection: " + JSON.stringify(home) + ", not " + read.first + ".." + read.last);
-  // A call's hover says what it returned: ksys_read(…) = 26.
-  const kbox = ksee.time.boxOf(ksee.m.first_call("ksys_read", read.first, read.last, read.task.addr));
-  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: kbox?.x, clientY: kbox?.y }));
-  r.rets = [document.querySelector(".tip:not([hidden])")?.firstChild?.textContent];
-  $("chart").dispatchEvent(new PointerEvent("pointerleave"));
-  if (!/^ksys_read = \d+$/.test(r.rets[0] ?? "")) throw new Error("no return value in a call's hover: " + JSON.stringify(r.rets));
-  ksee.time.go(ksee.m.first_call("vfs_read", read.first, read.last, read.task.addr));
-  // The Objects (the explanation's link): what the call did, each object
-  // it wrote, member by member (the inode's access time, by the function
-  // that wrote it), not a stack's (no kiocb: the Stack's); a row goes to
-  // the write that left it so.
-  const before = ksee.time.cursor();
-  [...document.querySelectorAll(".explain a.place")].find((x) => /changed/.test(x.textContent))?.click();
-  await until(() => $("right").dataset.tab === "objects" && document.querySelector("#objects .obj"));
-  const kipos = [...document.querySelectorAll("#objects tr")].find((tr) => tr.cells[0]?.textContent === "i_atime_nsec");
-  r.objects = [kipos?.innerText.replace(/\s+/g, " "), document.querySelector("#objects .head")?.textContent];
-  if (!/^i_atime_nsec 0 → \d+ \w+$/.test(r.objects[0] ?? "") || /kiocb/.test($("objects").textContent)) throw new Error("objects: " + JSON.stringify(r.objects));
-  kipos.click(); await sleep(200);
-  if (ksee.time.cursor() !== Number(kipos.dataset.last) || !kipos.classList.contains("on")) throw new Error("a change's row goes to its write: " + JSON.stringify([ksee.time.cursor(), kipos.dataset.last]));
-  ksee.tab("stack");
-  ksee.select(read); ksee.time.go(before); // (as it was)
-  // (At a store: its line in the source says what it stored, at its end.)
-  const lastStore = Math.max(...ksee.m.objects(read.first, read.last).flatMap((n) => n.changes.flatMap((d) => d.runs.map((r) => r.last))));
-  ksee.time.go(lastStore);
-  await sleep(300);
-  r.stored = [...document.querySelectorAll(".cm-editor a.stored")].map((a) => a.textContent.trim()).slice(0, 3);
-  if (!r.stored.length) throw new Error("no stored notes in the source at " + $("where").textContent);
-  document.querySelector('h2.tabs a[data-tab="stack"]').click();
-  r.selected = $("chart-title").textContent;
-  // (Any call's box, clicked: that call selected on the Stack, the syscall
-  // still selected; "zoom" goes to it.)
-  const ksys = ksee.m.call_stack(ksee.m.first_call("ksys_read", read.first, read.last, read.task.addr)).find((f) => f.func === "ksys_read");
-  const kb = ksee.time.boxOf(ksys.first), readSel = ksee.time.home();
-  for (const t of ["pointerdown", "pointerup"]) $("chart").dispatchEvent(new PointerEvent(t, { clientX: kb.x, clientY: kb.y }));
-  const on = document.querySelector("#stack .on")?.textContent ?? "";
-  if (!on.startsWith("ksys_read") || ksee.time.home() !== readSel) throw new Error("ksys_read selected: " + JSON.stringify([on, ksee.time.home()]));
-  // (Zoom: the window at the call selected, from the chart's head.)
-  const zoomTo = [...document.querySelectorAll("#chart-verbs a")].find((x) => x.textContent.startsWith("zoom"));
-  r.zoom = zoomTo?.textContent;
-  if (r.zoom !== "zoom to ksys_read") throw new Error("zoom to the call selected: " + r.zoom);
-  zoomTo.click();
-  if (![...document.querySelectorAll("#chart-verbs a")].some((x) => x.textContent === "whole")) throw new Error("zoomed: no way back to the whole recording");
-  ksee.tab("objects");
-  // (The Objects: all the syscall did, always; gray, what has not
-  // happened by the moment shown: the pointer's, over the timeline.)
-  const head = () => document.querySelector("#objects .head")?.textContent;
-  const row = (member) => [...document.querySelectorAll("#objects tr")].find((tr) => tr.cells[0]?.textContent === member);
-  r.focused = head();
-  if (!/^read by prog\(\d+\) changed /.test(r.focused ?? "")) throw new Error("the Objects, a call clicked: " + r.focused);
-  // (Over filemap_read: the file's f_pos, which ksys_read writes after it, not yet.)
-  const fm = ksee.m.call_stack(ksee.m.first_call("filemap_read", read.first, read.last, read.task.addr)).find((f) => f.func === "filemap_read");
-  const fb = ksee.time.boxOf(fm.first);
-  $("chart").dispatchEvent(new PointerEvent("pointermove", { clientX: fb.x, clientY: fb.y }));
-  await until(() => row("f_pos")?.classList.contains("later"));
-  r.hovered_objects = row("f_pos")?.classList.contains("later");
-  if (!r.hovered_objects) throw new Error("the Objects at the pointer's moment: f_pos not gray");
-  $("chart").dispatchEvent(new PointerEvent("pointerleave"));
-  // (At the syscall's end: all of it done, nothing gray.)
-  ksee.time.go(read.last);
-  await until(() => !document.querySelector("#objects tr.later"));
-  if (document.querySelector("#objects tr.later")) throw new Error("the Objects at the end: still gray");
-  ksee.tab("stack");
-  // Your own call: type it, Tab completes the name, Enter makes it.
-  const input = document.querySelector(".callform textarea"), key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
-  input.value = "mkdira"; key("Tab");
-  input.value += "AT_FDCWD, "; input.dispatchEvent(new Event("input"));
-  r.typed = [input.value, document.querySelector(".callform .hint").textContent];
-  // (With its result's type and name written first: the same call, its second parameter bold.)
-  input.value = "int fd = openat(AT_FDCWD, "; input.dispatchEvent(new Event("input"));
-  r.typedResult = [document.querySelector(".callform .hint").textContent, document.querySelector(".callform .hint b")?.textContent];
-  if (!r.typedResult[0].startsWith("openat(") || r.typedResult[1] !== "char *filename") throw new Error("a call with its result named: " + JSON.stringify(r.typedResult));
-  const had = lis().length;
-  input.value = 'openat(AT_FDCWD, "/mnt/mine", O_CREAT | O_WRONLY, 0644)'; key("Enter");
-  await until(() => document.querySelectorAll("ol.steps > li.done").length > had);
-  r.mine = line(lis().at(-1));
-  // Another example, from the contents: on a fresh kernel, the page staying.
-  window.stayed = true;
-  document.querySelector("#ex-head .contents").click();
-  [...document.querySelectorAll("nav.lessons a")].find((a) => a.textContent.includes("directory")).click();
-  await until(() => document.querySelectorAll("ol.steps > li.done").length === lis().length && document.querySelector(".explain a.place.on"));
-  r.switched = [location.hash, window.stayed, line(lis()[1])];
-  // (Its first line declares its buffer; its first call is mkdirat.)
-  if (!location.hash.startsWith("#ex=dir&") && location.hash !== "#ex=dir" || !window.stayed || !r.switched[2]?.startsWith("mkdirat")) throw new Error("not switched: " + JSON.stringify(r.switched));
-  // Typing a call: constants that fit the parameter first, Tab takes one; the parameter in bold.
-  const inp = document.querySelector(".callform textarea");
-  inp.focus();
-  await sleep(100);
-  // (Nothing written: every syscall, the ones the examples make first.)
-  const all = [...document.querySelectorAll(".callform ul.complete li")].map((li) => li.innerText.split(" ")[0]);
-  r.offered = [all.slice(0, 4), all.length];
-  if (all[0] !== "umask" || !all.includes("openat") || all.length < 100) throw new Error("nothing offered: " + JSON.stringify(r.offered));
-  inp.value = 'openat(AT_FDCWD, "/x", O_CR'; inp.dispatchEvent(new Event("input"));
-  r.complete = [...document.querySelectorAll(".callform ul.complete li")].map((li) => li.innerText).slice(0, 3);
-  inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
-  r.completed = [inp.value, document.querySelector(".callform .hint b")?.textContent];
-  if (!r.completed[0].endsWith("O_CREAT") || r.completed[1] !== "int flags") throw new Error("completion: " + JSON.stringify(r));
-  inp.value = ""; inp.dispatchEvent(new Event("input")); inp.blur();
-  // Changing a call, where it is (typing in it): the program runs again, on a fresh kernel, with it.
-  const n = lis().length, e3 = lis()[3].querySelector("textarea");
-  e3.focus();
-  e3.value = 'mkdirat(AT_FDCWD, "/mnt/other", 0700)';
-  e3.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-  await until(() => location.hash.includes("&p=") && document.querySelectorAll("ol.steps > li.done").length === n && line(lis()[3]).includes("= 0"));
-  r.edited = [lis().length, line(lis()[3])];
-  if (r.edited[0] !== n || !r.edited[1].includes("/mnt/other")) throw new Error("editing: " + JSON.stringify(r));
-  // Removing a call (✕): the program runs again without it; ↺: the example's own program back.
-  lis()[3].querySelector(".rm").click();
-  await until(() => document.querySelectorAll("ol.steps > li.done").length === n - 1 && !location.hash.includes("/mnt/other"));
-  r.removed = lis().length;
-  document.querySelector(".ptitle a").click();
-  await until(() => !location.hash.includes("&p=") && document.querySelectorAll("ol.steps > li.done").length === n);
-  r.reset = [lis().length, line(lis()[3])];
-  if (r.removed !== n - 1 || r.reset[0] !== n || r.reset[1].includes("/mnt/other")) throw new Error("remove, reset: " + JSON.stringify(r));
-  // Code navigation: F12 to a function, and to a field.
-  ksee.src.showFunction("vfs_mkdir");
-  await sleep(1200);
-  // (F12 on a name: ksee.src.definitionAt(line, column), as the key does.)
-  const goto = async (needle, off) => {
-    const at = ksee.src.find(needle);
-    if (!at) throw new Error(`no "${needle}" in ${$("fn-title").textContent}`);
-    ksee.src.definitionAt(at.line, at.column + off);
-    await sleep(1000);
-  };
-  await goto("may_create_dentry(idmap", 1);
-  r.def = $("fn-title").textContent;
-  await goto("dir->i_sb", 5);
-  r.field = [$("fn-title").textContent, ksee.src.text().split("\n")[ksee.src.lineAt() - 1].trim()];
-  if (!r.def.includes("may_create_dentry") || !r.field[0].includes("fs.h") || !r.field[1].includes("i_sb"))
-    throw new Error("navigation: " + JSON.stringify(r));
-  // Find a function in the recording, by any part of its name (as it is
-  // typed: how many calls); Enter, its next call after the cursor;
-  // Shift+Enter, the one before.
-  const fbox = document.querySelector("input.find"), fkey = (k, shift = false) => fbox.dispatchEvent(new KeyboardEvent("keydown", { key: k, shiftKey: shift }));
-  // (Its one call may be before the cursor: then Shift+Enter finds it.)
-  const typed = (text) => ((fbox.value = text), fbox.dispatchEvent(new Event("input")), Number(document.querySelector(".findhint").textContent.match(/^\d+/)?.[0]));
-  r.matched = [typed("mkdir"), typed("vfs_mkdir")];
-  fkey("Enter"); await sleep(300);
-  r.found = [document.querySelector(".findhint").textContent];
-  if (r.found[0].startsWith("none")) { fkey("Enter", true); await sleep(300); r.found.push(document.querySelector(".findhint").textContent); }
-  r.found.push(document.querySelector("#stack tr.frame")?.innerText.includes("vfs_mkdir")); // (at its call site: the call on top)
-  fbox.value = "nope_fn"; fkey("Enter");
-  r.noFn = document.querySelector(".findhint").textContent;
-  if (!r.found.at(-2).match(/^\d+ of \d+$/) || !r.found.at(-1) || !(r.matched[0] > r.matched[1] && r.matched[1] >= 1)
-      || r.noFn !== 'nothing with "nope_fn" in its name runs in the recording') throw new Error("find: " + JSON.stringify(r));
-  // The console, a tab: the kernel's log, whole; the current task, a link
-  // to the Tasks: there, open, its key fields; each task, where it is.
-  ksee.tab("console");
-  r.console = [$("pane-console").offsetParent !== null, $("console").textContent.split("\n").find((l) => l.startsWith("Linux version"))?.slice(0, 20)];
-  ksee.tab("stack");
-  const cur = document.querySelector("#stack tr.task a");
-  r.current = [cur?.textContent];
-  cur?.click(); await sleep(200);
-  r.current.push($("right").dataset.tab, ...[...document.querySelectorAll("#tasks tr.on, #tasks tr.on ~ tr")].slice(0, 14).map((tr) => tr.innerText.replace(/\s+/g, " ").trim()));
-  r.tasks = [...document.querySelectorAll("#tasks tr.task")].map((tr) => tr.innerText.replace(/\s+/g, " ").trim());
-  if (!r.console[0] || !r.console[1] || r.current[0] !== `current task: prog(${ksee.m.main()})` || r.current[1] !== "tasks"
-      || !r.current[2]?.includes(`prog(${ksee.m.main()}) running in `) || !r.current.slice(3).some((x) => x.startsWith("pid")) || !r.tasks.some((x) => /^▸init\(1\) sleeping/.test(x))) throw new Error("console, current: " + JSON.stringify(r));
-  ksee.tab("stack");
+  const line = () => Number(document.querySelector(".transport .dim:last-child").textContent.match(/line (\d+)/)[1]);
+  const at = line();
+  button("▶").click(); await sleep(200);
+  r.into = [at, line()];
+  button("◀").click(); await sleep(200);
+  for (let k = 0; k < 3; k++) { button("over ▶").click(); await sleep(150); }
+  r.over = where();
+  button("out ▶").click(); await sleep(200);
+  r.out = where();
+  if (r.into[1] !== at + 1 || !r.over.startsWith("vfs_read") || r.out.startsWith("vfs_read")) fail("stepping", r);
+  // (Keys, on the work area: → a line.)
+  const work = document.querySelector(".work");
+  work.focus();
+  const before = line();
+  work.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  await sleep(200);
+  if (line() !== before + 1) fail("→", [before, line()]);
+  // (A click on a bar: the cursor there, that frame chosen.)
+  const bar = $$(".chart .bar").find((b) => b.textContent.startsWith("vfs_read"));
+  bar.click(); await sleep(300);
+  r.clicked = [bar.textContent, where(), document.querySelector(".frame.on .fhead b")?.textContent];
+  if (r.clicked[2] !== "vfs_read") fail("a click on a bar", r.clicked);
+  // (Find: its bars lit; Enter, the cursor in it.)
+  const find = document.querySelector(".find");
+  find.value = "copy_page_to_iter"; find.dispatchEvent(new Event("input", { bubbles: true })); await sleep(200);
+  r.found = $$(".chart .bar.found").length;
+  find.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); await sleep(300);
+  if (!r.found || !$$(".frame .fhead b").some((b) => b.textContent === "copy_page_to_iter")) fail("find", [r.found, where()]);
+  // (Objects: what the read changed, its file's position; Tasks: a task_struct opened.)
+  $$(".tabs .tab").find((t) => t.textContent === "Objects").click(); await sleep(300);
+  r.objects = $$(".obj").map((o) => o.querySelector(".fhead").textContent);
+  if (!$$(".obj td").some((td) => td.textContent === "f_pos")) fail("objects", r.objects);
+  $$(".tabs .tab").find((t) => t.textContent === "Tasks").click(); await sleep(300);
+  const rows = $$(".pane tr").length;
+  document.querySelector(".pane a.tw").click(); await sleep(300);
+  r.tasks = [rows, $$(".pane tr").length];
+  if (!(r.tasks[1] > r.tasks[0] + 5) || !$$(".pane td").some((td) => td.textContent === "comm")) fail("a task_struct opened", r.tasks);
+  $$(".tabs .tab").find((t) => t.textContent === "Stack").click();
+  // (A line changed: the program made again; 4 bytes read.)
+  write(document.querySelectorAll(".cells .cell textarea")[2], "read(fd, buf, 4)");
+  if (!(await until(() => cells()[2]?.text === "read(fd, buf, 4)" && cells()[2].result === "= 4", 300))) fail("a line changed", cells());
+  if (!location.hash.includes("&p=")) fail("the URL: the program changed", location.hash);
+  // (Back to the lesson's program; a try: its program; and back.)
+  document.querySelector(".lesson .dim a.link").click();
+  if (!(await until(() => cells()[2]?.result === "= 18", 300))) fail("back to the lesson's program", cells());
+  $$(".para a.link").find((a) => a.textContent === "read twice")?.click();
+  r.tried = await until(() => cells().length === 5 && done(5), 300) && cells().map((c) => c.result);
+  if (!r.tried || r.tried.at(-2) !== "= 0") fail("the try", cells());
+  document.querySelector(".lesson .dim a.link").click();
+  if (!(await until(() => cells().length === 3 && done(3), 300))) fail("back to the lesson's program", cells());
+  // (The next lesson.)
+  const title = document.querySelector("h1").textContent;
+  $$(".bar button").at(-1).click();
+  if (!(await until(() => document.querySelector("h1").textContent !== title, 100))) fail("the next lesson", title);
   return r;
 })()

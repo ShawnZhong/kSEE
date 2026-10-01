@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
-use ksee_core::view::{Frame, Line, Object};
+use ksee_core::view::{step, Frame, Line, Move, Object};
 
 use crate::machine;
 use crate::state::Ui;
@@ -22,25 +22,6 @@ pub fn shown(ui: Ui, frames: &[Frame]) -> Option<Frame> {
     frames.get((ui.frame)().unwrap_or(0)).or(frames.first()).cloned()
 }
 
-/// The next line from `k` in direction `dir`, of those at most as deep as
-/// line `k` (`over`), shallower (`out`), or any (into).
-fn step(lines: &[Line], k: usize, dir: isize, how: How) -> Option<usize> {
-    let here = lines.get(k).map(|l| (l.depth, l.inl))?;
-    let fits = |l: &Line| match how {
-        How::Into => true,
-        How::Over => (l.depth, l.inl) <= here,
-        How::Out => (l.depth, l.inl) < here,
-    };
-    let mut j = k as isize + dir;
-    while j >= 0 && (j as usize) < lines.len() {
-        if fits(&lines[j as usize]) {
-            return Some(j as usize);
-        }
-        j += dir;
-    }
-    None
-}
-
 /// A key's step: ← → a line (Shift: over the calls; Alt: out of the
 /// function).
 pub fn key(ui: Ui, e: &KeyboardEvent) {
@@ -50,19 +31,13 @@ pub fn key(ui: Ui, e: &KeyboardEvent) {
         _ => return,
     };
     let m = e.modifiers();
-    let how = if m.alt() { How::Out } else if m.shift() { How::Over } else { How::Into };
+    let how = if m.alt() { Move::Out } else if m.shift() { Move::Over } else { Move::Into };
     if let Some(j) = step(&ui.lines(), (ui.cursor)(), dir, how) {
         e.prevent_default();
         ui.go(j);
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum How {
-    Into,
-    Over,
-    Out,
-}
 
 #[component]
 pub fn Transport() -> Element {
@@ -71,19 +46,19 @@ pub fn Transport() -> Element {
     let k = (ui.cursor)();
     let here = lines.get(k);
     let place = here.map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
-    let button = |label: &'static str, title: &'static str, dir: isize, how: How| {
+    let button = |label: &'static str, title: &'static str, dir: isize, how: Move| {
         let lines = lines.clone();
         let to = step(&lines, k, dir, how);
         rsx! { button { title, disabled: to.is_none(), onclick: move |_| if let Some(j) = to { ui.go(j) }, "{label}" } }
     };
     rsx! {
         div { class: "transport",
-            {button("◀ out", "back, to the line that called this one", -1, How::Out)}
-            {button("◀ over", "back, over the calls this line's function made", -1, How::Over)}
-            {button("◀", "the line before", -1, How::Into)}
-            {button("▶", "the next line", 1, How::Into)}
-            {button("over ▶", "the next line of this function, over the calls it makes", 1, How::Over)}
-            {button("out ▶", "on, to the line after this function returns", 1, How::Out)}
+            {button("◀ out", "back, to the line that called this one", -1, Move::Out)}
+            {button("◀ over", "back, over the calls this line's function made", -1, Move::Over)}
+            {button("◀", "the line before", -1, Move::Into)}
+            {button("▶", "the next line", 1, Move::Into)}
+            {button("over ▶", "the next line of this function, over the calls it makes", 1, Move::Over)}
+            {button("out ▶", "on, to the line after this function returns", 1, Move::Out)}
             span { class: "mono dim", "{place}" }
             span { class: "dim", " · line {k + 1} of {lines.len()}" }
         }

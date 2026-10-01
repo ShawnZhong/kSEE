@@ -47,7 +47,7 @@ pub fn Source() -> Element {
     rsx! {
         div { class: "source",
             div { class: "srchead mono dim", "{path}" }
-            Code { key: "{path}", path: path.clone(), from, to, line, ran: ran(ui, &path) }
+            Code { path: path.clone(), from, to, line, ran: ran(ui, &path) }
         }
     }
 }
@@ -61,7 +61,8 @@ fn ran(ui: Ui, file: &str) -> Vec<u32> {
 
 #[component]
 fn Code(path: String, from: u32, to: u32, line: u32, ran: Vec<u32>) -> Element {
-    let text = use_resource(move || file(path.clone()));
+    // (Fetched again as the file changes: the prop, read reactively.)
+    let text = use_resource(use_reactive!(|(path,)| file(path)));
     let Some(all) = text.read().clone().flatten() else { return rsx! { p { class: "dim pad", "…" } } };
     rsx! {
         div { class: "code mono",

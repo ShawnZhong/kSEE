@@ -10,14 +10,15 @@ shape everything), then the doc for the part you touch ([docs/](docs/README.md))
 - **Rules, not cases.** No special case for one syscall, function, struct
   or example: find the rule the data already says (the types, the
   recording, the debug info), or ask. Kernel names belong to the kernel,
-  `ksee pack` and ksee-core's arch.rs, never to web/.
+  `ksee pack` and ksee-core's arch.rs, never to the page.
 - **Nothing is fixed.** Every decision, earlier ones included (this file's
   too), can be revisited: propose what seems right, with the reason. There
   is no compatibility to keep: nothing outside this repository depends on
   its formats or APIs, so change them all together and drop the old. Ask
   before a new mode, language or dependency.
-- **Rust does the work** in ksee-core, unit-tested on made-up records; web/
-  only lays out what `Machine` returns.
+- **Rust does the work** in ksee-core, unit-tested on made-up records; the
+  page (crates/ksee-page) only lays out what the Machine and the views
+  return.
 - **The port is linux.patch** (to the stable tree's v7.2.7: the build
   fetches it into linux/ and applies the patch). Change linux/ in
   arch/wasm where possible, elsewhere only what the port needs; `ksee

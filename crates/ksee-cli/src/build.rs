@@ -17,7 +17,6 @@
 //! (Gzipped by the build: hosts compress them less, or not at all; the
 //! page unpacks them.)
 //!   examples.json          the examples (user/examples/*.json)
-//!   codemirror.js          the source view's editor (npm's @codemirror, bundled by Deno)
 //!
 //! $LLVM is the LLVM version suffix (default -23).
 use std::path::Path;
@@ -86,7 +85,6 @@ pub fn build() {
     run(Command::new("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", &format!("{SITE}/pkg"),
         "target/wasm32-unknown-unknown/release/ksee_page.wasm"]));
 
-    codemirror();
     // (Packed again for a new kernel, or a new pack: this program.)
     let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
     if stale("target/vmlinux", &["linux/vmlinux", &me]) {
@@ -220,30 +218,6 @@ fn examples() {
         .unwrap_or_else(|e| crate::fail(&format!("{out}: {e}")));
 }
 
-/// CodeMirror (the page's source view): the packages it needs, bundled
-/// into one module, codemirror.js, by Deno (`deno bundle`: esbuild).
-const CODEMIRROR: &str = r#"export { EditorView, Decoration, WidgetType, hoverTooltip, gutter, GutterMarker, lineNumbers, keymap } from "npm:@codemirror/view@6";
-export { EditorState, StateField, StateEffect, RangeSet } from "npm:@codemirror/state@6";
-export { cpp } from "npm:@codemirror/lang-cpp@6";
-export { syntaxHighlighting, defaultHighlightStyle } from "npm:@codemirror/language@6";
-export { oneDarkHighlightStyle } from "npm:@codemirror/theme-one-dark@6";
-"#;
-
-fn codemirror() {
-    let out = format!("{SITE}/codemirror.js");
-    // (Bundled again only when what it exports changes: its entry, written
-    // when it differs.)
-    let entry = "target/codemirror-entry.js";
-    if std::fs::read_to_string(entry).ok().as_deref() != Some(CODEMIRROR) {
-        std::fs::write(entry, CODEMIRROR).unwrap_or_else(|e| crate::fail(&format!("{entry}: {e}")));
-    }
-    if !stale(&out, &[entry]) {
-        return;
-    }
-    eprintln!("  CM      {out} (deno bundle: npm's @codemirror)");
-    run(Command::new("deno").args(["bundle", "-q", "--minify", "--platform=browser", "-o", &out, entry]));
-}
-
 /// Links in the site to web/'s files (so an edit there needs no build), and
 /// none to files no longer there.
 fn site() {
@@ -262,15 +236,13 @@ fn site() {
     }
 }
 
-/// Build, then: core's unit tests, and under Deno tests/steps.js
-/// (stepping, on made-up lines) and tests/web.js (the kernel, its
+/// Build, then: core's unit tests, and under Deno tests/web.js (the kernel, its
 /// recordings, every example); with `ui`, also tests/ui.js (the page in
 /// headless Chromium, $CHROME: the read example, a changed program, the
 /// pipe example, a phone's screen).
 pub fn test(ui: bool) {
     build();
     run(Command::new("cargo").args(["test", "-q", "-p", "ksee-core"]));
-    run(Command::new("deno").args(["test", "-q", "--allow-read", "tests/steps.js"]));
     run(Command::new("deno").args(["run", "--allow-read", "tests/web.js"]));
     if ui {
         run(Command::new("deno").args(["run", "-A", "tests/ui.js", "target/ui.png"]));

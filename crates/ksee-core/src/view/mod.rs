@@ -26,7 +26,7 @@ mod value;
 #[cfg(test)]
 mod tests;
 
-pub use frames::{Called, Frame, Line};
+pub use frames::{step, Called, Frame, Line, Move};
 pub use objects::{Diff, Group, Node, Run};
 pub use stores::{Named, Note, Region, RegionKind, Wrote, Write};
 pub use value::{Missing, Object, Target};

@@ -70,6 +70,36 @@ pub struct Frame {
     pub locals: Option<Vec<Object>>,
 }
 
+/// How a step moves along a call's lines (a debugger's): to the next line
+/// (into the calls), the next of the same function or its callers' (over
+/// them), or the next of its callers' (out of it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Move {
+    Into,
+    Over,
+    Out,
+}
+
+/// The line `how` steps to from line `k` of `lines`, in direction `dir`
+/// (1: on; -1: back), if any: deep as line k is or shallower (over), or
+/// shallower (out); code inlined counts as a level deeper.
+pub fn step(lines: &[Line], k: usize, dir: isize, how: Move) -> Option<usize> {
+    let here = lines.get(k).map(|l| (l.depth, l.inl))?;
+    let fits = |l: &Line| match how {
+        Move::Into => true,
+        Move::Over => (l.depth, l.inl) <= here,
+        Move::Out => (l.depth, l.inl) < here,
+    };
+    let mut j = k.checked_add_signed(dir)?;
+    while j < lines.len() {
+        if fits(&lines[j]) {
+            return Some(j);
+        }
+        j = j.checked_add_signed(dir)?;
+    }
+    None
+}
+
 impl View<'_> {
     /// Line step `s` as the page has it, with the comparisons it made.
     fn line(&self, s: &LineStep) -> Line {

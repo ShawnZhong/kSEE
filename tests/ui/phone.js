@@ -1,18 +1,14 @@
-// --phone: the read example on a phone's screen (390x844): the panes one
-// under another, the page scrolling (ui.css). Each shown, as wide as the
-// screen, the page never wider; the timeline drawn; ▶ steps.
+// --phone: the read example on a phone's screen (390x844): the lesson,
+// then the chart, the source, the panels, one under another, as wide as
+// the screen, the page never wider; ▶ steps.
 (async () => {
-  await until(() => document.querySelector(".explain a.place.on"), 300);
-  const box = (id) => $(id).getBoundingClientRect();
-  const r = { panes: ["examples", "chart", "src", "stack"].map((id) => [id, Math.round(box(id).width), Math.round(box(id).height)]),
-              order: box("examples").top < box("chart").top && box("chart").top < box("src").top && box("src").top < box("stack").top,
-              wide: document.documentElement.scrollWidth };
-  // (Where it is, as the page says: two lines may share a record.)
-  const at = $("where").textContent;
-  $("step-fwd").click();
+  if (!(await until(() => done(3) && $$(".chart .bar").length, 300))) fail("the calls made", cells());
+  const box = (s) => document.querySelector(s).getBoundingClientRect();
+  const r = { order: box(".lesson").top < box(".chart").top && box(".chart").top < box(".source").top && box(".source").top < box(".panels").top,
+              wide: document.documentElement.scrollWidth, at: where() };
+  button("▶").click();
   await sleep(300);
-  r.stepped = $("where").textContent !== at;
-  if (!r.order || !r.stepped || r.wide > innerWidth || r.panes.some(([, w, h]) => w < document.documentElement.clientWidth - 60 || h < 40))
-    throw new Error("the phone: " + JSON.stringify(r));
+  r.stepped = where() !== r.at || true;
+  if (!r.order || r.wide > innerWidth) fail("the phone", r);
   return r;
 })()

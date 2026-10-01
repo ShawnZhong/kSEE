@@ -18,11 +18,14 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
 - `linux.patch`: the port, `arch/wasm` and what it needs elsewhere, as a patch to Linux v7.2.7; `linux/`, the kernel it is built in (the build fetches the stable tree's v7.2.7 there, once, and applies the patch; edited there, it writes the patch again)
 - `plugin/`: the LLVM pass that instruments the kernel (blocks, calls, returns, stores, variables, comparisons)
 - `crates/`: Rust: `ksee-core` (decoding and rebuilding the recording:
-  stacks, lines, memory as it was, types), `ksee-runtime` (wasm: boots the
-  kernel and runs its tasks, serves the page), `ksee-cli` (`./ksee.sh`: build, test,
+  stacks, lines, memory as it was, types; the views; the programs'
+  language), `ksee-runtime` (wasm: boots the kernel and runs its tasks: the
+  Machine), `ksee-page` (the page, in Dioxus: the same wasm module as the
+  runtime, calling the Machine), `ksee-cli` (`./ksee.sh`: build, test,
   serve; pack the kernel for the page)
-- `web/`: the page (HTML, JS, CSS); the build puts it, with what it loads,
-  in `target/site/` (served, and deployed)
+- `web/`: `index.html` (the page's frame and style) and `ksee.js` (it boots
+  the kernel, then mounts the page); the build puts them, with what they
+  load, in `target/site/` (served, and deployed)
 - `user/`: `init.c` (sets up, starts the program), `prog.c` (the page's program: it makes its syscalls), `syscall.h` (a syscall, as arch/wasm makes one: no C library), `examples/`
 - `tests/`: the page's tests (see below)
 
@@ -33,135 +36,46 @@ with JSPI: Chrome or Edge 137, Firefox 153, Safari 27, or later.
     ./ksee.sh deploy       # build, then push the page to gh-pages (GitHub Pages)
     ./ksee.sh type task_struct
 
-The page boots the kernel and opens the first example (or the one in the
-URL, `#ex=read`), as a course's lesson: its chapter and place ("Start
-here · 1 of 4"), its title, the question, the explanation, then the
-example before and the next by name. Examples (above it) lists them all
-by chapter, those opened before ticked; it, ◀ ▶ and the next's name
-switch examples, each on a fresh kernel (the page starts again), so that
-each starts from the same state. An **example** (on the left) is a question about the kernel ("What
-happens in read()?", "What is a directory?", …), a program of syscalls that
-asks it, and an explanation: the program (or a thread or child of it) makes
-the calls as the example opens, each recorded, and the explanation's
-links lead into the recording: a function one of the calls runs (the
-cursor in it, at its first line, it selected on the Stack: the source, and
-its arguments and locals, as they were), or a call. Two pairs of keys
-explore it: ← → step in time, to the next line run at the level (that
-deep or shallower: what the calls there make is stepped over; the
-caller's lines, and the siblings' at the level, are not; with no level,
-at first, every line; past the syscall's end, or before its start, into
-its task's next syscall, or the one before); ↑ ↓ move the level, a row
-of the Stack up or down (the callee, the caller; ↓ from every line: the
-call selected, the innermost unless a click on a call, in the timeline or
-on the Stack, selected another; ↑ past the innermost: every line again,
-"all"); only they set it, a click only selects; the level is shown by the
-buttons as its row, "level 4", with "all" to leave it. ◀ ▶ ▲ ▼ under the timeline are the four keys. F4 in the
-source runs to the line the cursor is on (its next run; Shift+F4 its
-last).
+The page boots the kernel and opens the first lesson (or the one in the
+URL, `#ex=read`). The bar at the top lists every lesson by chapter, with
+◀ ▶ for the one before and the next; each opens on a fresh kernel, so
+that each starts from the same state.
 
-The program is below the explanation, a call a line, each written as in C
-(`openat(AT_FDCWD, "/mnt/x", O_CREAT | O_WRONLY, 0644)`): click one for its
-recording; type in it to change it, and Enter: the page starts a fresh
-kernel and makes the calls again, which comes to the very same state
-up to the change (the machine is deterministic: its clock is virtual);
-the calls are in the URL (`#ex=NAME&p=CALLS`: the program if
-changed, its calls separated by `;`), a link to them. ✕ (or emptying its line) removes a call, ↺ reset (always there) brings the example's
-own program back, and an edit left without Enter goes back to what it was. Add a call at the
-end. As you type, a list shows what fits (syscalls, the constants for the
-parameter, the results so far by name), and the signature. Some examples
-have several threads or processes (a futex, a thread's join, a pipe
-between two processes): a call can be made by a thread or child of the program, and a call can
-block, until a later call wakes it. With more than one task, the program
-is in lanes: a column per task (its tid over it, in the timeline's task
-colors), the lines in the order they were made, down being time; a call
-that blocked has its lane marked until the line during which it returned;
-each lane has its own line to add a call, made by its task (written out,
-as in the URL: `child: read(0, buf, 64)`, `20: …`). A line can also declare a variable of the program's, as in C: `char
-buf[64]`, `int fds[2]`, `struct __kernel_timespec ts = {0, 30000000}`,
-memory of its own in the program's process; its name then stands for its
-address (`read(fd, buf, 64)`, `&ts`), `fds[1]` for an element as it is
-when the call is made, and each call's line says the variables it changed,
-as C writes them (`fds = {3, 4}`, `buf = "hello from memory\n"`).
+A lesson is a notebook: its chapter and place ("Start here · 1 of 2"),
+its title and question, then its program, a line at a time, as the page
+makes it. Each line shows what it did (`= 3`, a call's result, an error
+with its name: `-2 (ENOENT)`; a variable as it starts; a call that blocked
+until a later line: `= 6 (during line 7)`), the variables the call
+changed under it (`fds = {3, 4}`), and the paragraphs that explain it.
+Their links lead into the recording: a call, a function in it (the
+cursor at its first line), what it changed; a try runs another program.
+Every line is written in place: as you type, a list of what fits there
+(syscalls, the constants that fit the parameter, the names of the lines
+before), and the call's signature with the argument at the cursor in
+bold; Enter makes the program again (a line emptied is removed; one that
+cannot be made says why, and nothing runs). The URL keeps the lesson and,
+if changed, the program (`#ex=write&p=…`).
 
-The timeline shows the recording: the call stacks over time (its unit is
-a step, a basic block run: a store takes no room), and which
-task ran; the whole recording at first (scroll to zoom, drag to pan;
-"zoom": the window at the call selected, else the syscall, "whole": all
-of it again; hover a call for what it was (its arguments, what it returned: `ksys_read = 26`): the
-source, the Stack and the Objects show that moment while the pointer is there; click it to fix the cursor there, and select it (on the Stack; a syscall: selected too,
-its records from its entry to its exit, with whatever else ran in
-between, the lines to step through). "find a function…" over it takes
-any part of a name (`read`: vfs_read, filemap_read, …): as it is typed,
-their bars colored and their calls counted; Enter, the next call after
-the cursor, Shift+Enter the one before. The
-cursor's line carries its values as it is about to run (as a debugger
-stops before a line: memory and the variables as the lines before it left
-them), and each line what it
-stored or set so far in the syscall selected, each thing it wrote its last
-change and how many times (`f_pos: 0 → 26 ×2`, a
-variable's `last_pos: (uninitialized) → -1`; a struct copied at once,
-each member: `mnt: NULL → 0x1c07910   dentry: NULL → 0x1c11dd00`; a name
-once, as the text has it, though two inlined copies' `sb` wrote it: `sb:
-NULL → 0x1c49000, (uninitialized) → 0x1c49000`): click it for its last write; not the
-temporaries the kernel's macros make up, `__UNIQUE_ID_…`); a step that lands after a call says what it returned.
-Hover
-a name in the source for its value at the cursor (a name with one is
-underlined, dotted: the arguments and locals of the calls on the Stack; a
-struct's value opens, field by field, on a click on its name), and a value in the Stack
-for who last wrote it. The Stack shows the selected call's
-values (the innermost's, unless another is selected: a click on it, ▲ ▼,
-a bar in the timeline), the others a row each, as a debugger's variables
-are the selected frame's; its locals are all
-of them, in the order it declares them, those in memory and those the
-code keeps in wasm locals, as the recording has them set. The Tasks tab lists every task at the
-cursor, as the kernel's task list had them then (from `init_task`, each
-process and its threads), then those the recording has besides (exited,
-or made later), as a tree (a thread under its process's leader, a process
-under its parent): the one running marked, each what the scheduler has it
-doing (running; runnable: on the run queue, waiting for the CPU;
-sleeping: off it, waiting for something) and where it is (`prog(20)
-sleeping in read`: its syscall, else its outermost call); a click on
-it opens its task_struct as it was (the running one's open; its key fields first: pid, comm, mm,
-…, then the others); the Stack's `current task` is a link to it. The
-Objects tab says what the syscall selected did to the kernel's data, all
-of it, always: its head says it in a line (`read by prog(19) changed
-3 objects: file, inode, folio`), then a box per object of the kernel's
-data it changed (by what it is, its type's name, then as the code names
-it: `file  filp in do_file_open`, `files_struct  prog(19)->files`; the
-task and a global by their names, `nr_inodes`; and by its
-address; a global, with where it is declared, a link to it; not a
-stack's: a call's locals are the Stack's; nor the machine's plumbing),
-first those it left changed, then those it left as they
-were (a lock taken and released, a count taken and dropped); in a box, the
-members it left changed first, each member it changed,
-a line a function that changed it in turn, from what to what (`f_mode
-0 → 0x4000001  init_file`, then `0x4000001 → 0x40a801d  do_dentry_open`;
-a pointer, to another object: that one, `fd_array[3]  NULL → file (f in
-create_pipe_files)`, a link to it; a count one took and another dropped,
-dim); a line goes to its write. As a tree: each object under
-the first that points to it (`← f_inode`), the one holding the task
-first; the head names them, once each (`folio ×23`). What other tasks
-changed while it ran (one it woke, or waited for: fsync's journal
-thread) comes after its own, by task, a head each. The moment shown (the
-pointer's over the timeline, else the cursor's) only colors it: the
-writes not made by then are gray, those it is among marked. One store may change several members (a struct
-copied at once: `f_path.mnt` and `f_path.dentry`): each is a change of
-its own. The line the cursor is on shows its values under it, as they are
-before it runs (`fd = 3   count = 64`). Objects are said as
-the kernel's own fields name them: a file by its fd and name, an inode by
-its number and filesystem, a task by its comm and pid. The Console tab is
-the kernel's log and the programs' output. The Trace tab is
-the raw trace, a line a record (a call with its arguments, a block, a
-store from what to what, a return): what every other view is built from.
-Ctrl+click (or F12) a name for its definition: a function, a type, a
-global, a struct's member.
+On the right is the call selected (a click on its line): its stack chart,
+the call stacks over its records, the outermost at the bottom, each bar
+colored by the part of the kernel it is in, a click going there; the
+task strip under it (who ran when, an idle stretch, a worker that names
+itself); a box to find a function by any part of its name (its bars
+light up, Enter goes to the next). Under them, the cursor's place and the
+steps, as a debugger's: ◀ ▶ a line (← →), over the calls (Shift), out of
+the function (Alt). Then the source at the cursor, the lines that ran
+marked, and the Stack: the calls then, innermost first, each with its
+arguments and locals as memory was then, a value opening into its members
+or what it points to. The other tabs: Objects (what the call changed:
+each object, each member from what to what), Tasks (every task then,
+what it is doing, its task_struct to open), Console (the kernel's log and
+the programs' output).
 
 An example is one JSON file in user/examples/: a title, a question, `text`
 (the explanation: paragraphs, with links into the recording as
 `[label](2:vfs_read)`, the first call of vfs_read in call 2's recording,
 `:any` for one on any task, or `[label](2)`, call 2 itself, and a tab to
-show, `:stack`, `:tasks` or `:trace`, or `:objects`: the
-function's call selected, at its return, what it changed; `code` in
+show, `:stack`, `:objects`, `:tasks` or `:console`; `code` in
 backticks; `[label](try:1)` runs the example's `tries[0]`, another program
 written as lines separated by `;`, to see what changes), `steps`: the
 program, its lines as the page writes them out (`"int fd = openat(AT_FDCWD,

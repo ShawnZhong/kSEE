@@ -65,7 +65,7 @@ await send("Page.enable");
 await send("Page.navigate", { url });
 await new Promise((r) => setTimeout(r, Number(opt("wait", "6000"))));
 // The script to run in the page: tests/ui/NAME.js (read, the default;
-// back; pipe), after tests/ui/lib.js; or --eval's.
+// back; pipe; phone), after tests/ui/lib.js; or --eval's.
 const page = (name) => Deno.readTextFileSync(new URL(`ui/${name}.js`, import.meta.url));
 const script = opt("eval", null) ?? page("lib") + page(Deno.args.includes("--back") ? "back" : Deno.args.includes("--pipe") ? "pipe" : phone ? "phone" : "read");
 
