@@ -440,6 +440,25 @@ fn a_task_is_named_as_it_was_then() {
 }
 
 #[test]
+fn a_chart_folds_into_runs() {
+    // Three columns: bars [0] / [0, 1] / [1], tasks 7, 7, 8.
+    let chart = Chart {
+        bars: Vec::new(),
+        cols: alloc::vec![
+            Column { i: 0, task: 7, frames: alloc::vec![0] },
+            Column { i: 1, task: 7, frames: alloc::vec![0, 1] },
+            Column { i: 2, task: 8, frames: alloc::vec![1] },
+        ],
+    };
+    // (Each row's runs: row 0 has bar 0 over columns 0..2, then bar 1 at
+    // column 2; row 1 has bar 1 at column 1 only.)
+    assert_eq!(chart.bar_runs(), alloc::vec![(0, 0, 2, 0), (0, 2, 3, 1), (1, 1, 2, 1)]);
+    assert_eq!(chart.task_runs(), alloc::vec![(0, 2, 7), (2, 3, 8)]);
+    // (No columns, no runs.)
+    assert!(Chart::default().bar_runs().is_empty() && Chart::default().task_runs().is_empty());
+}
+
+#[test]
 fn steps_go_into_over_or_out() {
     // f (depth 0) line 1, calls g (depth 1): lines 10, 11; then f's line 2.
     let line = |depth, line| Line { i: 0, at: 0, nth: 0, func: String::new(), file: String::new(), line, inlined: None, depth, inl: 0, run: 1,

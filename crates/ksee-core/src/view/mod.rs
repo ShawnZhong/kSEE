@@ -99,6 +99,42 @@ pub struct Chart {
     pub cols: Vec<Column>,
 }
 
+impl Chart {
+    /// Each row's runs: a bar over the columns it is on, in a row, as the
+    /// page draws it: (depth, first column, one past the last, bar).
+    pub fn bar_runs(&self) -> Vec<(u32, usize, usize, u32)> {
+        let n = self.cols.len();
+        let depth = self.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
+        let mut runs = Vec::new();
+        for dd in 0..depth {
+            let mut k = 0;
+            while k < n {
+                let Some(&bar) = self.cols.get(k).and_then(|c| c.frames.get(dd)) else { k += 1; continue };
+                let mut e = k + 1;
+                while self.cols.get(e).and_then(|c| c.frames.get(dd)) == Some(&bar) {
+                    e += 1;
+                }
+                runs.push((dd as u32, k, e, bar));
+                k = e;
+            }
+        }
+        runs
+    }
+
+    /// Which task ran when: a run of columns each, as the page draws it
+    /// under the chart: (first column, one past the last, task).
+    pub fn task_runs(&self) -> Vec<(usize, usize, u32)> {
+        let mut runs: Vec<(usize, usize, u32)> = Vec::new();
+        for (k, c) in self.cols.iter().enumerate() {
+            match runs.last_mut() {
+                Some(r) if r.2 == c.task => r.1 = k + 1,
+                _ => runs.push((k, k + 1, c.task)),
+            }
+        }
+        runs
+    }
+}
+
 /// A column: its record, the task running there, and its stack then, as
 /// bars (indexes in Chart::bars), outermost first.
 #[derive(Debug)]
