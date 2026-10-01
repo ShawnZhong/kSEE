@@ -12,6 +12,9 @@ pub fn uleb(buf: &[u8], pos: &mut usize) -> Option<u32> {
     loop {
         let b = *buf.get(*pos)?;
         *pos += 1;
+        if shift >= 32 {
+            return None; // corrupt: longer than any u32
+        }
         v |= ((b & 0x7f) as u32) << shift;
         if b & 0x80 == 0 {
             return Some(v);
@@ -37,6 +40,9 @@ fn sleb(buf: &[u8], pos: &mut usize) -> Option<i64> {
     loop {
         let b = *buf.get(*pos)?;
         *pos += 1;
+        if shift >= 64 {
+            return None; // corrupt: longer than any i64
+        }
         v |= ((b & 0x7f) as i64) << shift;
         shift += 7;
         if b & 0x80 == 0 {
@@ -192,6 +198,9 @@ mod tests {
             assert_eq!(uleb(&out, &mut p), Some(v));
             assert_eq!(p, out.len());
         }
+        // (Corrupt: longer than any u32, never terminates: None.)
+        let mut p = 0;
+        assert_eq!(uleb(&[0x80; 6], &mut p), None);
     }
 
     #[test]
