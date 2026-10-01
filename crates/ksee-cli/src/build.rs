@@ -182,18 +182,20 @@ pub fn build() {
     // (Inlining only what the source asks for, `inline`: the compiler's
     // own choices would hide calls, with their arguments, as inlined code.)
     // (kbuild runs its own tools — clang, wasm-ld, llvm-ar — off PATH.)
+    let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
     let kmake = |args: &[&str]| {
         let mut c = Command::new(&t.make);
         c.env("PATH", &t.path);
         c.args(["-C", "linux", "ARCH=wasm", "LLVM=1",
                 &format!("KCFLAGS=-g -finline-hint-functions -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
+            .arg(&jobs)
             .args(args);
         c
     };
     if stale("linux/.config", &["linux/arch/wasm/configs/defconfig"]) {
         run(&mut kmake(&["defconfig"]));
     }
-    run(&mut kmake(&[&format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()))]));
+    run(&mut kmake(&[]));
     // (Its UAPI headers: the pack's constants, the programs' syscalls.)
     run(&mut kmake(&["headers"]));
 
