@@ -50,7 +50,8 @@ pub struct Moment {
 /// changes: the moment shown (the pointer's, else the cursor's), its call
 /// (as the snapshot has it) and lines; the chart's window and the chart;
 /// the record the moment is at, its stack, and the frame shown on it; and
-/// the record the cursor is at (the chart's line).
+/// where the cursor is, in steps (the chart's line: its line's share of
+/// its block's step).
 #[derive(Clone, Copy)]
 pub struct Derived {
     pub shown: Memo<Option<Moment>>,
@@ -61,7 +62,7 @@ pub struct Derived {
     pub moment: Memo<Option<(usize, Option<usize>)>>,
     pub stack: Memo<Shared<Vec<Frame>>>,
     pub frame: Memo<usize>,
-    pub cursor: Memo<Option<usize>>,
+    pub cursor: Memo<Option<f64>>,
 }
 
 impl Derived {
@@ -92,16 +93,19 @@ impl Derived {
         });
         let moment = use_memo(move || lines.read().get(shown()?.line).map(|l| (l.i, Some(l.nth as usize))));
         let stack = use_memo(move || {
-            Shared(Rc::new(moment().map_or_else(Vec::new, |(i, nth)| machine().at_moment(i, |v, mem| v.call_stack(i, nth, mem, i)))))
+            let cut = shown().and_then(|m| lines.read().get(m.line).map(|l| l.cut as usize)).unwrap_or(0);
+            Shared(Rc::new(moment().map_or_else(Vec::new, |(i, nth)| machine().at_moment(i, |v, mem| v.call_stack(i, nth, cut, mem, i)))))
         });
         let frame = use_memo(move || shown().and_then(|m| m.frame).and_then(|(first, func)| stack.read().iter().position(|f| f.first == first && f.func == func)).unwrap_or(0));
         let cursor = use_memo(move || {
             let at = (ui.at)()?;
-            if shown().is_some_and(|s| s.call == at.call) {
-                lines.read().get(at.line).map(|l| l.i)
-            } else {
-                Ui::lines_of(at.call).get(at.line).map(|l| l.i)
-            }
+            let place = |lines: &[Line]| {
+                // (A block's lines share its record: each a share of its step, in order.)
+                let i = lines.get(at.line)?.i;
+                let (k, n) = (lines[..at.line].iter().rev().take_while(|l| l.i == i).count(), lines.iter().filter(|l| l.i == i).count());
+                Some(machine().view(|v| v.rec.step_of(i)) as f64 + k as f64 / n as f64)
+            };
+            if shown().is_some_and(|s| s.call == at.call) { place(&lines.read()) } else { place(&Ui::lines_of(at.call)) }
         });
         Derived { shown, syscall, lines, window, chart, moment, stack, frame, cursor }
     }
@@ -185,15 +189,25 @@ impl Ui {
 
     /// Select call `k` (an index in the syscalls), the cursor at its own
     /// code's first line (past the syscall entry's), on its innermost
-    /// frame; the chart's window the whole recording, unless it has the call.
+    /// frame; the chart's window the call.
     pub fn select(mut self, k: usize) {
-        let s = machine().view(|v| v.syscalls().into_iter().nth(k));
-        if let (Some((a, b)), Some(s)) = ((self.win)(), s) && (s.first < a || s.last.is_none_or(|l| l > b)) {
-            self.win.set(None);
-        }
+        self.zoom(k);
         let own = Ui::lines_of(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
         self.peek.set(None);
         self.at.set(Some(Moment { call: k, line: own.unwrap_or(0), frame: None }));
+    }
+
+    /// The chart's window: call `k`, with a little room either side (its
+    /// lines a step or so apart, not many to a column).
+    pub fn zoom(mut self, k: usize) {
+        let m = machine();
+        let w = m.view(|v| {
+            let s = v.syscalls().into_iter().nth(k)?;
+            let (a, b) = (v.rec.step_of(s.first), v.rec.step_of(s.last.unwrap_or(v.rec.len().saturating_sub(1))));
+            let p = ((b - a) / 50).max(4);
+            Some((v.rec.record_of(a.saturating_sub(p)), v.rec.record_of((b + p).min(v.rec.steps().saturating_sub(1)))))
+        });
+        self.win.set(w);
     }
 
     /// The cursor to line `k` of its call, on its innermost frame.

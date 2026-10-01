@@ -103,7 +103,7 @@ impl T {
 
     /// The call stack at record `i` (its `nth` line), its values as memory was after record `at`.
     fn stack(&self, i: usize, nth: Option<usize>, at: usize) -> Vec<Frame> {
-        self.m.at_moment(at, |v, mem| v.call_stack(i, nth, mem, at))
+        self.m.at_moment(at, |v, mem| v.call_stack(i, nth, 0, mem, at))
     }
 
     fn show(&self, v: (u32, u32, Option<u32>)) -> String {

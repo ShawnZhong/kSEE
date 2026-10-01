@@ -51,7 +51,7 @@ pub fn Timeline() -> Element {
             Overview {}
             div { class: "flamehead",
                 span { class: "dim", "{title}"
-                    if ui.syscall().is_some() { " · " a { title: "the window at the call selected", onclick: move |_| zoom_to(ui), "zoom" } }
+                    if let Some(k) = ui.call() { " · " a { title: "the window at the call selected", onclick: move |_| ui.zoom(k), "zoom" } }
                     if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.win.set(None), "whole" } }
                 }
                 Find {}
@@ -69,18 +69,6 @@ pub fn Timeline() -> Element {
             }
         }
     }
-}
-
-/// The window at the call selected, with a little room either side.
-fn zoom_to(mut ui: Ui) {
-    let Some(s) = ui.syscall() else { return };
-    let m = machine();
-    let w = m.view(|v| {
-        let (a, b) = (v.rec.step_of(s.first), v.rec.step_of(s.last.unwrap_or(v.rec.len().saturating_sub(1))));
-        let p = ((b - a) / 50).max(4);
-        (v.rec.record_of(a.saturating_sub(p)), v.rec.record_of((b + p).min(v.rec.steps().saturating_sub(1))))
-    });
-    ui.win.set(Some(w));
 }
 
 /// The whole recording, in buckets of steps: who ran in each, each
@@ -102,7 +90,7 @@ fn Overview() -> Element {
         }).collect();
         let starts: Vec<usize> = v.rec.syscalls.iter().map(|s| v.rec.step_of(s.first)).collect();
         let (a, b) = (d.window)();
-        (n, tasks, starts, (v.rec.step_of(a), v.rec.step_of(b)), cursor.map(|i| v.rec.step_of(i)))
+        (n, tasks, starts, (v.rec.step_of(a), v.rec.step_of(b)), cursor)
     });
     let pct = |s: usize| s as f64 * 100.0 / n as f64;
     rsx! {
@@ -120,7 +108,7 @@ fn Overview() -> Element {
             }
             for s in starts { div { class: "start", style: "left: {pct(s)}%" } }
             div { class: "win", style: "left: {pct(wa)}%; width: {pct(wb.saturating_sub(wa)).max(0.3)}%" }
-            if let Some(s) = at { div { class: "at", style: "left: {pct(s)}%" } }
+            if let Some(s) = at { div { class: "at", style: "left: {s * 100.0 / n as f64}%" } }
         }
     }
 }
@@ -152,14 +140,12 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let runs = chart.bar_runs();
     let cursor = d.cursor.cloned();
     let (wa, wb) = (d.window)();
-    // (Where a record is, across the window (%): the cursor's, solid; the
+    // (Where a step is, across the window (%): the cursor's, solid; the
     // moment under the pointer's, faint; the calls on its stack.)
-    let x = |i: usize| (i >= wa && i <= wb).then(|| machine().view(|v| {
-        let (sa, sb, s) = (v.rec.step_of(wa), v.rec.step_of(wb), v.rec.step_of(i));
-        (s - sa) as f64 * 100.0 / (sb - sa + 1) as f64
-    }));
+    let (sa, sb) = machine().view(|v| (v.rec.step_of(wa), v.rec.step_of(wb)));
+    let x = |s: f64| (s >= sa as f64 && s < (sb + 1) as f64).then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64);
     let now = cursor.and_then(x);
-    let peeked = ui.peek.read().as_ref().and(d.moment.cloned()).and_then(|(i, _)| x(i));
+    let peeked = ui.peek.read().as_ref().and(d.moment.cloned()).and_then(|(i, _)| x(machine().view(|v| v.rec.step_of(i)) as f64));
     let calls: Vec<(usize, String)> = d.stack.read().iter().map(|f| (f.first, f.func.clone())).collect();
     let find = (ui.find)().to_lowercase();
     // (The bar outlined: the one under the pointer, else the frame shown's call.)
@@ -290,7 +276,7 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
     }
     let m = machine();
     m.at_moment(first, |v, mem| {
-        let frame = v.call_stack(first, None, mem, first).into_iter().find(|f| !f.inlined);
+        let frame = v.call_stack(first, None, 0, mem, first).into_iter().find(|f| !f.inlined);
         let args: Vec<(String, String)> = frame.as_ref().and_then(|f| f.args.clone()).unwrap_or_default().into_iter()
             .map(|a| (a.name, a.value.unwrap_or_else(|| "{…}".into()))).collect();
         let ret = v.rec.calls.call_end(first).and_then(|end| v.at(end)).filter(|a| a.kind == ksee_core::view::RecordKind::Return).and_then(|a| a.value);

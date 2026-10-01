@@ -225,7 +225,7 @@ impl Calls {
                 (*steps.last()?, steps.len() as u32 - 1)
             }
         };
-        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run: 0, ret: None, callee: None })
+        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run: 0, ret: None, callee: None })
     }
 
     /// The source lines task `task` ran in records `from..=to`, in order: each block's lines up to its first call, then, as
@@ -284,14 +284,32 @@ impl Calls {
                 if s.loc.line == 0 {
                     continue;
                 }
-                if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && l.inlined == s.inlined) {
-                    continue;
-                }
                 // (Where it is: just before it runs, memory as the lines
                 // before it left it: the record before the first on it or a
                 // later one; with none, after the stretch's last.)
                 let at = first_at.range((base + nth) as u32..).map(|(_, &j)| j).min().map_or(last, |j| j - 1).max(i);
-                out.push(LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, run, ret: None, callee: None });
+                let step = LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run, ret: None, callee: None };
+                // (Code inlined it enters, as a call would be: first the line
+                // calling each function it enters, in the one calling it, the
+                // outermost first; from this call's line before, or, the
+                // call just entered, from none.)
+                let chain = |k: Option<u32>| k.and_then(|k| t.inlines.get(k as usize)).map_or(&[][..], |c| c.as_slice());
+                let before = match out.iter().rev().find(|l| l.depth <= c.depth) {
+                    Some(l) if (l.func, l.depth) == (c.func, c.depth) => &chain(l.inlined)[l.cut as usize..],
+                    _ => &[][..],
+                };
+                let into = chain(s.inlined);
+                let same = into.iter().rev().zip(before.iter().rev()).take_while(|(a, b)| a == b).count();
+                for level in (0..into.len() - same).rev() {
+                    let (loc, outer) = (into[level].1, &into[level + 1..]);
+                    if !out.last().is_some_and(|l| l.loc == loc && &chain(l.inlined)[l.cut as usize..] == outer) {
+                        out.push(LineStep { loc, cut: level as u32 + 1, ..step });
+                    }
+                }
+                if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && (l.inlined, l.cut) == (s.inlined, 0)) {
+                    continue;
+                }
+                out.push(step);
             }
             if let Some(l) = out.last_mut().filter(|l| l.record == i) {
                 l.ret = ret;
@@ -333,6 +351,9 @@ pub struct LineStep {
     pub depth: u32,
     pub loc: crate::tables::Loc,
     pub inlined: Option<u32>,
+    /// A line calling code inlined (`inlined`'s), not yet in it: how many
+    /// of its inline chain's functions, innermost first, it is not in.
+    pub cut: u32,
     pub run: u32,
     pub ret: Option<i64>,
     /// A line that made a call: the call's function, what it returned,

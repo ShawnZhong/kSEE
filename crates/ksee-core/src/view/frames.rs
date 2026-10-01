@@ -21,6 +21,8 @@ pub struct Line {
     /// The record the line is at: its first store's, else `i` (LineStep::at).
     pub at: usize,
     pub nth: u32,
+    /// A line calling code inlined, not yet in it (LineStep::cut).
+    pub cut: u32,
     pub func: String,
     pub file: String,
     pub line: u32,
@@ -99,9 +101,10 @@ impl View<'_> {
     /// Where line step `s` is (a store's, a write's place): the line, not
     /// what it compared.
     pub(super) fn line_only(&self, s: &LineStep) -> Line {
-        Line { i: s.record, at: s.at, nth: s.nth, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
-               inlined: self.inlined_from(s.inlined), depth: s.depth, inl: self.chain(s.inlined).len() as u32, run: s.run, tests: Vec::new(), ret: s.ret,
-               called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }), site: self.chain(s.inlined).last().map(|&(_, l)| l.line) }
+        let chain = &self.chain(s.inlined)[s.cut as usize..];
+        Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
+               inlined: chain.first().map(|&(f, _)| self.inline_name(f)), depth: s.depth, inl: chain.len() as u32, run: s.run, tests: Vec::new(), ret: s.ret,
+               called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }), site: chain.last().map(|&(_, l)| l.line) }
     }
 
     /// The source lines run in records `first..=last` of the task at `task`.
@@ -116,7 +119,9 @@ impl View<'_> {
     /// from (`inlined`, with no arguments: there was no call).
     /// (`at`: the moment `mem` is memory as it was at, for the variables'
     /// values too: a line step's.)
-    pub fn call_stack(&self, i: usize, nth: Option<usize>, mem: &dyn Memory, at: usize) -> Vec<Frame> {
+    /// (`cut`: a line calling code inlined, the innermost frames it is not
+    /// in yet left out, Line::cut.)
+    pub fn call_stack(&self, i: usize, nth: Option<usize>, cut: usize, mem: &dyn Memory, at: usize) -> Vec<Frame> {
         let t = self.tables;
         let mut out = Vec::new();
         // (At a record on a line of its own, a store, a comparison, a
@@ -162,7 +167,10 @@ impl View<'_> {
                 Frame { first: c.first, depth, syscall: None, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line),
                         args: (!a.is_empty()).then_some(a), locals: (!l.is_empty()).then_some(l), func }
             };
-            let nest = self.nest(&c);
+            let mut nest = self.nest(&c);
+            if out.is_empty() {
+                nest.drain(..cut.min(nest.len() - 1));
+            }
             let (&(_, at), inner) = nest.split_last().expect("a call");
             out.extend(inner.iter().map(|&(k, at)| frame(self.inline_name(k.unwrap_or(0)), true, at)));
             out.push(Frame { args, locals, syscall, ..frame(name, false, at) });
