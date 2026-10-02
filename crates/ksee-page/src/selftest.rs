@@ -156,6 +156,10 @@ pub async fn self_test() -> Result<(), String> {
             && crate::chart::call_color(Some("fs/x.c"), true) == "hsl(210 65% 50%)"
             && crate::chart::call_color(Some("arch/x.c"), false) == "hsl(0 0% 79%)"
             && crate::chart::call_color(None, false) == "hsl(0 0% 79%)");
+    let horizontal = crate::chart::wheel_view((100, 199), 500.0, 1000.0, 80.0, 4.0, false);
+    let vertical = crate::chart::wheel_view((100, 199), 500.0, 1000.0, 4.0, 80.0, false);
+    t.check("the timeline wheel follows one axis", (horizontal.0 - 108.0).abs() < f64::EPSILON && horizontal.1 == 99
+            && vertical.0 < 100.0 && vertical.1 > 99);
     t.check(format!("the program ready: a runner ({main}), not /init"), main > 1 && m.runners().contains(&main));
     m.snapshot();
     t.check("nothing recorded at first", m.records() == 0);

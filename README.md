@@ -66,8 +66,9 @@ if changed, the program (`#ex=write&p=…`).
 
 On the right is the recording: on top, an overview of all of it (who
 ran when, where each syscall starts, the window shown, the cursor), and
-the window as a stack chart, the call stacks over time (the wheel zooms, a
-drag pans; "zoom": the call selected, "whole": all of it; hover a bar:
+the window as a stack chart, the call stacks over time (the wheel zooms
+up/down and pans left/right, and a drag pans; "zoom": the call selected,
+"whole": all of it; hover a bar:
 what the call was; a click goes there); the task strip under it (who ran
 when, an idle stretch, a worker that names itself); a box to find a
 function by any part of its name (its bars light up, Enter goes to the

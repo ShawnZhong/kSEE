@@ -4,7 +4,7 @@
 //! stack, the outermost at the bottom; a bar a call (or code inlined into
 //! one) over the columns it is on, colored by the kernel's part it is in,
 //! the calls at the cursor darker; the task strip under it; then the
-//! transport. The wheel zooms, a drag pans; hover a bar: the moment shown
+//! transport. The wheel zooms vertically and pans horizontally; a drag pans;
 //! everywhere but the cursor's line, and what the call was; click it: the
 //! cursor there. Find a function by any part of its name.
 
@@ -20,8 +20,23 @@ const BUCKETS: usize = 240;
 /// A row's height (px): as tall as fits the chart's room, 11 to 15 (deeper,
 /// the chart scrolls).
 const ROW: f64 = 15.0;
-/// How much a wheel's turn (a pixel of it) zooms.
+/// How much a vertical wheel turn (a pixel of it) zooms.
 const ZOOM: f64 = 0.002;
+
+/// The window made by a wheel gesture. Its ends are inclusive, while
+/// `Ui::view` takes the distance between them. A gesture follows its dominant
+/// axis so a trackpad's small cross-axis movement cannot pan and zoom at once.
+pub(crate) fn wheel_view((a, b): (usize, usize), x: f64, width: f64, dx: f64, dy: f64, shift: bool) -> (f64, usize) {
+    let span = (b - a + 1) as f64;
+    if shift || dx.abs() > dy.abs() {
+        let delta = if shift { dy } else { dx };
+        return (a as f64 + delta / width * span, b - a);
+    }
+
+    let at = (x / width).clamp(0.0, 1.0);
+    let new = span * (dy * ZOOM).exp();
+    (a as f64 + at * (span - new), (new as usize).saturating_sub(1))
+}
 const MIN_ROW: f64 = 11.0;
 /// Kernel areas in timeline legend order; unmatched files use gray.
 const AREAS: &[(&str, &str)] = &[("fs/", "fs"), ("mm/", "mm"), ("kernel/sched/", "sched"), ("kernel/", "kernel"),
@@ -183,11 +198,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     // (The wheel: up and down zoom around the pointer's step, in
     // proportion to how far it turned; left and right (or Shift) pan.)
     let wheel = move |x: f64, dx: f64, dy: f64, shift: bool| {
-        let (a, b) = (d.window)();
-        let (span, f) = ((b - a + 1) as f64, (x / width()).clamp(0.0, 1.0));
-        let (dx, dy) = if shift { (dy, 0.0) } else { (dx, dy) };
-        let new = span * (dy * ZOOM).exp();
-        ui.view(a as f64 + f * (span - new) + dx / width() * span, new as usize);
+        let (start, span) = wheel_view((d.window)(), x, width(), dx, dy, shift);
+        ui.view(start, span);
     };
     rsx! {
         div { class: "chart", style: "height: {height}px",

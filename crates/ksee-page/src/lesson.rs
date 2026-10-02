@@ -258,7 +258,7 @@ pub fn Header() -> Element {
             button { disabled: at == 0, title: "the lesson before", onclick: move |_| open(ui, at - 1), "◀" }
             button { disabled: at + 1 >= all.len(), title: "the next lesson", onclick: move |_| open(ui, at + 1), "▶" }
             span { class: "crumb", "{all[at].group} · {place} of {group.len()}" }
-            span { class: "keys dim", title: "← → a line (Shift: over the calls)\n↑ ↓ the frame, the callee or the caller\nhover the timeline: that moment; click: go there\ndrag or the wheel: move and zoom it\nCtrl+click a name: its definition", "keys" }
+            span { class: "keys dim", title: "← → a line (Shift: over the calls)\n↑ ↓ the frame, the callee or the caller\nhover the timeline: that moment; click: go there\ndrag: move the timeline; wheel: move left/right, zoom up/down\nCtrl+click a name: its definition", "keys" }
             Theme {}
             if menu() {
                 div { class: "menuback", onclick: move |_| menu.set(false) }
