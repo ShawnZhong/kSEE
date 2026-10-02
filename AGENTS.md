@@ -27,6 +27,8 @@ shape everything), then the doc for the part you touch ([docs/](docs/README.md))
   fetches it into linux/ and applies the patch). Change linux/ in
   arch/wasm where possible, elsewhere only what the port needs; `ksee
   patch` writes linux.patch from it (never the build): commit that.
+- **Commit promptly.** Once a coherent change passes its focused checks,
+  commit it instead of leaving finished work mixed with later exploration.
 - **Before you finish:** `./ksee.sh test` (`--ui` with `$CHROME` runs the
   page too; the tests check what the page shows). Commit small. The docs and
   README describe the current state: change them with the code.
