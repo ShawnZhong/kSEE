@@ -96,13 +96,15 @@ impl State {
 }
 
 /// A runner: its task (its task_struct), its request (where a call is put:
-/// its first word, the number, is what the runner waits on), and its
-/// program's heap (its start).
+/// its first word, the number, is what the runner waits on), its program's
+/// heap (its start), and the result-bearing call that created it (none for
+/// the main runner).
 #[derive(Clone, Copy)]
 pub struct Runner {
     pub task: u32,
     pub req: u32,
     pub heap: u32,
+    pub source: Option<u32>,
 }
 
 /// A call finished: returned (its result), or ended by an execve (the new

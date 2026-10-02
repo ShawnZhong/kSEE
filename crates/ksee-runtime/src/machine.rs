@@ -182,9 +182,10 @@ impl Machine {
     /// as a call's are; a call from its runner's begin to its end
     /// (user/prog.c): the syscall, entry to return, and whatever the kernel
     /// does meanwhile.
-    pub fn make(&self, text: &str) -> Result<Made, String> {
+    pub fn make(&self, task: Option<&str>, text: &str) -> Result<Made, String> {
         let line = k(|k| k.lines);
-        let (tid, plan) = lower(text, &tables().types, &Seen(line), self.main(), &self.runners())?;
+        let tid = task_tid(task, line)?;
+        let plan = lower(text, &tables().types, &Seen(line))?;
         let mut made = Made::default();
         match plan {
             Lowered::Decl(d) => {
@@ -206,8 +207,30 @@ impl Machine {
 
     /// Whether line `text` can be made as line `line` (with the names of
     /// the lines before it): why not, if not; nothing made.
-    pub fn can_make(&self, text: &str, line: usize) -> Result<(), String> {
-        ksee_core::program::lower(text, &tables().types, &Seen(line), self.main(), &self.runners()).map(|_| ())
+    pub fn can_make(&self, task: Option<&str>, text: &str, line: usize) -> Result<(), String> {
+        task_tid(task, line)?;
+        ksee_core::program::lower(text, &tables().types, &Seen(line)).map(|_| ())
+    }
+
+    /// Active secondary task names visible after the rows before `line`, in
+    /// source-row order. The main task is represented by `None` at the API
+    /// boundary and therefore is not included.
+    pub fn task_columns(&self, line: usize) -> Vec<String> {
+        k(|k| {
+            let mut columns: Vec<(usize, u32, String)> = k.runners.values().filter_map(|runner| {
+                let call = k.calls.get(&runner.source?)?;
+                let (name, _) = call.result.as_ref()?;
+                (call.line < line).then(|| (call.line, call.id, name.clone()))
+            }).collect();
+            columns.sort_by_key(|(source_line, id, _)| (*source_line, *id));
+            let mut names = Vec::new();
+            for (_, _, name) in columns {
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+            names
+        })
     }
 
     /// What fits at the cursor `at` of `text`, line `line` of the program
@@ -263,6 +286,22 @@ impl Machine {
     pub fn runners(&self) -> Vec<u32> {
         k(|k| k.runners.keys().copied().collect())
     }
+}
+
+/// Resolve structured task metadata for row `line`. A secondary task is
+/// visible only through the name of the earlier result-bearing call that
+/// created an active runner.
+fn task_tid(task: Option<&str>, line: usize) -> Result<u32, String> {
+    k(|k| match task {
+        None => k.main.filter(|tid| k.runners.contains_key(tid)).ok_or_else(|| "the program is not ready".into()),
+        Some(name) => k.runners.iter().filter_map(|(&tid, runner)| {
+            let call = k.calls.get(&runner.source?)?;
+            let (result_name, _) = call.result.as_ref()?;
+            (call.line < line && result_name == name).then_some((call.line, call.id, tid))
+        }).max_by_key(|(source_line, id, _)| (*source_line, *id))
+            .map(|(_, _, tid)| tid)
+            .ok_or_else(|| format!("no task {name}")),
+    })
 }
 
 /// Write `bytes` at `addr` into kernel memory, as the host: recorded (as a

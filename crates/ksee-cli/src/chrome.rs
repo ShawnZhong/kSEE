@@ -19,8 +19,8 @@ use crate::fail;
 pub const TESTS: &[(&str, &str, (u32, u32))] = &[("kernel", "#test=kernel", SCREEN), ("read", "#ex=read&test=read", SCREEN), ("back", "", SCREEN),
                                                   ("pipe", "#ex=pipe&test=pipe", SCREEN), ("phone", "#ex=read&test=phone", (390, 844))];
 const SCREEN: (u32, u32) = (1500, 900);
-// (Raw in the URL: the value holds no & or %; the page splits at the first = and decodes the rest.)
-const BACK: &str = r#"int fd = openat(AT_FDCWD, "/note.txt", O_WRONLY | O_APPEND); write(fd, "changed;\n", 9)"#;
+// (Raw in the URL: the JSON holds no & or %; the page decodes it.)
+const BACK: &str = r#"["int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)","write(fd, \"changed;\\n\", 9)"]"#;
 
 /// Chromium ($CHROME), headless, with `args`; and its profile dir, for the
 /// caller to remove once it is gone.

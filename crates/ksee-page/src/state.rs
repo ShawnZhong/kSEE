@@ -148,7 +148,7 @@ pub struct Ui {
     /// The lesson open (an index in the examples), the program made for
     /// it (its own, or a try), and how each of its lines went.
     pub lesson: Signal<usize>,
-    pub program: Signal<Vec<String>>,
+    pub program: Signal<Vec<crate::lesson::Step>>,
     pub outcomes: Signal<Vec<crate::lesson::Outcome>>,
 }
 

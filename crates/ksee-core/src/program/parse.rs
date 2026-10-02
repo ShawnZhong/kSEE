@@ -38,16 +38,6 @@ impl TypeName {
     }
 }
 
-/// A program's line: made by `runner` (a thread id or a result's name, as
-/// written; none: the program), one of these; `text`, as written (but for
-/// its runner).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Statement {
-    pub runner: Option<String>,
-    pub text: String,
-    pub line: Line,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Line {
     /// `[type name =] call(args)`: a syscall, its result declared.
@@ -284,20 +274,10 @@ impl<'a> Parser<'a> {
         Ok((name, args, texts))
     }
 
-    pub(super) fn statement(&mut self) -> Result<Statement, String> {
-        // (Its runner: `19:`, `child:`.)
-        let runner = match (self.tok(0), self.is(1, ":")) {
-            (Some(Tok::Name(n)), true) => Some(n.clone()),
-            (Some(Tok::Num(n)), true) => Some(n.to_string()),
-            _ => None,
-        };
-        if runner.is_some() {
-            self.at += 2;
-        }
+    pub(super) fn statement(&mut self) -> Result<Line, String> {
         while self.toks.last().is_some_and(|t| t.tok == Tok::Op(";")) {
             self.toks.pop();
         }
-        let text = self.span(self.at, self.toks.len());
         let line = if self.declares() {
             let ty = self.type_name()?;
             let name = self.name(0).ok_or_else(|| format!("a name missing{}", self.here()))?.to_string();
@@ -330,12 +310,12 @@ impl<'a> Parser<'a> {
         if !self.done() {
             return Err(format!("not C here{}", self.here()));
         }
-        Ok(Statement { runner, text, line })
+        Ok(line)
     }
 }
 
 /// A program's line, parsed.
-pub fn statement(text: &str) -> Result<Statement, String> {
+pub fn statement(text: &str) -> Result<Line, String> {
     Parser::new(text)?.statement()
 }
 
@@ -365,25 +345,6 @@ fn tokens_so_far(text: &str) -> Vec<Token> {
     }
 }
 
-/// A program written on one line (a URL's, an example's try): its lines,
-/// separated by `;` outside strings and brackets, each trimmed; none empty.
-pub fn lines(text: &str) -> Vec<&str> {
-    let (mut out, mut from, mut depth) = (Vec::new(), 0, 0);
-    for t in tokens_so_far(text) {
-        match t.tok {
-            Tok::Op("(" | "[" | "{") => depth += 1,
-            Tok::Op(")" | "]" | "}") => depth -= 1,
-            Tok::Op(";") if depth == 0 => {
-                out.push(&text[from..t.start]);
-                from = t.end;
-            }
-            _ => {}
-        }
-    }
-    out.push(&text[from..]);
-    out.into_iter().map(str::trim).filter(|l| !l.is_empty()).collect()
-}
-
 /// Where the cursor is in a program's line being written (see
 /// statement): the call's name as far as written, and where it starts;
 /// the word at the cursor, and where it starts; in the arguments, which
@@ -398,8 +359,8 @@ pub struct Context {
 }
 
 /// The cursor at `at` (UTF-16 units) in `text`, a program's line (see
-/// Context): `19: int fd = open|` is at the call's name, "open";
-/// `read(fd, b|` at argument 1, the word "b".
+/// Context): `int fd = open|` is at the call's name, "open"; `read(fd,
+/// b|` at argument 1, the word "b".
 pub fn context(text: &str, at: usize) -> Context {
     let cursor = text.char_indices().scan(0, |u, (i, c)| {
         let here = *u;

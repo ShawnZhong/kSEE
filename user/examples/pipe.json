@@ -10,8 +10,46 @@
     "Try: [the end of input](try:1): once every writing end is closed, the child's own too, a read returns 0 (`pipe_release` wakes the readers); or [the child's end](try:2): it exits, and the parent, told by SIGCHLD, reaps it with waitid (`wait_task_zombie`, `release_task`)."
   ],
   "tries": [
-    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); int fds[2]; pipe2(fds, 0); pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0); char buf[16]; child: close(fds[1]); child: read(fds[0], buf, 16); close(fds[0]); write(fds[1], \"hello\\n\", 6); child: read(fds[0], buf, 16); close(fds[1])",
-    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); int fds[2]; pipe2(fds, 0); pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0); char buf[16]; child: read(fds[0], buf, 16); write(fds[1], \"hello\\n\", 6); child: exit(0); siginfo_t info; waitid(P_PID, child, &info, WEXITED, NULL)"
+    [
+      "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
+      "int fds[2]",
+      "pipe2(fds, 0)",
+      "pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)",
+      "char buf[16]",
+      {
+        "task": "child",
+        "text": "close(fds[1])"
+      },
+      {
+        "task": "child",
+        "text": "read(fds[0], buf, 16)"
+      },
+      "close(fds[0])",
+      "write(fds[1], \"hello\\n\", 6)",
+      {
+        "task": "child",
+        "text": "read(fds[0], buf, 16)"
+      },
+      "close(fds[1])"
+    ],
+    [
+      "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
+      "int fds[2]",
+      "pipe2(fds, 0)",
+      "pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)",
+      "char buf[16]",
+      {
+        "task": "child",
+        "text": "read(fds[0], buf, 16)"
+      },
+      "write(fds[1], \"hello\\n\", 6)",
+      {
+        "task": "child",
+        "text": "exit(0)"
+      },
+      "siginfo_t info",
+      "waitid(P_PID, child, &info, WEXITED, NULL)"
+    ]
   ],
   "steps": [
     "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
@@ -19,7 +57,10 @@
     "pipe2(fds, 0)",
     "pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)",
     "char buf[16]",
-    "child: read(fds[0], buf, 16)",
+    {
+      "task": "child",
+      "text": "read(fds[0], buf, 16)"
+    },
     "write(fds[1], \"hello\\n\", 6)"
   ]
 }

@@ -8,8 +8,17 @@
     "Try: [make the directory twice](try:1): the second mkdirat fails with EEXIST. Or [list the new directory itself](try:2): it has only \".\" and \"..\"."
   ],
   "tries": [
-    "mkdirat(AT_FDCWD, \"/sub\", 0755); mkdirat(AT_FDCWD, \"/sub\", 0755)",
-    "char buf[256]; mkdirat(AT_FDCWD, \"/sub\", 0755); int fd = openat(AT_FDCWD, \"/sub\", O_RDONLY | O_DIRECTORY); getdents64(fd, buf, 256); close(fd)"
+    [
+      "mkdirat(AT_FDCWD, \"/sub\", 0755)",
+      "mkdirat(AT_FDCWD, \"/sub\", 0755)"
+    ],
+    [
+      "char buf[256]",
+      "mkdirat(AT_FDCWD, \"/sub\", 0755)",
+      "int fd = openat(AT_FDCWD, \"/sub\", O_RDONLY | O_DIRECTORY)",
+      "getdents64(fd, buf, 256)",
+      "close(fd)"
+    ]
   ],
   "steps": [
     "char buf[256]",

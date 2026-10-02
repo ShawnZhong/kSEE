@@ -9,9 +9,15 @@
     "Try a change: [a longer line](try:1), [fd 2 instead of 1](try:2), or [fd 5, which is not open](try:3): its result is -9, EBADF, a failed call's result being the error's number, negative."
   ],
   "tries": [
-    "write(1, \"hello world\", 11)",
-    "write(2, \"hello\", 5)",
-    "write(5, \"hello\", 5)"
+    [
+      "write(1, \"hello world\", 11)"
+    ],
+    [
+      "write(2, \"hello\", 5)"
+    ],
+    [
+      "write(5, \"hello\", 5)"
+    ]
   ],
   "steps": [
     "write(1, \"hello\", 5)"

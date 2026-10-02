@@ -7,9 +7,9 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::eval::{lvalue, typed, value, Env};
+use super::eval::{lvalue, typed, Env};
 use super::layout::{Arg, Decl};
-use super::parse::{expression, statement, Line};
+use super::parse::{statement, Line};
 use crate::types::Types;
 
 /// What a line of the program makes, checked.
@@ -20,21 +20,12 @@ pub enum Lowered {
     Call { nr: u32, args: Vec<Arg>, result: Option<(String, String)> },
 }
 
-/// Line `text` as line `line` of the program: its runner (a thread id, or a
-/// result's name; else `main`, the program's own), and what it makes, with
-/// the names `env` sees. `runners`: the thread ids that can make it ("no
-/// runner", if its is not one).
-pub fn lower(text: &str, types: &Types, env: &dyn Env, main: Option<u32>, runners: &[u32]) -> Result<(u32, Lowered), String> {
-    let st = statement(text)?;
-    let tid = match &st.runner {
-        None => main.ok_or("the program is not ready")?,
-        Some(r) => value(&expression(r)?, Some(types), env)? as u32,
-    };
-    if !runners.contains(&tid) {
-        return Err(format!("no runner {tid}: the runners are {runners:?}"));
-    }
-    Ok((tid, match st.line {
-        Line::Decl { .. } => Lowered::Decl(types.declare(&st.line, env)?),
+/// Line `text` of the program, checked and lowered with the names `env`
+/// sees. Task selection belongs to the runtime boundary.
+pub fn lower(text: &str, types: &Types, env: &dyn Env) -> Result<Lowered, String> {
+    let line = statement(text)?;
+    Ok(match line {
+        Line::Decl { .. } => Lowered::Decl(types.declare(&line, env)?),
         Line::Assign { target, value } => {
             // (As a declaration's value: an expression, "…" or {…}; an array's, whole.)
             let (addr, ty, count) = lvalue(&target, types, env)?;
@@ -61,7 +52,7 @@ pub fn lower(text: &str, types: &Types, env: &dyn Env, main: Option<u32>, runner
             };
             Lowered::Call { nr, args, result }
         }
-    }))
+    })
 }
 
 /// How many words a call is made with (the syscall ABI's six arguments).

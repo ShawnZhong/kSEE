@@ -22,8 +22,8 @@ pub(crate) struct Token {
     pub end: usize,
 }
 
-const OPS: [&str; 22] = ["<<", ">>", "->", "(", ")", "[", "]", "{", "}", ".", ",", ";", "=", "*", "/",
-                         "+", "-", "~", "&", "|", "^", ":"];
+const OPS: [&str; 21] = ["<<", ">>", "->", "(", ")", "[", "]", "{", "}", ".", ",", ";", "=", "*", "/",
+                         "+", "-", "~", "&", "|", "^"];
 
 /// `text`'s tokens. (A string not closed: an error.)
 pub(crate) fn tokens(text: &str) -> Result<Vec<Token>, String> {

@@ -10,7 +10,18 @@
     "Try: [from a thread](try:1): a thread of the program gets the same getpid (its thread group's), but its own gettid."
   ],
   "tries": [
-    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0); thread: getpid(); thread: gettid()"
+    [
+      "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
+      "pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0)",
+      {
+        "task": "thread",
+        "text": "getpid()"
+      },
+      {
+        "task": "thread",
+        "text": "gettid()"
+      }
+    ]
   ],
   "steps": [
     "pid_t pid = getpid()"

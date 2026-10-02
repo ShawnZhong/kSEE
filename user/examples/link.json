@@ -8,7 +8,13 @@
     "Try: [read it by its new name](try:1): the same bytes, \"hello from the disk\"."
   ],
   "tries": [
-    "linkat(AT_FDCWD, \"/mnt/note.txt\", AT_FDCWD, \"/mnt/also.txt\", 0); unlinkat(AT_FDCWD, \"/mnt/note.txt\", 0); char buf[32]; int fd = openat(AT_FDCWD, \"/mnt/also.txt\", O_RDONLY); read(fd, buf, 32)"
+    [
+      "linkat(AT_FDCWD, \"/mnt/note.txt\", AT_FDCWD, \"/mnt/also.txt\", 0)",
+      "unlinkat(AT_FDCWD, \"/mnt/note.txt\", 0)",
+      "char buf[32]",
+      "int fd = openat(AT_FDCWD, \"/mnt/also.txt\", O_RDONLY)",
+      "read(fd, buf, 32)"
+    ]
   ],
   "steps": [
     "linkat(AT_FDCWD, \"/mnt/note.txt\", AT_FDCWD, \"/mnt/also.txt\", 0)",

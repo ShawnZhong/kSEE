@@ -2,9 +2,9 @@
 //! expressions:
 //!
 //! ```text
-//! [runner:] [type name =] call(args)     a syscall (its result declared)
-//! [runner:] type name[n] [= init]        a variable of the program's
-//! [runner:] target = value               memory of the program's written
+//! [type name =] call(args)     a syscall (its result declared)
+//! type name[n] [= init]        a variable of the program's
+//! target = value               memory of the program's written
 //! ```
 //!
 //! An expression is a small part of C's (`| ^ & << >> + - * /`, unary
@@ -33,5 +33,5 @@ pub use eval::{typed, value, Env, Sym};
 pub use layout::{Arg, Decl, Value};
 pub use lower::{lower, words, Lowered};
 pub use names::Names;
-pub use parse::{context, expression, lines, statement, Line};
-pub use parse::{Context, Expr, Statement, TypeName};
+pub use parse::{context, expression, statement, Line};
+pub use parse::{Context, Expr, TypeName};

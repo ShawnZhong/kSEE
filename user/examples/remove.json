@@ -10,8 +10,15 @@
     "Try: [open b.txt before removing it](try:1): the name goes, but the inode stays until the close, which is where `ext4_free_inode` runs then. Or [rename across directories](try:2), to /mnt/b.txt."
   ],
   "tries": [
-    "renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/dir/b.txt\", 0); int fd = openat(AT_FDCWD, \"/mnt/dir/b.txt\", O_RDONLY); unlinkat(AT_FDCWD, \"/mnt/dir/b.txt\", 0); close(fd)",
-    "renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/b.txt\", 0)"
+    [
+      "renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/dir/b.txt\", 0)",
+      "int fd = openat(AT_FDCWD, \"/mnt/dir/b.txt\", O_RDONLY)",
+      "unlinkat(AT_FDCWD, \"/mnt/dir/b.txt\", 0)",
+      "close(fd)"
+    ],
+    [
+      "renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/b.txt\", 0)"
+    ]
   ],
   "steps": [
     "renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/dir/b.txt\", 0)",

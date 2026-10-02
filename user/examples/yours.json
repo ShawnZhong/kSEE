@@ -1,7 +1,9 @@
 {
   "title": "Your own syscalls",
   "question": "Make any syscall, with the arguments you give, written as in C: the program makes it, recorded. Numbers (0644, 0x41, -100), the kernel's constants (O_CREAT | O_WRONLY, AT_FDCWD), \"strings\", {0, 30000000} (a struct, laid out as the parameter's type says); results by name (int fd = openat(…), then fd); and variables of your program's, declared as in C (char buf[64], int fds[2], struct __kernel_timespec ts = {0, 30000000}), for the kernel to fill or read: read(fd, buf, 64), &ts, fds[1].",
-  "steps": [],
+  "steps": [
+
+  ],
   "text": [
     "You have seen the examples; now make any syscall, with the arguments you give, written as in C."
   ]

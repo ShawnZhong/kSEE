@@ -10,8 +10,20 @@
     "To find any function in the recording: type part of its name in the box above the timeline, `copy`, say: its bars light up, and Enter goes to the next call."
   ],
   "tries": [
-    "char buf[64]; int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, buf, 64); read(fd, buf, 64); close(fd)",
-    "char buf[4]; int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); read(fd, buf, 4); read(fd, buf, 4); close(fd)"
+    [
+      "char buf[64]",
+      "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)",
+      "read(fd, buf, 64)",
+      "read(fd, buf, 64)",
+      "close(fd)"
+    ],
+    [
+      "char buf[4]",
+      "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)",
+      "read(fd, buf, 4)",
+      "read(fd, buf, 4)",
+      "close(fd)"
+    ]
   ],
   "steps": [
     "char buf[64]",

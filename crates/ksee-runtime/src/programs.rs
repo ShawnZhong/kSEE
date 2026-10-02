@@ -229,13 +229,21 @@ fn runner_imports() -> Object {
             if main != 0 {
                 k.main = Some(tid);
             }
-            k.runners.insert(tid, Runner { task, req, heap });
+            // A secondary runner is created by the latest result-bearing
+            // call. Keep that call id so task names cannot resolve through
+            // unrelated syscall results.
+            let source = if main == 0 {
+                k.calls.values().next_back().and_then(|c| c.result.as_ref().map(|_| c.id))
+            } else {
+                None
+            };
+            k.runners.insert(tid, Runner { task, req, heap, source });
             k.heaps.entry(heap).or_insert((heap, heap + size));
             // (A runner the last call started, a clone's child: its result's
             // name stands for it already, before the clone returns.)
             let (calls, names) = (&k.calls, &mut k.names);
-            if let Some(Call { line, result: Some((name, _)), .. }) = calls.values().next_back()
-                && main == 0 && !names.has(name, *line)
+            if let Some(Call { line, result: Some((name, _)), .. }) = source.and_then(|id| calls.get(&id))
+                && !names.has(name, *line)
             {
                 names.set(name, *line, Sym::Value { v: tid as i64, to: None });
             }

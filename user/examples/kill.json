@@ -8,12 +8,23 @@
     "Try: [signal 0](try:1): `kill(child, 0)` only checks that the child is there, and sends nothing: the child stays blocked."
   ],
   "tries": [
-    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0); child: futex(mem, FUTEX_WAIT, 0, NULL); kill(child, 0)"
+    [
+      "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
+      "pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)",
+      {
+        "task": "child",
+        "text": "futex(mem, FUTEX_WAIT, 0, NULL)"
+      },
+      "kill(child, 0)"
+    ]
   ],
   "steps": [
     "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
     "pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)",
-    "child: futex(mem, FUTEX_WAIT, 0, NULL)",
+    {
+      "task": "child",
+      "text": "futex(mem, FUTEX_WAIT, 0, NULL)"
+    },
     "kill(child, SIGKILL)"
   ]
 }

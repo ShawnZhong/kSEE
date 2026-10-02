@@ -8,8 +8,14 @@
     "[twice](try:1): the second call returns what the first set (077, which is 63). [a mask too big](try:2): the kernel keeps only the permission bits, 0777."
   ],
   "tries": [
-    "umask(077); umask(0)",
-    "umask(-1); umask(0)"
+    [
+      "umask(077)",
+      "umask(0)"
+    ],
+    [
+      "umask(-1)",
+      "umask(0)"
+    ]
   ],
   "steps": [
     "umask(077)"

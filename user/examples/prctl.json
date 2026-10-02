@@ -10,8 +10,16 @@
     "Try: [read it back](try:1), with `PR_GET_NAME`, into a buffer of the program's; or [a name too long](try:2): it is cut to 15 characters."
   ],
   "tries": [
-    "char got[16]; prctl(PR_SET_NAME, \"worker\", 0, 0, 0); prctl(PR_GET_NAME, got, 0, 0, 0)",
-    "char got[16]; prctl(PR_SET_NAME, \"a-name-longer-than-sixteen\", 0, 0, 0); prctl(PR_GET_NAME, got, 0, 0, 0)"
+    [
+      "char got[16]",
+      "prctl(PR_SET_NAME, \"worker\", 0, 0, 0)",
+      "prctl(PR_GET_NAME, got, 0, 0, 0)"
+    ],
+    [
+      "char got[16]",
+      "prctl(PR_SET_NAME, \"a-name-longer-than-sixteen\", 0, 0, 0)",
+      "prctl(PR_GET_NAME, got, 0, 0, 0)"
+    ]
   ],
   "steps": [
     "prctl(PR_SET_NAME, \"worker\", 0, 0, 0)"

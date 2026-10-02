@@ -8,7 +8,13 @@
     "Try: [open it twice instead](try:1): two opens make two open files, each with its own position, so the second read starts at 0 again."
   ],
   "tries": [
-    "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); int fd2 = openat(AT_FDCWD, \"/note.txt\", O_RDONLY); char buf[8]; read(fd, buf, 5); read(fd2, buf, 5)"
+    [
+      "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)",
+      "int fd2 = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)",
+      "char buf[8]",
+      "read(fd, buf, 5)",
+      "read(fd2, buf, 5)"
+    ]
   ],
   "steps": [
     "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)",

@@ -16,6 +16,7 @@ use wasm_bindgen_futures::JsFuture;
 
 use ksee_runtime::Finished;
 use ksee_core::text::{self, Piece};
+use crate::lesson::Step;
 
 fn log(s: &str) {
     web_sys::console::log_1(&s.into());
@@ -78,9 +79,9 @@ impl T {
         self.m.view(|v| v.syscalls().into_iter().nth(k))
     }
 
-    /// Line `text` of the program, made; a call: the kernel run until quiet.
-    async fn line(&mut self, text: &str) -> Made {
-        let made = match self.m.make(text) {
+    /// Line `text` of the program, made on `task`; a call: the kernel run until quiet.
+    async fn line_on(&mut self, task: Option<&str>, text: &str) -> Made {
+        let made = match self.m.make(task, text) {
             Ok(m) => m,
             Err(e) => {
                 self.check(format!("{text}: {e}"), false);
@@ -94,6 +95,10 @@ impl T {
         self.quiet().await;
         let f = self.fin.get(&id);
         Made { id: Some(id), how: f.map(|f| f.how.to_string()), ret: f.map(|f| f.ret), s: self.syscall(id), var: None }
+    }
+
+    async fn line(&mut self, text: &str) -> Made {
+        self.line_on(None, text).await
     }
 
     fn last(&self, s: &SyscallSummary) -> usize {
@@ -114,14 +119,14 @@ impl T {
         self.m.show(v.0, v.1, v.2)
     }
 
-    /// A lesson's program (or a try) on a fresh kernel: each line's call
-    /// id (none: a declaration, an assignment).
-    async fn program(&mut self, lines: &[String]) -> Vec<Option<u32>> {
+    /// A lesson's program (or a try) on a fresh kernel: each step's call
+    /// id (none: a declaration or assignment).
+    async fn program(&mut self, steps: &[Step]) -> Vec<Option<u32>> {
         let _ = self.m.restart().await;
         self.console();
         let mut ids = Vec::new();
-        for l in lines {
-            ids.push(self.line(l).await.id);
+        for step in steps {
+            ids.push(self.line_on(step.task(), step.text()).await.id);
         }
         ids
     }
@@ -290,7 +295,7 @@ pub async fn self_test() -> Result<(), String> {
         t.check(format!("variables: fds = {}, buf = {}", t.show(fds), t.show(buf)), n == Some(2) && t.show(buf) == "\"hi\"");
         t.line("void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)").await;
         t.line("pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0)").await;
-        let reading = t.line("thread: read(fds[0], buf, 8)").await;
+        let reading = t.line_on(Some("thread"), "read(fds[0], buf, 8)").await;
         let wrote = t.line("write(fds[1], \"ok\", 2)").await;
         let later = reading.id.and_then(|id| t.fin.get(&id)).map(|f| f.ret);
         t.check(format!("a blocked read, woken: wrote {:?}, read {later:?}: buf = {}", wrote.ret, t.show(buf)),
@@ -355,7 +360,7 @@ pub async fn self_test() -> Result<(), String> {
             def("file.f_pos").is_some_and(|d| d.file == "include/linux/fs.h") && member(Some(file.id), "f_pos").is_some_and(|d| d.file == "include/linux/fs.h")
             && member(None, "f_pos").is_some_and(|d| d.file == "include/linux/fs.h") && member(None, "next").is_none());
     {
-        let refused = m.make("io_setup(1, NULL)").err().unwrap_or_default();
+        let refused = m.make(None, "io_setup(1, NULL)").err().unwrap_or_default();
         t.check(format!("the syscalls built: read and setuid, not io_setup ({refused})"),
                 m.params("read").is_some() && m.params("setuid").is_some() && m.params("io_setup").is_none() && refused.contains("no syscall io_setup"));
         let su = t.line("setuid(0)").await;
@@ -400,7 +405,7 @@ pub async fn self_test() -> Result<(), String> {
         let names = m.complete("clos", 4, usize::MAX, &[]);
         t.check("syscall names completed, with their signatures", names.first().is_some_and(|n| n.label == "close" && n.detail == "close(unsigned int fd)"));
     }
-    let refusal = |text: &str, line: usize| m.can_make(text, line).err().unwrap_or_default();
+    let refusal = |text: &str, line: usize| m.can_make(None, text, line).err().unwrap_or_default();
     t.check("a line checked: a wrong member, a name not made yet, too many arguments",
             refusal("clock_nanosleep(1, 0, {.tv_min = 1}, NULL)", usize::MAX).contains("no member") && refusal("close(rfd)", 0).contains("rfd")
             && refusal("close(rfd)", usize::MAX).is_empty() && refusal("getpid(1)", usize::MAX).contains("arguments"));
@@ -408,9 +413,10 @@ pub async fn self_test() -> Result<(), String> {
     // The lessons: each on a fresh kernel, its calls finished, its links found; its tries, each made.
     for ex in &examples {
         let ids = t.program(&ex.steps).await;
-        let is_call = |l: &String| matches!(statement(l).map(|s| s.line), Ok(Stmt::Call { .. }));
-        let blocked: Vec<String> = ex.steps.iter().zip(&ids).filter(|(l, id)| is_call(l) && !id.is_some_and(|id| t.fin.contains_key(&id))).map(|(l, _)| l.clone()).collect();
-        let calls: Vec<Option<u32>> = ex.steps.iter().zip(&ids).filter(|(l, _)| is_call(l)).map(|(_, id)| *id).collect();
+        let is_call = |step: &Step| matches!(statement(step.text()), Ok(Stmt::Call { .. }));
+        let blocked: Vec<String> = ex.steps.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.fin.contains_key(&id)))
+            .map(|(step, _)| step.text().into()).collect();
+        let calls: Vec<Option<u32>> = ex.steps.iter().zip(&ids).filter(|(step, _)| is_call(step)).map(|(_, id)| *id).collect();
         let mut missing = Vec::new();
         for p in &ex.text {
             for x in text::pieces(p) {
@@ -432,9 +438,8 @@ pub async fn self_test() -> Result<(), String> {
             }
         }
         for (k, try_) in ex.tries.iter().enumerate() {
-            let lines: Vec<String> = ksee_core::program::lines(try_).into_iter().map(String::from).collect();
-            let ran = t.program(&lines).await;
-            t.check(format!("example {}, try {}: {} lines made", ex.name, k + 1, lines.len()), ran.len() == lines.len() && !lines.is_empty());
+            let ran = t.program(try_).await;
+            t.check(format!("example {}, try {}: {} lines made", ex.name, k + 1, try_.len()), ran.len() == try_.len() && !try_.is_empty());
         }
         t.check(format!("example {}: {} lines, all finished, the explanation's links found (missing {missing:?}, blocked {blocked:?})", ex.name, ex.steps.len()),
                 missing.is_empty() && blocked.is_empty());
@@ -445,7 +450,7 @@ pub async fn self_test() -> Result<(), String> {
     let again = t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await.ret;
     t.check("/tmp is there before", again == Some(-17));
     // (Restarted while a call is under way, its quiet not come: the calls after it still finish.)
-    let _ = m.make("getpid()");
+    let _ = m.make(None, "getpid()");
     // (Its quiet waited for, as the restart comes: the restart rejects it.)
     let waiting = m.clone();
     wasm_bindgen_futures::spawn_local(async move { let _ = waiting.quiet().await; });
@@ -470,14 +475,15 @@ pub async fn self_test() -> Result<(), String> {
     }
     // An execve with its argv (a vfork child runs the program again): it finishes as an exec.
     {
-        let lines = ["pid_t child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0)".to_string(), "child: execve(\"/bin/prog\", {\"prog\", \"-x\", NULL}, NULL)".to_string()];
+        let lines = [Step::Main("pid_t child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0)".into()),
+                     Step::Task { task: "child".into(), text: "execve(\"/bin/prog\", {\"prog\", \"-x\", NULL}, NULL)".into() }];
         let ids = t.program(&lines).await;
         let how = ids[1].and_then(|id| t.fin.get(&id)).map(|f| f.how.to_string());
         t.check(format!("an execve with argv runs the program ({how:?})"), how.as_deref() == Some("exec") && !t.out.contains("NULL argv"));
     }
     // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts).
     let _ = m.restart().await;
-    let _ = m.make("reboot(0xfee1dead, 672274793, 0x4321fedc, 0)");
+    let _ = m.make(None, "reboot(0xfee1dead, 672274793, 0x4321fedc, 0)");
     for _ in 0..1000 {
         if m.halted().is_some() {
             break;

@@ -19,7 +19,7 @@ fn cursor() -> Option<usize> {
 /// line removed), unless the Machine says it cannot be made; `focus`, as
 /// it gets the focus.
 #[component]
-pub fn Editor(text: String, line: usize, placeholder: String, common: Vec<String>, done: EventHandler<String>, focus: EventHandler<()>) -> Element {
+pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: String, common: Vec<String>, done: EventHandler<String>, focus: EventHandler<()>) -> Element {
     let mut draft = use_signal(|| text.clone());
     let mut at = use_signal(|| text.len());
     let mut sel = use_signal(|| 0usize);
@@ -68,7 +68,7 @@ pub fn Editor(text: String, line: usize, placeholder: String, common: Vec<String
                     } else if key == Key::Enter {
                         e.prevent_default();
                         let t = draft().trim().to_string();
-                        match if t.is_empty() { Ok(()) } else if !up { Err("the kernel is starting".into()) } else { machine().can_make(&t, line) } {
+                        match if t.is_empty() { Ok(()) } else if !up { Err("the kernel is starting".into()) } else { machine().can_make(task.as_deref(), &t, line) } {
                             Ok(()) => { open.set(false); done.call(t); }
                             Err(why) => error.set(Some(why)),
                         }

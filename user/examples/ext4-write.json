@@ -7,7 +7,11 @@
     "Try: [open with O_SYNC](try:1): the write itself then has to reach the disk, and the run grows by the whole writeback path."
   ],
   "tries": [
-    "int fd = openat(AT_FDCWD, \"/mnt/new.txt\", O_CREAT | O_WRONLY | O_SYNC, 0644); write(fd, \"hello, ext4\\n\", 12); close(fd)"
+    [
+      "int fd = openat(AT_FDCWD, \"/mnt/new.txt\", O_CREAT | O_WRONLY | O_SYNC, 0644)",
+      "write(fd, \"hello, ext4\\n\", 12)",
+      "close(fd)"
+    ]
   ],
   "steps": [
     "int fd = openat(AT_FDCWD, \"/mnt/new.txt\", O_CREAT | O_WRONLY, 0644)",

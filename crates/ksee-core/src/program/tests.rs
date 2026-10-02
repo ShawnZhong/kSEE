@@ -16,7 +16,7 @@ const TYPES: &str = "T\t1\tbase\tlong long\t8\ts\nT\t2\tstruct\ttimespec\t16\nM\
 
 /// Declaration `text`, in types `t`.
 fn decl(t: &Types, text: &str, known: &dyn Env) -> Result<Decl, alloc::string::String> {
-    t.declare(&statement(text)?.line, known)
+    t.declare(&statement(text)?, known)
 }
 
 fn known(name: &str) -> Option<i64> {
@@ -25,30 +25,27 @@ fn known(name: &str) -> Option<i64> {
 
 #[test]
 fn a_line_is_a_call_or_a_declaration() {
-    let o = |s: &str| Some(s.to_string());
     let call = |t: &str| match statement(t).unwrap() {
-        Statement { runner, line: Line::Call { result, call, texts, .. }, .. } => (runner, result.clone().map(|(t, _)| t.text()), result.map(|(_, n)| n), call, texts),
+        Line::Call { result, call, texts, .. } => (result.clone().map(|(t, _)| t.text()), result.map(|(_, n)| n), call, texts),
         s => panic!("{s:?}"),
     };
     assert_eq!(call("int fd = openat(AT_FDCWD, \"/a, b\", O_RDONLY);"),
-               (None, o("int"), o("fd"), "openat".into(), vec!["AT_FDCWD".into(), "\"/a, b\"".into(), "O_RDONLY".into()]));
-    assert_eq!(call("child: void *mem = mmap2(NULL, {1, 2}, 3)"), (o("child"), o("void *"), o("mem"), "mmap2".into(), vec!["NULL".into(), "{1, 2}".into(), "3".into()]));
-    assert_eq!(call("getpid()"), (None, None, None, "getpid".into(), vec![]));
+               (Some("int".into()), Some("fd".into()), "openat".into(), vec!["AT_FDCWD".into(), "\"/a, b\"".into(), "O_RDONLY".into()]));
+    assert_eq!(call("getpid()"), (None, None, "getpid".into(), vec![]));
     assert!(statement("fd = getpid()").is_err()); // (a result: declared)
-    // (Its text, as written, but for its runner.)
-    assert_eq!(statement("child: close(fd);").unwrap().text, "close(fd)");
+    assert!(statement("child: getpid()").is_err()); // (task selection is metadata)
     let decl = |t: &str| match statement(t).unwrap() {
-        Statement { runner, line: Line::Decl { ty, name, count, .. }, .. } => (runner, ty.text(), name, count.is_some()),
+        Line::Decl { ty, name, count, .. } => (ty.text(), name, count.is_some()),
         s => panic!("{s:?}"),
     };
-    assert_eq!(decl("char buf[64]"), (None, "char".into(), "buf".into(), true));
-    assert_eq!(decl("19: struct __kernel_timespec ts = {0, 1}"), (o("19"), "struct __kernel_timespec".into(), "ts".into(), false));
-    assert_eq!(decl("unsigned long long n"), (None, "unsigned long long".into(), "n".into(), false));
+    assert_eq!(decl("char buf[64]"), ("char".into(), "buf".into(), true));
+    assert_eq!(decl("struct __kernel_timespec ts = {0, 1}"), ("struct __kernel_timespec".into(), "ts".into(), false));
+    assert_eq!(decl("unsigned long long n"), ("unsigned long long".into(), "n".into(), false));
     assert!(statement("char **argv").is_err());
     assert!(statement("write(1, \"hi)\", 2").is_err());
     // (Assignments: memory of the program's written.)
     let assign = |t: &str| match statement(t).unwrap() {
-        Statement { line: Line::Assign { target, value }, .. } => (target, value),
+        Line::Assign { target, value } => (target, value),
         s => panic!("{s:?}"),
     };
     let n = |s: &str| Expr::Name(s.into());
@@ -222,8 +219,8 @@ fn where_the_cursor_is_in_a_line_being_written() {
         let c = context(&t.replace('|', ""), t[..t.find('|').unwrap()].encode_utf16().count());
         (c.call, c.call_start, c.word, c.param)
     };
-    // (The name, after a runner and a typed result.)
-    assert_eq!(at("19: int fd = open|"), ("open".into(), 13, "open".into(), None));
+    // (The name after a typed result.)
+    assert_eq!(at("int fd = open|"), ("open".into(), 9, "open".into(), None));
     // (An argument: which, past strings and braces with commas in them.)
     assert_eq!(at("read(fd, b|"), ("read".into(), 0, "b".into(), Some(1)));
     assert_eq!(at("write(1, \"a,b\", {1, 2}, O_|)"), ("write".into(), 0, "O_".into(), Some(3)));
@@ -236,20 +233,19 @@ fn where_the_cursor_is_in_a_line_being_written() {
 fn a_line_is_lowered_to_what_it_makes() {
     let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t7\tbase\tint\t4\ts\nS\t3\tgetpid\nP\t1\t__do_sys_getpid\t\n");
     let env = |n: &str| known(n);
-    let lower = |text: &str| super::lower(text, &t, &env, Some(19), &[19]);
+    let lower = |text: &str| super::lower(text, &t, &env);
     // A call: its number, its arguments, its result's name and type.
     match lower("int fd = getpid()").unwrap() {
-        (19, Lowered::Call { nr, args, result }) => {
+        Lowered::Call { nr, args, result } => {
             assert_eq!((nr, args, result), (3, Vec::new(), Some(("fd".to_string(), "int".to_string()))));
         }
         l => panic!("{l:?}"),
     }
-    // No runner, no syscall, too many arguments: why not.
-    assert!(lower("child: getpid()").unwrap_err().contains("no runner"));
+    // A textual task prefix, no syscall, too many arguments: why not.
+    assert!(lower("child: getpid()").is_err());
     assert!(lower("nosuch()").unwrap_err().contains("no syscall nosuch"));
     assert!(lower("getpid(1)").unwrap_err().contains("0 arguments, not 1"));
-    // Not ready (no main yet), and a result of no known type.
-    assert!(super::lower("getpid()", &t, &env, None, &[]).unwrap_err().contains("not ready"));
+    // A result of no known type.
     assert!(lower("struct nope *p = getpid()").unwrap_err().contains("no type"));
 }
 
@@ -266,11 +262,6 @@ fn a_calls_words_put_buffers_in_memory() {
     let args = [Arg::Number(3), Arg::Bytes(b"hi\0".to_vec()), Arg::Strings(vec![Some("init".into()), None])];
     assert_eq!(super::words(&args, &mut put), Ok([3, 0x100, 0x108, 0, 0, 0]));
     assert_eq!(heap, [b'h', b'i', b'\0', b'i', b'n', b'i', b't', b'\0', 3, 1, 0, 0, 0, 0, 0, 0]);
-}
-
-#[test]
-fn a_program_on_one_line_is_its_lines() {
-    assert_eq!(lines(r#"write(1, "a;b\";", 4);  close(1) ;"#), [r#"write(1, "a;b\";", 4)"#, "close(1)"]);
 }
 
 #[test]
