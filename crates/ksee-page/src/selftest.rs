@@ -152,6 +152,10 @@ pub async fn self_test() -> Result<(), String> {
     let mut t = T { m: crate::machine(), failures: Vec::new(), out: String::new(), fin: BTreeMap::new() };
     let m = t.m.clone();
     let main = m.main().unwrap_or(0);
+    t.check("timeline colors", crate::chart::call_color(Some("fs/x.c"), false) == "hsl(210 55% 74%)"
+            && crate::chart::call_color(Some("fs/x.c"), true) == "hsl(210 65% 50%)"
+            && crate::chart::call_color(Some("arch/x.c"), false) == "hsl(0 0% 79%)"
+            && crate::chart::call_color(None, false) == "hsl(0 0% 79%)");
     t.check(format!("the program ready: a runner ({main}), not /init"), main > 1 && m.runners().contains(&main));
     m.snapshot();
     t.check("nothing recorded at first", m.records() == 0);

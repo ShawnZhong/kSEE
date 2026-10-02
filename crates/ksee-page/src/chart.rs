@@ -38,7 +38,7 @@ fn task_color(pid: i32) -> String {
 }
 
 /// A call's color, by the first kernel area its source file belongs to.
-fn call_color(file: Option<&str>, on: bool) -> String {
+pub(crate) fn call_color(file: Option<&str>, on: bool) -> String {
     const HUES: [i32; 7] = [210, 135, 28, 48, 280, 175, 330];
     let l = if on { 50 } else { 74 };
     match AREAS.iter().position(|(p, _)| file.unwrap_or("").starts_with(p)).and_then(|k| HUES.get(k)) {

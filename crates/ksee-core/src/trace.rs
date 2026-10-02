@@ -287,6 +287,9 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
         let w = [0, COMPARE << 28 | 6, 1, VALUE << 28, 1, VALUE << 28, 0, VALUE << 28];
         assert_eq!(decode(&w)[0].comparison(), Some((1i128 << 32, ">", 1, true, true)));
         assert_eq!(Record::Compare { lhs: 5, rhs: 5, wide: false, pred: 1, line: 0 }.comparison(), Some((5, "!=", 5, false, false)));
+        assert_eq!(Record::Compare { lhs: u32::MAX as u64, rhs: 0, wide: false, pred: 6, line: 0 }.comparison(), Some((-1, ">", 0, true, false)));
+        assert_eq!(Record::Compare { lhs: u64::MAX, rhs: 0, wide: true, pred: 8, line: 0 }.comparison(), Some((-1, "<", 0, true, true)));
+        assert_eq!(Record::Compare { lhs: u64::MAX, rhs: 0, wide: true, pred: 2, line: 0 }.comparison(), Some((u64::MAX as i128, ">", 0, false, true)));
     }
 
     #[test]
