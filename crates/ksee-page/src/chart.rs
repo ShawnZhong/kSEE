@@ -23,6 +23,9 @@ const ROW: f64 = 15.0;
 /// How much a wheel's turn (a pixel of it) zooms.
 const ZOOM: f64 = 0.002;
 const MIN_ROW: f64 = 11.0;
+/// Kernel areas in timeline legend order; unmatched files use gray.
+const AREAS: &[(&str, &str)] = &[("fs/", "fs"), ("mm/", "mm"), ("kernel/sched/", "sched"), ("kernel/", "kernel"),
+                                  ("drivers/", "drivers"), ("lib/", "lib"), ("include/", "include"), ("arch/", "arch")];
 
 /// A task's hue, by its pid (the strip, the overview, the program's lanes).
 pub fn hue(pid: i32) -> i32 {
@@ -32,6 +35,16 @@ pub fn hue(pid: i32) -> i32 {
 /// A task's color: the idle task's (0) pale.
 fn task_color(pid: i32) -> String {
     format!("hsl({} 50% {}%)", hue(pid), if pid == 0 { 85 } else { 62 })
+}
+
+/// A call's color, by the first kernel area its source file belongs to.
+fn call_color(file: Option<&str>, on: bool) -> String {
+    const HUES: [i32; 7] = [210, 135, 28, 48, 280, 175, 330];
+    let l = if on { 50 } else { 74 };
+    match AREAS.iter().position(|(p, _)| file.unwrap_or("").starts_with(p)).and_then(|k| HUES.get(k)) {
+        Some(h) => format!("hsl({h} {}% {l}%)", if on { 65 } else { 55 }),
+        None => format!("hsl(0 0% {}%)", l + 5),
+    }
 }
 
 /// What the tip over a bar says: lines, where.
@@ -68,7 +81,7 @@ pub fn Timeline() -> Element {
                 }
                 Find {}
                 span { class: "legend",
-                    for (p , n) in ksee_core::arch::AREAS.iter() { span { i { style: "background: {ksee_core::arch::color(Some(p), false)}" } "{n}" } }
+                    for (p , n) in AREAS { span { i { style: "background: {call_color(Some(p), false)}" } "{n}" } }
                 }
             }
             div { class: "flamescroll", Bars { tip } }
@@ -245,7 +258,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     let id = (bar.first, bar.name.clone());
                     let on = calls.contains(&id);
                     let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
-                    let bg = if found { "var(--found)".to_string() } else { ksee_core::arch::color(bar.file.as_deref(), on) };
+                    let bg = if found { "var(--found)".to_string() } else { call_color(bar.file.as_deref(), on) };
                     let class = format!("bar{}{}{}", if on { " on" } else { "" }, if found { " found" } else { "" }, if lit.as_ref().is_some_and(|l| l.0 == id.0 && l.1 == id.1) { " lit" } else { "" });
                     let label = bar.label.clone();
                     let wide = (e - a) as f64 * px >= 24.0;

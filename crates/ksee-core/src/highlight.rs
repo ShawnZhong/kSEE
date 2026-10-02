@@ -39,25 +39,6 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// Its CSS class.
-    pub fn class(self) -> &'static str {
-        match self {
-            Kind::Plain => "",
-            Kind::Keyword => "kw",
-            Kind::Type => "ty",
-            Kind::Str => "str",
-            Kind::Esc => "esc",
-            Kind::Comment => "com",
-            Kind::Number => "num",
-            Kind::Pre => "pp",
-            Kind::Name => "nm",
-            Kind::Func => "fn",
-            Kind::Field => "fld",
-            Kind::Macro => "mac",
-            Kind::Bool => "bl",
-        }
-    }
-
     /// Whether it is an identifier the page hovers (a name, a call, a
     /// field, a macro: everything [`expr`] walks over).
     pub fn is_ident(self) -> bool {

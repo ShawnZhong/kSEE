@@ -17,7 +17,7 @@ use ksee_core::view::{Frame, Object};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
-use ksee_core::highlight::{self, Piece};
+use ksee_core::highlight::{self, Kind, Piece};
 use crate::machine;
 use crate::state::{Derived, Ui};
 
@@ -25,6 +25,25 @@ use crate::state::{Derived, Ui};
 pub struct File {
     pub text: Vec<String>,
     pub pieces: Vec<Vec<Piece>>,
+}
+
+/// The page's CSS class for a semantic source piece.
+fn kind_class(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Plain => "",
+        Kind::Keyword => "kw",
+        Kind::Type => "ty",
+        Kind::Str => "str",
+        Kind::Esc => "esc",
+        Kind::Comment => "com",
+        Kind::Number => "num",
+        Kind::Pre => "pp",
+        Kind::Name => "nm",
+        Kind::Func => "fn",
+        Kind::Field => "fld",
+        Kind::Macro => "mac",
+        Kind::Bool => "bl",
+    }
 }
 
 thread_local! {
@@ -231,7 +250,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, a
                                             let frame = frame.clone();
                                             let word = p.text.clone();
                                             rsx! {
-                                                span { class: if has { format!("{} val", p.kind.class()) } else { p.kind.class().to_string() },
+                                                span { class: if has { format!("{} val", kind_class(p.kind)) } else { kind_class(p.kind).to_string() },
                                                     onmouseenter: move |ev| {
                                                         let pt = ev.client_coordinates();
                                                         tip.set(value_of(&e, &frame, at).map(|o| Tip { x: pt.x, y: pt.y, lines: said(&e, &o) }));
@@ -246,7 +265,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, a
                                             }
                                         }
                                     } else {
-                                        span { class: p.kind.class(), "{p.text}" }
+                                        span { class: kind_class(p.kind), "{p.text}" }
                                     }
                                 }
                                 if is_here && !values.is_empty() {

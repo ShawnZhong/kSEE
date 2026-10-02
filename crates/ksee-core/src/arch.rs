@@ -92,34 +92,3 @@ pub(crate) const OCTAL_TYPES: &[&str] = &["umode_t"];
 /// The variables the kernel's macros make up (`__UNIQUE_ID`: min_t's,
 /// max_t's temporaries), not the source's own: not shown.
 pub(crate) const MADE_UP: &str = "__UNIQUE_ID_";
-
-/// The kernel's areas, by where a function's file is (the first that fits;
-/// the timeline colors a call by its area's, the last gray): its
-/// subsystems' directories.
-pub const AREAS: &[(&str, &str)] = &[("fs/", "fs"), ("mm/", "mm"), ("kernel/sched/", "sched"), ("kernel/", "kernel"),
-                                     ("drivers/", "drivers"), ("lib/", "lib"), ("include/", "include"), ("arch/", "arch")];
-
-/// The color of a call in file `file` (CSS): a hue for each of AREAS in
-/// order, the last (arch), and none, gray; `on` (at the cursor), darker.
-pub fn color(file: Option<&str>, on: bool) -> alloc::string::String {
-    const HUES: [i32; 7] = [210, 135, 28, 48, 280, 175, 330];
-    let file = file.unwrap_or("");
-    let l = if on { 50 } else { 74 };
-    match AREAS.iter().position(|(p, _)| file.starts_with(p)).and_then(|k| HUES.get(k)) {
-        Some(h) => alloc::format!("hsl({h} {}% {l}%)", if on { 65 } else { 55 }),
-        None => alloc::format!("hsl(0 0% {}%)", l + 5),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn a_calls_color_is_its_area() {
-        let (fs, arch) = (super::AREAS[0].0, super::AREAS.last().unwrap().0);
-        assert_eq!(super::color(Some(&alloc::format!("{fs}x.c")), false), "hsl(210 55% 74%)");
-        assert_eq!(super::color(Some(&alloc::format!("{fs}x.c")), true), "hsl(210 65% 50%)");
-        // (The last, arch, and none: gray.)
-        assert_eq!(super::color(Some(&alloc::format!("{arch}x.c")), false), "hsl(0 0% 79%)");
-        assert_eq!(super::color(None, false), "hsl(0 0% 79%)");
-    }
-}
