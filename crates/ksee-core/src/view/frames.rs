@@ -44,8 +44,7 @@ pub struct Line {
     pub called: Option<Called>,
 }
 
-/// A call on a stack, with its arguments (32 bits each: wider ones lose
-/// their high half) and its locals in memory.
+/// A call on a stack, with its arguments and its locals in memory.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frame {
     pub func: String,

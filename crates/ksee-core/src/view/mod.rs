@@ -434,8 +434,7 @@ impl View<'_> {
 /// A comparison, its operands and whether it held: "18 >= 0 ✓" (signed
 /// ones as such, else as numbers are).
 fn compared(r: &Record) -> Option<String> {
-    let (op, signed, held) = r.compare()?;
-    let (lhs, rhs) = r.operands(signed)?;
+    let (lhs, op, rhs, signed, held) = r.comparison()?;
     let v = |x: i128| if signed { x.to_string() } else { num(x as u64) };
     Some(format!("{} {op} {} {}", v(lhs), v(rhs), if held { "✓" } else { "✗" }))
 }
