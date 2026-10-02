@@ -31,7 +31,7 @@ mod state;
 #[cfg(feature = "selftest")]
 mod uitest;
 
-pub use lesson::Example;
+use lesson::Example;
 use state::Ui;
 
 thread_local! {
