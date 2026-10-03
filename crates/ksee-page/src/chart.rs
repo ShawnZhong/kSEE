@@ -11,14 +11,14 @@
 use dioxus::prelude::*;
 use ksee_core::trace::Record;
 use ksee_core::view::{wheel_window, Chart};
+use wasm_bindgen::JsCast;
 
 use crate::machine;
 use crate::state::{Derived, Shared, Ui};
 
 /// The overview's buckets.
 const BUCKETS: usize = 240;
-/// A row's height (px): as tall as fits the chart's room, 11 to 15 (deeper,
-/// the chart scrolls).
+/// A stack row's fixed height (px); deeper charts scroll.
 const ROW: f64 = 15.0;
 /// How much a vertical wheel turn (a pixel of it) zooms.
 const ZOOM: f64 = 0.002;
@@ -27,7 +27,6 @@ const ZOOM: f64 = 0.002;
 pub(crate) fn wheel_view(window: (usize, usize), x: f64, width: f64, dx: f64, dy: f64, shift: bool) -> (f64, usize) {
     wheel_window(window, x, width, dx, dy, shift, (dy * ZOOM).exp())
 }
-const MIN_ROW: f64 = 11.0;
 /// Kernel areas in timeline legend order; unmatched files use gray.
 const AREAS: &[(&str, &str)] = &[("fs/", "fs"), ("mm/", "mm"), ("kernel/sched/", "sched"), ("kernel/", "kernel"),
                                   ("drivers/", "drivers"), ("lib/", "lib"), ("include/", "include"), ("arch/", "arch")];
@@ -89,7 +88,7 @@ pub fn Timeline() -> Element {
                     for (p , n) in AREAS { span { i { style: "background: {call_color(Some(p), false)}" } "{n}" } }
                 }
             }
-            div { class: "flamescroll", Bars { tip } }
+            div { id: "timeline-scroll", class: "flamescroll", Bars { tip } }
             Strip {}
             Transport {}
         }
@@ -139,13 +138,31 @@ fn Overview() -> Element {
     }
 }
 
-/// A pan under way: where it began (x), and the window then (steps).
+/// A pan under way: where it began, and the time and stack windows then.
 #[derive(Clone, Copy)]
 struct Pan {
     x: f64,
+    y: f64,
+    scroll: i32,
     a: usize,
     b: usize,
     moved: bool,
+}
+
+fn stack_scroll() -> Option<web_sys::HtmlElement> {
+    web_sys::window()?.document()?.get_element_by_id("timeline-scroll")?.dyn_into().ok()
+}
+
+fn drag_moved(dx: f64, dy: f64) -> bool {
+    dx.hypot(dy) >= 4.0
+}
+
+fn drag_scroll(start: i32, dy: f64) -> i32 {
+    (start as f64 + dy).round() as i32
+}
+
+fn chart_height(depth: usize, room: f64) -> f64 {
+    (depth as f64 * ROW).max(room)
 }
 
 #[component]
@@ -160,9 +177,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let mut width = use_signal(|| 1000.0f64);
     let n = chart.cols.len().max(1);
     let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
-    // (The rows thinner to fit the chart's room; deeper, it scrolls.)
     let room = use_context::<Signal<crate::layout::Sizes>>()().chart;
-    let row = (room / depth.max(1) as f64).clamp(MIN_ROW, ROW).floor();
+    let row = ROW;
     let runs = chart.bar_runs();
     let (sa, sb) = (d.window)();
     // (Where a step is, across the window (%): the cursor's, solid; the
@@ -174,7 +190,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let find = (ui.find)().to_lowercase();
     // (The bar outlined: the one under the pointer, else the frame shown's call.)
     let lit = tip().map(|t| t.call).or_else(|| d.stack.read().get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
-    let height = (depth as f64 * row).max(room);
+    let height = chart_height(depth, room);
     // (One rule for hover and click: the column, its frame if there is one,
     // and the moment that column samples.)
     let hit = move |chart: &Chart, x: f64, y: f64| -> Option<(Option<crate::state::Moment>, Option<usize>)> {
@@ -202,22 +218,34 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 wheel(e.element_coordinates().x, d.x, d.y, e.modifiers().shift());
             },
             onpointerdown: move |e| {
+                e.prevent_default();
                 tip.set(None);
+                ui.set_preview(None);
                 dragged.set(false);
+                let p = e.client_coordinates();
+                let scroll = stack_scroll().map_or(0, |e| e.scroll_top());
                 let (a, b) = (d.window)();
-                pan.set(Some(Pan { x: e.client_coordinates().x, a, b, moved: false }));
+                pan.set(Some(Pan { x: p.x, y: p.y, scroll, a, b, moved: false }));
             },
             onpointermove: {
                 let chart = chart.clone();
                 move |e: PointerEvent| {
                     let ui = ui;
                     if let Some(mut p) = pan() {
-                        let dx = e.client_coordinates().x - p.x;
-                        if dx.abs() >= 4.0 || p.moved {
+                        let at = e.client_coordinates();
+                        let (dx, dy) = (at.x - p.x, at.y - p.y);
+                        if drag_moved(dx, dy) || p.moved {
                             p.moved = true;
                             dragged.set(true);
                             pan.set(Some(p));
-                            ui.view(p.a as f64 - dx / width() * (p.b - p.a + 1) as f64, p.b - p.a);
+                            ui.set_preview(None);
+                            tip.set(None);
+                            if dx != 0.0 {
+                                ui.view(p.a as f64 - dx / width() * (p.b - p.a + 1) as f64, p.b - p.a);
+                            }
+                            if let Some(scroll) = stack_scroll() {
+                                scroll.set_scroll_top(drag_scroll(p.scroll, dy));
+                            }
                             return;
                         }
                     }
