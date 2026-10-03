@@ -239,17 +239,15 @@ async fn read() -> Check {
     key(&find, "Enter");
     sleep(300).await;
     check(found > 0 && named("tr.frame a", "copy_page_to_iter").is_some(), "find", (found, place()))?;
-    // (Objects: what the read changed, its file's position; Tasks: a task_struct opened.)
+    // (Objects: what the read changed, its file's position; Tasks: the running task.)
     tab("Objects").await;
     let objects: Vec<String> = all(".obj .title").iter().map(text).collect();
     check(named(".obj td", "f_pos").is_some(), "objects", &objects)?;
     r.push(format!("objects {objects:?}"));
     tab("Tasks").await;
-    let rows = all(".pane tr").len();
-    click(&one(".pane tr.frame a").ok_or("no task")?);
-    sleep(300).await;
-    let opened = all(".pane tr").len();
-    check(opened > rows + 5 && named(".pane td", "comm").is_some(), "a task_struct opened", (rows, opened))?;
+    let tasks: Vec<String> = all(".pane tr.frame").iter().map(text).collect();
+    let running = all(".pane tr.frame.on").len();
+    check(!tasks.is_empty() && running == 1 && tasks.iter().any(|t| t.contains("running")), "tasks", (&tasks, running))?;
     tab("Stack").await;
     // (A line changed: the program made again; 4 bytes read.)
     write(all("ol.steps .cell textarea").get(2).ok_or("no third line")?, "read(fd, buf, 4)");

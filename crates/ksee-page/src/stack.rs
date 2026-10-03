@@ -114,7 +114,6 @@ pub fn Stack() -> Element {
     let chosen = d.frame.cloned();
     let at = d.line.cloned().map_or(0, |l| l.at);
     let task = machine().view(|v| v.rec.tasks.get(at).map(|&t| v.task(t, at)));
-    let mut open = use_context::<Signal<BTreeSet<String>>>();
     rsx! {
         div { class: "stack",
             table { class: "objs",
@@ -142,8 +141,8 @@ pub fn Stack() -> Element {
             }
             if let Some(t) = task {
                 div { class: "current dim", "current task: "
-                    a { class: "mono", title: "its task_struct, in Tasks (the task running: open there)",
-                        onclick: move |_| { ui.tab.set(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
+                    a { class: "mono", title: "show it in Tasks",
+                        onclick: move |_| ui.tab.set(Tab::Tasks),
                         "{t.named()}" }
                 }
             }

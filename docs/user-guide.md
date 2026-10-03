@@ -105,10 +105,10 @@ value was copied, its earlier origins.
 ### Tasks
 
 The Tasks tab reconstructs the task tree at the cursor. It identifies the
-running task and labels others as runnable, sleeping, exited, or not yet
-created. Open a task to inspect its `task_struct` as memory was at that moment.
-A thread appears under its thread-group leader and a process under its parent
-when those relationships are available.
+running task, labels others as runnable, sleeping, exited, or not yet created,
+and shows the syscall or function where each last ran. A thread appears under
+its thread-group leader and a process under its parent when those relationships
+are available.
 
 ### Objects
 

@@ -23,7 +23,7 @@ pub fn Tabs() -> Element {
         div { class: "panels",
             nav { class: "tabs",
                 {head(Tab::Stack, "Stack", "the calls at the cursor, their values as they were then")}
-                {head(Tab::Tasks, "Tasks", "every task at the cursor: what each is doing, its task_struct")}
+                {head(Tab::Tasks, "Tasks", "every task at the cursor: its relationships, state and current work")}
                 {head(Tab::Objects, "Objects", "the objects the call selected changed, and how they point to each other")}
                 {head(Tab::Console, "Console", "the kernel's log and the programs' output")}
             }
@@ -189,13 +189,11 @@ fn state(s: TaskState) -> (&'static str, &'static str) {
 }
 
 /// The tasks at the moment shown, as a tree (a thread under its process's
-/// leader, a process under its parent): the one running marked, and open
-/// to begin with; each what it is doing and where; open, its task_struct
-/// as it was then.
+/// leader, a process under its parent): the one running marked, each what
+/// it is doing and where.
 #[component]
 fn Tasks() -> Element {
     let d = use_context::<Derived>();
-    let mut open = use_context::<Signal<BTreeSet<String>>>();
     let at = d.line.cloned().map_or(0, |l| l.at);
     let m = machine();
     let list = m.view(|v| v.tasks(at));
@@ -219,27 +217,16 @@ fn Tasks() -> Element {
                 {
                     let t = &list[k];
                     let running = t.state == TaskState::Running;
-                    // (Open: the running one unless folded, another if opened.)
-                    let p = format!("task/{}", t.task.addr);
-                    let is_open = running != open.read().contains(&p);
                     let (said, title) = state(t.state);
                     let place = if t.last.is_some() { t.syscall.clone().or(t.func.clone()).map_or(String::new(), |s| format!(" in {s}")) } else { String::new() };
                     let class = format!("frame{}{}", if running { " on" } else { "" }, if matches!(t.state, TaskState::Later | TaskState::Exited) { " later" } else { "" });
-                    let fields = if is_open { m.at_moment(at, |v, mem| v.task_fields(mem, t.task.addr)).fields } else { Vec::new() };
                     let name = t.task.named();
-                    let q = p.clone();
                     rsx! {
-                        tr { class: "{class} opens", title,
-                            onclick: move |_| { let mut s = open.write(); if !s.remove(&q) { s.insert(q.clone()); } },
+                        tr { class: "{class}", title,
                             td { colspan: "3", style: "padding-left: {8 + depth * 16}px",
-                                a { class: "mono", title: if is_open { "fold it" } else { "its task_struct, as it was at the cursor" },
-                                    span { class: "tw", if is_open { "▾ " } else { "▸ " } }
-                                    "{name}" }
+                                b { class: "mono", "{name}" }
                                 span { class: "dim", "  {said}{place}" }
                             }
-                        }
-                        for o in fields {
-                            crate::stack::Value { o: o.clone(), path: format!("{p}.{}", o.name), depth: 1, at }
                         }
                     }
                 }
