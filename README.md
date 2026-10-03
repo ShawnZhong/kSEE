@@ -52,7 +52,7 @@ scheduled with JSPI.
 | `ksee-runtime` | Owns memory, boots Linux, schedules JSPI-suspended task stacks, drives syscall runners, and takes snapshots. |
 | `ksee-core` | Decodes trace records and packed metadata, then combines them with end-state memory to reconstruct stacks, lines, values, tasks, and objects. |
 | `ksee-page` | The Dioxus UI in the runtime's WebAssembly module; it drives `Machine` and renders the reconstructed views. |
-| `ksee-cli` | Builds, tests, traces, serves, deploys, packs kernel metadata, and updates `linux.patch`. |
+| `ksee-cli` | Builds, tests, serves, deploys, packs kernel metadata, and updates `linux.patch`. |
 | `user/` | `/init`, the syscall runner, lesson definitions, and lesson filesystem fixtures. |
 
 ## Quick start

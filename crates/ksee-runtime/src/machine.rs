@@ -29,9 +29,13 @@ pub struct Machine {
     pub(crate) rec: RefCell<Recording>,
 }
 
-/// Where the initramfs goes: at the top of RAM (page-aligned).
-fn initrd_at(ram: u32, initrd: &[u8]) -> u32 {
-    (ram - initrd.len() as u32) & !0xfff
+const RAM_BYTES: u32 = 64 << 20;
+
+/// Where the built initramfs goes: at the top of kernel RAM, page-aligned.
+fn initrd_at(initrd: &[u8]) -> Result<u32, JsValue> {
+    let len = u32::try_from(initrd.len()).map_err(|_| JsValue::from_str("initramfs is too large"))?;
+    RAM_BYTES.checked_sub(len).map(|at| at & !0xfff).filter(|&at| at >= KERNEL_BASE)
+        .ok_or_else(|| JsValue::from_str("initramfs does not fit in RAM"))
 }
 
 async fn fetch_bytes(url: &str) -> Result<Uint8Array, JsValue> {
@@ -54,37 +58,27 @@ fn section(module: &WebAssembly::Module, name: &str) -> String {
 
 #[wasm_bindgen]
 impl Machine {
-    /// Boot a kernel. `config`: { kernel, initrd?, cmdline?, ram } (URLs
-    /// of vmlinux and an initramfs; RAM in bytes).
-    pub async fn start(config: JsValue) -> Result<Machine, JsValue> {
-        let s = |k: &str| js::get(&config, k).as_string();
-        let url = s("kernel").ok_or("no kernel")?;
-        let ram = js::get(&config, "ram").as_f64().ok_or("no ram")? as u32;
+    /// Boot the built kernel and initramfs from their URLs in 64 MiB of RAM.
+    pub async fn start(kernel: String, initrd: String) -> Result<Machine, JsValue> {
         // The kernel's RAM: this module's memory, grown to it first (the
         // runtime's heap grows above it, its data and stack are below).
         let memory: WebAssembly::Memory = wasm_bindgen::memory().unchecked_into();
         let have = Uint8Array::new(&memory.buffer()).length();
-        if have < ram {
-            memory.grow((ram - have).div_ceil(PAGE_BYTES));
+        if have < RAM_BYTES {
+            memory.grow((RAM_BYTES - have).div_ceil(PAGE_BYTES));
         }
-        k_mut(|k| k.ram = ram);
+        k_mut(|k| k.ram = RAM_BYTES);
 
-        let bytes = fetch_bytes(&url).await?;
+        let bytes = fetch_bytes(&kernel).await?;
         let module: WebAssembly::Module =
             JsFuture::from(WebAssembly::compile(&bytes)).await?.unchecked_into();
         let tables = Tables::parse(&section(&module, "ksee.probes"), &section(&module, "ksee.types"));
         TABLES.set(tables).map_err(|_| "one machine per page")?;
 
-        let mut cmdline = s("cmdline").unwrap_or_default();
         // The initramfs goes at the top of RAM; the kernel reserves it.
-        let initrd = match s("initrd") {
-            Some(url) => fetch_bytes(&url).await?.to_vec(),
-            None => Vec::new(),
-        };
-        if !initrd.is_empty() {
-            cmdline += &format!(" initrd={:#x},{}", initrd_at(ram, &initrd), initrd.len());
-        }
-        k_mut(|k| k.cmdline = cmdline.trim().as_bytes().to_vec());
+        let initrd = fetch_bytes(&initrd).await?.to_vec();
+        let at = initrd_at(&initrd)?;
+        k_mut(|k| k.cmdline = format!("initrd={at:#x},{}", initrd.len()).into_bytes());
         let m = Machine { module, initrd, rec: Default::default() };
         m.boot().await?;
         Ok(m)
@@ -96,10 +90,8 @@ impl Machine {
     async fn boot(&self) -> Result<(), JsValue> {
         let ram = k(|k| k.ram);
         unsafe { core::ptr::write_bytes(KERNEL_BASE as *mut u8, 0, (ram - KERNEL_BASE) as usize) };
-        if !self.initrd.is_empty() {
-            let at = initrd_at(ram, &self.initrd) as usize;
-            unsafe { core::ptr::copy_nonoverlapping(self.initrd.as_ptr(), at as *mut u8, self.initrd.len()) };
-        }
+        let at = initrd_at(&self.initrd)? as usize;
+        unsafe { core::ptr::copy_nonoverlapping(self.initrd.as_ptr(), at as *mut u8, self.initrd.len()) };
         let inst: WebAssembly::Instance =
             JsFuture::from(WebAssembly::instantiate_module(&self.module, &imports::kernel())).await?.unchecked_into();
         let kernel = inst.exports();

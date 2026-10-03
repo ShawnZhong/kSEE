@@ -7,9 +7,10 @@ export const load = () => init({ module_or_path: new URL("./pkg/ksee_page_bg.was
 
 export async function start({ kernel, initrd }) {
   if (!WebAssembly.Suspending) throw new Error("this browser has no JSPI (WebAssembly.Suspending): kSEE needs Chrome 137, Firefox 153, Safari 27 or later");
+  if (!kernel || !initrd) throw new Error("kSEE needs a kernel and initramfs");
   await load();
-  [kernel, initrd] = await Promise.all([kernel, initrd].map((u) => u && unpacked(String(u))));
-  return Machine.start({ kernel, initrd, ram: 64 << 20 });
+  [kernel, initrd] = await Promise.all([kernel, initrd].map((u) => unpacked(String(u))));
+  return Machine.start(kernel, initrd);
 }
 
 // A .gz file (the build gzips the kernel and the initramfs), unpacked, as a

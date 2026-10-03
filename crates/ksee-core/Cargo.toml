@@ -5,8 +5,4 @@ description = "kSEE: probe tables, trace decoding and views (no_std)"
 edition.workspace = true
 publish.workspace = true
 
-[features]
-default = ["full"]
-full = []
-
 [dependencies]

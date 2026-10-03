@@ -181,12 +181,6 @@ Build and serve the site while editing:
 ./ksee.sh
 ```
 
-To print a lesson as the page reconstructs it, one source step per line:
-
-```sh
-CHROME=/path/to/chromium ./ksee.sh trace read
-```
-
 Run the kernel/browser lesson checks before committing a new lesson:
 
 ```sh

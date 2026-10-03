@@ -444,15 +444,6 @@ pub fn test(ui: bool) {
     }
 }
 
-/// Build, then lesson `name` as the page shows it, a line per step.
-pub fn trace(name: &str) {
-    build();
-    test_site();
-    if !crate::chrome::trace(name) {
-        crate::fail(&format!("no trace of {name}"));
-    }
-}
-
 /// target/test/site: the site, its module built with the tests.
 fn test_site() {
     // (Its own target directory: the site's module, built without them, stays as it is.)

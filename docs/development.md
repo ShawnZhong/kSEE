@@ -94,12 +94,11 @@ and passes all arguments through.
 | `./ksee.sh build` | Build the plugin, kernel, browser module, programs, metadata, lessons, and site. |
 | `./ksee.sh serve [--port=N]` | Serve the existing `target/site/` without rebuilding it. |
 | `./ksee.sh test [--ui]` | Run native tests, build, then run browser suites through `$CHROME`; `--ui` adds UI tests. |
-| `./ksee.sh trace LESSON` | Build, run one lesson through the browser test site, and print its reconstructed steps. |
 | `./ksee.sh deploy` | Build, then publish the generated site to the remote `gh-pages` branch. |
 | `./ksee.sh patch` | Write `linux.patch` from the current difference between `linux/` and `v7.2.7`. |
 
-`build`, `test`, `trace`, and the default command can fetch the kernel on their
-first run. `serve` expects an existing site.
+`build`, `test`, and the default command can fetch the kernel on their first
+run. `serve` expects an existing site.
 
 ## Generated outputs
 

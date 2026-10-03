@@ -58,13 +58,6 @@ pub fn test(name: &str) -> bool {
     passed
 }
 
-/// Lesson `name` as the page shows it, a line per step (its `trace` test).
-pub fn trace(name: &str) -> bool {
-    let (passed, log) = open(&format!("#ex={name}&test=trace"), SCREEN, Duration::from_secs(UI_TIMEOUT));
-    print!("{log}");
-    passed
-}
-
 /// The test site at `hash`, `size`d: whether the page said `ok`, and its log.
 fn open(hash: &str, size: (u32, u32), timeout: Duration) -> (bool, String) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap_or_else(|e| fail(&format!("serve: {e}")));

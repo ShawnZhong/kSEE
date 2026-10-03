@@ -15,30 +15,22 @@
 //! `no_std`, so that the same code runs in the wasm runtime
 //! (crates/ksee-runtime) and natively (crates/ksee-cli, tests).
 #![no_std]
-#![cfg_attr(not(feature = "full"), allow(dead_code))]
 
 extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
 pub mod arch;
-#[cfg(feature = "full")]
 pub mod highlight;
 pub mod program;
-#[cfg(feature = "full")]
 pub mod mem;
 pub mod module;
-#[cfg(feature = "full")]
 pub mod recording;
-#[cfg(feature = "full")]
 pub mod stack;
 pub mod tables;
-#[cfg(feature = "full")]
 pub mod text;
-#[cfg(feature = "full")]
 pub mod trace;
 pub mod types;
-#[cfg(feature = "full")]
 pub mod view;
 
 /// Read access to kernel memory.

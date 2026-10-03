@@ -38,7 +38,6 @@ async fn run_test(name: String) -> Result<String, JsValue> {
         "back" => back().await,
         "pipe" => pipe().await,
         "phone" => phone().await,
-        "trace" => trace().await,
         _ => Err(format!("no test {name}")),
     };
     r.map_err(|e| JsValue::from_str(&e))
@@ -316,35 +315,4 @@ async fn phone() -> Check {
     press("▶", false);
     sleep(300).await;
     Ok(format!("{at} → {}", place()))
-}
-
-/// The lesson open as the page shows it, a line per step, → by → to the
-/// call's end: where, the line, what is said at its end (its values, what
-/// it stored), and the Stack.
-async fn trace() -> Check {
-    wait(|| !all("tr.frame").is_empty() && one(".code .ln.now").is_some(), 300, "the recording shown", String::new).await?;
-    let said = |sel: &str| one(sel).map(|e| text(&e).trim().to_string()).unwrap_or_default();
-    let row = || {
-        // (The line's code: its text less its number, values and note.)
-        let mut code = said(".code .ln.now");
-        for part in [said(".code .ln.now .no"), said(".code .ln.now .values"), said(".code .ln.now .stored")] {
-            code = code.replacen(&part, "", 1);
-        }
-        let frames: Vec<String> = all("tr.frame a").iter().map(text).collect();
-        format!("{} | {} | {} | {} | {}", said(".transport .where"), code.split_whitespace().collect::<Vec<_>>().join(" "),
-                said(".code .ln.now .values"), said(".code .ln.now .stored"), frames.join(" < "))
-    };
-    let body = doc().body().ok_or("no body")?;
-    let (mut out, mut last) = (Vec::new(), String::new());
-    for k in 0..5000 {
-        let now = row();
-        if now == last {
-            break;
-        }
-        out.push(format!("{k:4} {now}"));
-        last = now;
-        key(&body, "ArrowRight");
-        sleep(20).await;
-    }
-    Ok(out.join("\n") + "\n")
 }
