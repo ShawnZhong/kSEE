@@ -7,7 +7,10 @@
 //! idle, restart_task and halt suspend the kernel's stack) and the
 //! programs' (programs.rs).
 
+use core::num::NonZeroU32;
+
 use js_sys::{Object, Promise};
+use ksee_core::trace::wire::{self, EncodedRecord, StoreChunks};
 use wasm_bindgen::prelude::*;
 
 use crate::js::{self, func};
@@ -73,47 +76,28 @@ pub extern "C" fn bulk(addr: u32, len: u32, line: u32, from: u32) {
 /// plugin), 0 for the runtime's own; `from`: where the bytes are copied
 /// from (each store then says where its own come from), else 0.
 pub fn log(addr: u32, len: u32, line: u32, from: u32) {
-    use ksee_core::trace::{STORE, VALUE};
-    if len == 0 {
-        return;
-    }
-    let mut off = 0;
-    while off < len {
-        let class = match len - off { 8.. => 3, 4..=7 => 2, 2..=3 => 1, _ => 0 };
-        let size = 1u32 << class;
+    for (off, size) in StoreChunks::new(addr, len, from) {
         let mut old = [0u8; 8];
-        Direct.read(addr + off, &mut old[..size as usize]);
-        let v = u64::from_le_bytes(old);
-        let w = [addr + off, STORE << 28 | line << 4 | class, v as u32, VALUE << 28, (v >> 32) as u32, VALUE << 28, 0, 0];
-        store(w, if class == 3 { 6 } else { 4 }, from, off);
-        off += size;
+        Direct.read(addr + off, &mut old[..size.bytes() as usize]);
+        let from = if from == 0 { None } else { NonZeroU32::new(from + off) };
+        ring_put(wire::store(addr + off, line, size, u64::from_le_bytes(old), from));
     }
-}
-
-/// Put the first `n` words of store record `w`, and, for a copy (`from`),
-/// where its bytes (`off` into the copy) come from.
-fn store(mut w: [u32; 8], n: usize, from: u32, off: u32) {
-    use ksee_core::trace::VALUE;
-    if from == 0 {
-        return ring_put(&w[..n]);
-    }
-    w[n] = from + off;
-    w[n + 1] = VALUE << 28;
-    ring_put(&w[..n + 2]);
 }
 
 /// A Task record: `task` (a task_struct) runs; where a recording begins.
 pub fn task(task: u32) {
-    ring_put(&[task, ksee_core::trace::TASK << 28]);
+    ring_put(wire::task(task));
 }
 
-/// Append a record (pairs of words) to the kernel's trace ring (called
-/// while the kernel runs: no kernel code writes it meanwhile).
-fn ring_put(words: &[u32]) {
+/// Append a complete record to the kernel's trace ring (called while the
+/// kernel runs: no kernel code writes it meanwhile).
+fn ring_put(record: EncodedRecord) {
     let (trace, size) = (k(|k| k.trace), tables().ring_words);
     if trace == 0 || size == 0 {
         return;
     }
+    debug_assert!(size.is_power_of_two() && size >= 2);
+    let words = record.words();
     let p = Direct.read_u32(trace);
     let ring = trace + ksee_core::trace::RING;
     for (i, &w) in words.iter().enumerate() {

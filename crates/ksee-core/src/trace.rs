@@ -1,9 +1,14 @@
 //! Decoding the trace ring (the record format is in plugin/ksee-trace.cpp).
 
+pub mod wire;
+
 use alloc::vec::Vec;
 use core::num::NonZeroU32;
 
 use crate::Memory;
+use wire::{Kind, StoreSize};
+
+pub use wire::{ON, RING};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Record {
@@ -49,22 +54,18 @@ impl Record {
     }
 }
 
-const BLOCK: u32 = 1;
-/// The tag of a Task record (the runtime's).
-pub const TASK: u32 = 3;
-const RETURN: u32 = 4;
-const COMPARE: u32 = 6;
-/// The tag of a Store record's head (the plugin's, and the runtime's).
-pub const STORE: u32 = 7;
-/// The tag of a continuation pair.
-pub const VALUE: u32 = 8;
-const VAR: u32 = 9;
-
-/// Offset of the ring's words in the trace header (`{ u32 pos; u32 pad;
-/// u32 on; u32 pad; u32 ring[words]; }`, see plugin/ksee-trace.cpp).
-pub const RING: u32 = 16;
-/// Offset of the `on` word (probes record only while it is nonzero).
-pub const ON: u32 = 8;
+#[cfg(test)]
+const BLOCK: u32 = Kind::Block as u32;
+#[cfg(test)]
+const RETURN: u32 = Kind::Return as u32;
+#[cfg(test)]
+const COMPARE: u32 = Kind::Compare as u32;
+#[cfg(test)]
+const STORE: u32 = Kind::Store as u32;
+#[cfg(test)]
+const VALUE: u32 = Kind::Continuation as u32;
+#[cfg(test)]
+const VAR: u32 = Kind::Var as u32;
 
 /// The calls' words, by their block 0's record: the arguments' (Tables::values
 /// splits them), then the frame base (its locals in memory are at their
@@ -139,7 +140,7 @@ impl<F: FnMut(u32) -> (u32, u32)> Decoder<F> {
         self.values.clear();
         while self.next < self.len {
             let (value, t) = (self.pair)(self.next);
-            if t >> 28 != VALUE {
+            if Kind::of(t) != Some(Kind::Continuation) {
                 break; // the next head
             }
             self.values.push(value);
@@ -154,50 +155,47 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
 
     fn next(&mut self) -> Option<Record> {
         while self.next < self.len {
-            let (func, tag) = (self.pair)(self.next);
+            let (payload, tag) = (self.pair)(self.next);
             self.head = self.next;
             self.next += 1;
-            let kind = tag >> 28;
             let got = self.read_values();
             let v = [self.values.first().copied().unwrap_or(0), self.values.get(1).copied().unwrap_or(0)];
-            match kind {
-                // (An entry block: the call's arguments, as many words as
-                // they take, then its frame base.)
-                BLOCK => return Some(Record::Block { func, n: tag & 0x0fff_ffff }),
-                TASK => return Some(Record::Task { task: func }),
-                RETURN => {
-                    if got < 1 {
-                        continue; // truncated
-                    }
-                    let value = if got > 1 { (v[0] as u64 | (v[1] as u64) << 32) as i64 } else { v[0] as i32 as i64 };
-                    return Some(Record::Return { func, value });
-                }
-                COMPARE => {
-                    if got < 1 {
+            let fields = wire::fields(tag);
+            match Kind::of(tag) {
+                Some(Kind::Block) => {
+                    // (An entry block: the call's arguments, as many words as
+                    // they take, then its frame base.)
+                    let n = fields;
+                    if (n == 0 && !(1..=15).contains(&got)) || (n != 0 && got != 0) {
                         continue;
                     }
+                    return Some(Record::Block { func: payload, n });
+                }
+                Some(Kind::Task) if got == 0 => return Some(Record::Task { task: payload }),
+                Some(Kind::Return) if matches!(got, 1 | 2) => {
+                    let value = if got == 2 { (v[0] as u64 | (v[1] as u64) << 32) as i64 } else { v[0] as i32 as i64 };
+                    return Some(Record::Return { func: payload, value });
+                }
+                Some(Kind::Compare) if matches!(got, 1 | 3) => {
                     // (A wide one: then the high words, lhs's and rhs's.)
-                    let wide = got >= 3;
+                    let wide = got == 3;
                     let hi = |k: usize| if wide { (self.values[k] as u64) << 32 } else { 0 };
-                    return Some(Record::Compare { lhs: func as u64 | hi(1), rhs: v[0] as u64 | hi(2), wide, pred: (tag & 0xf) as u8, line: tag >> 4 & 0xff_ffff });
+                    return Some(Record::Compare { lhs: payload as u64 | hi(1), rhs: v[0] as u64 | hi(2), wide, pred: (fields & 0xf) as u8, line: fields >> 4 });
                 }
-                STORE => {
+                Some(Kind::Store) => {
                     // (The old value; then, a copy's, where from.)
-                    let (class, line) = (tag & 0xf, tag >> 4 & 0xff_ffff);
-                    if class > 3 {
-                        continue;
-                    }
-                    let words = if class == 3 { 2 } else { 1 };
-                    if got < words {
+                    let Some(size) = StoreSize::of(fields & 0xf) else { continue };
+                    let words = size.old_words();
+                    if got != words && got != words + 1 {
                         continue;
                     }
                     let from = self.values.get(words).copied().and_then(NonZeroU32::new);
-                    let old = v[0] as u64 | if class == 3 { (v[1] as u64) << 32 } else { 0 };
-                    return Some(Record::Store { addr: func, size: 1 << class, old, line, from });
+                    let old = v[0] as u64 | if size == StoreSize::B8 { (v[1] as u64) << 32 } else { 0 };
+                    return Some(Record::Store { addr: payload, size: size.bytes(), old, line: fields >> 4, from });
                 }
                 // (A wide one's high word after it.)
-                VAR => return Some(Record::Var { var: tag & 0xffff, line: tag >> 16 & 0xfff, value: func as u64 | (v[0] as u64) << 32 }),
-                _ => continue, // a continuation without its head
+                Some(Kind::Var) if got <= 1 => return Some(Record::Var { var: fields & 0xffff, line: fields >> 16, value: payload as u64 | (v[0] as u64) << 32 }),
+                _ => continue, // malformed, unknown, or a continuation without its head
             }
         }
         None
@@ -288,6 +286,60 @@ fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
         assert_eq!(Record::Compare { lhs: u32::MAX as u64, rhs: 0, wide: false, pred: 6, line: 0 }.comparison(), Some((-1, ">", 0, true, false)));
         assert_eq!(Record::Compare { lhs: u64::MAX, rhs: 0, wide: true, pred: 8, line: 0 }.comparison(), Some((-1, "<", 0, true, true)));
         assert_eq!(Record::Compare { lhs: u64::MAX, rhs: 0, wide: true, pred: 2, line: 0 }.comparison(), Some((u64::MAX as i128, ">", 0, false, true)));
+    }
+
+    #[test]
+    fn runtime_store_encodings_round_trip() {
+        let cases = [
+            (StoreSize::B1, 0x88),
+            (StoreSize::B2, 0x7788),
+            (StoreSize::B4, 0x5566_7788),
+            (StoreSize::B8, 0x1122_3344_5566_7788),
+        ];
+        for (size, old) in cases {
+            for from in [None, NonZeroU32::new(0x200)] {
+                let encoded = wire::store(0x100, 5, size, old, from);
+                assert_eq!(decode(encoded.words()), [Record::Store { addr: 0x100, size: size.bytes(), old, line: 5, from }]);
+            }
+        }
+        assert_eq!(decode(wire::task(0x300).words()), [Record::Task { task: 0x300 }]);
+    }
+
+    #[test]
+    fn malformed_cardinalities_do_not_consume_the_next_head() {
+        let bad = [
+            (wire::tag(Kind::Task, 0), 1),
+            (wire::tag(Kind::Block, 1), 1),
+            (wire::tag(Kind::Block, 0), 0),
+            (wire::tag(Kind::Block, 0), 16),
+            (wire::tag(Kind::Return, 0), 0),
+            (wire::tag(Kind::Return, 0), 3),
+            (wire::tag(Kind::Compare, 0), 0),
+            (wire::tag(Kind::Compare, 0), 2),
+            (wire::tag(Kind::Store, StoreSize::B4 as u32), 0),
+            (wire::tag(Kind::Store, StoreSize::B4 as u32), 3),
+            (wire::tag(Kind::Var, 0), 2),
+        ];
+        let mut words = Vec::new();
+        for (tag, n) in bad {
+            words.extend([0, tag]);
+            for value in 0..n {
+                words.extend([value, VALUE << 28]);
+            }
+            words.extend(block(9, 1));
+        }
+        assert_eq!(decode(&words), alloc::vec![Record::Block { func: 9, n: 1 }; bad.len()]);
+    }
+
+    #[test]
+    fn a_call_has_arguments_and_a_frame_base() {
+        for n in [1, 15] {
+            let mut words = alloc::vec![9, BLOCK << 28];
+            for value in 0..n {
+                words.extend([value, VALUE << 28]);
+            }
+            assert_eq!(decode_values(&words), [(Record::Block { func: 9, n: 0 }, (0..n).collect())]);
+        }
     }
 
     #[test]
