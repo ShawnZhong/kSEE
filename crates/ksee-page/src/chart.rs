@@ -65,6 +65,7 @@ struct Tip {
 pub fn Timeline() -> Element {
     let ui = use_context::<Ui>();
     let tip = use_signal(|| None::<Tip>);
+    let mut bottomed = use_signal(|| false);
     // (The cursor stepped out of the window: the window moved to it, as wide.)
     let d = use_context::<Derived>();
     use_effect(move || {
@@ -88,7 +89,18 @@ pub fn Timeline() -> Element {
                     for (p , n) in AREAS { span { i { style: "background: {call_color(Some(p), false)}" } "{n}" } }
                 }
             }
-            div { id: "timeline-scroll", class: "flamescroll", Bars { tip } }
+            div { id: "timeline-scroll", class: "flamescroll",
+                onmounted: move |_| {
+                    if let Some(scroll) = stack_scroll() {
+                        let max = scroll.scroll_height() - scroll.client_height();
+                        if max > 0 {
+                            scroll.set_scroll_top(max);
+                            bottomed.set(true);
+                        }
+                    }
+                },
+                Bars { tip, bottomed }
+            }
             Strip {}
             Transport {}
         }
@@ -156,10 +168,10 @@ fn stack_scroll() -> Option<web_sys::HtmlElement> {
     element("timeline-scroll")
 }
 
-fn preview_drag(height: f64, dx: f64) {
-    if let Some(chart) = element("timeline-chart") {
-        let transform = if dx == 0.0 { String::new() } else { format!(" transform: translateX({dx}px);") };
-        let _ = chart.set_attribute("style", &format!("height: {height}px;{transform}"));
+fn preview_drag(dx: f64) {
+    if let Some(layer) = element("timeline-drag-layer") {
+        let style = if dx == 0.0 { String::new() } else { format!("transform: translateX({dx}px)") };
+        let _ = layer.set_attribute("style", &style);
     }
 }
 
@@ -176,7 +188,7 @@ fn chart_height(depth: usize, room: f64) -> f64 {
 }
 
 #[component]
-fn Bars(tip: Signal<Option<Tip>>) -> Element {
+fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     let chart = d.chart.cloned();
@@ -201,7 +213,15 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     // (The bar outlined: the one under the pointer, else the frame shown's call.)
     let lit = tip().map(|t| t.call).or_else(|| d.stack.read().get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
     let height = chart_height(depth, room);
-    let mut bottomed = use_signal(|| false);
+    let mut bottomed = bottomed;
+    let mut clear_drag = use_signal(|| false);
+    use_effect(move || {
+        let _ = (d.window)();
+        if clear_drag() {
+            preview_drag(0.0);
+            clear_drag.set(false);
+        }
+    });
     use_effect(move || {
         let _ = d.chart.read();
         if !bottomed() {
@@ -260,10 +280,10 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                         if drag_moved(dx, dy) || *dragged.peek() {
                             if !*dragged.peek() {
                                 dragged.set(true);
+                                ui.set_preview(None);
+                                tip.set(None);
                             }
-                            ui.set_preview(None);
-                            tip.set(None);
-                            preview_drag(height, dx);
+                            preview_drag(dx);
                             if let Some(scroll) = stack_scroll() {
                                 let max = scroll.scroll_height() - scroll.client_height();
                                 scroll.set_scroll_top(drag_scroll(p.scroll, dy, max));
@@ -288,10 +308,12 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             onpointerup: move |e| {
                 if let Some(p) = pan() {
                     let dx = e.client_coordinates().x - p.x;
-                    preview_drag(height, 0.0);
                     pan.set(None);
                     if *dragged.peek() && dx != 0.0 {
+                        clear_drag.set(true);
                         ui.view(p.a as f64 - dx / width() * (p.b - p.a + 1) as f64, p.b - p.a);
+                    } else {
+                        preview_drag(0.0);
                     }
                 }
             },
@@ -306,35 +328,39 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 }
             },
             onpointercancel: move |_| {
-                preview_drag(height, 0.0);
+                clear_drag.set(false);
+                preview_drag(0.0);
                 pan.set(None);
             },
             onmouseleave: move |_| {
                 ui.set_preview(None);
                 tip.set(None);
-                preview_drag(height, 0.0);
+                clear_drag.set(false);
+                preview_drag(0.0);
                 pan.set(None);
             },
-            for (dd , a , e , b) in runs {
-                {
-                    let bar = &chart.bars[b as usize];
-                    let id = (bar.first, bar.name.clone());
-                    let on = calls.contains(&id);
-                    let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
-                    let bg = if found { "var(--found)".to_string() } else { call_color(bar.file.as_deref(), on) };
-                    let class = format!("bar{}{}{}", if on { " on" } else { "" }, if found { " found" } else { "" }, if lit.as_ref().is_some_and(|l| l.0 == id.0 && l.1 == id.1) { " lit" } else { "" });
-                    let label = bar.label.clone();
-                    let wide = (e - a) as f64 * px >= 24.0;
-                    rsx! {
-                        div { class,
-                            style: "left: {pct(a)}%; width: {pct(e - a)}%; bottom: {dd as f64 * row}px; height: {row - 1.0}px; line-height: {row - 1.0}px; background: {bg}",
-                            if wide { "{label}" }
+            div { id: "timeline-drag-layer", class: "timeline-drag-layer",
+                for (dd , a , e , b) in runs {
+                    {
+                        let bar = &chart.bars[b as usize];
+                        let id = (bar.first, bar.name.clone());
+                        let on = calls.contains(&id);
+                        let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
+                        let bg = if found { "var(--found)".to_string() } else { call_color(bar.file.as_deref(), on) };
+                        let class = format!("bar{}{}{}", if on { " on" } else { "" }, if found { " found" } else { "" }, if lit.as_ref().is_some_and(|l| l.0 == id.0 && l.1 == id.1) { " lit" } else { "" });
+                        let label = bar.label.clone();
+                        let wide = (e - a) as f64 * px >= 24.0;
+                        rsx! {
+                            div { class,
+                                style: "left: {pct(a)}%; width: {pct(e - a)}%; bottom: {dd as f64 * row}px; height: {row - 1.0}px; line-height: {row - 1.0}px; background: {bg}",
+                                if wide { "{label}" }
+                            }
                         }
                     }
                 }
+                if let Some(x) = peeked { div { class: "now peek", style: "left: {x}%" } }
+                if let Some(x) = now { div { class: "now", style: "left: {x}%" } }
             }
-            if let Some(x) = peeked { div { class: "now peek", style: "left: {x}%" } }
-            if let Some(x) = now { div { class: "now", style: "left: {x}%" } }
         }
     }
 }
