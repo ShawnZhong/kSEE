@@ -13,5 +13,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked -p ksee-core -p ksee-cli
       - run: ./setup.sh --rust-only
-      - run: wasm-bindgen --version
       - run: ./ksee.sh build
