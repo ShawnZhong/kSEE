@@ -28,8 +28,9 @@ pub(crate) fn wheel_view(window: (usize, usize), x: f64, width: f64, dx: f64, dy
     wheel_window(window, x, width, dx, dy, shift, (dy * ZOOM).exp())
 }
 const MIN_ROW: f64 = 11.0;
-/// Kernel areas in color order; unmatched files use gray.
-const AREAS: &[&str] = &["fs/", "mm/", "kernel/sched/", "kernel/", "drivers/", "lib/", "include/", "arch/"];
+/// Kernel areas in timeline legend order; unmatched files use gray.
+const AREAS: &[(&str, &str)] = &[("fs/", "fs"), ("mm/", "mm"), ("kernel/sched/", "sched"), ("kernel/", "kernel"),
+                                  ("drivers/", "drivers"), ("lib/", "lib"), ("include/", "include"), ("arch/", "arch")];
 
 /// A task's hue, by its pid (the strip, the overview, the program's lanes).
 pub fn hue(pid: i32) -> i32 {
@@ -45,7 +46,7 @@ fn task_color(pid: i32) -> String {
 pub(crate) fn call_color(file: Option<&str>, on: bool) -> String {
     const HUES: [i32; 7] = [210, 135, 28, 48, 280, 175, 330];
     let l = if on { 50 } else { 74 };
-    match AREAS.iter().position(|&p| file.unwrap_or("").starts_with(p)).and_then(|k| HUES.get(k)) {
+    match AREAS.iter().position(|(p, _)| file.unwrap_or("").starts_with(p)).and_then(|k| HUES.get(k)) {
         Some(h) => format!("hsl({h} {}% {l}%)", if on { 65 } else { 55 }),
         None => format!("hsl(0 0% {}%)", l + 5),
     }
@@ -84,6 +85,9 @@ pub fn Timeline() -> Element {
                     if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.win.set(None), "whole" } }
                 }
                 Find {}
+                span { class: "legend",
+                    for (p , n) in AREAS { span { i { style: "background: {call_color(Some(p), false)}" } "{n}" } }
+                }
             }
             div { class: "flamescroll", Bars { tip } }
             Strip {}
