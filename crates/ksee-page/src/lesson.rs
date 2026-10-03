@@ -8,7 +8,7 @@ use ksee_core::program::{statement, Line};
 use serde::{Deserialize, Serialize};
 
 use crate::state::{Tab, Ui};
-use ksee_core::text::{self, Piece};
+use ksee_core::text::{self, LessonTab as LinkTab, LessonTarget, Piece};
 use crate::{examples, machine};
 
 /// One chronological program step: a statement for the program's own task,
@@ -133,7 +133,7 @@ async fn run(mut ui: Ui, lines: Vec<Step>) {
     let calls = ui.outcomes.read().iter().filter(|o| matches!(o, Outcome::Call { .. })).count();
     // (The lesson's own program: where its text's first link into the recording goes.)
     let linked = (lines == ex.steps).then(|| ex.text.iter().flat_map(|p| text::pieces(p)).find_map(|x| match x {
-        Piece::Link { call: Some(_), target, .. } => Some(target),
+        Piece::Link { target, .. } if matches!(LessonTarget::parse(&target), Ok(LessonTarget::Recording { .. })) => Some(target),
         _ => None,
     })).flatten();
     match linked {
@@ -157,30 +157,33 @@ fn call_of(ui: Ui, n: usize) -> Option<usize> {
 /// (`:stack`, `:objects`, `:tasks`, `:console`); `try:N`, its program made
 /// instead.
 fn follow(mut ui: Ui, target: &str) {
-    let parts: Vec<&str> = target.split(':').collect();
-    if parts[0] == "try" {
-        let k: usize = parts.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
+    let Ok(target) = LessonTarget::parse(target) else { return };
+    let LessonTarget::Recording { call, function, any_task, tab } = target else {
+        let LessonTarget::Try { index } = target else { unreachable!() };
         let tries = examples()[(ui.lesson)()].tries.clone();
-        if let Some(t) = tries.get(k - 1) {
+        if let Some(t) = tries.get(index - 1) {
             ui.program.set(t.clone());
         }
         return;
-    }
-    let Some(k) = parts[0].parse().ok().and_then(|n| call_of(ui, n)) else { return };
+    };
+    let Some(k) = call_of(ui, call) else { return };
     ui.select(k);
-    if let Some(func) = parts.get(1) {
+    if let Some(func) = function {
         // (The call's lines and syscall now: the memos have them as they were.)
         let m = machine();
         let (lines, s) = (Ui::lines_of(k), m.view(|v| v.syscalls().into_iter().nth(k)));
-        let at = s.and_then(|s| m.first_call(func, s.first, s.last.unwrap_or(m.records() - 1), (!parts.contains(&"any")).then_some(s.task.addr)));
+        let at = s.and_then(|s| m.first_call(&func, s.first, s.last.unwrap_or(m.records() - 1), (!any_task).then_some(s.task.addr)));
         if let Some(at) = at && let Some(j) = lines.iter().position(|l| l.i >= at) {
             ui.go(j);
         }
     }
-    for (name, tab) in [("stack", Tab::Stack), ("objects", Tab::Objects), ("tasks", Tab::Tasks), ("console", Tab::Console)] {
-        if parts.contains(&name) {
-            ui.tab.set(tab);
-        }
+    if let Some(tab) = tab {
+        ui.tab.set(match tab {
+            LinkTab::Stack => Tab::Stack,
+            LinkTab::Objects => Tab::Objects,
+            LinkTab::Tasks => Tab::Tasks,
+            LinkTab::Console => Tab::Console,
+        });
     }
 }
 
@@ -498,12 +501,18 @@ fn Paragraph(text: String, stale: bool) -> Element {
                 match x {
                     Piece::Text(t) => rsx! { "{t}" },
                     Piece::Code(c) => rsx! { code { "{c}" } },
-                    Piece::Link { label, target, call } => {
+                    Piece::Link { label, target, .. } => {
+                        let parsed = LessonTarget::parse(&target);
                         // (A try: a button; a function's place: its name, as code.)
-                        let class = if target.starts_with("try:") { "try" } else if target.contains(':') { "place mono" } else { "" };
-                        // (Stale (a try, not the lesson's own program): a call
+                        let class = match &parsed {
+                            Ok(LessonTarget::Try { .. }) => "try",
+                            Ok(LessonTarget::Recording { function: Some(_), .. }) => "place mono",
+                            _ => "",
+                        };
+                        // (Stale (a try, not the lesson's own program): a recording
                         // link names a call it no longer has: dimmed, no link.)
-                        if stale && call.is_some() {
+                        let recording = matches!(&parsed, Ok(LessonTarget::Recording { .. }));
+                        if parsed.is_err() || stale && recording {
                             rsx! { span { class: "dim", "{label}" } }
                         } else {
                             rsx! { a { class, onclick: move |_| follow(ui, &target), "{label}" } }

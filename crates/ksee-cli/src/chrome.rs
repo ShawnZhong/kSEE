@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use crate::fail;
 
-/// The tests (crates/ksee-page's uitest.rs), each with the page it opens
+/// The tests (crates/ksee-page's test module), each with the page it opens
 /// (its URL's hash: the lesson, and `test`, which runs the test, POSTing
 /// `ok` or `fail` and its log to /result) and the screen it has: the
 /// kernel's, then the page's: the read example, the write example with its

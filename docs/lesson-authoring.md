@@ -57,10 +57,13 @@ Lesson paragraphs use Markdown-like inline code and links parsed by
 | `[wake it](2:try_to_wake_up:any)` | Find the function on any task that ran during call 2. |
 | `[changed data](2:objects)` | Select call 2 and open Objects. |
 | `[the stack](2:vfs_read:stack)` | Move into the function and open Stack. |
+| `[wake stack](2:try_to_wake_up:any:stack)` | Find the function on any task and open Stack. |
 | `[try it](try:1)` | Run `tries[0]` instead of the lesson program. |
 
-The tab suffixes are `stack`, `objects`, `tasks`, and `console`. Call numbers
-count syscall steps only; declarations do not increment them.
+Call and try numbers are one-based and must be positive. The reserved tab
+suffixes are `stack`, `objects`, `tasks`, and `console`; `any` is valid only
+after a function name. Call numbers count syscall steps only, so declarations
+do not increment them. Malformed targets fail lesson self-test validation.
 A try keeps the lesson prose visible, but recording links are disabled because
 the alternative program may have different calls.
 

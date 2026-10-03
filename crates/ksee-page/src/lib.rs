@@ -23,13 +23,11 @@ mod editor;
 mod layout;
 mod lesson;
 mod panels;
-#[cfg(feature = "selftest")]
-mod selftest;
 mod source;
 mod stack;
 mod state;
 #[cfg(feature = "selftest")]
-mod uitest;
+mod test;
 
 use lesson::Example;
 use state::Ui;
@@ -74,9 +72,9 @@ pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsVa
     let examples: Vec<Example> = serde_wasm_bindgen::from_value(examples)?;
     BOOT.with_borrow_mut(|b| *b = Some(machine));
     EXAMPLES.with_borrow_mut(|e| *e = examples);
-    // (The tests, for the driver; the kernel's take the Machine instead: uitest.rs.)
+    // (The tests, for the native Chromium driver; the kernel test takes the Machine directly.)
     #[cfg(feature = "selftest")]
-    if let Some(name) = uitest::start() {
+    if let Some(name) = test::start() {
         if name == "kernel" {
             return Ok(());
         }

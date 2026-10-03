@@ -1,198 +1,16 @@
-//! The tests, run in the page built with them (target/test/site, in
-//! headless Chromium: `ksee test`, crates/ksee-cli/src/chrome.rs): the
-//! kernel's (selftest.rs), and the page's: what a user does, through its
-//! DOM, and what it shows then. Each returns a report, or why it failed.
+//! Page behavior exercised through its rendered DOM.
 
-use js_sys::Promise;
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::JsFuture;
-use web_sys::{Document, Element, Event, EventInit, HtmlElement, HtmlInputElement, HtmlTextAreaElement, KeyboardEvent, KeyboardEventInit,
-              MouseEvent, MouseEventInit, PointerEvent, PointerEventInit};
+use web_sys::{HtmlElement, HtmlInputElement, HtmlTextAreaElement};
 
-/// The test the URL names (`#…test=NAME`, set by chrome.rs), started: its
-/// outcome POSTed to the server's /result, `ok` or `fail` then its log.
-pub fn start() -> Option<String> {
-    let hash = web_sys::window()?.location().hash().ok()?;
-    let name = hash.trim_start_matches('#').split('&').find_map(|kv| kv.strip_prefix("test="))?.to_string();
-    let run = name.clone();
-    wasm_bindgen_futures::spawn_local(async move {
-        let body = match run_test(run).await {
-            Ok(report) => format!("ok\n{report}"),
-            Err(e) => format!("fail\n{}", e.as_string().unwrap_or_default()),
-        };
-        let init = web_sys::RequestInit::new();
-        init.set_method("POST");
-        init.set_body(&body.into());
-        let _ = JsFuture::from(web_sys::window().unwrap().fetch_with_str_and_init("/result", &init)).await;
-    });
-    Some(name)
-}
-
-/// Test `name` (kernel, read, back, pipe, phone; the page each needs
-/// opened: chrome.rs): its report, or an error saying what failed.
-async fn run_test(name: String) -> Result<String, JsValue> {
-    let r = match name.as_str() {
-        "kernel" => kernel().await,
-        "read" => read().await,
-        "back" => back().await,
-        "pipe" => pipe().await,
-        "phone" => phone().await,
-        _ => Err(format!("no test {name}")),
-    };
-    r.map_err(|e| JsValue::from_str(&e))
-}
-
-type Check = Result<String, String>;
-
-fn doc() -> Document {
-    web_sys::window().and_then(|w| w.document()).expect("a document")
-}
-
-fn all(sel: &str) -> Vec<Element> {
-    let list = doc().query_selector_all(sel).expect("a selector");
-    (0..list.length()).filter_map(|k| list.item(k)?.dyn_into().ok()).collect()
-}
-
-fn one(sel: &str) -> Option<Element> {
-    doc().query_selector(sel).ok().flatten()
-}
-
-fn text(e: &Element) -> String {
-    e.text_content().unwrap_or_default()
-}
-
-/// The first of `sel` whose text is `t`.
-fn named(sel: &str, t: &str) -> Option<Element> {
-    all(sel).into_iter().find(|e| text(e) == t)
-}
-
-async fn sleep(ms: i32) {
-    let p = Promise::new(&mut |done, _| {
-        let _ = web_sys::window().unwrap().set_timeout_with_callback_and_timeout_and_arguments_0(&done, ms);
-    });
-    let _ = JsFuture::from(p).await;
-}
-
-/// Wait until `f` holds, checking every 100 ms, `n` times at most.
-async fn until(f: impl Fn() -> bool, n: usize) -> bool {
-    for _ in 0..n {
-        if f() {
-            return true;
-        }
-        sleep(100).await;
-    }
-    f()
-}
-
-fn click(e: &Element) {
-    if let Some(h) = e.dyn_ref::<HtmlElement>() {
-        h.click();
-    }
-}
-
-fn mouse(e: &Element, kind: &str, x: f64, y: f64, shift: bool) {
-    let init = MouseEventInit::new();
-    init.set_bubbles(true);
-    init.set_client_x(x as i32);
-    init.set_client_y(y as i32);
-    init.set_shift_key(shift);
-    let _ = e.dispatch_event(&MouseEvent::new_with_mouse_event_init_dict(kind, &init).unwrap());
-}
-
-fn pointer(e: &Element, kind: &str, x: f64, y: f64) {
-    let init = PointerEventInit::new();
-    init.set_bubbles(true);
-    init.set_client_x(x as i32);
-    init.set_client_y(y as i32);
-    let _ = e.dispatch_event(&PointerEvent::new_with_event_init_dict(kind, &init).unwrap());
-}
-
-fn key(e: &Element, k: &str) {
-    let init = KeyboardEventInit::new();
-    init.set_bubbles(true);
-    init.set_key(k);
-    let _ = e.dispatch_event(&KeyboardEvent::new_with_keyboard_event_init_dict("keydown", &init).unwrap());
-}
-
-fn input(e: &Element) {
-    let init = EventInit::new();
-    init.set_bubbles(true);
-    let _ = e.dispatch_event(&Event::new_with_event_init_dict("input", &init).unwrap());
-}
-
-/// The program's lines (not the one that adds a line): their text and what each did.
-fn cells() -> Vec<(String, String)> {
-    all("ol.steps > li:not(.add) .cell").iter().map(|c| {
-        let t = c.query_selector("textarea").ok().flatten().and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok()).map(|t| t.value());
-        let r = c.query_selector(".ret").ok().flatten().map(|r| text(&r));
-        (t.unwrap_or_default(), r.unwrap_or_default())
-    }).collect()
-}
-
-/// The first `n` lines made, each with what it did.
-fn done(n: usize) -> bool {
-    let c = cells();
-    c.len() >= n && c[..n].iter().all(|(_, r)| !r.is_empty() && r != "…")
-}
-
-/// Where the cursor is, as the transport says ("task · func file:line · in call"): "func file:line".
-fn place() -> String {
-    one(".transport .where").map(|w| text(&w)).and_then(|t| t.split(" · ").nth(1).map(String::from)).unwrap_or_default()
-}
-
-/// A click on a transport button (Shift held: over the calls).
-fn press(label: &str, shift: bool) {
-    if let Some(b) = named(".transport button", label) {
-        mouse(&b, "click", 0.0, 0.0, shift);
-    }
-}
-
-/// A line's text changed and Enter pressed.
-fn write(ta: &Element, t: &str) {
-    let Some(a) = ta.dyn_ref::<HtmlTextAreaElement>() else { return };
-    let _ = a.focus();
-    a.set_value(t);
-    let _ = a.set_selection_range(t.len() as u32, t.len() as u32);
-    input(ta);
-    key(ta, "Enter");
-}
-
-fn fail(what: &str, detail: impl std::fmt::Debug) -> String {
-    format!("{what}: {detail:?}")
-}
-
-/// Check `ok`, else fail saying `what` and `detail`.
-fn check(ok: bool, what: &str, detail: impl std::fmt::Debug) -> Result<(), String> {
-    if ok { Ok(()) } else { Err(fail(what, detail)) }
-}
-
-/// A tab chosen.
-async fn tab(name: &str) {
-    if let Some(t) = named(".tabs .tab", name) {
-        click(&t);
-    }
-    sleep(300).await;
-}
-
-/// Wait for `f`, at most `n` checks; then check it.
-async fn wait(f: impl Fn() -> bool, n: usize, what: &str, detail: impl Fn() -> String) -> Result<(), String> {
-    let ok = until(f, n).await;
-    check(ok, what, detail())
-}
-
-/// The kernel's tests (selftest.rs), on the Machine `mount` was given,
-/// once booted (the page not mounted: #selftest).
-async fn kernel() -> Check {
-    crate::boot().await?;
-    crate::selftest::self_test().await.map(|()| "passed".into())
-}
+use super::dom::*;
+use super::Check;
 
 /// The read example (#ex=read): its calls made, its subject (the read)
 /// selected; its links followed; stepping into, over, out, and by key; the
 /// chart (a click, find); Objects and Tasks; a line changed, a
 /// try and back; the next lesson.
-async fn read() -> Check {
+pub(super) async fn read() -> Check {
     let mut r = Vec::new();
     wait(|| done(3) && !all(".chart .bar").is_empty(), 300, "the calls made", || format!("{:?}", cells())).await?;
     let selected = one(".cell.on textarea").and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok()).map(|t| t.value()).unwrap_or_default();
@@ -291,7 +109,7 @@ async fn read() -> Check {
 
 /// The page opened with a program changed (the URL's p=): its lines made,
 /// said to be a try, and the lesson's own program a click away.
-async fn back() -> Check {
+pub(super) async fn back() -> Check {
     wait(|| done(2), 300, "the program made", || format!("{:?}", cells())).await?;
     let note = one(".explain.dim").map(|n| text(&n)).unwrap_or_default();
     let c = cells();
@@ -302,7 +120,7 @@ async fn back() -> Check {
 /// The pipe example (two processes: the program, and a child sharing its
 /// memory, with fds of its own): the child's read blocked, finished as the
 /// program's write woke it; what each call changed; both tasks in the strip.
-async fn pipe() -> Check {
+pub(super) async fn pipe() -> Check {
     wait(|| done(7) && !all(".strip .run").is_empty(), 300, "the calls made", || format!("{:?}", cells())).await?;
     let c = cells();
     let changed: Vec<String> = all(".cell .more").iter().map(text).collect();
@@ -320,7 +138,7 @@ async fn pipe() -> Check {
 /// The read example on a phone's screen (390x844): the lesson, then the
 /// chart, the source, the panels, one under another, the page never wider
 /// than the screen; ▶ steps.
-async fn phone() -> Check {
+pub(super) async fn phone() -> Check {
     wait(|| done(3) && !all(".chart .bar").is_empty(), 300, "the calls made", || format!("{:?}", cells())).await?;
     let top = |s: &str| one(s).map(|e| e.get_bounding_client_rect().top()).unwrap_or(f64::NAN);
     let order = top(".lesson") < top(".chart") && top(".chart") < top(".source") && top(".source") < top(".panels");

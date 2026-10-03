@@ -1,5 +1,5 @@
 //! The kernel's tests, in the page's module (feature `selftest`: `ksee
-//! test` builds it and runs them in Chromium, see uitest.rs): the program makes syscalls, recorded, as
+//! test` builds it and runs them in Chromium): the program makes syscalls, recorded, as
 //! the page's lessons do, and the checks are of what the recordings show,
 //! through the views the page uses; then every lesson and try, on a fresh
 //! kernel each, its calls finished and its links found.
@@ -15,7 +15,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use ksee_runtime::Finished;
-use ksee_core::text::{self, Piece};
+use ksee_core::text::{self, LessonTarget, Piece};
 use crate::lesson::Step;
 
 fn log(s: &str) {
@@ -152,7 +152,7 @@ fn value(o: Option<&Object>) -> String {
 /// Run the tests on the booted Machine, with the lessons (both as `mount`
 /// was given them: the page not mounted, see lib.rs): whether all passed
 /// (each check is logged, "ok: …" or "FAIL: …").
-pub async fn self_test() -> Result<(), String> {
+pub(super) async fn run() -> Result<(), String> {
     let examples = crate::examples();
     let mut t = T { m: crate::machine(), failures: Vec::new(), out: String::new(), fin: BTreeMap::new() };
     let m = t.m.clone();
@@ -423,19 +423,21 @@ pub async fn self_test() -> Result<(), String> {
         for p in &ex.text {
             for x in text::pieces(p) {
                 let Piece::Link { target, .. } = x else { continue };
-                let parts: Vec<&str> = target.split(':').collect();
-                let Ok(n) = parts[0].parse::<usize>() else { continue };
-                // (N, N:func, N:func:any: as the page goes there; with a tab, not checked.)
-                let (func, any) = match parts.as_slice() {
-                    [_] => (None, false),
-                    [_, f] => (Some(*f), false),
-                    [_, f, "any"] => (Some(*f), true),
-                    _ => continue,
+                let found = match LessonTarget::parse(&target) {
+                    Ok(LessonTarget::Try { index }) => ex.tries.get(index - 1).is_some(),
+                    Ok(LessonTarget::Recording { call, function, any_task, .. }) => {
+                        let s = calls.get(call - 1).copied().flatten().and_then(|id| t.syscall(id));
+                        s.as_ref().is_some_and(|s| function.as_ref().is_none_or(|f|
+                            m.first_call(f, s.first, t.last(s), (!any_task).then_some(s.task.addr)).is_some()
+                        ))
+                    }
+                    Err(e) => {
+                        missing.push(format!("{target} ({e:?})"));
+                        continue;
+                    }
                 };
-                let s = calls.get(n - 1).copied().flatten().and_then(|id| t.syscall(id));
-                let found = s.as_ref().is_some_and(|s| func.is_none_or(|f| m.first_call(f, s.first, t.last(s), (!any).then_some(s.task.addr)).is_some()));
                 if !found {
-                    missing.push(target.clone());
+                    missing.push(target);
                 }
             }
         }

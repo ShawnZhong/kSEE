@@ -133,8 +133,10 @@ runtime's WebAssembly module and calls `Machine` directly.
 | `panels.rs` | Stack, Tasks, Objects, and Console tabs. |
 | `layout.rs` | Resizable panes and persisted dimensions. |
 | `state.rs` | Cursor, preview, selected frame, chart window, tabs, lesson program, and derived views. |
-| `selftest.rs` | Kernel and reconstruction checks compiled into the test module. |
-| `uitest.rs` | Browser-level page interaction suites. |
+| `test/kernel.rs` | Kernel and reconstruction integration checks. |
+| `test/ui.rs` | Browser-level page interaction suites. |
+| `test/dom.rs` | DOM queries, synthetic input, waiting, and assertions shared by UI suites. |
+| `test/mod.rs` | URL dispatch and result reporting to the native Chromium driver. |
 
 The central state is the selected syscall, the reconstructed line cursor, and
 the selected stack frame. A chart hover supplies a temporary preview. Dioxus
