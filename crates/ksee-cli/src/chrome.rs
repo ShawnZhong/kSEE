@@ -1,5 +1,6 @@
-//! `ksee test` in headless Chromium ($CHROME), without its debugging
-//! protocol: the page under `#test=NAME` runs its test and POSTs `ok` or
+//! `ksee test` in an auto-detected headless Chromium (`$CHROME` overrides),
+//! without its debugging protocol: the page under `#test=NAME` runs its test
+//! and POSTs `ok` or
 //! `fail` and its log to the server's /result.
 
 use std::net::TcpListener;
@@ -22,15 +23,39 @@ const SCREEN: (u32, u32) = (1500, 900);
 // (Raw in the URL: the JSON holds no & or %; the page decodes it.)
 const BACK: &str = r#"["int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)","write(fd, \"changed;\\n\", 9)"]"#;
 
-/// Chromium ($CHROME), headless, with `args`; and its profile dir, for the
-/// caller to remove once it is gone.
+/// The requested Chromium, or one in a standard location.
+fn browser() -> PathBuf {
+    if let Some(bin) = std::env::var_os("CHROME").filter(|p| !p.is_empty()) {
+        return bin.into();
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            for name in ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"] {
+                let bin = dir.join(name);
+                if bin.is_file() {
+                    return bin;
+                }
+            }
+        }
+    }
+    for bin in ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Chromium.app/Contents/MacOS/Chromium"] {
+        if Path::new(bin).is_file() {
+            return bin.into();
+        }
+    }
+    fail("no Chrome or Chromium found; set CHROME to its executable")
+}
+
+/// Chromium, headless, with `args`; and its profile dir, for the caller to
+/// remove once it is gone.
 fn launch(args: &[String]) -> (Child, PathBuf) {
-    let bin = std::env::var("CHROME").unwrap_or_else(|_| fail("set CHROME to a (headless) Chromium binary"));
+    let bin = browser();
     let dir = std::env::temp_dir().join(format!("ksee-chrome-{}", std::process::id()));
-    let child = Command::new(bin).args(["--headless=new", "--no-sandbox", "--no-first-run",
+    let child = Command::new(&bin).args(["--headless=new", "--no-sandbox", "--no-first-run",
             &format!("--user-data-dir={}", dir.display())]).args(args)
         .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
-        .unwrap_or_else(|e| fail(&format!("$CHROME: {e}")));
+        .unwrap_or_else(|e| fail(&format!("{}: {e}", bin.display())));
     (child, dir)
 }
 

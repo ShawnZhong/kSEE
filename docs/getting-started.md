@@ -94,16 +94,17 @@ runtime use one thread and one non-shared WebAssembly memory.
 
 ## Run tests
 
-Browser tests require a Chromium-compatible executable in `CHROME`:
+Browser tests find Chrome or Chromium on `PATH`, or in their standard macOS
+application locations. Set `CHROME` to override the detected executable:
 
 ```sh
-CHROME=/absolute/path/to/chromium ./ksee.sh test
+./ksee.sh test
 CHROME=/absolute/path/to/chromium ./ksee.sh test --ui
 ```
 
-The path may name Chromium, Chrome, or another compatible binary that accepts
-Chromium's headless flags. `setup.sh` intentionally leaves browser installation
-to you.
+The override may name Chromium, Chrome, or another compatible binary that
+accepts Chromium's headless flags. `setup.sh` intentionally leaves browser
+installation to you.
 
 The default test command runs native `ksee-core` and `ksee-cli` tests first,
 then performs a full build and runs the kernel/browser self-test. `--ui` adds

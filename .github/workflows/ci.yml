@@ -19,11 +19,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Install Rust/Wasm tools
         run: ./setup.sh --rust-only
-      - name: Build CLI
-        run: cargo build --locked --release -p ksee-cli
       - name: Test kernel
         env:
           KSEE_CACHED_LINUX: ${{ steps.linux_cache.outputs.cache-hit }}
-        run: |
-          export CHROME="$(command -v google-chrome)"
-          ./target/release/ksee test
+        run: ./ksee.sh test
