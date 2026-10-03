@@ -481,14 +481,16 @@ index 000000000..60c2dca56
 +#endif
 diff --git a/arch/wasm/include/asm/syscall.h b/arch/wasm/include/asm/syscall.h
 new file mode 100644
-index 000000000..d0ed379a9
+index 000000000..61fb36c67
 --- /dev/null
 +++ b/arch/wasm/include/asm/syscall.h
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,49 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +#ifndef _ASM_WASM_SYSCALL_H
 +#define _ASM_WASM_SYSCALL_H
 +
++#include <uapi/linux/audit.h>
++#include <linux/err.h>
 +#include <linux/sched.h>
 +
 +typedef long (*syscall_fn_t)(const struct pt_regs *regs);
@@ -1654,16 +1656,17 @@ index 000000000..f09592941
 +obj-y := uaccess.o
 diff --git a/arch/wasm/lib/delay.c b/arch/wasm/lib/delay.c
 new file mode 100644
-index 000000000..4057f912d
+index 000000000..d2275c7ea
 --- /dev/null
 +++ b/arch/wasm/lib/delay.c
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,27 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Delays spin on the host's clock (one thread: nothing to sleep on; there
 + * is no cycle counter).
 + */
 +#include <linux/delay.h>
++#include <linux/math64.h>
 +#include <asm/wasm.h>
 +
 +void __ndelay(unsigned long nsecs)
