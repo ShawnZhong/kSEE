@@ -182,7 +182,7 @@ bool runsProbes(const CallBase &CB) {
 
 class KseeTrace : public PassInfoMixin<KseeTrace> {
   Module *M = nullptr;
-  Type *i32 = nullptr, *i64 = nullptr;
+  Type *i32 = nullptr;
   // The writers: a record's head pair [a, tag] and k values after it; a
   // store of 1, 2, 4 or 8 bytes at an address (the old value, read while
   // recording only), and one that copies (where from, after).
@@ -292,7 +292,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         body(F, true, [&, F](IRBuilder<> &B, auto &w, auto value) {
           Value *addr = F->getArg(0);
           Value *old = B.CreateZExt(B.CreateAlignedLoad(IntegerType::get(C, 8 << k),
-                                                        B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1)), i64);
+                                                        B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1)), B.getInt64Ty());
           w.push_back(addr);
           w.push_back(B.CreateOr(B.getInt32(tag(Kind::Store, k)), B.CreateShl(F->getArg(1), 4)));
           value(B.CreateTrunc(old, i32));
@@ -362,7 +362,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   // 32 bits.
   void words(IRBuilder<> &B, Value *V, SmallVectorImpl<Value *> &out) {
     if (V->getType()->isIntegerTy() && V->getType()->getIntegerBitWidth() > 32) {
-      Value *v = B.CreateZExtOrTrunc(V, i64);
+      Value *v = B.CreateZExtOrTrunc(V, B.getInt64Ty());
       out.push_back(B.CreateTrunc(v, i32));
       out.push_back(B.CreateTrunc(B.CreateLShr(v, 32), i32));
     } else if (V->getType()->isPointerTy()) {
@@ -560,9 +560,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   void instrument(Function &F) {
     uint32_t id = fnId(F.getName(), F.hasLocalLinkage(), *M);
     DISubprogram *SP = F.getSubprogram();
-    SmallVector<BasicBlock *> blocks;
-    for (BasicBlock &BB : F)
-      blocks.push_back(&BB);
 
     // The source's parameters: the value each has at entry (an argument, or
     // a constant the optimizer put in its place), from the debug records
@@ -606,10 +603,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     // stays right for the sets too.)
     DominatorTree DT(F);
     bool seal = sealed(F, DT, writes);
-    for (auto [n, BB] : enumerate(blocks)) {
+    unsigned n = 0;
+    for (BasicBlock &BB : F) {
       if (seal && n > 0)
         break;
-      IRBuilder<> B(&*BB->getFirstInsertionPt());
+      IRBuilder<> B(&*BB.getFirstInsertionPt());
       // (The entry block's is the call: its arguments follow.)
       SmallVector<Value *, Values> args;
       for (Value *p : n == 0 ? params : SmallVector<Value *, CallArgs>{})
@@ -622,7 +620,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       record(B, B.getInt32(id), tag(Kind::Block, n), args);
       // (The entry block starts at the function's signature: entering a
       // call stops there, with its arguments, before its first statement.)
-      probes += ("L\t" + Twine(id) + "\t" + Twine(n) + "\t" + blockLines(*BB, n == 0 ? SP : nullptr) + "\n").str();
+      probes += ("L\t" + Twine(id) + "\t" + Twine(n) + "\t" + blockLines(BB, n == 0 ? SP : nullptr) + "\n").str();
+      n++;
     }
 
     // (The variables first: one set just before a return is recorded
@@ -630,8 +629,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     if (!seal)
       recordSets(F, DT, id, SP, params, sets);
 
-    for (BasicBlock *BB : blocks)
-      if (auto *R = dyn_cast<ReturnInst>(BB->getTerminator())) {
+    for (BasicBlock &BB : F)
+      if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator())) {
         // (A musttail call must stay right before its return.)
         Instruction *at = R;
         if (auto *C = dyn_cast_or_null<CallInst>(R->getPrevNode()); C && C->isMustTailCall())
@@ -649,23 +648,25 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     // (A comparison deciding a branch: its operands, after it; its
     // predicate and line in its tag. Not in a sealed function: its inside
     // is a box.)
-    for (ICmpInst *C : seal ? SmallVector<ICmpInst *>{} : compares) {
-      IRBuilder<> B(C->getNextNode());
-      unsigned line = std::min(lineOf.lookup(C), (1u << 24) - 1), pred = C->getPredicate() - CmpInst::FIRST_ICMP_PREDICATE;
-      // (Its operands, 32 bits each; wider, their high words after.)
-      // (A signed one's narrow operands sign-extended: -1 as -1, not 255.)
-      auto operand = [&](unsigned k) {
-        Value *v = C->getOperand(k);
-        bool narrow = v->getType()->isIntegerTy() && v->getType()->getIntegerBitWidth() < 32;
-        return C->isSigned() && narrow ? B.CreateSExt(v, i32) : v;
-      };
-      SmallVector<Value *, 2> l, r;
-      words(B, operand(0), l);
-      words(B, operand(1), r);
-      SmallVector<Value *, 3> rest{r[0]};
-      if (l.size() > 1)
-        rest.append({l[1], r[1]});
-      record(B, l[0], tag(Kind::Compare, line << 4 | pred), rest);
+    if (!seal) {
+      for (ICmpInst *C : compares) {
+        IRBuilder<> B(C->getNextNode());
+        unsigned line = std::min(lineOf.lookup(C), (1u << 24) - 1), pred = C->getPredicate() - CmpInst::FIRST_ICMP_PREDICATE;
+        // (Its operands, 32 bits each; wider, their high words after.)
+        // (A signed one's narrow operands sign-extended: -1 as -1, not 255.)
+        auto operand = [&](unsigned k) {
+          Value *v = C->getOperand(k);
+          bool narrow = v->getType()->isIntegerTy() && v->getType()->getIntegerBitWidth() < 32;
+          return C->isSigned() && narrow ? B.CreateSExt(v, i32) : v;
+        };
+        SmallVector<Value *, 2> l, r;
+        words(B, operand(0), l);
+        words(B, operand(1), r);
+        SmallVector<Value *, 3> rest{r[0]};
+        if (l.size() > 1)
+          rest.append({l[1], r[1]});
+        record(B, l[0], tag(Kind::Compare, line << 4 | pred), rest);
+      }
     }
 
     unsigned wide = 0;
@@ -681,7 +682,6 @@ public:
   PreservedAnalyses run(Module &Mod, ModuleAnalysisManager &) {
     M = &Mod;
     i32 = Type::getInt32Ty(Mod.getContext());
-    i64 = Type::getInt64Ty(Mod.getContext());
     SmallVector<Function *> todo;
     for (Function &F : Mod)
       if (!F.isDeclaration() && !F.getName().starts_with("__ksee_"))
