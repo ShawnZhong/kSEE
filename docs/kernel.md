@@ -1,15 +1,13 @@
 # The kernel: arch/wasm
 
-Linux 7.2 compiled to WebAssembly, with nothing emulated: `arch/wasm` is
-a minimal architecture port, kept as linux.patch (a patch to the stable
-tree's v7.2.7, which the build fetches into linux/ and applies it to),
-and almost everything else is the generic kernel. Outside arch/wasm the
-port touches five build files, 36 lines (no modpost or scripts/mod on
-wasm; its clang target; no NUL strip of modules.builtin.modinfo; macOS's
-missing copy_file_range; the initramfs's section flags).
+Linux stable `v7.2.7` is compiled directly to WebAssembly, with nothing
+emulated. `arch/wasm` is a minimal architecture port kept in `linux.patch`;
+the build fetches that stable release into `linux/` and applies the patch.
+Almost everything else is generic kernel code. Outside `arch/wasm`, the patch
+contains only build and portability changes required by the port.
 
 The configuration: wasm32, no MMU, one CPU, an initramfs, a console
-(output), a timer; the block layer, the loop device and ext4; io_uring.
+(output), a timer; the block layer, the loop device and ext4.
 
 ## Tasks: stacks the host suspends
 

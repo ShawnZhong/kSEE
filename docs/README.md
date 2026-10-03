@@ -1,35 +1,41 @@
-# kSEE docs
+# kSEE documentation
 
-- [design.md](design.md): the goal, the experience, how it works, limits.
+Use this page as the documentation map. The root [README](../README.md) gives a
+short system overview and a minimal way to run kSEE.
 
-How it works, part by part:
+## Start here
 
-- [kernel.md](kernel.md): Linux on wasm (arch/wasm): tasks as suspended stacks (JSPI),
-  interrupts and the virtual clock, programs in kernel memory, threads and
-  vfork, /init, the program and the runners that make the page's syscalls, a disk, the
-  console.
-- [recording.md](recording.md): what the compiler records, the ring, and
-  what the kernel says about itself.
-- [replay.md](replay.md): rebuilding the past from the records: tasks,
-  stacks, lines and stepping, syscalls, memory as it was, going back.
-- [runtime.md](runtime.md): the runtime (one wasm module in the kernel's
-  memory), the page, the tests.
+- [Getting started](getting-started.md): prerequisites, setup, build, serve,
+  browser support, testing, and troubleshooting.
+- [User guide](user-guide.md): lessons, the timeline, source, stacks, tasks,
+  objects, console output, and navigation.
+- [Lesson authoring](lesson-authoring.md): lesson JSON, recording links, tries,
+  task steps, expressions, course ordering, and fixtures.
+- [Development](development.md): repository layout, build pipeline, commands,
+  generated files, page internals, tests, and the Linux patch workflow.
 
-The build and the commands:
+A newcomer who wants to understand the implementation should read
+[the design](design.md), then [the recording](recording.md),
+[replay](replay.md), and [the runtime](runtime.md). Read the kernel port when
+you need the WebAssembly execution model or Linux-specific details.
 
-- `ksee.sh` builds the `ksee` command (crates/ksee-cli), then runs it:
-  `ksee` builds and serves the page; `ksee build` builds (the kernel, the
-  runtime and page, the programs, into target/site/);
-  `./setup.sh` installs what it needs (LLVM, GNU make and sed, mkfs.ext4,
-  Rust + its wasm target; Chromium in $CHROME for the tests).
-- `ksee test [--ui]`: the kernel's tests, the page's too with `--ui`
-  ([runtime.md](runtime.md): what each checks); `ksee patch` writes linux.patch from linux/
-  ([kernel.md](kernel.md): the port); the build's pack prepares the kernel for
-  the page ([recording.md](recording.md): what it adds).
+## Architecture
 
-Background:
+- [Design](design.md): goals, boundaries, system flow, rationale, and limits.
+- [Kernel](kernel.md): Linux `arch/wasm`, task stacks, virtual time, programs,
+  runners, storage, and the host interface.
+- [Recording](recording.md): LLVM instrumentation, runtime records, the trace
+  ring, and packed kernel metadata.
+- [Replay](replay.md): reconstruction of tasks, stacks, source lines, memory,
+  origins, objects, and chart data.
+- [Runtime](runtime.md): shared memory, kernel boot, JSPI scheduling, the runner
+  protocol, snapshots, and the page/runtime boundary.
 
-- [ideas.md](ideas.md): what was proposed and is still open, each a line
-- [research.md](research.md): directions surveyed and not built
-  (counterfactual execution, ext4 feasibility numbers), so they are not
-  re-done.
+## Historical notes
+
+These pages preserve earlier exploration. They are not current roadmaps or
+authoritative descriptions of kSEE:
+
+- [Ideas archive](archive/ideas.md): historical open and obsolete ideas.
+- [Research archive](archive/research.md): preliminary survey notes and project
+  proposals from September 2026.

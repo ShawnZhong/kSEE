@@ -1,21 +1,28 @@
 # Rebuilding the past
 
-The host rebuilds everything the page shows from the records alone
-(crates/ksee-core: `recording.rs`, `stack.rs`, `mem.rs`), with no help
-from the kernel. Each snapshot decodes the ring into a `Recording`;
-`view/` turns it into what the page shows (`frames.rs`: lines and the
-Stack; `stores.rs`: stores named, the notes, who wrote a value;
-`objects.rs`: what a call did; `value.rs`: a value as the page shows it).
+The host rebuilds what the page shows from trace records, packed kernel
+metadata, and memory at the end of the snapshot (`ksee-core`:
+`recording.rs`, `stack.rs`, `mem.rs`). Each snapshot decodes the ring into a
+`Recording`; `view/` turns it into named page data (`frames.rs`: lines and the
+Stack; `stores.rs`: named stores, notes, and writers; `objects.rs`: what a
+call changed; `value.rs`: typed values).
+
+The live kernel does not answer replay queries. It supplies the final memory
+image and the metadata packed into its WebAssembly module; core applies the
+recorded history to those inputs.
 
 ## Which task ran
 
-Records do not say which task wrote them. The running task changes at
-known places, so a pass over the records tracks it:
+The first record of a requested syscall is a runtime-generated `Task` record
+containing the running `task_struct` address. A pass over the later records
+then tracks changes in order:
 
-- a call of `__switch_to(prev, next)` notes `next`; the task changes when
-  that call **returns** (on the next task's stack);
-- a new task starts in `task_entry(p)` (its `__wasm_export` name);
-- before the first switch, its `prev` ran.
+- a `Task` record sets the running task directly and clears any pending switch;
+- a call of `__switch_to(prev, next)` notes `next`, and the task changes when
+  that call **returns** on the next task's stack;
+- a new task starts in `task_entry(p)` (its `__wasm_export` name); and
+- if an older or truncated recording begins before an identifying record, the
+  `prev` argument of its first observed switch fills the unknown prefix.
 
 Who a task was (pid, comm) comes from its task_struct as memory was at
 the record it is named at: a task renamed later is named as it was then.
@@ -71,8 +78,25 @@ line before it returns says what it returned (`ret`): the optimizer
 leaves `return x;` no code of its own (its value joins the function's one
 exit, whose line is the closing brace), so that is where the page shows
 it. A store's line is the one it says, in the block its task is in.
-`run_of` finds the next (or last) record whose block runs a given line:
-"run to a line".
+The run-to-line lookup finds the next or previous reconstructed step for a
+given source line.
+
+## Records, line steps, and chart columns
+
+These are related but not interchangeable units:
+
+- A **raw record** is one decoded ring event: a block, task, return, store,
+  comparison, or variable update.
+- A **line step** is reconstructed from a block's ordered source lines and the
+  calls between its stretches. One block record can therefore yield several
+  steps, while store and comparison records refine positions within them.
+- A **chart column** samples a line step from the requested step window. The
+  chart uses a fixed column count, so it can omit steps from a wide window or
+  repeat positions in a narrow one.
+
+The timeline's axis is reconstructed steps. A column still carries the raw
+record and the line ordinal within that record's stretch so the page can map a
+hover or click back to a cursor moment.
 
 ## Inlined code
 

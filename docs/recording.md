@@ -1,10 +1,11 @@
 # The recording
 
-What the kernel does is recorded by the compiler: plugin/ksee-trace.cpp, an
-LLVM pass plugin, instruments every kernel function the same way, with no
-settings and no list of functions, and writes one ring of records. The
-format is specified at the top of the plugin; ksee-core's trace.rs decodes
-it.
+Most of what the kernel does is recorded by the compiler:
+`plugin/ksee-trace.cpp`, an LLVM pass plugin, instruments every kernel
+function the same way, with no settings and no list of functions. The runtime
+adds the initial task and host-side stores to the same ring. The format is
+specified at the top of the plugin and extended by the shared tags in
+`ksee-core`; `trace.rs` decodes it.
 
 ## What is recorded
 
@@ -63,6 +64,7 @@ ring may have overwritten the start of a record) and skip to the next head:
 | Pair | Record |
 |---|---|
 | `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments, then its frame base |
+| `[task, 3<<28]` | the `task_struct` address running when a requested syscall's recording begins |
 | `[fn, 4<<28]` | a return from fn; the value follows (low, then high for one wider than 32 bits) |
 | `[lhs, 6<<28 \| line<<4 \| p]` | a comparison deciding a branch (or a select), on its block's line `line`: lhs, then rhs follows (for 64-bit ones, then lhs's high word, rhs's); p its predicate (LLVM's icmp's, from eq) |
 | `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows; k = 7: a range whose old contents are not logged, followed by its length; then, if it copies, where its bytes come from |
@@ -71,9 +73,16 @@ ring may have overwritten the start of a record) and skip to the next head:
 
 `fn` is a hash of the function's name (for one local to its file, of
 "file:name"). `pos` counts words ever written and is stored with release
-order after each record, so a reader sees whole records. One writer at a
-time: the kernel is uniprocessor. The host's runtime writes records too:
-stores, for its own writes into kernel memory.
+order after each record, so a reader sees whole records. One writer runs at a
+time because the kernel is uniprocessor.
+
+Block, return, comparison, variable, and instrumented store records come from
+the LLVM pass. The runtime emits a `Task` record immediately when
+`ksee.begin` starts a requested syscall recording, before enabling full
+probes. It also emits store records for host writes into kernel memory, such
+as a runner request or lesson variable. The initial task record identifies a
+recording that may contain no preceding context switch; later task changes
+are inferred from kernel call and return records.
 
 Probes record **only while `on` is nonzero**, at one of two levels. `1`:
 everything, while a runner is between `ksee.begin` and `ksee.end`

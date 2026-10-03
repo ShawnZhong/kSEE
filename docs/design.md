@@ -2,117 +2,171 @@
 
 ## Goal
 
-**kSEE records what the real Linux kernel does, down to every line it runs
-and every value it changes, and lets you explore the recording in time.**
+kSEE answers one question: *what did Linux do here, why, and where in the
+source?*
 
-The question it answers: *what did the kernel do here, why, and where in the
-source?* It runs in a browser, with nothing to install: Linux itself is
-compiled to WebAssembly (no emulator), and instrumented by the compiler.
+It runs an instrumented Linux stable `v7.2.7` kernel in the browser and lets a
+reader revisit the run in both directions. The recording follows basic blocks,
+calls, returns, memory stores, selected named variables, and branch decisions.
+It reconstructs source-line steps, call stacks, historical memory, tasks, and
+changed objects from that trace, packed kernel metadata, and memory at the end
+of the snapshot.
 
-**Who it is for**
+This is detailed coverage, not a claim that every source line or compiler value
+is observable. Optimization, sealed functions, WebAssembly-local
+intermediates, ring capacity, and large bulk stores impose explicit limits.
 
-- *Learners*: how an OS really works, on real Linux instead of a teaching
-  kernel. They start from **examples**, grouped by topic (start here;
-  files, in memory, then on ext4; time; threads and processes): a
-  question ("What is a file descriptor?", "What happens in
-  read()?", "What is a directory?", "How do two processes talk through a
-  pipe?"), a program of a few syscalls that asks it, and a short
-  explanation, with links into the recording. The first two are a first
-  look at kSEE itself, on umask (the smallest syscall that changes
-  something: one field): that it is a real Linux, and a program to change
-  and run again; then stepping through what the kernel did.
-- *Kernel developers*: what a code path really does, on a real kernel they
-  can read and change. They make **their own syscalls**.
+## Readers and boundaries
 
-**What it is not**: a live debugger (it replays; it does not pause the
-kernel), a syscall playground, a profiler, a full Linux system (no MMU, no
-SMP, no fork (threads and vfork, though): see Limits).
+kSEE serves two related readers:
 
-## The experience
+- A learner starts with a short syscall program and an explanation linked to
+  the exact functions and state that answer a question.
+- A kernel developer changes the program or kernel and inspects the real code
+  path and typed state produced by that run.
 
-1. **Make syscalls**, each recorded: an example's program (the page makes
-   them as it opens), changed or added to (calls written as in C). A
-   syscall takes milliseconds.
-2. **Explore the recording**, at one cursor, as in a debugger that goes
-   both ways:
-   - *time*: a timeline of the call stacks (who ran, what they called);
-     step in time (at a level: the lines that deep or shallower, a call's
-     siblings too; or every line) and in
-     depth (the calls above and below), forwards or back; run to a line
-     (its next run, or its last);
-   - *code*: the source line at the cursor, the lines that ran;
-   - *values*: the call stack with each call's arguments and locals,
-     the task running, and a name's value on hover (who last wrote it);
-     memory as it was at the cursor; what a call changed, by object
-     (by task, as a tree), each member from what to what.
-   An example's explanation is prose with links into the recording: a
-   function one of its calls ran, or a call.
+kSEE is not a live debugger. It does not pause and mutate a running kernel; it
+runs until quiet and explores a snapshot. It is not a profiler, a general
+syscall playground, or a full machine. The kernel has no MMU or SMP and does
+not support ordinary `fork`.
 
-```text
-┌──────────────┬──────────────────────────────────────────────┐
-│ Lesson:      │ Timeline: overview · call stacks · tasks     │
-│  question    │ ◀ ▶ step (← → in time, ↑ ↓ in depth)           │
-│  explanation ├───────────────────────────────┬──────────────┤
-│  (linked)    │ Source at the cursor          │ Stack (args, │
-│  program     │ (the lines that ran)          │ locals)      │
-│  (its calls) │                               │ Tasks        │
-│              │                               │ Objects      │
-│              │                               │ Console      │
-└──────────────┴───────────────────────────────┴──────────────┘
+The [user guide](user-guide.md) explains the interface. This document explains
+why the system is shaped as it is.
+
+## System flow
+
+Linux is compiled directly to WebAssembly through `arch/wasm`. No CPU is
+emulated.
+
+```mermaid
+flowchart LR
+    P[LLVM 23 pass] --> K[Linux v7.2.7 wasm]
+    U[Lessons and syscall runners] --> K
+    UI[ksee-page Dioxus UI] --> M[ksee-runtime Machine]
+    M --> K
+    K --> R[Trace ring]
+    R --> S[Snapshot]
+    D[Packed probes, types, symbols, and source] --> C[ksee-core views]
+    S --> C
+    E[End-state memory] --> C
+    C --> UI
 ```
 
-## How it works
+The Rust crate boundaries are:
 
-```text
-linux/ (arch/wasm) ──clang + plugin──▶ vmlinux (wasm) ──────┐
-user/ (/init, the program: plain C; examples)  ─▶ initramfs ┼─▶ site ─▶ browser
-crates/ksee-runtime (Rust → wasm) ──────────────────────────┘
-```
+- `ksee-core` is browser-independent. It decodes records and metadata,
+  reconstructs the recording, parses lesson programs, and exposes named views.
+- `ksee-runtime` owns the outer WebAssembly memory, instantiates Linux in it,
+  schedules JSPI-suspended kernel task stacks, drives syscall runners, and
+  takes snapshots. It depends on `ksee-core`.
+- `ksee-page` is the Dioxus UI in the same outer WebAssembly module as the
+  runtime. It depends on both runtime and core and calls `Machine` directly.
+- `ksee-cli` is the native build tool. It builds and packs the kernel, browser
+  module, programs, lessons, site, and tests; its metadata packer uses core.
 
-- **The kernel** ([kernel.md](kernel.md)): a minimal `arch/wasm` for Linux
-  7.2. One wasm instance, on the page's thread; a task is a call stack of
-  it, which the host suspends and resumes at a context switch (JSPI).
-  /init mounts the disk and starts the program (/bin/prog), which makes
-  the syscalls the page asks for, and so do its threads and children
-  (runners: each waits, in a futex, on the request the page writes into
-  its memory; the doorbell interrupt wakes it).
-- **The recording** ([recording.md](recording.md)): an LLVM pass
-  instruments every function the same way (blocks, calls with their
-  arguments and frame base, returns, stores with old values and where a
-  copy came from, the named variables kept in wasm locals as they are
-  set, the comparisons deciding branches) into one ring, in full while a
-  runner makes the syscall it was asked, stores only in between (so memory
-  as it was stays exact).
-- **Rebuilding the past** ([replay.md](replay.md)): from the records
-  alone, crates/ksee-core rebuilds which task ran, call stacks, lines
-  within blocks, syscalls, and memory as it was at any record.
-- **The runtime and the page** ([runtime.md](runtime.md)): one Rust wasm
-  module, on the kernel's memory, boots the kernel and reads it directly;
-  the page, in it (crates/ksee-page, Dioxus), lays out what the core
-  computes, calling the Machine directly.
-- **The build** (crates/ksee-cli, `./ksee.sh`): the plugin, the kernel,
-  the runtime and the page, the programs, and the page's files (types
-  from DWARF, the sources), with web/ (its frame), into target/site/.
+`web/` supplies the static frame and loader. `/init` and `/bin/prog` are
+freestanding WebAssembly programs inside Linux. The latter waits for requests
+from the page and makes each requested syscall as an ordinary Linux process.
 
-The choices that shape it:
+## Design choices
 
-- **Real Linux, minimal port.** Generic kernel code wherever it works;
-  arch/wasm only where wasm differs.
-- **The compiler records, uniformly.** No tracepoints or per-subsystem
-  hooks, so no part of the kernel is out of view.
-- **Record, then replay.** The kernel is never paused; everything the page
-  shows is rebuilt from a recording, so any moment can be revisited.
-- **Rust does the work, JS lays it out**, and what needs no browser is in
-  ksee-core, tested natively.
+### Real Linux, minimal port
+
+The interesting behavior must be Linux's, not a model's. `arch/wasm` supplies
+only what WebAssembly makes architecture-specific: task-stack suspension,
+interrupt delivery, virtual time, program loading, and the host interface.
+Generic kernel code, the VFS, ext4, the block layer, scheduler, futexes, and
+other subsystems run directly.
+
+### Compiler instrumentation, not subsystem hooks
+
+The LLVM pass instruments functions uniformly. There is no list of interesting
+syscalls, structs, or subsystems. That rule keeps a lesson free to follow an
+unexpected call path and lets new kernel code participate without a dedicated
+tracepoint.
+
+Instrumentation runs after optimization so records describe emitted code.
+Packed DWARF and probe tables reconnect that code to source names, types,
+locations, inline chains, frame offsets, syscalls, and constants.
+
+### Record, then reconstruct
+
+The kernel is not stopped for inspection. During a requested syscall, probes
+append full events to a ring. Between calls, only stores are kept so historical
+memory remains exact. The runtime snapshots the ring when the machine is quiet.
+
+`ksee-core` then combines three inputs:
+
+1. trace records, including the initial task and later task switches;
+2. packed metadata from probes, DWARF, link addresses, and UAPI headers; and
+3. end-state memory, with later stores undone to obtain an earlier moment.
+
+This separation makes replay deterministic and lets most reconstruction logic
+run in native unit tests with made-up records.
+
+### One thread and one memory
+
+The page/runtime module and Linux share one WebAssembly memory. Linux RAM sits
+between the runtime's lower static region and its upper heap. The runtime can
+read kernel objects and the trace ring directly, without workers, messages, or
+a copied memory model.
+
+A Linux task is a suspended call stack of the kernel instance. JSPI lets the
+host suspend that stack at a context switch and resume another. Only one task
+runs at a time, and host code runs while the kernel is suspended.
+
+### Programs make real syscalls
+
+The page does not call a special inspection syscall. It writes a request into
+a runner's program memory and rings a doorbell interrupt. The runner wakes from
+a futex and calls the kernel's ordinary syscall export. Threads and child
+processes can become runners too, so one call may block while another task
+wakes it.
+
+### Rust owns both reconstruction and presentation
+
+Core owns portable reconstruction and interaction rules that do not require a
+browser. Runtime owns kernel execution. Page owns UI state, event handling, and
+rendering. Dioxus renders the page, but the page is not a passive JavaScript
+layout layer: it drives `Machine`, selects snapshots and moments, and asks core
+views for the data it presents.
+
+The contributor-facing module map is in [development.md](development.md).
+
+## Experience
+
+A lesson poses a question, explains a small program, and links its prose into
+the resulting recording. A reader selects a syscall and moves through a
+source-line cursor while the timeline, source, stack, tasks, objects, and
+console remain synchronized. Editing a program reruns it on a fresh,
+deterministic kernel.
+
+The UI distinguishes raw trace records, reconstructed line steps, and sampled
+chart columns. The full workflow and controls are in
+[user-guide.md](user-guide.md).
 
 ## Limits
 
-- No MMU: no page tables, faults, copy-on-write or demand paging; no
-  fork (threads and vfork, which share memory).
-- One CPU; no preemption (the port selects `ARCH_NO_PREEMPT`).
-- Of the values in wasm locals, only the named variables', the
-  comparisons that decide branches and where a copied value came from are
-  recorded, not every intermediate.
-- A recording is a ring: the oldest records go when it is full.
-- No console input; no caught signal handlers (a signal that would stop
-  or kill still does).
+- **No MMU.** There are no page tables, page faults, copy-on-write, demand
+  paging, or independent process address spaces. Ordinary `fork` is absent;
+  threads and `vfork` share memory.
+- **One CPU, no preemption.** The port selects `ARCH_NO_PREEMPT`; it cannot
+  demonstrate SMP races or preemptive scheduling behavior.
+- **Selected values, not every intermediate.** Stores are recorded. Named
+  variables kept in WebAssembly locals, comparisons controlling branches, and
+  copy origins are recorded where available. Unnamed compiler intermediates
+  that remain in locals are not.
+- **Optimized code.** Source can be removed, combined, moved, or inlined by the
+  compiler. The replay follows the emitted code and debug metadata.
+- **Sealed functions.** A loop that calls nothing and writes no memory that
+  replay must undo records its call and return, but not each internal turn.
+- **Finite ring.** Long recordings overwrite their oldest records. Stable
+  record IDs preserve the identity of records still present.
+- **Large bulk writes.** A bulk write beyond the retained limit records its
+  address and length but not all old bytes. Earlier contents of that range
+  cannot be reconstructed exactly.
+- **Output-only console.** There is no console input or tty layer.
+- **Signals.** Signals that stop or kill a task work, but caught signal-handler
+  execution is not supported.
+- **Browser capability.** The execution model requires JSPI through
+  `WebAssembly.Suspending`.

@@ -1,7 +1,9 @@
 # kSEE, for agents
 
-Read [docs/design.md](docs/design.md) first (the goal, and the choices that
+Read [docs/design.md](docs/design.md) first (the goal and the choices that
 shape everything), then the doc for the part you touch ([docs/](docs/README.md)).
+Use [docs/development.md](docs/development.md) for commands, tests, repository
+layout, generated files, and the Linux patch workflow.
 
 - **Simplicity.** Prefer deleting to adding; when a change sprawls, step
   back to the goal. A feature earns its place by what a user gets from it:
@@ -20,9 +22,11 @@ shape everything), then the doc for the part you touch ([docs/](docs/README.md))
   compatibility to keep: nothing outside this repository depends on its
   formats or APIs, so change them all together and drop the old. Ask
   before a new mode, language or dependency.
-- **Rust does the work** in ksee-core, unit-tested on made-up records; the
-  page (crates/ksee-page) only lays out what the Machine and the views
-  return.
+- **Keep the Rust boundaries clear.** ksee-core owns browser-independent
+  decoding, reconstruction, views, and program rules, with native tests on
+  made-up records. ksee-runtime owns the kernel's memory and execution. The
+  Dioxus page drives `Machine` directly and owns UI state and presentation;
+  it does not maintain a second replay model.
 - **The port is linux.patch** (to the stable tree's v7.2.7: the build
   fetches it into linux/ and applies the patch). Change linux/ in
   arch/wasm where possible, elsewhere only what the port needs; `ksee
