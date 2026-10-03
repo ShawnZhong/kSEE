@@ -22,9 +22,8 @@ Linux)
 		echo "setup.sh: Linux setup supports Ubuntu 26.04 (resolute)" >&2
 		exit 1
 	fi
-	s=; [ "$(id -u)" = 0 ] || s=sudo
-	$s apt-get update
-	$s apt-get install -y --no-install-recommends build-essential flex bison bc git curl ca-certificates e2fsprogs gzip clang-22 lld-22 llvm-22-dev
+	sudo apt-get update
+	sudo apt-get install -y --no-install-recommends build-essential flex bison bc git curl ca-certificates e2fsprogs gzip clang-22 lld-22 llvm-22-dev
 	;;
 *)
 	echo "setup.sh: unsupported host: $(uname -s)" >&2
