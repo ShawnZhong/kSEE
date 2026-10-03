@@ -8,19 +8,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
       - name: Restore Linux build cache
+        id: linux_cache
         uses: actions/cache@v4
         with:
           path: |
             linux
             !linux/.git
-          key: linux-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-llvm22-${{ hashFiles('linux.patch', 'plugin/ksee-trace.cpp', 'crates/ksee-cli/src/build.rs') }}
+          key: linux-v2-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-llvm22-${{ hashFiles('linux.patch', 'plugin/ksee-trace.cpp', 'crates/ksee-cli/src/build.rs') }}
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
-      - name: Run Rust unit tests
-        run: cargo test --locked --release -p ksee-core -p ksee-cli
       - name: Install Rust/Wasm tools
         run: ./setup.sh --rust-only
       - name: Build CLI
         run: cargo build --locked --release -p ksee-cli
-      - name: Build site
-        run: ./target/release/ksee build
+      - name: Test kernel
+        env:
+          KSEE_CACHED_LINUX: ${{ steps.linux_cache.outputs.cache-hit }}
+        run: |
+          export CHROME="$(command -v google-chrome)"
+          ./target/release/ksee test

@@ -24,7 +24,7 @@ use std::process::Command;
 use std::sync::LazyLock;
 
 fn brew_prefix(formula: &str) -> String {
-    String::from_utf8_lossy(&output(Command::new("brew").args(["--prefix", formula])))
+    String::from_utf8_lossy(&stdout(Command::new("brew").args(["--prefix", formula])))
         .trim().to_string()
 }
 
@@ -80,31 +80,15 @@ pub fn run(cmd: &mut Command) {
     }
 }
 
-/// Runs `cmd`, said first, for its stdout (its stderr shown, its stdout said
-/// after when short, else its size).
-fn output(cmd: &mut Command) -> Vec<u8> {
+/// Runs `cmd`, said first, and returns its stdout; stderr remains visible.
+fn stdout(cmd: &mut Command) -> Vec<u8> {
     eprintln!("+ {}", line(cmd));
     let out = cmd.stderr(std::process::Stdio::inherit()).output()
         .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", line(cmd))));
     if !out.status.success() {
         crate::fail(&format!("{} failed: {}", line(cmd), out.status));
     }
-    match String::from_utf8(out.stdout) {
-        Ok(s) if s.lines().count() <= 20 => {
-            if !s.is_empty() {
-                eprintln!("{s}");
-            }
-            s.into_bytes()
-        }
-        Ok(s) => {
-            eprintln!("({} bytes)", s.len());
-            s.into_bytes()
-        }
-        Err(e) => {
-            eprintln!("({} bytes)", e.as_bytes().len());
-            e.into_bytes()
-        }
-    }
+    out.stdout
 }
 
 /// The site: what the page loads.
@@ -122,18 +106,23 @@ fn any_stale(outputs: &[&str], inputs: &[&str]) -> bool {
 }
 
 fn check_llvm() {
-    let version = String::from_utf8_lossy(&output(cmd("llvm-config").arg("--version"))).trim().to_string();
+    let version = String::from_utf8_lossy(&stdout(cmd("llvm-config").arg("--version"))).trim().to_string();
     if version.split('.').next() != Some("22") {
         crate::fail(&format!("LLVM 22 is required, found {version}"));
     }
 }
 
-pub fn build() {
-    check_llvm();
-    linux();
+const CACHED_LINUX: &str = "KSEE_CACHED_LINUX";
 
+fn cached_kernel(root: &Path, hit: Option<&str>) -> bool {
+    hit == Some("true") &&
+        ["Makefile", ".config", "vmlinux"].iter().all(|p| root.join(p).is_file()) &&
+        root.join("usr/include").is_dir()
+}
+
+fn trace_plugin() -> (String, std::path::PathBuf) {
     if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
-        let flags = output(cmd("llvm-config").arg("--cxxflags"));
+        let flags = stdout(cmd("llvm-config").arg("--cxxflags"));
         let mut plugin = cmd("clang++");
         plugin.args(["-shared", "-fPIC", "-O2", "plugin/ksee-trace.cpp", "-o", "plugin/ksee-trace.so"]);
         // (macOS links -shared eagerly: leave the LLVM symbols to clang,
@@ -143,37 +132,55 @@ pub fn build() {
         }
         run(plugin.args(String::from_utf8_lossy(&flags).split_whitespace()));
     }
-
-    // A hash of the plugin in the flags makes kbuild rebuild the kernel
-    // when it changes.
+    // A hash in the flags makes kbuild rebuild when the plugin changes.
     let id = format!("{:016x}", fnv64(&std::fs::read("plugin/ksee-trace.so").unwrap_or_default()));
-    let plugin = Path::new("plugin/ksee-trace.so").canonicalize().unwrap();
-    // (Inlining only what the source asks for, `inline`: the compiler's
-    // own choices would hide calls, with their arguments, as inlined code.)
-    let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
-    let kmake = |args: &[&str]| {
-        let mut c = cmd("make");
-        c.args(["-C", "linux", "ARCH=wasm", "LLVM=1",
-                &format!("KCFLAGS=-g -finline-hint-functions -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
-            .arg(&jobs)
-            .args(args);
-        c
-    };
-    // (Every Kconfig the port has: a new one re-runs defconfig too.)
-    let mut config = vec!["linux/arch/wasm/configs/defconfig".to_string()];
-    for e in std::fs::read_dir("linux/arch/wasm").into_iter().flatten().flatten() {
-        let n = e.file_name().to_string_lossy().into_owned();
-        if n.starts_with("Kconfig") {
-            config.push(format!("linux/arch/wasm/{n}"));
-        }
-    }
-    if stale("linux/.config", &config.iter().map(String::as_str).collect::<Vec<_>>()) {
-        run(&mut kmake(&["defconfig"]));
-    }
-    run(&mut kmake(&[]));
-    // (Its UAPI headers: the pack's constants, the programs' syscalls.)
-    run(&mut kmake(&["headers"]));
+    let path = Path::new("plugin/ksee-trace.so").canonicalize().unwrap();
+    (id, path)
+}
 
+fn kernel() {
+    linux_tree();
+
+    let cache_hit = std::env::var(CACHED_LINUX).ok();
+    let cached = cached_kernel(Path::new("linux"), cache_hit.as_deref());
+    if cache_hit.as_deref() == Some("true") && !cached {
+        eprintln!("+ (cache) incomplete Linux cache; rebuilding");
+    }
+    if cached {
+        eprintln!("+ (cache) Linux kernel and headers");
+    } else {
+        let (id, plugin) = trace_plugin();
+        // (Inlining only what the source asks for, `inline`: the compiler's
+        // own choices would hide calls, with their arguments, as inlined code.)
+        let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
+        let kmake = |args: &[&str]| {
+            let mut c = cmd("make");
+            c.args(["-C", "linux", "ARCH=wasm", "LLVM=1",
+                    &format!("KCFLAGS=-g -finline-hint-functions -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
+                .arg(&jobs)
+                .args(args);
+            c
+        };
+        // (Every Kconfig the port has: a new one re-runs defconfig too.)
+        let mut config = vec!["linux/arch/wasm/configs/defconfig".to_string()];
+        for e in std::fs::read_dir("linux/arch/wasm").into_iter().flatten().flatten() {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n.starts_with("Kconfig") {
+                config.push(format!("linux/arch/wasm/{n}"));
+            }
+        }
+        if stale("linux/.config", &config.iter().map(String::as_str).collect::<Vec<_>>()) {
+            run(&mut kmake(&["defconfig"]));
+        }
+        run(&mut kmake(&[]));
+        // (Its UAPI headers: the pack's constants, the programs' syscalls.)
+        run(&mut kmake(&["headers"]));
+    }
+}
+
+pub fn build() {
+    check_llvm();
+    kernel();
     site();
     // (The runtime and the page, one module: the page calls the Machine.)
     run(cmd("cargo").args(["build", "--locked", "--release", "-p", "ksee-page",
@@ -247,7 +254,7 @@ const LINUX_COMMIT: &str = "f42acb3678424d1e08f6ed27c0d8ba8a125e14d6";
 /// linux/: the release, fetched (a shallow git repo: its one commit) and
 /// linux.patch applied, the first time (only then: to re-apply an updated
 /// patch, remove linux/ first).
-fn linux() {
+fn linux_tree() {
     if !Path::new("linux/Makefile").exists() {
         eprintln!("+ (fetch) {LINUX_TREE} {LINUX_TAG} -> linux/");
         std::fs::create_dir_all("linux").unwrap_or_else(|e| crate::fail(&format!("linux/: {e}")));
@@ -278,7 +285,7 @@ pub fn patch() {
 }
 
 fn git(args: &[&str]) -> Vec<u8> {
-    output(cmd("git").arg("-C").arg("linux").args(args))
+    stdout(cmd("git").arg("-C").arg("linux").args(args))
 }
 
 /// wasm-bindgen's glue for `wasm`, in `out` (the crate, at ksee-page's
@@ -413,6 +420,29 @@ mod tests {
         assert!(!any_stale(&[&first_s, &second_s], &[&input_s]));
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn only_a_complete_exact_linux_cache_is_reused() {
+        let root = std::env::temp_dir().join(format!("ksee-linux-cache-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("usr/include")).unwrap();
+        for file in ["Makefile", ".config", "vmlinux"] {
+            std::fs::write(root.join(file), "").unwrap();
+        }
+
+        for value in [None, Some(""), Some("false"), Some("TRUE"), Some("1")] {
+            assert!(!cached_kernel(&root, value));
+        }
+        assert!(cached_kernel(&root, Some("true")));
+
+        std::fs::remove_file(root.join("vmlinux")).unwrap();
+        assert!(!cached_kernel(&root, Some("true")));
+        std::fs::write(root.join("vmlinux"), "").unwrap();
+        std::fs::remove_dir(root.join("usr/include")).unwrap();
+        std::fs::write(root.join("usr/include"), "").unwrap();
+        assert!(!cached_kernel(&root, Some("true")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
 
 /// The course: its chapters, each its examples (user/examples/NAME.json)
@@ -473,7 +503,7 @@ fn site() {
 /// example); with `ui`, also the page's (the read example, a changed
 /// program, the pipe example, a phone's screen).
 pub fn test(ui: bool) {
-    run(cmd("cargo").args(["test", "--locked", "-p", "ksee-core", "-p", "ksee-cli"]));
+    run(cmd("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
     build();
     test_site();
     for &(name, ..) in crate::chrome::TESTS.iter().filter(|t| ui || t.0 == "kernel") {
