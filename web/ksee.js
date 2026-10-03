@@ -1,4 +1,4 @@
-// The page's entry to the runtime (crates/ksee-runtime): initialize it, and
+// The page's entry to the host (crates/ksee-host): initialize it, and
 // boot a kernel (on this thread: its tasks are JSPI stacks, see sched.rs).
 import init, { Machine } from "./pkg/ksee_page.js";
 

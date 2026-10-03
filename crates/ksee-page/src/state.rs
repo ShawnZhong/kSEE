@@ -291,7 +291,7 @@ impl Ui {
         Self::lines_of_machine(&machine(), k)
     }
 
-    pub fn lines_of_machine(machine: &ksee_runtime::machine::Machine, k: usize) -> Vec<Line> {
+    pub fn lines_of_machine(machine: &ksee_host::machine::Machine, k: usize) -> Vec<Line> {
         machine.view(|v| {
             let Some(s) = v.syscalls().into_iter().nth(k) else { return Vec::new() };
             v.lines(s.first, s.last.unwrap_or(machine.records().saturating_sub(1)), s.task.addr)
@@ -305,7 +305,7 @@ impl Ui {
         self.select_machine(&machine(), k);
     }
 
-    pub fn select_machine(self, machine: &ksee_runtime::machine::Machine, k: usize) {
+    pub fn select_machine(self, machine: &ksee_host::machine::Machine, k: usize) {
         self.zoom_machine(machine, k);
         let own = Ui::lines_of_machine(machine, k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
         self.commit(Some(Moment { call: k, line: own.unwrap_or(0), frame: None }));
@@ -317,7 +317,7 @@ impl Ui {
         self.zoom_machine(&machine(), k);
     }
 
-    pub fn zoom_machine(self, machine: &ksee_runtime::machine::Machine, k: usize) {
+    pub fn zoom_machine(self, machine: &ksee_host::machine::Machine, k: usize) {
         let Some((a, b)) = machine.view(|v| {
             let s = v.syscalls().into_iter().nth(k)?;
             Some((v.rec.step_of(s.first), v.rec.step_of(s.last.unwrap_or(v.rec.len().saturating_sub(1)))))
@@ -332,7 +332,7 @@ impl Ui {
         self.view_machine(&machine(), start, span);
     }
 
-    pub fn view_machine(self, machine: &ksee_runtime::machine::Machine, start: f64, span: usize) {
+    pub fn view_machine(self, machine: &ksee_host::machine::Machine, start: f64, span: usize) {
         let total = machine.view(|v| v.rec.steps()).max(1);
         let span = span.max(MIN_SPAN).min(total - 1);
         let a = (start.max(0.0) as usize).min(total - 1 - span);

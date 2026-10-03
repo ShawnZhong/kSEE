@@ -24,7 +24,7 @@ layout, generated files, and the Linux patch workflow.
   before a new mode, language or dependency.
 - **Keep the Rust boundaries clear.** ksee-core owns browser-independent
   decoding, reconstruction, views, and program rules, with native tests on
-  made-up records. ksee-runtime owns the kernel's memory and execution. The
+  made-up records. ksee-host owns the kernel's memory and execution. The
   Dioxus page drives `Machine` directly and owns UI state and presentation;
   it does not maintain a second replay model.
 - **The port is linux.patch** (to the stable tree's v7.2.7: the build

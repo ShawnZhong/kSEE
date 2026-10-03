@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ksee-core", "crates/ksee-runtime", "crates/ksee-cli", "crates/ksee-page"]
+members = ["crates/ksee-core", "crates/ksee-host", "crates/ksee-cli", "crates/ksee-page"]
 
 [workspace.package]
 edition = "2024"

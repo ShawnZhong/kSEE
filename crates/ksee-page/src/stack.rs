@@ -11,7 +11,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 
 use crate::machine;
-use crate::runtime::Runtime;
+use crate::host::Host;
 use crate::state::{Derived, Moment, Shared, Tab, Ui};
 
 /// The stack at the moment shown (the pointer's over the chart, else the
@@ -31,7 +31,7 @@ pub fn shown() -> Option<Frame> {
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
 /// lines, into its task's syscall after it (or before). The lines read
 /// from the Machine (the window's listener calls it, outside the page).
-pub fn walk(ui: Ui, machine: &ksee_runtime::machine::Machine, dir: isize, over: bool) {
+pub fn walk(ui: Ui, machine: &ksee_host::machine::Machine, dir: isize, over: bool) {
     let Some(at) = ui.at.peek().clone() else { return };
     let k = at.call;
     let lines = Ui::lines_of_machine(machine, k);
@@ -70,7 +70,7 @@ pub fn frame(ui: Ui, d: Derived, dir: isize) {
 /// lines, find): arrows move the cursor there.
 pub fn listen(ui: Ui) {
     let d = use_context::<Derived>();
-    let runtime = use_context::<Runtime>();
+    let host = use_context::<Host>();
     use_hook(move || {
         let Some(window) = web_sys::window() else { return };
         let document = window.document();
@@ -88,8 +88,8 @@ pub fn listen(ui: Ui) {
             ui.set_preview(None);
             let over = e.shift_key();
             let arrow = match e.key().as_str() {
-                "ArrowLeft" => { runtime.machine().is_some_and(|machine| { walk(ui, &machine, -1, over); true }) }
-                "ArrowRight" => { runtime.machine().is_some_and(|machine| { walk(ui, &machine, 1, over); true }) }
+                "ArrowLeft" => { host.machine().is_some_and(|machine| { walk(ui, &machine, -1, over); true }) }
+                "ArrowRight" => { host.machine().is_some_and(|machine| { walk(ui, &machine, 1, over); true }) }
                 "ArrowUp" => { frame(ui, d, -1); true }
                 "ArrowDown" => { frame(ui, d, 1); true }
                 _ => false,

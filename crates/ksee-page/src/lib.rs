@@ -18,7 +18,7 @@ use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use js_sys::Promise;
 #[cfg(target_arch = "wasm32")]
-use ksee_runtime::machine::Machine;
+use ksee_host::machine::Machine;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::convert::TryFromJsValue;
 #[cfg(target_arch = "wasm32")]
@@ -41,7 +41,7 @@ mod objects_view;
 #[cfg(target_arch = "wasm32")]
 mod panels;
 #[cfg(target_arch = "wasm32")]
-mod runtime;
+mod host;
 #[cfg(target_arch = "wasm32")]
 mod source;
 #[cfg(target_arch = "wasm32")]
@@ -56,7 +56,7 @@ mod native_tests;
 #[cfg(target_arch = "wasm32")]
 use lesson::Example;
 #[cfg(target_arch = "wasm32")]
-pub(crate) use runtime::machine;
+pub(crate) use host::machine;
 #[cfg(target_arch = "wasm32")]
 use state::Ui;
 
@@ -111,12 +111,12 @@ fn App() -> Element {
         lesson::from_url(ui);
         ui
     });
-    let runtime = use_context_provider(runtime::Runtime::new);
+    let host = use_context_provider(host::Host::new);
     // (The kernel booting: ready, or why not.)
     use_hook(move || spawn(async move {
         let mut kernel = ui.kernel;
         kernel.set(Some(match boot().await {
-            Ok(machine) => { runtime.install(machine); Ok(()) }
+            Ok(machine) => { host.install(machine); Ok(()) }
             Err(error) => Err(error),
         }));
     }));

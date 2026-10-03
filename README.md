@@ -40,18 +40,18 @@ flowchart LR
     V --> UI
 ```
 
-The page and runtime are one outer Rust WebAssembly module. That module owns
+The page and host are one outer Rust WebAssembly module. That module owns
 the memory, instantiates the Linux WebAssembly module inside it, and calls the
-runtime's `Machine` directly. Linux tasks are suspended WebAssembly call stacks
+host's `Machine` directly. Linux tasks are suspended WebAssembly call stacks
 scheduled with JSPI.
 
 | Component | Responsibility |
 |---|---|
 | `linux.patch` and `linux/` | The `arch/wasm` port against Linux stable `v7.2.7`; `linux/` is fetched and patched on the first build. |
 | `plugin/` | The LLVM 22 pass that inserts trace probes. |
-| `ksee-runtime` | Owns memory, boots Linux, schedules JSPI-suspended task stacks, drives syscall runners, and takes snapshots. |
+| `ksee-host` | Owns memory, boots Linux, schedules JSPI-suspended task stacks, drives syscall runners, and takes snapshots. |
 | `ksee-core` | Decodes trace records and packed metadata, then combines them with end-state memory to reconstruct stacks, lines, values, tasks, and objects. |
-| `ksee-page` | The Dioxus UI in the runtime's WebAssembly module; it drives `Machine` and renders the reconstructed views. |
+| `ksee-page` | The Dioxus UI in the host's WebAssembly module; it drives `Machine` and renders the reconstructed views. |
 | `ksee-cli` | Builds, tests, serves, deploys, packs kernel metadata, and updates `linux.patch`. |
 | `user/` | `/init`, the syscall runner, lesson definitions, and lesson filesystem fixtures. |
 

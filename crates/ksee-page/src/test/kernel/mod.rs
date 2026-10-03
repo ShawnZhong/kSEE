@@ -15,7 +15,7 @@ mod trace;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use ksee_runtime::machine::Machine;
+use ksee_host::machine::Machine;
 
 use harness::{log, KernelHarness};
 

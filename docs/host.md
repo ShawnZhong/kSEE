@@ -1,6 +1,6 @@
-# The runtime
+# The host
 
-`ksee-runtime` is the browser host for the kernel. It owns the shared memory,
+`ksee-host` is the browser host for the kernel. It owns the shared memory,
 boots a Linux WebAssembly instance, schedules its suspended task stacks, drives
 lesson syscall runners, and exposes snapshots to the page.
 
@@ -31,7 +31,7 @@ stack is suspended. The required browser capability is JSPI,
 `WebAssembly.Suspending`; browser version numbers are not part of the runtime
 contract.
 
-## Runtime modules
+## Host modules
 
 ```text
 machine.rs    boot, restart, console, syscall requests, quiet, snapshots

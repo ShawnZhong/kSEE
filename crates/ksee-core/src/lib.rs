@@ -13,7 +13,7 @@
 //! * [`text`]: a lesson's paragraphs, in pieces.
 //!
 //! `no_std`, so that the same code runs in the wasm runtime
-//! (crates/ksee-runtime) and natively (crates/ksee-cli, tests).
+//! (crates/ksee-host) and natively (crates/ksee-cli, tests).
 #![no_std]
 
 extern crate alloc;

@@ -1,16 +1,16 @@
-//! The page's explicit handle to the booted runtime Machine.
+//! The page's explicit handle to the booted kernel host.
 
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use ksee_runtime::machine::Machine;
+use ksee_host::machine::Machine;
 
 #[derive(Clone, Copy)]
-pub struct Runtime {
+pub struct Host {
     machine: Signal<Option<Rc<Machine>>>,
 }
 
-impl Runtime {
+impl Host {
     pub fn new() -> Self {
         Self { machine: Signal::new(None) }
     }
@@ -27,5 +27,5 @@ impl Runtime {
 /// The booted Machine. Components and scope-owned tasks call this only after
 /// the kernel status is ready.
 pub fn machine() -> Rc<Machine> {
-    consume_context::<Runtime>().machine().expect("booted")
+    consume_context::<Host>().machine().expect("booted")
 }

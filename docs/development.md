@@ -12,7 +12,7 @@ shape the code.
 | `linux/` | Fetched working kernel tree with the patch applied; created on the first build. |
 | `plugin/` | LLVM 22 pass that instruments kernel functions. |
 | `crates/ksee-core/` | `no_std` trace decoding, packed tables, reconstruction, views, program parsing/evaluation, text parsing, and source highlighting. |
-| `crates/ksee-runtime/` | Browser host for the kernel: shared memory, JSPI task scheduling, programs, snapshots, and the `Machine` API. |
+| `crates/ksee-host/` | Browser host for the kernel: shared memory, JSPI task scheduling, programs, snapshots, and the `Machine` API. |
 | `crates/ksee-page/` | Dioxus UI built into the same WebAssembly module as the runtime. |
 | `crates/ksee-cli/` | Build, packing, test, browser driver, server, deployment, and patch commands. |
 | `user/` | Freestanding `/init`, syscall runner, headers, and lesson JSON. |
@@ -25,14 +25,14 @@ The crate dependencies are intentional:
 ksee-core
   ^        ^
   |        |
-ksee-runtime   ksee-cli
+ksee-host      ksee-cli
   ^            |
   |            +-- uses ksee-core while packing metadata
   |
 ksee-page -- also uses ksee-core directly
 ```
 
-`ksee-page` depends on both `ksee-runtime` and `ksee-core`. The runtime depends
+`ksee-page` depends on both `ksee-host` and `ksee-core`. The host depends
 on core. The CLI also depends on core for packing, but it is a native build
 tool rather than part of the browser module.
 
@@ -50,7 +50,7 @@ dependency set, then runs it. `ksee build` performs these stages:
    affected kernel objects.
 5. Create `target/site/` and link the current static files from `web/`.
 6. Build `ksee-page` for `wasm32-unknown-unknown` with `--locked --release`.
-   Cargo links `ksee-runtime` and `ksee-core` into the same outer module, then
+   Cargo links `ksee-host` and `ksee-core` into the same outer module, then
    wasm-bindgen writes `target/site/pkg/`.
 7. Pack `linux/vmlinux`: combine probe descriptions with DWARF-derived types,
    symbols, syscalls, constants, and declaration locations; copy referenced
@@ -127,7 +127,7 @@ runtime's WebAssembly module and calls `Machine` directly.
 |---|---|
 | `lib.rs` | Mounting, boot handoff, context providers, and top-level layout. |
 | `coordinator.rs` | Root-owned URL synchronization and the single active lesson run. |
-| `runtime.rs` | Context-owned access to the booted `Machine`. |
+| `host.rs` | Context-owned access to the booted `Machine`. |
 | `lesson.rs` | Lesson schema, navigation, execution algorithm, outcomes, links, tries, and rendering. |
 | `editor.rs` | In-place program editing, completions, signatures, and validation. |
 | `chart.rs` | Whole-recording overview, stack chart, task strip, transport, zoom/pan input, and function search. |

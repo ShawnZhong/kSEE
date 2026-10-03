@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use ksee_core::view::{Frame, Object, SyscallSummary};
-use ksee_runtime::machine::Machine;
+use ksee_host::machine::Machine;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use ksee_runtime::Finished;
+use ksee_host::Finished;
 
 use crate::lesson::Step;
 

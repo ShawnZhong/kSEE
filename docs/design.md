@@ -42,7 +42,7 @@ emulated.
 flowchart LR
     P[LLVM 22 pass] --> K[Linux v7.2.7 wasm]
     U[Lessons and syscall runners] --> K
-    UI[ksee-page Dioxus UI] --> M[ksee-runtime Machine]
+    UI[ksee-page Dioxus UI] --> M[ksee-host Machine]
     M --> K
     K --> R[Trace ring]
     R --> S[Snapshot]
@@ -56,7 +56,7 @@ The Rust crate boundaries are:
 
 - `ksee-core` is browser-independent. It decodes records and metadata,
   reconstructs the recording, parses lesson programs, and exposes named views.
-- `ksee-runtime` owns the outer WebAssembly memory, instantiates Linux in it,
+- `ksee-host` owns the outer WebAssembly memory, instantiates Linux in it,
   schedules JSPI-suspended kernel task stacks, drives syscall runners, and
   takes snapshots. It depends on `ksee-core`.
 - `ksee-page` is the Dioxus UI in the same outer WebAssembly module as the

@@ -1566,6 +1566,17 @@ name = "ksee-core"
 version = "0.1.0"
 
 [[package]]
+name = "ksee-host"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "ksee-core",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "ksee-page"
 version = "0.1.0"
 dependencies = [
@@ -1573,20 +1584,9 @@ dependencies = [
  "dioxus-html",
  "js-sys",
  "ksee-core",
- "ksee-runtime",
+ "ksee-host",
  "serde",
  "serde-wasm-bindgen",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "ksee-runtime"
-version = "0.1.0"
-dependencies = [
- "js-sys",
- "ksee-core",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

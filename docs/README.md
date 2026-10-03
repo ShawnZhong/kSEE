@@ -16,7 +16,7 @@ short system overview and a minimal way to run kSEE.
 
 A newcomer who wants to understand the implementation should read
 [the design](design.md), then [the recording](recording.md),
-[replay](replay.md), and [the runtime](runtime.md). Read the kernel port when
+[replay](replay.md), and [the host](host.md). Read the kernel port when
 you need the WebAssembly execution model or Linux-specific details.
 
 ## Architecture
@@ -28,7 +28,7 @@ you need the WebAssembly execution model or Linux-specific details.
   ring, and packed kernel metadata.
 - [Replay](replay.md): reconstruction of tasks, stacks, source lines, memory,
   origins, objects, and chart data.
-- [Runtime](runtime.md): shared memory, kernel boot, JSPI scheduling, the runner
+- [Host](host.md): shared memory, kernel boot, JSPI scheduling, the runner
   protocol, snapshots, and the page/runtime boundary.
 
 ## Historical notes

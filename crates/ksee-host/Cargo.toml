@@ -1,5 +1,5 @@
 [package]
-name = "ksee-runtime"
+name = "ksee-host"
 version = "0.1.0"
 description = "kSEE host runtime: the kernel's host, on the page's thread (wasm-bindgen, JSPI)"
 edition.workspace = true
