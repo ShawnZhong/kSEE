@@ -15,7 +15,7 @@ jobs:
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
       - name: Run Rust unit tests
-        run: cargo test --locked -p ksee-core -p ksee-cli
+        run: cargo test --locked --release -p ksee-core -p ksee-cli
       - name: Install Rust/Wasm tools
         run: ./setup.sh --rust-only
       - name: Build CLI
