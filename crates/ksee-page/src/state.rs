@@ -11,7 +11,7 @@ use ksee_core::view::{run_to, Chart, Frame, Line, SyscallSummary};
 use crate::machine;
 
 /// The chart's columns: moments across its window; and the fewest steps it shows.
-const COLUMNS: usize = 400;
+const COLUMNS: usize = 1200;
 const MIN_SPAN: usize = 20;
 
 /// A value computed once and shared (a memo's: compared by identity, not

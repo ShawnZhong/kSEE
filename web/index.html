@@ -130,6 +130,14 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .flamescroll { position: relative; height: var(--chart); overflow: hidden auto; overscroll-behavior: contain; }
 .chart { position: relative; cursor: crosshair; user-select: none; touch-action: none; }
 .timeline-canvas { display: block; pointer-events: none; }
+.exact-ruler { display: flex; align-items: center; gap: 6px; height: 16px; border-top: 1px solid var(--line); color: var(--dim); font-size: 10px; }
+.exact-ruler-label { flex: none; }
+.exact-ruler-scroll { min-width: 0; flex: 1; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; overscroll-behavior-x: contain; }
+.exact-ruler-cells { display: flex; width: max-content; height: 10px; }
+.exact-step { display: block; flex: 0 0 6px; width: 6px; height: 10px; padding: 0; border: 0; border-right: 1px solid var(--panel); background: var(--line); }
+.exact-step:hover { background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.exact-step.current { background: var(--accent); }
+.transport
 .task-canvas { height: 12px; }
 .transport { display: flex; gap: 4px; align-items: center; padding-top: 4px; font-size: 11.5px; }
 .transport .where { margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

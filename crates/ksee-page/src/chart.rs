@@ -115,11 +115,57 @@ pub fn Timeline() -> Element {
                 }
             }
             Bars { tip, bottomed }
+            ExactRuler {}
             Transport {}
         }
         if let Some(t) = tip() {
             div { class: "tip", style: "left: {t.x + 14.0}px; top: {t.y + 16.0}px",
                 for (l , c) in t.lines { div { class: c, "{l}" } }
+            }
+        }
+    }
+}
+
+/// Every exact source-line moment in the committed call, in ordinal order.
+#[component]
+fn ExactRuler() -> Element {
+    const CELL: i32 = 6;
+    let ui = use_context::<Ui>();
+    (ui.snapshot)();
+    let at = (ui.at)();
+    let lines = at.as_ref().map_or_else(Vec::new, |at| Ui::lines_of(at.call));
+    use_effect(move || {
+        let Some(at) = (ui.at)() else { return };
+        let Some(scroll) = element("exact-ruler-scroll") else { return };
+        let left = at.line as i32 * CELL;
+        let right = left + CELL;
+        let view_left = scroll.scroll_left();
+        let view_right = view_left + scroll.client_width();
+        if left < view_left {
+            scroll.set_scroll_left(left);
+        } else if right > view_right {
+            scroll.set_scroll_left(right - scroll.client_width());
+        }
+    });
+    let Some(at) = at else { return rsx! {} };
+    rsx! {
+        div { class: "exact-ruler",
+            span { class: "exact-ruler-label", title: "Every source-line moment in this call, in keyboard order", "exact steps" }
+            div { id: "exact-ruler-scroll", class: "exact-ruler-scroll", onmouseleave: move |_| ui.set_preview(None),
+                div { class: "exact-ruler-cells",
+                    for (k, line) in lines.iter().enumerate() {
+                        {
+                            let title = format!("step {} of {}: {} {}:{}", k + 1, lines.len(), line.inlined.as_deref().unwrap_or(&line.func), line.file, line.line);
+                            rsx! { button {
+                                class: if k == at.line { "exact-step current" } else { "exact-step" },
+                                title,
+                                onmouseenter: move |_| ui.set_preview(Some(crate::state::Moment { call: at.call, line: k, frame: None })),
+                                onclick: move |_| ui.commit(Some(crate::state::Moment { call: at.call, line: k, frame: None })),
+                                aria_label: "step {k + 1} of {lines.len()}"
+                            } }
+                        }
+                    }
+                }
             }
         }
     }
