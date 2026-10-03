@@ -63,12 +63,11 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .menu { position: absolute; z-index: 10; overflow-y: auto; background: var(--panel);
   border-top: 1px solid var(--line); padding: 4px 0 12px; box-shadow: 0 6px 16px rgb(0 0 0 / .12); }
 .menu .chapter { margin: 12px 12px 2px; font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
-.menu .item { display: block; position: relative; padding: 4px 12px 4px 30px; color: var(--fg); }
+.menu .item { display: block; padding: 4px 12px; color: var(--fg); }
 .menu .item:hover { background: var(--sel); text-decoration: none; }
 .menu .item.on { background: var(--sel); font-weight: 600; }
-.menu .tick { position: absolute; left: 13px; color: var(--run); }
 
-/* A lesson: its chapter and place, title, question, explanation; the lessons before and next */
+/* A lesson: its chapter and place, title, question and explanation */
 h1 { margin: 12px 12px 0; font-size: 17px; line-height: 1.3; font-weight: 600; }
 .question { color: var(--dim); margin: 0; padding: 6px 12px 0; }
 .explain { margin: 8px 12px; font-size: 12.5px; }
@@ -76,9 +75,6 @@ h1 { margin: 12px 12px 0; font-size: 17px; line-height: 1.3; font-weight: 600; }
 .explain .place { font-size: 12px; }
 .explain a.try { border: 1px solid var(--accent); border-radius: 3px; padding: 0 5px; font-size: 12px; white-space: nowrap; }
 .explain a.try:hover { text-decoration: none; background: var(--sel); }
-.pager { display: flex; gap: 12px; margin: 4px 12px 10px; font-size: 12px; }
-.pager .after { margin-left: auto; text-align: right; font-weight: 600; }
-
 /* The program: a line each (its editor, its result); a column per task */
 .ptitle { margin: 10px 12px 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: baseline; }
 .ptitle a { margin-left: auto; text-transform: none; letter-spacing: 0; }
@@ -127,8 +123,6 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .flamehead { display: flex; gap: 12px; align-items: center; font-size: 11.5px; padding: 4px 0 2px; white-space: nowrap; }
 .find { font-size: 11px; width: 12em; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--fg); }
 .find:focus { outline: none; border-color: var(--accent); }
-.legend { margin-left: auto; display: flex; gap: 8px; color: var(--dim); overflow: hidden; }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
 .flamescroll { height: var(--chart); overflow: hidden auto; overscroll-behavior: contain; display: flex; flex-direction: column-reverse; }
 .chart { position: relative; flex: none; cursor: crosshair; }
 .chart .bar { pointer-events: none; position: absolute; padding: 0 3px; font: 11px var(--mono); overflow: hidden; white-space: nowrap; color: #1f2328; box-shadow: inset -1px 0 var(--panel); }
@@ -210,7 +204,7 @@ table.objs tr.later { opacity: .45; }
   #root { height: auto; }
   .page, .below { display: block; }
   .side { border-right: 0; border-bottom: 1px solid var(--line); }
-  .vsplit, .hsplit, .legend { display: none; }
+  .vsplit, .hsplit { display: none; }
   .source, .panels { height: 70dvh; border-top: 1px solid var(--line); }
   .transport { flex-wrap: wrap; row-gap: 2px; }
   .transport button { padding: 4px 14px; }

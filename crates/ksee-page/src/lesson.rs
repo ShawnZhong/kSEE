@@ -258,22 +258,6 @@ fn Theme() -> Element {
     }
 }
 
-/// The lessons opened before (kept in the browser's storage), by name.
-fn seen() -> Vec<String> {
-    web_sys::window().and_then(|w| w.local_storage().ok().flatten()).and_then(|s| s.get_item("ksee.seen").ok().flatten())
-        .map(|t| t.split(',').map(String::from).collect()).unwrap_or_default()
-}
-
-fn see(name: &str) {
-    let mut all = seen();
-    if !all.iter().any(|n| n == name) {
-        all.push(name.into());
-        if let Some(s) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-            let _ = s.set_item("ksee.seen", &all.join(","));
-        }
-    }
-}
-
 /// Lesson `k` opened: its own program made, on a fresh kernel.
 fn open(mut ui: Ui, k: usize) {
     ui.lesson.set(k);
@@ -306,12 +290,11 @@ pub fn Header() -> Element {
     }
 }
 
-/// Every lesson, by chapter: the one open marked, those opened before ticked.
+/// Every lesson, by chapter, with the open one marked.
 #[component]
 fn Contents(close: EventHandler<()>) -> Element {
     let ui = use_context::<Ui>();
     let all = examples();
-    let seen = seen();
     let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
     for (k, e) in all.iter().enumerate() {
         match groups.last_mut() {
@@ -326,7 +309,6 @@ fn Contents(close: EventHandler<()>) -> Element {
                 for k in ks {
                     a { class: if k == (ui.lesson)() { "item on" } else { "item" },
                         onclick: move |_| { open(ui, k); close.call(()); },
-                        span { class: "tick", if seen.contains(&all[k].name) { "✓" } }
                         "{all[k].title}" }
                 }
             }
@@ -341,7 +323,6 @@ pub fn Lesson() -> Element {
     use_effect(move || {
         let lines = (ui.program)();
         to_url(ui);
-        see(&examples()[(ui.lesson)()].name);
         // (Once the kernel is up.)
         if matches!((ui.kernel)(), Some(Ok(()))) {
             spawn(run(ui, lines));
@@ -376,8 +357,6 @@ pub fn Lesson() -> Element {
         waiting.dedup();
         waiting
     };
-    let before = at.checked_sub(1).map(|k| (k, all[k].title.clone()));
-    let after = (at + 1 < all.len()).then(|| (at + 1, all[at + 1].title.clone()));
     let grid = format!("--columns: {}", columns.len());
     rsx! {
         h1 { "{ex.title}" }
@@ -389,10 +368,6 @@ pub fn Lesson() -> Element {
             // links no longer apply.)
             div { class: "explain", for p in ex.text.iter() { Paragraph { text: p.clone(), stale: true } } }
             p { class: "explain dim", "A try, not the lesson's own program." }
-        }
-        div { class: "pager",
-            if let Some((k, t)) = before { a { onclick: move |_| open(ui, k), "← {t}" } }
-            if let Some((k, t)) = after { a { class: "after", onclick: move |_| open(ui, k), "Next: {t} →" } }
         }
         div { class: "ptitle dim", "Program"
             if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| open(ui, (ui.lesson)()), "↺ reset" } }

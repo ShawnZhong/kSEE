@@ -7,9 +7,9 @@ and console output stay aligned.
 
 ## 1. Open a lesson or edit its program
 
-The **Lessons** menu groups lessons by chapter and marks lessons already
-opened. The previous and next buttons move through the course. Opening a
-lesson starts a fresh kernel so every lesson begins from the same state.
+The **Lessons** menu groups lessons by chapter and marks the lesson currently
+open. The previous and next buttons move through the course. Opening a lesson
+starts a fresh kernel so every lesson begins from the same state.
 
 A lesson contains a question, explanatory paragraphs, and a program. Each
 program row is a declaration or syscall. A completed syscall row
@@ -151,5 +151,4 @@ the lesson, `p` contains its JSON representation as well. Sharing that URL
 opens the same lesson and changed program; it does not contain a trace snapshot.
 The program runs again on a fresh deterministic machine.
 
-Dragged pane sizes, the chosen color theme, and the set of lessons previously
-opened are kept in browser storage.
+Dragged pane sizes and the chosen color theme are kept in browser storage.
