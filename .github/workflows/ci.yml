@@ -10,7 +10,9 @@ jobs:
       - name: Restore Linux build cache
         uses: actions/cache@v4
         with:
-          path: linux
+          path: |
+            linux
+            !linux/.git
           key: linux-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-llvm22-${{ hashFiles('linux.patch', 'plugin/ksee-trace.cpp', 'crates/ksee-cli/src/build.rs') }}
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
