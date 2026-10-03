@@ -357,9 +357,14 @@ pub async fn self_test() -> Result<(), String> {
             def("file.f_pos").is_some_and(|d| d.file == "include/linux/fs.h") && member(Some(file.id), "f_pos").is_some_and(|d| d.file == "include/linux/fs.h")
             && member(None, "f_pos").is_some_and(|d| d.file == "include/linux/fs.h") && member(None, "next").is_none());
     {
-        let refused = m.make(None, "io_setup(1, NULL)").err().unwrap_or_default();
-        t.check(format!("the syscalls built: read and setuid, not io_setup ({refused})"),
-                m.params("read").is_some() && m.params("setuid").is_some() && m.params("io_setup").is_none() && refused.contains("no syscall io_setup"));
+        let aio = m.make(None, "io_setup(1, NULL)").err().unwrap_or_default();
+        let uring = m.make(None, "io_uring_setup(1, NULL)").err().unwrap_or_default();
+        let uring_calls = m.complete("io_uring", 8, usize::MAX, &[]);
+        let uring_constants = m.complete("close(IORING_", 13, usize::MAX, &[]);
+        t.check(format!("the syscalls built: read and setuid, not aio or io_uring ({aio}; {uring})"),
+                m.params("read").is_some() && m.params("setuid").is_some() && m.params("io_setup").is_none()
+                && m.params("io_uring_setup").is_none() && aio.contains("no syscall io_setup") && uring.contains("no syscall io_uring_setup")
+                && uring_calls.is_empty() && uring_constants.is_empty());
         let su = t.line("setuid(0)").await;
         t.check(format!("setuid(0) = {:?}, recorded", su.ret), su.ret == Some(0) && su.s.as_ref().is_some_and(|s| s.name == "setuid") && t.ran(&su.s, "__sys_setuid"));
     }

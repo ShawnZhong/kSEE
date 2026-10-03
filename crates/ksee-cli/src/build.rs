@@ -384,7 +384,6 @@ const EXAMPLES: &[(&str, &[&str])] = &[
     ("Files, in memory", &["hello", "open-close", "dup", "read", "write", "open-fails", "create", "dir"]),
     ("Files on a disk (ext4)", &["ext4-read", "ext4-create", "ext4-write", "durable", "ext4-dir", "link", "remove"]),
     ("Waiting and waking", &["sleep", "futex", "join", "pipe", "kill"]),
-    ("Requests in memory (io_uring)", &["uring-setup", "uring-read", "uring-worker"]),
     ("Your own", &["yours"]),
 ];
 

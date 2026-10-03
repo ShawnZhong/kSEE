@@ -92,8 +92,8 @@ pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)
 ```
 
 The UI places secondary steps in task columns. A blocked call remains pending
-until a later step wakes it. Task selection is structured JSON metadata; the
-old textual `child: read(...)` prefix is not program syntax.
+until a later step wakes it. Task selection is structured JSON metadata, not
+part of the statement text.
 
 ## Program language
 
@@ -157,7 +157,7 @@ The generated course order is defined by `EXAMPLES` in
 6. Your own
 
 Names listed in `EXAMPLES` appear in that order. Other JSON files follow after
-the ordered course. The removed io_uring lessons are not a current chapter.
+the ordered course.
 
 ## Filesystem fixtures
 

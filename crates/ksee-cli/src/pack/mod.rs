@@ -13,7 +13,7 @@ pub fn pack(kernel: &Path, out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
     let mut types = dwarf::types(&image).unwrap_or_else(|e| crate::fail(&format!("DWARF: {e}")));
     let t = ksee_core::types::Types::parse(&types);
-    for (name, value) in constants(&kernel.join("usr/include")).into_iter().chain(enumerators(&t)) {
+    for (name, value) in constants(&kernel.join("usr/include")) {
         types += &format!("C\t{name}\t{value}\n");
     }
     let calls = syscalls(&image, &t);
@@ -64,19 +64,7 @@ const CONSTANTS: &[(&str, &[&str])] = &[
     ("asm-generic/signal.h", &["SIG"]),
     ("linux/wait.h", &["P_", "W"]),
     ("linux/prctl.h", &["PR_"]),
-    ("linux/io_uring.h", &["IORING_", "IOSQE_"]),
 ];
-
-/// The values of the enums those headers declare (IORING_OP_READ), as
-/// DWARF has them, with the prefixes kept.
-fn enumerators(t: &ksee_core::types::Types) -> Vec<(String, i64)> {
-    t.types.iter().flat_map(|ty| {
-        let ksee_core::types::Kind::Enum(values) = &ty.kind else { return Vec::new() };
-        let header = t.declared.get(&ty.name).and_then(|(file, _)| CONSTANTS.iter().find(|(h, _)| file.ends_with(&format!("uapi/{h}"))));
-        let Some((_, prefixes)) = header else { return Vec::new() };
-        values.iter().filter(|(n, _)| prefixes.iter().any(|p| n.starts_with(p))).cloned().collect()
-    }).collect()
-}
 
 /// Constants from the kernel's UAPI headers (under `include`): each
 /// `#define NAME VALUE` whose value is a number, or `|`, `<<`, `-` and
@@ -180,20 +168,6 @@ mod constants_tests {
         for dropped in ["__O_SYNC", "O_TMPFILE_MASK", "SEEK_SET", "STRANGE"] {
             assert!(!got.contains_key(dropped), "{dropped}");
         }
-    }
-
-    #[test]
-    fn enumerators_from_a_uapi_enum() {
-        // (The W line names the enum's type: declared maps names to files.)
-        let t = ksee_core::types::Types::parse(
-            "T\t1\tenum\tklock\t4\t\nV\t1\tIORING_OP_READ\t1\nV\t1\tOTHER\t3\nW\tklock\tinclude/uapi/linux/io_uring.h\t10\n");
-        let got: HashMap<String, i64> = enumerators(&t).into_iter().collect();
-        assert_eq!(got.get("IORING_OP_READ"), Some(&1));
-        assert!(!got.contains_key("OTHER"));
-        // (An enum another header declares is not a constant.)
-        let t = ksee_core::types::Types::parse(
-            "T\t1\tenum\tklock\t4\t\nV\t1\tIORING_OP_READ\t1\nW\tklock\tkernel/locking.c\t10\n");
-        assert!(enumerators(&t).is_empty());
     }
 }
 
