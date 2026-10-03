@@ -11,6 +11,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 
 use crate::machine;
+use crate::runtime::Runtime;
 use crate::state::{Derived, Moment, Shared, Tab, Ui};
 
 /// The stack at the moment shown (the pointer's over the chart, else the
@@ -30,26 +31,26 @@ pub fn shown() -> Option<Frame> {
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
 /// lines, into its task's syscall after it (or before). The lines read
 /// from the Machine (the window's listener calls it, outside the page).
-pub fn walk(ui: Ui, dir: isize, over: bool) {
+pub fn walk(ui: Ui, machine: &ksee_runtime::machine::Machine, dir: isize, over: bool) {
     let Some(at) = ui.at.peek().clone() else { return };
     let k = at.call;
-    let lines = Ui::lines_of(k);
+    let lines = Ui::lines_of_machine(machine, k);
     if let Some(j) = step(&lines, at.line, dir, over) {
         ui.go(j);
         return;
     }
-    let task = machine().view(|v| v.syscalls().into_iter().nth(k).map(|s| s.task.addr));
+    let task = machine.view(|v| v.syscalls().into_iter().nth(k).map(|s| s.task.addr));
     let Some(task) = task else { return };
-    let next = machine().view(|v| {
+    let next = machine.view(|v| {
         let all = v.syscalls();
         let mine: Vec<usize> = (0..all.len()).filter(|&j| all[j].task.addr == task).collect();
         let at = mine.iter().position(|&j| j == k)?;
         mine.get(at.checked_add_signed(dir)?).copied()
     });
     if let Some(next) = next {
-        ui.select(next);
+        ui.select_machine(machine, next);
         if dir < 0 {
-            ui.go(Ui::lines_of(next).len().saturating_sub(1));
+            ui.go(Ui::lines_of_machine(machine, next).len().saturating_sub(1));
         }
     }
 }
@@ -69,6 +70,7 @@ pub fn frame(ui: Ui, d: Derived, dir: isize) {
 /// lines, find): arrows move the cursor there.
 pub fn listen(ui: Ui) {
     let d = use_context::<Derived>();
+    let runtime = use_context::<Runtime>();
     use_hook(move || {
         let Some(window) = web_sys::window() else { return };
         let document = window.document();
@@ -86,8 +88,8 @@ pub fn listen(ui: Ui) {
             ui.set_preview(None);
             let over = e.shift_key();
             let arrow = match e.key().as_str() {
-                "ArrowLeft" => { walk(ui, -1, over); true }
-                "ArrowRight" => { walk(ui, 1, over); true }
+                "ArrowLeft" => { runtime.machine().is_some_and(|machine| { walk(ui, &machine, -1, over); true }) }
+                "ArrowRight" => { runtime.machine().is_some_and(|machine| { walk(ui, &machine, 1, over); true }) }
                 "ArrowUp" => { frame(ui, d, -1); true }
                 "ArrowDown" => { frame(ui, d, 1); true }
                 _ => false,

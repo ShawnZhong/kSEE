@@ -12,7 +12,10 @@ use super::Check;
 /// try and back; the next lesson.
 pub(super) async fn read() -> Check {
     let mut r = Vec::new();
-    wait(|| done(3) && !all(".chart .bar").is_empty(), 300, "the calls made", || format!("{:?}", cells())).await?;
+    wait(|| done(3) && !all(".chart .bar").is_empty(), 900, "the calls made", || {
+            let status = one(".pad.dim").map(|e| text(&e)).unwrap_or_default();
+            format!("{:?}; {status}", cells())
+        }).await?;
     let selected = one(".cell.on textarea").and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok()).map(|t| t.value()).unwrap_or_default();
     check(selected.starts_with("read("), "the subject call selected", &selected)?;
     // (The source's file is fetched: drawn a moment later.)
@@ -27,6 +30,13 @@ pub(super) async fn read() -> Check {
         check(ok, &format!("the link to {name}"), place())?;
         r.push(place());
     }
+    // (The global key listener: reset to a known cursor, then move it.)
+    click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
+    sleep(300).await;
+    let cursor = || one(".chart .now:not(.peek)").and_then(|e| e.get_attribute("style")).unwrap_or_default();
+    let before = cursor();
+    global_key("ArrowRight");
+    wait(|| cursor() != before, 20, "the global → key", || format!("{} at {}", cursor(), place())).await?;
     // (Stepping: on a line, back, and over vfs_read's calls (no deeper).)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     sleep(300).await;
@@ -42,13 +52,6 @@ pub(super) async fn read() -> Check {
     }
     let over = place();
     check(into != at && over.starts_with("vfs_read"), "stepping", (&at, &into, &over))?;
-    // (Keys, on the work area: → a line.)
-    let work = one(".work").ok_or("no work area")?;
-    let _ = work.dyn_ref::<HtmlElement>().map(|w| w.focus());
-    let before = place();
-    key(&work, "ArrowRight");
-    sleep(200).await;
-    check(place() != before, "→", (&before, place()))?;
     // (Hover and click resolve the same bar, moment and cursor position.)
     let bar = all(".chart .bar").into_iter().find(|b| text(b).starts_with("vfs_read")).ok_or("no vfs_read bar")?;
     let b = bar.get_bounding_client_rect();

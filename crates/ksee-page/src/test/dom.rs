@@ -74,6 +74,18 @@ pub(super) fn key(e: &Element, k: &str) {
     let _ = e.dispatch_event(&KeyboardEvent::new_with_keyboard_event_init_dict("keydown", &init).unwrap());
 }
 
+/// A key handled by the page's global window listener, independent of which
+/// form control the preceding test interaction left focused.
+pub(super) fn global_key(k: &str) {
+    if let Some(active) = doc().active_element().and_then(|e| e.dyn_into::<HtmlElement>().ok()) {
+        let _ = active.blur();
+    }
+    let init = KeyboardEventInit::new();
+    init.set_bubbles(true);
+    init.set_key(k);
+    let _ = web_sys::window().unwrap().dispatch_event(&KeyboardEvent::new_with_keyboard_event_init_dict("keydown", &init).unwrap());
+}
+
 pub(super) fn input(e: &Element) {
     let init = EventInit::new();
     init.set_bubbles(true);

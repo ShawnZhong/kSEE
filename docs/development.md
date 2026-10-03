@@ -136,7 +136,7 @@ runtime's WebAssembly module and calls `Machine` directly.
 | `panels.rs` | Stack, Tasks, Objects, and Console tabs. |
 | `layout.rs` | Resizable panes and persisted dimensions. |
 | `state.rs` | Semantic state transitions, run/snapshot identities, navigation, lesson program, and derived views. |
-| `test/kernel.rs` | Kernel and reconstruction integration checks. |
+| `test/kernel/` | One sequential kernel integration suite: harness, trace, program, metadata, lessons, and lifecycle phases. |
 | `test/ui.rs` | Browser-level page interaction suites. |
 | `test/dom.rs` | DOM queries, synthetic input, waiting, and assertions shared by UI suites. |
 | `test/mod.rs` | URL dispatch and result reporting to the native Chromium driver. |

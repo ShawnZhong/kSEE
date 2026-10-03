@@ -339,8 +339,8 @@ fn Transport() -> Element {
         .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value))).unwrap_or_default();
     rsx! {
         div { class: "transport",
-            button { title: "the line before (←); Shift: back over the calls", onclick: move |e| crate::stack::walk(ui, -1, e.modifiers().shift()), "◀" }
-            button { title: "the next line (→); Shift: over the calls", onclick: move |e| crate::stack::walk(ui, 1, e.modifiers().shift()), "▶" }
+            button { title: "the line before (←); Shift: back over the calls", onclick: move |e| crate::stack::walk(ui, &machine(), -1, e.modifiers().shift()), "◀" }
+            button { title: "the next line (→); Shift: over the calls", onclick: move |e| crate::stack::walk(ui, &machine(), 1, e.modifiers().shift()), "▶" }
             button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| crate::stack::frame(ui, d, -1), "▲" }
             button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| crate::stack::frame(ui, d, 1), "▼" }
             span { class: "where mono dim", "{task} · {place}{turn}{returned}" }

@@ -2,8 +2,8 @@
 //!
 //!   ksee [--port=N]          build, then serve the page
 //!   ksee build               build the kernel, runtime and page (build.rs)
-//!   ksee test [--ui]         build, then run the tests (in Chromium,
-//!                            $CHROME; --ui: the page's too)
+//!   ksee test [--ui | NAME ...]  build, then run the named Chromium tests
+//!                                (default: kernel; --ui: all)
 //!   ksee deploy              build, then push the page to origin's gh-pages
 //!   ksee patch               write linux.patch from linux/ (the port, as it
 //!                            differs from the release)
@@ -18,13 +18,13 @@ mod serve;
 use std::path::Path;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: ksee [--port=N | build | test [--ui] | deploy | serve [--port=N] | patch]";
+const USAGE: &str = "usage: ksee [--port=N | build | test [--ui | NAME ...] | deploy | serve [--port=N] | patch]";
 
 #[derive(Debug, Eq, PartialEq)]
 enum Command {
     BuildAndServe { port: u16 },
     Build,
-    Test { ui: bool },
+    Test { names: Vec<String> },
     Deploy,
     Patch,
     Serve { port: u16 },
@@ -46,11 +46,16 @@ fn parse_args(args: &[&str]) -> Result<Command, String> {
         "build" => Ok(Command::Build),
         "deploy" => Ok(Command::Deploy),
         "patch" => Ok(Command::Patch),
-        "test" => match options {
-            [] => Ok(Command::Test { ui: false }),
-            ["--ui"] => Ok(Command::Test { ui: true }),
-            _ => Err("test accepts only one optional --ui".into()),
-        },
+        "test" => {
+            let names: Vec<String> = match options {
+                [] => vec!["kernel".into()],
+                ["--ui"] => chrome::TESTS.iter().map(|test| test.0.into()).collect(),
+                names if names.iter().all(|name| chrome::TESTS.iter().any(|test| test.0 == *name)) =>
+                    names.iter().map(|name| (*name).into()).collect(),
+                _ => return Err(format!("test names are: {}", chrome::TESTS.iter().map(|test| test.0).collect::<Vec<_>>().join(", "))),
+            };
+            Ok(Command::Test { names })
+        }
         "serve" => match options {
             [] => Ok(Command::Serve { port: 8000 }),
             [option] => parse_port(option).map(|port| Command::Serve { port }),
@@ -96,7 +101,7 @@ fn main() -> ExitCode {
             serve::serve(Path::new(build::SITE), port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
         }
         Command::Build => build::build(),
-        Command::Test { ui } => build::test(ui),
+        Command::Test { names } => build::test(&names),
         Command::Deploy => deploy::deploy(),
         Command::Patch => build::patch(),
         Command::Serve { port } => {
@@ -119,8 +124,10 @@ mod tests {
         assert_eq!(parse(&[]), Command::BuildAndServe { port: 8000 });
         assert_eq!(parse(&["--port=9000"]), Command::BuildAndServe { port: 9000 });
         assert_eq!(parse(&["build"]), Command::Build);
-        assert_eq!(parse(&["test"]), Command::Test { ui: false });
-        assert_eq!(parse(&["test", "--ui"]), Command::Test { ui: true });
+        assert_eq!(parse(&["test"]), Command::Test { names: vec!["kernel".into()] });
+        assert_eq!(parse(&["test", "read"]), Command::Test { names: vec!["read".into()] });
+        assert_eq!(parse(&["test", "read", "phone"]), Command::Test { names: vec!["read".into(), "phone".into()] });
+        assert_eq!(parse(&["test", "--ui"]), Command::Test { names: chrome::TESTS.iter().map(|test| test.0.into()).collect() });
         assert_eq!(parse(&["deploy"]), Command::Deploy);
         assert_eq!(parse(&["patch"]), Command::Patch);
         assert_eq!(parse(&["serve"]), Command::Serve { port: 8000 });
