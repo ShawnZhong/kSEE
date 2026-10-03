@@ -172,7 +172,7 @@ pub fn build() {
 
     site();
     // (The runtime and the page, one module: the page calls the Machine.)
-    run(cmd("cargo").args(["build", "--release", "-p", "ksee-page",
+    run(cmd("cargo").args(["build", "--locked", "--release", "-p", "ksee-page",
         "--target", "wasm32-unknown-unknown"]));
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
 
@@ -273,9 +273,7 @@ fn git(args: &[&str]) -> Vec<u8> {
 /// wasm-bindgen's glue for `wasm`, in `out` (the crate, at ksee-page's
 /// wasm-bindgen version: the two must match).
 fn bindgen(wasm: &str, out: &str) {
-    eprintln!("+ (bindgen) {wasm} -> {out}");
-    wasm_bindgen_cli_support::Bindgen::new().input_path(wasm).web(true).and_then(|b| b.typescript(false).generate(out))
-        .unwrap_or_else(|e| crate::fail(&format!("wasm-bindgen {wasm}: {e}")));
+    run(cmd("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", out, wasm]));
 }
 
 fn gzip(from: &str, to: &str) {
@@ -434,7 +432,7 @@ fn site() {
 /// example); with `ui`, also the page's (the read example, a changed
 /// program, the pipe example, a phone's screen).
 pub fn test(ui: bool) {
-    run(cmd("cargo").args(["test", "-p", "ksee-core", "-p", "ksee-cli"]));
+    run(cmd("cargo").args(["test", "--locked", "-p", "ksee-core", "-p", "ksee-cli"]));
     build();
     test_site();
     for &(name, ..) in crate::chrome::TESTS.iter().filter(|t| ui || t.0 == "kernel") {
@@ -447,7 +445,7 @@ pub fn test(ui: bool) {
 /// target/test/site: the site, its module built with the tests.
 fn test_site() {
     // (Its own target directory: the site's module, built without them, stays as it is.)
-    run(cmd("cargo").args(["build", "--release", "-p", "ksee-page", "--features", "selftest",
+    run(cmd("cargo").args(["build", "--locked", "--release", "-p", "ksee-page", "--features", "selftest",
         "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));
     bindgen("target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm", "target/test/pkg");
     // (The site with the tests: the site's files, its module the one built with them.)

@@ -6,5 +6,5 @@
 #   ./ksee.sh deploy                   build, then push the page to gh-pages
 set -e
 cd "$(dirname "$0")"
-cargo build -q --release -p ksee-cli
+cargo build -q --locked --release -p ksee-cli
 exec target/release/ksee "$@"

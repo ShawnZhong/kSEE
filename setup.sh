@@ -1,7 +1,7 @@
 #!/bin/sh
 # What ./ksee.sh needs: LLVM 23 (clang, lld's wasm-ld, the pass's headers),
-# GNU make and sed, mkfs.ext4, gzip, Rust and its wasm target; from Homebrew
-# on macOS or apt on Ubuntu. ./ksee.sh test also needs Chromium, in $CHROME.
+# GNU make and sed, mkfs.ext4, gzip, Rust, its wasm target and wasm-bindgen;
+# from Homebrew or apt plus Cargo. ./ksee.sh test also needs Chromium, in $CHROME.
 set -e
 cd "$(dirname "$0")"
 case "$(uname -s)" in
@@ -42,3 +42,7 @@ if ! command -v rustup >/dev/null; then
 	. "$HOME/.cargo/env"
 fi
 rustup target add wasm32-unknown-unknown
+if ! command -v wasm-bindgen >/dev/null 2>&1 ||
+	[ "$(wasm-bindgen --version 2>/dev/null)" != "wasm-bindgen 0.2.128" ]; then
+	cargo install wasm-bindgen-cli --version 0.2.128 --locked --force
+fi
