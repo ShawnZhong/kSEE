@@ -29,7 +29,11 @@ impl Names {
     /// What `name` stands for to line `line`: the last line before it
     /// that made it.
     pub fn get(&self, name: &str, line: usize) -> Option<&Sym> {
-        self.0.iter().filter(|(n, l, _)| n == name && *l < line).max_by_key(|e| e.1).map(|e| &e.2)
+        self.0
+            .iter()
+            .filter(|(n, l, _)| n == name && *l < line)
+            .max_by_key(|e| e.1)
+            .map(|e| &e.2)
     }
 
     /// The names line `line` sees, each once, as get has them.
