@@ -109,8 +109,8 @@ fn a_store_is_a_change_to_its_member() {
     // b (2, was 1), record 3 a byte of a (5): each a change to its member.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t9\tf\t0:1\t0\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t9\tf\tp:3\n");
-    let r = [Record::Block { func: 9, n: 0 }, Record::Store { addr: 8, size: 4, old: Some(1), line: 0, from: None },
-             Record::Block { func: 9, n: 1 }, Record::Store { addr: 5, size: 1, old: Some(0), line: 0, from: None }];
+    let r = [Record::Block { func: 9, n: 0 }, Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None },
+             Record::Block { func: 9, n: 1 }, Record::Store { addr: 5, size: 1, old: 0, line: 0, from: None }];
     let mut args = Args::default();
     args.push(0, &[4, 64]);
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], args);
@@ -128,7 +128,7 @@ fn one_store_copying_a_struct_changes_each_member() {
     // second): mnt 0 → 5, dentry 0 → 6, in the Objects and the line's note.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nL\t1\t0\t0:1;:3\n",
                           "T\t1\tptr\t\t4\t0\nT\t2\tstruct\tpath\t8\nM\t2\tmnt\t0\t0\t1\nM\t2\tdentry\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\n");
-    let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 8, size: 8, old: Some(0), line: 1, from: None }];
+    let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 8, size: 8, old: 0, line: 1, from: None }];
     let mut args = Args::default();
     args.push(0, &[8, 64]);
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 2], args);
@@ -150,7 +150,7 @@ fn a_lines_note_says_a_name_once() {
     // b once, both changes after it.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:2\t0\nL\t2\t0\t0:2;:3\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t2\tg\tp:3\n");
-    let st = |addr, old| Record::Store { addr, size: 4, old: Some(old), line: 1, from: None };
+    let st = |addr, old| Record::Store { addr, size: 4, old, line: 1, from: None };
     let ret = Record::Return { func: 2, value: 0 };
     let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, st(8, 1), ret, Record::Block { func: 2, n: 0 }, st(20, 3), ret];
     let mut args = Args::default();
@@ -175,10 +175,10 @@ fn a_calls_stores_are_named_as_the_code_names_them() {
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
                            P\t1\tf\tp:3\nQ\t1\tx:1:4\n");
     let r = [Record::Block { func: 1, n: 0 },
-             Record::Store { addr: 8, size: 4, old: Some(1), line: 0, from: None }, Record::Store { addr: 36, size: 4, old: Some(0), line: 0, from: None },
+             Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None }, Record::Store { addr: 36, size: 4, old: 0, line: 0, from: None },
              Record::Block { func: 2, n: 0 },
-             Record::Store { addr: 20, size: 1, old: Some(0), line: 0, from: None }, Record::Return { func: 2, value: 0 },
-             Record::Store { addr: 100, size: 1, old: Some(0), line: 0, from: None }, Record::Store { addr: 21, size: 1, old: Some(0), line: 0, from: None }];
+             Record::Store { addr: 20, size: 1, old: 0, line: 0, from: None }, Record::Return { func: 2, value: 0 },
+             Record::Store { addr: 100, size: 1, old: 0, line: 0, from: None }, Record::Store { addr: 21, size: 1, old: 0, line: 0, from: None }];
     let mut args = Args::default();
     args.push(0, &[4, 32]);
     args.push(3, &[16]);
@@ -198,7 +198,7 @@ fn a_store_through_a_pointer_in_a_wasm_local_is_named_by_it() {
     // itself one of the call's stores); it stores q->b.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nV\t1\t0\t1\tf\tq\t0\t0\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nQ\t1\tq:3:\n");
-    let r = [Record::Block { func: 1, n: 0 }, Record::Var { var: 0, line: 0, value: 4 }, Record::Store { addr: 8, size: 4, old: Some(1), line: 0, from: None }];
+    let r = [Record::Block { func: 1, n: 0 }, Record::Var { var: 0, line: 0, value: 4 }, Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None }];
     let mut args = Args::default();
     args.push(0, &[64]);
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
@@ -217,7 +217,7 @@ fn the_objects_a_call_wrote_are_a_graph() {
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
                            T\t4\tstruct\tt\t8\nM\t4\tc\t0\t0\t1\nM\t4\tlink\t32\t0\t3\nT\t5\tptr\t\t4\t4\nP\t1\tf\tp:3,q:5\n");
-    let st = |addr, old| Record::Store { addr, size: 4, old: Some(old), line: 0, from: None };
+    let st = |addr, old| Record::Store { addr, size: 4, old, line: 0, from: None };
     let r = [Record::Block { func: 1, n: 0 }, st(8, 1), st(32, 0), st(36, 0)];
     let mut args = Args::default();
     args.push(0, &[4, 32, 64]);
@@ -240,7 +240,7 @@ fn another_tasks_objects_come_after_the_spans_own() {
     // first: f's p first, then g's q, by task 40.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:2\t0\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\nP\t2\tg\tq:3\n");
-    let st = |addr, old| Record::Store { addr, size: 4, old: Some(old), line: 0, from: None };
+    let st = |addr, old| Record::Store { addr, size: 4, old, line: 0, from: None };
     let r = [Record::Block { func: 1, n: 0 }, Record::Task { task: 40 }, Record::Block { func: 2, n: 0 }, st(20, 3), Record::Task { task: 0 }, st(8, 1)];
     let mut args = Args::default();
     args.push(0, &[4, 64]);
@@ -258,7 +258,7 @@ fn a_calls_locals_are_not_objects() {
     // f (1) stores its local int x (at frame 32 + 4): the Stack's, not
     // an object, before it returns as after.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:4\n");
-    let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 36, size: 4, old: Some(0), line: 0, from: None }, Record::Return { func: 1, value: 0 }];
+    let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 36, size: 4, old: 0, line: 0, from: None }, Record::Return { func: 1, value: 0 }];
     let mut args = Args::default();
     args.push(0, &[32]);
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
@@ -276,7 +276,7 @@ fn an_object_inside_another_is_its_member() {
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:9\t0\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\n\
                            T\t4\tstruct\tu\t12\nM\t4\ta\t0\t0\t1\nM\t4\tinner\t32\t0\t2\nT\t5\tptr\t\t4\t4\nP\t1\tf\tp:5\nP\t2\tg\tq:3\n");
-    let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, Record::Store { addr: 12, size: 4, old: Some(0), line: 0, from: None }];
+    let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, Record::Store { addr: 12, size: 4, old: 0, line: 0, from: None }];
     let mut args = Args::default();
     args.push(0, &[4, 64]);
     args.push(1, &[8, 48]);
@@ -294,7 +294,7 @@ fn two_objects_of_one_name_are_numbered() {
     // stores p->b: two objects, "p in f" and "p in f #2".
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\n");
-    let st = |addr| Record::Store { addr, size: 4, old: Some(0), line: 0, from: None };
+    let st = |addr| Record::Store { addr, size: 4, old: 0, line: 0, from: None };
     let r = [Record::Block { func: 1, n: 0 }, st(8), Record::Return { func: 1, value: 0 }, Record::Block { func: 1, n: 0 }, st(24), Record::Return { func: 1, value: 0 }];
     let mut args = Args::default();
     args.push(0, &[4, 64]);
@@ -314,7 +314,7 @@ fn a_members_changes_are_a_run_a_function() {
     // run 1 → 2, then g's 2 → 1.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:5\t0\nL\t1\t0\t0:1\nL\t2\t0\t0:5\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\nP\t2\tg\tp:3\n");
-    let st = |old| Record::Store { addr: 8, size: 4, old: Some(old), line: 0, from: None };
+    let st = |old| Record::Store { addr: 8, size: 4, old, line: 0, from: None };
     let r = [Record::Block { func: 1, n: 0 }, st(1), Record::Block { func: 2, n: 0 }, st(2), Record::Return { func: 2, value: 0 }];
     let mut args = Args::default();
     args.push(0, &[4, 64]);
@@ -338,7 +338,7 @@ fn a_member_one_function_writes_back_is_no_change() {
     // again: b left as it was, by the one function: no change, no object.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\n");
-    let st = |old| Record::Store { addr: 8, size: 4, old: Some(old), line: 0, from: None };
+    let st = |old| Record::Store { addr: 8, size: 4, old, line: 0, from: None };
     let r = [Record::Block { func: 1, n: 0 }, st(1), st(2)];
     let mut args = Args::default();
     args.push(0, &[4, 32]);
@@ -355,7 +355,7 @@ fn a_value_is_followed_through_its_copies() {
     // then to 0x20 by a memcpy of 8 (two stores): 0x24's way back is
     // 0x24 <- 0x14 <- ... 0x14 was never written; 0x20's is 0x20 <- 0x10 <- 0x30.
     let t = Tables::default();
-    let st = |addr, from| Record::Store { addr, size: 4, old: Some(0), line: 0, from: core::num::NonZeroU32::new(from) };
+    let st = |addr, from| Record::Store { addr, size: 4, old: 0, line: 0, from: core::num::NonZeroU32::new(from) };
     let r = [st(0x30, 0), st(0x10, 0x30), st(0x20, 0x10), st(0x24, 0x14)];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], Args::default());
     let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 64]) };
@@ -471,7 +471,7 @@ fn a_task_is_named_as_it_was_then() {
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n", "T\t1\tbase\tint\t4\ts\nT\t2\tbase\tchar\t1\tc\nT\t3\tarray\t\t8\t2\t8\n\
         T\t4\tstruct\ttask_struct\t12\nM\t4\tpid\t0\t0\t1\nM\t4\tcomm\t32\t0\t3\n");
     let r = [Record::Task { task: 0x40 }, Record::Block { func: 1, n: 0 },
-             Record::Store { addr: 0x44, size: 4, old: Some(u32::from_le_bytes(*b"prog") as u64), line: 0, from: None }, Record::Block { func: 1, n: 0 }];
+             Record::Store { addr: 0x44, size: 4, old: u32::from_le_bytes(*b"prog") as u64, line: 0, from: None }, Record::Block { func: 1, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), Args::default());
     let mut m = alloc::vec![0u8; 128];
     m[0x40] = 19;

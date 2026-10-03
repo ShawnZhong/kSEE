@@ -15,9 +15,6 @@ pub struct History {
     /// Start address -> [(record, size, old)], oldest first: the stores of
     /// 1 to 8 bytes.
     by_addr: BTreeMap<u32, Vec<(usize, u32, u64)>>,
-    /// The ranges of unknown old contents (nothing to undo; rare, and
-    /// long): (record, address, length), oldest first.
-    ranges: Vec<(usize, u32, u32)>,
     /// The Store records, oldest first.
     stores: Vec<usize>,
 }
@@ -28,10 +25,7 @@ impl History {
         for (i, r) in records.iter().enumerate() {
             if let Record::Store { addr, size, old, .. } = *r {
                 h.stores.push(i);
-                match old {
-                    None => h.ranges.push((i, addr, size)),
-                    Some(old) => h.by_addr.entry(addr).or_default().push((i, size, old)),
-                }
+                h.by_addr.entry(addr).or_default().push((i, size, old));
             }
         }
         h
@@ -70,8 +64,7 @@ impl History {
         }
     }
 
-    /// Whether a store in records `from..=to` wrote any of `addr..addr +
-    /// len` (a range of unknown old contents aside).
+    /// Whether a store in records `from..=to` wrote any of `addr..addr + len`.
     pub fn written(&self, addr: u32, len: u32, from: usize, to: usize) -> bool {
         self.by_addr.range(addr.saturating_sub(7)..addr.saturating_add(len)).any(|(&start, list)| {
             let later = &list[list.partition_point(|&(i, _, _)| i < from)..];
@@ -84,15 +77,14 @@ impl History {
         let end = addr.saturating_add(len);
         let mut out: Vec<usize> = self.by_addr.range(addr.saturating_sub(7)..end)
             .flat_map(|(&start, list)| list.iter().filter(move |&&(_, size, _)| start.saturating_add(size) > addr).map(|&(i, _, _)| i))
-            .chain(self.ranges.iter().filter(|&&(_, a, n)| a < end && addr < a.saturating_add(n)).map(|&(i, _, _)| i))
             .collect();
         out.sort_unstable();
         out
     }
 
     /// The newest store to any of `addr..addr + len` at or before record
-    /// `at`: (its record, the old value, if kept).
-    pub(crate) fn last_write(&self, records: &[Record], addr: u32, len: u32, at: usize) -> Option<(usize, Option<u64>)> {
+    /// `at`: (its record, the old value).
+    pub(crate) fn last_write(&self, records: &[Record], addr: u32, len: u32, at: usize) -> Option<(usize, u64)> {
         let i = self.writes(addr, len).into_iter().take_while(|&i| i <= at).last()?;
         let Record::Store { old, .. } = records[i] else { return None };
         Some((i, old))
@@ -127,7 +119,7 @@ mod tests {
 
     #[test]
     fn a_slot_is_written_in_a_span_or_not() {
-        let r = [Record::Store { addr: 0x10, size: 4, old: Some(0), line: 0, from: None }, Record::Block { func: 1, n: 1 }, Record::Store { addr: 0x20, size: 8, old: Some(0), line: 0, from: None }];
+        let r = [Record::Store { addr: 0x10, size: 4, old: 0, line: 0, from: None }, Record::Block { func: 1, n: 1 }, Record::Store { addr: 0x20, size: 8, old: 0, line: 0, from: None }];
         let h = History::new(&r);
         assert!(h.written(0x10, 4, 0, 2) && !h.written(0x10, 4, 1, 2));
         assert!(h.written(0x24, 4, 1, 2) && !h.written(0x28, 4, 0, 2));
@@ -137,7 +129,7 @@ mod tests {
     fn undoes_later_stores() {
         // A u32 at 4 was 1; record 1 stores 2 there, record 3 stores 3.
         let b = Record::Block { func: 1, n: 1 };
-        let r = [b, Record::Store { addr: 4, size: 4, old: Some(1), line: 0, from: None }, b, Record::Store { addr: 4, size: 4, old: Some(2), line: 0, from: None }, b];
+        let r = [b, Record::Store { addr: 4, size: 4, old: 1, line: 0, from: None }, b, Record::Store { addr: 4, size: 4, old: 2, line: 0, from: None }, b];
         let mut m = alloc::vec![0u8; 16];
         m[4] = 3;
         let live = Mem(m);
@@ -146,11 +138,11 @@ mod tests {
         assert_eq!((at(0), at(2), at(4)), (1, 2, 3));
         assert_eq!((h.after(0), h.after(2), h.after(4)), (2, 1, 0));
         // (Bytes of one store undone by an older, narrower one at another start.)
-        let r2 = [b, Record::Store { addr: 5, size: 1, old: Some(9), line: 0, from: None }, Record::Store { addr: 4, size: 4, old: Some(0x0102_0304), line: 0, from: None }];
+        let r2 = [b, Record::Store { addr: 5, size: 1, old: 9, line: 0, from: None }, Record::Store { addr: 4, size: 4, old: 0x0102_0304, line: 0, from: None }];
         let h2 = History::new(&r2);
         assert_eq!(PastMemory { base: &live, history: &h2, at: 0 }.read_u32(4), 0x0102_0904);
         assert_eq!(PastMemory { base: &live, history: &h2, at: 1 }.read_u32(4), 0x0102_0304);
-        assert_eq!(h.last_write(&r, 4, 4, 2), Some((1, Some(1))));
+        assert_eq!(h.last_write(&r, 4, 4, 2), Some((1, 1)));
         assert_eq!(h.last_write(&r, 4, 4, 0), None);
     }
 }

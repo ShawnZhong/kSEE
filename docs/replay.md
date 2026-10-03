@@ -176,9 +176,7 @@ source's around, so it says what was compared, not which way the source's
 
 What it cannot show: values only in wasm locals (registers, in effect)
 that are no named variable's (an intermediate, `a + b` before it is
-stored), and old contents of bulk writes beyond 4096 bytes (their record
-says where and how much, not what: going back shows such bytes as they are
-now).
+stored).
 
 ## Going back
 

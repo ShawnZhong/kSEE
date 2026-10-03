@@ -69,19 +69,17 @@ pub extern "C" fn bulk(addr: u32, len: u32, line: u32, from: u32) {
 
 /// What the runtime itself writes into kernel memory (a call's request,
 /// a runner's word): Store records with the old contents of `addr..addr +
-/// len`, in 8-byte stores, up to a page, 4096 bytes (the rest as a range of
-/// unknown old contents); `line`: the kernel's store's line (see the
+/// len`, in 8-byte stores; `line`: the kernel's store's line (see the
 /// plugin), 0 for the runtime's own; `from`: where the bytes are copied
 /// from (each store then says where its own come from), else 0.
 pub fn log(addr: u32, len: u32, line: u32, from: u32) {
-    use ksee_core::trace::{STORE, UNKNOWN, VALUE};
+    use ksee_core::trace::{STORE, VALUE};
     if len == 0 {
         return;
     }
-    let logged = len.min(4096);
     let mut off = 0;
-    while off < logged {
-        let class = match logged - off { 8.. => 3, 4..=7 => 2, 2..=3 => 1, _ => 0 };
+    while off < len {
+        let class = match len - off { 8.. => 3, 4..=7 => 2, 2..=3 => 1, _ => 0 };
         let size = 1u32 << class;
         let mut old = [0u8; 8];
         Direct.read(addr + off, &mut old[..size as usize]);
@@ -89,9 +87,6 @@ pub fn log(addr: u32, len: u32, line: u32, from: u32) {
         let w = [addr + off, STORE << 28 | line << 4 | class, v as u32, VALUE << 28, (v >> 32) as u32, VALUE << 28, 0, 0];
         store(w, if class == 3 { 6 } else { 4 }, from, off);
         off += size;
-    }
-    if len > logged {
-        store([addr + logged, STORE << 28 | line << 4 | UNKNOWN, len - logged, VALUE << 28, 0, 0, 0, 0], 4, from, logged);
     }
 }
 

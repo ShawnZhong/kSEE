@@ -42,7 +42,7 @@ Every function gets:
   its block's lines: so a line step lands where its first store is, and a
   store is attributed to its line). Bulk writes (memcpy, memset, wider
   stores) call the `ksee.bulk(addr, len, line, from)` import, which logs
-  their old contents the same way. A store that copies (a value loaded and
+  all their old contents the same way. A store that copies (a value loaded and
   stored as it is, a memcpy) says where its bytes come from.
 
 A function that loops but writes no memory the host must undo and calls
@@ -67,7 +67,7 @@ ring may have overwritten the start of a record) and skip to the next head:
 | `[task, 3<<28]` | the `task_struct` address running when a requested syscall's recording begins |
 | `[fn, 4<<28]` | a return from fn; the value follows (low, then high for one wider than 32 bits) |
 | `[lhs, 6<<28 \| line<<4 \| p]` | a comparison deciding a branch (or a select), on its block's line `line`: lhs, then rhs follows (for 64-bit ones, then lhs's high word, rhs's); p its predicate (LLVM's icmp's, from eq) |
-| `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows; k = 7: a range whose old contents are not logged, followed by its length; then, if it copies, where its bytes come from |
+| `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows; then, if it copies, where its bytes come from |
 | `[value, 9<<28 \| line<<16 \| k]` | variable k of the function running (its V line) takes value, on its block's line `line` (12 bits); its high word follows, for a wide one |
 | `[value, 8<<28]` | a continuation |
 

@@ -224,9 +224,9 @@ impl Recording {
     }
 
     /// The newest store to `addr..addr + len` at or before record `at` (or
-    /// the end): (its record, the value it overwrote if kept, the line that
-    /// made it: where the function running then was).
-    pub(crate) fn last_write(&self, t: &Tables, addr: u32, len: u32, at: usize) -> Option<(usize, Option<u64>, Option<LineStep>)> {
+    /// the end): (its record, the value it overwrote, the line that made it:
+    /// where the function running then was).
+    pub(crate) fn last_write(&self, t: &Tables, addr: u32, len: u32, at: usize) -> Option<(usize, u64, Option<LineStep>)> {
         let at = at.min(self.len().checked_sub(1)?);
         let (i, old) = self.stores().last_write(&self.records, addr, len, at)?;
         Some((i, old, self.line_at(t, i)))
