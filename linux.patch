@@ -1,23 +1,22 @@
 diff --git a/Makefile b/Makefile
-index c28f11c61..9454be91d 100644
+index c28f11c61..6d76c2d07 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -1377,7 +1377,8 @@ PHONY += vmlinux
+@@ -1377,7 +1377,7 @@ PHONY += vmlinux
  #  vmlinux: private export LDFLAGS_vmlinux := $(LDFLAGS_vmlinux)
  vmlinux: private _LDFLAGS_vmlinux := $(LDFLAGS_vmlinux)
  vmlinux: export LDFLAGS_vmlinux = $(_LDFLAGS_vmlinux)
 -vmlinux: vmlinux.o $(KBUILD_LDS) modpost
-+# wasm has no modules, and modpost cannot read wasm objects.
-+vmlinux: vmlinux.o $(KBUILD_LDS) $(if $(filter-out wasm,$(SRCARCH)),modpost)
++vmlinux: vmlinux.o $(KBUILD_LDS) $(if $(filter wasm,$(SRCARCH)),,modpost)
  	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.vmlinux
  
  # The actual objects are generated when descending,
-@@ -1415,7 +1416,7 @@ archprepare: outputmakefile archheaders archscripts scripts include/config/kerne
+@@ -1415,7 +1415,7 @@ archprepare: outputmakefile archheaders archscripts scripts include/config/kerne
  	include/generated/rustc_cfg remove-stale-files
  
  prepare0: archprepare
 -	$(Q)$(MAKE) $(build)=scripts/mod
-+	$(if $(filter-out wasm,$(SRCARCH)),$(Q)$(MAKE) $(build)=scripts/mod)
++	$(if $(filter wasm,$(SRCARCH)),,$(Q)$(MAKE) $(build)=scripts/mod)
  	$(Q)$(MAKE) $(build)=. prepare
  
  # All the preparing..
@@ -119,10 +118,10 @@ index 000000000..12256ac58
 +	$(Q)test -e .vmlinux.export.c || echo '/* no exports */' > .vmlinux.export.c
 diff --git a/arch/wasm/configs/defconfig b/arch/wasm/configs/defconfig
 new file mode 100644
-index 000000000..5a9cdd29f
+index 000000000..81a1e1a7b
 --- /dev/null
 +++ b/arch/wasm/configs/defconfig
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,62 @@
 +# CONFIG_LOCALVERSION_AUTO is not set
 +CONFIG_BLK_DEV_INITRD=y
 +CONFIG_INITRAMFS_SOURCE="usr/empty.cpio"
@@ -142,6 +141,7 @@ index 000000000..5a9cdd29f
 +# CONFIG_TIMERFD is not set
 +# CONFIG_EVENTFD is not set
 +# CONFIG_AIO is not set
++# CONFIG_IO_URING is not set
 +# CONFIG_ADVISE_SYSCALLS is not set
 +# CONFIG_MEMBARRIER is not set
 +# CONFIG_CACHESTAT_SYSCALL is not set
