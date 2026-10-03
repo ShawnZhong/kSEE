@@ -9,9 +9,14 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: linux
-          key: linux-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-llvm22-${{ hashFiles('linux.patch', 'plugin/ksee-trace.cpp', 'crates/ksee-cli/src/build.rs', 'setup.sh') }}
+          key: linux-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-llvm22-${{ hashFiles('linux.patch', 'plugin/ksee-trace.cpp', 'crates/ksee-cli/src/build.rs') }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked -p ksee-core -p ksee-cli
-      - run: ./setup.sh
+      - run: rustup target add wasm32-unknown-unknown
+      - run: |
+          if ! command -v wasm-bindgen >/dev/null 2>&1 ||
+            [ "$(wasm-bindgen --version 2>/dev/null)" != "wasm-bindgen 0.2.128" ]; then
+            cargo install wasm-bindgen-cli --version 0.2.128 --locked --force
+          fi
       - run: wasm-bindgen --version
       - run: ./ksee.sh build
