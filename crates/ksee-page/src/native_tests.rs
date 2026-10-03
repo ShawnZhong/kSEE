@@ -14,6 +14,30 @@ use crate::objects_view::{ObjectDefinition, ObjectsView};
 static PARAGRAPH_TARGETS: Mutex<Vec<LessonTarget>> = Mutex::new(Vec::new());
 static OBJECT_RECORDS: Mutex<Vec<usize>> = Mutex::new(Vec::new());
 
+#[test]
+fn timeline_pan_tracks_a_middle_drag() {
+    assert_eq!(
+        crate::clamped_pan((20, 39), 100.0, 1000.0, 100),
+        (18.0, 19, 100.0)
+    );
+}
+
+#[test]
+fn timeline_pan_clamps_at_the_left_edge() {
+    assert_eq!(
+        crate::clamped_pan((0, 19), 100.0, 1000.0, 100),
+        (0.0, 19, 0.0)
+    );
+}
+
+#[test]
+fn timeline_pan_clamps_at_the_right_edge() {
+    assert_eq!(
+        crate::clamped_pan((80, 99), -100.0, 1000.0, 100),
+        (80.0, 19, 0.0)
+    );
+}
+
 fn paragraph_app() -> Element {
     rsx! {
         ParagraphView {

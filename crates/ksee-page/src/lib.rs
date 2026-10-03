@@ -33,15 +33,17 @@ mod coordinator;
 #[cfg(target_arch = "wasm32")]
 mod editor;
 #[cfg(target_arch = "wasm32")]
+mod host;
+#[cfg(target_arch = "wasm32")]
 mod layout;
 #[cfg(target_arch = "wasm32")]
 mod lesson;
 mod lesson_view;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod native_tests;
 mod objects_view;
 #[cfg(target_arch = "wasm32")]
 mod panels;
-#[cfg(target_arch = "wasm32")]
-mod host;
 #[cfg(target_arch = "wasm32")]
 mod source;
 #[cfg(target_arch = "wasm32")]
@@ -50,13 +52,30 @@ mod stack;
 mod state;
 #[cfg(all(target_arch = "wasm32", feature = "browser-tests"))]
 mod test;
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod native_tests;
+
+/// Clamp a horizontal timeline drag to the recording and return its committed
+/// start/span plus the pixel offset that can actually be previewed.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub(crate) fn clamped_pan(
+    window: (usize, usize),
+    dx: f64,
+    width: f64,
+    steps: usize,
+) -> (f64, usize, f64) {
+    let (a, b) = window;
+    let span = b.saturating_sub(a);
+    let visible = span.saturating_add(1).min(steps.max(1));
+    let max_start = steps.saturating_sub(visible) as f64;
+    let requested = a as f64 - dx / width.max(1.0) * visible as f64;
+    let start = requested.clamp(0.0, max_start);
+    let offset = (a as f64 - start) / visible as f64 * width.max(1.0);
+    (start, span, offset)
+}
 
 #[cfg(target_arch = "wasm32")]
-use lesson::Example;
-#[cfg(target_arch = "wasm32")]
 pub(crate) use host::machine;
+#[cfg(target_arch = "wasm32")]
+use lesson::Example;
 #[cfg(target_arch = "wasm32")]
 use state::Ui;
 
@@ -72,8 +91,14 @@ thread_local! {
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn boot() -> Result<Rc<Machine>, String> {
     let promise = BOOT.with_borrow(|p| p.clone()).ok_or("not mounted")?;
-    let booted = JsFuture::from(promise).await.map_err(|e| e.as_string().or_else(|| js_sys::Error::from(e).message().as_string()).unwrap_or_default())?;
-    Ok(Rc::new(Machine::try_from_js_value(booted).map_err(|_| "not a Machine".to_string())?))
+    let booted = JsFuture::from(promise).await.map_err(|e| {
+        e.as_string()
+            .or_else(|| js_sys::Error::from(e).message().as_string())
+            .unwrap_or_default()
+    })?;
+    Ok(Rc::new(
+        Machine::try_from_js_value(booted).map_err(|_| "not a Machine".to_string())?,
+    ))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -88,7 +113,9 @@ pub(crate) fn examples() -> Vec<Example> {
 #[wasm_bindgen]
 pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsValue> {
     // (A panic said on the console, not only "unreachable".)
-    std::panic::set_hook(Box::new(|p| web_sys::console::error_1(&p.to_string().into())));
+    std::panic::set_hook(Box::new(|p| {
+        web_sys::console::error_1(&p.to_string().into())
+    }));
     let examples: Vec<Example> = serde_wasm_bindgen::from_value(examples)?;
     BOOT.with_borrow_mut(|b| *b = Some(machine));
     EXAMPLES.with_borrow_mut(|e| *e = examples);
@@ -99,7 +126,9 @@ pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsVa
             return Ok(());
         }
     }
-    dioxus::LaunchBuilder::web().with_cfg(dioxus::web::Config::new().rootname(root)).launch(App);
+    dioxus::LaunchBuilder::web()
+        .with_cfg(dioxus::web::Config::new().rootname(root))
+        .launch(App);
     Ok(())
 }
 
@@ -113,13 +142,18 @@ fn App() -> Element {
     });
     let host = use_context_provider(host::Host::new);
     // (The kernel booting: ready, or why not.)
-    use_hook(move || spawn(async move {
-        let mut kernel = ui.kernel;
-        kernel.set(Some(match boot().await {
-            Ok(machine) => { host.install(machine); Ok(()) }
-            Err(error) => Err(error),
-        }));
-    }));
+    use_hook(move || {
+        spawn(async move {
+            let mut kernel = ui.kernel;
+            kernel.set(Some(match boot().await {
+                Ok(machine) => {
+                    host.install(machine);
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            }));
+        })
+    });
     coordinator::use_coordinator(ui);
     let derived = state::Derived::new(ui);
     use_context_provider(|| derived);

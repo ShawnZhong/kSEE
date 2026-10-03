@@ -10,11 +10,11 @@
 
 use dioxus::prelude::*;
 use ksee_core::trace::Record;
-use ksee_core::view::{wheel_window, Chart};
+use ksee_core::view::{Chart, wheel_window};
 use wasm_bindgen::JsCast;
 
 use crate::machine;
-use crate::state::{Derived, Shared, Ui};
+use crate::state::{Derived, Ui};
 
 /// The overview's buckets.
 const BUCKETS: usize = 240;
@@ -22,14 +22,31 @@ const BUCKETS: usize = 240;
 const ROW: f64 = 15.0;
 /// How much a vertical wheel turn (a pixel of it) zooms.
 const ZOOM: f64 = 0.002;
+/// The task lane fixed under the stack rows (px).
+const TASK_LANE: f64 = 12.0;
 
 /// The chart window made by the page's wheel input.
-pub(crate) fn wheel_view(window: (usize, usize), x: f64, width: f64, dx: f64, dy: f64, shift: bool) -> (f64, usize) {
+pub(crate) fn wheel_view(
+    window: (usize, usize),
+    x: f64,
+    width: f64,
+    dx: f64,
+    dy: f64,
+    shift: bool,
+) -> (f64, usize) {
     wheel_window(window, x, width, dx, dy, shift, (dy * ZOOM).exp())
 }
 /// Kernel areas in timeline legend order; unmatched files use gray.
-const AREAS: &[(&str, &str)] = &[("fs/", "fs"), ("mm/", "mm"), ("kernel/sched/", "sched"), ("kernel/", "kernel"),
-                                  ("drivers/", "drivers"), ("lib/", "lib"), ("include/", "include"), ("arch/", "arch")];
+const AREAS: &[(&str, &str)] = &[
+    ("fs/", "fs"),
+    ("mm/", "mm"),
+    ("kernel/sched/", "sched"),
+    ("kernel/", "kernel"),
+    ("drivers/", "drivers"),
+    ("lib/", "lib"),
+    ("include/", "include"),
+    ("arch/", "arch"),
+];
 
 /// A task's hue, by its pid (the strip, the overview, the program's lanes).
 pub fn hue(pid: i32) -> i32 {
@@ -45,7 +62,11 @@ fn task_color(pid: i32) -> String {
 pub(crate) fn call_color(file: Option<&str>, on: bool) -> String {
     const HUES: [i32; 7] = [210, 135, 28, 48, 280, 175, 330];
     let l = if on { 50 } else { 74 };
-    match AREAS.iter().position(|(p, _)| file.unwrap_or("").starts_with(p)).and_then(|k| HUES.get(k)) {
+    match AREAS
+        .iter()
+        .position(|(p, _)| file.unwrap_or("").starts_with(p))
+        .and_then(|k| HUES.get(k))
+    {
         Some(h) => format!("hsl({h} {}% {l}%)", if on { 65 } else { 55 }),
         None => format!("hsl(0 0% {}%)", l + 5),
     }
@@ -65,7 +86,7 @@ struct Tip {
 pub fn Timeline() -> Element {
     let ui = use_context::<Ui>();
     let tip = use_signal(|| None::<Tip>);
-    let mut bottomed = use_signal(|| false);
+    let bottomed = use_signal(|| false);
     // (The cursor stepped out of the window: the window moved to it, as wide.)
     let d = use_context::<Derived>();
     use_effect(move || {
@@ -75,7 +96,11 @@ pub fn Timeline() -> Element {
             ui.view(at - ((b - a) / 2) as f64, b - a);
         }
     });
-    let title = d.syscall.cloned().map(|s| format!("{} by {}", s.name, s.task.named())).unwrap_or_default();
+    let title = d
+        .syscall
+        .cloned()
+        .map(|s| format!("{} by {}", s.name, s.task.named()))
+        .unwrap_or_default();
     rsx! {
         section { class: "history",
             Overview {}
@@ -89,19 +114,7 @@ pub fn Timeline() -> Element {
                     for (p , n) in AREAS { span { i { style: "background: {call_color(Some(p), false)}" } "{n}" } }
                 }
             }
-            div { id: "timeline-scroll", class: "flamescroll",
-                onmounted: move |_| {
-                    if let Some(scroll) = stack_scroll() {
-                        let max = scroll.scroll_height() - scroll.client_height();
-                        if max > 0 {
-                            scroll.set_scroll_top(max);
-                            bottomed.set(true);
-                        }
-                    }
-                },
-                Bars { tip, bottomed }
-            }
-            Strip {}
+            Bars { tip, bottomed }
             Transport {}
         }
         if let Some(t) = tip() {
@@ -125,11 +138,22 @@ fn Overview() -> Element {
     let cursor = d.cursor.cloned();
     let (n, tasks, starts, (wa, wb), at) = m.view(|v| {
         let n = v.rec.steps().max(1);
-        let tasks: Vec<i32> = (0..BUCKETS).map(|k| {
-            let i = v.rec.record_of(k * n / BUCKETS);
-            v.rec.tasks.get(i).and_then(|&t| v.task(t, i).pid).unwrap_or(0)
-        }).collect();
-        let starts: Vec<usize> = v.rec.syscalls.iter().map(|s| v.rec.step_of(s.first)).collect();
+        let tasks: Vec<i32> = (0..BUCKETS)
+            .map(|k| {
+                let i = v.rec.record_of(k * n / BUCKETS);
+                v.rec
+                    .tasks
+                    .get(i)
+                    .and_then(|&t| v.task(t, i).pid)
+                    .unwrap_or(0)
+            })
+            .collect();
+        let starts: Vec<usize> = v
+            .rec
+            .syscalls
+            .iter()
+            .map(|s| v.rec.step_of(s.first))
+            .collect();
         (n, tasks, starts, (d.window)(), cursor)
     });
     let pct = |s: usize| s as f64 * 100.0 / n as f64;
@@ -158,10 +182,15 @@ struct Pan {
     scroll: i32,
     a: usize,
     b: usize,
+    pointer_id: i32,
 }
 
 fn element(id: &str) -> Option<web_sys::HtmlElement> {
-    web_sys::window()?.document()?.get_element_by_id(id)?.dyn_into().ok()
+    web_sys::window()?
+        .document()?
+        .get_element_by_id(id)?
+        .dyn_into()
+        .ok()
 }
 
 fn stack_scroll() -> Option<web_sys::HtmlElement> {
@@ -169,15 +198,24 @@ fn stack_scroll() -> Option<web_sys::HtmlElement> {
 }
 
 fn chart_coordinates(client_x: f64, client_y: f64) -> Option<(f64, f64)> {
-    let rect = element("timeline-chart")?.get_bounding_client_rect();
+    let rect = element("timeline-canvas")?.get_bounding_client_rect();
     Some((client_x - rect.left(), client_y - rect.top()))
 }
 
-fn preview_drag(dx: f64) {
-    if let Some(layer) = element("timeline-drag-layer") {
-        let style = if dx == 0.0 { String::new() } else { format!("transform: translateX({dx}px)") };
-        let _ = layer.set_attribute("style", &style);
-    }
+fn foreground() -> String {
+    let Some(window) = web_sys::window() else {
+        return "currentColor".into();
+    };
+    let Some(chart) = element("timeline-chart") else {
+        return "currentColor".into();
+    };
+    window
+        .get_computed_style(&chart)
+        .ok()
+        .flatten()
+        .and_then(|style| style.get_property_value("color").ok())
+        .filter(|color| !color.is_empty())
+        .unwrap_or_else(|| "currentColor".into())
 }
 
 fn drag_moved(dx: f64, dy: f64) -> bool {
@@ -192,40 +230,261 @@ fn chart_height(depth: usize, room: f64) -> f64 {
     (depth as f64 * ROW).max(room)
 }
 
+#[derive(Clone)]
+struct TaskRun {
+    start: usize,
+    end: usize,
+    name: String,
+    color: String,
+}
+
+fn task_runs(chart: &Chart) -> Vec<TaskRun> {
+    let m = machine();
+    chart
+        .task_runs()
+        .into_iter()
+        .map(|(start, end, task)| {
+            let t = m.view(|v| v.task(task, chart.cols[end - 1].i));
+            TaskRun {
+                start,
+                end,
+                name: t.named(),
+                color: task_color(t.pid.unwrap_or(0)),
+            }
+        })
+        .collect()
+}
+
+fn canvas_context(
+    id: &str,
+    width: f64,
+    height: f64,
+) -> Option<(
+    web_sys::HtmlCanvasElement,
+    web_sys::CanvasRenderingContext2d,
+)> {
+    let canvas = web_sys::window()?
+        .document()?
+        .get_element_by_id(id)?
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .ok()?;
+    let ctx = canvas
+        .get_context("2d")
+        .ok()
+        .flatten()?
+        .dyn_into::<web_sys::CanvasRenderingContext2d>()
+        .ok()?;
+    let dpr = web_sys::window()
+        .map_or(1.0, |w| w.device_pixel_ratio())
+        .max(1.0);
+    canvas.set_width((width * dpr).round() as u32);
+    canvas.set_height((height * dpr).round() as u32);
+    let _ = canvas.style().set_property("width", &format!("{width}px"));
+    let _ = canvas
+        .style()
+        .set_property("height", &format!("{height}px"));
+    let _ = ctx.set_transform(dpr, 0.0, 0.0, dpr, 0.0, 0.0);
+    ctx.clear_rect(0.0, 0.0, width, height);
+    Some((canvas, ctx))
+}
+
+fn draw_chart(
+    chart: &Chart,
+    tasks: &[TaskRun],
+    width: f64,
+    height: f64,
+    calls: &[(usize, String)],
+    find: &str,
+    lit: Option<&(usize, String)>,
+    peeked: Option<f64>,
+    now: Option<f64>,
+    offset: f64,
+) {
+    let Some((canvas, ctx)) = canvas_context("timeline-canvas", width, height) else {
+        return;
+    };
+    let Some((task_canvas, task_ctx)) = canvas_context("timeline-task-canvas", width, TASK_LANE)
+    else {
+        return;
+    };
+    let n = chart.cols.len().max(1) as f64;
+    let foreground = foreground();
+    task_ctx.set_font("10px ui-monospace, SFMono-Regular, Menlo, monospace");
+    task_ctx.set_text_baseline("middle");
+    for task in tasks {
+        let x = task.start as f64 * width / n + offset;
+        let w = (task.end - task.start) as f64 * width / n;
+        if x + w <= 0.0 || x >= width {
+            continue;
+        }
+        task_ctx.set_fill_style_str(&task.color);
+        task_ctx.fill_rect(x, 0.0, (w - 1.0).max(1.0), TASK_LANE);
+        task_ctx.save();
+        task_ctx.begin_path();
+        task_ctx.rect(x, 0.0, (w - 2.0).max(1.0), TASK_LANE);
+        task_ctx.clip();
+        task_ctx.set_fill_style_str("#1f2328");
+        let _ = task_ctx.fill_text(&task.name, x + 3.0, TASK_LANE / 2.0);
+        task_ctx.restore();
+    }
+    ctx.set_font("11px ui-monospace, SFMono-Regular, Menlo, monospace");
+    ctx.set_text_baseline("middle");
+    let mut test_vfs = None;
+    let mut found_count = 0;
+    for (dd, a, e, b) in chart.bar_runs() {
+        let bar = &chart.bars[b as usize];
+        let id = (bar.first, bar.name.clone());
+        let on = calls.contains(&id);
+        let found = !find.is_empty() && bar.name.to_lowercase().contains(find);
+        let color = if found {
+            "#ffd866".to_string()
+        } else {
+            call_color(bar.file.as_deref(), on)
+        };
+        let x = a as f64 * width / n + offset;
+        let w = (e - a) as f64 * width / n;
+        let y = height - (dd as f64 + 1.0) * ROW;
+        if found {
+            found_count += 1;
+        }
+        if test_vfs.is_none() && bar.name == "vfs_read" {
+            test_vfs = Some((x + w / 2.0, y + ROW / 2.0));
+        }
+        if x + w <= 0.0 || x >= width {
+            continue;
+        }
+        ctx.set_fill_style_str(&color);
+        ctx.fill_rect(x, y, (w - 1.0).max(1.0), ROW - 1.0);
+        if lit.is_some_and(|l| l.0 == id.0 && l.1 == id.1) {
+            ctx.set_stroke_style_str(&foreground);
+            ctx.set_line_width(1.5);
+            ctx.stroke_rect(x + 0.75, y + 0.75, (w - 2.5).max(1.0), ROW - 2.5);
+        }
+        if w >= 24.0 {
+            ctx.save();
+            ctx.begin_path();
+            ctx.rect(x, y, w - 2.0, ROW);
+            ctx.clip();
+            ctx.set_fill_style_str(if on { "#fff" } else { "#1f2328" });
+            let _ = ctx.fill_text(&bar.label, x + 3.0, y + ROW / 2.0);
+            ctx.restore();
+        }
+    }
+    for (at, alpha) in [(peeked, 0.3), (now, 1.0)] {
+        if let Some(pct) = at {
+            ctx.set_global_alpha(alpha);
+            ctx.set_fill_style_str(&foreground);
+            ctx.fill_rect(pct * width / 100.0 + offset - 1.0, 0.0, 2.0, height);
+        }
+    }
+    ctx.set_global_alpha(1.0);
+    if cfg!(feature = "browser-tests") {
+        match test_vfs {
+            Some((x, y)) => {
+                let _ = canvas.set_attribute("data-test-vfs-read", &format!("{x},{y}"));
+            }
+            None => {
+                let _ = canvas.remove_attribute("data-test-vfs-read");
+            }
+        }
+        let _ = canvas.set_attribute("data-test-found", &found_count.to_string());
+        for (name, value) in [("data-test-peek", peeked), ("data-test-now", now)] {
+            match value {
+                Some(value) => {
+                    let _ = canvas.set_attribute(name, &value.to_string());
+                }
+                None => {
+                    let _ = canvas.remove_attribute(name);
+                }
+            }
+        }
+        let task_names = tasks
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let _ = canvas.set_attribute("data-test-tasks", &task_names);
+        let _ = task_canvas.set_attribute("data-test-tasks", &task_names);
+    }
+}
+
 #[component]
 fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     let chart = d.chart.cloned();
+    let steps = machine().view(|v| v.rec.steps().max(1));
+    let tasks = task_runs(&chart);
     let mut pan = use_signal(|| None::<Pan>);
     // (Latched through pointer-up: a click fires after it, when pan is
     // already none — so a drag never ends in a click.)
     let mut dragged = use_signal(|| false);
     let mut width = use_signal(|| 1000.0f64);
-    let n = chart.cols.len().max(1);
     let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
-    let room = use_context::<Signal<crate::layout::Sizes>>()().chart;
+    let sizes = use_context::<Signal<crate::layout::Sizes>>();
+    let room = sizes().chart;
     let row = ROW;
-    let runs = chart.bar_runs();
     let (sa, sb) = (d.window)();
     // (Where a step is, across the window (%): the cursor's, solid; the
     // moment under the pointer's, faint; the calls on its stack.)
-    let x = |s: f64| (s >= sa as f64 && s < (sb + 1) as f64).then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64);
+    let x = |s: f64| {
+        (s >= sa as f64 && s < (sb + 1) as f64)
+            .then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64)
+    };
     let now = d.cursor.cloned().and_then(x);
     let peeked = d.preview.cloned().and_then(x);
-    let calls: Vec<(usize, String)> = d.stack.read().iter().map(|f| (f.first, f.func.clone())).collect();
+    let calls: Vec<(usize, String)> = d
+        .stack
+        .read()
+        .iter()
+        .map(|f| (f.first, f.func.clone()))
+        .collect();
     let find = (ui.find)().to_lowercase();
     // (The bar outlined: the one under the pointer, else the frame shown's call.)
-    let lit = tip().map(|t| t.call).or_else(|| d.stack.read().get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
+    let lit = tip().map(|t| t.call).or_else(|| {
+        d.stack
+            .read()
+            .get(d.frame.cloned())
+            .map(|f| (f.first, f.func.clone()))
+    });
     let height = chart_height(depth, room);
     let mut bottomed = bottomed;
-    let mut clear_drag = use_signal(|| false);
     use_effect(move || {
-        let _ = (d.window)();
-        if clear_drag() {
-            preview_drag(0.0);
-            clear_drag.set(false);
-        }
+        let chart = d.chart.cloned();
+        let width = width();
+        let room = sizes().chart;
+        let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
+        let height = chart_height(depth, room);
+        let (sa, sb) = (d.window)();
+        let x = |s: f64| {
+            (s >= sa as f64 && s < (sb + 1) as f64)
+                .then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64)
+        };
+        let calls: Vec<(usize, String)> = d
+            .stack
+            .read()
+            .iter()
+            .map(|f| (f.first, f.func.clone()))
+            .collect();
+        let lit = tip().map(|t| t.call).or_else(|| {
+            d.stack
+                .read()
+                .get(d.frame.cloned())
+                .map(|f| (f.first, f.func.clone()))
+        });
+        let tasks = task_runs(&chart);
+        draw_chart(
+            &chart,
+            &tasks,
+            width,
+            height,
+            &calls,
+            &(ui.find)().to_lowercase(),
+            lit.as_ref(),
+            d.preview.cloned().and_then(x),
+            d.cursor.cloned().and_then(x),
+            0.0,
+        );
     });
     use_effect(move || {
         let _ = d.chart.read();
@@ -241,24 +500,38 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
     });
     // (One rule for hover and click:
     // and the moment that column samples.)
-    let hit = move |chart: &Chart, x: f64, y: f64| -> Option<(Option<crate::state::Moment>, Option<usize>)> {
-        let k = ((x / width() * chart.cols.len() as f64).max(0.0) as usize).min(chart.cols.len().checked_sub(1)?);
+    let hit = move |chart: &Chart,
+                    x: f64,
+                    y: f64|
+          -> Option<(Option<crate::state::Moment>, Option<usize>)> {
+        let k = ((x / width() * chart.cols.len() as f64).max(0.0) as usize)
+            .min(chart.cols.len().checked_sub(1)?);
         let dd = ((height - y) / row).floor();
-        let bar = (dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len()).then(|| chart.cols[k].frames[dd as usize] as usize);
+        let bar = (y < height && dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len())
+            .then(|| chart.cols[k].frames[dd as usize] as usize);
         let frame = bar.map(|b| (chart.bars[b].first, chart.bars[b].name.clone()));
         let shown = d.shown.peek().as_ref().map(|m| m.call);
-        Some((ui.moment_at(chart.cols[k].i, Some(chart.cols[k].nth), frame, shown, &d.lines.read()), bar))
+        Some((
+            ui.moment_at(
+                chart.cols[k].i,
+                Some(chart.cols[k].nth),
+                frame,
+                shown,
+                &d.lines.read(),
+            ),
+            bar,
+        ))
     };
-    let pct = |k: usize| k as f64 * 100.0 / n as f64;
-    let px = width() / n as f64;
     // (The wheel: up and down zoom around the pointer's step, in
     // proportion to how far it turned; left and right (or Shift) pan.)
     let wheel = move |x: f64, dx: f64, dy: f64, shift: bool| {
         let (start, span) = wheel_view((d.window)(), x, width(), dx, dy, shift);
         ui.view(start, span);
     };
+    let labels: Vec<String> = chart.bars.iter().map(|bar| bar.label.clone()).collect();
+    let task_labels: Vec<String> = tasks.iter().map(|task| task.name.clone()).collect();
     rsx! {
-        div { id: "timeline-chart", class: "chart", style: "height: {height}px",
+        div { id: "timeline-chart", class: "chart",
             onresize: move |e| if let Ok(s) = e.get_content_box_size() { width.set(s.width.max(1.0)) },
             onwheel: move |e| {
                 e.prevent_default();
@@ -276,13 +549,22 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                 let p = e.client_coordinates();
                 let scroll = stack_scroll().map_or(0, |e| e.scroll_top());
                 let (a, b) = (d.window)();
-                pan.set(Some(Pan { x: p.x, y: p.y, scroll, a, b }));
+                let pointer_id = e.pointer_id();
+                if let Some(chart) = element("timeline-chart") {
+                    let _ = chart.set_pointer_capture(pointer_id);
+                }
+                pan.set(Some(Pan { x: p.x, y: p.y, scroll, a, b, pointer_id }));
             },
             onpointermove: {
                 let chart = chart.clone();
+                let tasks = tasks.clone();
+                let calls = calls.clone();
+                let find = find.clone();
+                let lit = lit.clone();
                 move |e: PointerEvent| {
                     let ui = ui;
                     if let Some(p) = pan() {
+                        if p.pointer_id != e.pointer_id() { return }
                         let at = e.client_coordinates();
                         let (dx, dy) = (at.x - p.x, at.y - p.y);
                         if drag_moved(dx, dy) || *dragged.peek() {
@@ -291,7 +573,8 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                                 ui.set_preview(None);
                                 tip.set(None);
                             }
-                            preview_drag(dx);
+                            let (_, _, offset) = crate::clamped_pan((p.a, p.b), dx, width(), steps);
+                            draw_chart(&chart, &tasks, width(), height, &calls, &find, lit.as_ref(), peeked, now, offset);
                             if let Some(scroll) = stack_scroll() {
                                 let max = scroll.scroll_height() - scroll.client_height();
                                 scroll.set_scroll_top(drag_scroll(p.scroll, dy, max));
@@ -314,14 +597,15 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                 }
             },
             onpointerup: move |e| {
-                if let Some(p) = pan() {
+                if let Some(p) = pan().filter(|p| p.pointer_id == e.pointer_id()) {
                     let dx = e.client_coordinates().x - p.x;
                     pan.set(None);
                     if *dragged.peek() && dx != 0.0 {
-                        clear_drag.set(true);
-                        ui.view(p.a as f64 - dx / width() * (p.b - p.a + 1) as f64, p.b - p.a);
-                    } else {
-                        preview_drag(0.0);
+                        let (start, span, _) = crate::clamped_pan((p.a, p.b), dx, width(), steps);
+                        ui.view(start, span);
+                    }
+                    if let Some(chart) = element("timeline-chart") {
+                        let _ = chart.release_pointer_capture(p.pointer_id);
                     }
                 }
             },
@@ -337,39 +621,46 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                     }
                 }
             },
-            onpointercancel: move |_| {
-                clear_drag.set(false);
-                preview_drag(0.0);
-                pan.set(None);
-            },
-            onmouseleave: move |_| {
-                ui.set_preview(None);
-                tip.set(None);
-                clear_drag.set(false);
-                preview_drag(0.0);
-                pan.set(None);
-            },
-            div { id: "timeline-drag-layer", class: "timeline-drag-layer",
-                for (dd , a , e , b) in runs {
-                    {
-                        let bar = &chart.bars[b as usize];
-                        let id = (bar.first, bar.name.clone());
-                        let on = calls.contains(&id);
-                        let found = !find.is_empty() && bar.name.to_lowercase().contains(&find);
-                        let bg = if found { "var(--found)".to_string() } else { call_color(bar.file.as_deref(), on) };
-                        let class = format!("bar{}{}{}", if on { " on" } else { "" }, if found { " found" } else { "" }, if lit.as_ref().is_some_and(|l| l.0 == id.0 && l.1 == id.1) { " lit" } else { "" });
-                        let label = bar.label.clone();
-                        let wide = (e - a) as f64 * px >= 24.0;
-                        rsx! {
-                            div { class,
-                                style: "left: {pct(a)}%; width: {pct(e - a)}%; bottom: {dd as f64 * row}px; height: {row - 1.0}px; line-height: {row - 1.0}px; background: {bg}",
-                                if wide { "{label}" }
-                            }
-                        }
+            onpointercancel: {
+                let chart = chart.clone();
+                let tasks = tasks.clone();
+                let calls = calls.clone();
+                let find = find.clone();
+                let lit = lit.clone();
+                move |e: PointerEvent| {
+                    if pan().is_some_and(|p| p.pointer_id == e.pointer_id()) {
+                        pan.set(None);
+                        dragged.set(false);
+                        draw_chart(&chart, &tasks, width(), height, &calls, &find, lit.as_ref(), peeked, now, 0.0);
                     }
                 }
-                if let Some(x) = peeked { div { class: "now peek", style: "left: {x}%" } }
-                if let Some(x) = now { div { class: "now", style: "left: {x}%" } }
+            },
+            onmouseleave: move |_| {
+                if pan().is_none() {
+                    ui.set_preview(None);
+                    tip.set(None);
+                }
+            },
+            div { id: "timeline-scroll", class: "flamescroll",
+                onmounted: move |_| {
+                    if let Some(scroll) = stack_scroll() {
+                        let max = scroll.scroll_height() - scroll.client_height();
+                        if max > 0 {
+                            scroll.set_scroll_top(max);
+                            bottomed.set(true);
+                        }
+                    }
+                },
+                canvas { id: "timeline-canvas", class: "timeline-canvas", role: "img", aria_label: "Call stack timeline" }
+            }
+            canvas { id: "timeline-task-canvas", class: "timeline-canvas task-canvas", role: "img", aria_label: "Task runs in the call stack timeline",
+                onmounted: move |_| draw_chart(&chart, &tasks, width(), height, &calls, &find, lit.as_ref(), peeked, now, 0.0)
+            }
+            div { class: "sr-only",
+                p { "Call labels in the timeline:" }
+                ul { for label in labels { li { "{label}" } } }
+                p { "Task runs in the timeline:" }
+                ul { for task in task_labels { li { "{task}" } } }
             }
         }
     }
@@ -384,45 +675,59 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
     }
     let m = machine();
     m.at_moment(first, |v, mem| {
-        let frame = v.call_stack(first, None, 0, mem, first).into_iter().find(|f| !f.inlined);
-        let args: Vec<(String, String)> = frame.as_ref().and_then(|f| f.args.clone()).unwrap_or_default().into_iter()
-            .map(|a| (a.name, a.value.unwrap_or_else(|| "{…}".into()))).collect();
-        let ret = v.rec.calls.call_end(first).and_then(|end| match v.rec.records.get(end) { Some(&Record::Return { value, .. }) => Some(value), _ => None });
-        let ret = ret.map(|r| format!(" = {}", v.tables.types.result(r))).unwrap_or_default();
-        match v.rec.syscalls.binary_search_by_key(&first, |s| s.first).ok().map(|k| &v.rec.syscalls[k]) {
+        let frame = v
+            .call_stack(first, None, 0, mem, first)
+            .into_iter()
+            .find(|f| !f.inlined);
+        let args: Vec<(String, String)> = frame
+            .as_ref()
+            .and_then(|f| f.args.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|a| (a.name, a.value.unwrap_or_else(|| "{…}".into())))
+            .collect();
+        let ret = v
+            .rec
+            .calls
+            .call_end(first)
+            .and_then(|end| match v.rec.records.get(end) {
+                Some(&Record::Return { value, .. }) => Some(value),
+                _ => None,
+            });
+        let ret = ret
+            .map(|r| format!(" = {}", v.tables.types.result(r)))
+            .unwrap_or_default();
+        match v
+            .rec
+            .syscalls
+            .binary_search_by_key(&first, |s| s.first)
+            .ok()
+            .map(|k| &v.rec.syscalls[k])
+        {
             Some(s) => {
                 let task = v.task(s.task, first);
-                let ret = s.ret.map(|r| v.tables.types.result(r as i64)).unwrap_or_else(|| "…".into());
+                let ret = s
+                    .ret
+                    .map(|r| v.tables.types.result(r as i64))
+                    .unwrap_or_else(|| "…".into());
                 let shown: Vec<String> = args.iter().map(|(_, x)| x.clone()).collect();
-                vec![(format!("{}({}) = {ret}", v.tables.types.syscall_name(s.nr), shown.join(", ")), ""),
-                     (format!("a syscall by {}", task.named()), "dim")]
+                vec![
+                    (
+                        format!(
+                            "{}({}) = {ret}",
+                            v.tables.types.syscall_name(s.nr),
+                            shown.join(", ")
+                        ),
+                        "",
+                    ),
+                    (format!("a syscall by {}", task.named()), "dim"),
+                ]
             }
-            None => std::iter::once((format!("{name}{ret}"), "")).chain(args.into_iter().map(|(n, x)| (format!("{n} = {x}"), "f"))).collect(),
+            None => std::iter::once((format!("{name}{ret}"), ""))
+                .chain(args.into_iter().map(|(n, x)| (format!("{n} = {x}"), "f")))
+                .collect(),
         }
     })
-}
-
-/// Under the chart: which task ran when, a run of columns each, named as
-/// the task was as the run ends (a thread that names itself: as it became).
-#[component]
-fn Strip() -> Element {
-    let d = use_context::<Derived>();
-    let chart: Shared<Chart> = d.chart.cloned();
-    let n = chart.cols.len().max(1);
-    let runs = chart.task_runs();
-    let m = machine();
-    let pct = |k: usize| k as f64 * 100.0 / n as f64;
-    rsx! {
-        div { class: "strip",
-            for (a , e , task) in runs {
-                {
-                    let t = m.view(|v| v.task(task, chart.cols[e - 1].i));
-                    let name = t.named();
-                    rsx! { div { class: "run", title: "{name}", style: "left: {pct(a)}%; width: {pct(e - a)}%; background: {task_color(t.pid.unwrap_or(0))}", "{name}" } }
-                }
-            }
-        }
-    }
 }
 
 /// Under the strip: steps through the call's lines (◀ ▶; Shift: over the
@@ -435,12 +740,30 @@ fn Transport() -> Element {
     let here = d.line.cloned();
     let s = d.syscall.cloned();
     let task = s.as_ref().map(|s| s.task.named()).unwrap_or_default();
-    let place = here.as_ref().map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
+    let place = here
+        .as_ref()
+        .map(|l| {
+            format!(
+                "{} {}:{}",
+                l.inlined.as_deref().unwrap_or(&l.func),
+                l.file,
+                l.line
+            )
+        })
+        .unwrap_or_default();
     // (A line that runs more than once in this call: which turn the cursor is on.)
-    let turn = here.as_ref().filter(|l| l.run > 1).map(|l| format!(" · turn {}", l.run)).unwrap_or_default();
+    let turn = here
+        .as_ref()
+        .filter(|l| l.run > 1)
+        .map(|l| format!(" · turn {}", l.run))
+        .unwrap_or_default();
     // (A step that lands after a call: what it returned.)
-    let returned = here.as_ref().and_then(|l| l.called.as_ref()).filter(|c| c.at <= here.as_ref().map_or(0, |l| l.at))
-        .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value))).unwrap_or_default();
+    let returned = here
+        .as_ref()
+        .and_then(|l| l.called.as_ref())
+        .filter(|c| c.at <= here.as_ref().map_or(0, |l| l.at))
+        .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value)))
+        .unwrap_or_default();
     rsx! {
         div { class: "transport",
             button { title: "the line before (←); Shift: back over the calls", onclick: move |e| crate::stack::walk(ui, &machine(), -1, e.modifiers().shift()), "◀" }
@@ -462,8 +785,20 @@ fn Find() -> Element {
     (ui.snapshot)();
     let w = (ui.find)().to_lowercase();
     let m = machine();
-    let calls: Vec<usize> = if w.is_empty() { Vec::new() } else {
-        m.view(|v| v.rec.calls(v.tables, |n| n.to_lowercase().contains(&w), 0, usize::MAX, None).collect())
+    let calls: Vec<usize> = if w.is_empty() {
+        Vec::new()
+    } else {
+        m.view(|v| {
+            v.rec
+                .calls(
+                    v.tables,
+                    |n| n.to_lowercase().contains(&w),
+                    0,
+                    usize::MAX,
+                    None,
+                )
+                .collect()
+        })
     };
     let count = calls.len();
     rsx! {

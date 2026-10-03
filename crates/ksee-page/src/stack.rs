@@ -119,14 +119,8 @@ pub fn Stack() -> Element {
     let mut open = use_context::<Signal<BTreeSet<String>>>();
     rsx! {
         div { class: "stack",
-            if let Some(f) = frames.get(chosen).cloned() {
-                table { class: "objs frame-values",
-                    for o in f.args.unwrap_or_default().into_iter().chain(f.locals.unwrap_or_default()) {
-                        Value { o: o.clone(), path: format!("{chosen}.{}", o.name), depth: 1, at }
-                    }
-                }
-            }
-            table { class: "objs",
+            div { class: "frame-list",
+                table { class: "objs",
                 for (k , f) in frames.iter().cloned().enumerate() {
                     tr { class: if k == chosen { "frame on" } else { "frame" }, onclick: {
                         let id = (f.first, f.func.clone());
@@ -140,6 +134,17 @@ pub fn Stack() -> Element {
                             span { class: "dim mono", " {f.file.clone().unwrap_or_default()}:{f.line.unwrap_or(0)}" }
                             if f.inlined { span { class: "dim", " · inlined" } }
                             if let Some(s) = &f.syscall { span { class: "dim", " · {s}" } }
+                        }
+                    }
+                    }
+                }
+            }
+            if let Some(f) = frames.get(chosen).cloned() {
+                div { class: "frame-details",
+                    div { class: "frame-title mono", "{f.func}" }
+                    table { class: "objs",
+                        for o in f.args.unwrap_or_default().into_iter().chain(f.locals.unwrap_or_default()) {
+                            Value { o: o.clone(), path: format!("{chosen}.{}", o.name), depth: 1, at }
                         }
                     }
                 }
