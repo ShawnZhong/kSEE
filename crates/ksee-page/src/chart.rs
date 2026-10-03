@@ -146,19 +146,29 @@ struct Pan {
     scroll: i32,
     a: usize,
     b: usize,
-    moved: bool,
+}
+
+fn element(id: &str) -> Option<web_sys::HtmlElement> {
+    web_sys::window()?.document()?.get_element_by_id(id)?.dyn_into().ok()
 }
 
 fn stack_scroll() -> Option<web_sys::HtmlElement> {
-    web_sys::window()?.document()?.get_element_by_id("timeline-scroll")?.dyn_into().ok()
+    element("timeline-scroll")
+}
+
+fn preview_drag(height: f64, dx: f64) {
+    if let Some(chart) = element("timeline-chart") {
+        let transform = if dx == 0.0 { String::new() } else { format!(" transform: translateX({dx}px);") };
+        let _ = chart.set_attribute("style", &format!("height: {height}px;{transform}"));
+    }
 }
 
 fn drag_moved(dx: f64, dy: f64) -> bool {
     dx.hypot(dy) >= 4.0
 }
 
-fn drag_scroll(start: i32, dy: f64) -> i32 {
-    (start as f64 + dy).round() as i32
+fn drag_scroll(start: i32, dy: f64, max: i32) -> i32 {
+    ((start as f64 - dy).round() as i32).clamp(0, max)
 }
 
 fn chart_height(depth: usize, room: f64) -> f64 {
@@ -191,7 +201,20 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     // (The bar outlined: the one under the pointer, else the frame shown's call.)
     let lit = tip().map(|t| t.call).or_else(|| d.stack.read().get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
     let height = chart_height(depth, room);
-    // (One rule for hover and click: the column, its frame if there is one,
+    let mut bottomed = use_signal(|| false);
+    use_effect(move || {
+        let _ = d.chart.read();
+        if !bottomed() {
+            if let Some(scroll) = stack_scroll() {
+                let max = scroll.scroll_height() - scroll.client_height();
+                if max > 0 {
+                    scroll.set_scroll_top(max);
+                    bottomed.set(true);
+                }
+            }
+        }
+    });
+    // (One rule for hover and click:
     // and the moment that column samples.)
     let hit = move |chart: &Chart, x: f64, y: f64| -> Option<(Option<crate::state::Moment>, Option<usize>)> {
         let k = ((x / width() * chart.cols.len() as f64).max(0.0) as usize).min(chart.cols.len().checked_sub(1)?);
@@ -210,7 +233,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         ui.view(start, span);
     };
     rsx! {
-        div { class: "chart", style: "height: {height}px",
+        div { id: "timeline-chart", class: "chart", style: "height: {height}px",
             onresize: move |e| if let Ok(s) = e.get_content_box_size() { width.set(s.width.max(1.0)) },
             onwheel: move |e| {
                 e.prevent_default();
@@ -225,26 +248,25 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 let p = e.client_coordinates();
                 let scroll = stack_scroll().map_or(0, |e| e.scroll_top());
                 let (a, b) = (d.window)();
-                pan.set(Some(Pan { x: p.x, y: p.y, scroll, a, b, moved: false }));
+                pan.set(Some(Pan { x: p.x, y: p.y, scroll, a, b }));
             },
             onpointermove: {
                 let chart = chart.clone();
                 move |e: PointerEvent| {
                     let ui = ui;
-                    if let Some(mut p) = pan() {
+                    if let Some(p) = pan() {
                         let at = e.client_coordinates();
                         let (dx, dy) = (at.x - p.x, at.y - p.y);
-                        if drag_moved(dx, dy) || p.moved {
-                            p.moved = true;
-                            dragged.set(true);
-                            pan.set(Some(p));
+                        if drag_moved(dx, dy) || *dragged.peek() {
+                            if !*dragged.peek() {
+                                dragged.set(true);
+                            }
                             ui.set_preview(None);
                             tip.set(None);
-                            if dx != 0.0 {
-                                ui.view(p.a as f64 - dx / width() * (p.b - p.a + 1) as f64, p.b - p.a);
-                            }
+                            preview_drag(height, dx);
                             if let Some(scroll) = stack_scroll() {
-                                scroll.set_scroll_top(drag_scroll(p.scroll, dy));
+                                let max = scroll.scroll_height() - scroll.client_height();
+                                scroll.set_scroll_top(drag_scroll(p.scroll, dy, max));
                             }
                             return;
                         }
@@ -263,7 +285,16 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     }
                 }
             },
-            onpointerup: move |_| pan.set(None),
+            onpointerup: move |e| {
+                if let Some(p) = pan() {
+                    let dx = e.client_coordinates().x - p.x;
+                    preview_drag(height, 0.0);
+                    pan.set(None);
+                    if *dragged.peek() && dx != 0.0 {
+                        ui.view(p.a as f64 - dx / width() * (p.b - p.a + 1) as f64, p.b - p.a);
+                    }
+                }
+            },
             // (A click, not a drag: resolve its coordinates afresh, then commit.)
             onclick: {
                 let chart = chart.clone();
@@ -274,7 +305,16 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     if let Some(moment) = hit(&chart, at.x, at.y).and_then(|h| h.0) { ui.commit(Some(moment)); }
                 }
             },
-            onmouseleave: move |_| { ui.set_preview(None); tip.set(None); pan.set(None); dragged.set(false); },
+            onpointercancel: move |_| {
+                preview_drag(height, 0.0);
+                pan.set(None);
+            },
+            onmouseleave: move |_| {
+                ui.set_preview(None);
+                tip.set(None);
+                preview_drag(height, 0.0);
+                pan.set(None);
+            },
             for (dd , a , e , b) in runs {
                 {
                     let bar = &chart.bars[b as usize];

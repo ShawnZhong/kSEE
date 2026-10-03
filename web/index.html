@@ -125,8 +125,8 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .find:focus { outline: none; border-color: var(--accent); }
 .legend { margin-left: auto; display: flex; gap: 8px; color: var(--dim); overflow: hidden; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
-.flamescroll { height: var(--chart); overflow: hidden auto; overscroll-behavior: contain; display: flex; flex-direction: column-reverse; }
-.chart { position: relative; flex: none; cursor: crosshair; user-select: none; touch-action: none; }
+.flamescroll { position: relative; height: var(--chart); overflow: hidden auto; overscroll-behavior: contain; }
+.chart { position: relative; cursor: crosshair; user-select: none; touch-action: none; }
 .chart .bar { pointer-events: none; position: absolute; padding: 0 3px; font: 11px var(--mono); overflow: hidden; white-space: nowrap; color: #1f2328; box-shadow: inset -1px 0 var(--panel); }
 .chart .bar.on { color: #fff; }
 .chart .bar.lit { outline: 1.5px solid var(--fg); outline-offset: -1.5px; z-index: 2; }
