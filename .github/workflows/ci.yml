@@ -18,5 +18,7 @@ jobs:
         run: cargo test --locked -p ksee-core -p ksee-cli
       - name: Install Rust/Wasm tools
         run: ./setup.sh --rust-only
+      - name: Build CLI
+        run: cargo build --locked --release -p ksee-cli
       - name: Build site
-        run: ./ksee.sh build
+        run: ./target/release/ksee build
