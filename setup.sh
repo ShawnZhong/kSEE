@@ -23,7 +23,7 @@ Linux)
 		exit 1
 	fi
 	sudo apt-get update
-	sudo apt-get install -y --no-install-recommends build-essential flex bison bc git curl ca-certificates e2fsprogs gzip clang-22 lld-22 llvm-22-dev
+	sudo apt-get install -y --no-install-recommends make flex bison bc git curl ca-certificates e2fsprogs gzip clang-22 lld-22 llvm-22-dev
 	;;
 *)
 	echo "setup.sh: unsupported host: $(uname -s)" >&2
