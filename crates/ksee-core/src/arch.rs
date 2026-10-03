@@ -30,8 +30,11 @@ pub(crate) const TASK_ENTRY: &str = "wasm_task_entry";
 pub(crate) const SWITCH: &str = "__switch_to";
 /// The kernel's page (arch/wasm: PAGE_SHIFT 12).
 pub const PAGE: u32 = 4096;
-/// A task, and the fields that identify it.
+/// A task (what the task running points at), and the fields of it the
+/// Stack shows first.
 pub const TASK: &str = "task_struct";
+/// What the kernel calls the task running, and a task's id and name.
+pub(crate) const CURRENT: &str = "current";
 pub(crate) const TASK_PID: &str = "pid";
 pub(crate) const TASK_COMM: &str = "comm";
 /// A task's parent, and its thread group's leader (itself, for a process).
@@ -47,6 +50,8 @@ pub(crate) const THREAD_HEAD: &str = "thread_head";
 pub(crate) const THREAD_NODE: &str = "thread_node";
 /// Whether a task is on its CPU's run queue (runnable, or running).
 pub(crate) const TASK_ON_RQ: &str = "on_rq";
+/// A task's fields shown first (the Tasks'), in this order.
+pub(crate) const TASK_FIELDS: [&str; 12] = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
 /// are the syscall's.
 pub(crate) const SYSCALL_BODY: &str = "__do_sys_";

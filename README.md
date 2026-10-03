@@ -20,7 +20,7 @@ A lesson runs a small program made of real syscalls. Its recording connects:
 - a timeline of tasks and call stacks;
 - the kernel source at the selected moment;
 - arguments, locals, and pointed-to values as memory was then;
-- every task's relationships, state, and current work;
+- every task's state and `task_struct`;
 - the kernel objects changed by the selected syscall; and
 - kernel and program console output.
 

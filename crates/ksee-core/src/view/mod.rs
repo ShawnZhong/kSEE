@@ -178,6 +178,13 @@ pub struct LineCount {
     pub count: u64,
 }
 
+/// A task's fields: the key ones first (arch::TASK_FIELDS, in that
+/// order), then the others.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskFields {
+    pub fields: Vec<Object>,
+}
+
 /// A task at a record: what the scheduler has it doing (`state`); its
 /// `last` record by then (None: it first runs after, or the recording
 /// never saw it run), and there the syscall it is in, else its
@@ -256,6 +263,15 @@ impl View<'_> {
             Some(task)
         });
         Task { addr, pid: task.as_ref().map(|t| t.pid), comm: task.map(|t| t.comm) }
+    }
+
+    /// The fields of the task at `addr`, in `mem` (memory as it was): the
+    /// key ones first (arch::TASK_FIELDS), then the others as declared.
+    pub fn task_fields(&self, mem: &dyn Memory, addr: u32) -> TaskFields {
+        let types = &self.tables.types;
+        let mut fields = types.find(arch::TASK).and_then(|ty| types.object(mem, arch::CURRENT, addr, ty, 1).children).unwrap_or_default();
+        fields.sort_by_key(|o| arch::TASK_FIELDS.iter().position(|&k| k == o.name).unwrap_or(usize::MAX));
+        TaskFields { fields }
     }
 
     /// The tasks at record `i`: the kernel's, as its lists had them then

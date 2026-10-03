@@ -240,6 +240,8 @@ pub async fn self_test() -> Result<(), String> {
     let undone = |i: usize| m.view(|v| v.rec.stores().after(i));
     t.check("memory as it was: writes undone", undone(w.first) > undone(wlast));
     let in_write = m.first_call("vfs_write", w.first, wlast, Some(w.task.addr)).unwrap_or(0);
+    let comm = m.at_moment(in_write, |v, mem| v.task_fields(mem, w.task.addr)).fields.into_iter().find(|c| c.name == "comm").and_then(|c| c.value);
+    t.check("the task, as it was", comm.as_deref() == Some("\"prog\""));
     let rq = m.at_moment(in_write, |v, mem| v.tables.types.globals.get("runqueues").map(|&(a, ty)| v.tables.types.object(mem, "runqueues", a, ty, 1)));
     t.check("a global", rq.is_some_and(|o| child(&o, "nr_running").is_some()));
 
