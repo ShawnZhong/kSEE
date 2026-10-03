@@ -134,6 +134,9 @@ name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "block-buffer"
@@ -766,6 +769,9 @@ dependencies = [
  "keyboard-types",
  "lazy-js-bundle",
  "rustversion",
+ "serde",
+ "serde_json",
+ "serde_repr",
  "tracing",
 ]
 
@@ -957,6 +963,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1a05365e3b1c6d1650318537c7460c6923f1abdd272ad6842baa2b509957a06"
 dependencies = [
  "num-traits",
+ "serde",
 ]
 
 [[package]]
@@ -1528,6 +1535,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b750dcadc39a09dbadd74e118f6dd6598df77fa01df0cfcdc52c28dece74528a"
 dependencies = [
  "bitflags",
+ "serde",
 ]
 
 [[package]]
@@ -1562,6 +1570,7 @@ name = "ksee-page"
 version = "0.1.0"
 dependencies = [
  "dioxus",
+ "dioxus-html",
  "js-sys",
  "ksee-core",
  "ksee-runtime",
@@ -2318,6 +2327,17 @@ dependencies = [
  "percent-encoding",
  "serde",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "serde_repr"
+version = "0.1.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d3b1629de253c70a0508c3899572da79ca359fdab27c7920ff00406df418906"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
 ]
 
 [[package]]

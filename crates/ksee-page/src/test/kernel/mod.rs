@@ -1,4 +1,4 @@
-//! The kernel's tests, in the page's module (feature `selftest`: `ksee
+//! The kernel's tests, in the page's module (feature `browser-tests`: `ksee
 //! test` builds it and runs them in Chromium): the program makes syscalls, recorded, as
 //! the page's lessons do, and the checks are of what the recordings show,
 //! through the views the page uses; then every lesson and try, on a fresh

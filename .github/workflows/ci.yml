@@ -23,4 +23,6 @@ jobs:
       - name: Build kernel and site
         run: target/release/ksee build
       - name: Test
-        run: target/release/ksee test --built
+        run: |
+          cargo test --locked --release -p ksee-page --lib
+          target/release/ksee test --built

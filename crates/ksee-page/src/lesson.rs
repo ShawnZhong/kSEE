@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::state::{RunId, Tab, Ui};
 use ksee_core::text::{self, LessonTab as LinkTab, LessonTarget, Piece};
+use crate::lesson_view::ParagraphView;
 use crate::{examples, machine};
 
 /// One chronological program step: a statement for the program's own task,
@@ -154,7 +155,7 @@ pub(crate) async fn run(ui: Ui, run: RunId, lines: Vec<Step>) {
         _ => None,
     })).flatten();
     match linked {
-        Some(t) => follow(ui, &t),
+        Some(t) => if let Ok(target) = LessonTarget::parse(&t) { follow(ui, target) },
         None => if let Some(k) = call_of(ui, calls) { ui.select(k) },
     }
 }
@@ -173,8 +174,7 @@ fn call_of(ui: Ui, n: usize) -> Option<usize> {
 /// `N:func` (the cursor at func's first line in it), and a tab to show
 /// (`:stack`, `:objects`, `:tasks`, `:console`); `try:N`, its program made
 /// instead.
-fn follow(ui: Ui, target: &str) {
-    let Ok(target) = LessonTarget::parse(target) else { return };
+fn follow(ui: Ui, target: LessonTarget) {
     let LessonTarget::Recording { call, function, any_task, tab } = target else {
         let LessonTarget::Try { index } = target else { unreachable!() };
         let tries = examples()[(ui.lesson)()].tries.clone();
@@ -372,11 +372,15 @@ pub fn Lesson() -> Element {
         h1 { "{ex.title}" }
         p { class: "question", "{ex.question}" }
         if mine {
-            div { class: "explain", for p in ex.text.iter() { Paragraph { text: p.clone(), stale: false } } }
+            div { class: "explain", for p in ex.text.iter() {
+                ParagraphView { pieces: text::pieces(p), stale: false, follow: move |target| follow(ui, target) }
+            } }
         } else {
             // (A try: its own text kept, the lesson's still shown; its call
             // links no longer apply.)
-            div { class: "explain", for p in ex.text.iter() { Paragraph { text: p.clone(), stale: true } } }
+            div { class: "explain", for p in ex.text.iter() {
+                ParagraphView { pieces: text::pieces(p), stale: true, follow: move |target| follow(ui, target) }
+            } }
             p { class: "explain dim", "A try, not the lesson's own program." }
         }
         div { class: "ptitle dim", "Program"
@@ -495,36 +499,4 @@ fn said(o: Option<&Outcome>) -> String {
 /// " (during line N)", for a call that finished as a later line ran.
 fn later(during: Option<usize>) -> String {
     during.map_or(String::new(), |j| format!(" (during line {})", j + 1))
-}
-
-#[component]
-fn Paragraph(text: String, stale: bool) -> Element {
-    let ui = use_context::<Ui>();
-    rsx! {
-        p { class: "para",
-            for x in text::pieces(&text) {
-                match x {
-                    Piece::Text(t) => rsx! { "{t}" },
-                    Piece::Code(c) => rsx! { code { "{c}" } },
-                    Piece::Link { label, target, .. } => {
-                        let parsed = LessonTarget::parse(&target);
-                        // (A try: a button; a function's place: its name, as code.)
-                        let class = match &parsed {
-                            Ok(LessonTarget::Try { .. }) => "try",
-                            Ok(LessonTarget::Recording { function: Some(_), .. }) => "place mono",
-                            _ => "",
-                        };
-                        // (Stale (a try, not the lesson's own program): a recording
-                        // link names a call it no longer has: dimmed, no link.)
-                        let recording = matches!(&parsed, Ok(LessonTarget::Recording { .. }));
-                        if parsed.is_err() || stale && recording {
-                            rsx! { span { class: "dim", "{label}" } }
-                        } else {
-                            rsx! { a { class, onclick: move |_| follow(ui, &target), "{label}" } }
-                        }
-                    }
-                }
-            }
-        }
-    }
 }

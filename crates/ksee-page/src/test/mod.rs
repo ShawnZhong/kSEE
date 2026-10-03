@@ -1,4 +1,4 @@
-//! Browser tests compiled into the page with feature `selftest`: the kernel's
+//! Browser tests compiled into the page with feature `browser-tests`: the kernel's
 //! integration checks and the page's DOM interaction suites.
 
 use wasm_bindgen::prelude::*;

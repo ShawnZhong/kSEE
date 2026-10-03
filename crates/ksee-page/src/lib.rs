@@ -8,33 +8,59 @@
 //! call selected, the cursor in it (a line it ran), and the frame chosen on
 //! the Stack.
 
+#[cfg(target_arch = "wasm32")]
 use std::cell::RefCell;
+#[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
 
+#[cfg(target_arch = "wasm32")]
 use dioxus::prelude::*;
+#[cfg(target_arch = "wasm32")]
 use js_sys::Promise;
+#[cfg(target_arch = "wasm32")]
 use ksee_runtime::machine::Machine;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::convert::TryFromJsValue;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::JsFuture;
 
+#[cfg(target_arch = "wasm32")]
 mod chart;
+#[cfg(target_arch = "wasm32")]
 mod coordinator;
+#[cfg(target_arch = "wasm32")]
 mod editor;
+#[cfg(target_arch = "wasm32")]
 mod layout;
+#[cfg(target_arch = "wasm32")]
 mod lesson;
+mod lesson_view;
+mod objects_view;
+#[cfg(target_arch = "wasm32")]
 mod panels;
+#[cfg(target_arch = "wasm32")]
 mod runtime;
+#[cfg(target_arch = "wasm32")]
 mod source;
+#[cfg(target_arch = "wasm32")]
 mod stack;
+#[cfg(target_arch = "wasm32")]
 mod state;
-#[cfg(feature = "selftest")]
+#[cfg(all(target_arch = "wasm32", feature = "browser-tests"))]
 mod test;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod native_tests;
 
+#[cfg(target_arch = "wasm32")]
 use lesson::Example;
+#[cfg(target_arch = "wasm32")]
 pub(crate) use runtime::machine;
+#[cfg(target_arch = "wasm32")]
 use state::Ui;
 
+#[cfg(target_arch = "wasm32")]
 thread_local! {
     /// The Machine (one thread: the page's), once booted; until then, its
     /// boot (a promise: `mount`'s).
@@ -43,12 +69,14 @@ thread_local! {
 }
 
 /// The Machine, once booted; or why it could not be.
+#[cfg(target_arch = "wasm32")]
 pub(crate) async fn boot() -> Result<Rc<Machine>, String> {
     let promise = BOOT.with_borrow(|p| p.clone()).ok_or("not mounted")?;
     let booted = JsFuture::from(promise).await.map_err(|e| e.as_string().or_else(|| js_sys::Error::from(e).message().as_string()).unwrap_or_default())?;
     Ok(Rc::new(Machine::try_from_js_value(booted).map_err(|_| "not a Machine".to_string())?))
 }
 
+#[cfg(target_arch = "wasm32")]
 pub(crate) fn examples() -> Vec<Example> {
     EXAMPLES.with_borrow(|e| e.clone())
 }
@@ -56,6 +84,7 @@ pub(crate) fn examples() -> Vec<Example> {
 /// Mount the page into the element `root`, with the lessons, `examples`
 /// (examples.json), and `machine`, the kernel booting (a promise of the
 /// Machine: the page owns it once booted; the lesson shows meanwhile).
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsValue> {
     // (A panic said on the console, not only "unreachable".)
@@ -64,7 +93,7 @@ pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsVa
     BOOT.with_borrow_mut(|b| *b = Some(machine));
     EXAMPLES.with_borrow_mut(|e| *e = examples);
     // (The tests, for the native Chromium driver; the kernel test takes the Machine directly.)
-    #[cfg(feature = "selftest")]
+    #[cfg(feature = "browser-tests")]
     if let Some(name) = test::start() {
         if name == "kernel" {
             return Ok(());
@@ -74,6 +103,7 @@ pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsVa
     Ok(())
 }
 
+#[cfg(target_arch = "wasm32")]
 #[component]
 fn App() -> Element {
     let ui = use_context_provider(|| {

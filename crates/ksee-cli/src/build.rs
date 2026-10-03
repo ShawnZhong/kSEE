@@ -476,7 +476,7 @@ pub fn test(names: &[String], built: bool) {
 /// target/test/site: the site, its module built with the tests.
 fn test_site() {
     // (Its own target directory: the site's module, built without them, stays as it is.)
-    run(cmd("cargo").args(["build", "--locked", "--release", "-p", "ksee-page", "--features", "selftest",
+    run(cmd("cargo").args(["build", "--locked", "--release", "-p", "ksee-page", "--features", "browser-tests",
         "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));
     bindgen("target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm", "target/test/pkg");
     // (The site with the tests: the site's files, its module the one built with them.)
