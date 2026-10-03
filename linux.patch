@@ -82,29 +82,25 @@ index 000000000..a4e40e534
 +# SPDX-License-Identifier: GPL-2.0-only
 diff --git a/arch/wasm/Makefile b/arch/wasm/Makefile
 new file mode 100644
-index 000000000..d124a8845
+index 000000000..12256ac58
 --- /dev/null
 +++ b/arch/wasm/Makefile
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,31 @@
 +# SPDX-License-Identifier: GPL-2.0-only
 +
 +# wasm-ld has no linker scripts; kernel/vmlinux.lds.S is wasm assembly that
 +# the wrapper links first to fix the data layout. The wrappers also drop GNU
 +# options that wasm-ld and llvm-objcopy (for wasm) do not understand.
 +
-+WASM_LD := $(LLVM_PREFIX)wasm-ld$(LLVM_SUFFIX)
 +LD := $(srctree)/arch/wasm/scripts/wasm-ld
-+WASM_OBJCOPY := $(OBJCOPY)
 +OBJCOPY := $(srctree)/arch/wasm/scripts/objcopy
-+WASM_CC := $(CC)
-+export WASM_LD WASM_CC WASM_OBJCOPY
 +
 +# No modules: EXPORT_SYMBOL() emits ELF-only inline asm.
 +KBUILD_CPPFLAGS += -D__DISABLE_EXPORTS
 +# Return addresses are not observable in wasm.
 +KBUILD_CPPFLAGS += '-D__builtin_return_address(n)=((void*)0)'
 +
-+KBUILD_LDFLAGS += --no-gc-sections --error-limit=0
++KBUILD_LDFLAGS += --no-gc-sections
 +
 +# The final link only. The kernel imports the host runtime's memory (one
 +# thread: not shared); the runtime lives in it below CONFIG_WASM_HOST_MEMORY.
@@ -1801,7 +1797,7 @@ index 000000000..0d937d3d1
 +}
 diff --git a/arch/wasm/scripts/objcopy b/arch/wasm/scripts/objcopy
 new file mode 100755
-index 000000000..7bcd03214
+index 000000000..bac3137b4
 --- /dev/null
 +++ b/arch/wasm/scripts/objcopy
 @@ -0,0 +1,12 @@
@@ -1815,11 +1811,11 @@ index 000000000..7bcd03214
 +case "$1" in
 +--set-section-flags)	cp "$3" "$4" ;;	# --set-section-flags X in out
 +--remove-section=.modinfo) ;;
-+*)			exec $WASM_OBJCOPY "$@" ;;
++*)			exec llvm-objcopy "$@" ;;
 +esac
 diff --git a/arch/wasm/scripts/wasm-ld b/arch/wasm/scripts/wasm-ld
 new file mode 100755
-index 000000000..c41e0185f
+index 000000000..95694784e
 --- /dev/null
 +++ b/arch/wasm/scripts/wasm-ld
 @@ -0,0 +1,28 @@
@@ -1845,12 +1841,12 @@ index 000000000..c41e0185f
 +	esac
 +done
 +
-+[ -z "$script" ] && exec $WASM_LD "$@"
++[ -z "$script" ] && exec wasm-ld "$@"
 +
 +head=$(mktemp "${TMPDIR:-/tmp}/wasm-ld.XXXXXX.o")
 +trap 'rm -f "$head"' EXIT
-+$WASM_CC --target=wasm32 -x assembler -c "$script" -o "$head"
-+$WASM_LD "$head" "$@"
++clang --target=wasm32 -x assembler -c "$script" -o "$head"
++wasm-ld "$head" "$@"
 diff --git a/scripts/Makefile.clang b/scripts/Makefile.clang
 index b67636b28..b37824b5c 100644
 --- a/scripts/Makefile.clang
