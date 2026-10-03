@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: ./setup.sh
+      - name: Build site
+        run: ./ksee.sh build
+      - name: Check build outputs
+        run: |
+          test -s linux/vmlinux
+          test -s target/site/vmlinux.gz
+          test -s target/site/initramfs.cpio.gz
+          test -s target/site/examples.json
+          test -s target/site/pkg/ksee_page.js
+          test -s target/site/pkg/ksee_page_bg.wasm
+          test -e target/site/index.html
+      - name: Run native tests
+        run: cargo test --locked -p ksee-core -p ksee-cli

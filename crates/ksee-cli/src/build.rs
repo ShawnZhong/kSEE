@@ -23,16 +23,38 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::LazyLock;
 
-/// setup.sh's dirs first, then the caller's PATH. macOS: brew's LLVM, lld,
-/// GNU make and sed, mkfs.ext4; Linux: the LLVM setup.sh installs.
-static PATH: LazyLock<String> = LazyLock::new(|| {
-    let dirs: Vec<String> = if cfg!(target_os = "macos") {
-        let brew = String::from_utf8_lossy(&output(Command::new("brew").arg("--prefix"))).trim().to_string();
-        ["opt/llvm/bin", "opt/lld/bin", "opt/make/libexec/gnubin", "opt/gnu-sed/libexec/gnubin", "opt/e2fsprogs/sbin"]
-            .iter().map(|d| format!("{brew}/{d}")).collect()
+fn brew_prefix(formula: &str) -> String {
+    String::from_utf8_lossy(&output(Command::new("brew").args(["--prefix", formula])))
+        .trim().to_string()
+}
+
+/// LLVM 23's binaries. An override is useful for a custom toolchain, but is
+/// absolute so builds do not silently change with their working directory.
+static LLVM_BIN: LazyLock<String> = LazyLock::new(|| {
+    if let Ok(bin) = std::env::var("KSEE_LLVM_BIN") {
+        if !Path::new(&bin).is_absolute() || !Path::new(&bin).is_dir() {
+            crate::fail("KSEE_LLVM_BIN must be an absolute directory");
+        }
+        bin
+    } else if cfg!(target_os = "macos") {
+        format!("{}/bin", brew_prefix("llvm@23"))
     } else {
-        vec!["/usr/lib/llvm-23/bin".into()]
-    };
+        "/usr/lib/llvm-23/bin".into()
+    }
+});
+
+/// setup.sh's dirs first, then the caller's PATH. macOS also needs Homebrew's
+/// lld, GNU make and sed, and mkfs.ext4.
+static PATH: LazyLock<String> = LazyLock::new(|| {
+    let mut dirs = vec![(*LLVM_BIN).clone()];
+    if cfg!(target_os = "macos") {
+        dirs.extend([
+            format!("{}/bin", brew_prefix("lld@23")),
+            format!("{}/libexec/gnubin", brew_prefix("make")),
+            format!("{}/libexec/gnubin", brew_prefix("gnu-sed")),
+            format!("{}/sbin", brew_prefix("e2fsprogs")),
+        ]);
+    }
     format!("{}:{}", dirs.join(":"), std::env::var("PATH").unwrap_or_default())
 });
 
@@ -95,7 +117,15 @@ fn stale(out: &str, inputs: &[&str]) -> bool {
     inputs.iter().any(|i| time(i).is_none_or(|ti| ti > t))
 }
 
+fn check_llvm() {
+    let version = String::from_utf8_lossy(&output(cmd("llvm-config").arg("--version"))).trim().to_string();
+    if version.split('.').next() != Some("23") {
+        crate::fail(&format!("LLVM 23 is required, found {version}"));
+    }
+}
+
 pub fn build() {
+    check_llvm();
     linux();
 
     if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
