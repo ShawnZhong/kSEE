@@ -47,9 +47,8 @@
 //                         then for one wider than 32 bits high)
 //   [addr, 7 << 28 | line << 4 | k]
 //                         a store of 1 << k bytes at addr (k < 4), followed
-//                         by the old value (low, then for 8 bytes high); k =
-//                         7: a range whose old contents are not logged,
-//                         followed by its length. Then, if it copies (a
+//                         by the old value (low, then for 8 bytes high).
+//                         Then, if it copies (a
 //                         value loaded and stored as it is, a memcpy),
 //                         where its bytes come from. line: which of its
 //                         block's lines (the L line's items, "|" apart,
@@ -129,7 +128,11 @@ namespace {
 constexpr unsigned RingWords = 1u << 21;
 constexpr unsigned CallArgs = 7; // the syscall entry's: the number and six
 constexpr unsigned Values = 2 * CallArgs + 1; // a record's at most: a call's arguments (wide ones two words) and its frame base
-enum Kind { KindBlock = 1, KindReturn = 4, KindCompare = 6, KindStore = 7, KindValue = 8, KindVar = 9 };
+enum class Kind : uint32_t { Block = 1, Return = 4, Compare = 6, Store = 7, Continuation = 8, Var = 9 };
+
+constexpr uint32_t tag(Kind kind, uint32_t fields = 0) {
+  return (static_cast<uint32_t>(kind) << 28) | (fields & 0x0fffffff);
+}
 
 uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
   for (unsigned char c : s)
@@ -260,10 +263,10 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       B.CreateCondBr(store ? B.CreateICmpNE(on, B.getInt32(0)) : B.CreateICmpEQ(on, B.getInt32(1)), write, done);
       B.SetInsertPoint(write);
       SmallVector<Value *> w;
-      // Continuation pairs: [value, KindValue << 28].
+      // Continuation pairs: [value, tag(Kind::Continuation)].
       auto value = [&](Value *v) {
         w.push_back(v);
-        w.push_back(B.getInt32(KindValue << 28));
+        w.push_back(B.getInt32(tag(Kind::Continuation)));
       };
       words(B, w, value);
       Value *p = B.CreateLoad(i32, field(B, 0));
@@ -291,7 +294,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
           Value *old = B.CreateZExt(B.CreateAlignedLoad(IntegerType::get(C, 8 << k),
                                                         B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1)), i64);
           w.push_back(addr);
-          w.push_back(B.CreateOr(B.getInt32(KindStore << 28 | k), B.CreateShl(F->getArg(1), 4)));
+          w.push_back(B.CreateOr(B.getInt32(tag(Kind::Store, k)), B.CreateShl(F->getArg(1), 4)));
           value(B.CreateTrunc(old, i32));
           if (k == 3)
             value(B.CreateTrunc(B.CreateLShr(old, 32), i32));
@@ -549,7 +552,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       // record goes before the next instruction, a later line's.)
       auto *D = dyn_cast<Instruction>(v);
       unsigned line = lineOf.lookup(D && D->getParent() == t.I->getParent() ? D : t.I);
-      record(B, low, KindVar << 28 | std::min(line, (1u << 12) - 1) << 16 | it->second, w);
+      record(B, low, tag(Kind::Var, std::min(line, (1u << 12) - 1) << 16 | it->second), w);
     }
 
   }
@@ -616,7 +619,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         Function *fa = Intrinsic::getOrInsertDeclaration(M, Intrinsic::frameaddress, {PointerType::getUnqual(M->getContext())});
         args.push_back(B.CreatePtrToInt(B.CreateCall(fa, {B.getInt32(0)}), i32));
       }
-      record(B, B.getInt32(id), KindBlock << 28 | n, args);
+      record(B, B.getInt32(id), tag(Kind::Block, n), args);
       // (The entry block starts at the function's signature: entering a
       // call stops there, with its arguments, before its first statement.)
       probes += ("L\t" + Twine(id) + "\t" + Twine(n) + "\t" + blockLines(*BB, n == 0 ? SP : nullptr) + "\n").str();
@@ -637,7 +640,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         Value *ret = R->getReturnValue();
         SmallVector<Value *, 2> w;
         ret ? words(B, ret, w) : w.push_back(B.getInt32(0));
-        record(B, B.getInt32(id), KindReturn << 28, w);
+        record(B, B.getInt32(id), tag(Kind::Return), w);
       }
 
     for (Instruction *I : writes)
@@ -662,7 +665,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       SmallVector<Value *, 3> rest{r[0]};
       if (l.size() > 1)
         rest.append({l[1], r[1]});
-      record(B, l[0], KindCompare << 28 | line << 4 | pred, rest);
+      record(B, l[0], tag(Kind::Compare, line << 4 | pred), rest);
     }
 
     unsigned wide = 0;
