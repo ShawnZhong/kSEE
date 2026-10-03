@@ -19,10 +19,12 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 mod chart;
+mod coordinator;
 mod editor;
 mod layout;
 mod lesson;
 mod panels;
+mod runtime;
 mod source;
 mod stack;
 mod state;
@@ -30,32 +32,21 @@ mod state;
 mod test;
 
 use lesson::Example;
+pub(crate) use runtime::machine;
 use state::Ui;
 
 thread_local! {
     /// The Machine (one thread: the page's), once booted; until then, its
     /// boot (a promise: `mount`'s).
-    static MACHINE: RefCell<Option<Rc<Machine>>> = const { RefCell::new(None) };
     static BOOT: RefCell<Option<Promise>> = const { RefCell::new(None) };
     static EXAMPLES: RefCell<Vec<Example>> = const { RefCell::new(Vec::new()) };
-}
-
-/// The Machine (booted: see `boot`, Ui::kernel).
-pub(crate) fn machine() -> Rc<Machine> {
-    MACHINE.with_borrow(|m| m.clone().expect("booted"))
 }
 
 /// The Machine, once booted; or why it could not be.
 pub(crate) async fn boot() -> Result<Rc<Machine>, String> {
     let promise = BOOT.with_borrow(|p| p.clone()).ok_or("not mounted")?;
     let booted = JsFuture::from(promise).await.map_err(|e| e.as_string().or_else(|| js_sys::Error::from(e).message().as_string()).unwrap_or_default())?;
-    // (Its first taker makes it the page's.)
-    if let Some(m) = MACHINE.with_borrow(|m| m.clone()) {
-        return Ok(m);
-    }
-    let m = Rc::new(Machine::try_from_js_value(booted).map_err(|_| "not a Machine".to_string())?);
-    MACHINE.with_borrow_mut(|slot| *slot = Some(m.clone()));
-    Ok(m)
+    Ok(Rc::new(Machine::try_from_js_value(booted).map_err(|_| "not a Machine".to_string())?))
 }
 
 pub(crate) fn examples() -> Vec<Example> {
@@ -90,11 +81,16 @@ fn App() -> Element {
         lesson::from_url(ui);
         ui
     });
+    let runtime = use_context_provider(runtime::Runtime::new);
     // (The kernel booting: ready, or why not.)
     use_hook(move || spawn(async move {
         let mut kernel = ui.kernel;
-        kernel.set(Some(boot().await.map(|_| ())));
+        kernel.set(Some(match boot().await {
+            Ok(machine) => { runtime.install(machine); Ok(()) }
+            Err(error) => Err(error),
+        }));
     }));
+    coordinator::use_coordinator(ui);
     let derived = state::Derived::new(ui);
     use_context_provider(|| derived);
     let sizes = use_context_provider(|| Signal::new(layout::Sizes::kept()));

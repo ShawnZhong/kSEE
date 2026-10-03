@@ -82,11 +82,12 @@ impl Derived {
     pub fn new(ui: Ui) -> Derived {
         let shown = use_memo(move || (ui.peek)().or((ui.at)()));
         let syscall = use_memo(move || {
-            (ui.version)();
+            (ui.snapshot)();
             let k = shown()?.call;
             machine().view(|v| v.syscalls().into_iter().nth(k))
         });
         let lines = use_memo(move || {
+            (ui.snapshot)();
             Shared(Rc::new(syscall.cloned().map_or_else(Vec::new, |s| {
                 let m = machine();
                 m.view(|v| v.lines(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), s.task.addr))
@@ -95,11 +96,12 @@ impl Derived {
         // (The chart's: none before the kernel is up.)
         let up = move || matches!((ui.kernel)(), Some(Ok(())));
         let window = use_memo(move || {
-            (ui.version)();
+            (ui.snapshot)();
             let end = if up() { machine().view(|v| v.rec.steps()).saturating_sub(1) } else { 0 };
             (ui.win)().unwrap_or((0, end))
         });
         let chart = use_memo(move || {
+            (ui.snapshot)();
             let (a, b) = window();
             Shared(Rc::new(if up() { machine().view(|v| v.chart(a, b, COLUMNS)) } else { Chart::default() }))
         });
@@ -107,17 +109,20 @@ impl Derived {
         // (Its values as they are just before the line runs: at its own
         // record, past what the lines before it in its stretch did.)
         let stack = use_memo(move || {
+            (ui.snapshot)();
             Shared(Rc::new(line.cloned().map_or_else(Vec::new, |l| {
                 machine().at_moment(l.at, |v, mem| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, mem, l.at))
             })))
         });
         let frame = use_memo(move || shown().and_then(|m| m.frame).and_then(|(first, func)| stack.read().iter().position(|f| f.first == first && f.func == func)).unwrap_or(0));
         let cursor = use_memo(move || {
+            (ui.snapshot)();
             let at = (ui.at)()?;
             if shown().is_some_and(|s| s.call == at.call) { moment_step(&at, &lines.read()) }
             else { moment_step(&at, &Ui::lines_of(at.call)) }
         });
         let preview = use_memo(move || {
+            (ui.snapshot)();
             let at = (ui.peek)()?;
             if shown().is_some_and(|s| s.call == at.call) { moment_step(&at, &lines.read()) }
             else { moment_step(&at, &Ui::lines_of(at.call)) }
@@ -134,10 +139,18 @@ pub enum Tab {
     Console,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RunId(u64);
+
+
 #[derive(Clone, Copy)]
 pub struct Ui {
-    /// Bumped at each snapshot: what reads the recording reads it again.
-    pub version: Signal<u32>,
+    /// The published recording snapshot: what reads the recording subscribes
+    /// to this identity and reads it again when it changes.
+    pub snapshot: Signal<u64>,
+    /// The newest requested program execution. Async results from older runs
+    /// are ignored even if their underlying browser work finishes later.
+    run: Signal<RunId>,
     /// The cursor (none: no call selected), and the moment under the
     /// pointer, if it is over the chart.
     pub at: Signal<Option<Moment>>,
@@ -163,7 +176,8 @@ pub struct Ui {
 impl Ui {
     pub fn new() -> Ui {
         Ui {
-            version: Signal::new(0),
+            snapshot: Signal::new(0),
+            run: Signal::new(RunId::default()),
             at: Signal::new(None),
             peek: Signal::new(None),
             win: Signal::new(None),
@@ -178,19 +192,95 @@ impl Ui {
         }
     }
 
+    /// Begin a new program execution and invalidate all older publishers.
+    pub fn begin_run(mut self) -> RunId {
+        let next = RunId(self.run.peek().0.wrapping_add(1));
+        self.run.set(next);
+        self.outcomes.write().clear();
+        self.console.set(String::new());
+        self.at.set(None);
+        self.peek.set(None);
+        self.seen.set(None);
+        next
+    }
+
+    pub fn is_current(&self, run: RunId) -> bool {
+        *self.run.peek() == run
+    }
+
+    pub fn publish_outcomes(mut self, run: RunId, outcomes: Vec<crate::lesson::Outcome>) -> bool {
+        if !self.is_current(run) {
+            return false;
+        }
+        self.outcomes.set(outcomes);
+        true
+    }
+
+    /// Publish the current execution state after a new Machine snapshot.
+    pub fn publish_snapshot(mut self, run: RunId, outcomes: Vec<crate::lesson::Outcome>, console: String) -> bool {
+        if !self.is_current(run) {
+            return false;
+        }
+        self.outcomes.set(outcomes);
+        self.console.write().push_str(&console);
+        self.snapshot += 1;
+        true
+    }
+
+    pub fn open_lesson(mut self, lesson: usize) {
+        let examples = crate::examples();
+        let Some(example) = examples.get(lesson) else { return };
+        self.lesson.set(lesson);
+        self.program.set(example.steps.clone());
+    }
+
+    pub fn restore_lesson(mut self, lesson: usize, program: Vec<crate::lesson::Step>) {
+        if lesson >= crate::examples().len() {
+            return;
+        }
+        self.lesson.set(lesson);
+        self.program.set(program);
+    }
+
+    pub fn replace_program(mut self, program: Vec<crate::lesson::Step>) {
+        self.program.set(program);
+    }
+
+    pub fn edit_program(mut self, edit: impl FnOnce(&mut Vec<crate::lesson::Step>)) {
+        edit(&mut self.program.write());
+    }
+
+    pub fn commit(mut self, moment: Option<Moment>) {
+        self.peek.set(None);
+        self.seen.set(None);
+        self.at.set(moment);
+    }
+
+    pub fn set_preview(mut self, moment: Option<Moment>) {
+        if *self.peek.peek() != moment {
+            self.peek.set(moment);
+        }
+    }
+
+    pub fn set_window(mut self, window: Option<(usize, usize)>) {
+        self.win.set(window);
+    }
+
+    pub fn set_tab(mut self, tab: Tab) {
+        self.tab.set(tab);
+    }
+
+    pub fn show_definition(mut self, definition: Option<(String, u32)>) {
+        self.seen.set(definition);
+    }
+
+    pub fn set_function_filter(mut self, filter: String) {
+        self.find.set(filter);
+    }
+
     /// The call selected (the cursor's).
     pub fn call(&self) -> Option<usize> {
         self.at.read().as_ref().map(|m| m.call)
-    }
-
-    /// The call shown, as the snapshot has it (Derived's).
-    pub fn syscall(&self) -> Option<SyscallSummary> {
-        consume_context::<Derived>().syscall.cloned()
-    }
-
-    /// The lines the call shown ran (its task's), in order.
-    pub fn lines(&self) -> Shared<Vec<Line>> {
-        consume_context::<Derived>().lines.cloned()
     }
 
     /// Syscall `k`'s lines (its task's), as the snapshot has them.
@@ -205,11 +295,10 @@ impl Ui {
     /// Select call `k` (an index in the syscalls), the cursor at its own
     /// code's first line (past the syscall entry's), on its innermost
     /// frame; the chart's window the call.
-    pub fn select(mut self, k: usize) {
+    pub fn select(self, k: usize) {
         self.zoom(k);
         let own = Ui::lines_of(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
-        self.peek.set(None);
-        self.at.set(Some(Moment { call: k, line: own.unwrap_or(0), frame: None }));
+        self.commit(Some(Moment { call: k, line: own.unwrap_or(0), frame: None }));
     }
 
     /// The chart's window: call `k`, with a little room either side (its
@@ -225,18 +314,17 @@ impl Ui {
 
     /// The chart's window: `span` steps from `start`, kept in the recording
     /// (as wide, at its ends).
-    pub fn view(mut self, start: f64, span: usize) {
+    pub fn view(self, start: f64, span: usize) {
         let total = machine().view(|v| v.rec.steps()).max(1);
         let span = span.max(MIN_SPAN).min(total - 1);
         let a = (start.max(0.0) as usize).min(total - 1 - span);
-        self.win.set(Some((a, a + span)));
+        self.set_window(Some((a, a + span)));
     }
 
     /// The cursor to line `k` of its call, on its innermost frame.
-    pub fn go(mut self, k: usize) {
+    pub fn go(self, k: usize) {
         if let Some(call) = self.call() {
-            self.peek.set(None);
-            self.at.set(Some(Moment { call, line: k, frame: None }));
+            self.commit(Some(Moment { call, line: k, frame: None }));
         }
     }
 
@@ -252,24 +340,23 @@ impl Ui {
 
     /// The moment at record `i` (in the chart: its `nth` line), on frame `frame` there:
     /// the call it is in, its line there (the last at or before it).
-    pub fn moment_at(&self, i: usize, nth: Option<usize>, frame: Option<(usize, String)>) -> Option<Moment> {
+    pub fn moment_at(&self, i: usize, nth: Option<usize>, frame: Option<(usize, String)>, shown: Option<usize>, shown_lines: &[Line]) -> Option<Moment> {
         let (call, own) = machine().view(|v| (v.rec.syscall_at(i), v.line_of(i).or(nth.map(|n| (i, n as u32)))));
         let call = call?;
-        let shown = consume_context::<Derived>().shown.peek().as_ref().map(|m| m.call);
         // (A write, a comparison: its own line; a block: its first line; else the last before.)
         let line = |lines: &[Line]| match own {
             Some((r, nth)) => lines.iter().rposition(|l| l.i == r && l.nth <= nth),
             None => lines.iter().position(|l| l.i == i),
         }.or_else(|| lines.iter().rposition(|l| l.i <= i)).unwrap_or(0);
-        let line = if shown == Some(call) { line(&self.lines()) } else { line(&Ui::lines_of(call)) };
+        let line = if shown == Some(call) { line(shown_lines) } else { line(&Ui::lines_of(call)) };
         Some(Moment { call, line, frame })
     }
 
     /// The cursor to record `i`, on frame `frame` (see `moment_at`).
-    pub fn go_record(mut self, i: usize, frame: Option<(usize, String)>) {
-        if let Some(m) = self.moment_at(i, None, frame) {
-            self.peek.set(None);
-            self.at.set(Some(m));
+    pub fn go_record(self, d: Derived, i: usize, frame: Option<(usize, String)>) {
+        let shown = d.shown.peek().as_ref().map(|m| m.call);
+        if let Some(m) = self.moment_at(i, None, frame, shown, &d.lines.read()) {
+            self.commit(Some(m));
         }
     }
 }

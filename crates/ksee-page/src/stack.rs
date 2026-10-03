@@ -56,11 +56,11 @@ pub fn walk(ui: Ui, dir: isize, over: bool) {
 
 /// The frame chosen on the cursor's stack (`d.stack`), `dir` up it (-1:
 /// the callee) or down (1: the caller).
-pub fn frame(mut ui: Ui, d: Derived, dir: isize) {
+pub fn frame(ui: Ui, d: Derived, dir: isize) {
     let Some(at) = ui.at.peek().clone() else { return };
     let frames = d.stack.peek();
     let k = d.frame.peek().saturating_add_signed(dir).min(frames.len().saturating_sub(1));
-    ui.at.set(Some(Moment { frame: frames.get(k).map(|f| (f.first, f.func.clone())), ..at }));
+    ui.commit(Some(Moment { frame: frames.get(k).map(|f| (f.first, f.func.clone())), ..at }));
 }
 
 /// The page's keys, anywhere on it: one listener on the window; ← → a
@@ -83,8 +83,7 @@ pub fn listen(ui: Ui) {
                     return;
                 }
             }
-            let mut peek = ui.peek;
-            peek.set(None);
+            ui.set_preview(None);
             let over = e.shift_key();
             let arrow = match e.key().as_str() {
                 "ArrowLeft" => { walk(ui, -1, over); true }
@@ -108,7 +107,8 @@ pub fn listen(ui: Ui) {
 /// then; a click on another, it chosen. Then the task running.
 #[component]
 pub fn Stack() -> Element {
-    let mut ui = use_context::<Ui>();
+    let ui = use_context::<Ui>();
+    (ui.snapshot)();
     let frames = frames();
     let d = use_context::<Derived>();
     let chosen = d.frame.cloned();
@@ -123,7 +123,7 @@ pub fn Stack() -> Element {
                         let id = (f.first, f.func.clone());
                         move |_| {
                             let at = ui.at.peek().clone();
-                            if let Some(at) = at { ui.peek.set(None); ui.at.set(Some(Moment { frame: Some(id.clone()), ..at })) }
+                            if let Some(at) = at { ui.commit(Some(Moment { frame: Some(id.clone()), ..at })) }
                         }
                     },
                         td { colspan: "3",
@@ -143,7 +143,7 @@ pub fn Stack() -> Element {
             if let Some(t) = task {
                 div { class: "current dim", "current task: "
                     a { class: "mono", title: "its task_struct, in Tasks (the task running: open there)",
-                        onclick: move |_| { ui.tab.set(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
+                        onclick: move |_| { ui.set_tab(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
                         "{t.named()}" }
                 }
             }

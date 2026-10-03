@@ -13,7 +13,7 @@ use std::rc::Rc;
 
 use dioxus::html::geometry::PixelsVector2D;
 use dioxus::prelude::*;
-use ksee_core::view::{Frame, Object};
+use ksee_core::view::{Frame, Object, SyscallSummary};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
@@ -69,11 +69,12 @@ async fn file(file: String) -> Option<Rc<File>> {
 #[component]
 pub fn Source() -> Element {
     let d = use_context::<Derived>();
-    let mut seen = use_context::<Ui>().seen;
+    let ui = use_context::<Ui>();
+    let seen = ui.seen;
     // (The cursor moved: back to its place.)
     use_effect(move || {
         let _ = d.line.read();
-        seen.set(None);
+        ui.show_definition(None);
     });
     let Some(f) = crate::stack::shown() else { return rsx! { div { class: "source" } } };
     let (Some(path), Some(line)) = (f.file.clone(), f.line) else { return rsx! { div { class: "source" } } };
@@ -92,7 +93,7 @@ pub fn Source() -> Element {
                 span { "{path}" }
                 if !def_of { span { " · {f.func}" } }
                 if sealed { span { title: "it loops, writes nothing and calls nothing: only its call and its return are recorded, not each turn", " · sealed: a box, its turns not recorded" } }
-                if def_of { a { onclick: move |_| seen.set(None), "back to the cursor" } }
+                if def_of { a { onclick: move |_| ui.show_definition(None), "back to the cursor" } }
             }
             Code { path: path.clone(), from, to, line, here: !def_of, frame: f, at, seen }
         }
@@ -101,11 +102,11 @@ pub fn Source() -> Element {
 
 /// What the call selected did on each line of `file`: the lines that ran,
 /// how often; what each stored, its note and the write's record.
-fn ran(ui: Ui, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
+fn ran(ui: Ui, syscall: Option<SyscallSummary>, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
     let m = machine();
     let k = ui.call();
     let counts = m.view(|v| v.coverage(file, k)).into_iter().map(|c| (c.line, c.count)).collect();
-    let notes = ui.syscall().map(|s| m.view(|v| v.notes(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), file, at)))
+    let notes = syscall.map(|s| m.view(|v| v.notes(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), file, at)))
         .unwrap_or_default().into_iter().map(|n| (n.line, (n.short, n.full, n.i))).collect();
     (counts, notes)
 }
@@ -168,6 +169,7 @@ fn place(line: u32, top: f64, view: f64) -> Option<f64> {
 #[component]
 fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, at: usize, seen: Signal<Option<(String, u32)>>) -> Element {
     let ui = use_context::<Ui>();
+    (ui.snapshot)();
     let p = path.clone();
     let text = use_resource(use_reactive!(|(p,)| file(p)));
     let mut tip = use_signal(|| None::<Tip>);
@@ -185,12 +187,12 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, a
         }
     }));
     let Some(src) = text.read().clone().flatten() else { return rsx! { div { class: "scroll", p { class: "dim pad", "…" } } } };
-    let (counts, notes) = ran(ui, &path, at);
+    let d = use_context::<Derived>();
+    let (counts, notes) = ran(ui, d.syscall.cloned(), &path, at);
     let total = src.text.len();
     // (The cursor's line, at its end: the frame's values its names have, as
     // they are before it runs; what it compared, which way its branch went;
     // the call it made, once returned, what it returned.)
-    let d = use_context::<Derived>();
     let shown = d.line.cloned();
     let values: Vec<String> = if here && line >= 1 && (line as usize) <= total {
         let words: Vec<&str> = src.pieces[line as usize - 1].iter().filter(|p| p.kind.is_ident()).map(|p| p.text.as_str()).collect();
@@ -272,7 +274,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, a
                                     span { class: "values", title: "{values.join(\"\n\")}", "{values.join(\"   \")}" }
                                 }
                                 if let Some((short, full, at)) = note {
-                                    a { class: "stored", title: "{full}", onclick: move |_| ui.go_record(at, None), "{short}" }
+                                    a { class: "stored", title: "{full}", onclick: move |_| ui.go_record(d, at, None), "{short}" }
                                 }
                             }
                         }

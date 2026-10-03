@@ -13,11 +13,11 @@ use crate::state::{Derived, Shared, Tab, Ui};
 
 #[component]
 pub fn Tabs() -> Element {
-    let mut ui = use_context::<Ui>();
+    let ui = use_context::<Ui>();
     use_context_provider(|| Signal::new(BTreeSet::<String>::new()));
     let tab = (ui.tab)();
     let head = |t: Tab, label: &'static str, title: &'static str| rsx! {
-        a { class: if tab == t { "tab on" } else { "tab" }, title, onclick: move |_| ui.tab.set(t), "{label}" }
+        a { class: if tab == t { "tab on" } else { "tab" }, title, onclick: move |_| ui.set_tab(t), "{label}" }
     };
     rsx! {
         div { class: "panels",
@@ -65,10 +65,11 @@ fn Objects() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     let nodes = use_memo(move || {
+        (ui.snapshot)();
         let m = machine();
         Shared(Rc::new(d.syscall.cloned().map_or_else(Vec::new, |s| m.view(|v| v.objects(s.first, s.last.unwrap_or(m.records().saturating_sub(1)))))))
     })();
-    let Some(s) = ui.syscall() else { return rsx! { p { class: "pad dim", "Select a call: what it did to the kernel's data." } } };
+    let Some(s) = d.syscall.cloned() else { return rsx! { p { class: "pad dim", "Select a call: what it did to the kernel's data." } } };
     let title = format!("{} by {}", s.name, s.task.named());
     if nodes.is_empty() {
         return rsx! { p { class: "pad dim", "{title} changed nothing of the kernel's data" } };
@@ -120,7 +121,8 @@ fn Objects() -> Element {
 /// box, at the end: a link to it).
 #[component]
 fn ObjectBox(nodes: Shared<Vec<Node>>, k: usize, depth: usize, cur: Option<usize>) -> Element {
-    let mut ui = use_context::<Ui>();
+    let ui = use_context::<Ui>();
+    let d = use_context::<Derived>();
     let n = &nodes[k];
     let what = match (n.kind, &n.within) {
         (RegionKind::Object, Some(f)) => format!("{} in {f}", n.what),
@@ -148,12 +150,12 @@ fn ObjectBox(nodes: Shared<Vec<Node>>, k: usize, depth: usize, cur: Option<usize
                 b { "{n.label}" }
                 span { class: "dim", "  {what}  at {n.addr:#x}{via}" }
                 if let Some(d) = decl {
-                    a { title: "where it is declared", onclick: move |_| ui.seen.set(Some((d.file.clone(), d.line))), "  {d.file}:{d.line}" }
+                    a { title: "where it is declared", onclick: move |_| ui.show_definition(Some((d.file.clone(), d.line))), "  {d.file}:{d.line}" }
                 }
             }
             table { class: "objs",
                 for (class , title , member , before , after , to , func , last) in rows {
-                    tr { class, title, onclick: move |_| ui.go_record(last, None),
+                    tr { class, title, onclick: move |_| ui.go_record(d, last, None),
                         td { class: "fname", "{member}" }
                         td { class: "fval",
                             span { class: "dim", "{before} → " }
@@ -194,6 +196,8 @@ fn state(s: TaskState) -> (&'static str, &'static str) {
 /// as it was then.
 #[component]
 fn Tasks() -> Element {
+    let ui = use_context::<Ui>();
+    (ui.snapshot)();
     let d = use_context::<Derived>();
     let mut open = use_context::<Signal<BTreeSet<String>>>();
     let at = d.line.cloned().map_or(0, |l| l.at);

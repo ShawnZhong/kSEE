@@ -44,6 +44,6 @@ async fn run_test(name: String) -> Result<String, JsValue> {
 }
 
 async fn run_kernel() -> Check {
-    crate::boot().await?;
-    kernel::run().await.map(|()| "passed".into())
+    let machine = crate::boot().await?;
+    kernel::run(machine).await.map(|()| "passed".into())
 }

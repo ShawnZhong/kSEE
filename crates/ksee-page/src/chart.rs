@@ -64,7 +64,7 @@ struct Tip {
 
 #[component]
 pub fn Timeline() -> Element {
-    let mut ui = use_context::<Ui>();
+    let ui = use_context::<Ui>();
     let tip = use_signal(|| None::<Tip>);
     // (The cursor stepped out of the window: the window moved to it, as wide.)
     let d = use_context::<Derived>();
@@ -75,14 +75,14 @@ pub fn Timeline() -> Element {
             ui.view(at - ((b - a) / 2) as f64, b - a);
         }
     });
-    let title = ui.syscall().map(|s| format!("{} by {}", s.name, s.task.named())).unwrap_or_default();
+    let title = d.syscall.cloned().map(|s| format!("{} by {}", s.name, s.task.named())).unwrap_or_default();
     rsx! {
         section { class: "history",
             Overview {}
             div { class: "flamehead",
                 span { class: "dim", "{title}"
                     if let Some(k) = ui.call() { " · " a { title: "the window at the call selected", onclick: move |_| ui.zoom(k), "zoom" } }
-                    if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.win.set(None), "whole" } }
+                    if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.set_window(None), "whole" } }
                 }
                 Find {}
                 span { class: "legend",
@@ -108,7 +108,7 @@ pub fn Timeline() -> Element {
 fn Overview() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
-    (ui.version)();
+    (ui.snapshot)();
     let mut width = use_signal(|| 1000.0f64);
     let m = machine();
     let cursor = d.cursor.cloned();
@@ -182,7 +182,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let dd = ((height - y) / row).floor();
         let bar = (dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len()).then(|| chart.cols[k].frames[dd as usize] as usize);
         let frame = bar.map(|b| (chart.bars[b].first, chart.bars[b].name.clone()));
-        Some((ui.moment_at(chart.cols[k].i, Some(chart.cols[k].nth), frame), bar))
+        let shown = d.shown.peek().as_ref().map(|m| m.call);
+        Some((ui.moment_at(chart.cols[k].i, Some(chart.cols[k].nth), frame, shown, &d.lines.read()), bar))
     };
     let pct = |k: usize| k as f64 * 100.0 / n as f64;
     let px = width() / n as f64;
@@ -209,8 +210,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             onpointermove: {
                 let chart = chart.clone();
                 move |e: PointerEvent| {
-                    let mut ui = ui;
-                    // (A drag: the window panned.)
+                    let ui = ui;
                     if let Some(mut p) = pan() {
                         let dx = e.client_coordinates().x - p.x;
                         if dx.abs() >= 4.0 || p.moved {
@@ -224,7 +224,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     // (Else the moment under the pointer shown everywhere but the line: over a bar, what its call was.)
                     let at = e.element_coordinates();
                     let Some((peek, bar)) = hit(&chart, at.x, at.y) else { return };
-                    if *ui.peek.peek() != peek { ui.peek.set(peek); }
+                    ui.set_preview(peek);
                     let p = e.client_coordinates();
                     match bar.map(|b| &chart.bars[b]) {
                         None => if tip().is_some() { tip.set(None) },
@@ -241,13 +241,12 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 let chart = chart.clone();
                 move |e: MouseEvent| {
                     if dragged() { dragged.set(false); return }
-                    let mut ui = ui;
+                    let ui = ui;
                     let at = e.element_coordinates();
-                    if let Some(moment) = hit(&chart, at.x, at.y).and_then(|h| h.0) { ui.at.set(Some(moment)); }
-                    ui.peek.set(None);
+                    if let Some(moment) = hit(&chart, at.x, at.y).and_then(|h| h.0) { ui.commit(Some(moment)); }
                 }
             },
-            onmouseleave: move |_| { let mut ui = ui; ui.peek.set(None); tip.set(None); pan.set(None); dragged.set(false); },
+            onmouseleave: move |_| { ui.set_preview(None); tip.set(None); pan.set(None); dragged.set(false); },
             for (dd , a , e , b) in runs {
                 {
                     let bar = &chart.bars[b as usize];
@@ -330,7 +329,7 @@ fn Transport() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     let here = d.line.cloned();
-    let s = ui.syscall();
+    let s = d.syscall.cloned();
     let task = s.as_ref().map(|s| s.task.named()).unwrap_or_default();
     let place = here.as_ref().map(|l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line)).unwrap_or_default();
     // (A line that runs more than once in this call: which turn the cursor is on.)
@@ -354,7 +353,9 @@ fn Transport() -> Element {
 /// before), round to the start.
 #[component]
 fn Find() -> Element {
-    let mut ui = use_context::<Ui>();
+    let ui = use_context::<Ui>();
+    let d = use_context::<Derived>();
+    (ui.snapshot)();
     let w = (ui.find)().to_lowercase();
     let m = machine();
     let calls: Vec<usize> = if w.is_empty() { Vec::new() } else {
@@ -364,18 +365,18 @@ fn Find() -> Element {
     rsx! {
         input { class: "find mono", placeholder: "find a function…", value: "{ui.find}", spellcheck: false,
             title: "any part of a function's name (its bars colored as you type): Enter, its next call after the cursor; Shift+Enter, the one before; Esc clears",
-            oninput: move |e| ui.find.set(e.value()),
+            oninput: move |e| ui.set_function_filter(e.value()),
             onkeydown: move |e| {
-                if e.key() == Key::Escape { ui.find.set(String::new()); return }
+                if e.key() == Key::Escape { ui.set_function_filter(String::new()); return }
                 if e.key() != Key::Enter || calls.is_empty() { return }
-                let here = consume_context::<Derived>().line.cloned().map_or(0, |l| l.i);
+                let here = d.line.cloned().map_or(0, |l| l.i);
                 let to = if e.modifiers().shift() {
                     calls.iter().rev().find(|&&c| c < here).or(calls.last())
                 } else {
                     calls.iter().find(|&&c| c > here).or(calls.first())
                 };
                 if let Some(&i) = to {
-                    ui.go_record(i, None);
+                    ui.go_record(d, i, None);
 
                 }
             } }

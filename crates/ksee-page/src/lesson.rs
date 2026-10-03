@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use ksee_core::program::{statement, Line};
 use serde::{Deserialize, Serialize};
 
-use crate::state::{Tab, Ui};
+use crate::state::{RunId, Tab, Ui};
 use ksee_core::text::{self, LessonTab as LinkTab, LessonTarget, Piece};
 use crate::{examples, machine};
 
@@ -69,41 +69,51 @@ pub enum Outcome {
 /// kernel run until it is quiet), each line's outcome as it goes; then a
 /// call selected: the first the lesson's text links to (its subject), else
 /// the last.
-async fn run(mut ui: Ui, lines: Vec<Step>) {
-    let m = machine();
-    ui.outcomes.write().clear();
-    ui.at.set(None);
-    ui.peek.set(None);
-    if m.restart().await.is_err() {
+pub(crate) async fn run(ui: Ui, run: RunId, lines: Vec<Step>) {
+    if !ui.is_current(run) {
         return;
     }
-    ui.console.set(String::new());
+    let m = machine();
+    if m.restart().await.is_err() || !ui.is_current(run) {
+        return;
+    }
+    let mut outcomes = Vec::new();
     // (The variables so far: their name, type, address, count, and as they were shown last.)
     let mut vars: Vec<(String, u32, u32, Option<u32>, u32, String)> = Vec::new();
     for (j, step) in lines.iter().enumerate() {
+        if !ui.is_current(run) {
+            return;
+        }
         let line = step.text();
         let made = match m.make(step.task(), line) {
             Ok(made) => made,
-            Err(e) => {
-                ui.outcomes.write().push(Outcome::Failed(e));
+            Err(error) => {
+                outcomes.push(Outcome::Failed(error));
+                ui.publish_outcomes(run, outcomes.clone());
                 break;
             }
         };
         if let Some(v) = made.decl {
             let shown = m.show(v.ty, v.addr, v.count);
             vars.push((v.name, v.ty, v.addr, v.count, v.size * v.count.unwrap_or(1), shown.clone()));
-            ui.outcomes.write().push(Outcome::Declared(shown));
+            outcomes.push(Outcome::Declared(shown));
+            if !ui.publish_outcomes(run, outcomes.clone()) {
+                return;
+            }
             continue;
         }
         let Some(id) = made.id else { continue };
-        ui.outcomes.write().push(Outcome::Call { id, ret: None, how: None, during: None, changed: Vec::new() });
+        outcomes.push(Outcome::Call { id, ret: None, how: None, during: None, changed: Vec::new() });
+        if !ui.publish_outcomes(run, outcomes.clone()) {
+            return;
+        }
         let Ok(finished) = m.quiet().await else { return };
-        m.snapshot();
-        ui.version += 1;
-        ui.console.write().push_str(&m.console());
+        if !ui.is_current(run) {
+            return;
+        }
         for f in finished {
-            for (k, o) in ui.outcomes.write().iter_mut().enumerate() {
-                if let Outcome::Call { id, ret, how, during, .. } = o && *id == f.id {
+            for (k, outcome) in outcomes.iter_mut().enumerate() {
+                if let Outcome::Call { id, ret, how, during, .. } = outcome && *id == f.id {
                     (*ret, *how, *during) = (Some(f.ret), Some(f.how.to_string()), (k != j).then_some(j));
                 }
             }
@@ -114,7 +124,7 @@ async fn run(mut ui: Ui, lines: Vec<Step>) {
             Ok(Line::Call { call, texts, .. }) => (call, texts),
             _ => (String::new(), Vec::new()),
         };
-        let ret = match ui.outcomes.read().get(j) { Some(Outcome::Call { ret, .. }) => *ret, _ => None };
+        let ret = match outcomes.get(j) { Some(Outcome::Call { ret, .. }) => *ret, _ => None };
         let mut changed = Vec::new();
         for (name, ty, addr, count, size, last) in vars.iter_mut() {
             let now = m.show(*ty, *addr, *count);
@@ -125,12 +135,19 @@ async fn run(mut ui: Ui, lines: Vec<Step>) {
                 *last = now;
             }
         }
-        if let Some(Outcome::Call { changed: c, .. }) = ui.outcomes.write().get_mut(j) {
-            *c = changed;
+        if let Some(Outcome::Call { changed: value, .. }) = outcomes.get_mut(j) {
+            *value = changed;
+        }
+        m.snapshot();
+        if !ui.publish_snapshot(run, outcomes.clone(), m.console()) {
+            return;
         }
     }
+    if !ui.is_current(run) {
+        return;
+    }
     let ex = &examples()[(ui.lesson)()];
-    let calls = ui.outcomes.read().iter().filter(|o| matches!(o, Outcome::Call { .. })).count();
+    let calls = outcomes.iter().filter(|o| matches!(o, Outcome::Call { .. })).count();
     // (The lesson's own program: where its text's first link into the recording goes.)
     let linked = (lines == ex.steps).then(|| ex.text.iter().flat_map(|p| text::pieces(p)).find_map(|x| match x {
         Piece::Link { target, .. } if matches!(LessonTarget::parse(&target), Ok(LessonTarget::Recording { .. })) => Some(target),
@@ -156,13 +173,13 @@ fn call_of(ui: Ui, n: usize) -> Option<usize> {
 /// `N:func` (the cursor at func's first line in it), and a tab to show
 /// (`:stack`, `:objects`, `:tasks`, `:console`); `try:N`, its program made
 /// instead.
-fn follow(mut ui: Ui, target: &str) {
+fn follow(ui: Ui, target: &str) {
     let Ok(target) = LessonTarget::parse(target) else { return };
     let LessonTarget::Recording { call, function, any_task, tab } = target else {
         let LessonTarget::Try { index } = target else { unreachable!() };
         let tries = examples()[(ui.lesson)()].tries.clone();
         if let Some(t) = tries.get(index - 1) {
-            ui.program.set(t.clone());
+            ui.replace_program(t.clone());
         }
         return;
     };
@@ -178,7 +195,7 @@ fn follow(mut ui: Ui, target: &str) {
         }
     }
     if let Some(tab) = tab {
-        ui.tab.set(match tab {
+        ui.set_tab(match tab {
             LinkTab::Stack => Tab::Stack,
             LinkTab::Objects => Tab::Objects,
             LinkTab::Tasks => Tab::Tasks,
@@ -215,21 +232,21 @@ fn program_from_json(text: &str) -> Option<Vec<Step>> {
     serde_wasm_bindgen::from_value(js_sys::JSON::parse(text).ok()?).ok()
 }
 
-pub fn from_url(mut ui: Ui) {
+pub fn from_url(ui: Ui) {
     let (ex, p) = hash();
     let all = examples();
     if let Some(k) = ex.and_then(|n| all.iter().position(|e| e.name == n)) {
-        ui.lesson.set(k);
-        ui.program.set(p.as_deref().and_then(program_from_json).unwrap_or_else(|| all[k].steps.clone()));
+        let program = p.as_deref().and_then(program_from_json).unwrap_or_else(|| all[k].steps.clone());
+        ui.restore_lesson(k, program);
     }
 }
 
 /// The URL, as the lesson and its program are.
-fn to_url(ui: Ui) {
-    let ex = &examples()[(ui.lesson)()];
-    let program = (ui.program)();
+pub(crate) fn to_url(lesson: usize, program: &[Step]) {
+    let all = examples();
+    let Some(ex) = all.get(lesson) else { return };
     let p = if program == ex.steps { String::new() } else {
-        program_json(&program).map_or_else(String::new, |p| format!("&p={}", js_sys::encode_uri_component(&p)))
+        program_json(program).map_or_else(String::new, |p| format!("&p={}", js_sys::encode_uri_component(&p)))
     };
     if let Some(h) = web_sys::window().and_then(|w| w.history().ok()) {
         let _ = h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&format!("#ex={}{p}", ex.name)));
@@ -262,9 +279,8 @@ fn Theme() -> Element {
 }
 
 /// Lesson `k` opened: its own program made, on a fresh kernel.
-fn open(mut ui: Ui, k: usize) {
-    ui.lesson.set(k);
-    ui.program.set(examples()[k].steps.clone());
+fn open(ui: Ui, k: usize) {
+    ui.open_lesson(k);
 }
 
 #[component]
@@ -322,15 +338,6 @@ fn Contents(close: EventHandler<()>) -> Element {
 #[component]
 pub fn Lesson() -> Element {
     let ui = use_context::<Ui>();
-    // (The program, made again as it changes: a lesson opened, a try.)
-    use_effect(move || {
-        let lines = (ui.program)();
-        to_url(ui);
-        // (Once the kernel is up.)
-        if matches!((ui.kernel)(), Some(Ok(()))) {
-            spawn(run(ui, lines));
-        }
-    });
     let all = examples();
     let at = (ui.lesson)();
     let ex = all[at].clone();
@@ -402,7 +409,7 @@ pub fn Lesson() -> Element {
                                 div { class: "cell", style: if many { format!("grid-column: {}", c + 1) } else { String::new() },
                                     crate::editor::Editor { key: "{program.len()}:{c}", text: String::new(), task: task.clone(), line: program.len(),
                                         placeholder: by, common: common(),
-                                        done: move |text: String| if !text.is_empty() { let mut ui = ui; ui.program.write().push(Step::on(task.as_deref(), text)); },
+                                        done: move |text: String| if !text.is_empty() { ui.edit_program(|program| program.push(Step::on(task.as_deref(), text))); },
                                         focus: move |_| {} }
                                 }
                             }
@@ -448,13 +455,11 @@ fn Cell(j: usize, step: Step, outcome: Option<Outcome>, call: Option<usize>, col
         div { class, style: "{style}",
             div { class: "line",
                 crate::editor::Editor { text: step.text().to_string(), task: step.task().map(String::from), line: j, placeholder: "", common: common(),
-                    done: move |text: String| {
-                        let mut ui = ui;
-                        let mut program = ui.program.write();
+                    done: move |text: String| ui.edit_program(|program| {
                         if text.is_empty() { program.remove(j); } else { program[j] = step.with_text(text); }
-                    },
+                    }),
                     focus: move |_| if let Some(k) = call.and_then(|n| call_of(ui, n)) { ui.select(k) } }
-                a { class: "rm", title: "remove this line (the program runs again without it)", onclick: move |_| { let mut ui = ui; ui.program.write().remove(j); }, "✕" }
+                a { class: "rm", title: "remove this line (the program runs again without it)", onclick: move |_| ui.edit_program(|program| { program.remove(j); }), "✕" }
                 span { class: "ret mono", {said(outcome.as_ref())} }
             }
             if let Some(Outcome::Call { changed, .. }) = &outcome && !changed.is_empty() {

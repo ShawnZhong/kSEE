@@ -152,9 +152,9 @@ fn value(o: Option<&Object>) -> String {
 /// Run the tests on the booted Machine, with the lessons (both as `mount`
 /// was given them: the page not mounted, see lib.rs): whether all passed
 /// (each check is logged, "ok: …" or "FAIL: …").
-pub(super) async fn run() -> Result<(), String> {
+pub(super) async fn run(machine: Rc<Machine>) -> Result<(), String> {
     let examples = crate::examples();
-    let mut t = T { m: crate::machine(), failures: Vec::new(), out: String::new(), fin: BTreeMap::new() };
+    let mut t = T { m: machine, failures: Vec::new(), out: String::new(), fin: BTreeMap::new() };
     let m = t.m.clone();
     let main = m.main().unwrap_or(0);
     t.check("timeline colors", crate::chart::call_color(Some("fs/x.c"), false) == "hsl(210 55% 74%)"
