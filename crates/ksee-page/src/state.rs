@@ -83,6 +83,9 @@ impl Derived {
         let shown = use_memo(move || (ui.peek)().or((ui.at)()));
         let syscall = use_memo(move || {
             (ui.snapshot)();
+            if !matches!((ui.kernel)(), Some(Ok(()))) {
+                return None;
+            }
             let k = shown()?.call;
             machine().view(|v| v.syscalls().into_iter().nth(k))
         });
