@@ -455,7 +455,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   // through the and, or and xor that combine conditions.
   static bool decides(Value *V, unsigned depth = 3) {
     for (User *U : V->users()) {
-      if (isa<CondBrInst>(U))
+      if (isa<BranchInst>(U))
         return true;
       if (auto *S = dyn_cast<SelectInst>(U); S && S->getCondition() == V)
         return true;

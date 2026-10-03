@@ -28,7 +28,7 @@ fn brew_prefix(formula: &str) -> String {
         .trim().to_string()
 }
 
-/// LLVM 23's binaries. An override is useful for a custom toolchain, but is
+/// LLVM 22's binaries. An override is useful for a custom toolchain, but is
 /// absolute so builds do not silently change with their working directory.
 static LLVM_BIN: LazyLock<String> = LazyLock::new(|| {
     if let Ok(bin) = std::env::var("KSEE_LLVM_BIN") {
@@ -37,9 +37,9 @@ static LLVM_BIN: LazyLock<String> = LazyLock::new(|| {
         }
         bin
     } else if cfg!(target_os = "macos") {
-        format!("{}/bin", brew_prefix("llvm@23"))
+        format!("{}/bin", brew_prefix("llvm@22"))
     } else {
-        "/usr/lib/llvm-23/bin".into()
+        "/usr/lib/llvm-22/bin".into()
     }
 });
 
@@ -49,7 +49,7 @@ static PATH: LazyLock<String> = LazyLock::new(|| {
     let mut dirs = vec![(*LLVM_BIN).clone()];
     if cfg!(target_os = "macos") {
         dirs.extend([
-            format!("{}/bin", brew_prefix("lld@23")),
+            format!("{}/bin", brew_prefix("lld@22")),
             format!("{}/libexec/gnubin", brew_prefix("make")),
             format!("{}/libexec/gnubin", brew_prefix("gnu-sed")),
             format!("{}/sbin", brew_prefix("e2fsprogs")),
@@ -119,8 +119,8 @@ fn stale(out: &str, inputs: &[&str]) -> bool {
 
 fn check_llvm() {
     let version = String::from_utf8_lossy(&output(cmd("llvm-config").arg("--version"))).trim().to_string();
-    if version.split('.').next() != Some("23") {
-        crate::fail(&format!("LLVM 23 is required, found {version}"));
+    if version.split('.').next() != Some("22") {
+        crate::fail(&format!("LLVM 22 is required, found {version}"));
     }
 }
 

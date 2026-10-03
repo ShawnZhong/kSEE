@@ -1,5 +1,5 @@
 #!/bin/sh
-# What ./ksee.sh needs: LLVM 23 (clang, lld's wasm-ld, the pass's headers),
+# What ./ksee.sh needs: LLVM 22 (clang, lld's wasm-ld, the pass's headers),
 # GNU make and sed, mkfs.ext4, gzip, Rust, its wasm target and wasm-bindgen;
 # from Homebrew or apt plus Cargo. ./ksee.sh test also needs Chromium, in $CHROME.
 set -e
@@ -10,7 +10,7 @@ Darwin)
 		echo "setup.sh: Homebrew is required on macOS" >&2
 		exit 1
 	}
-	brew install llvm@23 lld@23 make gnu-sed e2fsprogs
+	brew install llvm@22 lld@22 make gnu-sed e2fsprogs
 	;;
 Linux)
 	command -v apt-get >/dev/null || {
@@ -24,13 +24,7 @@ Linux)
 	fi
 	s=; [ "$(id -u)" = 0 ] || s=sudo
 	$s apt-get update
-	$s apt-get install -y --no-install-recommends build-essential flex bison bc git curl ca-certificates e2fsprogs gzip
-	$s install -d -m 0755 /etc/apt/keyrings
-	curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | $s tee /etc/apt/keyrings/apt.llvm.org.asc >/dev/null
-	printf '%s\n' 'deb [signed-by=/etc/apt/keyrings/apt.llvm.org.asc] https://apt.llvm.org/resolute/ llvm-toolchain-resolute-23 main' |
-		$s tee /etc/apt/sources.list.d/llvm-23.list >/dev/null
-	$s apt-get update
-	$s apt-get install -y --no-install-recommends clang-23 lld-23 llvm-23-dev
+	$s apt-get install -y --no-install-recommends build-essential flex bison bc git curl ca-certificates e2fsprogs gzip clang-22 lld-22 llvm-22-dev
 	;;
 *)
 	echo "setup.sh: unsupported host: $(uname -s)" >&2
