@@ -1859,27 +1859,6 @@ index b67636b28..b37824b5c 100644
  # This is only for i386 UM builds, which need the 32-bit target not -m32
  CLANG_TARGET_FLAGS_i386		:= i386-linux-gnu
  CLANG_TARGET_FLAGS_um		:= $(CLANG_TARGET_FLAGS_$(SUBARCH))
-diff --git a/usr/Makefile b/usr/Makefile
-index e8f42478a..e7c57cbaa 100644
---- a/usr/Makefile
-+++ b/usr/Makefile
-@@ -16,8 +16,6 @@ obj-$(CONFIG_BLK_DEV_INITRD) := initramfs_data.o
- 
- $(obj)/initramfs_data.o: $(obj)/initramfs_inc_data
- 
--hostprogs := gen_init_cpio
--
- ramfs-input := $(CONFIG_INITRAMFS_SOURCE)
- cpio-data :=
- 
-@@ -48,6 +46,7 @@ endif
- # specified by CONFIG_INITRAMFS_SOURCE.
- ifeq ($(cpio-data),)
- 
-+hostprogs := gen_init_cpio
- cpio-data := $(obj)/initramfs_data.cpio
- 
- # .initramfs_data.cpio.d is used to identify all files included
 diff --git a/usr/empty.cpio b/usr/empty.cpio
 new file mode 100644
 index 000000000..e69de29bb
