@@ -482,6 +482,35 @@ fn a_task_is_named_as_it_was_then() {
 }
 
 #[test]
+fn a_chart_window_follows_one_wheel_axis() {
+    // Horizontal trackpad movement pans without changing the inclusive span,
+    // even with a little vertical noise; Shift pans by the vertical delta.
+    let horizontal = wheel_window((100, 199), 500.0, 1000.0, 80.0, 4.0, false, 1.5);
+    let shifted = wheel_window((100, 199), 500.0, 1000.0, 80.0, 20.0, true, 1.5);
+    assert!((horizontal.0 - 108.0).abs() < 1e-9 && horizontal.1 == 99);
+    assert!((shifted.0 - 102.0).abs() < 1e-9 && shifted.1 == 99);
+}
+
+#[test]
+fn a_chart_window_zooms_around_the_pointer() {
+    let out = wheel_window((100, 199), 500.0, 1000.0, 4.0, 80.0, false, 1.2);
+    let into = wheel_window((100, 199), 500.0, 1000.0, 4.0, -80.0, false, 0.8);
+    assert!(out.0 < 100.0 && out.1 > 99);
+    assert!(into.0 > 100.0 && into.1 < 99);
+
+    // A pointer outside the chart is anchored to its nearest edge.
+    assert_eq!(wheel_window((100, 199), -100.0, 1000.0, 0.0, 80.0, false, 1.2),
+               wheel_window((100, 199), 0.0, 1000.0, 0.0, 80.0, false, 1.2));
+    assert_eq!(wheel_window((100, 199), 1100.0, 1000.0, 0.0, 80.0, false, 1.2),
+               wheel_window((100, 199), 1000.0, 1000.0, 0.0, 80.0, false, 1.2));
+}
+
+#[test]
+fn no_wheel_delta_keeps_a_chart_window() {
+    assert_eq!(wheel_window((100, 199), 500.0, 1000.0, 0.0, 0.0, false, 1.0), (100.0, 99));
+}
+
+#[test]
 fn a_chart_folds_into_runs() {
     // Three columns: bars [0] / [0, 1] / [1], tasks 7, 7, 8.
     let chart = Chart {

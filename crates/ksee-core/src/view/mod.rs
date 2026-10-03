@@ -62,6 +62,22 @@ pub struct SyscallSummary {
 }
 
 
+/// The chart window made by a wheel gesture. Its ends are inclusive, while
+/// the returned span is the distance between them. A gesture follows its
+/// dominant axis so trackpad cross-axis noise cannot pan and zoom at once.
+/// `width` is positive; `zoom` is the vertical gesture's span multiplier.
+pub fn wheel_window((a, b): (usize, usize), x: f64, width: f64, dx: f64, dy: f64, shift: bool, zoom: f64) -> (f64, usize) {
+    let span = (b - a + 1) as f64;
+    if shift || dx.abs() > dy.abs() {
+        let delta = if shift { dy } else { dx };
+        return (a as f64 + delta / width * span, b - a);
+    }
+
+    let at = (x / width).clamp(0.0, 1.0);
+    let new = span * zoom;
+    (a as f64 + at * (span - new), (new as usize).saturating_sub(1))
+}
+
 /// A stack chart (View::chart): its columns, and the bars they stack.
 #[derive(Debug, Default)]
 pub struct Chart {

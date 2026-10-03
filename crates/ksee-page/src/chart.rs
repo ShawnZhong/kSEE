@@ -10,7 +10,7 @@
 
 use dioxus::prelude::*;
 use ksee_core::trace::Record;
-use ksee_core::view::Chart;
+use ksee_core::view::{wheel_window, Chart};
 
 use crate::machine;
 use crate::state::{Derived, Shared, Ui};
@@ -23,19 +23,9 @@ const ROW: f64 = 15.0;
 /// How much a vertical wheel turn (a pixel of it) zooms.
 const ZOOM: f64 = 0.002;
 
-/// The window made by a wheel gesture. Its ends are inclusive, while
-/// `Ui::view` takes the distance between them. A gesture follows its dominant
-/// axis so a trackpad's small cross-axis movement cannot pan and zoom at once.
-pub(crate) fn wheel_view((a, b): (usize, usize), x: f64, width: f64, dx: f64, dy: f64, shift: bool) -> (f64, usize) {
-    let span = (b - a + 1) as f64;
-    if shift || dx.abs() > dy.abs() {
-        let delta = if shift { dy } else { dx };
-        return (a as f64 + delta / width * span, b - a);
-    }
-
-    let at = (x / width).clamp(0.0, 1.0);
-    let new = span * (dy * ZOOM).exp();
-    (a as f64 + at * (span - new), (new as usize).saturating_sub(1))
+/// The chart window made by the page's wheel input.
+pub(crate) fn wheel_view(window: (usize, usize), x: f64, width: f64, dx: f64, dy: f64, shift: bool) -> (f64, usize) {
+    wheel_window(window, x, width, dx, dy, shift, (dy * ZOOM).exp())
 }
 const MIN_ROW: f64 = 11.0;
 /// Kernel areas in timeline legend order; unmatched files use gray.
