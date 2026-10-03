@@ -194,7 +194,7 @@ impl Machine {
                 k_mut(|k| k.names.set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
                 made.decl = Some(Var { name: d.name, addr, ty: d.ty, count: d.count, size: tables().types.size_of(d.ty) });
             }
-            Lowered::Call { nr, args, result } => (made.id, made.tid) = (Some(call(tid, nr, &args, line, result)?), Some(tid)),
+            Lowered::Call { nr, args, result } => made.id = Some(call(tid, nr, &args, line, result)?),
         }
         k_mut(|k| k.lines = line + 1);
         Ok(made)
@@ -314,16 +314,13 @@ fn write_logged(addr: u32, bytes: &[u8]) {
     unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), addr as *mut u8, bytes.len()) };
 }
 
-/// `len` bytes of the memory of runner `tid`'s program (user/prog.c's heap:
-/// its process's): their address, on 16 bytes; a page or more, on a page
-/// (as mmap gives it: memory the kernel can pin, a ring's).
+/// `len` bytes of runner `tid`'s program memory (user/prog.c's heap),
+/// aligned to 16 bytes.
 fn alloc(tid: u32, len: u32) -> Result<u32, String> {
     k_mut(|k| {
         let base = k.runners.get(&tid).ok_or_else(|| format!("no runner {tid}"))?.heap;
         let (next, end) = k.heaps.get_mut(&base).ok_or("no memory")?;
-        let page = ksee_core::arch::PAGE;
-        let align = if len >= page { page } else { 16 };
-        let at = (*next + align - 1) & !(align - 1);
+        let at = (*next + 15) & !15;
         if at + len > *end {
             return Err("the program's memory is full".into());
         }
@@ -332,13 +329,11 @@ fn alloc(tid: u32, len: u32) -> Result<u32, String> {
     })
 }
 
-/// What a line made (Machine::make): a variable, or a call asked (its
-/// id, its runner).
+/// What a line made (Machine::make): a variable, or a call's id.
 #[derive(Default)]
 pub struct Made {
     pub decl: Option<Var>,
     pub id: Option<u32>,
-    pub tid: Option<u32>,
 }
 
 /// A variable of the program's: memory of type `ty` (an array of `count`)

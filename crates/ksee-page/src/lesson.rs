@@ -357,8 +357,9 @@ pub fn Lesson() -> Element {
     let mine = program == ex.steps;
     let outcomes = ui.outcomes.read().clone();
     // (Task columns: the program's first, then those used or made.)
+    let active = if matches!((ui.kernel)(), Some(Ok(()))) { machine().task_columns(program.len()) } else { Vec::new() };
     let mut columns: Vec<Option<String>> = vec![None];
-    for task in program.iter().filter_map(|step| step.task()).chain(machine().task_columns(program.len()).iter().map(String::as_str)) {
+    for task in program.iter().filter_map(|step| step.task()).chain(active.iter().map(String::as_str)) {
         if !columns.iter().any(|column| column.as_deref() == Some(task)) {
             columns.push(Some(task.into()));
         }
@@ -377,7 +378,7 @@ pub fn Lesson() -> Element {
     };
     let before = at.checked_sub(1).map(|k| (k, all[k].title.clone()));
     let after = (at + 1 < all.len()).then(|| (at + 1, all[at + 1].title.clone()));
-    let grid = format!("--lanes: {}", columns.len());
+    let grid = format!("--columns: {}", columns.len());
     rsx! {
         h1 { "{ex.title}" }
         p { class: "question", "{ex.question}" }
@@ -398,11 +399,11 @@ pub fn Lesson() -> Element {
         }
         div { class: "program",
             if many {
-                div { class: "laneheads", style: "{grid}",
-                    for (name , pid) in names.iter().cloned() { div { class: "lane mono", style: "--hue: {crate::chart::hue(pid)}", "{name}" } }
+                div { class: "taskheads", style: "{grid}",
+                    for (name , pid) in names.iter().cloned() { div { class: "task mono", style: "--hue: {crate::chart::hue(pid)}", "{name}" } }
                 }
             }
-            ol { class: if many { "steps lanes" } else { "steps" }, style: "{grid}",
+            ol { class: if many { "steps columns" } else { "steps" }, style: "{grid}",
                 for (j , step) in program.iter().enumerate() {
                     li { key: "{j}:{step.text()}", class: if many { "row" } else { "" },
                         if many {
