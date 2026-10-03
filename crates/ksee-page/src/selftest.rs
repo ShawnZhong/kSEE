@@ -300,17 +300,14 @@ pub async fn self_test() -> Result<(), String> {
         let later = reading.id.and_then(|id| t.fin.get(&id)).map(|f| f.ret);
         t.check(format!("a blocked read, woken: wrote {:?}, read {later:?}: buf = {}", wrote.ret, t.show(buf)),
                 reading.how.is_none() && wrote.ret == Some(2) && later == Some(2) && t.show(buf) == "\"ok\"");
-        let name = t.line("char name[16] = \"ksee\"").await.var.unwrap();
         let got = t.line("char got16[16]").await.var.unwrap();
-        let set = t.line("prctl(PR_SET_NAME, name, 0, 0, 0)").await.ret;
+        let set = t.line("prctl(PR_SET_NAME, \"ksee\", 0, 0, 0)").await.ret;
         let get = t.line("prctl(PR_GET_NAME, got16, 0, 0, 0)").await.ret;
-        t.line("name = \"prog\"").await;
-        t.line("prctl(PR_SET_NAME, name, 0, 0, 0)").await;
-        t.check(format!("prctl(PR_SET_NAME) = {set:?}, PR_GET_NAME: {}; name set again: {}", t.show(got), t.show(name)),
-                set == Some(0) && get == Some(0) && t.show(got) == "\"ksee\"" && t.show(name) == "\"prog\"");
-        let ts = t.line("struct __kernel_timespec ts").await.var.unwrap();
-        t.line("ts = {1, 5}").await;
-        t.check(format!("a struct assigned: ts = {}", t.show(ts)), t.show(ts) == "{tv_sec = 1, tv_nsec = 5}");
+        let reset = t.line("prctl(PR_SET_NAME, \"prog\", 0, 0, 0)").await.ret;
+        t.check(format!("prctl(PR_SET_NAME) = {set:?}, PR_GET_NAME: {}; name reset = {reset:?}", t.show(got)),
+                set == Some(0) && get == Some(0) && reset == Some(0) && t.show(got) == "\"ksee\"");
+        let ts = t.line("struct __kernel_timespec ts = {1, 5}").await.var.unwrap();
+        t.check(format!("a positional struct initializer: ts = {}", t.show(ts)), t.show(ts) == "{tv_sec = 1, tv_nsec = 5}");
     }
     // A 64-bit argument, whole: llseek's offset (high 1, low 0) is vfs_llseek's loff_t 1 << 32.
     {
@@ -406,8 +403,8 @@ pub async fn self_test() -> Result<(), String> {
         t.check("syscall names completed, with their signatures", names.first().is_some_and(|n| n.label == "close" && n.detail == "close(unsigned int fd)"));
     }
     let refusal = |text: &str, line: usize| m.can_make(None, text, line).err().unwrap_or_default();
-    t.check("a line checked: a wrong member, a name not made yet, too many arguments",
-            refusal("clock_nanosleep(1, 0, {.tv_min = 1}, NULL)", usize::MAX).contains("no member") && refusal("close(rfd)", 0).contains("rfd")
+    t.check("a line checked: too many positional values, a name not made yet, too many arguments",
+            refusal("clock_nanosleep(1, 0, {1, 2, 3}, NULL)", usize::MAX).contains("too many") && refusal("close(rfd)", 0).contains("rfd")
             && refusal("close(rfd)", usize::MAX).is_empty() && refusal("getpid(1)", usize::MAX).contains("arguments"));
 
     // The lessons: each on a fresh kernel, its calls finished, its links found; its tries, each made.

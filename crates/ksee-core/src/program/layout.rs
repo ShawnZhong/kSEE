@@ -77,13 +77,6 @@ impl Types {
         Ok(Decl { name, ty, count, bytes })
     }
 
-    /// A variable's bytes (of type `ty`, an array of `count` of them) as
-    /// `init` makes them, as a declaration's value: an expression, or "hi",
-    /// {3, 4}, {.tv_sec = 1}.
-    pub(crate) fn assign(&self, ty: u32, count: Option<u32>, init: &Expr, known: &dyn Env) -> Result<Vec<u8>, String> {
-        self.lay(ty, count, Some(init), known)
-    }
-
     /// The bytes of a variable of type `ty` (an array of `count`) that
     /// `init` makes (none: zeros).
     fn lay(&self, ty: u32, count: Option<u32>, init: Option<&Expr>, known: &dyn Env) -> Result<Vec<u8>, String> {
@@ -261,7 +254,7 @@ impl Types {
                 // A char **: an array of strings.
                 if matches!(self.get(to).kind, Kind::Pointer(c) if self.is_string(c)) {
                     let ev = Eval { types: Some(self), env: known };
-                    return list.iter().map(|(_, it)| match it {
+                    return list.iter().map(|it| match it {
                         Expr::Str(s) => Ok(Some(String::from_utf8_lossy(s).into_owned())),
                         it if ev.number(it)? == 0 => Ok(None),
                         _ => Err("an array of strings: \"…\" or NULL each".to_string()),
@@ -282,18 +275,12 @@ impl Types {
         match (&t.kind, init) {
             (Kind::Struct(_) | Kind::Union(_), Expr::Init(list)) => {
                 let members = self.members(&t.kind);
-                let mut next = 0;
-                for (name, it) in list {
-                    let k = match name {
-                        Some(n) => members.iter().position(|m| &m.name == n).ok_or_else(|| format!("{} has no member {n}", self.name(id)))?,
-                        None => next,
-                    };
+                for (k, it) in list.iter().enumerate() {
                     let m = members.get(k).ok_or_else(|| format!("{}: too many values", self.name(id)))?;
                     if m.bit_size > 0 {
                         return Err(format!("{}.{}: a bitfield", self.name(id), m.name));
                     }
                     self.fill(buf, at + (m.bit_offset / 8) as usize, m.ty, it, known)?;
-                    next = k + 1;
                 }
                 Ok(())
             }
@@ -324,7 +311,7 @@ impl Types {
                 Ok(())
             }
             Expr::Init(list) if list.len() > count as usize => Err(format!("too many values: {count} at most")),
-            Expr::Init(list) => list.iter().enumerate().try_for_each(|(i, (_, it))| self.fill(buf, at + i * esize, elem, it, known)),
+            Expr::Init(list) => list.iter().enumerate().try_for_each(|(i, it)| self.fill(buf, at + i * esize, elem, it, known)),
             _ => Err("an array is {…} (or a string, for chars)".into()),
         }
     }

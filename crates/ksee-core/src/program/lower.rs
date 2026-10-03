@@ -7,7 +7,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::eval::{lvalue, typed, Env};
+use super::eval::{typed, Env};
 use super::layout::{Arg, Decl};
 use super::parse::{statement, Line};
 use crate::types::Types;
@@ -16,7 +16,6 @@ use crate::types::Types;
 #[derive(Debug)]
 pub enum Lowered {
     Decl(Decl),
-    Assign { addr: u32, bytes: Vec<u8> },
     Call { nr: u32, args: Vec<Arg>, result: Option<(String, String)> },
 }
 
@@ -26,11 +25,6 @@ pub fn lower(text: &str, types: &Types, env: &dyn Env) -> Result<Lowered, String
     let line = statement(text)?;
     Ok(match line {
         Line::Decl { .. } => Lowered::Decl(types.declare(&line, env)?),
-        Line::Assign { target, value } => {
-            // (As a declaration's value: an expression, "…" or {…}; an array's, whole.)
-            let (addr, ty, count) = lvalue(&target, types, env)?;
-            Lowered::Assign { addr, bytes: types.assign(ty, count, &value, env)? }
-        }
         Line::Call { result, call, args, texts } => {
             let nr = types.syscalls.iter().find(|(_, n)| **n == call).map(|(&nr, _)| nr)
                 .ok_or_else(|| {

@@ -4,11 +4,10 @@
 //! ```text
 //! [type name =] call(args)     a syscall (its result declared)
 //! type name[n] [= init]        a variable of the program's
-//! target = value               memory of the program's written
 //! ```
 //!
 //! An expression is a small part of C's (`| ^ & << >> + - * /`, unary
-//! `- ~ * &`, `.` `->` `[]`, C's precedence), over typed names: a variable is memory of its type, a
+//! `- ~ &`, `[]`, C's precedence), over typed names: a variable is memory of its type, a
 //! result a value of its declared type, a constant the kernel's. An
 //! argument or a value may also be a string ("a buffer with it") or `{…}`
 //! (laid out as the parameter's type, or the variable's, says).

@@ -80,11 +80,6 @@ impl Eval<'_> {
                 V::Lv { addr, ty, .. } => V::Ptr { addr, to: ty },
                 _ => return Err("&: of a variable, or a member of one".into()),
             },
-            Expr::Unary("*", x) => match self.rvalue(self.eval(x)?)? {
-                V::Ptr { to: 0, .. } => return Err("*: of a void *: name the result's type".into()),
-                V::Ptr { addr, to } => self.place(addr, to),
-                _ => return Err("*: of a number, not a pointer".into()),
-            },
             Expr::Unary(op, x) => {
                 let n = num(self.rvalue(self.eval(x)?)?);
                 V::Int(if *op == "-" { n.wrapping_neg() } else { !n })
@@ -97,20 +92,6 @@ impl Eval<'_> {
                     V::Ptr { addr, to } => self.place((addr as i64 + i * self.types()?.size_of(to) as i64) as u32, to),
                     _ => return Err("[]: of a number, not an array or a pointer".into()),
                 }
-            }
-            Expr::Member(b, m, arrow) => {
-                let (addr, ty) = match (*arrow, if *arrow { self.rvalue(self.eval(b)?)? } else { self.eval(b)? }) {
-                    (false, V::Lv { addr, ty, count: None }) => (addr, ty),
-                    (true, V::Ptr { addr, to }) if to != 0 => (addr, to),
-                    _ => return Err(format!("{}{m}: not a struct{}", if *arrow { "->" } else { "." }, if *arrow { " pointer" } else { "" })),
-                };
-                let t = self.types()?;
-                let member = t.members(&t.get(t.resolve(ty)).kind).into_iter().find(|x| x.name == *m)
-                    .ok_or_else(|| format!("{} has no member {m}", t.name(ty)))?;
-                if member.bit_size > 0 {
-                    return Err(format!("{m}: a bitfield"));
-                }
-                self.place(addr + member.bit_offset / 8, member.ty)
             }
         })
     }
@@ -183,15 +164,6 @@ impl Eval<'_> {
     pub(super) fn number(&self, e: &Expr) -> Result<i64, String> {
         Ok(num(self.rvalue(self.eval(e)?)?))
     }
-
-    /// Expression `e` as memory to write: its address, type (an array's
-    /// element's), and count if an array.
-    pub(super) fn lvalue(&self, e: &Expr) -> Result<(u32, u32, Option<u32>), String> {
-        match self.eval(e)? {
-            V::Lv { addr, ty, count } => Ok((addr, ty, count)),
-            _ => Err("not a variable, a member of one, or what a pointer points to".into()),
-        }
-    }
 }
 
 fn num(v: V) -> i64 {
@@ -205,12 +177,6 @@ fn num(v: V) -> i64 {
 /// members and memory (none: numbers and names only).
 pub fn value(e: &Expr, types: Option<&Types>, env: &dyn Env) -> Result<i64, String> {
     Eval { types, env }.number(e)
-}
-
-/// Expression `e` as memory to write (an lvalue): its address, type, and
-/// count if an array.
-pub(crate) fn lvalue(e: &Expr, types: &Types, env: &dyn Env) -> Result<(u32, u32, Option<u32>), String> {
-    Eval { types: Some(types), env }.lvalue(e)
 }
 
 /// A result's value as its declared type (`void *`, `struct x *`, `int`)

@@ -1,5 +1,5 @@
-//! A program's line parsed (see lex): a call, a declaration or an
-//! assignment, each of C expressions and initializers.
+//! A program's line parsed (see lex): a call or a declaration, each of C
+//! expressions and positional initializers.
 
 use alloc::boxed::Box;
 use alloc::format;
@@ -16,14 +16,12 @@ pub enum Expr {
     Name(String),
     Unary(&'static str, Box<Expr>),
     Binary(&'static str, Box<Expr>, Box<Expr>),
-    /// `e.m`, or `e->m` (true).
-    Member(Box<Expr>, String, bool),
     Index(Box<Expr>, Box<Expr>),
-    /// `{a, .x = b}`.
-    Init(Vec<(Option<String>, Expr)>),
+    /// `{a, b}`.
+    Init(Vec<Expr>),
 }
 
-/// A type as written: its name ("struct io_uring_sqe", "unsigned int",
+/// A type as written: its name ("struct timespec", "unsigned int",
 /// "pid_t"), or a pointer to it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeName {
@@ -45,8 +43,6 @@ pub enum Line {
     /// `type name[count] = init`: a variable of the program's (`count`:
     /// Some(None) for `[]`).
     Decl { ty: TypeName, name: String, count: Option<Option<Expr>>, init: Option<Expr> },
-    /// `target = value`: memory of the program's written.
-    Assign { target: Expr, value: Expr },
 }
 
 /// The words that begin a type.
@@ -150,14 +146,7 @@ impl<'a> Parser<'a> {
         }
         let mut items = Vec::new();
         while !self.eat("}") {
-            let name = if self.is(0, ".") && self.name(1).is_some() && self.is(2, "=") {
-                let n = self.name(1).map(String::from);
-                self.at += 3;
-                n
-            } else {
-                None
-            };
-            items.push((name, self.init()?));
+            items.push(self.init()?);
             if !self.eat(",") {
                 self.expect("}")?;
                 break;
@@ -189,7 +178,7 @@ impl<'a> Parser<'a> {
     }
 
     fn unary(&mut self) -> Result<Expr, String> {
-        for op in ["-", "~", "*", "&"] {
+        for op in ["-", "~", "&"] {
             if self.eat(op) {
                 return Ok(Expr::Unary(op, Box::new(self.unary()?)));
             }
@@ -204,12 +193,6 @@ impl<'a> Parser<'a> {
                 let i = self.expr()?;
                 self.expect("]")?;
                 e = Expr::Index(Box::new(e), Box::new(i));
-            } else if self.is(0, ".") || self.is(0, "->") {
-                let arrow = self.is(0, "->");
-                self.at += 1;
-                let m = self.name(0).ok_or_else(|| format!("a member's name missing{}", self.here()))?.to_string();
-                self.at += 1;
-                e = Expr::Member(Box::new(e), m, arrow);
             } else {
                 return Ok(e);
             }
@@ -303,9 +286,7 @@ impl<'a> Parser<'a> {
             let (call, args, texts) = self.call()?;
             Line::Call { result: None, call, args, texts }
         } else {
-            let target = self.expr()?;
-            self.expect("=")?;
-            Line::Assign { target, value: self.init()? }
+            return Err(format!("a call or declaration expected{}", self.here()));
         };
         if !self.done() {
             return Err(format!("not C here{}", self.here()));

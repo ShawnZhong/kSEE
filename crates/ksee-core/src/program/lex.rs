@@ -22,7 +22,7 @@ pub(crate) struct Token {
     pub end: usize,
 }
 
-const OPS: [&str; 21] = ["<<", ">>", "->", "(", ")", "[", "]", "{", "}", ".", ",", ";", "=", "*", "/",
+const OPS: [&str; 19] = ["<<", ">>", "(", ")", "[", "]", "{", "}", ",", ";", "=", "*", "/",
                          "+", "-", "~", "&", "|", "^"];
 
 /// `text`'s tokens. (A string not closed: an error.)

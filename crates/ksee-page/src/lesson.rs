@@ -61,8 +61,6 @@ pub enum Outcome {
     /// (`during`: the line during which it finished, if a later one's;
     /// `changed`: the variables it changed, as they are then.)
     Call { id: u32, ret: Option<i64>, how: Option<String>, during: Option<usize>, changed: Vec<String> },
-    /// A line that made no call (an assignment): nothing to say.
-    Done,
     Failed(String),
 }
 
@@ -97,7 +95,8 @@ async fn run(mut ui: Ui, lines: Vec<Step>) {
             ui.outcomes.write().push(Outcome::Declared(shown));
             continue;
         }
-        ui.outcomes.write().push(made.id.map_or(Outcome::Done, |id| Outcome::Call { id, ret: None, how: None, during: None, changed: Vec::new() }));
+        let Some(id) = made.id else { continue };
+        ui.outcomes.write().push(Outcome::Call { id, ret: None, how: None, during: None, changed: Vec::new() });
         let Ok(finished) = m.quiet().await else { return };
         m.snapshot();
         ui.version += 1;
@@ -503,7 +502,6 @@ fn said(o: Option<&Outcome>) -> String {
         None => "…".into(),
         Some(Outcome::Declared(v)) => format!("= {v}"),
         Some(Outcome::Failed(e)) => e.clone(),
-        Some(Outcome::Done) => String::new(),
         Some(Outcome::Call { ret: None, .. }) => "… blocked".into(),
         Some(Outcome::Call { how: Some(h), during, .. }) if h != "returned" => format!("(no return: {}{})", if h == "exec" { "it ran a program" } else { "it exited" }, later(*during)),
         Some(Outcome::Call { ret: Some(r), during, .. }) => format!("= {}{}", machine().result(*r), later(*during)),

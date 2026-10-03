@@ -1,12 +1,10 @@
 //! The programs' text and values, on made-up types.
 
 use super::*;
-use super::eval::lvalue;
 use crate::types::Types;
 use crate::Memory;
 use alloc::string::ToString;
 use alloc::vec;
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 const TYPES: &str = "T\t1\tbase\tlong long\t8\ts\nT\t2\tstruct\ttimespec\t16\nM\t2\ttv_sec\t0\t0\t1\nM\t2\ttv_nsec\t64\t0\t1\n\
@@ -43,16 +41,11 @@ fn a_line_is_a_call_or_a_declaration() {
     assert_eq!(decl("unsigned long long n"), ("unsigned long long".into(), "n".into(), false));
     assert!(statement("char **argv").is_err());
     assert!(statement("write(1, \"hi)\", 2").is_err());
-    // (Assignments: memory of the program's written.)
-    let assign = |t: &str| match statement(t).unwrap() {
-        Line::Assign { target, value } => (target, value),
-        s => panic!("{s:?}"),
-    };
-    let n = |s: &str| Expr::Name(s.into());
-    assert_eq!(assign("rings->sq.tail = 1;"), (Expr::Member(Box::new(Expr::Member(Box::new(n("rings")), "sq".into(), true)), "tail".into(), false), Expr::Num(1)));
-    assert_eq!(assign("fds[0] = 3").0, Expr::Index(Box::new(n("fds")), Box::new(Expr::Num(0))));
-    assert_eq!(assign("x = y + 2").1, Expr::Binary("+", Box::new(n("y")), Box::new(Expr::Num(2))));
-    assert!(matches!(assign("*sqe = {.opcode = IORING_OP_READ, .fd = fd}"), (Expr::Unary("*", _), Expr::Init(l)) if l.len() == 2));
+    assert!(statement("fds[0] = 3").is_err());
+    assert!(expression("value.member").is_err());
+    assert!(expression("pointer->member").is_err());
+    assert!(expression("*pointer").is_err());
+    assert!(expression("{.member = 1}").is_err());
 }
 
 #[test]
@@ -84,7 +77,6 @@ fn declarations_are_a_programs_memory() {
     assert_eq!(t.value(&mem, 0, 7, Some(2)), Value::List(alloc::vec![Value::Int(3), Value::Int(4)]));
     assert_eq!(t.value(&mem, 8, 2, None), Value::Fields(alloc::vec![("tv_sec".into(), Value::Int(0)), ("tv_nsec".into(), Value::Int(30000000))]));
     assert_eq!(t.value(&mem, 24, 4, Some(3)), Value::Text("hi".into()));
-    assert_eq!(t.assign(7, Some(2), &expression("{5, 6}").unwrap(), &known).unwrap(), [5, 0, 0, 0, 6, 0, 0, 0]);
     // (Past a NUL too, escaped, as C writes it.)
     assert_eq!(t.show(&M(b"a\0b\x05\0\0".to_vec()), 0, 4, Some(6)), "\"a\\0b\\x05\"");
 }
@@ -94,7 +86,7 @@ fn expressions() {
     let eval = |s: &str, k: &dyn Env| expression(s).and_then(|e| value(&e, None, k));
     assert_eq!(eval("O_CREAT | O_WRONLY", &known), Ok(65));
     assert_eq!(eval("0644", &known), Ok(420));
-    assert_eq!(eval("(1 << 4) + fd - n", &known), Ok(14));
+    assert_eq!(eval("(1 << 4) + fd * 2 - n / 5", &known), Ok(21));
     assert_eq!(eval("NULL", &known), Ok(0));
     assert!(eval("nope", &known).is_err());
     assert!(eval("1 2", &known).is_err());
@@ -129,14 +121,9 @@ fn expressions_as_c_reads_them() {
     let env = Prog(vec![("p", Sym::Var { addr: 8, ty: 2, count: None }), ("fds", Sym::Var { addr: 16, ty: 1, count: Some(2) }),
                         ("q", Sym::Value { v: 8, to: Some(2) })], m);
     let v = |s| value(&expression(s).unwrap(), Some(&t), &env);
-    let lv = |s| lvalue(&expression(s).unwrap(), &t, &env);
-    assert_eq!((v("p.y"), v("fds[1]"), v("q->x + q[0].y"), v("&p"), v("fds")), (Ok(4), Ok(6), Ok(7), Ok(8), Ok(16)));
-    // (Pointer arithmetic: by the size pointed to.)
-    assert_eq!((v("*(fds + 1)"), v("(q + 1)->x")), (Ok(6), Ok(5)));
-    assert!(v("p").is_err()); // (a struct: its address, or a member)
-    // (Memory to write: where, of which type.)
-    assert_eq!((lv("fds[1]"), lv("q->y"), lv("*(fds + 1)")), (Ok((20, 1, None)), Ok((12, 1, None)), Ok((20, 1, None))));
-    assert_eq!(lv("fds"), Ok((16, 1, Some(2)))); // (an array, whole: as a declaration's value)
+    assert_eq!((v("fds[1]"), v("&p"), v("fds")), (Ok(6), Ok(8), Ok(16)));
+    assert_eq!((v("(fds + 1)[0]"), v("fds[0]")), (Ok(6), Ok(5)));
+    assert!(v("p").is_err());
 }
 
 #[test]
@@ -144,10 +131,9 @@ fn a_struct_is_laid_out_by_its_type() {
     let t = Types::parse(TYPES);
     let ts = |text| t.arg(&expression(text).unwrap(), 3, &known);
     let want = Arg::Bytes([0u64.to_le_bytes(), 30000000u64.to_le_bytes()].concat());
-    assert_eq!(ts("{0, 30000000}"), Ok(want.clone()));
-    assert_eq!(ts("{.tv_nsec = 30000000}"), Ok(want));
-    assert_eq!(ts("{.tv_sec = 1}"), Ok(Arg::Bytes([1u64.to_le_bytes(), [0; 8]].concat())));
-    assert!(ts("{.tv_min = 1}").unwrap_err().contains("no member"));
+    assert_eq!(ts("{0, 30000000}"), Ok(want));
+    assert_eq!(ts("{1}"), Ok(Arg::Bytes([1u64.to_le_bytes(), [0; 8]].concat())));
+    assert!(expression("{.tv_nsec = 30000000}").is_err());
     assert!(ts("{1, 2, 3}").unwrap_err().contains("too many"));
     // A struct with an int and a char array; one with an array member.
     let mut named = vec![0u8; 12];
@@ -172,13 +158,12 @@ fn strings_and_argv() {
 
 #[test]
 fn a_struct_summary_is_short() {
-    // struct params { int sq_entries; int cq_entries; int flags; int cpu; int idle; int features;
-    //                 int wq_fd; struct inner resv; struct inner sq_off; } with flags = 65536:
-    // zero scalars omitted, nested aggregates omitted: "{flags = 65536}".
+    // A generic struct with seven scalars and two nested aggregates: zero
+    // scalars and nested aggregates are omitted from its summary.
     let t = Types::parse("T\t1\tbase\tint\t4\ts\nT\t2\tstruct\tinner\t4\nM\t2\ta\t0\t0\t1\n\
-                          T\t3\tstruct\tparams\t36\nM\t3\tsq_entries\t0\t0\t1\nM\t3\tcq_entries\t32\t0\t1\nM\t3\tflags\t64\t0\t1\n\
-                          M\t3\tcpu\t96\t0\t1\nM\t3\tidle\t128\t0\t1\nM\t3\tfeatures\t160\t0\t1\nM\t3\twq_fd\t192\t0\t1\n\
-                          M\t3\tresv\t224\t0\t2\nM\t3\tsq_off\t256\t0\t2\n");
+                          T\t3\tstruct\tparams\t36\nM\t3\tfirst\t0\t0\t1\nM\t3\tsecond\t32\t0\t1\nM\t3\tflags\t64\t0\t1\n\
+                          M\t3\tfourth\t96\t0\t1\nM\t3\tfifth\t128\t0\t1\nM\t3\tsixth\t160\t0\t1\nM\t3\tseventh\t192\t0\t1\n\
+                          M\t3\tnested_a\t224\t0\t2\nM\t3\tnested_b\t256\t0\t2\n");
     struct M(Vec<u8>);
     impl Memory for M {
         fn read(&self, addr: u32, buf: &mut [u8]) {
@@ -194,7 +179,7 @@ fn a_struct_summary_is_short() {
     for at in [0, 4, 8, 12, 16, 20] {
         many[at..at + 4].copy_from_slice(&1u32.to_le_bytes());
     }
-    assert_eq!(t.show(&M(many), 0, 3, None), "{sq_entries = 1, cq_entries = 1, flags = 1, cpu = 1, …}");
+    assert_eq!(t.show(&M(many), 0, 3, None), "{first = 1, second = 1, flags = 1, fourth = 1, …}");
 }
 
 #[test]
