@@ -141,11 +141,7 @@ fn trace_plugin() -> (String, std::path::PathBuf) {
 fn kernel() {
     linux_tree();
 
-    let cache_hit = std::env::var(CACHED_LINUX).ok();
-    let cached = cached_kernel(Path::new("linux"), cache_hit.as_deref());
-    if cache_hit.as_deref() == Some("true") && !cached {
-        eprintln!("+ (cache) incomplete Linux cache; rebuilding");
-    }
+    let cached = cached_kernel(Path::new("linux"), std::env::var(CACHED_LINUX).ok().as_deref());
     if cached {
         eprintln!("+ (cache) Linux kernel and headers");
     } else {
