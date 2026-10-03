@@ -6,6 +6,5 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
-      - run: ./setup.sh
       - run: ./ksee.sh build
       - run: cargo test -p ksee-core -p ksee-cli
