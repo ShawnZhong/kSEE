@@ -112,14 +112,6 @@ fn check_llvm() {
     }
 }
 
-const CACHED_LINUX: &str = "KSEE_CACHED_LINUX";
-
-fn cached_kernel(root: &Path, hit: Option<&str>) -> bool {
-    hit == Some("true") &&
-        ["Makefile", ".config", "vmlinux"].iter().all(|p| root.join(p).is_file()) &&
-        root.join("usr/include").is_dir()
-}
-
 fn trace_plugin() -> (String, std::path::PathBuf) {
     if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
         let flags = stdout(cmd("llvm-config").arg("--cxxflags"));
@@ -132,46 +124,41 @@ fn trace_plugin() -> (String, std::path::PathBuf) {
         }
         run(plugin.args(String::from_utf8_lossy(&flags).split_whitespace()));
     }
-    // A hash in the flags makes kbuild rebuild when the plugin changes.
-    let id = format!("{:016x}", fnv64(&std::fs::read("plugin/ksee-trace.so").unwrap_or_default()));
+    // A stable source hash in the flags makes kbuild rebuild only when the
+    // instrumentation changes, not when an equivalent shared object is relinked.
+    let id = format!("{:016x}", fnv64(&std::fs::read("plugin/ksee-trace.cpp").unwrap_or_default()));
     let path = Path::new("plugin/ksee-trace.so").canonicalize().unwrap();
     (id, path)
 }
 
 fn kernel() {
     linux_tree();
-
-    let cached = cached_kernel(Path::new("linux"), std::env::var(CACHED_LINUX).ok().as_deref());
-    if cached {
-        eprintln!("+ (cache) Linux kernel and headers");
-    } else {
-        let (id, plugin) = trace_plugin();
-        // (Inlining only what the source asks for, `inline`: the compiler's
-        // own choices would hide calls, with their arguments, as inlined code.)
-        let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
-        let kmake = |args: &[&str]| {
-            let mut c = cmd("make");
-            c.args(["-C", "linux", "ARCH=wasm", "LLVM=1",
-                    &format!("KCFLAGS=-g -finline-hint-functions -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
-                .arg(&jobs)
-                .args(args);
-            c
-        };
-        // (Every Kconfig the port has: a new one re-runs defconfig too.)
-        let mut config = vec!["linux/arch/wasm/configs/defconfig".to_string()];
-        for e in std::fs::read_dir("linux/arch/wasm").into_iter().flatten().flatten() {
-            let n = e.file_name().to_string_lossy().into_owned();
-            if n.starts_with("Kconfig") {
-                config.push(format!("linux/arch/wasm/{n}"));
-            }
+    let (id, plugin) = trace_plugin();
+    // (Inlining only what the source asks for, `inline`: the compiler's
+    // own choices would hide calls, with their arguments, as inlined code.)
+    let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
+    let kmake = |args: &[&str]| {
+        let mut c = cmd("make");
+        c.args(["-C", "linux", "ARCH=wasm", "LLVM=1",
+                &format!("KCFLAGS=-g -finline-hint-functions -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
+            .arg(&jobs)
+            .args(args);
+        c
+    };
+    // (Every Kconfig the port has: a new one re-runs defconfig too.)
+    let mut config = vec!["linux/arch/wasm/configs/defconfig".to_string()];
+    for e in std::fs::read_dir("linux/arch/wasm").into_iter().flatten().flatten() {
+        let n = e.file_name().to_string_lossy().into_owned();
+        if n.starts_with("Kconfig") {
+            config.push(format!("linux/arch/wasm/{n}"));
         }
-        if stale("linux/.config", &config.iter().map(String::as_str).collect::<Vec<_>>()) {
-            run(&mut kmake(&["defconfig"]));
-        }
-        run(&mut kmake(&[]));
-        // (Its UAPI headers: the pack's constants, the programs' syscalls.)
-        run(&mut kmake(&["headers"]));
     }
+    if stale("linux/.config", &config.iter().map(String::as_str).collect::<Vec<_>>()) {
+        run(&mut kmake(&["defconfig"]));
+    }
+    run(&mut kmake(&[]));
+    // (Its UAPI headers: the pack's constants, the programs' syscalls.)
+    run(&mut kmake(&["headers"]));
 }
 
 pub fn build() {
@@ -415,29 +402,6 @@ mod tests {
         std::fs::write(&second, b"new output").unwrap();
         assert!(!any_stale(&[&first_s, &second_s], &[&input_s]));
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn only_a_complete_exact_linux_cache_is_reused() {
-        let root = std::env::temp_dir().join(format!("ksee-linux-cache-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("usr/include")).unwrap();
-        for file in ["Makefile", ".config", "vmlinux"] {
-            std::fs::write(root.join(file), "").unwrap();
-        }
-
-        for value in [None, Some(""), Some("false"), Some("TRUE"), Some("1")] {
-            assert!(!cached_kernel(&root, value));
-        }
-        assert!(cached_kernel(&root, Some("true")));
-
-        std::fs::remove_file(root.join("vmlinux")).unwrap();
-        assert!(!cached_kernel(&root, Some("true")));
-        std::fs::write(root.join("vmlinux"), "").unwrap();
-        std::fs::remove_dir(root.join("usr/include")).unwrap();
-        std::fs::write(root.join("usr/include"), "").unwrap();
-        assert!(!cached_kernel(&root, Some("true")));
-        let _ = std::fs::remove_dir_all(&root);
     }
 }
 

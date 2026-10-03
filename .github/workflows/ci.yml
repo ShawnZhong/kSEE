@@ -20,6 +20,4 @@ jobs:
       - name: Install Rust/Wasm tools
         run: ./setup.sh --rust-only
       - name: Test kernel
-        env:
-          KSEE_CACHED_LINUX: ${{ steps.linux_cache.outputs.cache-hit }}
         run: ./ksee.sh test
