@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Document, Element, Event, EventInit, HtmlElement, HtmlInputElement, HtmlTextAreaElement, KeyboardEvent, KeyboardEventInit,
-              MouseEvent, MouseEventInit};
+              MouseEvent, MouseEventInit, PointerEvent, PointerEventInit};
 
 /// The test the URL names (`#…test=NAME`, set by chrome.rs), started: its
 /// outcome POSTed to the server's /result, `ok` or `fail` then its log.
@@ -98,6 +98,14 @@ fn mouse(e: &Element, kind: &str, x: f64, y: f64, shift: bool) {
     init.set_client_y(y as i32);
     init.set_shift_key(shift);
     let _ = e.dispatch_event(&MouseEvent::new_with_mouse_event_init_dict(kind, &init).unwrap());
+}
+
+fn pointer(e: &Element, kind: &str, x: f64, y: f64) {
+    let init = PointerEventInit::new();
+    init.set_bubbles(true);
+    init.set_client_x(x as i32);
+    init.set_client_y(y as i32);
+    let _ = e.dispatch_event(&PointerEvent::new_with_event_init_dict(kind, &init).unwrap());
 }
 
 fn key(e: &Element, k: &str) {
@@ -223,13 +231,21 @@ async fn read() -> Check {
     key(&work, "ArrowRight");
     sleep(200).await;
     check(place() != before, "→", (&before, place()))?;
-    // (A click on a bar: the cursor there, that frame chosen.)
+    // (Hover and click resolve the same bar, moment and cursor position.)
     let bar = all(".chart .bar").into_iter().find(|b| text(b).starts_with("vfs_read")).ok_or("no vfs_read bar")?;
     let b = bar.get_bounding_client_rect();
-    mouse(&one(".chart").ok_or("no chart")?, "click", b.left() + b.width() / 2.0, b.top() + b.height() / 2.0, false);
+    let chart = one(".chart").ok_or("no chart")?;
+    let (x, y) = (b.left() + b.width() / 2.0, b.top() + b.height() / 2.0);
+    pointer(&chart, "pointermove", x, y);
+    sleep(200).await;
+    let hovered = place();
+    let preview = one(".chart .now.peek").and_then(|e| e.get_attribute("style")).unwrap_or_default();
+    mouse(&chart, "click", x, y, false);
     sleep(300).await;
     let chosen = one("tr.frame.on a").map(|a| text(&a)).unwrap_or_default();
-    check(chosen == "vfs_read", "a click on a bar", (&chosen, place()))?;
+    let committed = one(".chart .now:not(.peek)").and_then(|e| e.get_attribute("style")).unwrap_or_default();
+    check(chosen == "vfs_read" && hovered == place() && preview == committed,
+        "hover and click on a bar", (&chosen, &hovered, place(), &preview, &committed))?;
     // (Find: its bars lit; Enter, the cursor in it.)
     let find = one(".find").ok_or("no find box")?;
     find.dyn_ref::<HtmlInputElement>().ok_or("find, not an input")?.set_value("copy_page_to_iter");

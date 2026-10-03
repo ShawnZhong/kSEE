@@ -164,24 +164,25 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let room = use_context::<Signal<crate::layout::Sizes>>()().chart;
     let row = (room / depth.max(1) as f64).clamp(MIN_ROW, ROW).floor();
     let runs = chart.bar_runs();
-    let cursor = d.cursor.cloned();
     let (sa, sb) = (d.window)();
     // (Where a step is, across the window (%): the cursor's, solid; the
     // moment under the pointer's, faint; the calls on its stack.)
     let x = |s: f64| (s >= sa as f64 && s < (sb + 1) as f64).then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64);
-    let now = cursor.and_then(x);
-    let peeked = ui.peek.read().as_ref().and(d.line.cloned()).and_then(|l| x(machine().view(|v| v.rec.step_of(l.i)) as f64));
+    let now = d.cursor.cloned().and_then(x);
+    let peeked = d.preview.cloned().and_then(x);
     let calls: Vec<(usize, String)> = d.stack.read().iter().map(|f| (f.first, f.func.clone())).collect();
     let find = (ui.find)().to_lowercase();
     // (The bar outlined: the one under the pointer, else the frame shown's call.)
     let lit = tip().map(|t| t.call).or_else(|| d.stack.read().get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
     let height = (depth as f64 * row).max(room);
-    // (What is under the pointer, at x, y in the chart: its column, and the bar there, if
-    // one: its depth from the outermost.)
-    let hit = move |chart: &Chart, x: f64, y: f64| -> Option<(usize, Option<usize>)> {
+    // (One rule for hover and click: the column, its frame if there is one,
+    // and the moment that column samples.)
+    let hit = move |chart: &Chart, x: f64, y: f64| -> Option<(Option<crate::state::Moment>, Option<usize>)> {
         let k = ((x / width() * chart.cols.len() as f64).max(0.0) as usize).min(chart.cols.len().checked_sub(1)?);
         let dd = ((height - y) / row).floor();
-        Some((k, (dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len()).then_some(dd as usize)))
+        let bar = (dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len()).then(|| chart.cols[k].frames[dd as usize] as usize);
+        let frame = bar.map(|b| (chart.bars[b].first, chart.bars[b].name.clone()));
+        Some((ui.moment_at(chart.cols[k].i, Some(chart.cols[k].nth), frame), bar))
     };
     let pct = |k: usize| k as f64 * 100.0 / n as f64;
     let px = width() / n as f64;
@@ -222,12 +223,10 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     }
                     // (Else the moment under the pointer shown everywhere but the line: over a bar, what its call was.)
                     let at = e.element_coordinates();
-                    let Some((k, dd)) = hit(&chart, at.x, at.y) else { return };
-                    let call = dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]).map(|b| (b.first, b.name.clone()));
-                    let peek = ui.moment_at(chart.cols[k].i, Some(chart.cols[k].nth), call);
+                    let Some((peek, bar)) = hit(&chart, at.x, at.y) else { return };
                     if *ui.peek.peek() != peek { ui.peek.set(peek); }
                     let p = e.client_coordinates();
-                    match dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]) {
+                    match bar.map(|b| &chart.bars[b]) {
                         None => if tip().is_some() { tip.set(None) },
                         Some(b) => match tip() {
                             Some(t) if t.call.0 == b.first && t.call.1 == b.name => tip.set(Some(Tip { x: p.x, y: p.y, ..t })),
@@ -237,19 +236,14 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 }
             },
             onpointerup: move |_| pan.set(None),
-            // (A click, not a drag: the moment previewed committed, as it is.)
+            // (A click, not a drag: resolve its coordinates afresh, then commit.)
             onclick: {
                 let chart = chart.clone();
                 move |e: MouseEvent| {
                     if dragged() { dragged.set(false); return }
                     let mut ui = ui;
                     let at = e.element_coordinates();
-                    let peek = ui.peek.peek().clone().or_else(|| {
-                        let (k, dd) = hit(&chart, at.x, at.y)?;
-                        let call = dd.map(|dd| &chart.bars[chart.cols[k].frames[dd] as usize]).map(|b| (b.first, b.name.clone()));
-                        ui.moment_at(chart.cols[k].i, Some(chart.cols[k].nth), call)
-                    });
-                    if peek.is_some() { ui.at.set(peek); }
+                    if let Some(moment) = hit(&chart, at.x, at.y).and_then(|h| h.0) { ui.at.set(Some(moment)); }
                     ui.peek.set(None);
                 }
             },

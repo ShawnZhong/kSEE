@@ -64,6 +64,17 @@ pub struct Derived {
     pub stack: Memo<Shared<Vec<Frame>>>,
     pub frame: Memo<usize>,
     pub cursor: Memo<Option<f64>>,
+    pub preview: Memo<Option<f64>>,
+}
+
+/// A moment's position in recording steps. Lines in one block divide the
+/// block's step range evenly, so preview and committed cursors agree.
+fn moment_step(at: &Moment, lines: &[Line]) -> Option<f64> {
+    let i = lines.get(at.line)?.i;
+    let (k, n) = (lines[..at.line].iter().rev().take_while(|l| l.i == i).count(), lines.iter().filter(|l| l.i == i).count());
+    let (first, last) = machine().view(|v| (v.rec.blocks.partition_point(|&b| b < i), v.rec.step_of(i)));
+    let first = first.min(last);
+    Some(first as f64 + (last + 1 - first) as f64 * k as f64 / n as f64)
 }
 
 impl Derived {
@@ -103,18 +114,15 @@ impl Derived {
         let frame = use_memo(move || shown().and_then(|m| m.frame).and_then(|(first, func)| stack.read().iter().position(|f| f.first == first && f.func == func)).unwrap_or(0));
         let cursor = use_memo(move || {
             let at = (ui.at)()?;
-            let place = |lines: &[Line]| {
-                // (A block's lines share its record and its steps (one a
-                // line): each its share of them, in order.)
-                let i = lines.get(at.line)?.i;
-                let (k, n) = (lines[..at.line].iter().rev().take_while(|l| l.i == i).count(), lines.iter().filter(|l| l.i == i).count());
-                let (first, last) = machine().view(|v| (v.rec.blocks.partition_point(|&b| b < i), v.rec.step_of(i)));
-                let first = first.min(last);
-                Some(first as f64 + (last + 1 - first) as f64 * k as f64 / n as f64)
-            };
-            if shown().is_some_and(|s| s.call == at.call) { place(&lines.read()) } else { place(&Ui::lines_of(at.call)) }
+            if shown().is_some_and(|s| s.call == at.call) { moment_step(&at, &lines.read()) }
+            else { moment_step(&at, &Ui::lines_of(at.call)) }
         });
-        Derived { shown, syscall, lines, window, chart, line, stack, frame, cursor }
+        let preview = use_memo(move || {
+            let at = (ui.peek)()?;
+            if shown().is_some_and(|s| s.call == at.call) { moment_step(&at, &lines.read()) }
+            else { moment_step(&at, &Ui::lines_of(at.call)) }
+        });
+        Derived { shown, syscall, lines, window, chart, line, stack, frame, cursor, preview }
     }
 }
 
