@@ -16,7 +16,7 @@ will reject them.
 
 The build requires:
 
-- LLVM 23: Clang, `wasm-ld`, `llvm-config`, and the pass-plugin headers;
+- LLVM 22: Clang, `wasm-ld`, `llvm-config`, and the pass-plugin headers;
 - GNU make and sed;
 - `mkfs.ext4` from e2fsprogs;
 - `gzip`;
@@ -39,10 +39,10 @@ The script installs the supported host dependencies, installs rustup if it is
 missing, and adds the Rust WebAssembly target. It does **not** install Chromium
 or another browser.
 
-### Use a custom LLVM 23 build
+### Use a custom LLVM 22 build
 
-By default, kSEE uses Homebrew's `llvm@23` on macOS and
-`/usr/lib/llvm-23/bin` on Linux. Set `KSEE_LLVM_BIN` to use another LLVM 23
+By default, kSEE uses Homebrew's `llvm@22` on macOS and
+`/usr/lib/llvm-22/bin` on Linux. Set `KSEE_LLVM_BIN` to use another LLVM 22
 installation:
 
 ```sh
@@ -50,7 +50,7 @@ KSEE_LLVM_BIN=/absolute/path/to/llvm/bin ./ksee.sh build
 ```
 
 The value must be an absolute path to an existing directory. The build checks
-`llvm-config --version` and refuses any LLVM major version other than 23.
+`llvm-config --version` and refuses any LLVM major version other than 22.
 
 ## Build and serve
 
@@ -79,7 +79,7 @@ The first build:
 5. builds `/init`, `/bin/prog`, and the initramfs; and
 6. writes the deployable site to `target/site/`.
 
-Later builds reuse outputs whose inputs have not changed. Use one LLVM 23
+Later builds reuse outputs whose inputs have not changed. Use one LLVM 22
 toolchain for a checkout after its first build.
 
 ## Browser requirement
@@ -134,7 +134,7 @@ directories.
 Run the build with an explicit absolute directory:
 
 ```sh
-KSEE_LLVM_BIN=/absolute/path/to/llvm-23/bin ./ksee.sh build
+KSEE_LLVM_BIN=/absolute/path/to/llvm-22/bin ./ksee.sh build
 ```
 
 The error reports the version seen through `llvm-config`. The directory must

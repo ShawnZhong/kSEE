@@ -40,7 +40,7 @@ emulated.
 
 ```mermaid
 flowchart LR
-    P[LLVM 23 pass] --> K[Linux v7.2.7 wasm]
+    P[LLVM 22 pass] --> K[Linux v7.2.7 wasm]
     U[Lessons and syscall runners] --> K
     UI[ksee-page Dioxus UI] --> M[ksee-runtime Machine]
     M --> K

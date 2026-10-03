@@ -10,7 +10,7 @@ shape the code.
 |---|---|
 | `linux.patch` | Complete `arch/wasm` port and required generic-kernel changes against stable `v7.2.7`. |
 | `linux/` | Fetched working kernel tree with the patch applied; created on the first build. |
-| `plugin/` | LLVM 23 pass that instruments kernel functions. |
+| `plugin/` | LLVM 22 pass that instruments kernel functions. |
 | `crates/ksee-core/` | `no_std` trace decoding, packed tables, reconstruction, views, program parsing/evaluation, text parsing, and source highlighting. |
 | `crates/ksee-runtime/` | Browser host for the kernel: shared memory, JSPI task scheduling, programs, snapshots, and the `Machine` API. |
 | `crates/ksee-page/` | Dioxus UI built into the same WebAssembly module as the runtime. |
@@ -41,7 +41,7 @@ tool rather than part of the browser module.
 `./ksee.sh` first builds `ksee-cli` in release mode with Cargo's locked
 dependency set, then runs it. `ksee build` performs these stages:
 
-1. Resolve the configured LLVM tools and require LLVM major version 23.
+1. Resolve the configured LLVM tools and require LLVM major version 22.
 2. Fetch Linux stable `v7.2.7` into `linux/` if it is absent, verify the pinned
    commit, and apply `linux.patch`.
 3. Build `plugin/ksee-trace.so` when its source is newer than the plugin.
@@ -66,8 +66,8 @@ packing steps compare output and input modification times.
 
 ### LLVM selection
 
-The build requires LLVM major version 23. Defaults are Homebrew's `llvm@23` on
-macOS and `/usr/lib/llvm-23/bin` elsewhere. Override that directory with an
+The build requires LLVM major version 22. Defaults are Homebrew's `llvm@22` on
+macOS and `/usr/lib/llvm-22/bin` elsewhere. Override that directory with an
 absolute path:
 
 ```sh
@@ -76,7 +76,7 @@ KSEE_LLVM_BIN=/absolute/path/to/llvm/bin ./ksee.sh build
 
 The build checks `llvm-config --version` before doing other build work. It
 does not track the selected LLVM installation as an incremental-build input,
-so use one LLVM 23 toolchain for a checkout after its first build. If you
+so use one LLVM 22 toolchain for a checkout after its first build. If you
 switch toolchains, rebuild the native plugin and kernel outputs rather than
 reusing artifacts produced by the previous installation.
 

@@ -117,6 +117,10 @@ fn stale(out: &str, inputs: &[&str]) -> bool {
     inputs.iter().any(|i| time(i).is_none_or(|ti| ti > t))
 }
 
+fn any_stale(outputs: &[&str], inputs: &[&str]) -> bool {
+    outputs.iter().any(|out| stale(out, inputs))
+}
+
 fn check_llvm() {
     let version = String::from_utf8_lossy(&output(cmd("llvm-config").arg("--version"))).trim().to_string();
     if version.split('.').next() != Some("22") {
@@ -176,14 +180,20 @@ pub fn build() {
         "--target", "wasm32-unknown-unknown"]));
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
 
-    // (Packed again for a new kernel, or a new pack: this program.)
+    // (Packed again for a new kernel or pack implementation, or to restore
+    // either required result after a partial clean.)
     let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
-    if stale("target/vmlinux", &["linux/vmlinux", &me]) {
+    let pack_inputs = ["linux/vmlinux", me.as_str()];
+    let sources = format!("{SITE}/src");
+    if any_stale(&["target/vmlinux", &sources], &pack_inputs) {
         eprintln!("+ (pack) linux -> {SITE}");
         crate::pack::pack(Path::new("linux"), Path::new(SITE));
         std::fs::rename(format!("{SITE}/vmlinux"), "target/vmlinux")
             .unwrap_or_else(|e| crate::fail(&format!("target/vmlinux: {e}")));
-        gzip("target/vmlinux", &format!("{SITE}/vmlinux.gz"));
+    }
+    let packed = format!("{SITE}/vmlinux.gz");
+    if stale(&packed, &["target/vmlinux"]) {
+        gzip("target/vmlinux", &packed);
     }
     // The programs (/init, /bin/prog): plain C, no C library (their syscalls:
     // user/syscall.h), with the kernel's UAPI headers.
@@ -222,7 +232,10 @@ pub fn build() {
         eprintln!("+ (cpio) -> {cpio_out}");
         std::fs::write(&cpio_out, cpio(Path::new(dir)))
             .unwrap_or_else(|e| crate::fail(&format!("{cpio_out}: {e}")));
-        gzip(&cpio_out, &format!("{SITE}/initramfs.cpio.gz"));
+    }
+    let compressed = format!("{SITE}/initramfs.cpio.gz");
+    if stale(&compressed, &[&cpio_out]) {
+        gzip(&cpio_out, &compressed);
     }
     examples();
 }
@@ -370,6 +383,36 @@ mod tests {
              ("/bin/prog", 0o100755), ("/mnt", 0o040755), ("/disk.img", 0o100644), ("TRAILER!!!", 0)]);
         assert_eq!(entries[2].2.as_slice(), b"\0asm");
         assert_eq!(entries[3].2.as_slice(), b"hello from memory\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stale_outputs_are_detected() {
+        let dir = std::env::temp_dir().join(format!("ksee-stale-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("input");
+        let first = dir.join("first");
+        let second = dir.join("second");
+        let input_s = input.to_string_lossy();
+        let first_s = first.to_string_lossy();
+        let second_s = second.to_string_lossy();
+
+        std::fs::write(&first, b"output").unwrap();
+        assert!(stale(&second_s, &[&input_s]));
+        assert!(stale(&first_s, &[&input_s]));
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&input, b"input").unwrap();
+        assert!(stale(&first_s, &[&input_s]));
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&first, b"new output").unwrap();
+        assert!(!stale(&first_s, &[&input_s]));
+        assert!(any_stale(&[&first_s, &second_s], &[&input_s]));
+
+        std::fs::write(&second, b"new output").unwrap();
+        assert!(!any_stale(&[&first_s, &second_s], &[&input_s]));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

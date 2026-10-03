@@ -48,7 +48,7 @@ scheduled with JSPI.
 | Component | Responsibility |
 |---|---|
 | `linux.patch` and `linux/` | The `arch/wasm` port against Linux stable `v7.2.7`; `linux/` is fetched and patched on the first build. |
-| `plugin/` | The LLVM 23 pass that inserts trace probes. |
+| `plugin/` | The LLVM 22 pass that inserts trace probes. |
 | `ksee-runtime` | Owns memory, boots Linux, schedules JSPI-suspended task stacks, drives syscall runners, and takes snapshots. |
 | `ksee-core` | Decodes trace records and packed metadata, then combines them with end-state memory to reconstruct stacks, lines, values, tasks, and objects. |
 | `ksee-page` | The Dioxus UI in the runtime's WebAssembly module; it drives `Machine` and renders the reconstructed views. |
