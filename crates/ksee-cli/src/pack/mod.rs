@@ -1,15 +1,15 @@
-//! Pack the kernel for the page (called by `ksee build`): OUT/vmlinux,
-//! with the kernel's types and syscalls from DWARF (see ksee_core::types)
-//! and without DWARF; and OUT/src, the sources its probes refer to.
+//! Package the raw Kbuild kernel for the page (called by `ksee build`): a
+//! rewritten image with packed metadata and no DWARF, plus the kernel sources
+//! referenced by its probes.
 
 mod dwarf;
 
-use std::path::Path;
+use std::path::{Component, Path};
 
 use ksee_core::{module, tables::Tables};
 
-/// Write OUT/vmlinux (from KERNEL/vmlinux) and OUT/src (from KERNEL).
-pub fn pack(kernel: &Path, out: &Path) {
+/// Write the packed image and its referenced sources to their final paths.
+pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
     let mut types = dwarf::types(&image).unwrap_or_else(|e| crate::fail(&format!("DWARF: {e}")));
     let t = ksee_core::types::Types::parse(&types);
@@ -21,8 +21,10 @@ pub fn pack(kernel: &Path, out: &Path) {
         types += &format!("S\t{nr}\t{name}\n");
     }
     let packed = rewrite(&image, &types);
-    std::fs::create_dir_all(out).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", out.display())));
-    std::fs::write(out.join("vmlinux"), &packed).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", out.display())));
+    if let Some(parent) = image_out.parent() {
+        std::fs::create_dir_all(parent).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", parent.display())));
+    }
+    std::fs::write(image_out, &packed).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", image_out.display())));
 
     // The sources, for the page's source view.
     let probes = String::from_utf8_lossy(&module::custom_section(&image, "ksee.probes")).into_owned();
@@ -30,24 +32,34 @@ pub fn pack(kernel: &Path, out: &Path) {
     // (The functions the trace has whose parameters DWARF gave, by id: the
     // two agree on what a function is.)
     let known = tables.functions.keys().filter(|id| tables.types.params.contains_key(id)).count();
-    let src = out.join("src");
-    let _ = std::fs::remove_dir_all(&src);
-    let (mut files, mut bytes) = (0, 0);
-    for file in &tables.files {
-        if file.starts_with('/') || file.contains("..") {
-            continue; // outside the tree
-        }
-        if let Ok(data) = std::fs::read(kernel.join(file)) {
-            let to = src.join(file);
-            let _ = std::fs::create_dir_all(to.parent().unwrap());
-            std::fs::write(&to, &data).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", to.display())));
-            files += 1;
-            bytes += data.len();
-        }
-    }
+    let (files, bytes) = publish_sources(kernel, &tables.files, sources_out);
     eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} -> {} KiB; {files} sources, {} KiB",
-              out.display(), types.lines().filter(|l| l.starts_with('T')).count(), calls.len(), tables.functions.len(),
+              image_out.display(), types.lines().filter(|l| l.starts_with('T')).count(), calls.len(), tables.functions.len(),
               image.len() >> 10, packed.len() >> 10, bytes >> 10);
+}
+
+pub(crate) fn source_path(file: &str) -> Option<&Path> {
+    let path = Path::new(file);
+    (!file.is_empty() && path.components().all(|c| matches!(c, Component::Normal(_)))).then_some(path)
+}
+
+fn publish_sources(kernel: &Path, files: &[String], out: &Path) -> (usize, usize) {
+    let _ = std::fs::remove_dir_all(out);
+    std::fs::create_dir_all(out).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", out.display())));
+
+    let mut paths: Vec<&Path> = files.iter().filter_map(|file| source_path(file)).collect();
+    paths.sort_unstable();
+    paths.dedup();
+    let (mut copied, mut bytes) = (0, 0);
+    for path in paths {
+        let Ok(data) = std::fs::read(kernel.join(path)) else { continue };
+        let to = out.join(path);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", to.display())));
+        std::fs::write(&to, &data).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", to.display())));
+        copied += 1;
+        bytes += data.len();
+    }
+    (copied, bytes)
 }
 
 /// The UAPI headers the page's constants come from, with the prefixes kept.
@@ -125,6 +137,56 @@ fn rewrite(image: &[u8], types: &str) -> Vec<u8> {
     module::leb(&mut out, payload.len() as u32);
     out.extend_from_slice(&payload);
     out
+}
+
+#[cfg(test)]
+mod source_tests {
+    use super::*;
+
+    #[test]
+    fn source_paths_are_relative_and_normal() {
+        for path in ["kernel/fork.c", "name..c"] {
+            assert_eq!(source_path(path), Some(Path::new(path)));
+        }
+        for path in ["", "/kernel/fork.c", "../fork.c", "kernel/../fork.c", "."] {
+            assert!(source_path(path).is_none(), "accepted {path}");
+        }
+    }
+
+    #[test]
+    fn sources_are_sorted_deduplicated_and_replaced() {
+        let root = std::env::temp_dir().join(format!("ksee-pack-sources-test-{}", std::process::id()));
+        let kernel = root.join("kernel");
+        let out = root.join("out");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(kernel.join("a")).unwrap();
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(kernel.join("a/one.c"), b"one").unwrap();
+        std::fs::write(kernel.join("two.c"), b"two").unwrap();
+        std::fs::write(out.join("old.c"), b"old").unwrap();
+        let files = ["two.c", "a/one.c", "two.c", "missing.c", "../outside"]
+            .map(str::to_string);
+
+        assert_eq!(publish_sources(&kernel, &files, &out), (2, 6));
+        assert_eq!(std::fs::read(out.join("a/one.c")).unwrap(), b"one");
+        assert_eq!(std::fs::read(out.join("two.c")).unwrap(), b"two");
+        assert!(!out.join("old.c").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_empty_source_set_still_replaces_the_directory() {
+        let root = std::env::temp_dir().join(format!("ksee-pack-empty-test-{}", std::process::id()));
+        let out = root.join("out");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("old.c"), b"old").unwrap();
+
+        assert_eq!(publish_sources(&root, &[], &out), (0, 0));
+        assert!(out.is_dir());
+        assert!(std::fs::read_dir(&out).unwrap().next().is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
 
 #[cfg(test)]

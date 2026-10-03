@@ -186,10 +186,8 @@ pub fn build() {
     let pack_inputs = ["linux/vmlinux", me.as_str()];
     let sources = format!("{SITE}/src");
     if any_stale(&["target/vmlinux", &sources], &pack_inputs) {
-        eprintln!("+ (pack) linux -> {SITE}");
-        crate::pack::pack(Path::new("linux"), Path::new(SITE));
-        std::fs::rename(format!("{SITE}/vmlinux"), "target/vmlinux")
-            .unwrap_or_else(|e| crate::fail(&format!("target/vmlinux: {e}")));
+        eprintln!("+ (pack) linux -> target/vmlinux, {sources}");
+        crate::pack::kernel(Path::new("linux"), Path::new("target/vmlinux"), Path::new(&sources));
     }
     let packed = format!("{SITE}/vmlinux.gz");
     if stale(&packed, &["target/vmlinux"]) {

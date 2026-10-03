@@ -106,13 +106,14 @@ Do not edit generated output as source:
 
 | Output | Contents |
 |---|---|
+| `linux/vmlinux` | Raw instrumented Kbuild kernel with DWARF; retained with the Linux build cache in CI. |
 | `target/site/` | Normal site served locally and deployed. |
 | `target/site/pkg/` | wasm-bindgen output for the combined page/runtime module. |
 | `target/site/vmlinux.gz` | Instrumented, packed kernel without DWARF. |
 | `target/site/src/` | Kernel source files referenced by probe metadata. |
 | `target/site/initramfs.cpio.gz` | `/init`, `/bin/prog`, root fixture, and ext4 image. |
 | `target/site/examples.json` | Built lesson index and content. |
-| `target/vmlinux` | Uncompressed packed kernel used to produce the site copy. |
+| `target/vmlinux` | Uncompressed packed kernel, with metadata injected and DWARF removed, used to produce the site copy. |
 | `target/initramfs/` | Intermediate programs, ext4 image, fixture tree, and archive. |
 | `target/test/site/` | Test site whose package points at a self-test-enabled page/runtime build. |
 | `target/test/build/` | Separate Cargo target directory for that self-test module. |
