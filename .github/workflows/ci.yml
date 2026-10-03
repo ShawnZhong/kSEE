@@ -20,5 +20,7 @@ jobs:
         run: ./setup.sh --rust-only
       - name: Build ksee CLI
         run: cargo build --locked --release -p ksee-cli
-      - name: Test kernel
-        run: target/release/ksee test
+      - name: Build kernel and site
+        run: target/release/ksee build
+      - name: Test
+        run: target/release/ksee test --built

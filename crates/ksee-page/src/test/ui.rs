@@ -10,7 +10,7 @@ use super::Check;
 /// selected; its links followed; stepping into, over, out, and by key; the
 /// chart (a click, find); Objects and Tasks; a line changed, a
 /// try and back; the next lesson.
-pub(super) async fn read() -> Check {
+pub(super) async fn lesson() -> Check {
     let mut r = Vec::new();
     wait(|| done(3) && !all(".chart .bar").is_empty(), 900, "the calls made", || {
             let status = one(".pad.dim").map(|e| text(&e)).unwrap_or_default();
@@ -112,7 +112,7 @@ pub(super) async fn read() -> Check {
 
 /// The page opened with a program changed (the URL's p=): its lines made,
 /// said to be a try, and the lesson's own program a click away.
-pub(super) async fn back() -> Check {
+pub(super) async fn history() -> Check {
     wait(|| done(2), 300, "the program made", || format!("{:?}", cells())).await?;
     let note = one(".explain.dim").map(|n| text(&n)).unwrap_or_default();
     let c = cells();
@@ -123,7 +123,7 @@ pub(super) async fn back() -> Check {
 /// The pipe example (two processes: the program, and a child sharing its
 /// memory, with fds of its own): the child's read blocked, finished as the
 /// program's write woke it; what each call changed; both tasks in the strip.
-pub(super) async fn pipe() -> Check {
+pub(super) async fn tasks() -> Check {
     wait(|| done(7) && !all(".strip .run").is_empty(), 300, "the calls made", || format!("{:?}", cells())).await?;
     let c = cells();
     let changed: Vec<String> = all(".cell .more").iter().map(text).collect();
@@ -141,7 +141,7 @@ pub(super) async fn pipe() -> Check {
 /// The read example on a phone's screen (390x844): the lesson, then the
 /// chart, the source, the panels, one under another, the page never wider
 /// than the screen; ▶ steps.
-pub(super) async fn phone() -> Check {
+pub(super) async fn responsive() -> Check {
     wait(|| done(3) && !all(".chart .bar").is_empty(), 300, "the calls made", || format!("{:?}", cells())).await?;
     let top = |s: &str| one(s).map(|e| e.get_bounding_client_rect().top()).unwrap_or(f64::NAN);
     let order = top(".lesson") < top(".chart") && top(".chart") < top(".source") && top(".source") < top(".panels");

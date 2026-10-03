@@ -457,12 +457,14 @@ fn site() {
     }
 }
 
-/// Core's and this command's unit tests, then build, then `names` run in
-/// the page (crates/ksee-page built with them, as target/test/site) in
-/// headless Chromium ($CHROME, see chrome.rs).
-pub fn test(names: &[String]) {
+/// Run native tests, ensure the production site is built, then build the
+/// test page and run `names` in headless Chromium. `built` skips only the
+/// production build when an earlier CI step already completed it.
+pub fn test(names: &[String], built: bool) {
     run(cmd("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
-    build();
+    if !built {
+        build();
+    }
     test_site();
     for name in names {
         if !crate::chrome::test(name) {

@@ -48,10 +48,11 @@ Page modules and Dioxus state are documented in
 
 ## Boot and restart
 
-`Machine::start` receives URLs for the packed kernel and initramfs. It grows
-the outer memory to the product's fixed 64 MiB of kernel RAM, fetches and
-compiles the kernel, places the initramfs on the built-in command line, and
-parses the packed `ksee.probes` and `ksee.types` custom sections once.
+JavaScript fetches and decompresses the packed kernel and initramfs, then
+`Machine::start` receives their bytes. It grows the outer memory to the
+product's fixed 64 MiB of kernel RAM, compiles the kernel, places the initramfs
+on the built-in command line, and parses the packed `ksee.probes` and
+`ksee.types` custom sections once.
 
 Each boot then:
 

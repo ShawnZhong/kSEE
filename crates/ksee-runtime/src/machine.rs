@@ -38,16 +38,6 @@ fn initrd_at(initrd: &[u8]) -> Result<u32, JsValue> {
         .ok_or_else(|| JsValue::from_str("initramfs does not fit in RAM"))
 }
 
-async fn fetch_bytes(url: &str) -> Result<Uint8Array, JsValue> {
-    let fetch: Function = js::get(&js_sys::global(), "fetch").unchecked_into();
-    let resp: web_sys::Response = JsFuture::from(js_sys::Promise::from(fetch.call1(&JsValue::NULL, &url.into())?))
-        .await?.unchecked_into();
-    if !resp.ok() {
-        return Err(format!("{url}: {}", resp.status()).into());
-    }
-    Ok(Uint8Array::new(&JsFuture::from(resp.array_buffer()?).await?))
-}
-
 fn section(module: &WebAssembly::Module, name: &str) -> String {
     let mut text = Vec::new();
     for b in WebAssembly::Module::custom_sections(module, name).iter() {
@@ -58,8 +48,8 @@ fn section(module: &WebAssembly::Module, name: &str) -> String {
 
 #[wasm_bindgen]
 impl Machine {
-    /// Boot the built kernel and initramfs from their URLs in 64 MiB of RAM.
-    pub async fn start(kernel: String, initrd: String) -> Result<Machine, JsValue> {
+    /// Boot the built kernel and initramfs bytes in 64 MiB of RAM.
+    pub async fn start(kernel: Uint8Array, initrd: Uint8Array) -> Result<Machine, JsValue> {
         // The kernel's RAM: this module's memory, grown to it first (the
         // runtime's heap grows above it, its data and stack are below).
         let memory: WebAssembly::Memory = wasm_bindgen::memory().unchecked_into();
@@ -69,14 +59,13 @@ impl Machine {
         }
         k_mut(|k| k.ram = RAM_BYTES);
 
-        let bytes = fetch_bytes(&kernel).await?;
         let module: WebAssembly::Module =
-            JsFuture::from(WebAssembly::compile(&bytes)).await?.unchecked_into();
+            JsFuture::from(WebAssembly::compile(&kernel)).await?.unchecked_into();
         let tables = Tables::parse(&section(&module, "ksee.probes"), &section(&module, "ksee.types"));
         TABLES.set(tables).map_err(|_| "one machine per page")?;
 
         // The initramfs goes at the top of RAM; the kernel reserves it.
-        let initrd = fetch_bytes(&initrd).await?.to_vec();
+        let initrd = initrd.to_vec();
         let at = initrd_at(&initrd)?;
         k_mut(|k| k.cmdline = format!("initrd={at:#x},{}", initrd.len()).into_bytes());
         let m = Machine { module, initrd, rec: Default::default() };

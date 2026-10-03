@@ -29,15 +29,15 @@ pub fn start() -> Option<String> {
     Some(name)
 }
 
-/// Test `name` (kernel, read, back, pipe, phone; the page each needs is
+/// Test `name` (kernel, lesson, history, tasks, responsive; the page each needs is
 /// opened by chrome.rs): its report, or an error saying what failed.
 async fn run_test(name: String) -> Result<String, JsValue> {
     let r = match name.as_str() {
         "kernel" => run_kernel().await,
-        "read" => ui::read().await,
-        "back" => ui::back().await,
-        "pipe" => ui::pipe().await,
-        "phone" => ui::phone().await,
+        "lesson" => ui::lesson().await,
+        "history" => ui::history().await,
+        "tasks" => ui::tasks().await,
+        "responsive" => ui::responsive().await,
         _ => Err(format!("no test {name}")),
     };
     r.map_err(|e| JsValue::from_str(&e))

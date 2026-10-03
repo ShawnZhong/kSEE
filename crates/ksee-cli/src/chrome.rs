@@ -17,11 +17,11 @@ use crate::fail;
 /// kernel's, then the page's: the read example, the write example with its
 /// program changed in the URL, the pipe example, the read example on a
 /// phone's screen.
-pub const TESTS: &[(&str, &str, (u32, u32))] = &[("kernel", "#test=kernel", SCREEN), ("read", "#ex=read&test=read", SCREEN), ("back", "", SCREEN),
-                                                  ("pipe", "#ex=pipe&test=pipe", SCREEN), ("phone", "#ex=read&test=phone", (390, 844))];
+pub const TESTS: &[(&str, &str, (u32, u32))] = &[("kernel", "#test=kernel", SCREEN), ("lesson", "#ex=read&test=lesson", SCREEN), ("history", "", SCREEN),
+                                                  ("tasks", "#ex=pipe&test=tasks", SCREEN), ("responsive", "#ex=read&test=responsive", (390, 844))];
 const SCREEN: (u32, u32) = (1500, 900);
 // (Raw in the URL: the JSON holds no & or %; the page decodes it.)
-const BACK: &str = r#"["int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)","write(fd, \"changed;\\n\", 9)"]"#;
+const CHANGED_PROGRAM: &str = r#"["int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)","write(fd, \"changed;\\n\", 9)"]"#;
 
 /// The requested Chromium, or one in a standard location.
 fn browser() -> PathBuf {
@@ -76,7 +76,7 @@ pub fn test(name: &str) -> bool {
     let Some(&(_, hash, size)) = TESTS.iter().find(|t| t.0 == name) else {
         fail(&format!("no test {name}: {}", TESTS.iter().map(|t| t.0).collect::<Vec<_>>().join(", ")))
     };
-    let hash = if name == "back" { format!("#ex=write&p={BACK}&test=back") } else { hash.into() };
+    let hash = if name == "history" { format!("#ex=write&p={CHANGED_PROGRAM}&test=history") } else { hash.into() };
     let (passed, log) = open(&hash, size, Duration::from_secs(if name == "kernel" { KERNEL_TIMEOUT } else { UI_TIMEOUT }));
     print!("{log}");
     println!("{name}: {}", if passed { "PASS" } else { "FAIL" });

@@ -93,7 +93,7 @@ and passes all arguments through.
 | `./ksee.sh` | Build changed outputs, then serve `target/site/` on port 8000. |
 | `./ksee.sh build` | Build the plugin, kernel, browser module, programs, metadata, lessons, and site. |
 | `./ksee.sh serve [--port=N]` | Serve the existing `target/site/` without rebuilding it. |
-| `./ksee.sh test [--ui]` | Run native tests, build, then run browser suites through `$CHROME`; `--ui` adds UI tests. |
+| `./ksee.sh test [--ui \| NAME ...]` | Run native tests, build, then run the selected browser suites through `$CHROME`; the default is `kernel`. |
 | `./ksee.sh deploy` | Build, then publish the generated site to the remote `gh-pages` branch. |
 | `./ksee.sh patch` | Write `linux.patch` from the current difference between `linux/` and `v7.2.7`. |
 
@@ -170,7 +170,12 @@ native unit tests live in `ksee-core`.
    syscalls and every lesson, and checks stacks, lines, memory history,
    origins, tasks, and lesson links.
 5. With `--ui`, Chromium also runs the read, changed-program/history, pipe, and
-   phone-layout suites through the DOM.
+   phone-layout suites through the DOM. Test names can also be given directly
+   for focused runs, such as `./ksee.sh test lesson`.
+
+CI separates launcher compilation, the kernel/site build, and tests. Its test
+step uses `ksee test --built`, which skips rebuilding production but still runs
+native tests, builds the self-test page, and runs the selected browser suites.
 
 Set `CHROME` to the browser executable:
 
