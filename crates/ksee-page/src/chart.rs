@@ -168,6 +168,11 @@ fn stack_scroll() -> Option<web_sys::HtmlElement> {
     element("timeline-scroll")
 }
 
+fn chart_coordinates(client_x: f64, client_y: f64) -> Option<(f64, f64)> {
+    let rect = element("timeline-chart")?.get_bounding_client_rect();
+    Some((client_x - rect.left(), client_y - rect.top()))
+}
+
 fn preview_drag(dx: f64) {
     if let Some(layer) = element("timeline-drag-layer") {
         let style = if dx == 0.0 { String::new() } else { format!("transform: translateX({dx}px)") };
@@ -258,7 +263,10 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
             onwheel: move |e| {
                 e.prevent_default();
                 let d = e.delta().strip_units();
-                wheel(e.element_coordinates().x, d.x, d.y, e.modifiers().shift());
+                let p = e.client_coordinates();
+                if let Some((x, _)) = chart_coordinates(p.x, p.y) {
+                    wheel(x, d.x, d.y, e.modifiers().shift());
+                }
             },
             onpointerdown: move |e| {
                 e.prevent_default();
@@ -292,10 +300,10 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                         }
                     }
                     // (Else the moment under the pointer shown everywhere but the line: over a bar, what its call was.)
-                    let at = e.element_coordinates();
-                    let Some((peek, bar)) = hit(&chart, at.x, at.y) else { return };
-                    ui.set_preview(peek);
                     let p = e.client_coordinates();
+                    let Some((x, y)) = chart_coordinates(p.x, p.y) else { return };
+                    let Some((peek, bar)) = hit(&chart, x, y) else { return };
+                    ui.set_preview(peek);
                     match bar.map(|b| &chart.bars[b]) {
                         None => if tip().is_some() { tip.set(None) },
                         Some(b) => match tip() {
@@ -323,8 +331,10 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                 move |e: MouseEvent| {
                     if dragged() { dragged.set(false); return }
                     let ui = ui;
-                    let at = e.element_coordinates();
-                    if let Some(moment) = hit(&chart, at.x, at.y).and_then(|h| h.0) { ui.commit(Some(moment)); }
+                    let p = e.client_coordinates();
+                    if let Some(moment) = chart_coordinates(p.x, p.y).and_then(|(x, y)| hit(&chart, x, y)).and_then(|h| h.0) {
+                        ui.commit(Some(moment));
+                    }
                 }
             },
             onpointercancel: move |_| {

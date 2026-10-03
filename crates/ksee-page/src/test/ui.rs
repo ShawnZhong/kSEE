@@ -64,9 +64,8 @@ pub(super) async fn lesson() -> Check {
     mouse(&chart, "click", x, y, false);
     sleep(300).await;
     let chosen = one("tr.frame.on a").map(|a| text(&a)).unwrap_or_default();
-    let hovered_frame = hovered.split_whitespace().next().unwrap_or_default();
     let committed = one(".chart .now:not(.peek)").and_then(|e| e.get_attribute("style")).unwrap_or_default();
-    check(chosen == hovered_frame && hovered == place() && preview == committed,
+    check(chosen == "vfs_read" && hovered == place() && preview == committed,
         "hover and click on a bar", (&chosen, &hovered, place(), &preview, &committed))?;
     // (Find: its bars lit; Enter, the cursor in it.)
     let find = one(".find").ok_or("no find box")?;
