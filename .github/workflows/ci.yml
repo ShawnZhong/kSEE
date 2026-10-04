@@ -2,7 +2,9 @@ name: CI
 on: [push, pull_request]
 
 # The kernel (linux/ and arch/wasm/'s objects, which kbuild writes through
-# the link; the plugin; vmlinux, its UAPI headers) is its own job,
+# the link; the plugin; vmlinux, its UAPI headers) is its own job, its cache
+# with the sources that built it (restored, they are as old as the objects:
+# nothing is rebuilt),
 # cached by what builds it, so a change elsewhere (the page, the user
 # programs, the rest of the Makefile) reuses it; and it is saved even when
 # the tests then fail.
@@ -29,6 +31,7 @@ jobs:
             linux
             !linux/.git
             arch/wasm
+            plugin/ksee-trace.cpp
             plugin/ksee-trace.so
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
@@ -43,6 +46,7 @@ jobs:
             linux
             !linux/.git
             arch/wasm
+            plugin/ksee-trace.cpp
             plugin/ksee-trace.so
           key: ${{ steps.key.outputs.key }}
 
@@ -59,14 +63,10 @@ jobs:
             linux
             !linux/.git
             arch/wasm
+            plugin/ksee-trace.cpp
             plugin/ksee-trace.so
           key: ${{ needs.kernel.outputs.key }}
           fail-on-cache-miss: true
-      # (The checkout's files are newer than the kernel's objects, though
-      # the key says what builds the kernel is as it was: older, so make
-      # and kbuild rebuild nothing of it.)
-      - name: Date what built the kernel before it
-        run: touch -d @0 $(git ls-files arch plugin/ksee-trace.cpp)
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
       - name: Build ksee CLI

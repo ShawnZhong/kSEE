@@ -172,9 +172,10 @@ workspace's default members (a bare `cargo test`) are the native crates.
 CI builds the kernel in a job of its own, cached by what builds it (the port,
 the plugin, the Makefile's lines for Linux) and saved even if the tests fail;
 the test job restores it, builds the rest of the site (the user programs, the
-initramfs, the page) and runs `ksee test --built --ui`. (A checkout's
-files are newer than the kernel restored; the key says they are as they were,
-so CI dates them before it, and nothing of the kernel is rebuilt.)
+initramfs, the page) and runs `ksee test --built --ui`. The cache holds the
+sources that built the kernel too (arch/wasm/, the plugin): restored over the
+checkout, with their times, they are no newer than the objects, so nothing of
+the kernel is rebuilt.
 
 The browser is Chrome's headless shell at the Makefile's `CHROME_VERSION`,
 fetched into `target/chrome/` by `make chrome`, which `ksee test` runs.
