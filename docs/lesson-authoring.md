@@ -167,13 +167,13 @@ fails the build, and a JSON file not listed is left out.
 
 Each fresh kernel gets two fixture areas:
 
-- The in-memory root filesystem contains `/note.txt` with
-  `hello from memory`.
-- `/init` mounts an ext4 image at `/mnt`; it contains `/mnt/note.txt` and
-  `/mnt/dir/a.txt`.
+- The in-memory root filesystem contains `/note.txt` (`user/note.txt`).
+- `/init` mounts an ext4 image at `/mnt`: the files under `user/disk/`, such
+  as `/mnt/note.txt` and `/mnt/dir/a.txt`.
 
-The build creates the ext4 image with `mkfs.ext4` and places it in the
-initramfs as `/disk.img`. Lessons should use these shared fixtures or create
+The build (the Makefile) creates the ext4 image of `user/disk/` with
+`mkfs.ext4` and places it in the initramfs as `/disk.img`; add a file there to
+give the lessons another. Lessons should use these shared fixtures or create
 what they need in earlier steps. Opening another lesson starts from the
 original fixtures again.
 

@@ -13,7 +13,7 @@ jobs:
           path: |
             linux
             !linux/.git
-          key: linux-v2-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-llvm22-${{ hashFiles('linux.patch', 'plugin/ksee-trace.cpp', 'crates/ksee-cli/src/build.rs') }}
+          key: linux-v2-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-llvm22-${{ hashFiles('linux.patch', 'plugin/ksee-trace.cpp', 'Makefile') }}
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
       - name: Build ksee CLI

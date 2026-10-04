@@ -40,25 +40,24 @@ kernel suite checks end to end.
 `./ksee.sh` first builds `ksee-cli` in release mode with Cargo's locked
 dependency set, then runs it. `ksee build` performs these stages:
 
-1. Resolve the configured LLVM tools and require LLVM major version 22.
-2. Fetch Linux stable `v7.2.7` into `linux/` if it is absent, verify the pinned
-   commit, and apply `linux.patch`.
-3. Build `plugin/ksee-trace.so` when its source is newer than the plugin.
-4. Run kbuild for the WebAssembly kernel and exported UAPI headers. A hash of
-   the plugin is part of the kernel flags, so changing the pass rebuilds the
-   affected kernel objects.
-5. Create `target/site/` and link the current static files from `web/`.
-6. Build `ksee-page` for `wasm32-unknown-unknown` with `--locked --release`.
+1. `make` (the Makefile: the kernel's half, C and LLVM): require LLVM 22; fetch
+   Linux stable `v7.2.7` into `linux/` if it is absent, verify the pinned
+   commit, and apply `linux.patch`; build `plugin/ksee-trace.so`; run kbuild
+   for the WebAssembly kernel and its UAPI headers (a hash of the plugin's
+   source is part of the kernel flags, so changing the pass rebuilds the
+   kernel); compile freestanding `user/init.c` and `user/prog.c`, make the ext4
+   image of `user/disk/`, and archive them with `user/note.txt` as
+   `user/initramfs.list` says (the kernel's `gen_init_cpio`).
+2. Create `target/site/` and link the current static files from `web/`.
+3. Pack `linux/vmlinux`: combine probe descriptions with DWARF-derived types,
+   symbols, syscalls, constants, and declaration locations; copy referenced
+   kernel sources; strip DWARF; and write `target/site/vmlinux.gz`, then
+   `target/site/initramfs.cpio.gz`.
+4. Combine `user/examples/*.json` in course order into
+   `target/site/examples.json`.
+5. Build `ksee-page` for `wasm32-unknown-unknown` with `--locked --release`.
    Cargo links `ksee-host` and `ksee-core` into the same outer module, then
    wasm-bindgen writes `target/site/pkg/`.
-7. Pack `linux/vmlinux`: combine probe descriptions with DWARF-derived types,
-   symbols, syscalls, constants, and declaration locations; copy referenced
-   kernel sources; strip DWARF; and write `target/site/vmlinux.gz`.
-8. Compile freestanding `user/init.c` and `user/prog.c`, create the ext4 lesson
-   fixture image, assemble the initramfs, and write
-   `target/site/initramfs.cpio.gz`.
-9. Combine `user/examples/*.json` in course order into
-   `target/site/examples.json`.
 
 Most stages ask their owning build system for dependency tracking. Smaller
 packing steps compare output and input modification times.

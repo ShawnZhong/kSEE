@@ -1,24 +1,17 @@
-//! `ksee build` and `ksee test`: the build, in order. Every step asks the
-//! tool that knows its own dependencies (kbuild, cargo), or checks whether
-//! its output is older than its inputs.
-//!
-//!   linux/                 Linux, the stable tree's LINUX_TAG, fetched once, with linux.patch applied
-//!   linux.patch            the port: linux/ as it differs from the release (written by `ksee patch`)
-//!   plugin/ksee-trace.so   the LLVM pass that instruments the kernel
-//!   linux/vmlinux          the kernel, instrumented (kbuild)
-//!
-//! and the site, in target/site (what `ksee serve` serves and `ksee deploy`
-//! pushes): links to web/'s files (the page's own), and
+//! `ksee build` and `ksee test`: the build, in order. The kernel's half
+//! (the plugin, linux/, the initramfs) is the Makefile's; then, each step
+//! asking the tool that knows its own dependencies (cargo) or checking
+//! whether its output is older than its inputs, the site, in target/site
+//! (what `ksee serve` serves and `ksee deploy` pushes): links to web/'s
+//! files (the page's own), and
 //!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
 //!   vmlinux.gz, src/       the kernel for the page (pack; target/vmlinux)
-//!   initramfs.cpio.gz      /init (user/init.c), /bin/prog (user/prog.c: the page's program), and an ext4 disk image
-//!                          (/disk.img, mkfs.ext4), from target/initramfs/
-//!
-//! (Gzipped by the build: hosts compress them less, or not at all; the
-//! page unpacks them.)
+//!   initramfs.cpio.gz      the Makefile's target/initramfs/initramfs.cpio
 //!   examples.json          the examples (user/examples/*.json)
 //!
-//! The tools setup.sh installs, first on every command's PATH.
+//! (Gzipped by the build: hosts compress them less, or not at all; the
+//! page unpacks them.) The tools setup.sh installs, first on every
+//! command's PATH.
 use std::path::Path;
 use std::process::Command;
 use std::sync::LazyLock;
@@ -78,62 +71,6 @@ fn stale(out: &str, inputs: &[&str]) -> bool {
     inputs.iter().any(|i| time(i).is_none_or(|ti| ti > t))
 }
 
-fn check_llvm() {
-    let version = String::from_utf8_lossy(&stdout(cmd("llvm-config").arg("--version"))).trim().to_string();
-    if version.split('.').next() != Some("22") {
-        crate::fail(&format!("LLVM 22 is required, found {version}"));
-    }
-}
-
-fn trace_plugin() -> (String, std::path::PathBuf) {
-    if stale("plugin/ksee-trace.so", &["plugin/ksee-trace.cpp"]) {
-        let flags = stdout(cmd("llvm-config").arg("--cxxflags"));
-        let mut plugin = cmd("clang++");
-        plugin.args(["-shared", "-fPIC", "-O2", "plugin/ksee-trace.cpp", "-o", "plugin/ksee-trace.so"]);
-        // (macOS links -shared eagerly: leave the LLVM symbols to clang,
-        // which loads the pass.)
-        if cfg!(target_os = "macos") {
-            plugin.arg("-Wl,-undefined,dynamic_lookup");
-        }
-        run(plugin.args(String::from_utf8_lossy(&flags).split_whitespace()));
-    }
-    // A stable source hash in the flags makes kbuild rebuild only when the
-    // instrumentation changes, not when an equivalent shared object is relinked.
-    let id = format!("{:08x}", crate::pack::id(&String::from_utf8_lossy(&crate::read(Path::new("plugin/ksee-trace.cpp")))));
-    let path = Path::new("plugin/ksee-trace.so").canonicalize().unwrap();
-    (id, path)
-}
-
-fn kernel() {
-    linux_tree();
-    let (id, plugin) = trace_plugin();
-    // (Inlining only what the source asks for, `inline`: the compiler's
-    // own choices would hide calls, with their arguments, as inlined code.)
-    let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
-    let kmake = |args: &[&str]| {
-        let mut c = cmd("make");
-        c.args(["-C", "linux", "ARCH=wasm", "LLVM=1",
-                &format!("KCFLAGS=-g -finline-hint-functions -fpass-plugin={} -DKSEE_ID={id}", plugin.display())])
-            .arg(&jobs)
-            .args(args);
-        c
-    };
-    // (Every Kconfig the port has: a new one re-runs defconfig too.)
-    let mut config = vec!["linux/arch/wasm/configs/defconfig".to_string()];
-    for e in std::fs::read_dir("linux/arch/wasm").into_iter().flatten().flatten() {
-        let n = e.file_name().to_string_lossy().into_owned();
-        if n.starts_with("Kconfig") {
-            config.push(format!("linux/arch/wasm/{n}"));
-        }
-    }
-    if stale("linux/.config", &config.iter().map(String::as_str).collect::<Vec<_>>()) {
-        run(&mut kmake(&["defconfig"]));
-    }
-    run(&mut kmake(&[]));
-    // (Its UAPI headers: the pack's constants, the programs' syscalls.)
-    run(&mut kmake(&["headers"]));
-}
-
 pub fn build() {
     assets();
     page();
@@ -142,11 +79,14 @@ pub fn build() {
 /// The site but its module: the kernel, its sources, the initramfs, the
 /// examples, web/'s files.
 fn assets() {
-    check_llvm();
-    kernel();
+    let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
+    run(cmd("make").args(["--no-print-directory", &jobs]));
     site();
     packed_kernel();
-    initramfs();
+    let (cpio, compressed) = ("target/initramfs/initramfs.cpio", format!("{SITE}/initramfs.cpio.gz"));
+    if stale(&compressed, &[cpio]) {
+        gzip(cpio, &compressed);
+    }
     examples();
 }
 
@@ -175,91 +115,9 @@ fn packed_kernel() {
     }
 }
 
-/// initramfs.cpio.gz: the programs, a note, and an ext4 disk image.
-fn initramfs() {
-    // The programs (/init, /bin/prog): plain C, no C library (their syscalls:
-    // user/syscall.h), with the kernel's UAPI headers.
-    let programs = ["init", "prog"];
-    // (And this command: the archive's entries are in it, cpio().)
-    let inputs = ["user/init.c", "user/prog.c", "user/syscall.h", "target/release/ksee"];
-    let dir = "target/initramfs";
-    let cpio_out = format!("{dir}/initramfs.cpio");
-    if stale(&cpio_out, &inputs) {
-        crate::or_fail(std::fs::create_dir_all(dir), dir);
-        for p in programs {
-            run(cmd("clang")
-                // (Position-independent, in the kernel's memory: see binfmt_wasm.c.)
-                .args(["--target=wasm32", "-O2", "-g0", "-ffreestanding", "-nostdlib", "-fPIC", "-Wl,-pie",
-                       "-Wl,--experimental-pic", "-Wl,--import-memory", "-Wl,--no-entry",
-                       "-nostdinc", "-isystem", "linux/usr/include",
-                       "-o", &format!("{dir}/{p}.wasm"), &format!("user/{p}.c")]));
-        }
-        // A file in the (in-memory) root, for the examples: /note.txt (its
-        // bytes go to the archive; the disk's own note.txt is below).
-        // The ext4 disk /init mounts (a file, through the loop device), with
-        // files for the examples to start from: note.txt, dir/a.txt.
-        let disk = format!("{dir}/disk.img");
-        let _ = std::fs::remove_file(&disk);
-        let files = format!("{dir}/disk");
-        let _ = std::fs::remove_dir_all(&files);
-        for (path, text) in [("note.txt", "hello from the disk\n"), ("dir/a.txt", "a\n")] {
-            let p = Path::new(&files).join(path);
-            crate::or_fail(std::fs::create_dir_all(p.parent().unwrap()).and_then(|_| std::fs::write(&p, text)), p.display());
-        }
-        // (Initialized in full: no background work after the mount, ext4lazyinit's.)
-        run(cmd("mkfs.ext4").args(["-F", "-b", "1024", "-L", "ksee", "-N", "32", "-d", &files,
-                                            "-E", "lazy_itable_init=0,lazy_journal_init=0", &disk, "2M"]));
-        // The archive: the programs, a note, and the disk.
-        eprintln!("+ (cpio) -> {cpio_out}");
-        crate::or_fail(std::fs::write(&cpio_out, cpio(Path::new(dir))), &cpio_out);
-    }
-    let compressed = format!("{SITE}/initramfs.cpio.gz");
-    if stale(&compressed, &[&cpio_out]) {
-        gzip(&cpio_out, &compressed);
-    }
-}
-
-/// The release the port is a patch to: the stable tree's tag, and the
-/// commit it must be (what is fetched, checked).
-const LINUX_TREE: &str = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git";
-const LINUX_TAG: &str = "v7.2.7";
-const LINUX_COMMIT: &str = "f42acb3678424d1e08f6ed27c0d8ba8a125e14d6";
-
-/// linux/: the release, fetched (a shallow git repo: its one commit) and
-/// linux.patch applied, the first time (only then: to re-apply an updated
-/// patch, remove linux/ first).
-fn linux_tree() {
-    if !Path::new("linux/Makefile").exists() {
-        eprintln!("+ (fetch) {LINUX_TREE} {LINUX_TAG} -> linux/");
-        crate::or_fail(std::fs::create_dir_all("linux"), "linux/");
-        git(&["init"]);
-        git(&["fetch", "--depth=1", LINUX_TREE, "tag", LINUX_TAG]);
-        let commit = git(&["rev-parse", &format!("{LINUX_TAG}^{{commit}}")]);
-        if String::from_utf8_lossy(&commit).trim() != LINUX_COMMIT {
-            crate::fail(&format!("{LINUX_TAG}: not {LINUX_COMMIT}"));
-        }
-        git(&["checkout", LINUX_TAG]);
-        git(&["apply", "../linux.patch"]);
-    }
-}
-
-/// linux.patch: the port, all of it (the files new too) as linux/ differs
-/// from the release. Written by `ksee patch`, never by `ksee build`.
+/// linux.patch, written from linux/ (the Makefile's), never by the build.
 pub fn patch() {
-    if !Path::new("linux/Makefile").exists() {
-        crate::fail("no linux/: run ./ksee.sh build first");
-    }
-    git(&["add", "-A", "--intent-to-add"]);
-    let diff = git(&["diff", "--no-color", LINUX_TAG]);
-    if std::fs::read("linux.patch").ok().as_deref() == Some(&diff[..]) {
-        return;
-    }
-    eprintln!("+ (patch) linux -> linux.patch");
-    crate::or_fail(std::fs::write("linux.patch", &diff), "linux.patch");
-}
-
-fn git(args: &[&str]) -> Vec<u8> {
-    stdout(cmd("git").arg("-C").arg("linux").args(args))
+    run(cmd("make").args(["--no-print-directory", "patch"]));
 }
 
 /// wasm-bindgen's glue for `wasm`, in `out` (cli-support, at ksee-page's
@@ -278,94 +136,9 @@ fn gzip(from: &str, to: &str) {
     run(cmd("gzip").args(["-9nc", from]).stdout(out));
 }
 
-/// The initramfs, as a newc ("070701") archive: the console (the kernel
-/// opens it before init; the kernel's own initramfs is empty), the
-/// programs, a note, and the disk image, with their modes; all times are 0.
-fn cpio(dir: &Path) -> Vec<u8> {
-    let file = |name: &str| crate::read(&dir.join(name));
-    // (Archive path, mode, device (major, minor), data; a directory's data is empty.)
-    let entries = [
-        ("/dev", 0o040755, (0, 0), Vec::new()),
-        ("/dev/console", 0o020600, (5, 1), Vec::new()),
-        ("/init", 0o100755, (0, 0), file("init.wasm")),
-        ("/note.txt", 0o100644, (0, 0), b"hello from memory\n".to_vec()),
-        ("/bin", 0o040755, (0, 0), Vec::new()),
-        ("/bin/prog", 0o100755, (0, 0), file("prog.wasm")),
-        ("/mnt", 0o040755, (0, 0), Vec::new()),
-        ("/disk.img", 0o100644, (0, 0), file("disk.img")),
-        ("TRAILER!!!", 0, (0, 0), Vec::new()),
-    ];
-    let mut out = Vec::new();
-    for (i, (name, mode, (major, minor), data)) in entries.iter().enumerate() {
-        let nlink = if mode & 0o170000 == 0o040000 { 2 } else { 1 };
-        out.extend_from_slice(format!("070701{:08X}{mode:08X}0000000000000000{nlink:08X}00000000{:08X}0000000300000001{major:08X}{minor:08X}{:08X}00000000",
-            i + 1, data.len(), name.len() + 1).as_bytes());
-        out.extend_from_slice(name.as_bytes());
-        // (The name's NUL, then pad the offset: the header is 110 bytes.
-        // The file ends padded to a block, as gen_init_cpio left it.)
-        out.push(0);
-        while out.len() % 4 != 0 {
-            out.push(0);
-        }
-        out.extend_from_slice(data);
-        while out.len() % 4 != 0 {
-            out.push(0);
-        }
-    }
-    while out.len() % 512 != 0 {
-        out.push(0);
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The headers back: each entry's name, mode and data.
-    fn entries(archive: &[u8]) -> Vec<(String, u32, Vec<u8>)> {
-        let mut entries = Vec::new();
-        let mut at = 0;
-        let align = |at: usize| {
-            let mut at = at;
-            while at % 4 != 0 {
-                assert_eq!(archive[at], 0);
-                at += 1;
-            }
-            at
-        };
-        loop {
-            let head = std::str::from_utf8(&archive[at..at + 110]).unwrap();
-            assert_eq!(&head[..6], "070701");
-            let num = |r: std::ops::Range<usize>| u32::from_str_radix(&head[r], 16).unwrap();
-            let (size, namesize) = (num(54..62) as usize, num(94..102) as usize);
-            at += 110;
-            let name = std::str::from_utf8(&archive[at..at + namesize - 1]).unwrap().to_string();
-            at = align(at + namesize);
-            let data = archive[at..at + size].to_vec();
-            at = align(at + size);
-            let last = name == "TRAILER!!!";
-            entries.push((name, num(14..22), data));
-            if last {
-                return entries;
-            }
-        }
-    }
-
-    #[test]
-    fn cpio_round_trip() {
-        let scratch = crate::Scratch::new("cpio");
-        let dir = &scratch.0;
-        std::fs::write(dir.join("init.wasm"), b"\0asm").unwrap();
-        std::fs::write(dir.join("prog.wasm"), b"\0asm").unwrap();
-        std::fs::write(dir.join("disk.img"), b"disk").unwrap();
-        let entries = entries(&cpio(dir));
-        assert_eq!(entries.iter().map(|e| (e.0.as_str(), e.1)).collect::<Vec<_>>(),
-            [("/dev", 0o040755), ("/dev/console", 0o020600), ("/init", 0o100755), ("/note.txt", 0o100644), ("/bin", 0o040755),
-             ("/bin/prog", 0o100755), ("/mnt", 0o040755), ("/disk.img", 0o100644), ("TRAILER!!!", 0)]);
-        assert_eq!(entries[2].2.as_slice(), b"\0asm");
-        assert_eq!(entries[3].2.as_slice(), b"hello from memory\n");
-    }
 
     #[test]
     fn stale_outputs_are_detected() {
