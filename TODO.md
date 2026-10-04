@@ -21,6 +21,15 @@ them).
   page): move `crates/ksee-page/src/test/kernel/` there behind a feature;
   the page keeps its DOM suites; one runner for both.
 
+## Trace format
+
+- **Records read backwards, no continuation words.** Each value now takes
+  two words ([v, CONT]) so a reader can resynchronize where the ring
+  overwrote a record's start. Ending each record with its head
+  (`values..., a, tag | n`) lets the reader walk back from `pos`, always a
+  boundary: half the words for values, a simpler writer (`ksee.c`) and
+  decoder (`trace.rs`); ids stay word positions.
+
 ## Build and repository
 
 - **Kconfig / defconfig**: can `arch/wasm/configs/defconfig` be derived
