@@ -32,7 +32,7 @@ impl Machine {
     /// syscalls: the first of its number its runner made since it was
     /// asked, if the snapshot has it.
     pub fn syscall_of(&self, id: u32) -> Option<usize> {
-        let (task, nr, from) = k(|k| k.calls.get(&id).map(|c| (c.task, c.nr, c.from)))?;
+        let (task, nr, from) = k(|k| k.p.calls.get(&id).map(|c| (c.task, c.nr, c.from)))?;
         let rec = self.rec.borrow();
         rec.syscalls.iter().position(|s| s.nr == nr && s.task == task && rec.ids[s.first] >= from)
     }

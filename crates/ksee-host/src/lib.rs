@@ -25,4 +25,4 @@ mod sched;
 mod state;
 pub mod test;
 
-pub use state::{Outcome, Var};
+pub use ksee_core::program::{Outcome, Var};

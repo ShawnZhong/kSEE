@@ -3,11 +3,12 @@
 //! given), and the probe tables.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::OnceLock;
 
 use js_sys::Function;
 use ksee_core::tables::Tables;
+use ksee_core::program::Session;
 use ksee_core::Memory;
 
 /// The probe tables, set once by the page before boot.
@@ -57,81 +58,8 @@ pub struct State {
     pub console_out: Vec<u8>,
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
     pub doorbell: VecDeque<u32>,
-    /// The runners ready for the page's calls (user/prog.c), by thread id.
-    pub runners: BTreeMap<u32, Runner>,
-    /// The program's own runner (user/prog.c's main thread: the page's
-    /// calls' by default), once it is ready.
-    pub main: Option<u32>,
-    /// The programs' own memory (user/prog.c's heap: a process's, its
-    /// threads' and vfork children's too, the same memory): what of each
-    /// is handed out (its start -> (next free, end)).
-    pub heaps: BTreeMap<u32, (u32, u32)>,
-    /// The calls asked (by id: see Machine::make), this boot's; and how many
-    /// ever (the last id: ids are not used again, a boot after another's).
-    pub calls: BTreeMap<u32, Call>,
-    pub asked: u32,
-    /// The page's program: its names (a variable's, a result's), and how
-    /// many of its lines have been made (see Machine::make).
-    pub names: ksee_core::program::Names,
-    pub lines: usize,
-    /// How each line went (see Outcome), and the variables declared, each
-    /// as it was shown last (see Machine::quiet).
-    pub outcomes: Vec<Outcome>,
-    pub vars: Vec<(Var, String)>,
-}
-
-/// How a line of the program went: a variable declared (as it starts), or
-/// a call (its id): finished (its result) or not yet (it blocks); or why it
-/// could not be made.
-#[derive(Clone, PartialEq, Debug)]
-pub enum Outcome {
-    Declared(String),
-    /// (`during`: the line during which it finished, if a later one's;
-    /// `changed`: the variables it changed, as they are then.)
-    Call { id: u32, done: bool, ret: Option<i64>, during: Option<usize>, changed: Vec<String> },
-    Failed(String),
-}
-
-/// A variable of the program's: memory of type `ty` (an array of `count`)
-/// at `addr`, `bytes` long.
-#[derive(Clone)]
-pub struct Var {
-    pub name: String,
-    pub addr: u32,
-    pub ty: u32,
-    pub count: Option<u32>,
-    pub bytes: u32,
-}
-
-impl State {
-    /// The call runner `tid` is making (asked, not done), if any: its id.
-    pub fn in_flight(&self, tid: u32) -> Option<u32> {
-        self.calls.values().find(|c| c.tid == tid && !c.done).map(|c| c.id)
-    }
-
-    /// Runner `tid` is one no more (its task exited, or it ran another
-    /// program): its request, room and heap forgotten (a heap no runner has
-    /// left, its process's gone: another's may come to the same address).
-    pub fn forget(&mut self, tid: u32) {
-        if let Some(r) = self.runners.remove(&tid) && !self.runners.values().any(|o| o.heap == r.heap) {
-            self.heaps.remove(&r.heap);
-        }
-        if self.main == Some(tid) {
-            self.main = None; // (the program exited: /init starts it again)
-        }
-    }
-}
-
-/// A runner: its task (its task_struct), its request (where a call is put:
-/// its first word, the number, is what the runner waits on), its program's
-/// heap (its start), and the result-bearing call that created it (none for
-/// the main runner).
-#[derive(Clone, Copy)]
-pub struct Runner {
-    pub task: u32,
-    pub req: u32,
-    pub heap: u32,
-    pub source: Option<u32>,
+    /// The page's program: its runners, calls and lines.
+    pub p: Session,
 }
 
 thread_local! {
@@ -147,28 +75,6 @@ pub fn k<T>(f: impl FnOnce(&State) -> T) -> T {
 pub fn k_mut<T>(f: impl FnOnce(&mut State) -> T) -> T {
     K.with_borrow_mut(f)
 }
-
-/// A syscall a runner makes (user/prog.c): asked (written into its
-/// request), begun (recorded from `from`, the id of the record there),
-/// then done (see Finished).
-#[derive(Default)]
-pub struct Call {
-    pub id: u32,
-    pub tid: u32,
-    /// Its runner's task (its task_struct): as the recording names it.
-    pub task: u32,
-    pub nr: u32,
-    pub from: u32,
-    pub begun: bool,
-    pub done: bool,
-    /// The program's line that made it, and its result's name and what its
-    /// type points to, if declared (`int fd = openat(…)`: Lowered::Call).
-    pub line: usize,
-    pub result: Option<(String, Option<u32>)>,
-    /// The syscall's name, and the variable each argument names (if it is one).
-    pub said: (String, Vec<Option<String>>),
-}
-
 
 /// The kernel's memory is this module's memory.
 pub struct Direct;

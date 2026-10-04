@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use js_sys::{Function, Promise, Uint8Array, WebAssembly};
 use ksee_core::recording::Recording;
 use ksee_core::tables::Tables;
-use ksee_core::program::{lower, statement, Arg, Expr, Line, Lowered, Sym};
+use ksee_core::program::{lower, statement, Arg, Call, Expr, Line, Lowered, Outcome, Runner, Sym, Var};
 use ksee_core::{trace, Memory};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -94,13 +94,13 @@ impl Machine {
         // (Nothing of a machine before it but its command line, and the ids of
         // the calls asked: they are not used again.)
         k_mut(|k| *k = State { trace, current, pending, deadline, waiting: Some(0), booting: true,
-                               cmdline: std::mem::take(&mut k.cmdline), asked: k.asked,
+                               cmdline: std::mem::take(&mut k.cmdline), p: k.p.again(),
                                quiet_waiters: std::mem::take(&mut k.quiet_waiters), ..Default::default() });
         crate::programs::instantiated(&kernel);
         imports::instantiated(&kernel);
         sched::boot(&kernel)?;
         // (Quiet, with the program ready.)
-        while k(|k| k.main).is_none() {
+        while k(|k| k.p.main).is_none() {
             self.quiet().await?;
         }
         Ok(())
@@ -158,25 +158,25 @@ impl Machine {
         let outcome = match &made {
             Ok(Made::Decl(v)) => {
                 let shown = self.show(v.ty, v.addr, v.count);
-                k_mut(|k| k.vars.push((v.clone(), shown.clone())));
+                k_mut(|k| k.p.vars.push((v.clone(), shown.clone())));
                 Outcome::Declared(shown)
             }
             Ok(Made::Call(id)) => Outcome::Call { id: *id, done: false, ret: None, during: None, changed: Vec::new() },
             Err(e) => Outcome::Failed(e.clone()),
         };
-        k_mut(|k| k.outcomes.push(outcome));
+        k_mut(|k| k.p.outcomes.push(outcome));
         made
     }
 
     fn lower_and_make(&self, task: Option<&str>, text: &str) -> Result<Made, String> {
-        let line = k(|k| k.lines);
-        let tid = task_tid(task, line)?;
+        let line = k(|k| k.p.lines);
+        let tid = k(|k| k.p.task_tid(task, line))?;
         let plan = lower(text, &tables().types, &Seen(line))?;
         let made = match plan {
             Lowered::Decl(d) => {
-                let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
+                let addr = k_mut(|k| k.p.alloc(tid, d.bytes.len() as u32)).map_err(|e| format!("{}: {e}", d.name))?;
                 write_logged(addr, &d.bytes);
-                k_mut(|k| k.names.set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
+                k_mut(|k| k.p.names.set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
                 Made::Decl(Var { name: d.name, addr, ty: d.ty, count: d.count, bytes: d.bytes.len() as u32 })
             }
             Lowered::Call { nr, args, result } => {
@@ -189,19 +189,19 @@ impl Machine {
                 Made::Call(call(tid, nr, &args, line, result, said)?)
             }
         };
-        k_mut(|k| k.lines = line + 1);
+        k_mut(|k| k.p.lines = line + 1);
         Ok(made)
     }
 
     /// How each line made since the boot went.
     pub fn outcomes(&self) -> Vec<Outcome> {
-        k(|k| k.outcomes.clone())
+        k(|k| k.p.outcomes.clone())
     }
 
     /// Whether line `text` can be made as line `line` (with the names of
     /// the lines before it): why not, if not; nothing made.
     pub fn can_make(&self, task: Option<&str>, text: &str, line: usize) -> Result<(), String> {
-        task_tid(task, line)?;
+        k(|k| k.p.task_tid(task, line))?;
         ksee_core::program::lower(text, &tables().types, &Seen(line)).map(|_| ())
     }
 
@@ -209,29 +209,19 @@ impl Machine {
     /// source-row order. The main task is represented by `None` at the API
     /// boundary and therefore is not included.
     pub fn task_columns(&self, line: usize) -> Vec<String> {
-        k(|k| {
-            let mut columns = named_runners(k, line);
-            columns.sort_by_key(|&(id, _, _)| id);
-            let mut names: Vec<String> = Vec::new();
-            for (_, name, _) in columns {
-                if !names.iter().any(|n| n == name) {
-                    names.push(name.to_string());
-                }
-            }
-            names
-        })
+        k(|k| k.p.task_columns(line))
     }
 
     /// What fits at the cursor `at` of `text`, line `line` of the program
     /// (ksee_core::program::completions; `common`: the syscalls first).
     pub fn complete(&self, text: &str, at: usize, line: usize, common: &[String]) -> Vec<ksee_core::program::Completion> {
         let c = ksee_core::program::context(text, at);
-        k(|k| ksee_core::program::completions(&tables().types, &c, &k.names.before(line), common))
+        k(|k| ksee_core::program::completions(&tables().types, &c, &k.p.names.before(line), common))
     }
 
     /// The names line `line` sees (see make): a variable's, a result's.
     pub fn names_before(&self, line: usize) -> Vec<String> {
-        k(|k| k.names.before(line).into_iter().map(|(name, _)| name.to_string()).collect())
+        k(|k| k.p.names.before(line).into_iter().map(|(name, _)| name.to_string()).collect())
     }
 
     /// The kernel quiet (now, or once it is): the calls finished meanwhile
@@ -246,21 +236,9 @@ impl Machine {
                 settle(None);
             }
         })).await?;
-        let (mut outcomes, mut vars) = k(|k| (k.outcomes.clone(), k.vars.clone()));
-        if let Some(Outcome::Call { id, ret, changed, .. }) = outcomes.last_mut()
-            && let Some((call, names)) = k(|k| k.calls.get(id).map(|c| c.said.clone())) {
-            changed.clear();
-            for (v, last) in vars.iter_mut() {
-                let now = self.show(v.ty, v.addr, v.count);
-                if now != *last {
-                    let records = names.iter().position(|n| n.as_deref() == Some(v.name.as_str())).zip(ret.filter(|r| *r > 0))
-                        .and_then(|(k, r)| self.as_records(&call, k, v.addr, (r as u32).min(v.bytes)));
-                    changed.push(format!("{} = {}", v.name, records.unwrap_or_else(|| now.clone())));
-                    *last = now;
-                }
-            }
-        }
-        k_mut(|k| (k.outcomes, k.vars) = (outcomes, vars));
+        let mut p = k_mut(|k| std::mem::take(&mut k.p));
+        p.changed(|v| self.show(v.ty, v.addr, v.count), |call, k, v, len| self.as_records(call, k, v.addr, len));
+        k_mut(|k| k.p = p);
         Ok(())
     }
 
@@ -285,34 +263,13 @@ impl Machine {
     /// The program's own runner (user/prog.c's main thread), its tid: the
     /// one the page's calls are made by unless they say another.
     pub fn main(&self) -> Option<u32> {
-        k(|k| k.main)
+        k(|k| k.p.main)
     }
 
     /// The runners' thread ids.
     pub fn runners(&self) -> Vec<u32> {
-        k(|k| k.runners.keys().copied().collect())
+        k(|k| k.p.runners.keys().copied().collect())
     }
-}
-
-/// Resolve structured task metadata for row `line`. A secondary task is
-/// visible only through the name of the earlier result-bearing call that
-/// created an active runner.
-fn task_tid(task: Option<&str>, line: usize) -> Result<u32, String> {
-    k(|k| match task {
-        None => k.main.filter(|tid| k.runners.contains_key(tid)).ok_or_else(|| "the program is not ready".into()),
-        Some(name) => named_runners(k, line).into_iter().filter(|&(_, n, _)| n == name).max_by_key(|&(id, _, _)| id)
-            .map(|(_, _, tid)| tid).ok_or_else(|| format!("no task {name}")),
-    })
-}
-
-/// The runners a result-bearing call before line `line` created: (that
-/// call's id, its result's name, the runner's tid). (Ids grow line by line.)
-fn named_runners(k: &State, line: usize) -> Vec<(u32, &str, u32)> {
-    k.runners.iter().filter_map(|(&tid, runner)| {
-        let call = k.calls.get(&runner.source?)?;
-        let (name, _) = call.result.as_ref()?;
-        (call.line < line).then_some((call.id, name.as_str(), tid))
-    }).collect()
 }
 
 /// Write `bytes` at `addr` into kernel memory, as the host: recorded (as a
@@ -326,21 +283,6 @@ fn write_logged(addr: u32, bytes: &[u8]) {
     unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), addr as *mut u8, bytes.len()) };
 }
 
-/// `len` bytes of runner `tid`'s program memory (user/prog.c's heap),
-/// aligned to 16 bytes.
-fn alloc(tid: u32, len: u32) -> Result<u32, String> {
-    k_mut(|k| {
-        let base = k.runners.get(&tid).ok_or_else(|| format!("no runner {tid}"))?.heap;
-        let (next, end) = k.heaps.get_mut(&base).ok_or("no memory")?;
-        let at = (*next + 15) & !15;
-        if at + len > *end {
-            return Err("the program's memory is full".into());
-        }
-        *next = at + len;
-        Ok(at)
-    })
-}
-
 /// What a line made (Machine::make): a variable, or a call's id.
 pub enum Made {
     Decl(Var),
@@ -350,25 +292,18 @@ pub enum Made {
 /// Have runner `tid` make syscall `nr` with `args`, for line `line` (its
 /// result named `result`): the call's id.
 fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, Option<u32>)>, said: (String, Vec<Option<String>>)) -> Result<u32, String> {
-    let (Runner { task, req, .. }, id) = k(|k| {
-        let runner = k.runners.get(&tid).copied().ok_or_else(|| format!("no runner {tid}"))?;
-        if k.in_flight(tid).is_some() {
-            return Err(format!("{tid} is still making its call"));
-        }
-        Ok((runner, k.asked + 1))
-    })?;
+    let (id, Runner { task, req, .. }) = k(|k| k.p.next_call(tid))?;
     // (A call's words as the buffers they point to are put in its program's
     // memory, recorded, as its variables are.)
     let mut put = |b: &[u8]| -> Result<u32, String> {
-        let at = alloc(tid, b.len() as u32)?;
+        let at = k_mut(|k| k.p.alloc(tid, b.len() as u32))?;
         write_logged(at, b);
         Ok(at)
     };
     let words = ksee_core::program::words(args, &mut put)?;
     let c = Call { id, tid, nr, task, line, result, said, ..Default::default() };
     k_mut(|k| {
-        k.asked = id;
-        k.calls.insert(id, c);
+        k.p.ask(c);
         // (The page waits for the kernel now: see State::waiting.)
         k.waiting = Some(k.clock);
         // (Ring the runner: it waits on the request's number.)
@@ -392,7 +327,7 @@ impl ksee_core::program::Env for Seen {
         if let Some(&v) = tables().types.constants.get(n) {
             return Some(Sym::Value { v, to: None });
         }
-        k(|k| k.names.get(n, self.0).cloned())
+        k(|k| k.p.names.get(n, self.0).cloned())
     }
 
     fn memory(&self) -> Option<&dyn Memory> {

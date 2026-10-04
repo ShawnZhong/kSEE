@@ -215,7 +215,7 @@ const BOOT_NS: u64 = 1_000_000_000;
 /// Whether a runner the page waits for sleeps on a timer of its own (see
 /// ksee_core::arch::sleeping).
 fn sleeping() -> bool {
-    let tasks: Vec<u32> = k(|k| k.calls.values().filter(|c| !c.done).map(|c| c.task).collect());
+    let tasks = k(|k| k.p.waiting_tasks());
     ksee_core::arch::sleeping(&tables().types, &Direct, &tasks)
 }
 

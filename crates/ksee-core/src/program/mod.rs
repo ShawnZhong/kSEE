@@ -15,7 +15,8 @@
 //! [`lex`] and [`parse`]: the text as C's tokens, then a statement (a
 //! syntax tree: any other syntax would make the same); [`eval`]: its
 //! expressions' values; [`complete`]: what fits at a cursor; [`names`]: what the lines before a line named;
-//! [`layout`]: values laid out in the kernel's types, and read back.
+//! [`layout`]: values laid out in the kernel's types, and read back;
+//! [`Session`]: a program as the host runs it, its runners and calls.
 
 mod complete;
 mod eval;
@@ -24,6 +25,7 @@ mod lex;
 mod lower;
 mod names;
 mod parse;
+mod session;
 #[cfg(test)]
 mod tests;
 
@@ -34,3 +36,4 @@ pub use lower::{lower, words, Lowered};
 pub use names::Names;
 pub use parse::{context, expression, statement, Line};
 pub use parse::{Context, Expr, TypeName};
+pub use session::{Call, Outcome, Runner, Session, Var};

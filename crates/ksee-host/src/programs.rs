@@ -12,7 +12,6 @@ use wasm_bindgen::JsCast;
 
 use crate::js;
 use crate::state::*;
-use ksee_core::program::Sym;
 use ksee_core::Memory;
 
 /// The tasks' programs (position-independent modules, in kernel memory):
@@ -64,8 +63,8 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
     });
     if dead {
         let gone = k_mut(|k| {
-            let tid = k.runners.iter().find(|(_, r)| r.task == prev).map(|(&t, _)| t);
-            tid.inspect(|&t| k.forget(t))
+            let tid = k.p.runner_of(prev);
+            tid.inspect(|&t| k.p.forget(t))
         });
         if let Some(tid) = gone {
             finish(tid, None);
@@ -152,7 +151,7 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
         // runs. A runner again only if it says so: ksee.ready.)
         let tid = tid();
         finish(tid, None);
-        k_mut(|k| k.forget(tid));
+        k_mut(|k| k.p.forget(tid));
         Ok(start)
     };
     start().unwrap_or_else(|e| {
@@ -167,25 +166,11 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
 /// page waits no more once none is left.
 pub(crate) fn finish(tid: u32, ret: Option<i64>) {
     let done = k_mut(|k| {
-        let Some(id) = k.in_flight(tid) else { return false };
-        let (calls, names) = (&mut k.calls, &mut k.names);
-        let c = calls.get_mut(&id).unwrap();
-        c.done = true;
-        // (Its result: the name it was declared with stands for it now.)
-        if let (Some((name, to)), Some(v)) = (&c.result, ret) {
-            names.set(name, c.line, Sym::Value { v, to: *to });
-        }
-        // (Its line's outcome: done; during the last line, if a later one.)
-        let last = k.outcomes.len().saturating_sub(1);
-        for (j, o) in k.outcomes.iter_mut().enumerate() {
-            if let Outcome::Call { id: i, done, ret: r, during, .. } = o && *i == id {
-                (*done, *r, *during) = (true, ret, (j != last).then_some(last));
-            }
-        }
-        if k.calls.values().all(|c| c.done) {
+        let done = k.p.finish(tid, ret);
+        if done && k.p.all_done() {
             k.waiting = None;
         }
-        true
+        done
     });
     if done {
         on_off();
@@ -197,7 +182,7 @@ pub(crate) fn finish(tid: u32, ret: Option<i64>) {
 /// meanwhile with it), else 2 (stores only: memory stays exact between
 /// recordings; the runner's way back to its wait, idle, are not shown).
 pub(crate) fn on_off() {
-    let on = k(|k| k.calls.values().any(|c| c.begun && !c.done));
+    let on = k(|k| k.p.recording());
     crate::imports::record(if on { 1 } else { 2 });
 }
 
@@ -213,28 +198,7 @@ fn runner_imports() -> Object {
     js::set(&ksee, "ready", Closure::<dyn FnMut(u32, u32, u32, u32)>::new(|req: u32, heap: u32, size: u32, main: u32| {
         let (tid, task) = (tid(), current());
         k_mut(|k| {
-            if main != 0 {
-                k.main = Some(tid);
-            }
-            // A secondary runner is created by the latest result-bearing
-            // call. Keep that call id so task names cannot resolve through
-            // unrelated syscall results.
-            let source = if main == 0 {
-                k.calls.values().next_back().and_then(|c| c.result.as_ref().map(|_| c.id))
-            } else {
-                None
-            };
-            k.runners.insert(tid, Runner { task, req, heap, source });
-            k.heaps.entry(heap).or_insert((heap, heap + size));
-            // (A runner the last call started, a clone's child: its result's
-            // name stands for it already, before the clone returns.)
-            let (calls, names) = (&k.calls, &mut k.names);
-            if let Some(Call { line, result: Some((name, _)), .. }) = source.and_then(|id| calls.get(&id))
-                && !names.has(name, *line)
-            {
-                names.set(name, *line, Sym::Value { v: tid as i64, to: None });
-            }
-            if main != 0 && k.calls.values().all(|c| c.done) {
+            if k.p.ready(tid, task, req, heap, size, main != 0) {
                 // (The boot's over: let what it left for later run now, while
                 // nothing is recorded.)
                 k.waiting = Some(k.clock);
@@ -243,26 +207,16 @@ fn runner_imports() -> Object {
     }).into_js_value());
     js::set(&ksee, "begin", Closure::<dyn FnMut()>::new(|| {
         let tid = tid();
-        let begun = k_mut(|k| {
-            let Some(id) = k.in_flight(tid) else { return false };
-            let c = k.calls.get_mut(&id).unwrap();
-            if c.begun {
-                return false;
-            }
-            c.begun = true;
-            // (Its recording starts here: the records' id, which counts the
-            // pairs of words ever written: see trace::ring.)
-            c.from = Direct.read_u32(k.trace) / 2;
-            true
-        });
+        // (Its recording starts here: the records' id, which counts the
+        // pairs of words ever written: see trace::ring.)
+        let begun = k_mut(|k| k.p.begin(tid, Direct.read_u32(k.trace) / 2));
         if begun {
             on_off();
         }
     }).into_js_value());
     js::set(&ksee, "end", Closure::<dyn FnMut(i64)>::new(|ret: i64| {
         let tid = tid();
-        let begun = k(|k| k.in_flight(tid).and_then(|id| k.calls.get(&id).map(|c| c.begun)));
-        if begun == Some(true) {
+        if k(|k| k.p.begun(tid)) {
             finish(tid, Some(ret));
         }
     }).into_js_value());
