@@ -422,71 +422,29 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
     let mut width = use_signal(|| 1000.0f64);
     let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
     let sizes = use_context::<Signal<crate::layout::Sizes>>();
-    let room = sizes().chart;
-    let row = ROW;
-    let (sa, sb) = (d.window)();
-    // (Where a step is, across the window (%): the cursor's, solid; the
-    // moment under the pointer's, faint; the calls on its stack.)
-    let x = |s: f64| {
-        (s >= sa as f64 && s < (sb + 1) as f64)
-            .then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64)
-    };
-    let now = d.cursor.cloned().and_then(x);
-    let peeked = d.preview.cloned().and_then(x);
-    let calls: Vec<(usize, String)> = d
-        .stack
-        .read()
-        .iter()
-        .map(|f| (f.first, f.func.clone()))
-        .collect();
-    let find = (ui.find)().to_lowercase();
-    // (The bar outlined: the one under the pointer, else the frame shown's call.)
-    let lit = tip().map(|t| t.call).or_else(|| {
-        d.stack
-            .read()
-            .get(d.frame.cloned())
-            .map(|f| (f.first, f.func.clone()))
-    });
-    let height = chart_height(depth, room);
+    let height = chart_height(depth, sizes().chart);
     let mut bottomed = bottomed;
+    // (A drag's pan so far (px), drawn until it ends; and the canvases
+    // mounted: either draws again.)
+    let mut offset = use_signal(|| 0.0f64);
+    let mut mounted = use_signal(|| false);
     use_effect(move || {
+        mounted();
         let chart = d.chart.cloned();
-        let width = width();
-        let room = sizes().chart;
-        let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
-        let height = chart_height(depth, room);
+        let height = chart_height(chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0), sizes().chart);
         let (sa, sb) = (d.window)();
-        let x = |s: f64| {
-            (s >= sa as f64 && s < (sb + 1) as f64)
-                .then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64)
-        };
-        let calls: Vec<(usize, String)> = d
-            .stack
-            .read()
-            .iter()
-            .map(|f| (f.first, f.func.clone()))
-            .collect();
-        let lit = tip().map(|t| t.call).or_else(|| {
-            d.stack
-                .read()
-                .get(d.frame.cloned())
-                .map(|f| (f.first, f.func.clone()))
-        });
-        let tasks = task_runs(&chart);
-        draw_chart(
-            &chart,
-            &tasks,
-            width,
-            height,
-            &calls,
-            &(ui.find)().to_lowercase(),
-            lit.as_ref(),
-            d.preview.cloned().and_then(x),
-            d.cursor.cloned().and_then(x),
-            0.0,
-        );
+        // (Where a step is, across the window (%): the cursor's, solid; the
+        // moment under the pointer's, faint; the calls on its stack.)
+        let x = |s: f64| (s >= sa as f64 && s < (sb + 1) as f64).then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64);
+        let stack = d.stack.read();
+        let calls: Vec<(usize, String)> = stack.iter().map(|f| (f.first, f.func.clone())).collect();
+        // (The bar outlined: the one under the pointer, else the frame shown's call.)
+        let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
+        draw_chart(&chart, &task_runs(&chart), width(), height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
+                   d.preview.cloned().and_then(x), d.cursor.cloned().and_then(x), offset());
     });
     use_effect(move || {
+        mounted();
         let _ = d.chart.read();
         if !bottomed() {
             if let Some(scroll) = stack_scroll() {
@@ -506,7 +464,7 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
           -> Option<(Option<crate::state::Moment>, Option<usize>)> {
         let k = ((x / width() * chart.cols.len() as f64).max(0.0) as usize)
             .min(chart.cols.len().checked_sub(1)?);
-        let dd = ((height - y) / row).floor();
+        let dd = ((height - y) / ROW).floor();
         let bar = (y < height && dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len())
             .then(|| chart.cols[k].frames[dd as usize] as usize);
         let frame = bar.map(|b| (chart.bars[b].first, chart.bars[b].name.clone()));
@@ -557,10 +515,6 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
             },
             onpointermove: {
                 let chart = chart.clone();
-                let tasks = tasks.clone();
-                let calls = calls.clone();
-                let find = find.clone();
-                let lit = lit.clone();
                 move |e: PointerEvent| {
                     let ui = ui;
                     if let Some(p) = pan() {
@@ -573,8 +527,7 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                                 ui.set_preview(None);
                                 tip.set(None);
                             }
-                            let (_, _, offset) = crate::clamped_pan((p.a, p.b), dx, width(), steps);
-                            draw_chart(&chart, &tasks, width(), height, &calls, &find, lit.as_ref(), peeked, now, offset);
+                            offset.set(crate::clamped_pan((p.a, p.b), dx, width(), steps).2);
                             if let Some(scroll) = stack_scroll() {
                                 let max = scroll.scroll_height() - scroll.client_height();
                                 scroll.set_scroll_top(drag_scroll(p.scroll, dy, max));
@@ -600,6 +553,7 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                 if let Some(p) = pan().filter(|p| p.pointer_id == e.pointer_id()) {
                     let dx = e.client_coordinates().x - p.x;
                     pan.set(None);
+                    offset.set(0.0);
                     if *dragged.peek() && dx != 0.0 {
                         let (start, span, _) = crate::clamped_pan((p.a, p.b), dx, width(), steps);
                         ui.view(start, span);
@@ -621,18 +575,11 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                     }
                 }
             },
-            onpointercancel: {
-                let chart = chart.clone();
-                let tasks = tasks.clone();
-                let calls = calls.clone();
-                let find = find.clone();
-                let lit = lit.clone();
-                move |e: PointerEvent| {
-                    if pan().is_some_and(|p| p.pointer_id == e.pointer_id()) {
-                        pan.set(None);
-                        dragged.set(false);
-                        draw_chart(&chart, &tasks, width(), height, &calls, &find, lit.as_ref(), peeked, now, 0.0);
-                    }
+            onpointercancel: move |e: PointerEvent| {
+                if pan().is_some_and(|p| p.pointer_id == e.pointer_id()) {
+                    pan.set(None);
+                    dragged.set(false);
+                    offset.set(0.0);
                 }
             },
             onmouseleave: move |_| {
@@ -642,19 +589,10 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                 }
             },
             div { id: "timeline-scroll", class: "flamescroll",
-                onmounted: move |_| {
-                    if let Some(scroll) = stack_scroll() {
-                        let max = scroll.scroll_height() - scroll.client_height();
-                        if max > 0 {
-                            scroll.set_scroll_top(max);
-                            bottomed.set(true);
-                        }
-                    }
-                },
                 canvas { id: "timeline-canvas", class: "timeline-canvas", role: "img", aria_label: "Call stack timeline" }
             }
             canvas { id: "timeline-task-canvas", class: "timeline-canvas task-canvas", role: "img", aria_label: "Task runs in the call stack timeline",
-                onmounted: move |_| draw_chart(&chart, &tasks, width(), height, &calls, &find, lit.as_ref(), peeked, now, 0.0)
+                onmounted: move |_| mounted.set(true)
             }
             div { class: "sr-only",
                 p { "Call labels in the timeline:" }
