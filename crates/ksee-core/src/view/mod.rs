@@ -155,8 +155,11 @@ impl View<'_> {
     pub fn tasks(&self, i: usize) -> Vec<TaskAt> {
         let t = self.tables;
         let mem = self.rec.memory_at(self.now, i);
-        let field = |addr: u32, s: &str, f: &str| t.types.field(s, f).map(|(off, _)| mem.read_u32(addr.wrapping_add(off)));
+        // (The fields read, where they are: looked up once.)
         let offset = |s: &str, f: &str| t.types.field(s, f).map(|(off, _)| off);
+        let of_task = |f: &str| offset(arch::TASK, f);
+        let (signal, on_rq, leader, parent) = (of_task(arch::TASK_SIGNAL.0), of_task(arch::TASK_ON_RQ), of_task(arch::TASK_LEADER), of_task(arch::TASK_PARENT));
+        let word = |addr: u32, off: Option<u32>| off.map(|off| mem.read_u32(addr.wrapping_add(off)));
         // (The kernel's: each process, then its threads, the leader among them.)
         let mut list: Vec<u32> = Vec::new();
         if let (Some(&(init, _)), Some(next), Some(node), Some(head)) = (t.types.globals.get(arch::INIT_TASK), offset(arch::TASK, arch::TASK_LIST),
@@ -164,7 +167,7 @@ impl View<'_> {
             let mut p = init;
             // (Guards: a list read from memory as it was may be torn.)
             while list.len() < 4096 {
-                let threads = field(p, arch::TASK, arch::TASK_SIGNAL.0).unwrap_or(0).wrapping_add(head);
+                let threads = word(p, signal).unwrap_or(0).wrapping_add(head);
                 let mut n = mem.read_u32(threads);
                 while n != threads && n != 0 && list.len() < 4096 {
                     list.push(n.wrapping_sub(node));
@@ -193,11 +196,7 @@ impl View<'_> {
         let running = self.rec.tasks.get(i).copied();
         list.iter().map(|&a| (a, true)).chain(others.into_iter().map(|a| (a, !known))).map(|(addr, listed)| {
             let last = seen.iter().find(|s| s.0 == addr).and_then(|s| s.1);
-            let on_rq = t.types.field(arch::TASK, arch::TASK_ON_RQ).is_some_and(|(off, _)| {
-                let mut b = [0u8];
-                mem.read(addr.wrapping_add(off), &mut b);
-                b[0] != 0
-            });
+            let on_rq = on_rq.is_some_and(|off| mem.read_u8(addr.wrapping_add(off)) != 0);
             let state = match () {
                 _ if running == Some(addr) => TaskState::Running,
                 _ if !listed && last.is_none() => TaskState::Later,
@@ -205,10 +204,10 @@ impl View<'_> {
                 _ if on_rq => TaskState::Runnable,
                 _ => TaskState::Sleeping,
             };
-            let up = |f: &str| field(addr, arch::TASK, f).filter(|&p| p != 0 && p != addr);
+            let up = |off| word(addr, off).filter(|&p| p != 0 && p != addr);
             TaskAt {
                 task: self.task(addr, i),
-                up: up(arch::TASK_LEADER).or_else(|| up(arch::TASK_PARENT)),
+                up: up(leader).or_else(|| up(parent)),
                 state, last,
                 doing: last.and_then(|j| {
                     let syscall = self.rec.syscall_at(j).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr).cloned());
