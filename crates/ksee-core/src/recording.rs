@@ -32,7 +32,7 @@ fn split(entry: u32, records: &[Record], tasks: &[u32], args: &Args, calls: &sta
     calls.calls.iter().filter(|c| c.func == entry && matches!(records[c.first], Record::Block { n: 0, .. })).map(|c| {
         let nr = args.get(c.first).and_then(|(w, _)| w.first().copied()).unwrap_or(0);
         let ret = c.last.and_then(|l| match records[l] {
-            Record::Return { func, value } if func == entry => Some(value as i32),
+            Record::Return { func, value: Some(value) } if func == entry => Some(value as i32),
             _ => None,
         });
         Syscall { task: tasks[c.first], nr, ret, first: c.first, last: ret.and(c.last) }
@@ -244,7 +244,7 @@ mod tests {
     fn syscalls_split_per_task() {
         // Task 7 makes syscall 64 (write): its entry (1) calls 2; task 8 runs meanwhile.
         let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, Record::Block { func: 3, n: 0 },
-                 Record::Return { func: 1, value: 3 }];
+                 Record::Return { func: 1, value: Some(3) }];
         let tasks = [7, 7, 8, 7];
         let mut args = Args::default();
         args.push(0, &[64, 1, 2, 3, 0]);
@@ -258,7 +258,7 @@ mod tests {
     fn tasks_switch_where_switch_to_returns() {
         let t = Tables::parse("F\t1\t__switch_to\t0:1\t3\n", "");
         let switch = t.find("__switch_to").unwrap();
-        let r = [b(9, 1), b(switch, 0), Record::Return { func: switch, value: 0 }, b(9, 1)];
+        let r = [b(9, 1), b(switch, 0), Record::Return { func: switch, value: Some(0) }, b(9, 1)];
         let mut args = Args::default();
         args.push(1, &[0x100, 0x200, 0]);
         let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);

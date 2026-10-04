@@ -240,8 +240,9 @@ impl Calls {
             let Some((p, steps)) = self.stretch(t, i) else { continue };
             let c = &self.calls[p.call as usize];
             // (After a return into it: the line that made the call says what
-            // it returned, the value its `ret = f(...)` got.)
-            if let Record::Return { func, value } = records[i]
+            // it returned, the value its `ret = f(...)` got; nothing, a void
+            // function's.)
+            if let Record::Return { func, value: Some(value) } = records[i]
                 && let Some(l) = out.iter_mut().rev().find(|l| l.depth <= c.depth).filter(|l| l.depth == c.depth && l.func == c.func) {
                 l.callee = Some((func, value, i));
             }
@@ -412,11 +413,11 @@ mod tests {
         // f's block 0: lines 1, 2, a call (g: line 10), then line 3.
         let t = crate::tables::Tables::parse(
             "U\nP\t0\tf.c\nP\t1\tg.c\nL\t1\t0\t0:1;:2;|;:3\nL\t2\t0\t1:10\n", "");
-        let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 0 }, Record::Return { func: 1, value: 0 }];
+        let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: Some(0) }, Record::Return { func: 1, value: Some(0) }];
         let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, 7).iter().map(|s| (s.loc.line, s.record, s.depth)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (10, 1, 1), (3, 2, 0)]);
         // f's line 2 made the call to g: it says g returned 7.
-        let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 7 }, Record::Return { func: 1, value: 9 }];
+        let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: Some(7) }, Record::Return { func: 1, value: Some(9) }];
         let got = lines(&t, &r, &[7; 4], 0, 3, 7);
         assert_eq!(got.iter().map(|s| s.callee.map(|(f, v, _)| (f, v))).collect::<Vec<_>>(), [None, Some((2, 7)), None, None]);
         // A loop: f's block 1 (lines 5, 6) three times; each turn counted.
@@ -436,7 +437,7 @@ mod tests {
         let t = crate::tables::Tables::parse(
             "U\nP\t0\tf.c\nP\t1\tg.c\nL\t1\t0\t0:1;:2;:3;|;:4\nL\t2\t0\t1:10\n", "");
         let st = |line| Record::Store { addr: 8, size: 4, old: 0, line, from: None };
-        let r = [b(1, 0), st(1), st(1), b(2, 0), Record::Return { func: 2, value: 0 }, st(3), Record::Return { func: 1, value: 0 }];
+        let r = [b(1, 0), st(1), st(1), b(2, 0), Record::Return { func: 2, value: Some(0) }, st(3), Record::Return { func: 1, value: Some(0) }];
         let got: Vec<_> = lines(&t, &r, &[7; 7], 0, 6, 7).iter().map(|s| (s.loc.line, s.record, s.at)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (3, 0, 2), (10, 3, 3), (4, 4, 4)]);
         // A store is on its line (the block's third item, line 4, after the call); the
@@ -482,7 +483,7 @@ mod tests {
         // Task 7's f (1) calls g (2); task 8 runs h (3); back on 7, g returns.
         // At records 1, 2, 4: 7's f and g, 8's h, 7's f.
         let t = Tables::default();
-        let r = [b(1, 0), b(2, 0), b(3, 0), Record::Return { func: 2, value: 0 }, b(1, 1)];
+        let r = [b(1, 0), b(2, 0), b(3, 0), Record::Return { func: 2, value: Some(0) }, b(1, 1)];
         let c = Calls::new(&t, &r, &[7, 7, 8, 7, 7]);
         let got: Vec<_> = [1, 2, 4].iter().map(|&i| c.stack_at(&t, i, None).iter().map(|c| c.func).collect::<Vec<_>>()).collect();
         assert_eq!(got, [alloc::vec![1, 2], alloc::vec![3], alloc::vec![1]]);
@@ -491,7 +492,7 @@ mod tests {
     #[test]
     fn calls_end_where_they_return() {
         // f (1) calls g (2), which returns; f goes on, then returns. (Task 8 runs between.)
-        let r = [b(1, 0), b(2, 0), b(9, 0), Record::Return { func: 2, value: 0 }, b(1, 1), Record::Return { func: 1, value: 0 }, b(3, 0)];
+        let r = [b(1, 0), b(2, 0), b(9, 0), Record::Return { func: 2, value: Some(0) }, b(1, 1), Record::Return { func: 1, value: Some(0) }, b(3, 0)];
         let t = [7, 7, 8, 7, 7, 7, 7];
         assert_eq!((call_end(&r, &t, 1), call_end(&r, &t, 0), call_end(&r, &t, 6)), (Some(3), Some(5), None));
     }
@@ -499,7 +500,7 @@ mod tests {
     #[test]
     fn exits_pop() {
         // A syscall (1) that calls 2, then returns to user space; another.
-        let exit = Record::Return { func: 1, value: 0 };
+        let exit = Record::Return { func: 1, value: Some(0) };
         let r = [b(1, 0), b(2, 0), exit, b(1, 0)];
         assert_eq!(stack_at(&r, &[7; 4], 3), [1]);
     }

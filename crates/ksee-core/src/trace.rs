@@ -14,8 +14,9 @@ pub use wire::RING;
 pub enum Record {
     /// Block `n` of `func` (block 0: a call; its arguments are in Args).
     Block { func: u32, n: u32 },
-    /// A return from `func`, with `value` (a 32-bit one sign-extended).
-    Return { func: u32, value: i64 },
+    /// A return from `func`, with `value` (a 32-bit one sign-extended;
+    /// none: a function that returns nothing).
+    Return { func: u32, value: Option<i64> },
     /// A store of `size` bytes at `addr`, which held `old`, on `line`:
     /// which of its block's lines (tables::Block::steps); `from`:
     /// if it copies (a value loaded and stored as it is, a memcpy), where
@@ -135,8 +136,8 @@ fn record(a: u32, tag: u32, v: &[u32]) -> Option<Record> {
         // take, then its frame base.)
         Kind::Block if (fields == 0) == (1..=15).contains(&got) => Record::Block { func: a, n: fields },
         Kind::Task if got == 0 => Record::Task { task: a },
-        Kind::Return if matches!(got, 1 | 2) => {
-            let value = if got == 2 { (word(0) | word(1) << 32) as i64 } else { word(0) as u32 as i32 as i64 };
+        Kind::Return if got <= 2 => {
+            let value = match got { 0 => None, 1 => Some(word(0) as u32 as i32 as i64), _ => Some((word(0) | word(1) << 32) as i64) };
             Record::Return { func: a, value }
         }
         // (A wide one: then the high words, lhs's and rhs's.)
@@ -194,7 +195,7 @@ pub(crate) mod tests {
     #[test]
     fn a_wide_return_has_its_high_word() {
         let w = [rec(5, RETURN, 0, &[1, 2]), rec(6, RETURN, 0, &[-2i32 as u32])].concat();
-        assert_eq!(decode(&w), [Record::Return { func: 5, value: 1 | 2 << 32 }, Record::Return { func: 6, value: -2 }]);
+        assert_eq!(decode(&w), [Record::Return { func: 5, value: Some(1 | 2 << 32) }, Record::Return { func: 6, value: Some(-2) }]);
     }
 
     #[test]
@@ -221,7 +222,7 @@ pub(crate) mod tests {
         assert_eq!(decode_values(&w)[0], (Record::Block { func: 5, n: 0 }, alloc::vec![1, 2, 0x900]));
         // (Its first word overwritten: the ring has from word 1 on.)
         let got: Vec<Record> = super::decode(w.len() as u32, 1, |i| w[i as usize]).into_iter().map(|(_, r, _)| r).collect();
-        assert_eq!(got, [Record::Block { func: 5, n: 3 }, Record::Return { func: 5, value: 42 }]);
+        assert_eq!(got, [Record::Block { func: 5, n: 3 }, Record::Return { func: 5, value: Some(42) }]);
     }
 
     struct Ring(Vec<u8>);
@@ -273,7 +274,7 @@ pub(crate) mod tests {
 
     #[test]
     fn malformed_cardinalities_are_skipped_whole() {
-        let bad = [(TASK, 0, 1), (BLOCK, 1, 1), (BLOCK, 0, 0), (RETURN, 0, 0), (RETURN, 0, 3), (COMPARE, 0, 0), (COMPARE, 0, 2),
+        let bad = [(TASK, 0, 1), (BLOCK, 1, 1), (BLOCK, 0, 0), (RETURN, 0, 3), (COMPARE, 0, 0), (COMPARE, 0, 2),
                    (STORE, StoreSize::B4 as u32, 0), (STORE, StoreSize::B4 as u32, 3), (VAR, 0, 2)];
         let mut words = Vec::new();
         for (kind, fields, n) in bad {

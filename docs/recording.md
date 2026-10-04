@@ -68,7 +68,7 @@ one the ring has partly overwritten:
 |---|---|
 | `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call: its values its arguments, then its frame base |
 | `[task, 3<<28]` | the `task_struct` address running when a requested syscall's recording begins |
-| `[fn, 4<<28]` | a return from fn; its values the value (low, then high for one wider than 32 bits) |
+| `[fn, 4<<28]` | a return from fn; its values the value (low, then high for one wider than 32 bits; none for a void function) |
 | `[lhs, 6<<28 \| line<<4 \| p]` | a comparison deciding a branch (or a select), on its block's line `line`: lhs, its values rhs (for 64-bit ones, then lhs's high word, rhs's); p its predicate (LLVM's icmp's, from eq) |
 | `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); its values the old value, then, if it copies, where its bytes come from |
 | `[value, 9<<28 \| line<<12 \| k]` | variable k (12 bits) of the function running (its V line) takes value, on its block's line `line` (12 bits); its high word its value, for a wide one |

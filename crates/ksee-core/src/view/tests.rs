@@ -66,7 +66,7 @@ fn each_task_where_it_last_ran() {
     // Task 0x100 runs f (1), switches (__switch_to, 2) to 0x200, which
     // runs f.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\t__switch_to\t0:1\t3\n", "");
-    let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, Record::Return { func: 2, value: 0 }, Record::Block { func: 1, n: 0 }];
+    let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, Record::Return { func: 2, value: Some(0) }, Record::Block { func: 1, n: 0 }];
     let mut args = Args::default();
     args.push(1, &[0x100, 0x200, 0]);
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
@@ -151,7 +151,7 @@ fn a_lines_note_says_a_name_once() {
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:2\t0\nL\t2\t0\t0:2;:3\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t2\tg\tp:3\n");
     let st = |addr, old| Record::Store { addr, size: 4, old, line: 1, from: None };
-    let ret = Record::Return { func: 2, value: 0 };
+    let ret = Record::Return { func: 2, value: Some(0) };
     let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, st(8, 1), ret, Record::Block { func: 2, n: 0 }, st(20, 3), ret];
     let mut args = Args::default();
     args.push(1, &[4, 64]);
@@ -177,7 +177,7 @@ fn a_calls_stores_are_named_as_the_code_names_them() {
     let r = [Record::Block { func: 1, n: 0 },
              Record::Store { addr: 8, size: 4, old: 1, line: 0, from: None }, Record::Store { addr: 36, size: 4, old: 0, line: 0, from: None },
              Record::Block { func: 2, n: 0 },
-             Record::Store { addr: 20, size: 1, old: 0, line: 0, from: None }, Record::Return { func: 2, value: 0 },
+             Record::Store { addr: 20, size: 1, old: 0, line: 0, from: None }, Record::Return { func: 2, value: Some(0) },
              Record::Store { addr: 100, size: 1, old: 0, line: 0, from: None }, Record::Store { addr: 21, size: 1, old: 0, line: 0, from: None }];
     let mut args = Args::default();
     args.push(0, &[4, 32]);
@@ -258,7 +258,7 @@ fn a_calls_locals_are_not_objects() {
     // f (1) stores its local int x (at frame 32 + 4): the Stack's, not
     // an object, before it returns as after.
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n", "T\t1\tbase\tint\t4\ts\nQ\t1\tx:1:4\n");
-    let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 36, size: 4, old: 0, line: 0, from: None }, Record::Return { func: 1, value: 0 }];
+    let r = [Record::Block { func: 1, n: 0 }, Record::Store { addr: 36, size: 4, old: 0, line: 0, from: None }, Record::Return { func: 1, value: Some(0) }];
     let mut args = Args::default();
     args.push(0, &[32]);
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
@@ -295,7 +295,7 @@ fn two_objects_of_one_name_are_numbered() {
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\n");
     let st = |addr| Record::Store { addr, size: 4, old: 0, line: 0, from: None };
-    let r = [Record::Block { func: 1, n: 0 }, st(8), Record::Return { func: 1, value: 0 }, Record::Block { func: 1, n: 0 }, st(24), Record::Return { func: 1, value: 0 }];
+    let r = [Record::Block { func: 1, n: 0 }, st(8), Record::Return { func: 1, value: Some(0) }, Record::Block { func: 1, n: 0 }, st(24), Record::Return { func: 1, value: Some(0) }];
     let mut args = Args::default();
     args.push(0, &[4, 64]);
     args.push(3, &[20, 64]);
@@ -315,7 +315,7 @@ fn a_members_changes_are_a_run_a_function() {
     let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:5\t0\nL\t1\t0\t0:1\nL\t2\t0\t0:5\n",
                           "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t8\nM\t2\ta\t0\t0\t1\nM\t2\tb\t32\t0\t1\nT\t3\tptr\t\t4\t2\nP\t1\tf\tp:3\nP\t2\tg\tp:3\n");
     let st = |old| Record::Store { addr: 8, size: 4, old, line: 0, from: None };
-    let r = [Record::Block { func: 1, n: 0 }, st(1), Record::Block { func: 2, n: 0 }, st(2), Record::Return { func: 2, value: 0 }];
+    let r = [Record::Block { func: 1, n: 0 }, st(1), Record::Block { func: 2, n: 0 }, st(2), Record::Return { func: 2, value: Some(0) }];
     let mut args = Args::default();
     args.push(0, &[4, 64]);
     args.push(2, &[4, 48]);
