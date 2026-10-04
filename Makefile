@@ -4,7 +4,7 @@
 #
 #   linux/                       Linux, the stable tree's LINUX_TAG, fetched once; linux.patch
 #                                (the port's edits to Linux's own files) applied, and arch/wasm/
-#                                (the port's own files) copied in, as they change
+#                                (the port's own files) linked in
 #   plugin/ksee-trace.so         the LLVM pass that instruments the kernel
 #   linux/vmlinux                the kernel, instrumented (kbuild), and its UAPI headers
 #   target/initramfs/initramfs.cpio
@@ -38,7 +38,7 @@ KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=1 \
 	KCFLAGS="-g -finline-hint-functions -fpass-plugin=$(CURDIR)/$(PLUGIN) -DKSEE_ID=$(shell cksum < plugin/ksee-trace.cpp | cut -d' ' -f1)"
 
 all: linux/vmlinux $(OUT)/initramfs.cpio
-.PHONY: all linux/vmlinux port patch llvm chrome
+.PHONY: all linux/vmlinux patch llvm chrome
 
 llvm:
 	@v=$$(llvm-config --version); test "$${v%%.*}" = 22 || { echo "LLVM 22 is required, found $$v" >&2; exit 1; }
@@ -52,26 +52,21 @@ linux/Makefile:
 	test "$$(git -C linux rev-parse '$(LINUX_TAG)^{commit}')" = $(LINUX_COMMIT)
 	git -C linux checkout -q $(LINUX_TAG)
 	git -C linux apply ../linux.patch
+	ln -s ../../arch/wasm linux/arch/wasm
 
 $(PLUGIN): plugin/ksee-trace.cpp | llvm
 	clang++ -shared -fPIC -O2 $< -o $@ $$(llvm-config --cxxflags)
 
-# arch/wasm/'s files into linux/, those whose contents differ from their
-# copies (kbuild then rebuilds what they make; a checkout's new times alone,
-# nothing).
-port: linux/Makefile
-	rsync -rc arch/ linux/arch/
-
 # (Every Kconfig the port has: a new one runs defconfig again; touched,
 # as kbuild leaves a .config the same as it was.)
-linux/.config: arch/wasm/configs/defconfig $(wildcard arch/wasm/Kconfig*) | port
+linux/.config: arch/wasm/configs/defconfig $(wildcard arch/wasm/Kconfig*) | linux/Makefile
 	$(KMAKE) defconfig
 	touch $@
 
 # (kbuild knows the kernel's own dependencies: it is always asked; it
 # builds gen_init_cpio too, the kernel's own initramfs writer.)
 linux/usr/gen_init_cpio: linux/vmlinux ;
-linux/vmlinux: $(PLUGIN) linux/.config port
+linux/vmlinux: $(PLUGIN) linux/.config
 	$(KMAKE)
 	$(KMAKE) headers
 

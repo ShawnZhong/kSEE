@@ -58,6 +58,11 @@ jobs:
             plugin/ksee-trace.so
           key: ${{ needs.kernel.outputs.key }}
           fail-on-cache-miss: true
+      # (The checkout's files are newer than the kernel's objects, though
+      # the key says what builds the kernel is as it was: older, so make
+      # and kbuild rebuild nothing of it.)
+      - name: Date what built the kernel before it
+        run: touch -d @0 $(git ls-files arch plugin/ksee-trace.cpp)
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
       - name: Build ksee CLI
