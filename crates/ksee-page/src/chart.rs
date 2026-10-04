@@ -325,7 +325,7 @@ fn draw_chart(
         if found {
             found_count += 1;
         }
-        if cfg!(feature = "browser-tests") && !points.iter().any(|p| p.split(' ').next() == Some(&bar.name)) {
+        if crate::test::on() && !points.iter().any(|p| p.split(' ').next() == Some(&bar.name)) {
             points.push(format!("{} {},{}", bar.name, x + w / 2.0, y + ROW / 2.0));
         }
         if x + w <= 0.0 || x >= width {
@@ -356,7 +356,7 @@ fn draw_chart(
         }
     }
     ctx.set_global_alpha(1.0);
-    if cfg!(feature = "browser-tests") {
+    if crate::test::on() {
         let _ = canvas.set_attribute("data-test-bars", &points.join("\n"));
         let _ = canvas.set_attribute("data-test-found", &found_count.to_string());
         match now {

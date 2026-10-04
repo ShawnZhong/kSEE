@@ -200,35 +200,18 @@ fn site() {
     }
 }
 
-/// Run native tests, build the site but its module (`built`: an earlier
-/// CI step did), then the test page, and run `names` in the headless shell (target/chrome/).
+/// Run native tests, build (`built`: an earlier CI step did), and run
+/// `names` on the site in the headless shell (target/chrome/).
 pub fn test(names: &[String], built: bool) {
     run(Command::new("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
     if !built {
-        assets();
+        build();
     }
-    test_site();
     // (The browser, the Makefile's version: fetched the first time.)
     run(Command::new("make").args(["--no-print-directory", "chrome"]));
     for name in names {
         if !crate::chrome::test(name) {
             crate::fail(&format!("the {name} test failed"));
         }
-    }
-}
-
-/// target/test/site: the site, its module built with the tests.
-fn test_site() {
-    // (Its own target directory: the site's module, built without them, stays as it is.)
-    run(built(Command::new("cargo").args(["build", "--locked", "--release", "-p", "ksee-page", "--features", "browser-tests",
-        "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"])));
-    bindgen("target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm", "target/test/pkg");
-    // (The site with the tests: the site's files, its module the one built with them.)
-    let site = Path::new("target/test/site");
-    let _ = std::fs::remove_dir_all(site);
-    crate::or_fail(std::fs::create_dir_all(site), site.display());
-    let names = std::fs::read_dir(SITE).into_iter().flatten().flatten().map(|e| e.file_name()).filter(|n| n != "pkg");
-    for (from, name) in names.map(|n| (Path::new("../../site").join(&n), n)).chain([(Path::new("../pkg").into(), "pkg".into())]) {
-        crate::or_fail(std::os::unix::fs::symlink(from, site.join(&name)), site.display());
     }
 }

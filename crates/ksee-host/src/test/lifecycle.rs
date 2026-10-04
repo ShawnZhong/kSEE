@@ -1,8 +1,6 @@
-use crate::lesson::Step;
-
 use super::harness::{sleep, KernelHarness};
 
-pub(super) async fn run(t: &mut KernelHarness, examples: &[crate::lesson::Example]) {
+pub(super) async fn run(t: &mut KernelHarness) {
     let m = t.machine.clone();
     // A fresh kernel, in place: nothing of the calls before (/tmp is gone).
     t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await;
@@ -22,11 +20,19 @@ pub(super) async fn run(t: &mut KernelHarness, examples: &[crate::lesson::Exampl
     let made = t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await.ret;
     t.check("... on a fresh kernel: /tmp is not there", made == Some(0));
     // Deterministic: the same calls on a fresh kernel make the same recording, record for record.
-    for name in ["create", "futex"] {
-        let Some(ex) = examples.iter().find(|e| e.name == name) else { continue };
+    // (A file made; a thread waiting on a futex, woken.)
+    let made: &[(Option<&str>, &str)] = &[(None, "int fd = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644)")];
+    let futex: &[(Option<&str>, &str)] = &[
+        (None, "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)"),
+        (None, "pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0)"),
+        (Some("thread"), "futex(mem, FUTEX_WAIT_PRIVATE, 1, NULL)"),
+        (Some("thread"), "futex(mem, FUTEX_WAIT_PRIVATE, 0, NULL)"),
+        (None, "futex(mem, FUTEX_WAKE_PRIVATE, 1, NULL)"),
+    ];
+    for (name, program) in [("a file made", made), ("a futex", futex)] {
         let mut runs = Vec::new();
         for _ in 0..2 {
-            let ids = t.program(&ex.steps).await;
+            let ids = t.program(program.iter().copied()).await;
             let seen: Vec<_> = ids.iter().flatten().map(|&id| t.syscall(id).map(|s| (s.first, s.last, t.finished.get(&id).map(|f| f.ret)))).collect();
             runs.push((m.records(), seen));
         }
@@ -34,9 +40,8 @@ pub(super) async fn run(t: &mut KernelHarness, examples: &[crate::lesson::Exampl
     }
     // An execve with its argv (a vfork child runs the program again): it finishes as an exec.
     {
-        let lines = [Step::Main("pid_t child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0)".into()),
-                     Step::Task { task: "child".into(), text: "execve(\"/bin/prog\", {\"prog\", \"-x\", NULL}, NULL)".into() }];
-        let ids = t.program(&lines).await;
+        let ids = t.program([(None, "pid_t child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0)"),
+                             (Some("child"), "execve(\"/bin/prog\", {\"prog\", \"-x\", NULL}, NULL)")]).await;
         let ended = ids[1].and_then(|id| t.finished.get(&id)).map(|f| f.ret);
         t.check(format!("an execve with argv runs the program, no return ({ended:?})"), ended == Some(None) && !t.console_output.contains("NULL argv"));
     }

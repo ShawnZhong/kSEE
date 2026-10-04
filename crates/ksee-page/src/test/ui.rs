@@ -10,8 +10,19 @@ use super::dom::*;
 /// selected; its links followed; stepping into, over, out, and by key; the
 /// chart (a click, find); Objects and Tasks; a line changed, a
 /// try and back; the next lesson.
-pub(super) async fn lesson() -> Check {
+pub(super) async fn read() -> Check {
     let mut r = Vec::new();
+    // (The timeline's colors, and its wheel: one axis at a time.)
+    let colors = [(Some("fs/x.c"), false, "hsl(210 55% 74%)"), (Some("fs/x.c"), true, "hsl(210 65% 50%)"),
+                  (Some("arch/x.c"), false, "hsl(0 0% 79%)"), (None, false, "hsl(0 0% 79%)")];
+    if let Some((file, on, _)) = colors.iter().find(|(f, on, c)| crate::chart::call_color(*f, *on) != *c) {
+        return Err(format!("the timeline's color for {file:?} (on: {on}) is {}", crate::chart::call_color(*file, *on)));
+    }
+    let horizontal = crate::chart::wheel_view((100, 199), 500.0, 1000.0, 80.0, 4.0, false);
+    let vertical = crate::chart::wheel_view((100, 199), 500.0, 1000.0, 4.0, 80.0, false);
+    if !((horizontal.0 - 108.0).abs() < f64::EPSILON && horizontal.1 == 99 && vertical.0 < 100.0 && vertical.1 > 99) {
+        return Err(format!("the timeline's wheel moves both axes: {horizontal:?}, {vertical:?}"));
+    }
     wait(
         || {
             done(3)

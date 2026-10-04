@@ -108,8 +108,7 @@ Do not edit generated output as source:
 | `target/site/examples.json` | Built lesson index and content. |
 | `target/vmlinux` | Uncompressed packed kernel, with metadata injected and DWARF removed, used to produce the site copy. |
 | `target/initramfs/` | Intermediate programs, ext4 image, fixture tree, and archive. |
-| `target/test/site/` | Test site whose package points at a self-test-enabled page/runtime build. |
-| `target/test/build/` | Separate Cargo target directory for that self-test module. |
+| `target/chrome/` | The tests' browser, Chrome's headless shell (`make chrome`). |
 
 ## Page modules and state
 
@@ -127,10 +126,15 @@ runtime's WebAssembly module and calls `Machine` directly.
 | `panels.rs` | Stack, Tasks, Objects, and Console tabs. |
 | `layout.rs` | Resizable panes and persisted dimensions. |
 | `state.rs` | Semantic state transitions, the snapshot identity, navigation, lesson program, and derived views. |
-| `test/kernel/` | One sequential kernel integration suite: harness, trace, program, metadata, lessons, and lifecycle phases. |
+| `test/lessons.rs` | Every lesson and try on a fresh kernel: its calls finished, its links found. |
 | `test/ui.rs` | Browser-level page interaction suites. |
 | `test/dom.rs` | DOM queries, synthetic input, waiting, and assertions shared by UI suites. |
-| `test/mod.rs` | URL dispatch and result reporting to the native Chromium driver. |
+| `test/mod.rs` | URL dispatch and result reporting to the CLI's browser driver. |
+
+The kernel's own suite is `ksee-host`'s `test/` (harness, trace, program,
+metadata, lifecycle, timings): it checks the Machine, with no page. The tests
+are always in the shipped module (about 80 KB gzipped); a URL naming one,
+`#test=NAME`, runs it.
 
 The central state is the selected syscall, reconstructed line cursor, selected
 stack frame, and lesson program. A chart hover supplies a temporary preview. Dioxus memos derive the syscall, line sequence,
@@ -157,19 +161,17 @@ workspace's default members (a bare `cargo test`) are the native crates.
 1. `cargo test --locked -p ksee-core -p ksee-cli` runs native
    reconstruction, view, program-language, source/text, chart-window, packing,
    and CLI tests.
-2. The site is built but its module: the self-test module below stands in.
-3. A self-test-enabled `ksee-page` module is built in `target/test/build/` and
-   assembled into `target/test/site/`.
-4. Headless Chromium runs the kernel suite. It boots Linux, exercises recorded
-   syscalls and every lesson, and checks stacks, lines, memory history,
-   origins, tasks, and lesson links.
-5. With `--ui`, Chromium also runs the read, changed-program/history, pipe, and
+2. The site is built, as `ksee build` builds it: the tests are in its module.
+3. Headless Chrome runs the kernel suite (`ksee-host`): it boots Linux,
+   exercises recorded syscalls, and checks stacks, lines, memory history,
+   origins, tasks, and timings; then the lessons suite, every lesson and try.
+4. With `--ui`, it also runs the read, changed-program/history, pipe, and
    phone-layout suites through the DOM. Test names can also be given directly
-   for focused runs, such as `./ksee.sh test lesson`.
+   for focused runs, such as `./ksee.sh test read`.
 
 CI separates launcher compilation, the kernel/site build, and tests. Its test
-step uses `ksee test --built`, which skips rebuilding production but still runs
-native tests, builds the self-test page, and runs the selected browser suites.
+step uses `ksee test --built`, which runs native tests and the selected browser
+suites on the site already built.
 
 The browser is Chrome's headless shell at the Makefile's `CHROME_VERSION`,
 fetched into `target/chrome/` by `make chrome`, which `ksee test` runs.

@@ -49,7 +49,7 @@ fn parse_args(args: &[&str]) -> Result<Command, String> {
                 _ => (false, options),
             };
             let names: Vec<String> = match selection {
-                [] => vec!["kernel".into()],
+                [] => vec!["kernel".into(), "lessons".into()],
                 ["--ui"] => chrome::TESTS.iter().map(|test| test.0.into()).collect(),
                 names if names.iter().all(|name| chrome::TESTS.iter().any(|test| test.0 == *name)) =>
                     names.iter().map(|name| (*name).into()).collect(),
@@ -146,9 +146,9 @@ mod tests {
     fn parses_commands_and_their_options() {
         assert_eq!(parse(&[]), Command::Serve { build: true, port: 8000 });
         assert_eq!(parse(&["build"]), Command::Build);
-        assert_eq!(parse(&["test"]), Command::Test { built: false, names: vec!["kernel".into()] });
-        assert_eq!(parse(&["test", "lesson"]), Command::Test { built: false, names: vec!["lesson".into()] });
-        assert_eq!(parse(&["test", "--built", "lesson", "responsive"]), Command::Test { built: true, names: vec!["lesson".into(), "responsive".into()] });
+        assert_eq!(parse(&["test"]), Command::Test { built: false, names: vec!["kernel".into(), "lessons".into()] });
+        assert_eq!(parse(&["test", "read"]), Command::Test { built: false, names: vec!["read".into()] });
+        assert_eq!(parse(&["test", "--built", "read", "responsive"]), Command::Test { built: true, names: vec!["read".into(), "responsive".into()] });
         assert_eq!(parse(&["test", "--ui"]), Command::Test { built: false, names: chrome::TESTS.iter().map(|test| test.0.into()).collect() });
         assert_eq!(parse(&["test", "--built", "--ui"]), Command::Test { built: true, names: chrome::TESTS.iter().map(|test| test.0.into()).collect() });
         assert_eq!(parse(&["deploy"]), Command::Deploy);

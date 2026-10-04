@@ -24,13 +24,8 @@ web-sys = { version = "0.3.105", features = [
     "HtmlCanvasElement", "HtmlTextAreaElement", "CanvasRenderingContext2d",
     "CssStyleDeclaration", "DomRect", "KeyboardEvent", "Location", "History", "Storage",
     "console",
+    # (The tests', src/test/.)
+    "HtmlInputElement", "EventInit", "KeyboardEventInit", "MouseEvent", "MouseEventInit",
+    "PointerEvent", "PointerEventInit", "WheelEvent", "WheelEventInit", "NodeList",
+    "Request", "RequestInit", "Performance",
 ] }
-
-[features]
-# (The tests run in the page: the kernel integration and DOM suites in src/test/.)
-browser-tests = [
-    "web-sys/HtmlInputElement", "web-sys/EventInit", "web-sys/KeyboardEventInit",
-    "web-sys/MouseEvent", "web-sys/MouseEventInit", "web-sys/PointerEvent",
-    "web-sys/PointerEventInit", "web-sys/WheelEvent", "web-sys/WheelEventInit",
-    "web-sys/NodeList", "web-sys/Request", "web-sys/RequestInit", "web-sys/Performance",
-]

@@ -72,7 +72,7 @@ creates the generated site under `target/site/`.
 `./ksee.sh test` runs the tests in Chrome's headless shell, a pinned version it
 fetches into `target/chrome/` the first time (`setup.sh` installs the
 libraries it needs). The test command first runs the native `ksee-core` and `ksee-cli` tests, then
-builds and runs the kernel/browser self-tests. Add `--ui` for the page suites.
+builds and runs the kernel and lessons suites in the browser. Add `--ui` for the page suites.
 See the [getting-started guide](docs/getting-started.md) for prerequisites,
 custom LLVM setup, and troubleshooting.
 

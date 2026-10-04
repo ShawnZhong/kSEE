@@ -28,7 +28,6 @@ mod panels;
 mod source;
 mod stack;
 mod state;
-#[cfg(feature = "browser-tests")]
 mod test;
 
 use lesson::Example;
@@ -77,12 +76,9 @@ pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsVa
     let examples: Vec<Example> = serde_wasm_bindgen::from_value(examples)?;
     BOOT.with_borrow_mut(|b| *b = Some(machine));
     EXAMPLES.set(Box::leak(examples.into_boxed_slice()));
-    // (The tests, for the native Chromium driver; the kernel test takes the Machine directly.)
-    #[cfg(feature = "browser-tests")]
-    if let Some(name) = test::start() {
-        if name == "kernel" {
-            return Ok(());
-        }
+    // (A test, if the URL names one: those of the Machine only, no page.)
+    if test::start().is_some_and(|name| test::MACHINE_ONLY.contains(&name.as_str())) {
+        return Ok(());
     }
     dioxus::LaunchBuilder::web()
         .with_cfg(dioxus::web::Config::new().rootname(root))

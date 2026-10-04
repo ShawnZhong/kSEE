@@ -14,6 +14,7 @@
 //! * [`programs`]: user programs (in kernel memory), their tasks' stack
 //!   pointers, and the runners that make the page's calls.
 //! * [`state`]: the machine's state in the runtime.
+//! * [`test`]: the kernel's tests (`ksee test`), and their harness.
 
 mod imports;
 mod js;
@@ -22,5 +23,6 @@ mod programs;
 mod replay;
 mod sched;
 mod state;
+pub mod test;
 
 pub use state::Finished;

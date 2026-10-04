@@ -13,12 +13,13 @@ use crate::or_fail;
 /// The tests (crates/ksee-page's test module), each with the page it opens
 /// (its URL's hash: the lesson, and `test`, which runs the test, POSTing
 /// `ok` or `fail` and its log to /result) and the screen it has: the
-/// kernel's, then the page's: the read example, the write example with its
+/// kernel's (ksee-host's), every lesson made, then the page's: the read example, the write example with its
 /// program changed in the URL (raw: the JSON holds no & or %; the page
 /// decodes it), the pipe example, the read example on a phone's screen.
 pub const TESTS: &[(&str, &str, (u32, u32))] = &[
     ("kernel", "#test=kernel", SCREEN),
-    ("lesson", "#ex=read&test=lesson", SCREEN),
+    ("lessons", "#test=lessons", SCREEN),
+    ("read", "#ex=read&test=read", SCREEN),
     ("history", r#"#ex=write&p=["int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)","write(fd, \"changed;\\n\", 9)"]&test=history"#, SCREEN),
     ("tasks", "#ex=pipe&test=tasks", SCREEN),
     ("responsive", "#ex=read&test=responsive", (390, 844)),
@@ -31,14 +32,13 @@ const BROWSER: &str = "target/chrome/chrome-headless-shell";
 /// How long a test may take (the kernel's take minutes).
 const TIMEOUT: Duration = Duration::from_secs(300);
 
-/// Test `name` (on the site built with them, target/test/site, in a headless
-/// Chromium): whether the page said `ok` (its log printed either way).
+/// Test `name` (on the site, target/site, in the headless shell): whether the page said `ok` (its log printed either way).
 pub fn test(name: &str) -> bool {
     let &(_, hash, (width, height)) = TESTS.iter().find(|t| t.0 == name).expect("a test's name");
     let listener = or_fail(TcpListener::bind("127.0.0.1:0"), "serve");
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let (tx, rx) = channel();
-    std::thread::spawn(move || crate::serve::serve_on(listener, Path::new("target/test/site"), tx));
+    std::thread::spawn(move || crate::serve::serve_on(listener, Path::new(crate::build::SITE), tx));
     let profile = std::env::temp_dir().join(format!("ksee-chrome-{}", std::process::id()));
     let mut child = or_fail(Command::new(BROWSER)
         .args(["--headless=new", "--no-sandbox", "--no-first-run", &format!("--user-data-dir={}", profile.display()),

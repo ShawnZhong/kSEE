@@ -1,15 +1,26 @@
+//! The lessons, each on a fresh kernel: its calls finished, its links
+//! found; its tries, each made.
+
+use std::rc::Rc;
+
 use ksee_core::program::{statement, Line as Stmt};
 use ksee_core::text::{self, LessonTarget, Piece};
+use ksee_host::machine::Machine;
+use ksee_host::test::KernelHarness;
 
 use crate::lesson::Step;
 
-use super::harness::KernelHarness;
+/// Each step as the harness makes it: its task and its text.
+fn lines(steps: &[Step]) -> impl Iterator<Item = (Option<&str>, &str)> {
+    steps.iter().map(|s| (s.task(), s.text()))
+}
 
-pub(super) async fn run(t: &mut KernelHarness, examples: &[crate::lesson::Example]) {
+pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
+    let mut t = KernelHarness::new(machine);
     let m = t.machine.clone();
-    // The lessons: each on a fresh kernel, its calls finished, its links found; its tries, each made.
+    let examples = crate::examples();
     for ex in examples {
-        let ids = t.program(&ex.steps).await;
+        let ids = t.program(lines(&ex.steps)).await;
         let is_call = |step: &Step| matches!(statement(step.text()), Ok(Stmt::Call { .. }));
         let blocked: Vec<String> = ex.steps.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.finished.contains_key(&id)))
             .map(|(step, _)| step.text().into()).collect();
@@ -34,10 +45,11 @@ pub(super) async fn run(t: &mut KernelHarness, examples: &[crate::lesson::Exampl
             }
         }
         for (k, try_) in ex.tries.iter().enumerate() {
-            let ran = t.program(try_).await;
+            let ran = t.program(lines(try_)).await;
             t.check(format!("example {}, try {}: {} lines made", ex.name, k + 1, try_.len()), ran.len() == try_.len() && !try_.is_empty());
         }
         t.check(format!("example {}: {} lines, all finished, the explanation's links found (missing {missing:?}, blocked {blocked:?})", ex.name, ex.steps.len()),
                 missing.is_empty() && blocked.is_empty());
     }
+    t.done(format!("{} lessons", examples.len()))
 }

@@ -99,9 +99,8 @@ Browser tests run in Chrome's headless shell: the Makefile's `CHROME_VERSION`,
 fetched once into `target/chrome/` (`make chrome`) for x86-64 or arm64 Linux.
 
 The default test command runs native `ksee-core` and `ksee-cli` tests first,
-then performs a full build and runs the kernel/browser self-test. `--ui` adds
-the interactive page suites. Generated test pages are placed under
-`target/test/site/`.
+then performs a full build and runs the kernel and lessons suites on the site.
+`--ui` adds the interactive page suites.
 
 See [development.md#tests](development.md#tests) for the test layers and their
 order.

@@ -9,12 +9,6 @@ them).
   under it; a design that keeps it steady (fixed height and preview-only
   modes were tried and rejected).
 
-## Tests
-
-- **The kernel suite belongs to ksee-host** (it tests the Machine, not the
-  page): move `crates/ksee-page/src/test/kernel/` there behind a feature;
-  the page keeps its DOM suites; one runner for both.
-
 ## Trace format
 
 - **Records read backwards, no continuation words.** Each value now takes
