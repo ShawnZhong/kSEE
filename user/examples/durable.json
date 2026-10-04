@@ -5,7 +5,7 @@
     "The last write left the bytes in memory, to be written back later. fsync() asks for them to be durable now. What does that take?",
     "1. [ext4_sync_file](3:ext4_sync_file): the data must reach the disk. The dirty page is written back, and now [ext4_mb_new_blocks](3:ext4_mb_new_blocks), the multiblock allocator, chooses a block for it from the block bitmap.",
     "2. The metadata changes (the bitmaps, the inode, the directory block) go through the journal: [jbd2_journal_commit_transaction](3:jbd2_journal_commit_transaction:any) commits them, on jbd2's own thread. Look at the task strip in the timeline: the CPU changes hands.",
-    "3. Every request to the disk goes through the block layer: [submit_bio](3:submit_bio) sends one to /dev/loop0, whose blocks are a file in memory here.",
+    "3. Every request to the disk goes through the block layer: [submit_bio](3:submit_bio) sends one to /dev/ram0, a RAM disk: its driver, [brd_submit_bio](3:brd_submit_bio), copies the blocks into its pages, there and then.",
     "Try: [without the fsync](try:1), the write and the close leave everything in memory. [With two fsyncs](try:2), the second has nothing dirty to write and returns almost at once."
   ],
   "tries": [

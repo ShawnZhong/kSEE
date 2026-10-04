@@ -8,7 +8,7 @@ and copies `arch/wasm/` in. Almost everything else is generic kernel code:
 in Linux's own files.
 
 The configuration: wasm32, no MMU, one CPU, an initramfs, a console
-(output), a timer; the block layer, the loop device and ext4.
+(output), a timer; the block layer, a RAM disk and ext4.
 
 ## Tasks: stacks the host suspends
 
@@ -150,11 +150,12 @@ wakes it.
 
 ## A disk
 
-No block device is emulated: the initramfs holds an ext4 image
-(`/disk.img`, made by `mkfs.ext4` at build time), and /init attaches it to
-the loop device (the kernel's own driver: a file as a block device) and
-mounts it on `/mnt`. So ext4, jbd2 and the block layer are all the real
-kernel's; the disk's blocks are that file's pages in memory. The image
+The disk is a RAM disk, `/dev/ram0` (`brd`, the kernel's own driver: its
+blocks are pages of memory, a request copied to or from them as it is
+submitted). The initramfs holds an ext4 image (`/disk.img`, made by
+`mkfs.ext4` at build time); /init copies it onto the disk, removes it, and
+mounts the disk on `/mnt`. So ext4, jbd2, the block layer and the driver are
+all the real kernel's. The image
 comes with files for the examples to start from (`mkfs.ext4 -d user/disk`):
 `/mnt/note.txt`, `/mnt/dir/a.txt`.
 
