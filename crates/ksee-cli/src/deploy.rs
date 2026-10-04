@@ -3,21 +3,19 @@
 //! replaced each time (the kernel is ~20 MB; no history of it to keep).
 use std::process::Command;
 
-use crate::build::{run, stdout};
+use crate::build::{git, run};
 
 pub fn deploy() {
     crate::build::build();
-    let git = |args: &[&str]| String::from_utf8_lossy(&stdout(Command::new("git").args(args))).trim().to_string();
-    let remote = git(&["remote", "get-url", "origin"]);
-    let head = git(&["rev-parse", "--short", "HEAD"]);
-    let dirty = if git(&["status", "--porcelain"]).is_empty() { "" } else { " (with changes)" };
+    let remote = git(&["remote", "get-url", "origin"]).unwrap_or_else(|| crate::fail("no origin remote to deploy to"));
+    let head = git(&["rev-parse", "--short", "HEAD"]).unwrap_or_default();
+    let dirty = if git(&["status", "--porcelain"]).unwrap_or_default().is_empty() { "" } else { " (with changes)" };
 
     let dir = std::env::temp_dir().join(format!("ksee-deploy-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     crate::or_fail(std::fs::create_dir_all(&dir), dir.display());
     eprintln!("  DEPLOY  {remote} gh-pages");
-    // -L: the files, not the links (to web/).
-    run(Command::new("cp").arg("-rL").arg(format!("{}/.", crate::build::SITE)).arg(&dir));
+    run(Command::new("cp").arg("-r").arg(format!("{}/.", crate::build::SITE)).arg(&dir));
     // (No Jekyll: it would drop files that start with _.)
     crate::or_fail(std::fs::write(dir.join(".nojekyll"), ""), ".nojekyll");
 

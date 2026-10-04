@@ -40,7 +40,7 @@ pub fn write() {
     let page = String::from_utf8_lossy(&crate::read(Path::new("web/index.html"))).into_owned();
     let out = |name: &str, text: String| {
         let out = format!("{SITE}/{name}");
-        // (Not through a link: the site's files are web/'s, linked.)
+        // (Not through a link an older build left: to web/'s file.)
         let _ = std::fs::remove_file(&out);
         crate::or_fail(std::fs::write(&out, text), &out);
     };

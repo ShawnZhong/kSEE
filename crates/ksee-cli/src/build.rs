@@ -2,8 +2,7 @@
 //! (the plugin, linux/, the initramfs) is the Makefile's; then, each step
 //! asking the tool that knows its own dependencies (cargo) or checking
 //! whether its output is older than its inputs, the site, in target/site
-//! (what `ksee serve` serves and `ksee deploy` pushes): links to web/'s
-//! files (the page's own), and
+//! (what `ksee serve` serves and `ksee deploy` pushes):
 //!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
 //!   vmlinux.gz, src/       the kernel for the page (pack; target/vmlinux)
 //!   initramfs.cpio.gz      the Makefile's target/initramfs/initramfs.cpio
@@ -30,16 +29,6 @@ pub fn run(cmd: &mut Command) {
     }
 }
 
-/// Runs `cmd`, said first, and returns its stdout; stderr remains visible.
-pub(crate) fn stdout(cmd: &mut Command) -> Vec<u8> {
-    eprintln!("+ {}", line(cmd));
-    let out = crate::or_fail(cmd.stderr(std::process::Stdio::inherit()).output(), line(cmd));
-    if !out.status.success() {
-        crate::fail(&format!("{} failed: {}", line(cmd), out.status));
-    }
-    out.stdout
-}
-
 /// The site: what the page loads.
 pub const SITE: &str = "target/site";
 
@@ -56,11 +45,11 @@ pub fn build() {
 }
 
 /// The site but its module: the kernel, its sources, the initramfs, the
-/// examples, web/'s files.
+/// lessons and their pages.
 fn assets() {
     let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
     run(Command::new("make").args(["--no-print-directory", &jobs]));
-    site();
+    crate::or_fail(std::fs::create_dir_all(SITE), SITE);
     packed_kernel();
     let (cpio, compressed) = ("target/initramfs/initramfs.cpio", format!("{SITE}/initramfs.cpio.gz"));
     if stale(&compressed, &[cpio]) {
@@ -81,13 +70,13 @@ fn built(cargo: &mut Command) -> &mut Command {
 }
 
 /// git's output for `args`, if it ran.
-fn git(args: &[&str]) -> Option<String> {
+pub(crate) fn git(args: &[&str]) -> Option<String> {
     Command::new("git").args(args).output().ok().filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
 
 /// The source's page: the origin remote's on GitHub (https://github.com/OWNER/REPO).
-fn source() -> Option<String> {
+pub(crate) fn source() -> Option<String> {
     Some(git(&["remote", "get-url", "origin"])?.trim_end_matches(".git").replacen("git@github.com:", "https://github.com/", 1))
 }
 
@@ -146,6 +135,23 @@ fn gzip(from: &str, to: &str) {
     run(Command::new("gzip").args(["-9nc", from]).stdout(out));
 }
 
+
+/// Run native tests, build (`built`: an earlier CI step did), and run
+/// `names` on the site in the headless shell (target/chrome/).
+pub fn test(names: &[String], built: bool) {
+    run(Command::new("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
+    if !built {
+        build();
+    }
+    // (The browser, the Makefile's version: fetched the first time.)
+    run(Command::new("make").args(["--no-print-directory", "chrome"]));
+    for name in names {
+        if !crate::chrome::test(name) {
+            crate::fail(&format!("the {name} test failed"));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,40 +178,5 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&first, b"new output").unwrap();
         assert!(!stale(&first_s, &[&input_s]));
-    }
-}
-
-/// Links in the site to web/'s files (so an edit there needs no build), and
-/// none to files no longer there.
-fn site() {
-    eprintln!("+ (site) web/* -> {SITE}/");
-    crate::or_fail(std::fs::create_dir_all(SITE), SITE);
-    for e in std::fs::read_dir(SITE).into_iter().flatten().flatten() {
-        if e.path().is_symlink() && !e.path().exists() {
-            let _ = std::fs::remove_file(e.path());
-        }
-    }
-    // (Not index.html: the lessons' pages are made from it, see lessons.rs.)
-    for e in std::fs::read_dir("web").into_iter().flatten().flatten().filter(|e| e.file_name() != "index.html") {
-        let link = Path::new(SITE).join(e.file_name());
-        if !link.is_symlink() {
-            crate::or_fail(std::os::unix::fs::symlink(Path::new("../../web").join(e.file_name()), &link), link.display());
-        }
-    }
-}
-
-/// Run native tests, build (`built`: an earlier CI step did), and run
-/// `names` on the site in the headless shell (target/chrome/).
-pub fn test(names: &[String], built: bool) {
-    run(Command::new("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
-    if !built {
-        build();
-    }
-    // (The browser, the Makefile's version: fetched the first time.)
-    run(Command::new("make").args(["--no-print-directory", "chrome"]));
-    for name in names {
-        if !crate::chrome::test(name) {
-            crate::fail(&format!("the {name} test failed"));
-        }
     }
 }
