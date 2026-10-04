@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::Closure;
 
 use crate::machine;
 use crate::host::Host;
-use crate::state::{Derived, Moment, Shared, Tab, Ui};
+use crate::state::{Derived, Moment, Shared, Ui};
 
 /// The stack at the moment shown (the pointer's over the chart, else the
 /// cursor's).
@@ -104,9 +104,9 @@ pub fn listen(ui: Ui) {
     });
 }
 
-/// The calls at the moment shown, innermost first, at the bottom of the
-/// pane: the frame chosen open, its arguments and locals as memory was
-/// then; a click on another, it chosen. Then the task running.
+/// The calls at the moment shown, at the bottom of the pane as the chart
+/// stacks them (the outermost lowest); under the frame chosen, its
+/// arguments and locals as memory was then. A click on another: it chosen.
 #[component]
 pub fn Stack() -> Element {
     let ui = use_context::<Ui>();
@@ -115,12 +115,9 @@ pub fn Stack() -> Element {
     let d = use_context::<Derived>();
     let chosen = d.frame.cloned();
     let at = d.line.cloned().map_or(0, |l| l.at);
-    let task = machine().view(|v| v.rec.tasks.get(at).map(|&t| v.task(t, at)));
-    let mut open = use_context::<Signal<BTreeSet<String>>>();
     rsx! {
         div { class: "stack",
-            div { class: "frame-list",
-                table { class: "objs",
+            table { class: "objs",
                 for (k , f) in frames.iter().cloned().enumerate() {
                     tr { class: if k == chosen { "frame on" } else { "frame" }, onclick: {
                         let id = (f.first, f.func.clone());
@@ -136,24 +133,11 @@ pub fn Stack() -> Element {
                             if let Some(s) = &f.syscall { span { class: "dim", " · {s}" } }
                         }
                     }
-                    }
-                }
-            }
-            if let Some(f) = frames.get(chosen).cloned() {
-                div { class: "frame-details",
-                    div { class: "frame-title mono", "{f.func}" }
-                    table { class: "objs",
+                    if k == chosen {
                         for o in f.args.into_iter().chain(f.locals) {
-                            Value { o: o.clone(), path: format!("{chosen}.{}", o.name), depth: 1, at }
+                            Value { o: o.clone(), path: format!("{k}.{}", o.name), depth: 1, at }
                         }
                     }
-                }
-            }
-            if let Some(t) = task {
-                div { class: "current dim", "current task: "
-                    a { class: "mono", title: "its task_struct, in Tasks (the task running: open there)",
-                        onclick: move |_| { ui.set_tab(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
-                        "{t.named()}" }
                 }
             }
         }
