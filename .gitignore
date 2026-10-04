@@ -1,5 +1,4 @@
 /target/
 /plugin/*.so
-# (Repositories of their own: git shows them, and add -A would take them.)
+# (A repository of its own: git shows it, and add -A would take it.)
 /linux/
-/.claude/worktrees/
