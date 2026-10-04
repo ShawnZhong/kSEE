@@ -254,7 +254,7 @@ pub(super) async fn lesson() -> Check {
     .await?;
     // (The next lesson.)
     let title = one("h1").map(|h| text(&h)).unwrap_or_default();
-    click(&one(".topbar button[title='the next lesson']").ok_or("no next lesson")?);
+    click(&named(".topbar button", "Next ▶").ok_or("no next lesson")?);
     wait(
         || one("h1").map(|h| text(&h)) != Some(title.clone()),
         100,

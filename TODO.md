@@ -5,9 +5,6 @@ them).
 
 ## Page
 
-- **Header**: kSEE centered; the lesson buttons at the upper left named
-  (not bare ◀ ▶); at the upper right, the build id, linking to its source
-  (the commit on GitHub).
 - **No ad-hoc labels**: a syscall entry's bar says `wasm_syscall · write`
   (chart.rs, `Bar.label`): one function's special case; the bar should say
   its function as every bar does.

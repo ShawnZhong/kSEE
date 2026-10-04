@@ -68,10 +68,24 @@ fn assets() {
     examples();
 }
 
+/// `cargo` building the page, told what it is built from (the page says it):
+/// the commit (+: with changes not committed) and where the source is,
+/// GitHub's page of the origin remote; neither without git.
+fn built(cargo: &mut Command) -> &mut Command {
+    let git = |args: &[&str]| Command::new("git").args(args).output().ok().filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    if let (Some(commit), Some(remote)) = (git(&["rev-parse", "--short=12", "HEAD"]), git(&["remote", "get-url", "origin"])) {
+        let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
+        let source = remote.trim_end_matches(".git").replacen("git@github.com:", "https://github.com/", 1);
+        cargo.env("KSEE_COMMIT", format!("{commit}{}", if dirty { "+" } else { "" })).env("KSEE_SOURCE", source);
+    }
+    cargo
+}
+
 /// pkg/: the runtime and the page, one module (the page calls the Machine).
 fn page() {
-    run(Command::new("cargo").args(["build", "--locked", "--release", "-p", "ksee-page",
-        "--target", "wasm32-unknown-unknown"]));
+    run(built(Command::new("cargo").args(["build", "--locked", "--release", "-p", "ksee-page",
+        "--target", "wasm32-unknown-unknown"])));
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
 }
 
@@ -204,8 +218,8 @@ pub fn test(names: &[String], built: bool) {
 /// target/test/site: the site, its module built with the tests.
 fn test_site() {
     // (Its own target directory: the site's module, built without them, stays as it is.)
-    run(Command::new("cargo").args(["build", "--locked", "--release", "-p", "ksee-page", "--features", "browser-tests",
-        "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));
+    run(built(Command::new("cargo").args(["build", "--locked", "--release", "-p", "ksee-page", "--features", "browser-tests",
+        "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"])));
     bindgen("target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm", "target/test/pkg");
     // (The site with the tests: the site's files, its module the one built with them.)
     let site = Path::new("target/test/site");

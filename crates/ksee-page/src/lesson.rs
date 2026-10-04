@@ -258,6 +258,11 @@ fn Theme() -> Element {
     }
 }
 
+/// The commit the page was built from (+: with changes not committed), and
+/// where its source is: `ksee build`'s.
+const COMMIT: Option<&str> = option_env!("KSEE_COMMIT");
+const SOURCE: Option<&str> = option_env!("KSEE_SOURCE");
+
 #[component]
 pub fn Header() -> Element {
     let ui = use_context::<Ui>();
@@ -269,13 +274,22 @@ pub fn Header() -> Element {
     let place = group.iter().position(|&k| k == at).unwrap_or(0) + 1;
     rsx! {
         header { class: "topbar",
+            div { class: "left",
+                button { class: if menu() { "contents on" } else { "contents" }, title: "every lesson, by chapter", onclick: move |_| menu.toggle(), "☰ Lessons" }
+                button { disabled: at == 0, title: if at > 0 { all[at - 1].title.clone() } else { String::new() },
+                    onclick: move |_| ui.open(at - 1, all[at - 1].steps.clone()), "◀ Previous" }
+                button { disabled: at + 1 >= all.len(), title: all.get(at + 1).map_or(String::new(), |e| e.title.clone()),
+                    onclick: move |_| ui.open(at + 1, all[at + 1].steps.clone()), "Next ▶" }
+                span { class: "crumb", "{all[at].group} · {place} of {group.len()}" }
+            }
             b { title: "watch the Linux kernel run", "kSEE" }
-            button { class: if menu() { "contents on" } else { "contents" }, title: "every lesson, by chapter", onclick: move |_| menu.toggle(), "☰ Lessons" }
-            button { disabled: at == 0, title: "the lesson before", onclick: move |_| ui.open(at - 1, all[at - 1].steps.clone()), "◀" }
-            button { disabled: at + 1 >= all.len(), title: "the next lesson", onclick: move |_| ui.open(at + 1, all[at + 1].steps.clone()), "▶" }
-            span { class: "crumb", "{all[at].group} · {place} of {group.len()}" }
-            span { class: "keys dim", title: "← → a line (Shift: over the calls)\n↑ ↓ the frame, the callee or the caller\nhover the timeline: that moment; click: go there\ndrag: move the timeline; wheel: move left/right, zoom up/down\nCtrl+click a name: its definition", "keys" }
-            Theme {}
+            div { class: "right",
+                if let (Some(commit), Some(source)) = (COMMIT, SOURCE) {
+                    a { class: "build", href: "{source}/tree/{commit.trim_end_matches('+')}", target: "_blank",
+                        title: "the source this page was built from: {commit} (+: with changes not committed)", "source" }
+                }
+                Theme {}
+            }
             if menu() {
                 div { class: "menuback", onclick: move |_| menu.set(false) }
                 Contents { close: move |_| menu.set(false) }

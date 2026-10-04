@@ -52,13 +52,15 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .sheet { position: fixed; inset: 0; z-index: 50; }
 
 /* The top bar, the page's own: the lessons (the contents, the one before and the next), the theme */
-.topbar { display: flex; gap: 4px; align-items: center; padding: 4px 8px 4px 12px; background: var(--panel);
-  border-bottom: 1px solid var(--line); flex: none; position: relative; }
+/* (The lessons' buttons left, kSEE in the middle, the build and the theme right.) */
+.topbar { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; padding: 4px 8px;
+  background: var(--panel); border-bottom: 1px solid var(--line); flex: none; position: relative; }
+.topbar .left, .topbar .right { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.topbar .right { justify-content: end; }
 .topbar b { font-size: 14px; }
+.topbar .build { font-size: 11px; color: var(--dim); }
 .topbar .contents.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
 .topbar .crumb { margin-left: 8px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
-.topbar .keys { margin-left: auto; font-size: 11px; cursor: help; border-bottom: 1px dotted var(--dim); }
-.topbar .theme { margin-left: 8px; }
 .topbar .menu { top: 100%; left: 0; width: min(340px, 92vw); max-height: 70dvh; }
 .menuback { position: fixed; inset: 0; z-index: 9; }
 .menu { position: absolute; z-index: 10; overflow-y: auto; background: var(--panel);
@@ -204,7 +206,11 @@ table.objs tr.later { opacity: .45; }
   .source, .panels { height: 70dvh; border-top: 1px solid var(--line); }
   .transport { flex-wrap: wrap; row-gap: 2px; }
   .transport button { padding: 4px 14px; }
-  .topbar { flex-wrap: wrap; row-gap: 2px; }
+  /* (Two rows: kSEE and the build and theme; then the lessons' buttons.) */
+  .topbar { grid-template-columns: auto 1fr; }
+  .topbar b { grid-row: 1; grid-column: 1; }
+  .topbar .right { grid-row: 1; grid-column: 2; }
+  .topbar .left { grid-row: 2; grid-column: 1 / -1; flex-wrap: wrap; }
 }
 </style>
 </head>
