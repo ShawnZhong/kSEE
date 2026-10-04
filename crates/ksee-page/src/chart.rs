@@ -157,7 +157,7 @@ fn Overview() -> Element {
                 div { class: "b", style: "left: {k as f64 * 100.0 / BUCKETS as f64}%; width: {100.0 / BUCKETS as f64 + 0.1}%; background: {task_color(pid)}" }
             }
             for s in starts { div { class: "start", style: "left: {pct(s)}%" } }
-            div { class: "win", style: "left: {pct(wa)}%; width: {pct(wb.saturating_sub(wa)).max(0.3)}%" }
+            div { class: "win", style: "left: {pct(wa)}%; width: {pct(wb + 1 - wa).max(0.3)}%" }
             if let Some(s) = at { div { class: "at", style: "left: {s * 100.0 / n as f64}%" } }
         }
     }
@@ -481,11 +481,15 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                                 ui.set_preview(None);
                                 tip.set(None);
                             }
-                            offset.set(clamped_pan((p.a, p.b), dx, width(), steps).2);
+                            // (Up and down: the rows, their distance from the bottom
+                            // kept before the redraw the pan makes restores it.)
                             if let Some(scroll) = element("timeline-scroll") {
                                 let max = scroll.scroll_height() - scroll.client_height();
-                                scroll.set_scroll_top(((p.scroll as f64 - dy).round() as i32).clamp(0, max));
+                                let top = ((p.scroll as f64 - dy).round() as i32).clamp(0, max);
+                                from_bottom.set(max - top);
+                                scroll.set_scroll_top(top);
                             }
+                            offset.set(clamped_pan((p.a, p.b), dx, width(), steps).2);
                             return;
                         }
                     }

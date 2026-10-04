@@ -117,10 +117,12 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 /* The timeline: the overview, the stack chart, the task strip, the transport */
 .history { border-bottom: 1px solid var(--line); background: var(--panel); padding: 4px 12px; flex: none; }
 .overview { position: relative; height: 18px; cursor: pointer; }
+/* (A click is the overview's: where on it, not on what it shows.) */
+.overview > * { pointer-events: none; }
 .overview .b { position: absolute; top: 3px; bottom: 3px; }
 .overview .start { position: absolute; bottom: 0; height: 4px; width: 1px; background: var(--accent); }
-.overview .win { position: absolute; top: 1px; bottom: 1px; border: 1.5px solid var(--accent); pointer-events: none; }
-.overview .at { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--fg); pointer-events: none; }
+.overview .win { position: absolute; top: 1px; bottom: 1px; border: 1.5px solid var(--accent); }
+.overview .at { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--fg); }
 .flamehead { display: flex; gap: 12px; align-items: center; font-size: 11.5px; padding: 4px 0 2px; white-space: nowrap; }
 .find { font-size: 11px; width: 12em; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--fg); }
 .find:focus { outline: none; border-color: var(--accent); }

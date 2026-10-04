@@ -124,6 +124,19 @@ pub(super) async fn lesson() -> Check {
         "hover and click on a bar",
         (&chosen, &hovered, place()),
     )?;
+    // (Then, from the bar clicked, a drag: the bars follow the pointer.)
+    let before = bar(&canvas, "vfs_read").map(|p| p.0);
+    let win0 = one(".overview .win").and_then(|w| w.get_attribute("style"));
+    pointer(&chart, "pointerdown", x, y);
+    pointer(&chart, "pointermove", x + 60.0, y);
+    sleep(200).await;
+    let during = bar(&canvas, "vfs_read").map(|p| p.0);
+    pointer(&chart, "pointerup", x + 60.0, y);
+    mouse(&chart, "click", x + 60.0, y, false);
+    sleep(300).await;
+    let win1 = one(".overview .win").and_then(|w| w.get_attribute("style"));
+    check(before.zip(during).is_some_and(|(a, b)| (b - a - 60.0).abs() < 1.0 || win0 != win1),
+          "a drag after a click", (before, during, win0, win1))?;
     // (Find: its bars lit; Enter, the cursor in it.)
     let find = one(".find").ok_or("no find box")?;
     find.dyn_ref::<HtmlInputElement>()
@@ -165,6 +178,29 @@ pub(super) async fn lesson() -> Check {
     sleep(300).await;
     let y1 = screen_y();
     check(y0.zip(y1).is_some_and(|(a, b)| (a - b).abs() < 1.0), "zoomed out, the bars stay", (y0, y1))?;
+    // (Dragged up or down: the rows scroll, if there are more than fit.)
+    let rows = one("#timeline-scroll").ok_or("no rows")?;
+    let max = rows.scroll_height() - rows.client_height();
+    let top0 = rows.scroll_top();
+    pointer(&chart, "pointerdown", mid, y);
+    pointer(&chart, "pointermove", mid, y + 40.0);
+    sleep(200).await;
+    pointer(&chart, "pointerup", mid, y + 40.0);
+    sleep(300).await;
+    check(max <= 0 || rows.scroll_top() != top0, "a drag scrolls the rows", (max, top0, rows.scroll_top()))?;
+    // (A click on the overview, wherever it lands: the window's middle there,
+    // zoomed in so that it can move.)
+    wheel(&chart, mid, y, -1600.0);
+    sleep(300).await;
+    let over = one(".overview").ok_or("no overview")?;
+    let o = over.get_bounding_client_rect();
+    let (cx, cy) = (o.left() + o.width() * 0.75, o.top() + o.height() / 2.0);
+    // (On what a click there would land on.)
+    let hit = web_sys::window().and_then(|w| w.document()).and_then(|d| d.element_from_point(cx as f32, cy as f32)).unwrap_or(over.clone());
+    mouse(&hit, "click", cx, cy, false);
+    sleep(300).await;
+    let middle = one(".overview .win").map(|w| { let r = w.get_bounding_client_rect(); (r.left() + r.width() / 2.0 - o.left()) / o.width() });
+    check(middle.is_some_and(|m| (m - 0.75).abs() < 0.05 || m > 0.75), "a click on the overview moves the window there", middle)?;
     // (Typing a call: what fits, offered; Escape, nothing changed.)
     let add = all(".program textarea").into_iter().find(|t| t.get_attribute("placeholder").is_some_and(|p| p.starts_with("add a call")))
         .ok_or("no line to add")?;
