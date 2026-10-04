@@ -193,6 +193,11 @@ impl Ui {
         self.program.set(program);
     }
 
+    /// Lesson `k`, with its own program.
+    pub fn open_lesson(self, k: usize) {
+        self.open(k, crate::examples()[k].steps.clone());
+    }
+
     pub fn commit(mut self, moment: Option<Moment>) {
         self.peek.set(None);
         self.seen.set(None);

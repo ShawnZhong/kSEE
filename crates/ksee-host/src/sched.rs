@@ -8,7 +8,7 @@
 //! The idle task's idle() suspends until an interrupt may be pending. The
 //! kernel's clock is virtual: while the page waits for the kernel (a boot,
 //! a call), idle skips it to the timer's deadline and goes on at once;
-//! else it waits for the page's input (see wake), and time stands still. So
+//! else it waits for the page's input (see interrupt), and time stands still. So
 //! a run is the same every time. All
 //! tasks share the instance's __stack_pointer: each saves it when it
 //! suspends, and has it back before it resumes.

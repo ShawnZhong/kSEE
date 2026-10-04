@@ -135,7 +135,7 @@ impl Machine {
     }
 
     /// The halt code once the kernel has halted.
-    pub fn halted(&self) -> Option<i32> {
+    pub(crate) fn halted(&self) -> Option<i32> {
         k(|k| k.halted)
     }
 
@@ -223,7 +223,7 @@ impl Machine {
     }
 
     /// The names line `line` sees (see make): a variable's, a result's.
-    pub fn names_before(&self, line: usize) -> Vec<String> {
+    pub(crate) fn names_before(&self, line: usize) -> Vec<String> {
         k(|k| k.p.names.before(line).into_iter().map(|(name, _)| name.to_string()).collect())
     }
 
@@ -246,7 +246,7 @@ impl Machine {
     }
 
     /// A program's variable (of type `ty`, an array of `count` if given, at
-    /// `addr`: see run) as it is now, as C would write it: `"hello"`,
+    /// `addr`: see make) as it is now, as C would write it: `"hello"`,
     /// `{3, 4}`, `{tv_sec = 0, tv_nsec = 30000000}`.
     pub fn show(&self, ty: u32, addr: u32, count: Option<u32>) -> String {
         tables().types.show(&Direct, addr, ty, count)
@@ -254,8 +254,8 @@ impl Machine {
 
     /// The `len` bytes at `addr`, passed as argument `k` of syscall `call`,
     /// as the records its parameter's type says they are, if they are of
-    /// variable length (Types::records: getdents64's entries); else null.
-    pub fn as_records(&self, call: &str, k: usize, addr: u32, len: u32) -> Option<String> {
+    /// variable length (Types::records: getdents64's entries).
+    pub(crate) fn as_records(&self, call: &str, k: usize, addr: u32, len: u32) -> Option<String> {
         use ksee_core::types::Kind;
         let types = &tables().types;
         let &(_, ty) = types.syscall_params(call)?.get(k)?;
@@ -265,12 +265,12 @@ impl Machine {
 
     /// The program's own runner (user/prog.c's main thread), its tid: the
     /// one the page's calls are made by unless they say another.
-    pub fn main(&self) -> Option<u32> {
+    pub(crate) fn main(&self) -> Option<u32> {
         k(|k| k.p.main)
     }
 
     /// The runners' thread ids.
-    pub fn runners(&self) -> Vec<u32> {
+    pub(crate) fn runners(&self) -> Vec<u32> {
         k(|k| k.p.runners.keys().copied().collect())
     }
 }

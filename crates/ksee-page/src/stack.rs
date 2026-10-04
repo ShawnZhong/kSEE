@@ -6,18 +6,12 @@
 use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
-use ksee_core::view::{step, Frame, Object};
+use ksee_core::view::{step, Object};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 
 use crate::machine;
-use crate::state::{Derived, Moment, Shared, Tab, Ui};
-
-/// The stack at the moment shown (the pointer's over the chart, else the
-/// cursor's).
-pub fn frames() -> Shared<Vec<Frame>> {
-    use_context::<Derived>().stack.cloned()
-}
+use crate::state::{Derived, Moment, Tab, Ui};
 
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
 /// lines, into its task's syscall after it (or before).
@@ -29,12 +23,10 @@ pub fn walk(ui: Ui, dir: isize, over: bool) {
         ui.go(j);
         return;
     }
-    let m = machine();
-    let task = m.view(|v| v.syscall(k).map(|s| s.task.addr));
-    let Some(task) = task else { return };
-    let next = m.view(|v| {
-        let all = v.syscalls();
-        let mine: Vec<usize> = (0..all.len()).filter(|&j| all[j].task.addr == task).collect();
+    let next = machine().view(|v| {
+        let all = &v.rec.syscalls;
+        let task = all.get(k)?.task;
+        let mine: Vec<usize> = (0..all.len()).filter(|&j| all[j].task == task).collect();
         let at = mine.iter().position(|&j| j == k)?;
         mine.get(at.checked_add_signed(dir)?).copied()
     });
@@ -104,8 +96,9 @@ pub fn listen(ui: Ui) {
 pub fn Stack() -> Element {
     let mut ui = use_context::<Ui>();
     (ui.snapshot)();
-    let frames = frames();
+    // (The stack at the moment shown: the pointer's over the chart, else the cursor's.)
     let d = use_context::<Derived>();
+    let frames = d.stack.cloned();
     let chosen = d.frame.cloned();
     let at = d.line.cloned().map_or(0, |l| l.at);
     let task = machine().view(|v| v.rec.tasks.get(at).map(|&t| v.task(t, at)));
@@ -170,7 +163,7 @@ fn origin(addr: u32, len: u32, at: usize) -> String {
             return "not written in the recording".into();
         }
         let place = |w: &ksee_core::view::Write| w.at.as_ref().map_or("?".into(), |l| format!("{} {}:{}", l.func, l.file, l.line));
-        let mut out = vec![format!("written at {}, by {}({}); was {}", place(&way[0]), way[0].task.comm.clone().unwrap_or_default(), way[0].task.pid.unwrap_or(0), way[0].old)];
+        let mut out = vec![format!("written at {}, by {}; was {}", place(&way[0]), way[0].task.named(), way[0].old)];
         out.extend(way.iter().skip(1).map(|w| format!("  ← copied from {:#x}, written at {}", w.addr, place(w))));
         if let Some(from) = way.last().and_then(|w| w.from) {
             out.push(format!("  ← copied from {from:#x}, not written in the recording"));
@@ -188,12 +181,12 @@ pub fn Value(o: Object, path: String, depth: usize, at: usize) -> Element {
     let is_open = open.read().contains(&path);
     let can = o.children.is_some() || o.open.is_some();
     let kids = if is_open {
-        o.children.clone().or_else(|| o.open.and_then(|t| machine().at_moment(at, |v, mem| v.tables.types.object(mem, &o.name, t.addr, t.ty, 1).children)))
+        machine().at_moment(at, |v, mem| o.members(&v.tables.types, mem))
     } else {
         None
     };
     let p = path.clone();
-    let value = o.value.clone().unwrap_or_else(|| "{…}".into());
+    let value = o.shown();
     let (addr, size) = (o.addr, o.size.clamp(1, 8));
     rsx! {
         // (One that opens: a click anywhere on its row.)

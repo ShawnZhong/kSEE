@@ -4,9 +4,10 @@
 //! stack, the outermost at the bottom; a bar a call (or code inlined into
 //! one) over the columns it is on, colored by the kernel's part it is in,
 //! the calls at the cursor darker; the task strip under it; then the
-//! transport. The wheel zooms vertically and pans horizontally; a drag pans;
-//! everywhere but the cursor's line, and what the call was; click it: the
-//! cursor there. Find a function by any part of its name.
+//! transport. The wheel zooms vertically and pans horizontally; a drag pans.
+//! Hovered, a moment is shown everywhere but the source's cursor line, and a
+//! bar says what its call was; clicked, the cursor goes there. Find a
+//! function by any part of its name.
 
 use dioxus::prelude::*;
 use ksee_core::arch::AREAS;
@@ -25,18 +26,6 @@ const ROW: f64 = 15.0;
 const ZOOM: f64 = 0.002;
 /// The task lane fixed under the stack rows (px).
 const TASK_LANE: f64 = 12.0;
-
-/// The chart window made by the page's wheel input.
-pub(crate) fn wheel_view(
-    window: (usize, usize),
-    x: f64,
-    width: f64,
-    dx: f64,
-    dy: f64,
-    shift: bool,
-) -> (f64, usize) {
-    wheel_window(window, x, width, dx, dy, shift, (dy * ZOOM).exp())
-}
 
 /// A task's hue, by its pid (the strip, the overview, the program's lanes).
 pub fn hue(pid: i32) -> i32 {
@@ -448,7 +437,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     // (The wheel: up and down zoom around the pointer's step, in
     // proportion to how far it turned; left and right (or Shift) pan.)
     let wheel = move |x: f64, dx: f64, dy: f64, shift: bool| {
-        let (start, span) = wheel_view((d.window)(), x, width(), dx, dy, shift);
+        let (start, span) = wheel_window((d.window)(), x, width(), dx, dy, shift, (dy * ZOOM).exp());
         ui.view(start, span);
     };
     let labels: Vec<String> = chart.bars.iter().map(|bar| bar.name.clone()).collect();
@@ -595,7 +584,7 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
             .map(|f| f.args.clone())
             .unwrap_or_default()
             .into_iter()
-            .map(|a| (a.name, a.value.unwrap_or_else(|| "{…}".into())))
+            .map(|a| (a.name.clone(), a.shown()))
             .collect();
         let ret = v
             .rec
@@ -608,30 +597,13 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
         let ret = ret
             .map(|r| format!(" = {}", v.tables.types.result(r)))
             .unwrap_or_default();
-        match v
-            .rec
-            .syscalls
-            .binary_search_by_key(&first, |s| s.first)
-            .ok()
-            .map(|k| &v.rec.syscalls[k])
-        {
+        match v.rec.syscalls.binary_search_by_key(&first, |s| s.first).ok().and_then(|k| v.syscall(k)) {
             Some(s) => {
-                let task = v.task(s.task, first);
-                let ret = s
-                    .ret
-                    .map(|r| v.tables.types.result(r as i64))
-                    .unwrap_or_else(|| "…".into());
+                let ret = s.ret.map_or_else(|| "…".into(), |r| v.tables.types.result(r as i64));
                 let shown: Vec<String> = args.iter().map(|(_, x)| x.clone()).collect();
                 vec![
-                    (
-                        format!(
-                            "{}({}) = {ret}",
-                            v.tables.types.syscall_name(s.nr),
-                            shown.join(", ")
-                        ),
-                        "",
-                    ),
-                    (format!("a syscall by {}", task.named()), "dim"),
+                    (format!("{}({}) = {ret}", s.name, shown.join(", ")), ""),
+                    (format!("a syscall by {}", s.task.named()), "dim"),
                 ]
             }
             None => std::iter::once((format!("{name}{ret}"), ""))

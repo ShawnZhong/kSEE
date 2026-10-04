@@ -120,7 +120,7 @@ fn value_of(e: &str, f: &Frame, at: usize) -> Option<Object> {
     m.at_moment(at, |v, mem| {
         let mut o = f.args.iter().chain(&f.locals).find(|o| o.name == path[0]).cloned()
             .or_else(|| v.tables.types.globals.get(path[0]).map(|&(a, ty)| v.tables.types.object(mem, path[0], a, ty, 1)))?;
-        let kids = |o: &Object| o.children.clone().or_else(|| o.open.and_then(|t| v.tables.types.object(mem, &o.name, t.addr, t.ty, 1).children));
+        let kids = |o: &Object| o.members(&v.tables.types, mem);
         for field in &path[1..] {
             o = kids(&o)?.into_iter().find(|c| c.name == *field)?;
         }
@@ -141,7 +141,7 @@ struct Tip {
 /// What the tip over expression `e` says: its value, then its members'
 /// (the first 16).
 fn said(e: &str, o: &Object) -> Vec<String> {
-    let value = |o: &Object| o.value.clone().unwrap_or_else(|| "{…}".into());
+    let value = |o: &Object| o.shown();
     let kids = o.children.as_deref().unwrap_or_default();
     std::iter::once(format!("{e} = {}", value(o)))
         .chain(kids.iter().take(16).map(|c| format!("{} = {}", c.name, value(c))))
@@ -217,7 +217,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
             .filter(|c| c.at <= l.at).map(|c| format!("{} → {}", c.func, machine().tables().types.result(c.value))));
         frame.args.iter().chain(&frame.locals)
             .filter(|o| words.contains(&o.name.as_str()) && o.none != Some(ksee_core::view::Missing::NotRecorded))
-            .map(|o| format!("{} = {}", o.name, o.value.clone().unwrap_or_else(|| "{…}".into())))
+            .map(|o| format!("{} = {}", o.name, o.shown()))
             .chain(shown.filter(|_| leaf).map(|l| l.tests).unwrap_or_default()).chain(returned.filter(|_| leaf)).collect()
     } else { Vec::new() };
     let names: Vec<String> = frame.args.iter().chain(&frame.locals).map(|o| o.name.clone()).collect();

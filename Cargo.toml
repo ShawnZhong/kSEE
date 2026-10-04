@@ -12,6 +12,3 @@ publish = false
 opt-level = "s"
 lto = true
 panic = "abort"
-
-[profile.dev]
-panic = "abort"

@@ -27,7 +27,7 @@ pub enum Record {
     Task { task: u32 },
     /// A comparison that decides a branch (or a select): `lhs` with `rhs`
     /// (`wide`: 64 bits, else 32), by `pred` (an LLVM icmp predicate, from
-    /// eq: see Pred), on `line` (as a Store's).
+    /// eq: see PREDICATES), on `line` (as a Store's).
     Compare { lhs: u64, rhs: u64, wide: bool, pred: u8, line: u32 },
     /// Variable `var` of the function running (Tables::vars: a named one
     /// kept in a wasm local) takes `value` here, on `line` (as a Store's).

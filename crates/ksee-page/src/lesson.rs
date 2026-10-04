@@ -151,7 +151,7 @@ fn hash() -> (Option<String>, Option<String>) {
     (ex, p)
 }
 
-/// The lesson and program the URL says, at first.
+/// A program as the URL has it: JSON.
 fn program_json(program: &[Step]) -> Option<String> {
     let value = serde_wasm_bindgen::to_value(program).ok()?;
     js_sys::JSON::stringify(&value).ok()?.as_string()
@@ -161,6 +161,7 @@ fn program_from_json(text: &str) -> Option<Vec<Step>> {
     serde_wasm_bindgen::from_value(js_sys::JSON::parse(text).ok()?).ok()
 }
 
+/// The lesson and program the URL says, at first.
 pub fn from_url(ui: Ui) {
     let (ex, p) = hash();
     let all = examples();
@@ -253,10 +254,10 @@ fn Turn() -> Element {
     rsx! {
         nav { class: "turn",
             if let Some(e) = at.checked_sub(1).map(|k| &all[k]) {
-                a { onclick: move |_| ui.open(at - 1, all[at - 1].steps.clone()), span { class: "dim", "◀ Previous" } "{e.title}" }
+                a { onclick: move |_| ui.open_lesson(at - 1), span { class: "dim", "◀ Previous" } "{e.title}" }
             }
             if let Some(e) = all.get(at + 1) {
-                a { class: "next", onclick: move |_| ui.open(at + 1, all[at + 1].steps.clone()), span { class: "dim", "Next ▶" } "{e.title}" }
+                a { class: "next", onclick: move |_| ui.open_lesson(at + 1), span { class: "dim", "Next ▶" } "{e.title}" }
             }
         }
     }
@@ -280,7 +281,7 @@ fn Contents(close: EventHandler<()>) -> Element {
                 div { class: "chapter", "{g}" }
                 for k in ks {
                     a { class: if k == (ui.lesson)() { "item on" } else { "item" },
-                        onclick: move |_| { ui.open(k, all[k].steps.clone()); close.call(()); },
+                        onclick: move |_| { ui.open_lesson(k); close.call(()); },
                         "{all[k].title}" }
                 }
             }
@@ -330,7 +331,7 @@ pub fn Lesson() -> Element {
         } }
         if !mine { p { class: "explain dim", "A try, not the lesson's own program." } }
         div { class: "ptitle dim", "Program"
-            if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| ui.open(at, all[at].steps.clone()), "↺ reset" } }
+            if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| ui.open_lesson(at), "↺ reset" } }
         }
         div { class: "program",
             if many {

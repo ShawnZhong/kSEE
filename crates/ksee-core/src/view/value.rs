@@ -54,6 +54,17 @@ impl Missing {
 }
 
 impl Object {
+    /// Its value as the page shows it: `{…}` for one that has members.
+    pub fn shown(&self) -> String {
+        self.value.clone().unwrap_or_else(|| "{…}".into())
+    }
+
+    /// Its members (or what it points to, read from `mem` as `types` lay
+    /// it out), if it has any.
+    pub fn members(&self, types: &crate::types::Types, mem: &dyn crate::Memory) -> Option<Vec<Object>> {
+        self.children.clone().or_else(|| self.open.and_then(|t| types.object(mem, &self.name, t.addr, t.ty, 1).children))
+    }
+
     /// Without a value, for `why`.
     pub(crate) fn missing(self, why: Missing) -> Object {
         Object { value: Some(why.text().into()), none: Some(why), children: None, open: None, ..self }

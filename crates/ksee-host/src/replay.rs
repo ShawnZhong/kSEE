@@ -24,7 +24,7 @@ impl Machine {
     }
 
     /// How many records the last snapshot holds.
-    pub fn records(&self) -> usize {
+    pub(crate) fn records(&self) -> usize {
         self.rec.borrow().len()
     }
 
