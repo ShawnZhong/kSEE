@@ -1,6 +1,6 @@
 //! The ksee command (./ksee.sh runs it, in the kSEE tree):
 //!
-//!   ksee [--port=N]          build, then serve the page
+//!   ksee                     build, then serve the page (as serve)
 //!   ksee build               build the kernel, runtime and page (build.rs)
 //!   ksee test [--built] [--ui | NAME ...]
 //!                            build, then run named Chromium tests; --built
@@ -16,30 +16,26 @@ mod deploy;
 mod pack;
 mod serve;
 
+use std::fmt::Display;
 use std::path::Path;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: ksee [--port=N | build | test [--built] [--ui | NAME ...] | deploy | serve [--port=N] | patch]";
+const USAGE: &str = "usage: ksee [build | test [--built] [--ui | NAME ...] | deploy | serve [--port=N] | patch]";
 
 #[derive(Debug, Eq, PartialEq)]
 enum Command {
-    BuildAndServe { port: u16 },
     Build,
     Test { built: bool, names: Vec<String> },
     Deploy,
     Patch,
-    Serve { port: u16 },
+    /// (`build`: build first, as plain `ksee` does.)
+    Serve { build: bool, port: u16 },
 }
 
 fn parse_args(args: &[&str]) -> Result<Command, String> {
     let Some((command, options)) = args.split_first() else {
-        return Ok(Command::BuildAndServe { port: 8000 });
+        return Ok(Command::Serve { build: true, port: 8000 });
     };
-    if let [option] = args {
-        if option.starts_with("--port=") {
-            return parse_port(option).map(|port| Command::BuildAndServe { port });
-        }
-    }
     match *command {
         "build" | "deploy" | "patch" if !options.is_empty() => {
             Err(format!("{command} takes no options or arguments"))
@@ -62,8 +58,8 @@ fn parse_args(args: &[&str]) -> Result<Command, String> {
             Ok(Command::Test { built, names })
         }
         "serve" => match options {
-            [] => Ok(Command::Serve { port: 8000 }),
-            [option] => parse_port(option).map(|port| Command::Serve { port }),
+            [] => Ok(Command::Serve { build: false, port: 8000 }),
+            [option] => parse_port(option).map(|port| Command::Serve { build: false, port }),
             _ => Err("serve accepts only one optional --port=N".into()),
         },
         _ if command.starts_with('-') => Err(format!("unknown option: {command}")),
@@ -74,20 +70,43 @@ fn parse_args(args: &[&str]) -> Result<Command, String> {
 fn parse_port(option: &str) -> Result<u16, String> {
     let value = option.strip_prefix("--port=")
         .ok_or_else(|| "expected --port=N".to_string())?;
-    let port = value.parse::<u16>().map_err(|_| format!("invalid port: {value}"))?;
-    if port == 0 {
-        return Err("invalid port: 0".into());
-    }
-    Ok(port)
+    value.parse::<u16>().map_err(|_| format!("invalid port: {value}"))
 }
 
 fn read(p: &Path) -> Vec<u8> {
-    std::fs::read(p).unwrap_or_else(|e| fail(&format!("{}: {e}", p.display())))
+    or_fail(std::fs::read(p), p.display())
+}
+
+/// `r`'s value, or a failure: `what` and its error.
+fn or_fail<T, E: Display>(r: Result<T, E>, what: impl Display) -> T {
+    r.unwrap_or_else(|e| fail(&format!("{what}: {e}")))
 }
 
 fn fail(msg: &str) -> ! {
     eprintln!("ksee: {msg}");
     std::process::exit(1)
+}
+
+/// A test's scratch dir, removed on drop (even on panic).
+#[cfg(test)]
+struct Scratch(std::path::PathBuf);
+
+#[cfg(test)]
+impl Scratch {
+    fn new(name: &str) -> Scratch {
+        let dir = std::env::temp_dir().join(format!("ksee-{name}-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |t| t.subsec_nanos())));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        Scratch(dir)
+    }
+}
+
+#[cfg(test)]
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 fn main() -> ExitCode {
@@ -101,16 +120,15 @@ fn main() -> ExitCode {
         }
     };
     match command {
-        Command::BuildAndServe { port } => {
-            build::build();
-            serve::serve(Path::new(build::SITE), port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
-        }
         Command::Build => build::build(),
         Command::Test { built, names } => build::test(&names, built),
         Command::Deploy => deploy::deploy(),
         Command::Patch => build::patch(),
-        Command::Serve { port } => {
-            serve::serve(Path::new(build::SITE), port).unwrap_or_else(|e| fail(&format!("serve: {e}")));
+        Command::Serve { build: first, port } => {
+            if first {
+                build::build();
+            }
+            or_fail(serve::serve(Path::new(build::SITE), port), "serve");
         }
     }
     ExitCode::SUCCESS
@@ -126,8 +144,7 @@ mod tests {
 
     #[test]
     fn parses_commands_and_their_options() {
-        assert_eq!(parse(&[]), Command::BuildAndServe { port: 8000 });
-        assert_eq!(parse(&["--port=9000"]), Command::BuildAndServe { port: 9000 });
+        assert_eq!(parse(&[]), Command::Serve { build: true, port: 8000 });
         assert_eq!(parse(&["build"]), Command::Build);
         assert_eq!(parse(&["test"]), Command::Test { built: false, names: vec!["kernel".into()] });
         assert_eq!(parse(&["test", "lesson"]), Command::Test { built: false, names: vec!["lesson".into()] });
@@ -136,13 +153,14 @@ mod tests {
         assert_eq!(parse(&["test", "--built", "--ui"]), Command::Test { built: true, names: chrome::TESTS.iter().map(|test| test.0.into()).collect() });
         assert_eq!(parse(&["deploy"]), Command::Deploy);
         assert_eq!(parse(&["patch"]), Command::Patch);
-        assert_eq!(parse(&["serve"]), Command::Serve { port: 8000 });
-        assert_eq!(parse(&["serve", "--port=9000"]), Command::Serve { port: 9000 });
+        assert_eq!(parse(&["serve"]), Command::Serve { build: false, port: 8000 });
+        assert_eq!(parse(&["serve", "--port=9000"]), Command::Serve { build: false, port: 9000 });
+        assert_eq!(parse(&["serve", "--port=0"]), Command::Serve { build: false, port: 0 });
     }
 
     #[test]
     fn rejects_invalid_ports() {
-        for port in ["", "no", "0", "65536"] {
+        for port in ["", "no", "65536"] {
             assert!(parse_args(&["serve", &format!("--port={port}")]).is_err());
         }
         assert!(parse_args(&["serve", "--port", "9000"]).is_err());
@@ -153,6 +171,7 @@ mod tests {
     fn rejects_unknown_misplaced_and_extra_arguments() {
         for args in [
             &["--unknown"][..],
+            &["--port=9000"][..],
             &["unknown"][..],
             &["build", "--ui"][..],
             &["deploy", "extra"][..],

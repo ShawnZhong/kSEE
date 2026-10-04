@@ -52,17 +52,16 @@ fn line(cmd: &Command) -> String {
 /// Runs `cmd`, said first, its output shown.
 pub fn run(cmd: &mut Command) {
     eprintln!("+ {}", line(cmd));
-    let status = cmd.status().unwrap_or_else(|e| crate::fail(&format!("{}: {e}", line(cmd))));
+    let status = crate::or_fail(cmd.status(), line(cmd));
     if !status.success() {
         crate::fail(&format!("{} failed: {status}", line(cmd)));
     }
 }
 
 /// Runs `cmd`, said first, and returns its stdout; stderr remains visible.
-fn stdout(cmd: &mut Command) -> Vec<u8> {
+pub(crate) fn stdout(cmd: &mut Command) -> Vec<u8> {
     eprintln!("+ {}", line(cmd));
-    let out = cmd.stderr(std::process::Stdio::inherit()).output()
-        .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", line(cmd))));
+    let out = crate::or_fail(cmd.stderr(std::process::Stdio::inherit()).output(), line(cmd));
     if !out.status.success() {
         crate::fail(&format!("{} failed: {}", line(cmd), out.status));
     }
@@ -100,7 +99,7 @@ fn trace_plugin() -> (String, std::path::PathBuf) {
     }
     // A stable source hash in the flags makes kbuild rebuild only when the
     // instrumentation changes, not when an equivalent shared object is relinked.
-    let id = format!("{:016x}", fnv64(&std::fs::read("plugin/ksee-trace.cpp").unwrap_or_default()));
+    let id = format!("{:08x}", ksee_core::tables::Tables::id(&String::from_utf8_lossy(&crate::read(Path::new("plugin/ksee-trace.cpp")))));
     let path = Path::new("plugin/ksee-trace.so").canonicalize().unwrap();
     (id, path)
 }
@@ -180,7 +179,7 @@ fn initramfs() {
     let dir = "target/initramfs";
     let cpio_out = format!("{dir}/initramfs.cpio");
     if stale(&cpio_out, &inputs) {
-        std::fs::create_dir_all(dir).unwrap_or_else(|e| crate::fail(&format!("{dir}: {e}")));
+        crate::or_fail(std::fs::create_dir_all(dir), dir);
         for p in programs {
             run(cmd("clang")
                 // (Position-independent, in the kernel's memory: see binfmt_wasm.c.)
@@ -199,16 +198,14 @@ fn initramfs() {
         let _ = std::fs::remove_dir_all(&files);
         for (path, text) in [("note.txt", "hello from the disk\n"), ("dir/a.txt", "a\n")] {
             let p = Path::new(&files).join(path);
-            std::fs::create_dir_all(p.parent().unwrap()).and_then(|_| std::fs::write(&p, text))
-                .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", p.display())));
+            crate::or_fail(std::fs::create_dir_all(p.parent().unwrap()).and_then(|_| std::fs::write(&p, text)), p.display());
         }
         // (Initialized in full: no background work after the mount, ext4lazyinit's.)
         run(cmd("mkfs.ext4").args(["-F", "-b", "1024", "-L", "ksee", "-N", "32", "-d", &files,
                                             "-E", "lazy_itable_init=0,lazy_journal_init=0", &disk, "2M"]));
         // The archive: the programs, a note, and the disk.
         eprintln!("+ (cpio) -> {cpio_out}");
-        std::fs::write(&cpio_out, cpio(Path::new(dir)))
-            .unwrap_or_else(|e| crate::fail(&format!("{cpio_out}: {e}")));
+        crate::or_fail(std::fs::write(&cpio_out, cpio(Path::new(dir))), &cpio_out);
     }
     let compressed = format!("{SITE}/initramfs.cpio.gz");
     if stale(&compressed, &[&cpio_out]) {
@@ -228,7 +225,7 @@ const LINUX_COMMIT: &str = "f42acb3678424d1e08f6ed27c0d8ba8a125e14d6";
 fn linux_tree() {
     if !Path::new("linux/Makefile").exists() {
         eprintln!("+ (fetch) {LINUX_TREE} {LINUX_TAG} -> linux/");
-        std::fs::create_dir_all("linux").unwrap_or_else(|e| crate::fail(&format!("linux/: {e}")));
+        crate::or_fail(std::fs::create_dir_all("linux"), "linux/");
         git(&["init"]);
         git(&["fetch", "--depth=1", LINUX_TREE, "tag", LINUX_TAG]);
         let commit = git(&["rev-parse", &format!("{LINUX_TAG}^{{commit}}")]);
@@ -252,7 +249,7 @@ pub fn patch() {
         return;
     }
     eprintln!("+ (patch) linux -> linux.patch");
-    std::fs::write("linux.patch", &diff).unwrap_or_else(|e| crate::fail(&format!("linux.patch: {e}")));
+    crate::or_fail(std::fs::write("linux.patch", &diff), "linux.patch");
 }
 
 fn git(args: &[&str]) -> Vec<u8> {
@@ -271,7 +268,7 @@ fn bindgen(wasm: &str, out: &str) {
 }
 
 fn gzip(from: &str, to: &str) {
-    let out = std::fs::File::create(to).unwrap_or_else(|e| crate::fail(&format!("{to}: {e}")));
+    let out = crate::or_fail(std::fs::File::create(to), to);
     run(cmd("gzip").args(["-9nc", from]).stdout(out));
 }
 
@@ -279,8 +276,7 @@ fn gzip(from: &str, to: &str) {
 /// opens it before init; the kernel's own initramfs is empty), the
 /// programs, a note, and the disk image, with their modes; all times are 0.
 fn cpio(dir: &Path) -> Vec<u8> {
-    let file = |name: &str| std::fs::read(dir.join(name))
-        .unwrap_or_else(|e| crate::fail(&format!("{}: {e}", dir.join(name).display())));
+    let file = |name: &str| crate::read(&dir.join(name));
     // (Archive path, mode, device (major, minor), data; a directory's data is empty.)
     let entries = [
         ("/dev", 0o040755, (0, 0), Vec::new()),
@@ -352,26 +348,23 @@ mod tests {
 
     #[test]
     fn cpio_round_trip() {
-        let dir = std::env::temp_dir().join(format!("ksee-cpio-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = crate::Scratch::new("cpio");
+        let dir = &scratch.0;
         std::fs::write(dir.join("init.wasm"), b"\0asm").unwrap();
         std::fs::write(dir.join("prog.wasm"), b"\0asm").unwrap();
         std::fs::write(dir.join("disk.img"), b"disk").unwrap();
-        let entries = entries(&cpio(&dir));
+        let entries = entries(&cpio(dir));
         assert_eq!(entries.iter().map(|e| (e.0.as_str(), e.1)).collect::<Vec<_>>(),
             [("/dev", 0o040755), ("/dev/console", 0o020600), ("/init", 0o100755), ("/note.txt", 0o100644), ("/bin", 0o040755),
              ("/bin/prog", 0o100755), ("/mnt", 0o040755), ("/disk.img", 0o100644), ("TRAILER!!!", 0)]);
         assert_eq!(entries[2].2.as_slice(), b"\0asm");
         assert_eq!(entries[3].2.as_slice(), b"hello from memory\n");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn stale_outputs_are_detected() {
-        let dir = std::env::temp_dir().join(format!("ksee-stale-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = crate::Scratch::new("stale");
+        let dir = &scratch.0;
         let input = dir.join("input");
         let first = dir.join("first");
         let second = dir.join("second");
@@ -390,7 +383,6 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&first, b"new output").unwrap();
         assert!(!stale(&first_s, &[&input_s]));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
@@ -416,15 +408,14 @@ fn examples() {
         format!("  {{ \"name\": \"{name}\", \"group\": \"{group}\", {}", text.trim().strip_prefix('{').unwrap_or("}").trim_start())
     })).collect();
     let out = format!("{SITE}/examples.json");
-    std::fs::write(&out, format!("[\n{}\n]\n", index.join(",\n")))
-        .unwrap_or_else(|e| crate::fail(&format!("{out}: {e}")));
+    crate::or_fail(std::fs::write(&out, format!("[\n{}\n]\n", index.join(",\n"))), &out);
 }
 
 /// Links in the site to web/'s files (so an edit there needs no build), and
 /// none to files no longer there.
 fn site() {
     eprintln!("+ (site) web/* -> {SITE}/");
-    std::fs::create_dir_all(SITE).unwrap_or_else(|e| crate::fail(&format!("{SITE}: {e}")));
+    crate::or_fail(std::fs::create_dir_all(SITE), SITE);
     for e in std::fs::read_dir(SITE).into_iter().flatten().flatten() {
         if e.path().is_symlink() && !e.path().exists() {
             let _ = std::fs::remove_file(e.path());
@@ -433,8 +424,7 @@ fn site() {
     for e in std::fs::read_dir("web").into_iter().flatten().flatten() {
         let link = Path::new(SITE).join(e.file_name());
         if !link.is_symlink() {
-            std::os::unix::fs::symlink(Path::new("../../web").join(e.file_name()), &link)
-                .unwrap_or_else(|err| crate::fail(&format!("{}: {err}", link.display())));
+            crate::or_fail(std::os::unix::fs::symlink(Path::new("../../web").join(e.file_name()), &link), link.display());
         }
     }
 }
@@ -464,14 +454,10 @@ fn test_site() {
     // (The site with the tests: the site's files, its module the one built with them.)
     let site = Path::new("target/test/site");
     let _ = std::fs::remove_dir_all(site);
-    std::fs::create_dir_all(site).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", site.display())));
+    crate::or_fail(std::fs::create_dir_all(site), site.display());
     for e in std::fs::read_dir(SITE).into_iter().flatten().flatten() {
         let name = e.file_name();
         let from = if name == "pkg" { Path::new("../pkg").to_path_buf() } else { Path::new("../../site").join(&name) };
-        std::os::unix::fs::symlink(from, site.join(&name)).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", site.display())));
+        crate::or_fail(std::os::unix::fs::symlink(from, site.join(&name)), site.display());
     }
-}
-
-fn fnv64(data: &[u8]) -> u64 {
-    data.iter().fold(0xcbf29ce484222325, |h, &b| (h ^ b as u64).wrapping_mul(0x100000001b3))
 }

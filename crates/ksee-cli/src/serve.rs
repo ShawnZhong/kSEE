@@ -10,20 +10,13 @@ use std::sync::mpsc::Sender;
 pub fn serve(root: &Path, port: u16) -> std::io::Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", port))?;
     eprintln!("serving {} at http://127.0.0.1:{}/", root.display(), listener.local_addr()?.port());
-    serve_on(listener, root, None);
+    serve_on(listener, root, std::sync::mpsc::channel().0);
     Ok(())
 }
 
-/// A test's outcome, as its page POSTed it to /result: whether it passed,
-/// and what it said.
-pub struct Outcome {
-    pub passed: bool,
-    pub log: String,
-}
-
 /// Serve `root` on `listener`, for ever; each POST to /result handed to
-/// `outcomes`, if one is given.
-pub fn serve_on(listener: TcpListener, root: &Path, outcomes: Option<Sender<Outcome>>) {
+/// `outcomes`: whether the test passed, and what it said.
+pub fn serve_on(listener: TcpListener, root: &Path, outcomes: Sender<(bool, String)>) {
     for stream in listener.incoming().flatten() {
         let (root, outcomes) = (root.to_path_buf(), outcomes.clone());
         std::thread::spawn(move || {
@@ -32,7 +25,7 @@ pub fn serve_on(listener: TcpListener, root: &Path, outcomes: Option<Sender<Outc
     }
 }
 
-fn handle(root: &Path, mut stream: TcpStream, outcomes: &Option<Sender<Outcome>>) -> std::io::Result<()> {
+fn handle(root: &Path, mut stream: TcpStream, outcomes: &Sender<(bool, String)>) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut request = String::new();
     reader.read_line(&mut request)?;
@@ -42,7 +35,7 @@ fn handle(root: &Path, mut stream: TcpStream, outcomes: &Option<Sender<Outcome>>
         if reader.read_line(&mut line)? <= 2 {
             break;
         }
-        if let Some(n) = line.strip_prefix("Content-Length:").or(line.strip_prefix("content-length:")) {
+        if let Some((name, n)) = line.split_once(':') && name.eq_ignore_ascii_case("content-length") {
             length = n.trim().parse().unwrap_or(0);
         }
     }
@@ -54,9 +47,7 @@ fn handle(root: &Path, mut stream: TcpStream, outcomes: &Option<Sender<Outcome>>
         reader.read_exact(&mut body)?;
         let body = String::from_utf8_lossy(&body);
         let (first, log) = body.split_once('\n').unwrap_or((body.as_ref(), ""));
-        if let Some(outcomes) = outcomes {
-            let _ = outcomes.send(Outcome { passed: first.trim() == "ok", log: log.to_string() });
-        }
+        let _ = outcomes.send((first.trim() == "ok", log.to_string()));
         return reply(&mut stream, "200 OK", "text/plain", b"ok\n");
     }
     let (status, body, kind) = match resolve(root, path).and_then(|p| Some((std::fs::read(&p).ok()?, p))) {
@@ -90,53 +81,31 @@ fn resolve(root: &Path, url: &str) -> Option<PathBuf> {
     p.is_file().then_some(p)
 }
 
+/// The types the browser checks: the page, its module scripts, and the
+/// runtime's module (instantiateStreaming). (The page reads the rest as
+/// bytes or text, whatever the type.)
 fn mime(p: &Path) -> &'static str {
     match p.extension().and_then(|e| e.to_str()) {
         Some("html") => "text/html; charset=utf-8",
-        Some("js" | "mjs") => "text/javascript",
-        Some("json") => "application/json",
+        Some("js") => "text/javascript",
         Some("wasm") => "application/wasm",
-        Some("css") => "text/css",
-        Some("gz") => "application/gzip",
-        _ => match p.file_name().and_then(|n| n.to_str()) {
-            Some("vmlinux") => "application/wasm",
-            _ => "application/octet-stream",
-        },
+        _ => "application/octet-stream",
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Scratch;
     use std::io::Write;
-
-    /// A scratch dir, removed on drop (even on panic).
-    struct Scratch(PathBuf);
-    impl Scratch {
-        fn new(name: &str) -> Scratch {
-            let dir = std::env::temp_dir().join(format!("ksee-{name}-{}-{}", std::process::id(),
-                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |t| t.subsec_nanos())));
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir).unwrap();
-            Scratch(dir)
-        }
-    }
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
 
     #[test]
     fn mime_kinds() {
         let mime_of = |name: &str| mime(Path::new(name));
         assert_eq!(mime_of("index.html"), "text/html; charset=utf-8");
         assert_eq!(mime_of("ksee.js"), "text/javascript");
-        assert_eq!(mime_of("examples.json"), "application/json");
         assert_eq!(mime_of("ksee_page_bg.wasm"), "application/wasm");
-        assert_eq!(mime_of("vmlinux"), "application/wasm");
-        assert_eq!(mime_of("vmlinux.gz"), "application/gzip");
-        assert_eq!(mime_of("note.txt"), "application/octet-stream");
+        assert_eq!(mime_of("vmlinux.gz"), "application/octet-stream");
     }
 
     #[test]
@@ -159,12 +128,11 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let (tx, rx) = std::sync::mpsc::channel();
         let site = root.0.clone();
-        std::thread::spawn(move || serve_on(listener, &site, Some(tx)));
+        std::thread::spawn(move || serve_on(listener, &site, tx));
         for (body, passed) in [("ok\nall good\n", true), ("fail\nwhat broke\n", false)] {
             let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
             write!(stream, "POST /result HTTP/1.1\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
-            let outcome = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
-            assert_eq!((outcome.passed, outcome.log), (passed, body.split_once('\n').unwrap().1.into()));
+            assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), (passed, body.split_once('\n').unwrap().1.into()));
         }
     }
 }

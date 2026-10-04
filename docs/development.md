@@ -179,8 +179,7 @@ CHROME=/absolute/path/to/chromium ./ksee.sh test --ui
 ```
 
 The CLI serves the test site on a temporary local port. Each browser suite
-posts `ok` or `fail` and its log back to that server. Kernel tests have a longer
-timeout than UI suites.
+posts `ok` or `fail` and its log back to that server, within five minutes.
 
 For a focused native run:
 

@@ -11,24 +11,23 @@ use ksee_core::{module, tables::Tables};
 /// Write the packed image and its referenced sources to their final paths.
 pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
-    let mut types = dwarf::types(&image).unwrap_or_else(|e| crate::fail(&format!("DWARF: {e}")));
-    let t = ksee_core::types::Types::parse(&types);
+    let mut types = crate::or_fail(dwarf::types(&image), "DWARF");
+    let probes = String::from_utf8_lossy(&module::custom_section(&image, "ksee.probes")).into_owned();
+    let tables = Tables::parse(&probes, &types);
     for (name, value) in constants(&kernel.join("usr/include")) {
         types += &format!("C\t{name}\t{value}\n");
     }
-    let calls = syscalls(&image, &t);
+    let calls = syscalls(&image, &tables.types);
     for (nr, name) in &calls {
         types += &format!("S\t{nr}\t{name}\n");
     }
     let packed = rewrite(&image, &types);
     if let Some(parent) = image_out.parent() {
-        std::fs::create_dir_all(parent).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", parent.display())));
+        crate::or_fail(std::fs::create_dir_all(parent), parent.display());
     }
-    std::fs::write(image_out, &packed).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", image_out.display())));
+    crate::or_fail(std::fs::write(image_out, &packed), image_out.display());
 
     // The sources, for the page's source view.
-    let probes = String::from_utf8_lossy(&module::custom_section(&image, "ksee.probes")).into_owned();
-    let tables = Tables::parse(&probes, &types);
     // (The functions the trace has whose parameters DWARF gave, by id: the
     // two agree on what a function is.)
     let known = tables.functions.keys().filter(|id| tables.types.params.contains_key(id)).count();
@@ -38,14 +37,14 @@ pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
               image.len() >> 10, packed.len() >> 10, bytes >> 10);
 }
 
-pub(crate) fn source_path(file: &str) -> Option<&Path> {
+fn source_path(file: &str) -> Option<&Path> {
     let path = Path::new(file);
     (!file.is_empty() && path.components().all(|c| matches!(c, Component::Normal(_)))).then_some(path)
 }
 
 fn publish_sources(kernel: &Path, files: &[String], out: &Path) -> (usize, usize) {
     let _ = std::fs::remove_dir_all(out);
-    std::fs::create_dir_all(out).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", out.display())));
+    crate::or_fail(std::fs::create_dir_all(out), out.display());
 
     let mut paths: Vec<&Path> = files.iter().filter_map(|file| source_path(file)).collect();
     paths.sort_unstable();
@@ -54,8 +53,7 @@ fn publish_sources(kernel: &Path, files: &[String], out: &Path) -> (usize, usize
     for path in paths {
         let Ok(data) = std::fs::read(kernel.join(path)) else { continue };
         let to = out.join(path);
-        std::fs::create_dir_all(to.parent().unwrap()).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", to.display())));
-        std::fs::write(&to, &data).unwrap_or_else(|e| crate::fail(&format!("{}: {e}", to.display())));
+        crate::or_fail(std::fs::create_dir_all(to.parent().unwrap()).and_then(|_| std::fs::write(&to, &data)), to.display());
         copied += 1;
         bytes += data.len();
     }
@@ -124,8 +122,7 @@ fn syscalls(image: &[u8], t: &ksee_core::types::Types) -> Vec<(u32, String)> {
 fn rewrite(image: &[u8], types: &str) -> Vec<u8> {
     let mut out = image[..8].to_vec();
     for (id, name, raw) in module::sections(image) {
-        let drop = id == 0 && (name.starts_with(".debug_") || name == "ksee.types");
-        if !drop {
+        if !(id == 0 && name.starts_with(".debug_")) {
             out.extend_from_slice(raw);
         }
     }
@@ -155,10 +152,9 @@ mod source_tests {
 
     #[test]
     fn sources_are_sorted_deduplicated_and_replaced() {
-        let root = std::env::temp_dir().join(format!("ksee-pack-sources-test-{}", std::process::id()));
-        let kernel = root.join("kernel");
-        let out = root.join("out");
-        let _ = std::fs::remove_dir_all(&root);
+        let root = crate::Scratch::new("pack-sources");
+        let kernel = root.0.join("kernel");
+        let out = root.0.join("out");
         std::fs::create_dir_all(kernel.join("a")).unwrap();
         std::fs::create_dir_all(&out).unwrap();
         std::fs::write(kernel.join("a/one.c"), b"one").unwrap();
@@ -171,34 +167,31 @@ mod source_tests {
         assert_eq!(std::fs::read(out.join("a/one.c")).unwrap(), b"one");
         assert_eq!(std::fs::read(out.join("two.c")).unwrap(), b"two");
         assert!(!out.join("old.c").exists());
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn an_empty_source_set_still_replaces_the_directory() {
-        let root = std::env::temp_dir().join(format!("ksee-pack-empty-test-{}", std::process::id()));
-        let out = root.join("out");
-        let _ = std::fs::remove_dir_all(&root);
+        let root = crate::Scratch::new("pack-empty");
+        let out = root.0.join("out");
         std::fs::create_dir_all(&out).unwrap();
         std::fs::write(out.join("old.c"), b"old").unwrap();
 
-        assert_eq!(publish_sources(&root, &[], &out), (0, 0));
+        assert_eq!(publish_sources(&root.0, &[], &out), (0, 0));
         assert!(out.is_dir());
         assert!(std::fs::read_dir(&out).unwrap().next().is_none());
-        let _ = std::fs::remove_dir_all(&root);
     }
 }
 
 #[cfg(test)]
 mod constants_tests {
     use super::*;
+    use crate::Scratch;
     use std::collections::HashMap;
-    use std::path::PathBuf;
 
     /// `include/` with two headers: numbers in every shape, and the ones to skip.
-    fn headers() -> PathBuf {
-        let root = std::env::temp_dir().join(format!("ksee-pack-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+    fn headers() -> Scratch {
+        let scratch = Scratch::new("pack-constants");
+        let root = &scratch.0;
         // (Defines used before they are defined resolve: O_SYNC is (__O_SYNC|O_DSYNC).)
         let fcntl = "#define O_ACCMODE 00000003\n#define O_RDONLY 00000000\n#define __O_SYNC 000040000\n#define O_DSYNC 000010000\n\
             #define O_SYNC (__O_SYNC|O_DSYNC)\n#define O_TMPFILE_MASK(x) 1\n#define SEEK_SET 0\n";
@@ -213,14 +206,13 @@ mod constants_tests {
                 std::fs::write(&p, "").unwrap();
             }
         }
-        root
+        scratch
     }
 
     #[test]
     fn constants_from_uapi_defines() {
         let root = headers();
-        let got: HashMap<String, i64> = constants(&root).into_iter().collect();
-        let _ = std::fs::remove_dir_all(&root);
+        let got: HashMap<String, i64> = constants(&root.0).into_iter().collect();
         // (Octal, a name used before it is defined, a comment, a duplicate kept first.)
         assert_eq!(got.get("O_ACCMODE"), Some(&3));
         assert_eq!(got.get("O_RDONLY"), Some(&0));
@@ -253,12 +245,11 @@ mod image_tests {
     }
 
     fn image() -> Vec<u8> {
-        [&b"\0asm\x01\0\0\0"[..], &section(10, &[1, 2, 3]), &custom(".debug_info", b"DWARF"),
-            &custom("ksee.types", b"old"), &custom("name", b"kept")].concat()
+        [&b"\0asm\x01\0\0\0"[..], &section(10, &[1, 2, 3]), &custom(".debug_info", b"DWARF"), &custom("name", b"kept")].concat()
     }
 
     #[test]
-    fn rewrite_drops_dwarf_and_replaces_types() {
+    fn rewrite_drops_dwarf_and_adds_types() {
         let out = rewrite(&image(), "T\t1\tbase\tint\t4\ts\n");
         assert_eq!(&out[..8], b"\0asm\x01\0\0\0");
         assert!(module::custom_section(&out, ".debug_info").is_empty());
@@ -267,14 +258,6 @@ mod image_tests {
         let kept: Vec<_> = module::sections(&out).filter(|s| s.0 == 10).collect();
         assert_eq!(kept.len(), 1);
         assert_eq!(&kept[0].2[2..], &[1, 2, 3]);
-    }
-
-    #[test]
-    fn rewrite_adds_types_where_there_were_none() {
-        let bare: Vec<u8> = [&b"\0asm\x01\0\0\0"[..], &section(10, &[9])].concat();
-        let out = rewrite(&bare, "T\t1\tbase\tint\t4\ts\n");
-        assert_eq!(module::custom_section(&out, "ksee.types"), b"T\t1\tbase\tint\t4\ts\n");
-        assert_eq!(module::sections(&out).count(), 2);
     }
 
     /// An image whose table calls `__wasm_sys_read` at 0 and nothing at 1.
