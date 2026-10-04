@@ -272,14 +272,16 @@ impl View<'_> {
         writes.sort_by_key(|w| w.i);
         // (The things they changed, in the order first written.)
         let mut things: Vec<Thing> = Vec::new();
+        let mut index: BTreeMap<(u32, String), usize> = BTreeMap::new();
         for w in writes {
             let r = &regions[w.region as usize];
             let members = if r.kind == RegionKind::Var { alloc::vec![(String::new(), None)] } else { self.members(r, w.i) };
             for (member, leaf) in members {
-                match things.iter_mut().find(|t| t.region == w.region && t.member == member) {
-                    Some(t) => t.writes.push(w),
-                    None => things.push(Thing { region: w.region, member, leaf, writes: alloc::vec![w] }),
-                }
+                let k = *index.entry((w.region, member.clone())).or_insert_with(|| {
+                    things.push(Thing { region: w.region, member, leaf, writes: Vec::new() });
+                    things.len() - 1
+                });
+                things[k].writes.push(w);
             }
         }
         Named { regions, things }

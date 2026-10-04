@@ -65,7 +65,9 @@ pub fn test(name: &str) -> bool {
     let _ = child.kill();
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&profile);
-    print!("{log}");
+    if !log.is_empty() {
+        println!("{}", log.trim_end());
+    }
     println!("{name}: {}", if passed { "PASS" } else { "FAIL" });
     passed
 }

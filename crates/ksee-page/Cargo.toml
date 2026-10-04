@@ -32,5 +32,5 @@ browser-tests = [
     "web-sys/HtmlInputElement", "web-sys/EventInit", "web-sys/KeyboardEventInit",
     "web-sys/MouseEvent", "web-sys/MouseEventInit", "web-sys/PointerEvent",
     "web-sys/PointerEventInit", "web-sys/WheelEvent", "web-sys/WheelEventInit",
-    "web-sys/NodeList", "web-sys/Request", "web-sys/RequestInit",
+    "web-sys/NodeList", "web-sys/Request", "web-sys/RequestInit", "web-sys/Performance",
 ]

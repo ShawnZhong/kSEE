@@ -137,6 +137,21 @@ pub(super) async fn lesson() -> Check {
     let win1 = one(".overview .win").and_then(|w| w.get_attribute("style"));
     check(before.zip(during).is_some_and(|(a, b)| (b - a - 60.0).abs() < 1.0 || win0 != win1),
           "a drag after a click", (before, during, win0, win1))?;
+    // (How long a hover takes, the page drawn again: 30 moves across the chart.)
+    let now = || web_sys::window().and_then(|w| w.performance()).map_or(0.0, |p| p.now());
+    let t0 = now();
+    for k in 0..30 {
+        pointer(&chart, "pointermove", b.left() + b.width() * (k as f64 + 0.5) / 30.0, y);
+        sleep(0).await;
+    }
+    let hover = (now() - t0) / 30.0;
+    let t0 = now();
+    for _ in 0..20 {
+        press("▶", false);
+        sleep(0).await;
+    }
+    let step = (now() - t0) / 20.0;
+    r.push(format!("hover {hover:.1} ms, step {step:.1} ms"));
     // (Find: its bars lit; Enter, the cursor in it.)
     let find = one(".find").ok_or("no find box")?;
     find.dyn_ref::<HtmlInputElement>()

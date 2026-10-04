@@ -9,6 +9,7 @@ mod harness;
 mod lessons;
 mod lifecycle;
 mod metadata;
+mod perf;
 mod program;
 mod trace;
 
@@ -22,7 +23,7 @@ use harness::{log, KernelHarness};
 /// Run the tests on the booted Machine, with the lessons (both as `mount`
 /// was given them: the page not mounted, see lib.rs): whether all passed
 /// (each check is logged, "ok: …" or "FAIL: …").
-pub(super) async fn run(machine: Rc<Machine>) -> Result<(), String> {
+pub(super) async fn run(machine: Rc<Machine>) -> Result<String, String> {
     let examples = crate::examples();
     let mut t = KernelHarness { machine, failures: Vec::new(), console_output: String::new(), finished: BTreeMap::new() };
     let m = t.machine.clone();
@@ -41,10 +42,12 @@ pub(super) async fn run(machine: Rc<Machine>) -> Result<(), String> {
     trace::run(&mut t, main).await;
     program::run(&mut t, main).await;
     metadata::run(&mut t).await;
+    let views = perf::views(&mut t);
     lessons::run(&mut t, &examples).await;
     lifecycle::run(&mut t, &examples).await;
+    let timings = format!("timings: {}; {views}", perf::boot(&mut t).await);
     if t.failures.is_empty() {
-        Ok(())
+        Ok(timings)
     } else {
         log(&t.console_output);
         Err(t.failures.join("\n"))
