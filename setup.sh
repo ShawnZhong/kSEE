@@ -1,26 +1,9 @@
 #!/bin/sh
 # What ./ksee.sh needs: LLVM 22 (clang, lld's wasm-ld, the pass's headers),
-# GNU make and sed, mkfs.ext4, gzip, Rust and its wasm target;
-# from Homebrew or apt plus Cargo. ./ksee.sh test also needs Chromium, in $CHROME.
+# GNU make and sed, mkfs.ext4, gzip, and Rust (rust-toolchain.toml adds
+# its wasm target); from Homebrew or apt. ./ksee.sh test also needs Chromium, in $CHROME.
 set -e
 cd "$(dirname "$0")"
-rust_only=
-case "$#" in
-0) ;;
-1)
-	if [ "$1" = --rust-only ]; then
-		rust_only=1
-	else
-		echo "usage: $0 [--rust-only]" >&2
-		exit 2
-	fi
-	;;
-*)
-	echo "usage: $0 [--rust-only]" >&2
-	exit 2
-	;;
-esac
-if [ -z "$rust_only" ]; then
 case "$(uname -s)" in
 Darwin)
 	command -v brew >/dev/null || {
@@ -47,9 +30,7 @@ Linux)
 	exit 1
 	;;
 esac
-fi
 if ! command -v rustup >/dev/null; then
 	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 	. "$HOME/.cargo/env"
 fi
-rustup target add wasm32-unknown-unknown

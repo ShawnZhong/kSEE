@@ -450,7 +450,7 @@ fn site() {
 /// test page and run `names` in headless Chromium. `built` skips only the
 /// production build when an earlier CI step already completed it.
 pub fn test(names: &[String], built: bool) {
-    run(cmd("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
+    run(cmd("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli", "-p", "ksee-page"]));
     if !built {
         build();
     }

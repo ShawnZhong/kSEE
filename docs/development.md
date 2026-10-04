@@ -155,8 +155,9 @@ native unit tests live in `ksee-core`.
 
 `./ksee.sh test` runs layers in this order:
 
-1. `cargo test --locked -p ksee-core -p ksee-cli` runs native reconstruction,
-   view, program-language, source/text, chart-window, packing, and CLI tests.
+1. `cargo test --locked -p ksee-core -p ksee-cli -p ksee-page` runs native
+   reconstruction, view, program-language, source/text, chart-window, packing,
+   CLI, and the page's native tests.
 2. A normal full build produces the current site.
 3. A self-test-enabled `ksee-page` module is built in `target/test/build/` and
    assembled into `target/test/site/`.
@@ -186,6 +187,7 @@ For a focused native run:
 ```sh
 cargo test --locked -p ksee-core
 cargo test --locked -p ksee-cli
+cargo test --locked -p ksee-page
 ```
 
 ## Linux patch workflow

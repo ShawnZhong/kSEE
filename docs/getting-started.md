@@ -36,9 +36,9 @@ From the repository root:
 ./setup.sh
 ```
 
-The script installs the supported host dependencies, installs rustup if it is
-missing, and adds the Rust WebAssembly target. It does **not** install Chromium
-or another browser.
+The script installs the supported host dependencies and rustup if it is
+missing; `rust-toolchain.toml` makes rustup add the Rust WebAssembly target on
+first use. It does **not** install Chromium or another browser.
 
 ### Use a custom LLVM 22 build
 
