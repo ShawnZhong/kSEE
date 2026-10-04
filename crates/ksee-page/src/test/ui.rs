@@ -313,7 +313,7 @@ pub(super) async fn lesson() -> Check {
     .await?;
     // (The next lesson.)
     let title = one("h1").map(|h| text(&h)).unwrap_or_default();
-    click(&named(".topbar button", "Next ▶").ok_or("no next lesson")?);
+    click(&one(".turn .next").ok_or("no next lesson")?);
     wait(
         || one("h1").map(|h| text(&h)) != Some(title.clone()),
         100,
@@ -321,6 +321,13 @@ pub(super) async fn lesson() -> Check {
         || title.clone(),
     )
     .await?;
+    // (And back: the link says the lesson's title.)
+    let back = all(".turn a").into_iter().next().ok_or("no lesson end")?;
+    if text(&back) != format!("◀ {title}") {
+        return Err(format!("the lesson's end says {:?}, not the lesson before", text(&back)));
+    }
+    click(&back);
+    wait(|| one("h1").map(|h| text(&h)) == Some(title.clone()), 100, "the lesson before", || title.clone()).await?;
     Ok(r.join("; "))
 }
 
