@@ -2,7 +2,8 @@
 /*
  * The trace: a ring of the kernel's records, and its writers. The kSEE
  * plugin's probes call them (a block, a return, a store, ...); the host
- * reads the ring (ksee_core::trace), says what to record (ksee_record), and
+ * reads the ring (ksee_trace, a global the linker exports: ksee_core::trace),
+ * says what to record (ksee_record), and
  * has its own writes logged (ksee_bulk). Not instrumented: the plugin leaves
  * __ksee_* alone.
  *
@@ -17,7 +18,6 @@
 #include <asm/wasm.h>
 
 /* (Called by the plugin's probes and the host only: no header has them.) */
-u32 __ksee_trace_info(void);
 void __ksee_put(u32 a, u32 tag, u32 n);
 void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from);
 void __ksee_record(u32 level);
@@ -33,22 +33,20 @@ void __ksee_record(u32 level);
  * sees whole records, from their end; words, the ring's size; on: what is recorded (see
  * ksee_record). One writer at a time: the kernel is uniprocessor.
  */
-static struct {
+struct ksee_ring {
 	u32 pos, words, on, pad;
 	u32 ring[RING_WORDS];
-} trace __aligned(8) = { .words = RING_WORDS };
+};
+extern struct ksee_ring ksee_trace;
+struct ksee_ring ksee_trace __aligned(8) = { .words = RING_WORDS };
 
-__wasm_export(ksee_trace) u32 __ksee_trace_info(void)
-{
-	return (u32)(unsigned long)&trace;
-}
 
 /*
  * The writers write nothing but the ring: their own writes (a frame on the
  * stack: an array, a local whose address is taken) would not be recorded,
  * and memory as it was would be wrong there. Registers only.
  */
-#define RING(i) trace.ring[(i) & (RING_WORDS - 1)]
+#define RING(i) ksee_trace.ring[(i) & (RING_WORDS - 1)]
 
 /* A value at p: where the next goes. */
 static __always_inline u32 value(u32 p, u32 v)
@@ -68,7 +66,7 @@ static __always_inline u32 head(u32 p, u32 a, u32 tag, u32 n)
 /* The record ending at p, written: a reader that loads pos sees it whole. */
 static __always_inline void done(u32 p)
 {
-	__atomic_store_n(&trace.pos, p, __ATOMIC_RELEASE);
+	__atomic_store_n(&ksee_trace.pos, p, __ATOMIC_RELEASE);
 }
 
 /* The probes' records: the n values the probe put in __ksee_values (up
@@ -80,9 +78,9 @@ void __ksee_put(u32 a, u32 tag, u32 n)
 {
 	u32 p, i;
 
-	if (trace.on != 1)
+	if (ksee_trace.on != 1)
 		return;
-	p = trace.pos;
+	p = ksee_trace.pos;
 	for (i = 0; i < n; i++)
 		p = value(p, __ksee_values[i]);
 	done(head(p, a, tag, n));
@@ -99,7 +97,7 @@ static __always_inline void store(u32 k, u32 addr, u32 line, u32 from)
 		  k == 1 ? get_unaligned((const u16 *)a) :
 		  k == 2 ? get_unaligned((const u32 *)a) :
 			   get_unaligned((const u64 *)a);
-	u32 p = value(trace.pos, (u32)old);
+	u32 p = value(ksee_trace.pos, (u32)old);
 
 	if (k == 3)
 		p = value(p, (u32)(old >> 32));
@@ -118,7 +116,7 @@ __wasm_export(ksee_bulk) void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from)
 	bool back = from && from < addr && addr - from < len;
 	u32 off = back ? len : 0;
 
-	if (!trace.on)
+	if (!ksee_trace.on)
 		return;
 	while (back ? off : off < len) {
 		u32 left = back ? off : len - off;
@@ -138,9 +136,9 @@ __wasm_export(ksee_bulk) void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from)
  * with a Task record: who runs (no switch in the recording says so). */
 __wasm_export(ksee_record) void __ksee_record(u32 level)
 {
-	bool begins = level == 1 && trace.on != 1;
+	bool begins = level == 1 && ksee_trace.on != 1;
 
-	trace.on = level;
+	ksee_trace.on = level;
 	if (begins)
-		done(head(trace.pos, (u32)(unsigned long)current, TASK, 0));
+		done(head(ksee_trace.pos, (u32)(unsigned long)current, TASK, 0));
 }

@@ -35,7 +35,7 @@ pub const TICK_NS: u64 = 1000;
 
 #[derive(Default)]
 pub struct State {
-    /// Addresses in kernel memory (each boot's): the trace (ksee_trace()),
+    /// Addresses in kernel memory (each boot's): the trace (ksee_trace),
     /// the variable holding the current task, the pending interrupts
     /// (wasm_irq_pending), and the timer's deadline (wasm_timer_deadline).
     pub trace: u32,

@@ -4,7 +4,7 @@
 
 use std::cell::RefCell;
 
-use js_sys::{Function, Promise, Uint8Array, WebAssembly};
+use js_sys::{Promise, Uint8Array, WebAssembly};
 use ksee_core::recording::Recording;
 use ksee_core::tables::Tables;
 use ksee_core::program::{lower, statement, Arg, Call, Expr, Line, Lowered, Outcome, Runner, Sym, Var};
@@ -94,8 +94,7 @@ impl Machine {
             JsFuture::from(WebAssembly::instantiate_module(&self.module, &imports::kernel())).await?.unchecked_into();
         let kernel = inst.exports();
         let global = |name: &str| js::get(&js::get(&kernel, name), "value").as_f64().unwrap_or(0.0) as u32;
-        let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
-        let trace = trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32;
+        let trace = global("ksee_trace");
         let (current, pending, deadline) = (global("__current_task"), global("wasm_irq_pending"), global("wasm_timer_deadline"));
         // (Nothing of a machine before it but its command line, and the ids of
         // the calls asked: they are not used again.)

@@ -185,12 +185,14 @@ on the command line. Memory above RAM is the host's heap.
 
 ## The host interface
 
-Nearly all of it is in arch/wasm/include/asm/wasm.h. Imports (module
-`kernel`): `console_write`, `get_cmdline`, `memory_end`, `time_ns`,
-`spawn_task`, `clone_user`, `restart_task`, `switch_task` and `idle`
-(suspending), `doorbell`, `halt`, `user_load`, `user_start`,
-`print_stack`. Exports: `boot_stack`, `boot`, `task_entry`, `user_entry`,
-`syscall`, `ksee_trace`, `ksee_bulk` and `ksee_record` (the trace, for
-the host: see [recording.md](recording.md)), and the globals
-`__stack_pointer`, `wasm_irq_pending`, `wasm_timer_deadline`,
-`__current_task`.
+All of it is in arch/wasm/include/asm/wasm.h (and the Makefile's
+`--export`s):
+
+| | The kernel imports (module `kernel`) | The kernel exports |
+|---|---|---|
+| Boot and memory | `get_cmdline`, `memory_end` | `boot_stack`, `boot` |
+| Time, the console | `time_ns`, `console_write`, `print_stack`, `halt` | |
+| Tasks (JSPI: `switch_task`, `idle`, `restart_task` suspend) | `spawn_task`, `clone_user`, `switch_task`, `restart_task`, `idle`, `doorbell` | `task_entry`, `user_entry`, `__stack_pointer`, `__current_task` |
+| Programs | `user_load`, `user_start` | `syscall` |
+| Interrupts, the disk | `disk_sectors`, `disk_submit`, `disk_done` | `wasm_irq_pending`, `wasm_timer_deadline` |
+| The trace ([recording.md](recording.md)) | | `ksee_trace` (the ring), `ksee_bulk`, `ksee_record` |
