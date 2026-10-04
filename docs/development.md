@@ -149,17 +149,19 @@ Stack's, take the record and rebuild memory as it was), while
 not own a second replay model.
 
 Chart window calculations are split at the ownership boundary. Dioxus event
-handling and rendering remain in `ksee-page`, while `wheel_window` and its
-native unit tests live in `ksee-core`.
+handling and rendering remain in `ksee-page`, while `wheel_window`,
+`clamped_pan` and their native unit tests live in `ksee-core`. The page and
+the host build only for `wasm32`: the browser suites test them, and the
+workspace's default members (a bare `cargo test`) are the native crates.
 
 ## Tests
 
 `./ksee.sh test` runs layers in this order:
 
-1. `cargo test --locked -p ksee-core -p ksee-cli -p ksee-page` runs native
+1. `cargo test --locked -p ksee-core -p ksee-cli` runs native
    reconstruction, view, program-language, source/text, chart-window, packing,
-   CLI, and the page's native tests.
-2. A normal full build produces the current site.
+   and CLI tests.
+2. The site is built but its module: the self-test module below stands in.
 3. A self-test-enabled `ksee-page` module is built in `target/test/build/` and
    assembled into `target/test/site/`.
 4. Headless Chromium runs the kernel suite. It boots Linux, exercises recorded
@@ -187,7 +189,6 @@ For a focused native run:
 ```sh
 cargo test --locked -p ksee-core
 cargo test --locked -p ksee-cli
-cargo test --locked -p ksee-page
 ```
 
 ## Linux patch workflow

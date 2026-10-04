@@ -608,3 +608,11 @@ fn the_steps_are_the_lines_stepping_visits() {
     let depths: Vec<_> = v.chart(0, 4, 5).cols.iter().map(|c| c.frames.len()).collect();
     assert_eq!(depths, [1, 1, 2, 3, 1]);
 }
+
+#[test]
+fn a_drag_pans_within_the_recording() {
+    // (In the middle, as far as the pointer; at either end, no further.)
+    assert_eq!(clamped_pan((20, 39), 100.0, 1000.0, 100), (18.0, 19, 100.0));
+    assert_eq!(clamped_pan((0, 19), 100.0, 1000.0, 100), (0.0, 19, 0.0));
+    assert_eq!(clamped_pan((80, 99), -100.0, 1000.0, 100), (80.0, 19, 0.0));
+}

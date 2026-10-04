@@ -6,24 +6,18 @@ edition.workspace = true
 publish.workspace = true
 
 [lib]
-crate-type = ["rlib", "cdylib"]
+crate-type = ["cdylib"]
 
 [dependencies]
 ksee-core = { path = "../ksee-core" }
-dioxus = { version = "0.7.10", default-features = false, features = ["macro", "html", "signals", "hooks"] }
-serde = { version = "1", features = ["derive"] }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
 ksee-host = { path = "../ksee-host" }
 dioxus = { version = "0.7.10", default-features = false, features = ["web", "macro", "html", "signals", "hooks", "launch", "mounted"] }
+serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6.5"
 wasm-bindgen = "=0.2.128"
 wasm-bindgen-futures = "0.4.78"
 js-sys = "0.3.105"
 web-sys = { version = "0.3.105", features = ["Window", "Response", "Document", "Element", "Event", "EventTarget", "HtmlCanvasElement", "CanvasRenderingContext2d", "CssStyleDeclaration", "HtmlElement", "HtmlTextAreaElement", "KeyboardEvent", "Location", "History", "console", "Storage"] }
-
-[dev-dependencies]
-dioxus-html = { version = "0.7.10", default-features = false, features = ["serialize"] }
 
 [features]
 # (The tests run in the page: the kernel integration and DOM suites in src/test/.)

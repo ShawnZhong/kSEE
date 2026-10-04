@@ -74,6 +74,17 @@ pub fn wheel_window((a, b): (usize, usize), x: f64, width: f64, dx: f64, dy: f64
     (a as f64 + at * (span - new), (new as usize).saturating_sub(1))
 }
 
+/// A drag of `dx` px over a chart `width` px wide, its window `window`, kept
+/// in the recording's `steps`: the window's start and span then, and the
+/// offset (px) the drawn chart moves by meanwhile.
+pub fn clamped_pan((a, b): (usize, usize), dx: f64, width: f64, steps: usize) -> (f64, usize, f64) {
+    let span = b.saturating_sub(a);
+    let visible = span.saturating_add(1).min(steps.max(1));
+    let max_start = steps.saturating_sub(visible) as f64;
+    let start = (a as f64 - dx / width.max(1.0) * visible as f64).clamp(0.0, max_start);
+    (start, span, (a as f64 - start) / visible as f64 * width.max(1.0))
+}
+
 /// A stack chart (View::chart): its columns, and the bars they stack.
 #[derive(Debug, Default)]
 pub struct Chart {

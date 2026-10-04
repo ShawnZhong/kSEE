@@ -11,7 +11,7 @@
 use dioxus::prelude::*;
 use ksee_core::arch::AREAS;
 use ksee_core::trace::Record;
-use ksee_core::view::{Chart, wheel_window};
+use ksee_core::view::{clamped_pan, wheel_window, Chart};
 use wasm_bindgen::JsCast;
 
 use crate::machine;
@@ -501,7 +501,7 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                                 ui.set_preview(None);
                                 tip.set(None);
                             }
-                            offset.set(crate::clamped_pan((p.a, p.b), dx, width(), steps).2);
+                            offset.set(clamped_pan((p.a, p.b), dx, width(), steps).2);
                             if let Some(scroll) = stack_scroll() {
                                 let max = scroll.scroll_height() - scroll.client_height();
                                 scroll.set_scroll_top(drag_scroll(p.scroll, dy, max));
@@ -529,7 +529,7 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                     pan.set(None);
                     offset.set(0.0);
                     if *dragged.peek() && dx != 0.0 {
-                        let (start, span, _) = crate::clamped_pan((p.a, p.b), dx, width(), steps);
+                        let (start, span, _) = clamped_pan((p.a, p.b), dx, width(), steps);
                         ui.view(start, span);
                     }
                     if let Some(chart) = element("timeline-chart") {

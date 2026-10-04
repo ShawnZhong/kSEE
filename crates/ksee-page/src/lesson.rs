@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::state::{RunId, Ui};
 use ksee_core::text::{self, LessonTarget, Piece};
-use crate::lesson_view::ParagraphView;
 use crate::{examples, machine};
 
 /// One chronological program step: a statement for the program's own task,
@@ -489,4 +488,35 @@ fn said(o: Option<&Outcome>) -> String {
 /// " (during line N)", for a call that finished as a later line ran.
 fn later(during: Option<usize>) -> String {
     during.map_or(String::new(), |j| format!(" (during line {})", j + 1))
+}
+
+/// A parsed lesson paragraph. Recording links are disabled when the lesson's
+/// program is stale; try links remain available.
+#[component]
+pub(crate) fn ParagraphView(
+    pieces: Vec<Piece>,
+    stale: bool,
+    follow: EventHandler<LessonTarget>,
+) -> Element {
+    rsx! {
+        p {
+            for piece in pieces {
+                match piece {
+                    Piece::Text(text) => rsx! { "{text}" },
+                    Piece::Code(code) => rsx! { code { "{code}" } },
+                    Piece::Link { label, to, .. } => match to {
+                        Some(to) if !(stale && matches!(to, LessonTarget::Recording { .. })) => {
+                            let class = match &to {
+                                LessonTarget::Try { .. } => "try",
+                                LessonTarget::Recording { function: Some(_), .. } => "place mono",
+                                _ => "",
+                            };
+                            rsx! { a { class, onclick: move |_| follow.call(to.clone()), "{label}" } }
+                        }
+                        _ => rsx! { span { class: "dim", "{label}" } },
+                    },
+                }
+            }
+        }
+    }
 }

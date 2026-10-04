@@ -135,10 +135,16 @@ fn kernel() {
 }
 
 pub fn build() {
+    assets();
+    page();
+}
+
+/// The site but its module: the kernel, its sources, the initramfs, the
+/// examples, web/'s files.
+fn assets() {
     check_llvm();
     kernel();
     site();
-    page();
     packed_kernel();
     initramfs();
     examples();
@@ -429,13 +435,12 @@ fn site() {
     }
 }
 
-/// Run native tests, ensure the production site is built, then build the
-/// test page and run `names` in headless Chromium. `built` skips only the
-/// production build when an earlier CI step already completed it.
+/// Run native tests, build the site but its module (`built`: an earlier
+/// CI step did), then the test page, and run `names` in headless Chromium.
 pub fn test(names: &[String], built: bool) {
-    run(cmd("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli", "-p", "ksee-page"]));
+    run(cmd("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
     if !built {
-        build();
+        assets();
     }
     test_site();
     for name in names {
@@ -455,9 +460,8 @@ fn test_site() {
     let site = Path::new("target/test/site");
     let _ = std::fs::remove_dir_all(site);
     crate::or_fail(std::fs::create_dir_all(site), site.display());
-    for e in std::fs::read_dir(SITE).into_iter().flatten().flatten() {
-        let name = e.file_name();
-        let from = if name == "pkg" { Path::new("../pkg").to_path_buf() } else { Path::new("../../site").join(&name) };
+    let names = std::fs::read_dir(SITE).into_iter().flatten().flatten().map(|e| e.file_name()).filter(|n| n != "pkg");
+    for (from, name) in names.map(|n| (Path::new("../../site").join(&n), n)).chain([(Path::new("../pkg").into(), "pkg".into())]) {
         crate::or_fail(std::os::unix::fs::symlink(from, site.join(&name)), site.display());
     }
 }

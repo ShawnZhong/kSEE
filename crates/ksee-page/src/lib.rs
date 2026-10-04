@@ -8,79 +8,34 @@
 //! call selected, the cursor in it (a line it ran), and the frame chosen on
 //! the Stack.
 
-#[cfg(target_arch = "wasm32")]
 use std::cell::RefCell;
-#[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
 
-#[cfg(target_arch = "wasm32")]
 use dioxus::prelude::*;
-#[cfg(target_arch = "wasm32")]
 use js_sys::Promise;
-#[cfg(target_arch = "wasm32")]
 use ksee_host::machine::Machine;
-#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::convert::TryFromJsValue;
-#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-#[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::JsFuture;
 
-#[cfg(target_arch = "wasm32")]
 mod chart;
-#[cfg(target_arch = "wasm32")]
 mod coordinator;
-#[cfg(target_arch = "wasm32")]
 mod editor;
-#[cfg(target_arch = "wasm32")]
 mod host;
-#[cfg(target_arch = "wasm32")]
 mod layout;
-#[cfg(target_arch = "wasm32")]
 mod lesson;
-mod lesson_view;
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod native_tests;
-#[cfg(any(target_arch = "wasm32", test))]
 mod objects_view;
-#[cfg(target_arch = "wasm32")]
 mod panels;
-#[cfg(target_arch = "wasm32")]
 mod source;
-#[cfg(target_arch = "wasm32")]
 mod stack;
-#[cfg(target_arch = "wasm32")]
 mod state;
-#[cfg(all(target_arch = "wasm32", feature = "browser-tests"))]
+#[cfg(feature = "browser-tests")]
 mod test;
 
-/// Clamp a horizontal timeline drag to the recording and return its committed
-/// start/span plus the pixel offset that can actually be previewed.
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-pub(crate) fn clamped_pan(
-    window: (usize, usize),
-    dx: f64,
-    width: f64,
-    steps: usize,
-) -> (f64, usize, f64) {
-    let (a, b) = window;
-    let span = b.saturating_sub(a);
-    let visible = span.saturating_add(1).min(steps.max(1));
-    let max_start = steps.saturating_sub(visible) as f64;
-    let requested = a as f64 - dx / width.max(1.0) * visible as f64;
-    let start = requested.clamp(0.0, max_start);
-    let offset = (a as f64 - start) / visible as f64 * width.max(1.0);
-    (start, span, offset)
-}
-
-#[cfg(target_arch = "wasm32")]
 pub(crate) use host::machine;
-#[cfg(target_arch = "wasm32")]
 use lesson::Example;
-#[cfg(target_arch = "wasm32")]
 use state::Ui;
 
-#[cfg(target_arch = "wasm32")]
 thread_local! {
     /// The Machine (one thread: the page's), once booted; until then, its
     /// boot (a promise: `mount`'s).
@@ -89,7 +44,6 @@ thread_local! {
 }
 
 /// The Machine, once booted; or why it could not be.
-#[cfg(target_arch = "wasm32")]
 pub(crate) async fn boot() -> Result<Rc<Machine>, String> {
     let promise = BOOT.with_borrow(|p| p.clone()).ok_or("not mounted")?;
     let booted = JsFuture::from(promise).await.map_err(|e| {
@@ -102,7 +56,6 @@ pub(crate) async fn boot() -> Result<Rc<Machine>, String> {
     ))
 }
 
-#[cfg(target_arch = "wasm32")]
 pub(crate) fn examples() -> Vec<Example> {
     EXAMPLES.with_borrow(|e| e.clone())
 }
@@ -110,7 +63,6 @@ pub(crate) fn examples() -> Vec<Example> {
 /// Mount the page into the element `root`, with the lessons, `examples`
 /// (examples.json), and `machine`, the kernel booting (a promise of the
 /// Machine: the page owns it once booted; the lesson shows meanwhile).
-#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsValue> {
     // (A panic said on the console, not only "unreachable".)
@@ -133,7 +85,6 @@ pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsVa
     Ok(())
 }
 
-#[cfg(target_arch = "wasm32")]
 #[component]
 fn App() -> Element {
     let ui = use_context_provider(|| {
