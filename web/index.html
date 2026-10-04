@@ -227,6 +227,15 @@ table.objs tr.later { opacity: .45; }
 const theme = localStorage.getItem("ksee.theme");
 if (theme) document.documentElement.dataset.theme = theme;
 </script>
+<script>
+// (A test (#test=NAME): an error before the page's own code runs, said to
+// ksee test at once, as the page's are: it waits for one.)
+if (location.hash.includes("test=")) {
+  const fail = (e) => fetch("/result", { method: "POST", body: `fail\n${e.reason ?? e.message}` });
+  addEventListener("error", fail);
+  addEventListener("unhandledrejection", fail);
+}
+</script>
 <script type="module">
 import init, { mount, Machine } from "./pkg/ksee_page.js";
 // (A build's file, its bytes: the .gz ones unpacked.)
