@@ -4,29 +4,23 @@ This guide gets a local kSEE build running and explains the browser and
 toolchain requirements. For repository internals and the full command
 reference, see [development.md](development.md).
 
-## Supported setup hosts
+## Supported setup host
 
-`setup.sh` automates setup on:
-
-- macOS with Homebrew; and
-- Ubuntu 26.04 with `apt`.
-
-Other hosts can work with a manually installed toolchain, but the setup script
-will reject them.
+`setup.sh` automates setup on Ubuntu 26.04 (with `apt`). Other Linux hosts
+can work with a manually installed toolchain, but the setup script will reject
+them.
 
 The build requires:
 
 - LLVM 22: Clang, `wasm-ld`, `llvm-config`, and the pass-plugin headers;
-- GNU make and sed;
+- make;
 - `mkfs.ext4` from e2fsprogs;
 - `gzip`;
 - Rust through rustup, with the `wasm32-unknown-unknown` target; and
 - a browser with JSPI support.
 
-On Linux, setup also installs the ordinary kernel build prerequisites, and
-Rust links host code with `clang-22` (`.cargo/config.toml`), so no system `cc`
-is needed. On macOS, it installs versioned Homebrew formulae for LLVM and LLD
-and puts the Homebrew GNU tools ahead of the system tools during the build.
+Setup also installs the ordinary kernel build prerequisites, and Rust links
+host code with `clang-22` (`.cargo/config.toml`), so no system `cc` is needed.
 
 ## Install the toolchain
 
@@ -42,8 +36,8 @@ first use. It does **not** install Chromium or another browser.
 
 ### Use a custom LLVM 22 build
 
-The build puts Homebrew's `llvm@22` (macOS) or `/usr/lib/llvm-22/bin` (Linux)
-ahead of `PATH`. Without that installation, it uses the LLVM on `PATH`:
+The Makefile puts `/usr/lib/llvm-22/bin` ahead of `PATH`. Without that
+installation, it uses the LLVM on `PATH`:
 
 ```sh
 PATH=/absolute/path/to/llvm/bin:$PATH ./ksee.sh build
@@ -94,8 +88,8 @@ runtime use one thread and one non-shared WebAssembly memory.
 
 ## Run tests
 
-Browser tests find Chrome, Chromium or `chromium-headless-shell` on `PATH`, or
-in their standard macOS application locations. Set `CHROME` to override the detected executable:
+Browser tests find Chrome, Chromium or `chromium-headless-shell` on `PATH`. Set
+`CHROME` to override the detected executable:
 
 ```sh
 ./ksee.sh test
@@ -116,20 +110,6 @@ order.
 
 ## Troubleshooting
 
-### `tapi ... unknown architecture` on macOS
-
-If linking fails with a `tapi ... unknown architecture` error, Xcode or its
-Command Line Tools and the selected developer directory may not match. Update
-or reinstall the tools, then inspect the active directory with:
-
-```sh
-xcode-select --print-path
-```
-
-Select the matching Xcode or Command Line Tools installation with
-`xcode-select --switch`, then run the build again. Do not delete SDK
-directories.
-
 ### Wrong LLVM is selected
 
 Install LLVM 22 with `./setup.sh`, or put another LLVM 22 first on `PATH` (see
@@ -142,5 +122,5 @@ compatible `clang` and `wasm-ld` binaries.
 Set `CHROME` to the browser executable itself, not its containing directory:
 
 ```sh
-CHROME=/Applications/Chromium.app/Contents/MacOS/Chromium ./ksee.sh test
+CHROME=/usr/bin/chromium ./ksee.sh test
 ```

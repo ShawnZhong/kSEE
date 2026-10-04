@@ -26,7 +26,7 @@ pub const TESTS: &[(&str, &str, (u32, u32))] = &[
 ];
 const SCREEN: (u32, u32) = (1500, 900);
 
-/// The requested Chromium, or one in a standard location.
+/// The requested Chromium, or one on PATH.
 fn browser() -> PathBuf {
     if let Some(bin) = std::env::var_os("CHROME").filter(|p| !p.is_empty()) {
         return bin.into();
@@ -39,12 +39,6 @@ fn browser() -> PathBuf {
                     return bin;
                 }
             }
-        }
-    }
-    for bin in ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                "/Applications/Chromium.app/Contents/MacOS/Chromium"] {
-        if Path::new(bin).is_file() {
-            return bin.into();
         }
     }
     fail("no Chrome or Chromium found; set CHROME to its executable")

@@ -64,9 +64,9 @@ packing steps compare output and input modification times.
 
 ### LLVM selection
 
-The build requires LLVM major version 22. It puts Homebrew's `llvm@22` on macOS
-and `/usr/lib/llvm-22/bin` elsewhere ahead of `PATH`; without that
-installation, the LLVM on `PATH` is used. The build checks `llvm-config --version` before doing other build work. It
+The build requires LLVM major version 22. The Makefile puts
+`/usr/lib/llvm-22/bin` ahead of `PATH`; without that installation, the LLVM on
+`PATH` is used. It checks `llvm-config --version` before building the plugin. It
 does not track the selected LLVM installation as an incremental-build input,
 so use one LLVM 22 toolchain for a checkout after its first build. If you
 switch toolchains, rebuild the native plugin and kernel outputs rather than

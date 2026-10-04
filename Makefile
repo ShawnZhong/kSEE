@@ -1,6 +1,6 @@
 # The kernel's half of the build: C and LLVM, file to file. `ksee build`
-# runs it (with setup.sh's LLVM 22 first on PATH), then packs the kernel and
-# builds the site (crates/ksee-cli/src/build.rs).
+# runs it, then packs the kernel and builds the site
+# (crates/ksee-cli/src/build.rs).
 #
 #   linux/                       Linux, the stable tree's LINUX_TAG, fetched once, linux.patch applied
 #   plugin/ksee-trace.so         the LLVM pass that instruments the kernel
@@ -18,6 +18,8 @@ LINUX_TREE := https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 LINUX_TAG := v7.2.7
 LINUX_COMMIT := f42acb3678424d1e08f6ed27c0d8ba8a125e14d6
 
+# (setup.sh's LLVM 22 first.)
+export PATH := /usr/lib/llvm-22/bin:$(PATH)
 export OUT := target/initramfs
 PLUGIN := plugin/ksee-trace.so
 # (A hash of the pass's source in the flags: kbuild rebuilds when the
@@ -43,10 +45,8 @@ linux/Makefile:
 	git -C linux checkout -q $(LINUX_TAG)
 	git -C linux apply ../linux.patch
 
-# (macOS links -shared eagerly: the LLVM symbols are left to clang, which
-# loads the pass.)
 $(PLUGIN): plugin/ksee-trace.cpp | llvm
-	clang++ -shared -fPIC -O2 $< -o $@ $$(llvm-config --cxxflags) $$(test $$(uname -s) = Darwin && echo -Wl,-undefined,dynamic_lookup)
+	clang++ -shared -fPIC -O2 $< -o $@ $$(llvm-config --cxxflags)
 
 # (Every Kconfig the port has: a new one runs defconfig again.)
 linux/.config: linux/Makefile linux/arch/wasm/configs/defconfig $(wildcard linux/arch/wasm/Kconfig*)

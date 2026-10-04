@@ -16,9 +16,11 @@ jobs:
           key: linux-v2-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-llvm22-${{ hashFiles('linux.patch', 'plugin/ksee-trace.cpp', 'Makefile') }}
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
+      - name: Build the kernel, plugin and initramfs (cached linux/)
+        run: make -j$(nproc)
       - name: Build ksee CLI
         run: cargo build --locked --release -p ksee-cli
-      - name: Build kernel and site
+      - name: Build the site
         run: target/release/ksee build
       - name: Test
         run: target/release/ksee test --built

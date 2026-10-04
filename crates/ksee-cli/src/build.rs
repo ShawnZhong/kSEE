@@ -10,31 +10,9 @@
 //!   examples.json          the examples (user/examples/*.json)
 //!
 //! (Gzipped by the build: hosts compress them less, or not at all; the
-//! page unpacks them.) The tools setup.sh installs, first on every
-//! command's PATH.
+//! page unpacks them.)
 use std::path::Path;
 use std::process::Command;
-use std::sync::LazyLock;
-
-/// setup.sh's dirs first, then the caller's PATH: LLVM 22's, and on macOS
-/// Homebrew's lld, GNU make and sed, and mkfs.ext4.
-static PATH: LazyLock<String> = LazyLock::new(|| {
-    let dirs = if cfg!(target_os = "macos") {
-        let brew = String::from_utf8_lossy(&stdout(Command::new("brew").arg("--prefix"))).trim().to_string();
-        ["llvm@22/bin", "lld@22/bin", "make/libexec/gnubin", "gnu-sed/libexec/gnubin", "e2fsprogs/sbin"]
-            .map(|d| format!("{brew}/opt/{d}")).join(":")
-    } else {
-        "/usr/lib/llvm-22/bin".to_string()
-    };
-    format!("{dirs}:{}", std::env::var("PATH").unwrap_or_default())
-});
-
-/// A command with the tools on its PATH.
-fn cmd(program: &str) -> Command {
-    let mut c = Command::new(program);
-    c.env("PATH", &*PATH);
-    c
-}
 
 /// `cmd` as a line: its program and arguments, spaced.
 fn line(cmd: &Command) -> String {
@@ -80,7 +58,7 @@ pub fn build() {
 /// examples, web/'s files.
 fn assets() {
     let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
-    run(cmd("make").args(["--no-print-directory", &jobs]));
+    run(Command::new("make").args(["--no-print-directory", &jobs]));
     site();
     packed_kernel();
     let (cpio, compressed) = ("target/initramfs/initramfs.cpio", format!("{SITE}/initramfs.cpio.gz"));
@@ -92,7 +70,7 @@ fn assets() {
 
 /// pkg/: the runtime and the page, one module (the page calls the Machine).
 fn page() {
-    run(cmd("cargo").args(["build", "--locked", "--release", "-p", "ksee-page",
+    run(Command::new("cargo").args(["build", "--locked", "--release", "-p", "ksee-page",
         "--target", "wasm32-unknown-unknown"]));
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
 }
@@ -117,7 +95,7 @@ fn packed_kernel() {
 
 /// linux.patch, written from linux/ (the Makefile's), never by the build.
 pub fn patch() {
-    run(cmd("make").args(["--no-print-directory", "patch"]));
+    run(Command::new("make").args(["--no-print-directory", "patch"]));
 }
 
 /// wasm-bindgen's glue for `wasm`, in `out` (cli-support, at ksee-page's
@@ -133,7 +111,7 @@ fn bindgen(wasm: &str, out: &str) {
 
 fn gzip(from: &str, to: &str) {
     let out = crate::or_fail(std::fs::File::create(to), to);
-    run(cmd("gzip").args(["-9nc", from]).stdout(out));
+    run(Command::new("gzip").args(["-9nc", from]).stdout(out));
 }
 
 #[cfg(test)]
@@ -211,7 +189,7 @@ fn site() {
 /// Run native tests, build the site but its module (`built`: an earlier
 /// CI step did), then the test page, and run `names` in headless Chromium.
 pub fn test(names: &[String], built: bool) {
-    run(cmd("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
+    run(Command::new("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
     if !built {
         assets();
     }
@@ -226,7 +204,7 @@ pub fn test(names: &[String], built: bool) {
 /// target/test/site: the site, its module built with the tests.
 fn test_site() {
     // (Its own target directory: the site's module, built without them, stays as it is.)
-    run(cmd("cargo").args(["build", "--locked", "--release", "-p", "ksee-page", "--features", "browser-tests",
+    run(Command::new("cargo").args(["build", "--locked", "--release", "-p", "ksee-page", "--features", "browser-tests",
         "--target", "wasm32-unknown-unknown", "--target-dir", "target/test/build"]));
     bindgen("target/test/build/wasm32-unknown-unknown/release/ksee_page.wasm", "target/test/pkg");
     // (The site with the tests: the site's files, its module the one built with them.)

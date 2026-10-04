@@ -57,7 +57,7 @@ scheduled with JSPI.
 
 ## Quick start
 
-Automated setup supports macOS with Homebrew and Ubuntu 26.04 with `apt`:
+Automated setup supports Ubuntu 26.04 with `apt`:
 
 ```sh
 ./setup.sh
