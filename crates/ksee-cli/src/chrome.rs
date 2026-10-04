@@ -33,7 +33,7 @@ fn browser() -> PathBuf {
     }
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
-            for name in ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"] {
+            for name in ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chromium-headless-shell"] {
                 let bin = dir.join(name);
                 if bin.is_file() {
                     return bin;

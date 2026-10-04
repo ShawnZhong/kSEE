@@ -94,8 +94,8 @@ runtime use one thread and one non-shared WebAssembly memory.
 
 ## Run tests
 
-Browser tests find Chrome or Chromium on `PATH`, or in their standard macOS
-application locations. Set `CHROME` to override the detected executable:
+Browser tests find Chrome, Chromium or `chromium-headless-shell` on `PATH`, or
+in their standard macOS application locations. Set `CHROME` to override the detected executable:
 
 ```sh
 ./ksee.sh test

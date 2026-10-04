@@ -157,6 +157,32 @@ pub(super) async fn lesson() -> Check {
     pointer(&chart, "pointerup", mid - 80.0, y);
     sleep(300).await;
     check((x0 - 80.0 - during).abs() < 1.0 && win() != w0, "a drag pans", (x0, during, w0, win()))?;
+    // (Typing a call: what fits, offered; Escape, nothing changed.)
+    let add = all(".program textarea").into_iter().find(|t| t.get_attribute("placeholder").is_some_and(|p| p.starts_with("add a call")))
+        .ok_or("no line to add")?;
+    {
+        let a = add.dyn_ref::<web_sys::HtmlTextAreaElement>().ok_or("not a textarea")?;
+        let _ = a.focus();
+        a.set_value("open");
+        let _ = a.set_selection_range(4, 4);
+        input(&add);
+    }
+    sleep(200).await;
+    let offered: Vec<String> = all("ul.complete li .mono").iter().map(text).collect();
+    // (And a variable of the lines before, as an argument.)
+    {
+        let a = add.dyn_ref::<web_sys::HtmlTextAreaElement>().ok_or("not a textarea")?;
+        a.set_value("read(f");
+        let _ = a.set_selection_range(6, 6);
+        input(&add);
+    }
+    sleep(200).await;
+    let names: Vec<String> = all("ul.complete li .mono").iter().map(text).collect();
+    let shown = one("ul.complete").map(|u| { let r = u.get_bounding_client_rect(); (r.width(), r.height()) });
+    key(&add, "Escape");
+    sleep(100).await;
+    check(offered.iter().any(|o| o == "openat") && names.iter().any(|o| o == "fd") && shown.is_some_and(|(w, h)| w > 0.0 && h > 0.0),
+          "completions", (&offered, &names, shown))?;
     // (Objects: what the read changed, its file's position; Tasks: a task_struct opened.)
     tab("Objects").await;
     let objects: Vec<String> = all(".obj .title").iter().map(text).collect();
