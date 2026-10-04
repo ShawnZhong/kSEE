@@ -98,9 +98,12 @@ fn line(text: &str, open: &mut Open) -> Vec<Piece> {
     // `->`, a field.)
     let mut last = "";
     while i < b.len() {
-        if *in_comment {
-            let end = text[i..].find("*/").map_or(b.len(), |k| i + k + 2);
-            *in_comment = end == b.len() && !text[i..].contains("*/");
+        // (A comment, to its end: on this line or a later one; `/*/` only opens one.)
+        if *in_comment || text[i..].starts_with("/*") {
+            let from = if *in_comment { i } else { i + 2 };
+            let end = text[from..].find("*/").map(|k| from + k + 2);
+            *in_comment = end.is_none();
+            let end = end.unwrap_or(b.len());
             push(&mut out, &text[i..end], Kind::Comment);
             i = end;
             continue;
@@ -110,9 +113,6 @@ fn line(text: &str, open: &mut Open) -> Vec<Piece> {
         if text[i..].starts_with("//") {
             push(&mut out, &text[i..], Kind::Comment);
             break;
-        } else if text[i..].starts_with("/*") {
-            *in_comment = true;
-            continue;
         } else if c == b'"' || c == b'\'' {
             push(&mut out, &text[start..start + 1], Kind::Str);
             i += 1;
@@ -134,15 +134,9 @@ fn line(text: &str, open: &mut Open) -> Vec<Piece> {
                 i += 1;
             }
         } else if c.is_ascii_digit() || (c == b'.' && text[i + 1..].starts_with(|c: char| c.is_ascii_digit())) {
-            if c.is_ascii_digit() {
-                while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'.') {
-                    i += 1;
-                }
-            } else {
+            i += 1;
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'.') {
                 i += 1;
-                while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'.') {
-                    i += 1;
-                }
             }
             push(&mut out, &text[start..i], Kind::Number);
         } else if c.is_ascii_alphabetic() || c == b'_' {
@@ -215,6 +209,10 @@ pub fn expr(pieces: &[Piece], k: usize) -> String {
 mod tests {
     use super::*;
 
+    fn kind_of(p: &[Piece]) -> Vec<Kind> {
+        p.iter().map(|p| p.kind).collect()
+    }
+
     #[test]
     fn a_lines_pieces() {
         let mut c = Open::default();
@@ -226,6 +224,11 @@ mod tests {
         assert!(c.comment, "a comment goes on");
         assert_eq!(line("still */ x = 1;", &mut c)[0].kind, Kind::Comment);
         assert!(!c.comment);
+        // (`/*/` opens a comment, not closes it; one closed on its line ends there.)
+        line("a /*/ b", &mut c);
+        assert!(c.comment);
+        line("*/", &mut c);
+        assert_eq!(kind_of(&line("/* a */ x .5", &mut c)), [Kind::Comment, Kind::Plain, Kind::Name, Kind::Plain, Kind::Number]);
         let p = line("x = a.b->c;", &mut c);
         let k = p.iter().position(|p| p.text == "c").unwrap();
         assert_eq!(expr(&p, k), "a.b->c");

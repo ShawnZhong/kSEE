@@ -1,7 +1,8 @@
 //! A program's expressions evaluated as C does (see parse): over names
 //! that are typed (Sym: a variable is memory of its type, a result a value
 //! of its declared type), reading the program's memory and the kernel's
-//! types: `.`, `->`, `[]`, `*`, `&`, and `+` on a pointer.
+//! types: `[]`, `&`, and `+` on a pointer (not `.`, `->` or `*`: parse has
+//! none).
 
 use alloc::format;
 use alloc::string::String;
@@ -177,14 +178,4 @@ fn num(v: V) -> i64 {
 /// members and memory (none: numbers and names only).
 pub fn value(e: &Expr, types: Option<&Types>, env: &dyn Env) -> Result<i64, String> {
     Eval { types, env }.number(e)
-}
-
-/// A result's value as its declared type (`void *`, `struct x *`, `int`)
-/// makes it: a number, or a pointer to what the type names.
-pub fn typed(v: i64, ty: &str, types: &Types) -> Option<Sym> {
-    let env = |_: &str| None;
-    let mut p = super::parse::Parser::new(ty).ok()?;
-    let t = p.type_name_only().ok()?;
-    let (_, to) = Eval { types: Some(types), env: &env }.type_of(&t).ok()?;
-    Some(Sym::Value { v, to })
 }

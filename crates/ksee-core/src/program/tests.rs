@@ -24,11 +24,12 @@ fn known(name: &str) -> Option<i64> {
 #[test]
 fn a_line_is_a_call_or_a_declaration() {
     let call = |t: &str| match statement(t).unwrap() {
-        Line::Call { result, call, texts, .. } => (result.clone().map(|(t, _)| t.text()), result.map(|(_, n)| n), call, texts),
+        Line::Call { result, call, args } => (result.clone().map(|(t, _)| t.text()), result.map(|(_, n)| n), call, args),
         s => panic!("{s:?}"),
     };
     assert_eq!(call("int fd = openat(AT_FDCWD, \"/a, b\", O_RDONLY);"),
-               (Some("int".into()), Some("fd".into()), "openat".into(), vec!["AT_FDCWD".into(), "\"/a, b\"".into(), "O_RDONLY".into()]));
+               (Some("int".into()), Some("fd".into()), "openat".into(),
+                vec![Expr::Name("AT_FDCWD".into()), Expr::Str(b"/a, b".to_vec()), Expr::Name("O_RDONLY".into())]));
     assert_eq!(call("getpid()"), (None, None, "getpid".into(), vec![]));
     assert!(statement("fd = getpid()").is_err()); // (a result: declared)
     assert!(statement("child: getpid()").is_err()); // (task selection is metadata)
@@ -73,10 +74,6 @@ fn declarations_are_a_programs_memory() {
     assert_eq!(t.show(&mem, 0, 7, Some(2)), "{3, 4}");
     assert_eq!(t.show(&mem, 8, 2, None), "{tv_nsec = 0x1c9c380}");
     assert_eq!(t.show(&mem, 24, 4, Some(3)), "\"hi\"");
-    // As data (for JavaScript), and assigned from a literal.
-    assert_eq!(t.value(&mem, 0, 7, Some(2)), Value::List(alloc::vec![Value::Int(3), Value::Int(4)]));
-    assert_eq!(t.value(&mem, 8, 2, None), Value::Fields(alloc::vec![("tv_sec".into(), Value::Int(0)), ("tv_nsec".into(), Value::Int(30000000))]));
-    assert_eq!(t.value(&mem, 24, 4, Some(3)), Value::Text("hi".into()));
     // (Past a NUL too, escaped, as C writes it.)
     assert_eq!(t.show(&M(b"a\0b\x05\0\0".to_vec()), 0, 4, Some(6)), "\"a\\0b\\x05\"");
 }
@@ -222,7 +219,7 @@ fn a_line_is_lowered_to_what_it_makes() {
     // A call: its number, its arguments, its result's name and type.
     match lower("int fd = getpid()").unwrap() {
         Lowered::Call { nr, args, result } => {
-            assert_eq!((nr, args, result), (3, Vec::new(), Some(("fd".to_string(), "int".to_string()))));
+            assert_eq!((nr, args, result), (3, Vec::new(), Some(("fd".to_string(), None))));
         }
         l => panic!("{l:?}"),
     }

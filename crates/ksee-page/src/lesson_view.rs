@@ -17,21 +17,17 @@ pub(crate) fn ParagraphView(
                 match piece {
                     Piece::Text(text) => rsx! { "{text}" },
                     Piece::Code(code) => rsx! { code { "{code}" } },
-                    Piece::Link { label, target, .. } => {
-                        let parsed = LessonTarget::parse(&target);
-                        let class = match &parsed {
-                            Ok(LessonTarget::Try { .. }) => "try",
-                            Ok(LessonTarget::Recording { function: Some(_), .. }) => "place mono",
-                            _ => "",
-                        };
-                        let recording = matches!(&parsed, Ok(LessonTarget::Recording { .. }));
-                        if parsed.is_err() || stale && recording {
-                            rsx! { span { class: "dim", "{label}" } }
-                        } else {
-                            let target = parsed.expect("checked lesson target");
-                            rsx! { a { class, onclick: move |_| follow.call(target.clone()), "{label}" } }
+                    Piece::Link { label, to, .. } => match to {
+                        Some(to) if !(stale && matches!(to, LessonTarget::Recording { .. })) => {
+                            let class = match &to {
+                                LessonTarget::Try { .. } => "try",
+                                LessonTarget::Recording { function: Some(_), .. } => "place mono",
+                                _ => "",
+                            };
+                            rsx! { a { class, onclick: move |_| follow.call(to.clone()), "{label}" } }
                         }
-                    }
+                        _ => rsx! { span { class: "dim", "{label}" } },
+                    },
                 }
             }
         }

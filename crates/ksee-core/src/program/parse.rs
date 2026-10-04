@@ -39,7 +39,7 @@ impl TypeName {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Line {
     /// `[type name =] call(args)`: a syscall, its result declared.
-    Call { result: Option<(TypeName, String)>, call: String, args: Vec<Expr>, texts: Vec<String> },
+    Call { result: Option<(TypeName, String)>, call: String, args: Vec<Expr> },
     /// `type name[count] = init`: a variable of the program's (`count`:
     /// Some(None) for `[]`).
     Decl { ty: TypeName, name: String, count: Option<Option<Expr>>, init: Option<Expr> },
@@ -84,13 +84,6 @@ impl<'a> Parser<'a> {
     fn done(&self) -> bool {
         self.at >= self.toks.len()
     }
-    /// The text of tokens `from..to`.
-    fn span(&self, from: usize, to: usize) -> String {
-        match (self.toks.get(from), to.checked_sub(1).and_then(|k| self.toks.get(k))) {
-            (Some(a), Some(b)) if to > from => self.text[a.start..b.end].to_string(),
-            _ => String::new(),
-        }
-    }
 
     /// Whether a type starts here, followed by a name (a declaration's, a
     /// result's): `int fd`, `void *mem`, `pid_t child`, `struct x p`.
@@ -128,15 +121,6 @@ impl<'a> Parser<'a> {
             return Err(format!("{} **: a pointer to a pointer", words.join(" ")));
         }
         Ok(TypeName { name: words.join(" "), pointer })
-    }
-
-    /// A type name, alone: all of the text.
-    pub(super) fn type_name_only(&mut self) -> Result<TypeName, String> {
-        let t = self.type_name()?;
-        if !self.done() {
-            return Err(format!("not a type{}", self.here()));
-        }
-        Ok(t)
     }
 
     /// An expression, or an initializer (`{…}`, a string).
@@ -237,24 +221,22 @@ impl<'a> Parser<'a> {
         false
     }
 
-    /// A call from here to the end: its name, its arguments, as written too.
-    fn call(&mut self) -> Result<(String, Vec<Expr>, Vec<String>), String> {
+    /// A call from here to the end: its name, its arguments.
+    fn call(&mut self) -> Result<(String, Vec<Expr>), String> {
         let name = self.name(0).ok_or("a call's name missing")?.to_string();
         self.at += 1;
         self.expect("(")?;
-        let (mut args, mut texts) = (Vec::new(), Vec::new());
+        let mut args = Vec::new();
         if !self.eat(")") {
             loop {
-                let from = self.at;
                 args.push(self.init()?);
-                texts.push(self.span(from, self.at));
                 if self.eat(")") {
                     break;
                 }
                 self.expect(",")?;
             }
         }
-        Ok((name, args, texts))
+        Ok((name, args))
     }
 
     pub(super) fn statement(&mut self) -> Result<Line, String> {
@@ -274,8 +256,8 @@ impl<'a> Parser<'a> {
             };
             if self.eat("=") {
                 if count.is_none() && self.call_ends_at(0) {
-                    let (call, args, texts) = self.call()?;
-                    Line::Call { result: Some((ty, name)), call, args, texts }
+                    let (call, args) = self.call()?;
+                    Line::Call { result: Some((ty, name)), call, args }
                 } else {
                     Line::Decl { ty, name, count, init: Some(self.init()?) }
                 }
@@ -283,8 +265,8 @@ impl<'a> Parser<'a> {
                 Line::Decl { ty, name, count, init: None }
             }
         } else if self.call_ends_at(0) {
-            let (call, args, texts) = self.call()?;
-            Line::Call { result: None, call, args, texts }
+            let (call, args) = self.call()?;
+            Line::Call { result: None, call, args }
         } else {
             return Err(format!("a call or declaration expected{}", self.here()));
         };

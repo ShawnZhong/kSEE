@@ -143,10 +143,10 @@ pub struct Call {
     pub from: u32,
     pub begun: bool,
     pub done: bool,
-    /// The program's line that made it, and its result's name and type, if
-    /// declared (`int fd = openat(…)`).
+    /// The program's line that made it, and its result's name and what its
+    /// type points to, if declared (`int fd = openat(…)`: Lowered::Call).
     pub line: usize,
-    pub result: Option<(String, String)>,
+    pub result: Option<(String, Option<u32>)>,
 }
 
 

@@ -23,16 +23,14 @@ pub(crate) const PRIMITIVES: [&str; 2] = ["arch/wasm/include/asm/", "include/asm
 /// The machine's own variables (arch/wasm: the interrupt flag, the task
 /// running, the timer), written by every lock and switch: the machine's
 /// state, not the kernel's.
-pub const MACHINE: &str = "arch/wasm/";
+pub(crate) const MACHINE: &str = "arch/wasm/";
 /// Where a task starts (arch/wasm/kernel/process.c), with an empty stack.
 pub(crate) const TASK_ENTRY: &str = "wasm_task_entry";
 /// The context switch: switch(prev, next) returns on next's stack.
 pub(crate) const SWITCH: &str = "__switch_to";
-/// The kernel's page (arch/wasm: PAGE_SHIFT 12).
-pub const PAGE: u32 = 4096;
 /// A task (what the task running points at), and the fields of it the
 /// Stack shows first.
-pub const TASK: &str = "task_struct";
+pub(crate) const TASK: &str = "task_struct";
 /// What the kernel calls the task running, and a task's id and name.
 pub(crate) const CURRENT: &str = "current";
 pub(crate) const TASK_PID: &str = "pid";
@@ -59,7 +57,6 @@ pub(crate) const SYSCALL_BODY: &str = "__do_sys_";
 /// names: for "syscall.param", else any syscall's parameter of that name.
 pub(crate) const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
     ("mmap2.flags", &["MAP_"]), ("unlinkat.flag", &["AT_"]), ("renameat2.flags", &["RENAME_"]), ("linkat.flags", &["AT_"]),
-    ("prctl.option", &["PR_"]),
     ("prctl.option", &["PR_"]), ("waitid.which", &["P_"]), ("waitid.options", &["W"]), ("clone.clone_flags", &["CLONE_", "SIG"]),
     ("clock_nanosleep.flags", &["TIMER_"]),
     ("dfd", &["AT_"]), ("olddfd", &["AT_"]), ("newdfd", &["AT_"]), ("flags", &["O_"]), ("prot", &["PROT_"]),

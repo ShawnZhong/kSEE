@@ -310,7 +310,7 @@ pub struct Var {
 
 /// Have runner `tid` make syscall `nr` with `args`, for line `line` (its
 /// result named `result`): the call's id.
-fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, String)>) -> Result<u32, String> {
+fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, Option<u32>)>) -> Result<u32, String> {
     let (Runner { task, req, .. }, id) = k(|k| {
         let runner = k.runners.get(&tid).copied().ok_or_else(|| format!("no runner {tid}"))?;
         if k.in_flight(tid).is_some() {

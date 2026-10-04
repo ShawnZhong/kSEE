@@ -190,9 +190,8 @@ pub(crate) fn finish(tid: u32, how: &'static str, ret: i64) {
         let c = calls.get_mut(&id).unwrap();
         c.done = true;
         // (Its result: the name it was declared with stands for it now.)
-        if let (Some((name, ty)), "returned") = (&c.result, how) {
-            let sym = ksee_core::program::typed(ret, ty, &tables().types).unwrap_or(Sym::Value { v: ret, to: None });
-            names.set(name, c.line, sym);
+        if let (Some((name, to)), "returned") = (&c.result, how) {
+            names.set(name, c.line, Sym::Value { v: ret, to: *to });
         }
         k.finished.push(Finished { id, how, ret });
         if k.calls.values().all(|c| c.done) {

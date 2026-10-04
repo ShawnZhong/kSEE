@@ -28,8 +28,8 @@ mod parse;
 mod tests;
 
 pub use complete::{completions, Completion};
-pub use eval::{typed, value, Env, Sym};
-pub use layout::{Arg, Decl, Value};
+pub use eval::{value, Env, Sym};
+pub use layout::{Arg, Decl};
 pub use lower::{lower, words, Lowered};
 pub use names::Names;
 pub use parse::{context, expression, statement, Line};

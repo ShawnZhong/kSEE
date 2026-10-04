@@ -4,7 +4,7 @@
 //! at a time, as it opens.
 
 use dioxus::prelude::*;
-use ksee_core::program::{statement, Line};
+use ksee_core::program::{statement, Expr, Line};
 use serde::{Deserialize, Serialize};
 
 use crate::state::{RunId, Tab, Ui};
@@ -124,7 +124,7 @@ pub(crate) async fn run(ui: Ui, run: RunId, lines: Vec<Step>) {
         // (The variables the line's call changed, by now; one passed as records of a
         // variable length, as its parameter's type reads them: a directory's entries.)
         let (call, args) = match statement(line) {
-            Ok(Line::Call { call, texts, .. }) => (call, texts),
+            Ok(Line::Call { call, args, .. }) => (call, args),
             _ => (String::new(), Vec::new()),
         };
         let ret = match outcomes.get(j) { Some(Outcome::Call { ret, .. }) => *ret, _ => None };
@@ -132,7 +132,7 @@ pub(crate) async fn run(ui: Ui, run: RunId, lines: Vec<Step>) {
         for (name, ty, addr, count, size, last) in vars.iter_mut() {
             let now = m.show(*ty, *addr, *count);
             if now != *last {
-                let records = args.iter().position(|a| a == name).zip(ret.filter(|r| *r > 0))
+                let records = args.iter().position(|a| matches!(a, Expr::Name(n) if n == name)).zip(ret.filter(|r| *r > 0))
                     .and_then(|(k, r)| m.as_records(&call, k, *addr, (r as u32).min(*size)));
                 changed.push(format!("{name} = {}", records.unwrap_or_else(|| now.clone())));
                 *last = now;
@@ -153,11 +153,11 @@ pub(crate) async fn run(ui: Ui, run: RunId, lines: Vec<Step>) {
     let calls = outcomes.iter().filter(|o| matches!(o, Outcome::Call { .. })).count();
     // (The lesson's own program: where its text's first link into the recording goes.)
     let linked = (lines == ex.steps).then(|| ex.text.iter().flat_map(|p| text::pieces(p)).find_map(|x| match x {
-        Piece::Link { target, .. } if matches!(LessonTarget::parse(&target), Ok(LessonTarget::Recording { .. })) => Some(target),
+        Piece::Link { to: Some(to @ LessonTarget::Recording { .. }), .. } => Some(to),
         _ => None,
     })).flatten();
     match linked {
-        Some(t) => if let Ok(target) = LessonTarget::parse(&t) { follow(ui, target) },
+        Some(to) => follow(ui, to),
         None => if let Some(k) = call_of(ui, calls) { ui.select(k) },
     }
 }

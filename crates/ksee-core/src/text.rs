@@ -37,83 +37,40 @@ pub enum LessonTarget {
     },
 }
 
-/// Why a lesson-link target is not part of the lesson grammar.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum LessonTargetError {
-    InvalidIndex,
-    ZeroIndex,
-    EmptyPart,
-    UnexpectedPart,
-}
-
 impl LessonTarget {
     /// Parse `N`, `N:function[:any][:tab]`, `N:tab`, or `try:N`.
-    pub fn parse(target: &str) -> Result<Self, LessonTargetError> {
+    pub fn parse(target: &str) -> Option<Self> {
         let mut parts = target.split(':');
-        let first = parts.next().ok_or(LessonTargetError::InvalidIndex)?;
+        let first = parts.next()?;
         if first == "try" {
-            let index = positive(parts.next().ok_or(LessonTargetError::InvalidIndex)?)?;
-            return if parts.next().is_none() {
-                Ok(Self::Try { index })
-            } else {
-                Err(LessonTargetError::UnexpectedPart)
-            };
+            let index = positive(parts.next()?)?;
+            return parts.next().is_none().then_some(Self::Try { index });
         }
-
         let call = positive(first)?;
         let Some(second) = parts.next() else {
-            return Ok(Self::Recording { call, function: None, any_task: false, tab: None });
+            return Some(Self::Recording { call, function: None, any_task: false, tab: None });
         };
-        if second.is_empty() {
-            return Err(LessonTargetError::EmptyPart);
-        }
         if let Some(tab) = LessonTab::parse(second) {
-            return if parts.next().is_none() {
-                Ok(Self::Recording { call, function: None, any_task: false, tab: Some(tab) })
-            } else {
-                Err(LessonTargetError::UnexpectedPart)
-            };
+            return parts.next().is_none().then_some(Self::Recording { call, function: None, any_task: false, tab: Some(tab) });
         }
-        if second == "any" {
-            return Err(LessonTargetError::UnexpectedPart);
+        if second.is_empty() || second == "any" {
+            return None;
         }
-
-        let function = Some(second.into());
-        let mut any_task = false;
-        let mut tab = None;
-        if let Some(third) = parts.next() {
-            if third == "any" {
-                any_task = true;
-                if let Some(fourth) = parts.next() {
-                    tab = LessonTab::parse(fourth).ok_or(LessonTargetError::UnexpectedPart).map(Some)?;
-                }
-            } else {
-                tab = LessonTab::parse(third).ok_or(LessonTargetError::UnexpectedPart).map(Some)?;
-            }
+        let mut next = parts.next();
+        let any_task = next == Some("any");
+        if any_task {
+            next = parts.next();
         }
-        if parts.next().is_some() {
-            return Err(LessonTargetError::UnexpectedPart);
-        }
-        Ok(Self::Recording { call, function, any_task, tab })
-    }
-
-    pub fn call(&self) -> Option<usize> {
-        match self {
-            Self::Try { .. } => None,
-            Self::Recording { call, .. } => Some(*call),
-        }
+        let tab = match next {
+            Some(t) => Some(LessonTab::parse(t)?),
+            None => None,
+        };
+        parts.next().is_none().then_some(Self::Recording { call, function: Some(second.into()), any_task, tab })
     }
 }
 
-fn positive(part: &str) -> Result<usize, LessonTargetError> {
-    if part.is_empty() {
-        return Err(LessonTargetError::EmptyPart);
-    }
-    match part.parse() {
-        Ok(0) => Err(LessonTargetError::ZeroIndex),
-        Ok(n) => Ok(n),
-        Err(_) => Err(LessonTargetError::InvalidIndex),
-    }
+fn positive(part: &str) -> Option<usize> {
+    part.parse().ok().filter(|&n| n > 0)
 }
 
 /// A piece of a paragraph.
@@ -121,8 +78,8 @@ fn positive(part: &str) -> Result<usize, LessonTargetError> {
 pub enum Piece {
     Text(String),
     Code(String),
-    /// [label](target): `call`, the recording call it names, if valid.
-    Link { label: String, target: String, call: Option<usize> },
+    /// [label](target): `to`, what it names, if it says (LessonTarget::parse).
+    Link { label: String, target: String, to: Option<LessonTarget> },
 }
 
 /// Paragraph `p`'s pieces.
@@ -139,8 +96,7 @@ pub fn pieces(p: &str) -> Vec<Piece> {
             rest = &r[end + 1..];
         } else if let Some(r) = rest.strip_prefix('[') && let Some(close) = r.find("](") && let Some(end) = r[close..].find(')') {
             let (label, target) = (&r[..close], &r[close + 2..close + end]);
-            let call = LessonTarget::parse(target).ok().and_then(|target| target.call());
-            out.push(Piece::Link { label: label.into(), target: target.into(), call });
+            out.push(Piece::Link { label: label.into(), target: target.into(), to: LessonTarget::parse(target) });
             rest = &r[close + end + 1..];
         } else {
             out.push(Piece::Text(rest[..1].into()));
@@ -168,7 +124,7 @@ mod tests {
             ("2:console", Recording { call: 2, function: None, any_task: false, tab: Some(Console) }),
             ("try:3", Try { index: 3 }),
         ] {
-            assert_eq!(LessonTarget::parse(text), Ok(target), "{text}");
+            assert_eq!(LessonTarget::parse(text), Some(target), "{text}");
         }
     }
 
@@ -177,7 +133,7 @@ mod tests {
         for text in ["", "abc", "0", ":vfs_read", "2:", "try", "try:", "try:0", "try:abc",
                      "try:1:stack", "2:any", "2:vfs_read:unknown", "2:vfs_read:stack:objects",
                      "2:vfs_read:any:any", "2:vfs_read:any:stack:extra"] {
-            assert!(LessonTarget::parse(text).is_err(), "{text}");
+            assert!(LessonTarget::parse(text).is_none(), "{text}");
         }
     }
 
@@ -186,11 +142,12 @@ mod tests {
         let p = pieces("1. [vfs_read](2:vfs_read) reads `buf`; [try](try:1).");
         assert_eq!(p, [
             Piece::Text("1. ".into()),
-            Piece::Link { label: "vfs_read".into(), target: "2:vfs_read".into(), call: Some(2) },
+            Piece::Link { label: "vfs_read".into(), target: "2:vfs_read".into(),
+                          to: Some(LessonTarget::Recording { call: 2, function: Some("vfs_read".into()), any_task: false, tab: None }) },
             Piece::Text(" reads ".into()),
             Piece::Code("buf".into()),
             Piece::Text("; ".into()),
-            Piece::Link { label: "try".into(), target: "try:1".into(), call: None },
+            Piece::Link { label: "try".into(), target: "try:1".into(), to: Some(LessonTarget::Try { index: 1 }) },
             Piece::Text(".".into()),
         ]);
     }

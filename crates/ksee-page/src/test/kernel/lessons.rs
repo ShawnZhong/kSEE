@@ -17,19 +17,16 @@ pub(super) async fn run(t: &mut KernelHarness, examples: &[crate::lesson::Exampl
         let mut missing = Vec::new();
         for p in &ex.text {
             for x in text::pieces(p) {
-                let Piece::Link { target, .. } = x else { continue };
-                let found = match LessonTarget::parse(&target) {
-                    Ok(LessonTarget::Try { index }) => ex.tries.get(index - 1).is_some(),
-                    Ok(LessonTarget::Recording { call, function, any_task, .. }) => {
+                let Piece::Link { target, to, .. } = x else { continue };
+                let found = match to {
+                    Some(LessonTarget::Try { index }) => ex.tries.get(index - 1).is_some(),
+                    Some(LessonTarget::Recording { call, function, any_task, .. }) => {
                         let s = calls.get(call - 1).copied().flatten().and_then(|id| t.syscall(id));
                         s.as_ref().is_some_and(|s| function.as_ref().is_none_or(|f|
                             m.first_call(f, s.first, t.last(s), (!any_task).then_some(s.task.addr)).is_some()
                         ))
                     }
-                    Err(e) => {
-                        missing.push(format!("{target} ({e:?})"));
-                        continue;
-                    }
+                    None => false,
                 };
                 if !found {
                     missing.push(target);

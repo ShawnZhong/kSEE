@@ -7,7 +7,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::eval::{typed, Env};
+use super::eval::{Env, Eval};
 use super::layout::{Arg, Decl};
 use super::parse::{statement, Line};
 use crate::types::Types;
@@ -16,7 +16,9 @@ use crate::types::Types;
 #[derive(Debug)]
 pub enum Lowered {
     Decl(Decl),
-    Call { nr: u32, args: Vec<Arg>, result: Option<(String, String)> },
+    /// (`result`: the name its result is declared with, and what a pointer
+    /// of its type points to, a type of the kernel's.)
+    Call { nr: u32, args: Vec<Arg>, result: Option<(String, Option<u32>)> },
 }
 
 /// Line `text` of the program, checked and lowered with the names `env`
@@ -25,22 +27,22 @@ pub fn lower(text: &str, types: &Types, env: &dyn Env) -> Result<Lowered, String
     let line = statement(text)?;
     Ok(match line {
         Line::Decl { .. } => Lowered::Decl(types.declare(&line, env)?),
-        Line::Call { result, call, args, texts } => {
+        Line::Call { result, call, args } => {
             let nr = types.syscalls.iter().find(|(_, n)| **n == call).map(|(&nr, _)| nr)
                 .ok_or_else(|| {
                     let like: Vec<&str> = types.syscalls.values().filter(|n| n.starts_with(call.as_str())).take(3).map(String::as_str).collect();
                     format!("this kernel has no syscall {call}{}", if like.is_empty() { String::new() } else { format!(": {}?", like.join(", ")) })
                 })?;
             let params = types.syscall_params(&call).cloned().unwrap_or_default();
-            if texts.len() > params.len() {
-                return Err(format!("{call}: {} arguments, not {}", params.len(), texts.len()));
+            if args.len() > params.len() {
+                return Err(format!("{call}: {} arguments, not {}", params.len(), args.len()));
             }
             let args = args.iter().enumerate().map(|(k, a)| types.arg(a, params.get(k).map_or(0, |p| p.1), env))
                 .collect::<Result<Vec<_>, _>>()?;
             let result = match result {
                 Some((ty, name)) => {
-                    typed(0, &ty.text(), types).ok_or_else(|| format!("{name}: no type {} in the kernel", ty.text()))?;
-                    Some((name, ty.text()))
+                    let (_, to) = Eval { types: Some(types), env }.type_of(&ty).map_err(|_| format!("{name}: no type {} in the kernel", ty.text()))?;
+                    Some((name, to))
                 }
                 None => None,
             };

@@ -20,18 +20,6 @@ pub enum Arg {
     Strings(Vec<Option<String>>),
 }
 
-/// A value of the kernel's types as data (Types::value): a number, a
-/// string (chars), a list (an array), the members of a struct.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Value {
-    Int(i64),
-    Uint(u64),
-    Float(f64),
-    Text(String),
-    List(Vec<Value>),
-    Fields(Vec<(String, Value)>),
-}
-
 /// A program's variable, declared as in C (see Types::declare): its name,
 /// its type (of each element, for an array of `count`), its size, and the
 /// bytes it starts with.
@@ -87,42 +75,6 @@ impl Types {
             (Some(it), None) => self.fill(&mut bytes, 0, ty, it, known)?,
         }
         Ok(bytes)
-    }
-
-    /// A value of type `ty` at `addr` (an array of `count`) as data: what a
-    /// JavaScript program reads it as.
-    pub fn value(&self, mem: &dyn Memory, addr: u32, ty: u32, count: Option<u32>) -> Value {
-        let esize = self.size_of(ty);
-        if let Some(n) = count {
-            if self.is_string(ty) {
-                let mut b = vec![0u8; n.min(4096) as usize];
-                mem.read(addr, &mut b);
-                let len = b.iter().position(|&c| c == 0).unwrap_or(b.len());
-                return Value::Text(String::from_utf8_lossy(&b[..len]).into_owned());
-            }
-            return Value::List((0..n.min(4096)).map(|i| self.value(mem, addr + i * esize, ty, None)).collect());
-        }
-        let id = self.resolve(ty);
-        match &self.get(id).kind {
-            k @ (Kind::Struct(_) | Kind::Union(_)) => Value::Fields(self.members(k).iter().filter(|m| !m.name.is_empty()).map(|m| {
-                let v = if m.bit_size > 0 {
-                    Value::Int(self.read_int(mem, addr + m.bit_offset / 8, 0, m.bit_offset % 8, m.bit_size) as i64)
-                } else {
-                    self.value(mem, addr + m.bit_offset / 8, m.ty, None)
-                };
-                (m.name.clone(), v)
-            }).collect()),
-            Kind::Array { elem, count } => self.value(mem, addr, *elem, Some(*count)),
-            Kind::Pointer(_) => Value::Int(mem.read_u32(addr) as i64),
-            Kind::Base(Base::Float) if esize == 4 => Value::Float(f32::from_bits(mem.read_u32(addr)) as f64),
-            Kind::Base(Base::Float) => Value::Float(f64::from_bits(self.read_int(mem, addr, 8, 0, 0))),
-            Kind::Base(Base::Signed | Base::Char) | Kind::Enum(_) => {
-                let bits = esize.clamp(1, 8) * 8;
-                Value::Int(((self.read_int(mem, addr, esize.min(8), 0, 0) << (64 - bits)) as i64) >> (64 - bits))
-            }
-            Kind::Base(_) => Value::Uint(self.read_int(mem, addr, esize.min(8), 0, 0)),
-            _ => Value::Int(0),
-        }
     }
 
     /// The type named `name` as C writes it: "struct timespec", a typedef
