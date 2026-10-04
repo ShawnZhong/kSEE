@@ -119,8 +119,7 @@ runtime's WebAssembly module and calls `Machine` directly.
 
 | Module | Responsibility |
 |---|---|
-| `lib.rs` | Mounting, boot handoff, the booted `Machine` and the lessons (thread-locals), context providers, and top-level layout. |
-| `coordinator.rs` | Root-owned URL synchronization and the single active lesson run. |
+| `lib.rs` | Mounting, boot handoff, the booted `Machine` and the lessons (thread-locals), context providers, URL synchronization, the single active lesson run, and top-level layout. |
 | `lesson.rs` | Lesson schema, navigation, execution algorithm, outcomes, links, tries, and rendering. |
 | `editor.rs` | In-place program editing, completions, signatures, and validation. |
 | `chart.rs` | Whole-recording overview, stack chart, task strip, transport, zoom/pan input, and function search. |
@@ -128,18 +127,17 @@ runtime's WebAssembly module and calls `Machine` directly.
 | `stack.rs` | Line/frame stepping, keyboard controls, stack frames, values, and origins. |
 | `panels.rs` | Stack, Tasks, Objects, and Console tabs. |
 | `layout.rs` | Resizable panes and persisted dimensions. |
-| `state.rs` | Semantic state transitions, run/snapshot identities, navigation, lesson program, and derived views. |
+| `state.rs` | Semantic state transitions, the snapshot identity, navigation, lesson program, and derived views. |
 | `test/kernel/` | One sequential kernel integration suite: harness, trace, program, metadata, lessons, and lifecycle phases. |
 | `test/ui.rs` | Browser-level page interaction suites. |
 | `test/dom.rs` | DOM queries, synthetic input, waiting, and assertions shared by UI suites. |
 | `test/mod.rs` | URL dispatch and result reporting to the native Chromium driver. |
 
 The central state is the selected syscall, reconstructed line cursor, selected
-stack frame, lesson program, and current execution identity. A chart hover
-supplies a temporary preview. Dioxus memos derive the syscall, line sequence,
+stack frame, and lesson program. A chart hover supplies a temporary preview. Dioxus memos derive the syscall, line sequence,
 chart, stack, and frame from those signals and the published snapshot identity.
-The root coordinator cancels superseded work, and run IDs prevent stale async
-results from publishing even if underlying browser work finishes later.
+The root cancels the previous lesson run as it starts another: a cancelled
+task's future is dropped, so a superseded run never publishes.
 
 The runtime exposes a closure-based boundary: `Machine::view` lends a
 `ksee_core::view::View` over the last snapshot (its views of a moment, the

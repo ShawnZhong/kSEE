@@ -11,6 +11,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use dioxus::dioxus_core::Task;
 use dioxus::prelude::*;
 use js_sys::Promise;
 use ksee_host::machine::Machine;
@@ -19,7 +20,6 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 mod chart;
-mod coordinator;
 mod editor;
 mod layout;
 mod lesson;
@@ -109,7 +109,22 @@ fn App() -> Element {
             }));
         })
     });
-    coordinator::use_coordinator(ui);
+    // (The URL, as the lesson and its program are.)
+    use_effect(move || lesson::to_url((ui.lesson)(), &(ui.program)()));
+    // (The program made again, on a fresh kernel, as it or the kernel
+    // changes: the run before cancelled.)
+    let mut running = use_signal(|| None::<Task>);
+    use_effect(move || {
+        let program = (ui.program)();
+        let kernel = (ui.kernel)();
+        ui.begin_run();
+        if let Some(task) = running.write().take() {
+            task.cancel();
+        }
+        if matches!(kernel, Some(Ok(()))) {
+            running.set(Some(spawn(lesson::run(ui, program))));
+        }
+    });
     let derived = state::Derived::new(ui);
     use_context_provider(|| derived);
     let sizes = use_context_provider(|| Signal::new(layout::Sizes::kept()));

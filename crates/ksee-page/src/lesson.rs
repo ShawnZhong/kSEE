@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use ksee_core::program::{statement, Expr, Line};
 use serde::{Deserialize, Serialize};
 
-use crate::state::{RunId, Ui};
+use crate::state::Ui;
 use ksee_core::text::{self, LessonTarget, Piece};
 use crate::{examples, machine};
 
@@ -69,27 +69,22 @@ pub enum Outcome {
 /// kernel run until it is quiet), each line's outcome as it goes; then a
 /// call selected: the first the lesson's text links to (its subject), else
 /// the last.
-pub(crate) async fn run(ui: Ui, run: RunId, lines: Vec<Step>) {
-    if !ui.is_current(run) {
-        return;
-    }
+/// (A run begun again cancels this one: it stops at its next await.)
+pub(crate) async fn run(mut ui: Ui, lines: Vec<Step>) {
     let m = machine();
-    if m.restart().await.is_err() || !ui.is_current(run) {
+    if m.restart().await.is_err() {
         return;
     }
     let mut outcomes = Vec::new();
     // (The variables so far: their name, type, address, count, and as they were shown last.)
     let mut vars: Vec<(String, u32, u32, Option<u32>, u32, String)> = Vec::new();
     for (j, step) in lines.iter().enumerate() {
-        if !ui.is_current(run) {
-            return;
-        }
         let line = step.text();
         let made = match m.make(step.task(), line) {
             Ok(made) => made,
             Err(error) => {
                 outcomes.push(Outcome::Failed(error));
-                ui.publish_outcomes(run, outcomes.clone());
+                ui.outcomes.set(outcomes.clone());
                 break;
             }
         };
@@ -99,20 +94,13 @@ pub(crate) async fn run(ui: Ui, run: RunId, lines: Vec<Step>) {
                 let shown = m.show(v.ty, v.addr, v.count);
                 vars.push((v.name, v.ty, v.addr, v.count, v.bytes, shown.clone()));
                 outcomes.push(Outcome::Declared(shown));
-                if !ui.publish_outcomes(run, outcomes.clone()) {
-                    return;
-                }
+                ui.outcomes.set(outcomes.clone());
                 continue;
             }
         };
         outcomes.push(Outcome::Call { id, ret: None, how: None, during: None, changed: Vec::new() });
-        if !ui.publish_outcomes(run, outcomes.clone()) {
-            return;
-        }
+        ui.outcomes.set(outcomes.clone());
         let Ok(finished) = m.quiet().await else { return };
-        if !ui.is_current(run) {
-            return;
-        }
         for f in finished {
             for (k, outcome) in outcomes.iter_mut().enumerate() {
                 if let Outcome::Call { id, ret, how, during, .. } = outcome && *id == f.id {
@@ -141,12 +129,9 @@ pub(crate) async fn run(ui: Ui, run: RunId, lines: Vec<Step>) {
             *value = changed;
         }
         m.snapshot();
-        if !ui.publish_snapshot(run, outcomes.clone(), m.console()) {
-            return;
-        }
-    }
-    if !ui.is_current(run) {
-        return;
+        ui.outcomes.set(outcomes.clone());
+        ui.console.write().push_str(&m.console());
+        ui.snapshot += 1;
     }
     let ex = &examples()[(ui.lesson)()];
     let calls = outcomes.iter().filter(|o| matches!(o, Outcome::Call { .. })).count();

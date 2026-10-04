@@ -132,18 +132,11 @@ impl Derived {
 /// A panel: what a lesson's link opens too.
 pub use ksee_core::text::LessonTab as Tab;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct RunId(u64);
-
-
 #[derive(Clone, Copy)]
 pub struct Ui {
     /// The published recording snapshot: what reads the recording subscribes
     /// to this identity and reads it again when it changes.
     pub snapshot: Signal<u64>,
-    /// The newest requested program execution. Async results from older runs
-    /// are ignored even if their underlying browser work finishes later.
-    run: Signal<RunId>,
     /// The cursor (none: no call selected), and the moment under the
     /// pointer, if it is over the chart.
     pub at: Signal<Option<Moment>>,
@@ -170,7 +163,6 @@ impl Ui {
     pub fn new() -> Ui {
         Ui {
             snapshot: Signal::new(0),
-            run: Signal::new(RunId::default()),
             at: Signal::new(None),
             peek: Signal::new(None),
             win: Signal::new(None),
@@ -185,39 +177,13 @@ impl Ui {
         }
     }
 
-    /// Begin a new program execution and invalidate all older publishers.
-    pub fn begin_run(mut self) -> RunId {
-        let next = RunId(self.run.peek().0.wrapping_add(1));
-        self.run.set(next);
+    /// A run begun: what the last made cleared.
+    pub fn begin_run(mut self) {
         self.outcomes.write().clear();
         self.console.set(String::new());
         self.at.set(None);
         self.peek.set(None);
         self.seen.set(None);
-        next
-    }
-
-    pub fn is_current(&self, run: RunId) -> bool {
-        *self.run.peek() == run
-    }
-
-    pub fn publish_outcomes(mut self, run: RunId, outcomes: Vec<crate::lesson::Outcome>) -> bool {
-        if !self.is_current(run) {
-            return false;
-        }
-        self.outcomes.set(outcomes);
-        true
-    }
-
-    /// Publish the current execution state after a new Machine snapshot.
-    pub fn publish_snapshot(mut self, run: RunId, outcomes: Vec<crate::lesson::Outcome>, console: String) -> bool {
-        if !self.is_current(run) {
-            return false;
-        }
-        self.outcomes.set(outcomes);
-        self.console.write().push_str(&console);
-        self.snapshot += 1;
-        true
     }
 
     pub fn open_lesson(mut self, lesson: usize) {
