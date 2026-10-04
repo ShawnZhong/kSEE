@@ -6,7 +6,7 @@ use web_sys::{HtmlElement, HtmlInputElement, HtmlTextAreaElement};
 use super::Check;
 use super::dom::*;
 
-/// The read example (#ex=read): its calls made, its subject (the read)
+/// The read example (read.html): its calls made, its subject (the read)
 /// selected; its links followed; stepping into, over, out, and by key; the
 /// chart (a click, find); Objects and Tasks; a line changed, a
 /// try and back; the next lesson.

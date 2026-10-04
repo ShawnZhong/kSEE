@@ -7,8 +7,8 @@
 //!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
 //!   vmlinux.gz, src/       the kernel for the page (pack; target/vmlinux)
 //!   initramfs.cpio.gz      the Makefile's target/initramfs/initramfs.cpio
-//!   examples.json, lessons/ the lessons (user/examples/*.json): the page's, and
-//!                          a page each (see lessons.rs)
+//!   examples.json, NAME.html the lessons (user/examples/*.json): the page's, and
+//!                          a page of it each (see lessons.rs)
 //!
 //! (Gzipped by the build: hosts compress them less, or not at all; the
 //! page unpacks them.)
