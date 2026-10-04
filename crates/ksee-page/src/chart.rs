@@ -275,6 +275,7 @@ fn draw_chart(
     lit: Option<&(usize, String)>,
     peeked: Option<f64>,
     now: Option<f64>,
+    level: Option<usize>,
     offset: f64,
 ) {
     let Some((canvas, ctx)) = canvas_context("timeline-canvas", width, height) else {
@@ -355,8 +356,18 @@ fn draw_chart(
             ctx.fill_rect(pct * width / 100.0 + offset - 1.0, 0.0, 2.0, height);
         }
     }
+    // (The level chosen, kept as the cursor moves: across, the cursor's other line.)
+    if let Some(level) = level {
+        ctx.set_global_alpha(0.5);
+        ctx.set_fill_style_str(&foreground);
+        ctx.fill_rect(0.0, height - (level as f64 + 0.5) * ROW - 0.5, width, 1.0);
+    }
     ctx.set_global_alpha(1.0);
     if crate::test::on() {
+        match level {
+            Some(level) => canvas.set_attribute("data-test-level", &level.to_string()),
+            None => canvas.remove_attribute("data-test-level"),
+        }.ok();
         let _ = canvas.set_attribute("data-test-bars", &points.join("\n"));
         let _ = canvas.set_attribute("data-test-found", &found_count.to_string());
         match now {
@@ -404,24 +415,24 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         // (The bar outlined: the one under the pointer, else the frame shown's call.)
         let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
         draw_chart(&chart, &task_runs(&chart), width(), height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
-                   d.preview.cloned().and_then(x), d.cursor.cloned().and_then(x), offset());
+                   d.preview.cloned().and_then(x), d.cursor.cloned().and_then(x), ui.at.read().as_ref().and_then(|m| m.frame), offset());
         if let Some(scroll) = element("timeline-scroll") {
             scroll.set_scroll_top((scroll.scroll_height() - scroll.client_height() - *from_bottom.peek()).max(0));
         }
     });
-    // (One rule for hover and click:
-    // and the moment that column samples.)
+    // (One rule for hover and click: the bar under the pointer, and the
+    // moment that column samples; off the bars, at level `off`.)
     let hit = move |chart: &Chart,
                     x: f64,
-                    y: f64|
+                    y: f64,
+                    off: Option<usize>|
           -> Option<(Option<crate::state::Moment>, Option<usize>)> {
         let k = ((x / width() * chart.cols.len() as f64).max(0.0) as usize)
             .min(chart.cols.len().checked_sub(1)?);
         let dd = ((height - y) / ROW).floor();
         let bar = (y < height && dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len())
             .then(|| chart.cols[k].frames[dd as usize] as usize);
-        // (A bar: its level; elsewhere, the level chosen, kept.)
-        let frame = bar.map(|_| dd as usize).or_else(|| ui.at.peek().as_ref().and_then(|m| m.frame));
+        let frame = bar.map(|_| dd as usize).or(off);
         let shown = d.shown.peek().as_ref().map(|m| m.call);
         Some((
             ui.moment_at(
@@ -497,7 +508,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     // (Else the moment under the pointer shown everywhere but the line: over a bar, what its call was.)
                     let p = e.client_coordinates();
                     let Some((x, y)) = chart_coordinates(p.x, p.y) else { return };
-                    let Some((peek, bar)) = hit(&chart, x, y) else { return };
+                    // (Off the bars, the level chosen, kept.)
+                    let Some((peek, bar)) = hit(&chart, x, y, ui.at.peek().as_ref().and_then(|m| m.frame)) else { return };
                     ui.set_preview(peek);
                     match bar.map(|b| &chart.bars[b]) {
                         None => if tip().is_some() { tip.set(None) },
@@ -522,14 +534,15 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     }
                 }
             },
-            // (A click, not a drag: resolve its coordinates afresh, then commit.)
+            // (A click, not a drag: resolve its coordinates afresh, then
+            // commit; off the bars, no level chosen: the innermost.)
             onclick: {
                 let chart = chart.clone();
                 move |e: MouseEvent| {
                     if dragged() { dragged.set(false); return }
                     let ui = ui;
                     let p = e.client_coordinates();
-                    if let Some(moment) = chart_coordinates(p.x, p.y).and_then(|(x, y)| hit(&chart, x, y)).and_then(|h| h.0) {
+                    if let Some(moment) = chart_coordinates(p.x, p.y).and_then(|(x, y)| hit(&chart, x, y, None)).and_then(|h| h.0) {
                         ui.commit(Some(moment));
                     }
                 }

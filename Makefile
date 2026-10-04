@@ -61,9 +61,11 @@ $(PLUGIN): plugin/ksee-trace.cpp | llvm
 port: linux/Makefile
 	cp -r -u arch/. linux/arch/
 
-# (Every Kconfig the port has: a new one runs defconfig again.)
+# (Every Kconfig the port has: a new one runs defconfig again; touched,
+# as kbuild leaves a .config the same as it was.)
 linux/.config: arch/wasm/configs/defconfig $(wildcard arch/wasm/Kconfig*) | port
 	$(KMAKE) defconfig
+	touch $@
 
 # (kbuild knows the kernel's own dependencies: it is always asked; it
 # builds gen_init_cpio too, the kernel's own initramfs writer.)

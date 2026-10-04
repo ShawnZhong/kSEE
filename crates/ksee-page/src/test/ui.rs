@@ -130,11 +130,19 @@ pub(super) async fn read() -> Check {
     mouse(&chart, "click", x, y, false);
     sleep(300).await;
     let chosen = one("tr.frame.on a").map(|a| text(&a)).unwrap_or_default();
+    let level = || canvas.get_attribute("data-test-level");
     check(
-        chosen == "vfs_read" && hovered == place(),
-        "hover and click on a bar",
-        (&chosen, &hovered, place()),
+        chosen == "vfs_read" && hovered == place() && level().is_some(),
+        "hover and click on a bar: its level chosen, a line across",
+        (&chosen, &hovered, place(), level()),
     )?;
+    // (A click above the bars: no level chosen, the innermost frame shown.)
+    mouse(&chart, "click", x, b.top() + 2.0, false);
+    sleep(300).await;
+    let innermost = one(".stack tbody").is_some_and(|t| t.class_name() == "on");
+    check(level().is_none() && innermost, "a click off the bars: no level chosen", (level(), innermost))?;
+    mouse(&chart, "click", x, y, false);
+    sleep(300).await;
     // (Then, from the bar clicked, a drag: the bars follow the pointer.)
     let before = bar(&canvas, "vfs_read").map(|p| p.0);
     let win0 = one(".overview .win").and_then(|w| w.get_attribute("style"));
