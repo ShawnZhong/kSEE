@@ -23,9 +23,10 @@ The build requires:
 - Rust through rustup, with the `wasm32-unknown-unknown` target; and
 - a browser with JSPI support.
 
-On Linux, setup also installs the ordinary kernel build prerequisites. On
-macOS, it installs versioned Homebrew formulae for LLVM and LLD and puts the
-Homebrew GNU tools ahead of the system tools during the build.
+On Linux, setup also installs the ordinary kernel build prerequisites, and
+Rust links host code with `clang-22` (`.cargo/config.toml`), so no system `cc`
+is needed. On macOS, it installs versioned Homebrew formulae for LLVM and LLD
+and puts the Homebrew GNU tools ahead of the system tools during the build.
 
 ## Install the toolchain
 

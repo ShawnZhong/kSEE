@@ -271,10 +271,15 @@ fn git(args: &[&str]) -> Vec<u8> {
     stdout(cmd("git").arg("-C").arg("linux").args(args))
 }
 
-/// wasm-bindgen's glue for `wasm`, in `out` (the crate, at ksee-page's
+/// wasm-bindgen's glue for `wasm`, in `out` (cli-support, at ksee-page's
 /// wasm-bindgen version: the two must match).
 fn bindgen(wasm: &str, out: &str) {
-    run(cmd("wasm-bindgen").args(["--target", "web", "--no-typescript", "--out-dir", out, wasm]));
+    eprintln!("+ (wasm-bindgen) {wasm} -> {out}");
+    wasm_bindgen_cli_support::Bindgen::new()
+        .input_path(wasm)
+        .web(true)
+        .and_then(|b| b.typescript(false).generate(out))
+        .unwrap_or_else(|e| crate::fail(&format!("wasm-bindgen: {e:#}")));
 }
 
 fn gzip(from: &str, to: &str) {
