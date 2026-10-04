@@ -25,7 +25,7 @@ extern struct console wasm_console; /* console.c */
 /* Stack pointer the host installs before calling boot(). */
 __wasm_export(boot_stack) void *wasm_boot_stack(void)
 {
-	return task_pt_regs(&init_task);
+	return task_stack_top(&init_task);
 }
 
 /* Entry point: the boot CPU, which becomes init_task/idle. */

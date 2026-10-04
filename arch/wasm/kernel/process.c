@@ -78,7 +78,7 @@ int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 	p->thread.fn = args->fn;
 	p->thread.fn_arg = args->fn_arg;
 
-	wasm_spawn_task(p, regs);
+	wasm_spawn_task(p, task_stack_top(p));
 	if (!args->fn) {
 		p->thread.entry = current->thread.clone_entry;
 		wasm_clone_user(p, args->stack);

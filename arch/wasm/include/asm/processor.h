@@ -11,6 +11,8 @@
 struct task_struct;
 
 struct thread_struct {
+	/* The syscall it makes (wasm has no user registers): syscall.c's. */
+	struct pt_regs regs;
 	/* Kernel thread entry. */
 	int (*fn)(void *);
 	void *fn_arg;
@@ -24,8 +26,9 @@ struct thread_struct {
 
 #define INIT_THREAD	{ }
 
-#define task_pt_regs(tsk) \
-	((struct pt_regs *)(task_stack_page(tsk) + THREAD_SIZE) - 1)
+#define task_pt_regs(tsk)	(&(tsk)->thread.regs)
+/* Where its kernel stack starts (it grows down). */
+#define task_stack_top(tsk)	((void *)(task_stack_page(tsk) + THREAD_SIZE))
 
 /* Kernel code always runs on its task stack. */
 #define on_thread_stack()	1

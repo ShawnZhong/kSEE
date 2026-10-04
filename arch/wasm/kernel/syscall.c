@@ -51,7 +51,7 @@ __wasm_export(syscall) long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2,
 	 * (the old program's frames are never returned to).
 	 */
 	if (current->thread.entry != entry)
-		wasm_restart_task(current, regs);
+		wasm_restart_task(current, task_stack_top(current));
 	syscall_exit_to_user_mode(regs);
 	return regs->ret;
 }
