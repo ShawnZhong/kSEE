@@ -72,7 +72,7 @@ fn declarations_are_a_programs_memory() {
     }
     let mem = M([fds.bytes.clone(), d.bytes.clone(), b"hi\0".to_vec()].concat());
     assert_eq!(t.show(&mem, 0, 7, Some(2)), "{3, 4}");
-    assert_eq!(t.show(&mem, 8, 2, None), "{tv_nsec = 0x1c9c380}");
+    assert_eq!(t.show(&mem, 8, 2, None), "{tv_nsec = 30000000}");
     assert_eq!(t.show(&mem, 24, 4, Some(3)), "\"hi\"");
     // (Past a NUL too, escaped, as C writes it.)
     assert_eq!(t.show(&M(b"a\0b\x05\0\0".to_vec()), 0, 4, Some(6)), "\"a\\0b\\x05\"");
@@ -169,7 +169,7 @@ fn a_struct_summary_is_short() {
     }
     let mut bytes = alloc::vec![0u8; 36];
     bytes[8..12].copy_from_slice(&65536u32.to_le_bytes());
-    assert_eq!(t.show(&M(bytes), 0, 3, None), "{flags = 0x10000}");
+    assert_eq!(t.show(&M(bytes), 0, 3, None), "{flags = 65536}");
     // All zero: {0}. Past 4 nonzero fields: capped with ….
     assert_eq!(t.show(&M(alloc::vec![0u8; 36]), 0, 3, None), "{0}");
     let mut many = alloc::vec![0u8; 36];
@@ -192,7 +192,7 @@ fn a_union_summary_is_its_first_member() {
     }
     let mut bytes = alloc::vec![0u8; 4];
     bytes[0..4].copy_from_slice(&0x1d20010u32.to_le_bytes());
-    assert_eq!(t.show(&M(bytes), 0, 2, None), "{addr = 0x1d20010}");
+    assert_eq!(t.show(&M(bytes), 0, 2, None), "{addr = 30539792}");
 }
 
 #[test]

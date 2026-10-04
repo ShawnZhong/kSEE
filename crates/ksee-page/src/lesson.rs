@@ -434,7 +434,7 @@ fn task_name(ui: Ui, task: Option<&str>, program: &[Step]) -> (String, i32) {
 }
 
 /// A program's step `j` (written in place: Enter makes the program again,
-/// the text changed, or removed if emptied, or by its ✕): what it did; a
+/// the text changed, or removed if emptied): what it did; a
 /// call, its recording selected as it gets the focus. In a task column: its
 /// column, and its task's hue.
 #[component]
@@ -452,7 +452,6 @@ fn Cell(j: usize, step: Step, outcome: Option<Outcome>, call: Option<usize>, col
                         if text.is_empty() { program.remove(j); } else { program[j] = step.with_text(text); }
                     }),
                     focus: move |_| if let Some(k) = call.and_then(|n| call_of(ui, n)) { ui.select(k) } }
-                a { class: "rm", title: "remove this line (the program runs again without it)", onclick: move |_| ui.edit_program(|program| { program.remove(j); }), "✕" }
                 span { class: "ret mono", {said(outcome.as_ref())} }
             }
             if let Some(Outcome::Call { changed, .. }) = &outcome && !changed.is_empty() {
