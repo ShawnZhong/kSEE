@@ -345,11 +345,12 @@ fn draw_chart(
             ctx.fill_rect(pct * width / 100.0 + offset - 1.0, 0.0, 2.0, height);
         }
     }
-    // (The level chosen, kept as the cursor moves: across, the cursor's other line.)
+    // (The level chosen, kept as the cursor moves: across, the cursor's
+    // other line, drawn as it is.)
     if let Some(level) = level {
-        ctx.set_global_alpha(0.5);
+        ctx.set_global_alpha(1.0);
         ctx.set_fill_style_str(&foreground);
-        ctx.fill_rect(0.0, height - (level as f64 + 0.5) * ROW - 0.5, width, 1.0);
+        ctx.fill_rect(0.0, height - (level as f64 + 0.5) * ROW - 1.0, width, 2.0);
     }
     ctx.set_global_alpha(1.0);
     if crate::test::on() {
@@ -591,7 +592,7 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
             .calls
             .call_end(first)
             .and_then(|end| match v.rec.records.get(end) {
-                Some(&Record::Return { value, .. }) => Some(value),
+                Some(&Record::Return { value, .. }) => value,
                 _ => None,
             });
         let ret = ret
