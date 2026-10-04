@@ -55,6 +55,9 @@ fn section(kernel: &Uint8Array, name: &str) -> String {
 impl Machine {
     /// Boot the built kernel and initramfs bytes in 64 MiB of RAM.
     pub async fn start(kernel: Uint8Array, initrd: Uint8Array) -> Result<Machine, JsValue> {
+        if js::get(&js::get(&js_sys::global(), "WebAssembly"), "Suspending").is_undefined() {
+            return Err("this browser has no JSPI (WebAssembly.Suspending): kSEE needs Chrome 137, Firefox 153, Safari 27 or later".into());
+        }
         // The kernel's RAM: this module's memory, grown to it first (the
         // runtime's heap grows above it, its data and stack are below).
         let memory: WebAssembly::Memory = wasm_bindgen::memory().unchecked_into();

@@ -228,11 +228,17 @@ const theme = localStorage.getItem("ksee.theme");
 if (theme) document.documentElement.dataset.theme = theme;
 </script>
 <script type="module">
-import { load, start } from "./ksee.js";
-import { mount } from "./pkg/ksee_page.js";
+import init, { mount, Machine } from "./pkg/ksee_page.js";
+// (A build's file, its bytes: the .gz ones unpacked.)
+async function bytes(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url}: ${response.status}`);
+  const body = url.endsWith(".gz") ? response.body.pipeThrough(new DecompressionStream("gzip")) : response.body;
+  return new Uint8Array(await new Response(body).arrayBuffer());
+}
 // (The page at once; the kernel boots meanwhile, the page's once up.)
-const [, examples] = await Promise.all([load(), fetch("examples.json").then((r) => r.json())]);
-mount("root", examples, start({ kernel: new URL("vmlinux.gz", location.href), initrd: new URL("initramfs.cpio.gz", location.href) }));
+const [, examples] = await Promise.all([init({ module_or_path: "pkg/ksee_page_bg.wasm" }), fetch("examples.json").then((r) => r.json())]);
+mount("root", examples, Promise.all([bytes("vmlinux.gz"), bytes("initramfs.cpio.gz")]).then(([kernel, initrd]) => Machine.start(kernel, initrd)));
 </script>
 </body>
 </html>

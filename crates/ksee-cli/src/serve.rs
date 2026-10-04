@@ -103,7 +103,7 @@ mod tests {
     fn mime_kinds() {
         let mime_of = |name: &str| mime(Path::new(name));
         assert_eq!(mime_of("index.html"), "text/html; charset=utf-8");
-        assert_eq!(mime_of("ksee.js"), "text/javascript");
+        assert_eq!(mime_of("x.js"), "text/javascript");
         assert_eq!(mime_of("ksee_page_bg.wasm"), "application/wasm");
         assert_eq!(mime_of("vmlinux.gz"), "application/octet-stream");
     }

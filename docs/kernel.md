@@ -173,7 +173,7 @@ The kernel's memory is the host runtime's (the kernel imports it; not
 shared: one thread). `CONFIG_WASM_HOST_MEMORY` (16 MiB) at its bottom
 belongs to the runtime, its static data and stack; the kernel image is
 linked above it. RAM ends where the host says (`memory_end`: 64 MiB, see
-web/ksee.js); the host puts the initramfs at its top and passes `initrd=`
+ksee-host's state.rs); the host puts the initramfs at its top and passes `initrd=`
 on the command line. Memory above RAM is the host's heap.
 
 ## The host interface
