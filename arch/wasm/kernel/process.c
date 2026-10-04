@@ -27,6 +27,18 @@ struct task_struct *__switch_to(struct task_struct *prev,
 	return wasm_last;
 }
 
+/*
+ * Return to user mode, at the start of the task's program (a direct call:
+ * nothing of the host's may be on a stack the host suspends). Returning
+ * from it is an exit.
+ */
+static void __noreturn wasm_enter_user(void)
+{
+	syscall_exit_to_user_mode(current_pt_regs());
+	current->thread.entry();
+	do_exit(0);
+}
+
 /* Called by the host, on a new task's stack, when it first gets the CPU. */
 __wasm_export(task_entry) void wasm_task_entry(struct task_struct *p)
 {
@@ -45,17 +57,6 @@ __wasm_export(user_entry) void wasm_user_entry(void)
 	wasm_enter_user();
 }
 
-/*
- * Return to user mode, at the start of the task's program (a direct call:
- * nothing of the host's may be on a stack the host suspends). Returning
- * from it is an exit.
- */
-void __noreturn wasm_enter_user(void)
-{
-	syscall_exit_to_user_mode(current_pt_regs());
-	current->thread.entry();
-	do_exit(0);
-}
 
 int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 {

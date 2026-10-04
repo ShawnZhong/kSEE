@@ -79,6 +79,10 @@ void wasm_switch_task(struct task_struct *prev, struct task_struct *next, bool d
 __wasm_import(idle)
 void wasm_idle(void);
 
+/* The call stack, as the host sees it, on its console (traps.c's show_stack). */
+__wasm_import(print_stack)
+void wasm_print_stack(void);
+
 /* Stop the machine. Does not return. */
 __wasm_import(halt)
 void __noreturn wasm_halt(int code);
@@ -122,10 +126,10 @@ void wasm_task_entry(struct task_struct *p);
 void wasm_user_entry(void);
 long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
 
+/* The timer's interrupt (time.c, irq.c). */
 void wasm_timer_interrupt(void);
-void __noreturn wasm_enter_user(void);
 
-/* Interrupt lines, as bits of wasm_irq_pending. */
+/* Interrupt lines, as bits of wasm_irq_pending (ksee-host's state.rs, IRQ_*, the same). */
 #define WASM_IRQ_TIMER		0
 #define WASM_IRQ_DOORBELL	1	/* the host rings tasks (irq.c) */
 #define WASM_IRQ_DISK		2	/* the disk has done requests (disk.c) */

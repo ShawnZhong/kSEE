@@ -516,7 +516,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       SmallVector<Value *, Values> args;
       for (Value *p : n == 0 ? params : SmallVector<Value *, CallArgs>{})
         p ? words(B, p, args) : args.push_back(B.getInt32(0));
-      // (Then the frame base, where its locals are: see the Q lines.)
+      // (Then the frame base, where its locals are: see ksee.types's Q lines, the pack's.)
       if (n == 0) {
         Function *fa = Intrinsic::getOrInsertDeclaration(M, Intrinsic::frameaddress, {PointerType::getUnqual(M->getContext())});
         args.push_back(B.CreatePtrToInt(B.CreateCall(fa, {B.getInt32(0)}), i32));

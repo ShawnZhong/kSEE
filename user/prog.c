@@ -2,7 +2,7 @@
 // special, it may not exit, it ignores the signals it has no handler for).
 // It makes the syscalls the page asks for, one at a time: it waits in a
 // futex on a word of its own, which the host sets when a call is asked for
-// (and rings the task: see the page's Machine.run). A clone child of it
+// (and rings the task: see crates/ksee-host's machine.rs, call). A clone child of it
 // (a thread, or vfork's child) starts at __wasm_clone_start and is a runner
 // too. /init starts it, and again when it exits. Plain C, with no C
 // library: its syscalls as syscall.h makes them.

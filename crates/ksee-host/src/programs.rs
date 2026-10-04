@@ -83,6 +83,7 @@ pub(crate) fn clone_user(p: u32, sp: u32) {
     });
 }
 
+/// (asm-generic/errno-base.h's.)
 const ENOEXEC: i32 = 8;
 
 /// Compile program `image` for the current task: the bytes its data

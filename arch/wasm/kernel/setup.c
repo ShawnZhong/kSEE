@@ -12,10 +12,8 @@
 #include <linux/start_kernel.h>
 #include <asm/sections.h>
 #include <asm/setup.h>
+#include <asm/uaccess.h>
 #include <asm/wasm.h>
-
-/* Linker-defined end of static data and of the boot stack. */
-extern char __heap_base[];
 
 unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)]
 	__aligned(THREAD_SIZE);

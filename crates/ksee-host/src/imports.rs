@@ -1,11 +1,11 @@
 //! The kernel's imports (arch/wasm/include/asm/wasm.h).
 //!
-//! Frequent ones (time, console, command line, spawn_task, the doorbell,
-//! the disk) are this module's exports, so the kernel calls them
-//! directly. The rest need JS objects (promises, programs' modules) and are
-//! closures reached through wasm-bindgen: the tasks' (sched.rs: switch_task,
-//! idle, restart_task and halt suspend the kernel's stack) and the
-//! programs' (programs.rs).
+//! Frequent ones (time, console, command line, memory_end, the doorbell,
+//! the disk; and sched.rs's spawn_task) are exports of this module, so the
+//! kernel calls them directly. The rest need JS objects (promises,
+//! programs' modules) and are closures reached through wasm-bindgen: the
+//! tasks' (sched.rs's switch_task, idle and restart_task, and halt here,
+//! suspend the kernel's stack) and the programs' (programs.rs).
 
 use std::cell::RefCell;
 
@@ -135,7 +135,7 @@ pub fn record(level: u32) {
 }
 
 /// The import object for the kernel (and the programs' syscall import,
-/// once it is instantiated: see instantiated).
+/// once it is instantiated: see programs.rs's instantiated).
 pub fn kernel() -> Object {
     let rt = wasm_bindgen::exports();
     let export = |name: &str| js::get(&rt, name);

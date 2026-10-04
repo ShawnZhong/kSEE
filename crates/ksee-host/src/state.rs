@@ -24,7 +24,7 @@ pub const KERNEL_BASE: u32 = 0x100_0000;
 /// Where it ends.
 pub const RAM_BYTES: u32 = 64 << 20;
 
-/// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h).
+/// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h: the same).
 pub const IRQ_TIMER: u32 = 0;
 pub const IRQ_DOORBELL: u32 = 1;
 pub const IRQ_DISK: u32 = 2;

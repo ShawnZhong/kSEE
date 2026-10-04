@@ -4,5 +4,4 @@
 *.a
 *.s
 .*.cmd
-/kernel/vmlinux.lds
 /include/generated/
