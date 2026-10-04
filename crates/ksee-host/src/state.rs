@@ -49,10 +49,9 @@ pub struct State {
     /// skips to the next timer), since when (the clock); whether it boots.
     pub waiting: Option<u64>,
     pub booting: bool,
-    /// What waits for it to be quiet (Machine::quiet): settled with the
-    /// calls finished since the last time (or rejected: it halted).
+    /// What waits for it to be quiet (Machine::quiet): settled (or
+    /// rejected: it halted).
     pub quiet_waiters: Vec<(Function, Function)>,
-    pub finished: Vec<Finished>,
     /// The halt code, once the kernel has halted.
     pub halted: Option<i32>,
     pub console_out: Vec<u8>,
@@ -75,6 +74,33 @@ pub struct State {
     /// many of its lines have been made (see Machine::make).
     pub names: ksee_core::program::Names,
     pub lines: usize,
+    /// How each line went (see Outcome), and the variables declared, each
+    /// as it was shown last (see Machine::quiet).
+    pub outcomes: Vec<Outcome>,
+    pub vars: Vec<(Var, String)>,
+}
+
+/// How a line of the program went: a variable declared (as it starts), or
+/// a call (its id): finished (its result) or not yet (it blocks); or why it
+/// could not be made.
+#[derive(Clone, PartialEq, Debug)]
+pub enum Outcome {
+    Declared(String),
+    /// (`during`: the line during which it finished, if a later one's;
+    /// `changed`: the variables it changed, as they are then.)
+    Call { id: u32, done: bool, ret: Option<i64>, during: Option<usize>, changed: Vec<String> },
+    Failed(String),
+}
+
+/// A variable of the program's: memory of type `ty` (an array of `count`)
+/// at `addr`, `bytes` long.
+#[derive(Clone)]
+pub struct Var {
+    pub name: String,
+    pub addr: u32,
+    pub ty: u32,
+    pub count: Option<u32>,
+    pub bytes: u32,
 }
 
 impl State {
@@ -108,13 +134,6 @@ pub struct Runner {
     pub source: Option<u32>,
 }
 
-/// A call finished: returned, its result; or not (none: an execve ran a
-/// new program, or its task exited).
-pub struct Finished {
-    pub id: u32,
-    pub ret: Option<i64>,
-}
-
 thread_local! {
     static K: RefCell<State> = RefCell::default();
 }
@@ -146,6 +165,8 @@ pub struct Call {
     /// type points to, if declared (`int fd = openat(…)`: Lowered::Call).
     pub line: usize,
     pub result: Option<(String, Option<u32>)>,
+    /// The syscall's name, and the variable each argument names (if it is one).
+    pub said: (String, Vec<Option<String>>),
 }
 
 

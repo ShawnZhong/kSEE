@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use ksee_core::view::{Frame, Object, SyscallSummary};
@@ -6,7 +5,7 @@ use crate::machine::Machine;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::Finished;
+use crate::Outcome;
 
 pub fn log(s: &str) {
     web_sys::console::log_1(&s.into());
@@ -32,14 +31,12 @@ pub struct Made {
 }
 
 /// The suites' state: the Machine, the checks failed, the console's
-/// text, the calls finished (the page's lessons suite uses it too).
+/// text (the page's lessons suite uses it too).
 pub struct KernelHarness {
     pub machine: Rc<Machine>,
     pub failures: Vec<String>,
     /// The console's text so far.
     pub console_output: String,
-    /// The calls finished, by id.
-    pub finished: BTreeMap<u32, Finished>,
 }
 
 impl KernelHarness {
@@ -56,14 +53,19 @@ impl KernelHarness {
         self.console_output.push_str(&self.machine.console().replace('\r', ""));
     }
 
-    /// The kernel run until it is quiet: the calls finished meanwhile kept.
+    /// The kernel run until it is quiet.
     pub async fn quiet(&mut self) {
-        let finished = self.machine.quiet().await.unwrap_or_default();
+        let _ = self.machine.quiet().await;
         self.machine.snapshot();
         self.console();
-        for f in finished {
-            self.finished.insert(f.id, f);
-        }
+    }
+
+    /// Call `id`'s result, once it finished (none: it did not return).
+    pub fn finished(&self, id: u32) -> Option<Option<i64>> {
+        self.machine.outcomes().into_iter().find_map(|o| match o {
+            Outcome::Call { id: i, done: true, ret, .. } if i == id => Some(ret),
+            _ => None,
+        })
     }
 
     pub fn syscall(&self, id: u32) -> Option<SyscallSummary> {
@@ -85,8 +87,8 @@ impl KernelHarness {
             crate::machine::Made::Decl(v) => return Made { id: None, done: false, ret: None, syscall: None, var: Some((v.ty, v.addr, v.count)) },
         };
         self.quiet().await;
-        let f = self.finished.get(&id);
-        Made { id: Some(id), done: f.is_some(), ret: f.and_then(|f| f.ret), syscall: self.syscall(id), var: None }
+        let f = self.finished(id);
+        Made { id: Some(id), done: f.is_some(), ret: f.flatten(), syscall: self.syscall(id), var: None }
     }
 
     pub async fn line(&mut self, text: &str) -> Made {
@@ -121,7 +123,7 @@ impl KernelHarness {
 
     /// A harness on `machine`, booted.
     pub fn new(machine: Rc<Machine>) -> Self {
-        KernelHarness { machine, failures: Vec::new(), console_output: String::new(), finished: BTreeMap::new() }
+        KernelHarness { machine, failures: Vec::new(), console_output: String::new() }
     }
 
     /// The outcome: `report`, or the checks failed (the console logged).

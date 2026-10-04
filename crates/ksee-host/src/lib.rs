@@ -25,4 +25,4 @@ mod sched;
 mod state;
 pub mod test;
 
-pub use state::Finished;
+pub use state::{Outcome, Var};

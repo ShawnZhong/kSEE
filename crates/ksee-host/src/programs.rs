@@ -204,7 +204,13 @@ pub(crate) fn finish(tid: u32, ret: Option<i64>) {
         if let (Some((name, to)), Some(v)) = (&c.result, ret) {
             names.set(name, c.line, Sym::Value { v, to: *to });
         }
-        k.finished.push(Finished { id, ret });
+        // (Its line's outcome: done; during the last line, if a later one.)
+        let last = k.outcomes.len().saturating_sub(1);
+        for (j, o) in k.outcomes.iter_mut().enumerate() {
+            if let Outcome::Call { id: i, done, ret: r, during, .. } = o && *i == id {
+                (*done, *r, *during) = (true, ret, (j != last).then_some(last));
+            }
+        }
         if k.calls.values().all(|c| c.done) {
             k.waiting = None;
         }

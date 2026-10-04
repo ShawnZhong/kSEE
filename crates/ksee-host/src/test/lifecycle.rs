@@ -33,7 +33,7 @@ pub(super) async fn run(t: &mut KernelHarness) {
         let mut runs = Vec::new();
         for _ in 0..2 {
             let ids = t.program(program.iter().copied()).await;
-            let seen: Vec<_> = ids.iter().flatten().map(|&id| t.syscall(id).map(|s| (s.first, s.last, t.finished.get(&id).map(|f| f.ret)))).collect();
+            let seen: Vec<_> = ids.iter().flatten().map(|&id| t.syscall(id).map(|s| (s.first, s.last, t.finished(id)))).collect();
             runs.push((m.records(), seen));
         }
         t.check(format!("deterministic: the same calls, the same records ({name}: {} records)", runs[0].0), runs[0] == runs[1]);
@@ -42,7 +42,7 @@ pub(super) async fn run(t: &mut KernelHarness) {
     {
         let ids = t.program([(None, "pid_t child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0)"),
                              (Some("child"), "execve(\"/bin/prog\", {\"prog\", \"-x\", NULL}, NULL)")]).await;
-        let ended = ids[1].and_then(|id| t.finished.get(&id)).map(|f| f.ret);
+        let ended = ids[1].and_then(|id| t.finished(id));
         t.check(format!("an execve with argv runs the program, no return ({ended:?})"), ended == Some(None) && !t.console_output.contains("NULL argv"));
     }
     // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts).

@@ -4,11 +4,13 @@
 //! at a time, as it opens.
 
 use dioxus::prelude::*;
-use ksee_core::program::{statement, Expr, Line};
+use ksee_core::program::{statement, Line};
+use ksee_core::text::{self, LessonTarget, Piece};
+use ksee_host::machine::Made;
+use ksee_host::Outcome;
 use serde::{Deserialize, Serialize};
 
 use crate::state::Ui;
-use ksee_core::text::{self, LessonTarget, Piece};
 use crate::{examples, machine};
 
 /// One chronological program step: a statement for the program's own task,
@@ -52,21 +54,9 @@ pub struct Example {
     pub steps: Vec<Step>,
 }
 
-/// How a line went: a variable declared (as it starts), memory written
-/// (what it holds then), or a call (its id): finished (its result) or not
-/// yet (it blocks); or why it could not be made.
-#[derive(Clone, PartialEq)]
-pub enum Outcome {
-    Declared(String),
-    /// (`during`: the line during which it finished, if a later one's;
-    /// `changed`: the variables it changed, as they are then.)
-    Call { id: u32, done: bool, ret: Option<i64>, during: Option<usize>, changed: Vec<String> },
-    Failed(String),
-}
-
-
 /// Make `lines` on a fresh kernel, one after another (a call: then the
-/// kernel run until it is quiet), each line's outcome as it goes; then a
+/// kernel run until it is quiet), each line's outcome (the Machine's) shown
+/// as it goes; then a
 /// call selected: the first the lesson's text links to (its subject), else
 /// the last.
 /// (A run begun again cancels this one: it stops at its next await.)
@@ -75,64 +65,23 @@ pub(crate) async fn run(mut ui: Ui, lines: Vec<Step>) {
     if m.restart().await.is_err() {
         return;
     }
-    let mut outcomes = Vec::new();
-    // (The variables so far: their name, type, address, count, and as they were shown last.)
-    let mut vars: Vec<(String, u32, u32, Option<u32>, u32, String)> = Vec::new();
-    for (j, step) in lines.iter().enumerate() {
-        let line = step.text();
-        let made = match m.make(step.task(), line) {
-            Ok(made) => made,
-            Err(error) => {
-                outcomes.push(Outcome::Failed(error));
-                ui.outcomes.set(outcomes.clone());
-                break;
-            }
-        };
-        let id = match made {
-            ksee_host::machine::Made::Call(id) => id,
-            ksee_host::machine::Made::Decl(v) => {
-                let shown = m.show(v.ty, v.addr, v.count);
-                vars.push((v.name, v.ty, v.addr, v.count, v.bytes, shown.clone()));
-                outcomes.push(Outcome::Declared(shown));
-                ui.outcomes.set(outcomes.clone());
-                continue;
-            }
-        };
-        outcomes.push(Outcome::Call { id, done: false, ret: None, during: None, changed: Vec::new() });
-        ui.outcomes.set(outcomes.clone());
-        let Ok(finished) = m.quiet().await else { return };
-        for f in finished {
-            for (k, outcome) in outcomes.iter_mut().enumerate() {
-                if let Outcome::Call { id, done, ret, during, .. } = outcome && *id == f.id {
-                    (*done, *ret, *during) = (true, f.ret, (k != j).then_some(j));
-                }
-            }
+    for step in &lines {
+        let made = m.make(step.task(), step.text());
+        ui.outcomes.set(m.outcomes());
+        match made {
+            Err(_) => break,
+            Ok(Made::Decl(_)) => continue,
+            Ok(Made::Call(_)) => {}
         }
-        // (The variables the line's call changed, by now; one passed as records of a
-        // variable length, as its parameter's type reads them: a directory's entries.)
-        let (call, args) = match statement(line) {
-            Ok(Line::Call { call, args, .. }) => (call, args),
-            _ => (String::new(), Vec::new()),
-        };
-        let ret = match outcomes.get(j) { Some(Outcome::Call { ret, .. }) => *ret, _ => None };
-        let mut changed = Vec::new();
-        for (name, ty, addr, count, size, last) in vars.iter_mut() {
-            let now = m.show(*ty, *addr, *count);
-            if now != *last {
-                let records = args.iter().position(|a| matches!(a, Expr::Name(n) if n == name)).zip(ret.filter(|r| *r > 0))
-                    .and_then(|(k, r)| m.as_records(&call, k, *addr, (r as u32).min(*size)));
-                changed.push(format!("{name} = {}", records.unwrap_or_else(|| now.clone())));
-                *last = now;
-            }
-        }
-        if let Some(Outcome::Call { changed: value, .. }) = outcomes.get_mut(j) {
-            *value = changed;
+        if m.quiet().await.is_err() {
+            return;
         }
         m.snapshot();
-        ui.outcomes.set(outcomes.clone());
+        ui.outcomes.set(m.outcomes());
         ui.console.write().push_str(&m.console());
         ui.snapshot += 1;
     }
+    let outcomes = m.outcomes();
     let ex = &examples()[(ui.lesson)()];
     let calls = outcomes.iter().filter(|o| matches!(o, Outcome::Call { .. })).count();
     // (The lesson's own program: where its text's first link into the recording goes.)

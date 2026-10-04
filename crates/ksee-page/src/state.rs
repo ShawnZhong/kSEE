@@ -156,7 +156,7 @@ pub struct Ui {
     /// it (its own, or a try), and how each of its lines went.
     pub lesson: Signal<usize>,
     pub program: Signal<Vec<crate::lesson::Step>>,
-    pub outcomes: Signal<Vec<crate::lesson::Outcome>>,
+    pub outcomes: Signal<Vec<ksee_host::Outcome>>,
 }
 
 impl Ui {

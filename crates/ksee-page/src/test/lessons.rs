@@ -22,7 +22,7 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
     for ex in examples {
         let ids = t.program(lines(&ex.steps)).await;
         let is_call = |step: &Step| matches!(statement(step.text()), Ok(Stmt::Call { .. }));
-        let blocked: Vec<String> = ex.steps.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.finished.contains_key(&id)))
+        let blocked: Vec<String> = ex.steps.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.finished(id).is_some()))
             .map(|(step, _)| step.text().into()).collect();
         let calls: Vec<Option<u32>> = ex.steps.iter().zip(&ids).filter(|(step, _)| is_call(step)).map(|(_, id)| *id).collect();
         let mut missing = Vec::new();

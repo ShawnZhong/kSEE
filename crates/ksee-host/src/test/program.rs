@@ -57,7 +57,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         t.line("pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0)").await;
         let reading = t.line_on(Some("thread"), "read(fds[0], buf, 8)").await;
         let wrote = t.line("write(fds[1], \"ok\", 2)").await;
-        let later = reading.id.and_then(|id| t.finished.get(&id)).and_then(|f| f.ret);
+        let later = reading.id.and_then(|id| t.finished(id)).flatten();
         t.check(format!("a blocked read, woken: wrote {:?}, read {later:?}: buf = {}", wrote.ret, t.show(buf)),
                 !reading.done && wrote.ret == Some(2) && later == Some(2) && t.show(buf) == "\"ok\"");
         let got = t.line("char got16[16]").await.var.unwrap();
