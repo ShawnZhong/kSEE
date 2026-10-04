@@ -1,7 +1,7 @@
 //! The views' tests, on made-up recordings.
 
 use super::*;
-use crate::trace::{wire::StoreChunks, Args};
+use crate::trace::Args;
 
 struct Mem(Vec<u8>);
 impl Memory for Mem {
@@ -366,15 +366,10 @@ fn a_value_is_followed_through_its_copies() {
 
 #[test]
 fn overlapping_copy_chunks_do_not_become_each_others_origins() {
-    // Copy 0x10..0x20 to 0x14..0x24. The higher chunk must precede the
-    // lower one: then neither destination exists when its source is sought.
-    let r: Vec<Record> = StoreChunks::new(0x14, 16, 0x10).map(|(off, size)| Record::Store {
-        addr: 0x14 + off,
-        size: size.bytes(),
-        old: 0,
-        line: 0,
-        from: core::num::NonZeroU32::new(0x10 + off),
-    }).collect();
+    // Copy 0x10..0x20 to 0x14..0x24, as __ksee_bulk logs it: the higher
+    // chunk first, so neither destination exists when its source is sought.
+    let copy = |addr: u32| Record::Store { addr, size: 8, old: 0, line: 0, from: core::num::NonZeroU32::new(addr - 4) };
+    let r: Vec<Record> = alloc::vec![copy(0x1c), copy(0x14)];
     let rec = Recording::new(&Tables::default(), r, alloc::vec![0; 2], Args::default());
     let v = View { tables: &Tables::default(), rec: &rec, now: &Mem(alloc::vec![0; 64]) };
     let way = |addr| v.origin(addr, 4, 1, 8).iter().map(|w| (w.addr, w.from)).collect::<Vec<_>>();

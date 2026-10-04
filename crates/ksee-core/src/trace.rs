@@ -197,6 +197,7 @@ pub(crate) mod tests {
     const STORE: u32 = Kind::Store as u32;
     const VALUE: u32 = Kind::Continuation as u32;
     const VAR: u32 = Kind::Var as u32;
+    const TASK: u32 = Kind::Task as u32;
 
     /// Records in `words`, oldest first, starting at a pair boundary. Leading
     /// continuations (of a record the ring has overwritten) and truncated
@@ -281,36 +282,30 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn runtime_store_encodings_round_trip() {
-        let cases = [
-            (StoreSize::B1, 0x88),
-            (StoreSize::B2, 0x7788),
-            (StoreSize::B4, 0x5566_7788),
-            (StoreSize::B8, 0x1122_3344_5566_7788),
-        ];
-        for (size, old) in cases {
-            for from in [None, NonZeroU32::new(0x200)] {
-                let encoded = wire::store(0x100, 5, size, old, from);
-                assert_eq!(decode(encoded.words()), [Record::Store { addr: 0x100, size: size.bytes(), old, line: 5, from }]);
-            }
-        }
-        assert_eq!(decode(wire::task(0x300).words()), [Record::Task { task: 0x300 }]);
+    fn stores_and_tasks_as_ksee_c_writes_them() {
+        // (A 4-byte store on line 5; an 8-byte copy from 0x200: its old value
+        // low word first; a Task record.)
+        let b4 = [0x100, STORE << 28 | 5 << 4 | 2, 0x1234, VALUE << 28];
+        let b8 = [0x100, STORE << 28 | 5 << 4 | 3, 0x5566_7788, VALUE << 28, 0x1122_3344, VALUE << 28, 0x200, VALUE << 28];
+        assert_eq!(decode(&b4), [Record::Store { addr: 0x100, size: 4, old: 0x1234, line: 5, from: None }]);
+        assert_eq!(decode(&b8), [Record::Store { addr: 0x100, size: 8, old: 0x1122_3344_5566_7788, line: 5, from: NonZeroU32::new(0x200) }]);
+        assert_eq!(decode(&[0x300, TASK << 28]), [Record::Task { task: 0x300 }]);
     }
 
     #[test]
     fn malformed_cardinalities_do_not_consume_the_next_head() {
         let bad = [
-            (wire::tag(Kind::Task, 0), 1),
-            (wire::tag(Kind::Block, 1), 1),
-            (wire::tag(Kind::Block, 0), 0),
-            (wire::tag(Kind::Block, 0), 16),
-            (wire::tag(Kind::Return, 0), 0),
-            (wire::tag(Kind::Return, 0), 3),
-            (wire::tag(Kind::Compare, 0), 0),
-            (wire::tag(Kind::Compare, 0), 2),
-            (wire::tag(Kind::Store, StoreSize::B4 as u32), 0),
-            (wire::tag(Kind::Store, StoreSize::B4 as u32), 3),
-            (wire::tag(Kind::Var, 0), 2),
+            (TASK << 28 | 0, 1),
+            (BLOCK << 28 | 1, 1),
+            (BLOCK << 28 | 0, 0),
+            (BLOCK << 28 | 0, 16),
+            (RETURN << 28 | 0, 0),
+            (RETURN << 28 | 0, 3),
+            (COMPARE << 28 | 0, 0),
+            (COMPARE << 28 | 0, 2),
+            (STORE << 28 | StoreSize::B4 as u32, 0),
+            (STORE << 28 | StoreSize::B4 as u32, 3),
+            (VAR << 28 | 0, 2),
         ];
         let mut words = Vec::new();
         for (tag, n) in bad {

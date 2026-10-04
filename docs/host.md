@@ -113,14 +113,16 @@ selection is not part of the program expression language. See
 ## Recording boundaries
 
 The runner brackets its syscall with `ksee.begin` and `ksee.end(ret)`.
-At `begin`, the runtime writes a `Task` record naming the currently running
+At `begin`, the runtime enables full probe recording, then has the kernel
+write a `Task` record (its `ksee_task` export) naming the currently running
 `task_struct`, because no context switch inside the new recording necessarily
-identifies it. It then enables full probe recording.
+identifies it.
 
 While at least one begun call is unfinished, trace level `1` records blocks,
 calls, returns, variables, comparisons, and stores. Outside requested calls,
-level `2` keeps stores only. Host writes to kernel memory use the same store
-format, so historical memory stays coherent across request setup and program
+level `2` keeps stores only. Host writes to kernel memory are logged by the
+kernel's `ksee_bulk` export before they are made, as its own bulk writes are,
+so historical memory stays coherent across request setup and program
 variables.
 
 A requested syscall can remain blocked when the kernel becomes quiet. A later
@@ -174,8 +176,8 @@ does not restore browser-held task stacks in place.
 
 ## Imports
 
-Frequent Linux imports such as `console_write`, `time_ns`, `spawn_task`, and
-`ksee.bulk` are exports of the outer Rust WebAssembly module, so Linux calls
+Frequent Linux imports such as `console_write`, `time_ns` and `spawn_task`
+are exports of the outer Rust WebAssembly module, so Linux calls
 them directly. Suspending scheduler operations and browser-facing work use
 closures and promises. The complete kernel-side import/export list is in
 [kernel.md#the-host-interface](kernel.md#the-host-interface).

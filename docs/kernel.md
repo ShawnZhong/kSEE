@@ -181,8 +181,8 @@ Nearly all of it is in arch/wasm/include/asm/wasm.h. Imports (module
 `kernel`): `console_write`, `get_cmdline`, `memory_end`, `time_ns`,
 `spawn_task`, `clone_user`, `restart_task`, `switch_task` and `idle`
 (suspending), `doorbell`, `halt`, `user_load`, `user_start`,
-`print_stack`; and `ksee.bulk` (module `ksee`: see
-[recording.md](recording.md)). Exports: `boot_stack`, `boot`,
-`task_entry`, `user_entry`, `syscall`, `ksee_trace`, and the globals
+`print_stack`. Exports: `boot_stack`, `boot`, `task_entry`, `user_entry`,
+`syscall`, `ksee_trace`, `ksee_bulk` and `ksee_task` (the trace's writers
+for the host: see [recording.md](recording.md)), and the globals
 `__stack_pointer`, `wasm_irq_pending`, `wasm_timer_deadline`,
 `__current_task`.

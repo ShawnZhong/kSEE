@@ -90,6 +90,7 @@ impl Machine {
                                cmdline: std::mem::take(&mut k.cmdline), asked: k.asked,
                                quiet_waiters: std::mem::take(&mut k.quiet_waiters), ..Default::default() });
         crate::programs::instantiated(&kernel);
+        imports::instantiated(&kernel);
         sched::boot(&kernel)?;
         // (Quiet, with the program ready.)
         while k(|k| k.main).is_none() {
@@ -273,7 +274,7 @@ fn write_logged(addr: u32, bytes: &[u8]) {
     if Direct.read_u32(trace + trace::ON) == 0 {
         Direct.write_u32(trace + trace::ON, 2);
     }
-    imports::log(addr, bytes.len() as u32, 0, 0);
+    imports::logged(addr, bytes.len() as u32);
     unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), addr as *mut u8, bytes.len()) };
 }
 

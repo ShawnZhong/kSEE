@@ -1,23 +1,22 @@
 //! The kernel's imports (arch/wasm/include/asm/wasm.h).
 //!
-//! Frequent ones (time, console, command line, bulk stores, spawn_task,
-//! the doorbell) are this module's exports, so the kernel calls them
+//! Frequent ones (time, console, command line, spawn_task, the doorbell)
+//! are this module's exports, so the kernel calls them
 //! directly. The rest need JS objects (promises, programs' modules) and are
 //! closures reached through wasm-bindgen: the tasks' (sched.rs: switch_task,
 //! idle, restart_task and halt suspend the kernel's stack) and the
 //! programs' (programs.rs).
 
-use core::num::NonZeroU32;
+use std::cell::RefCell;
 
-use js_sys::{Object, Promise};
-use ksee_core::trace::wire::{self, EncodedRecord, StoreChunks};
+use js_sys::{Function, Object, Promise};
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 
 use crate::js;
 use crate::programs::{clone_user, user_load, user_start};
 use crate::sched;
 use crate::state::*;
-use ksee_core::Memory;
 
 // ---- Exports the kernel imports directly -------------------------------------
 
@@ -60,45 +59,32 @@ pub extern "C" fn time_ns() -> u64 {
     })
 }
 
-/// ksee.bulk, for the kernel (memcpy, memset, wide stores): Store records
-/// with the old contents of `addr..addr + len`, while recording; `from`:
-/// where a copy (a memcpy) takes them from, else 0.
-#[unsafe(no_mangle)]
-pub extern "C" fn bulk(addr: u32, len: u32, line: u32, from: u32) {
-    if recording() {
-        log(addr, len, line, from);
-    }
+thread_local! {
+    /// The kernel's own trace writers (arch/wasm/kernel/ksee.c): ksee_bulk
+    /// and ksee_task, its exports.
+    static WRITERS: RefCell<Option<(Function, Function)>> = const { RefCell::new(None) };
 }
 
-/// What the runtime itself writes into kernel memory (a call's request,
-/// a runner's word): Store records with the old contents of `addr..addr +
-/// len`, in 8-byte stores; `line`: the kernel's store's line (see the
-/// plugin), 0 for the runtime's own; `from`: where the bytes are copied
-/// from (each store then says where its own come from), else 0.
-pub fn log(addr: u32, len: u32, line: u32, from: u32) {
-    for (off, size) in StoreChunks::new(addr, len, from) {
-        let mut old = [0u8; 8];
-        Direct.read(addr + off, &mut old[..size.bytes() as usize]);
-        let from = if from == 0 { None } else { NonZeroU32::new(from + off) };
-        ring_put(wire::store(addr + off, line, size, u64::from_le_bytes(old), from));
-    }
+/// The kernel instance's exports: its trace writers.
+pub fn instantiated(kernel: &Object) {
+    WRITERS.set(Some((js::get(kernel, "ksee_bulk").unchecked_into(), js::get(kernel, "ksee_task").unchecked_into())));
 }
 
-/// Append a complete record to the kernel's trace ring (called while the
-/// kernel runs: no kernel code writes it meanwhile).
-pub(crate) fn ring_put(record: EncodedRecord) {
-    let (trace, size) = (k(|k| k.trace), tables().ring_words);
-    if trace == 0 || size == 0 {
-        return;
-    }
-    debug_assert!(size.is_power_of_two() && size >= 2);
-    let words = record.words();
-    let p = Direct.read_u32(trace);
-    let ring = trace + ksee_core::trace::RING;
-    for (i, &w) in words.iter().enumerate() {
-        Direct.write_u32(ring + ((p + i as u32) & (size - 1)) * 4, w);
-    }
-    Direct.write_u32(trace, p + words.len() as u32);
+/// What the host writes into kernel memory (a variable, a call's request, a
+/// runner's word), logged before it is written: Store records with the old
+/// contents of `addr..addr + len`, while recording, as the kernel logs its
+/// own bulk writes.
+pub fn logged(addr: u32, len: u32) {
+    WRITERS.with_borrow(|w| if let Some((bulk, _)) = w {
+        let _ = bulk.call3(&JsValue::NULL, &addr.into(), &len.into(), &0.into());
+    });
+}
+
+/// A Task record: `task` (a task_struct) runs, where a recording begins.
+pub fn task(task: u32) {
+    WRITERS.with_borrow(|w| if let Some((_, put)) = w {
+        let _ = put.call1(&JsValue::NULL, &task.into());
+    });
 }
 
 /// The import object for the kernel (and the programs' syscall import,
@@ -126,14 +112,11 @@ pub fn kernel() -> Object {
     js::set(&kernel, "user_start", Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(user_start).into_js_value());
     js::set(&kernel, "clone_user", Closure::<dyn FnMut(u32, u32)>::new(clone_user).into_js_value());
 
-    let ksee = Object::new();
-    js::set(&ksee, "bulk", export("bulk"));
     let env = Object::new();
     js::set(&env, "memory", wasm_bindgen::memory());
     let imports = Object::new();
     js::set(&imports, "env", env);
     js::set(&imports, "kernel", kernel);
-    js::set(&imports, "ksee", ksee);
     imports
 }
 

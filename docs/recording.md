@@ -41,8 +41,9 @@ Every function gets:
   store record with the **old value** and the **line** it is on (which of
   its block's lines: so a line step lands where its first store is, and a
   store is attributed to its line). Bulk writes (memcpy, memset, wider
-  stores) call the `ksee.bulk(addr, len, line, from)` import, which logs
-  all their old contents the same way. A store that copies (a value loaded and
+  stores) call the kernel's `__ksee_bulk(addr, len, line, from)`
+  (arch/wasm/kernel/ksee.c), which logs all their old contents the same way,
+  in pieces of up to 8 bytes. A store that copies (a value loaded and
   stored as it is, a memcpy) says where its bytes come from.
 
 A function that loops but writes no memory the host must undo and calls
@@ -77,10 +78,11 @@ order after each record, so a reader sees whole records. One writer runs at a
 time because the kernel is uniprocessor.
 
 Block, return, comparison, variable, and instrumented store records come from
-the LLVM pass. The runtime emits a `Task` record immediately when
-`ksee.begin` starts a requested syscall recording, before enabling full
-probes. It also emits store records for host writes into kernel memory, such
-as a runner request or lesson variable. The initial task record identifies a
+the LLVM pass; bulk writes' from `ksee.c`. Only the kernel writes its ring:
+when `ksee.begin` starts a requested syscall recording, the runtime turns full
+probes on and calls the kernel's `ksee_task` export, which writes the `Task`
+record; and the host's own writes into kernel memory (a runner request, a
+lesson variable) go through its `ksee_bulk` export first. The initial task record identifies a
 recording that may contain no preceding context switch; later task changes
 are inferred from kernel call and return records.
 

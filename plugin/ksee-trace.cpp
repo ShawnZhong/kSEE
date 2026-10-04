@@ -13,9 +13,9 @@
 //     were), a store record, with the old value (the host undoes stores to
 //     see memory as it was) and the line it is on (so that stepping a line
 //     lands where its first store is). Bulk writes (memcpy, memset, wider
-//     stores) go to the ksee.bulk(address, length, line, from) import,
-//     which logs them. A store that copies (a value loaded and stored as
-//     it is, a memcpy) says where from.
+//     stores) go to the kernel's __ksee_bulk(address, length, line, from)
+//     (arch/wasm/kernel/ksee.c), which logs them in pieces. A store that
+//     copies (a value loaded and stored as it is, a memcpy) says where from.
 // A function that loops, but writes no memory the host must undo and calls
 // nothing (a checksum, a search: crc32c, find_next_bit) is sealed: only
 // its call and its returns are recorded, not each block of each turn. (Its
@@ -67,8 +67,9 @@
 //                         info says it changes (a #dbg_value); line as a
 //                         store's (12 bits)
 //   [value, 8 << 28]      a continuation of the head before
-// (The host's runtime writes records too: stores, for its own writes into
-// kernel memory.) fn is a hash of the function's name (for a
+// (The host's writes into kernel memory are logged too, through the
+// kernel's ksee_bulk export; and ksee_task's Task record starts a
+// recording: arch/wasm/kernel/ksee.c.) fn is a hash of the function's name (for a
 // function local to its file, of "file:name").
 //
 // The linked module describes its probes in a wasm custom section, which
@@ -204,13 +205,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     return GV;
   }
 
-  FunctionCallee import(StringRef name, StringRef import, FunctionType *T) {
-    FunctionCallee f = M->getOrInsertFunction(name, T);
-    cast<Function>(f.getCallee())->addFnAttr("wasm-import-module", "ksee");
-    cast<Function>(f.getCallee())->addFnAttr("wasm-import-name", import);
-    return f;
-  }
-
   // Record [a, tag] and `values`.
   void record(IRBuilder<> &B, Value *a, uint32_t tag, ArrayRef<Value *> values = {}) {
     SmallVector<Value *, 2 + Values> args{a, B.getInt32(tag)};
@@ -239,7 +233,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       putStore[k] = function("__ksee_put_store" + std::to_string(1 << k), 2);
     for (unsigned k = 0; k < 4; k++)
       putCopy[k] = function("__ksee_put_copy" + std::to_string(1 << k), 3);
-    bulk = import("__ksee_bulk", "bulk", FunctionType::get(vd, {i32, i32, i32, i32}, false));
+    bulk = M->getOrInsertFunction("__ksee_bulk", FunctionType::get(vd, {i32, i32, i32, i32}, false));
     if (!define)
       return;
 

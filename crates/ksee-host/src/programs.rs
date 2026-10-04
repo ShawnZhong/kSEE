@@ -10,7 +10,6 @@ use js_sys::{Function, Object, Uint8Array, WebAssembly};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::imports::bulk;
 use crate::js;
 use crate::state::*;
 use ksee_core::program::Sym;
@@ -175,7 +174,7 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
             Ok(at)
         };
         let (start, clone) = (entry(table_base + entries, "_start")?, entry(table_base + entries + 1, "__wasm_clone_start")?);
-        bulk(clone_entry, 4, 0, 0);
+        crate::imports::logged(clone_entry, 4);
         Direct.write_u32(clone_entry, clone);
         PROGRAMS.with_borrow_mut(|u| u.users.insert(current(), User { sp, saved: top }));
         // (A runner's call that was this execve is over: the new program
@@ -280,9 +279,9 @@ fn runner_imports() -> Object {
             true
         });
         if begun {
-            // (Who runs: no switch in the recording says so.)
-            crate::imports::ring_put(ksee_core::trace::wire::task(current()));
+            // (Recording on; then who runs: no switch in the recording says so.)
             on_off();
+            crate::imports::task(current());
         }
     }).into_js_value());
     js::set(&ksee, "end", Closure::<dyn FnMut(i64)>::new(|ret: i64| {

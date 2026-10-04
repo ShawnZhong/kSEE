@@ -22,10 +22,10 @@ index c28f11c61..6d76c2d07 100644
  # All the preparing..
 diff --git a/arch/wasm/Kconfig b/arch/wasm/Kconfig
 new file mode 100644
-index 000000000..9fbf0a932
+index 000000000..236429489
 --- /dev/null
 +++ b/arch/wasm/Kconfig
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,45 @@
 +# SPDX-License-Identifier: GPL-2.0-only
 +#
 +# WebAssembly: the kernel runs as a wasm32 module, one instance on one
@@ -71,7 +71,6 @@ index 000000000..9fbf0a932
 +# No port I/O: ioport_map() would add to a NULL PCI_IOBASE.
 +config NO_IOPORT_MAP
 +	def_bool y
-+
 diff --git a/arch/wasm/Kconfig.debug b/arch/wasm/Kconfig.debug
 new file mode 100644
 index 000000000..a4e40e534
@@ -896,7 +895,7 @@ index 000000000..c5f676c3c
 +vmlinux.lds
 diff --git a/arch/wasm/kernel/Makefile b/arch/wasm/kernel/Makefile
 new file mode 100644
-index 000000000..c99e8c526
+index 000000000..d342c659e
 --- /dev/null
 +++ b/arch/wasm/kernel/Makefile
 @@ -0,0 +1,5 @@
@@ -904,7 +903,7 @@ index 000000000..c99e8c526
 +extra-y := vmlinux.lds
 +
 +obj-y := setup.o console.o process.o ptrace.o irq.o time.o traps.o syscall.o \
-+	 signal.o binfmt_wasm.o
++	 signal.o binfmt_wasm.o ksee.o
 diff --git a/arch/wasm/kernel/asm-offsets.c b/arch/wasm/kernel/asm-offsets.c
 new file mode 100644
 index 000000000..34efca5ab
@@ -1150,6 +1149,79 @@ index 000000000..da44de98e
 +{
 +	wasm_idle();
 +	raw_local_irq_enable();
++}
+diff --git a/arch/wasm/kernel/ksee.c b/arch/wasm/kernel/ksee.c
+new file mode 100644
+index 000000000..ca8774e2d
+--- /dev/null
++++ b/arch/wasm/kernel/ksee.c
+@@ -0,0 +1,67 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * The trace's records that are not one instruction's (the kSEE plugin's
++ * probes write the rest, inline): a bulk write's (memcpy, memset, a store
++ * wider than 8 bytes; and the host's own writes into kernel memory), and
++ * the task running where a recording begins. Not instrumented (the plugin
++ * leaves __ksee_* alone); the plugin defines the ring and its writers.
++ */
++
++#include <linux/types.h>
++#include <asm/wasm.h>
++
++/* The plugin's writers: a Store record of the bytes at addr (their old
++ * value, before the write), on a line; a copy's says where from. */
++void __ksee_put_store1(u32 addr, u32 line);
++void __ksee_put_store2(u32 addr, u32 line);
++void __ksee_put_store4(u32 addr, u32 line);
++void __ksee_put_store8(u32 addr, u32 line);
++void __ksee_put_copy1(u32 addr, u32 line, u32 from);
++void __ksee_put_copy2(u32 addr, u32 line, u32 from);
++void __ksee_put_copy4(u32 addr, u32 line, u32 from);
++void __ksee_put_copy8(u32 addr, u32 line, u32 from);
++void __ksee_put0(u32 a, u32 tag);
++
++/* The writes of len bytes at addr, as Store records of up to 8 bytes each;
++ * from: where a copy takes them from, else 0. A copy whose higher
++ * destination overlaps its source goes backwards, so no earlier chunk's
++ * destination is a later one's apparent source. */
++__wasm_export(ksee_bulk) void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from)
++{
++	bool back = from && from < addr && addr - from < len;
++	u32 off = back ? len : 0;
++
++	while (back ? off : off < len) {
++		u32 left = back ? off : len - off;
++		u32 size = left >= 8 ? 8 : left >= 4 ? 4 : left >= 2 ? 2 : 1;
++		u32 at;
++
++		if (back)
++			off -= size;
++		at = addr + off;
++		if (!from) {
++			switch (size) {
++			case 1: __ksee_put_store1(at, line); break;
++			case 2: __ksee_put_store2(at, line); break;
++			case 4: __ksee_put_store4(at, line); break;
++			default: __ksee_put_store8(at, line);
++			}
++		} else {
++			switch (size) {
++			case 1: __ksee_put_copy1(at, line, from + off); break;
++			case 2: __ksee_put_copy2(at, line, from + off); break;
++			case 4: __ksee_put_copy4(at, line, from + off); break;
++			default: __ksee_put_copy8(at, line, from + off);
++			}
++		}
++		if (!back)
++			off += size;
++	}
++}
++
++/* A Task record (ksee_core::trace's kind 3): task runs, where a requested
++ * recording begins (no switch in it says so). */
++__wasm_export(ksee_task) void __ksee_task(u32 task)
++{
++	__ksee_put0(task, 3u << 28);
 +}
 diff --git a/arch/wasm/kernel/process.c b/arch/wasm/kernel/process.c
 new file mode 100644
