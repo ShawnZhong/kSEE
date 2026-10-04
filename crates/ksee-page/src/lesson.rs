@@ -230,7 +230,7 @@ pub fn Header() -> Element {
                 button { class: if menu() { "contents on" } else { "contents" }, title: "every lesson, by chapter", onclick: move |_| menu.toggle(), "☰ Lessons" }
                 span { class: "crumb", "{all[at].group} · {place} of {group.len()}" }
             }
-            b { "kSEE" span { class: "dim", " · the Linux kernel, line by line" } }
+            b { "kSEE" span { class: "dim", " · step through a real Linux kernel" } }
             div { class: "right",
                 if let (Some(commit), Some(source)) = (COMMIT, SOURCE) {
                     a { class: "build", href: "{source}/tree/{commit.trim_end_matches('+')}", target: "_blank",
