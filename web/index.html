@@ -57,7 +57,8 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
   background: var(--panel); border-bottom: 1px solid var(--line); flex: none; position: relative; }
 .topbar .left, .topbar .right { display: flex; gap: 4px; align-items: center; min-width: 0; }
 .topbar .right { justify-content: end; }
-.topbar b { font-size: 14px; }
+.topbar b { font-size: 14px; white-space: nowrap; }
+.topbar b span { font-weight: normal; font-size: 12px; }
 .topbar .build { font-size: 11px; color: var(--dim); }
 .topbar .contents.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
 .topbar .crumb { margin-left: 8px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
@@ -214,6 +215,7 @@ table.objs tr.later { opacity: .45; }
   /* (Two rows: kSEE and the build and theme; then the lessons' menu.) */
   .topbar { grid-template-columns: auto 1fr; }
   .topbar b { grid-row: 1; grid-column: 1; }
+  .topbar b span { display: none; }
   .topbar .right { grid-row: 1; grid-column: 2; }
   .topbar .left { grid-row: 2; grid-column: 1 / -1; flex-wrap: wrap; }
 }
