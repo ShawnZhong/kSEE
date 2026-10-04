@@ -91,7 +91,7 @@ pub fn listen(ui: Ui) {
 /// The calls at the moment shown, at the bottom of the pane as the chart
 /// stacks them (the outermost lowest); under the frame chosen, its
 /// arguments and locals as memory was then. A click on another: it chosen.
-/// Under them, the task running.
+/// Under them, the task running (first: the pane is reversed, see its CSS).
 #[component]
 pub fn Stack() -> Element {
     let mut ui = use_context::<Ui>();
@@ -118,6 +118,13 @@ pub fn Stack() -> Element {
     });
     rsx! {
         div { class: "stack",
+            if let Some(t) = task {
+                div { class: "current dim", "current task: "
+                    a { class: "mono", title: "its task_struct, in Tasks (the task running: open there)",
+                        onclick: move |_| { ui.tab.set(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
+                        "{t.named()}" }
+                }
+            }
             table { class: "objs",
                 for (k , f) in frames.iter().cloned().enumerate() {
                     tbody { class: if k == chosen { "on" } else { "" },
@@ -140,13 +147,6 @@ pub fn Stack() -> Element {
                         }
                     }
                     }
-                }
-            }
-            if let Some(t) = task {
-                div { class: "current dim", "current task: "
-                    a { class: "mono", title: "its task_struct, in Tasks (the task running: open there)",
-                        onclick: move |_| { ui.tab.set(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
-                        "{t.named()}" }
                 }
             }
         }

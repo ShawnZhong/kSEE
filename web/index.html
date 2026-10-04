@@ -181,9 +181,10 @@ table.objs tr.none td { color: var(--dim); }
 table.objs tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); cursor: pointer; }
 table.objs tr.frame.on td { background: var(--sel); }
 table.objs tr.frame a { font-weight: 600; }
-.stack { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
-/* (At the bottom, as the chart stacks calls.) */
-.stack > table { margin-top: auto; }
+/* (From the bottom, as the chart stacks calls, the task under them: reversed,
+   its scroll kept from the bottom, so a frame added above, a callee as the
+   cursor moves, moves nothing below it.) */
+.stack { flex: 1; min-height: 0; display: flex; flex-direction: column-reverse; overflow: auto; }
 .current { position: sticky; bottom: 0; padding: 6px 8px; border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; }
 .tw { color: var(--dim); display: inline-block; width: 1.2em; }
 tr.opens { cursor: pointer; }

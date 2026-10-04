@@ -147,6 +147,20 @@ pub(super) async fn read() -> Check {
     check(level().is_none() && innermost, "a click off the bars: no level chosen", (level(), innermost))?;
     mouse(&chart, "click", x, y, false);
     sleep(300).await;
+    // (Its level chosen, stepping on: callees come and go above it, and it,
+    // the same call, stays where it is.)
+    let chosen = || one(".stack tr.frame.on").map(|r| (text(&r), r.get_bounding_client_rect().top().round()));
+    let mut seen = vec![chosen()];
+    for _ in 0..6 {
+        press("Line ▶", false);
+        sleep(150).await;
+        seen.push(chosen());
+    }
+    let first = seen[0].clone();
+    check(seen.iter().all(|c| c.as_ref().map(|c| &c.0) != first.as_ref().map(|c| &c.0) || *c == first),
+          "the level chosen stays put as the cursor steps", &seen)?;
+    mouse(&chart, "click", x, y, false);
+    sleep(300).await;
     // (Then, from the bar clicked, a drag: the bars follow the pointer.)
     let before = bar(&canvas, "vfs_read").map(|p| p.0);
     let win0 = one(".overview .win").and_then(|w| w.get_attribute("style"));
