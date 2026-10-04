@@ -54,19 +54,6 @@ impl Record {
     }
 }
 
-#[cfg(test)]
-const BLOCK: u32 = Kind::Block as u32;
-#[cfg(test)]
-const RETURN: u32 = Kind::Return as u32;
-#[cfg(test)]
-const COMPARE: u32 = Kind::Compare as u32;
-#[cfg(test)]
-const STORE: u32 = Kind::Store as u32;
-#[cfg(test)]
-const VALUE: u32 = Kind::Continuation as u32;
-#[cfg(test)]
-const VAR: u32 = Kind::Var as u32;
-
 /// The calls' words, by their block 0's record: the arguments' (Tables::values
 /// splits them), then the frame base (its locals in memory are at their
 /// offsets from it: Types::locals).
@@ -132,9 +119,7 @@ impl<F: FnMut(u32) -> (u32, u32)> Decoder<F> {
     pub fn new(len: u32, pair: F) -> Self {
         Decoder { pair, next: 0, len, head: 0, values: Vec::new() }
     }
-}
 
-impl<F: FnMut(u32) -> (u32, u32)> Decoder<F> {
     /// The continuation pairs from the next one, into `values`: how many.
     fn read_values(&mut self) -> usize {
         self.values.clear();
@@ -206,18 +191,25 @@ impl<F: FnMut(u32) -> (u32, u32)> Iterator for Decoder<F> {
 pub(crate) mod tests {
     use super::*;
 
-/// Records in `words`, oldest first, starting at a pair boundary. Leading
-/// continuations (of a record the ring has overwritten) and truncated
-/// records are skipped.
-fn decode(words: &[u32]) -> Vec<Record> {
-    decode_values(words).into_iter().map(|(r, _)| r).collect()
-}
+    const BLOCK: u32 = Kind::Block as u32;
+    const RETURN: u32 = Kind::Return as u32;
+    const COMPARE: u32 = Kind::Compare as u32;
+    const STORE: u32 = Kind::Store as u32;
+    const VALUE: u32 = Kind::Continuation as u32;
+    const VAR: u32 = Kind::Var as u32;
 
-/// The same, with each record's values.
-fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
-    let mut d = Decoder::new(words.len() as u32 / 2, |i| (words[2 * i as usize], words[2 * i as usize + 1]));
-    core::iter::from_fn(|| d.next().map(|r| (r, d.values.clone()))).collect()
-}
+    /// Records in `words`, oldest first, starting at a pair boundary. Leading
+    /// continuations (of a record the ring has overwritten) and truncated
+    /// records are skipped.
+    fn decode(words: &[u32]) -> Vec<Record> {
+        decode_values(words).into_iter().map(|(r, _)| r).collect()
+    }
+
+    /// The same, with each record's values.
+    fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
+        let mut d = Decoder::new(words.len() as u32 / 2, |i| (words[2 * i as usize], words[2 * i as usize + 1]));
+        core::iter::from_fn(|| d.next().map(|r| (r, d.values.clone()))).collect()
+    }
 
     #[test]
     fn a_wide_return_has_its_high_word() {
