@@ -1,6 +1,9 @@
 //! The kernel's names the host rebuilds and shows a recording by (arch/wasm's
-//! functions, the scheduler's, and a few of its types and conventions): the
-//! only kernel names ksee-core knows.
+//! functions, the scheduler's, and a few of its types and conventions), and
+//! runs it by (its timers): the only kernel names ksee-core knows.
+
+use crate::types::Types;
+use crate::Memory;
 
 /// A syscall (arch/wasm/kernel/syscall.c): its call's arguments are the
 /// number and the syscall's; its return's value is the result.
@@ -98,3 +101,83 @@ pub const AREAS: &[(&str, &str)] = &[
     ("include/", "include"),
     ("arch/", "arch"),
 ];
+
+/// Whether one of `tasks` sleeps on a timer of its own (a sleep, a wait
+/// with a timeout), as `mem` is now: the host then skips to the timer's
+/// deadline. The kernel's timers, read as its types lay them out:
+/// - hrtimers (an hrtimer_sleeper's task): each clock base's, in order
+///   (7.2's linked rbtree: from the leftmost, by next);
+/// - the timer wheel (a process_timer's task: schedule_timeout, msleep):
+///   each base's buckets' lists.
+pub fn sleeping(t: &Types, mem: &dyn Memory, tasks: &[u32]) -> bool {
+    let off = |s: &str, f: &str| t.field(s, f).map(|(off, _)| off);
+    let size = |s: &str| t.find(s).map_or(0, |id| t.size_of(id));
+    // (How far a timer list is walked: kernel memory read live may be torn.)
+    const MAX_WALK: u32 = 4096;
+    // (A list's nodes from `first`, by the next pointer at `next`.)
+    let wakes = |mut p: u32, next: u32, task: u32| {
+        for _ in 0..MAX_WALK {
+            if p == 0 {
+                return false;
+            }
+            if tasks.contains(&mem.read_u32(p + task)) {
+                return true;
+            }
+            p = mem.read_u32(p + next);
+        }
+        false
+    };
+    // (A timer's list node is at its start: rb_node_linked in the hrtimer's
+    // timerqueue_linked_node; hlist_node in the timer_list.)
+    let hr = || -> Option<bool> {
+        let &(bases, _) = t.globals.get("hrtimer_bases")?;
+        let (clock, all) = t.field("hrtimer_cpu_base", "clock_base")?;
+        let (active, leftmost, next, task) = (off("hrtimer_clock_base", "active")?, off("rb_root_linked", "rb_leftmost")?,
+                                              off("rb_node_linked", "next")?, off("hrtimer_sleeper", "task")?);
+        let each = size("hrtimer_clock_base");
+        Some((0..all.checked_div(each)?).any(|b| wakes(mem.read_u32(bases + clock + b * each + active + leftmost), next, task)))
+    };
+    let wheel = || -> Option<bool> {
+        let &(bases, ty) = t.globals.get("timer_bases")?;
+        let (vectors, all) = t.field("timer_base", "vectors")?;
+        let (first, next) = (off("hlist_head", "first")?, off("hlist_node", "next")?);
+        let task = off("process_timer", "task").unwrap_or(size("timer_list"));
+        let (each, heads) = (size("timer_base"), all / 4);
+        Some((0..t.size_of(ty).checked_div(each)?).any(|b| {
+            (0..heads).any(|h| wakes(mem.read_u32(bases + b * each + vectors + h * 4 + first), next, task))
+        }))
+    };
+    hr() == Some(true) || wheel() == Some(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Mem(alloc::vec::Vec<u8>);
+    impl Memory for Mem {
+        fn read(&self, addr: u32, buf: &mut [u8]) {
+            buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
+        }
+    }
+
+    #[test]
+    fn a_task_on_the_timer_wheel_sleeps() {
+        // (One base of two buckets; a process_timer, its timer_list's node
+        // first, its task after it, in the second bucket.)
+        let t = Types::parse("T\t1\tbase\tint\t4\tu\n\
+            T\t2\tstruct\thlist_head\t4\nM\t2\tfirst\t0\t0\t1\n\
+            T\t3\tstruct\thlist_node\t8\nM\t3\tnext\t0\t0\t1\nM\t3\tpprev\t32\t0\t1\n\
+            T\t4\tstruct\t\t8\n\
+            T\t5\tstruct\ttimer_base\t8\nM\t5\tvectors\t0\t0\t4\n\
+            T\t6\tstruct\ttimer_list\t12\nM\t6\tentry\t0\t0\t3\n\
+            T\t7\tstruct\tprocess_timer\t16\nM\t7\ttimer\t0\t0\t6\nM\t7\ttask\t96\t0\t1\n\
+            G\ttimer_bases\t256\t5\n");
+        let mut m = alloc::vec![0u8; 1024];
+        m[260..264].copy_from_slice(&512u32.to_le_bytes());
+        m[524..528].copy_from_slice(&0x777u32.to_le_bytes());
+        let mem = Mem(m);
+        assert!(sleeping(&t, &mem, &[0x777]));
+        assert!(!sleeping(&t, &mem, &[0x778]));
+    }
+}

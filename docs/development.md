@@ -118,7 +118,7 @@ runtime's WebAssembly module and calls `Machine` directly.
 | Module | Responsibility |
 |---|---|
 | `lib.rs` | Mounting, boot handoff, the booted `Machine` and the lessons (thread-locals), context providers, URL synchronization, the single active lesson run, and top-level layout. |
-| `lesson.rs` | Lesson schema, navigation, execution algorithm, outcomes, links, tries, and rendering. |
+| `lesson.rs` | Lesson schema, navigation, running a program (the Machine keeps each line's outcome), links, tries, and rendering. |
 | `editor.rs` | In-place program editing, completions, signatures, and validation. |
 | `chart.rs` | Whole-recording overview, stack chart, task strip, transport, zoom/pan input, and function search. |
 | `source.rs` | Virtualized kernel source, executed lines, values, stores, run-to-line, and definition navigation. |

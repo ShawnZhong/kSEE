@@ -212,54 +212,11 @@ fn raise(irq: u32) {
 /// for later runs then, unrecorded.
 const BOOT_NS: u64 = 1_000_000_000;
 
-/// Whether a runner the page waits for sleeps on a timer of its own (a
-/// sleep, a wait with a timeout). The kernel's own timers, read as its
-/// types lay them out:
-/// - hrtimers (an hrtimer_sleeper's task): each clock base's, in order
-///   (7.2's linked rbtree: from the leftmost, by next);
-/// - the timer wheel (a process_timer's task: schedule_timeout, msleep):
-///   each base's buckets' lists.
+/// Whether a runner the page waits for sleeps on a timer of its own (see
+/// ksee_core::arch::sleeping).
 fn sleeping() -> bool {
     let tasks: Vec<u32> = k(|k| k.calls.values().filter(|c| !c.done).map(|c| c.task).collect());
-    let (t, mem) = (&tables().types, &Direct);
-    let off = |s: &str, f: &str| t.field(s, f).map(|(off, _)| off);
-    let size = |s: &str| t.find(s).map_or(0, |id| t.size_of(id));
-    // (How far a timer list is walked: kernel memory read live may be torn.)
-    const MAX_WALK: u32 = 4096;
-    // (A list's nodes from `first`, by the next pointer at `next`.)
-    let wakes = |mut p: u32, next: u32, task: u32| {
-        for _ in 0..MAX_WALK {
-            if p == 0 {
-                return false;
-            }
-            if tasks.contains(&mem.read_u32(p + task)) {
-                return true;
-            }
-            p = mem.read_u32(p + next);
-        }
-        false
-    };
-    // (A timer's list node is at its start: rb_node_linked in the hrtimer's
-    // timerqueue_linked_node; hlist_node in the timer_list.)
-    let hr = || -> Option<bool> {
-        let &(bases, _) = t.globals.get("hrtimer_bases")?;
-        let (clock, all) = t.field("hrtimer_cpu_base", "clock_base")?;
-        let (active, leftmost, next, task) = (off("hrtimer_clock_base", "active")?, off("rb_root_linked", "rb_leftmost")?,
-                                              off("rb_node_linked", "next")?, off("hrtimer_sleeper", "task")?);
-        let each = size("hrtimer_clock_base");
-        Some((0..all.checked_div(each)?).any(|b| wakes(mem.read_u32(bases + clock + b * each + active + leftmost), next, task)))
-    };
-    let wheel = || -> Option<bool> {
-        let &(bases, ty) = t.globals.get("timer_bases")?;
-        let (vectors, all) = t.field("timer_base", "vectors")?;
-        let (first, next) = (off("hlist_head", "first")?, off("hlist_node", "next")?);
-        let task = off("process_timer", "task").unwrap_or(size("timer_list"));
-        let (each, heads) = (size("timer_base"), all / 4);
-        Some((0..t.size_of(ty).checked_div(each)?).any(|b| {
-            (0..heads).any(|h| wakes(mem.read_u32(bases + b * each + vectors + h * 4 + first), next, task))
-        }))
-    };
-    hr() == Some(true) || wheel() == Some(true)
+    ksee_core::arch::sleeping(&tables().types, &Direct, &tasks)
 }
 
 /// idle (suspending): until an interrupt may be pending.
