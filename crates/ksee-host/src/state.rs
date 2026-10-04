@@ -19,7 +19,7 @@ pub fn tables() -> &'static Tables {
 }
 
 /// Where the kernel's memory starts (CONFIG_WASM_HOST_MEMORY: below it,
-/// the runtime's own static data and stack).
+/// the runtime's own static data and stack; checked at boot).
 pub const KERNEL_BASE: u32 = 0x100_0000;
 /// Where it ends.
 pub const RAM_BYTES: u32 = 64 << 20;

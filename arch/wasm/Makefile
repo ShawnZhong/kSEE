@@ -20,7 +20,8 @@ LDFLAGS_vmlinux += --global-base=$(shell printf %d $(CONFIG_WASM_HOST_MEMORY)) \
 		   --import-memory \
 		   --no-merge-data-segments --no-entry --export-table --growable-table \
 		   --export=__stack_pointer --export=wasm_irq_pending \
-		   --export=wasm_timer_deadline --export=__current_task --export=ksee_trace
+		   --export=wasm_timer_deadline --export=__current_task --export=ksee_trace \
+		   --export=__global_base
 
 core-y += arch/wasm/kernel/ arch/wasm/mm/
 libs-y += arch/wasm/lib/

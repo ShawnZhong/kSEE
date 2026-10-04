@@ -94,6 +94,11 @@ impl Machine {
             JsFuture::from(WebAssembly::instantiate_module(&self.module, &imports::kernel())).await?.unchecked_into();
         let kernel = inst.exports();
         let global = |name: &str| js::get(&js::get(&kernel, name), "value").as_f64().unwrap_or(0.0) as u32;
+        // (Where the kernel's memory starts, its CONFIG_WASM_HOST_MEMORY: as
+        // the host has it, KERNEL_BASE.)
+        if global("__global_base") != KERNEL_BASE {
+            return Err(format!("the kernel starts at {:#x}, not KERNEL_BASE ({KERNEL_BASE:#x}): build both alike", global("__global_base")).into());
+        }
         let trace = global("ksee_trace");
         let (current, pending, deadline) = (global("__current_task"), global("wasm_irq_pending"), global("wasm_timer_deadline"));
         // (Nothing of a machine before it but its command line, and the ids of
