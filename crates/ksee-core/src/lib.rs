@@ -1,19 +1,21 @@
 //! kSEE core: everything about a recording that needs no browser.
 //!
 //! * [`tables`], [`types`]: what the kernel says about itself (the plugin's
-//!   probe tables; types from DWARF, see crates/ksee-cli's pack).
+//!   probe tables; types from DWARF, see crates/ksee-cli's pack); [`wasm`]:
+//!   where they are, a module's custom sections; [`arch`]: the kernel's own
+//!   names, and its timers.
 //! * [`trace`]: decoding the trace ring into records.
 //! * [`recording`]: what the host rebuilds from the records: tasks,
 //!   syscalls, and the calls and lines ([`stack`]), memory as it was
 //!   ([`mem`]).
 //! * [`view`]: what the page shows of it.
-//! * [`program`]: a syscall's arguments as the page writes them (C, with the
-//!   kernel's types).
+//! * [`program`]: the page's program: a line's C (with the kernel's types),
+//!   and the run of it (program::Session: its runners and calls).
 //! * [`highlight`]: the kernel's source, colored.
 //! * [`text`]: a lesson's paragraphs, in pieces.
 //!
 //! `no_std`, so that the same code runs in the wasm runtime
-//! (crates/ksee-host) and natively (crates/ksee-cli, tests).
+//! (crates/ksee-host) and natively (its tests, on made-up data).
 #![no_std]
 
 extern crate alloc;
