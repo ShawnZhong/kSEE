@@ -151,7 +151,7 @@ expressions are rejected before the kernel runs.
 ## Course order
 
 The generated course order is defined by `EXAMPLES` in
-`crates/ksee-cli/src/build.rs`:
+`crates/ksee-cli/src/lessons.rs`:
 
 1. Start here
 2. A process

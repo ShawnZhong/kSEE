@@ -1,6 +1,6 @@
 //! Reading a wasm module: its custom sections (the kernel's
 //! self-description), and what its linker put in memory and in its
-//! function table (the kernel's syscall table: see ksee pack).
+//! function table (the kernel's syscall table: see pack/mod.rs).
 
 use std::collections::BTreeMap;
 

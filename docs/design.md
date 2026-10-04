@@ -62,7 +62,8 @@ The Rust crate boundaries are:
 - `ksee-page` is the Dioxus UI in the same outer WebAssembly module as the
   runtime. It depends on both runtime and core and calls `Machine` directly.
 - `ksee-cli` is the native build tool. It builds and packs the kernel, browser
-  module, programs, lessons, site, and tests; its metadata packer uses core.
+  module, programs, lessons, site, and tests; it uses core only for lesson
+  text (the packer writes the formats core reads).
 
 `web/` supplies the static frame and loader. `/init` and `/bin/prog` are
 freestanding WebAssembly programs inside Linux. The latter waits for requests
@@ -97,7 +98,8 @@ memory remains exact. The runtime snapshots the ring when the machine is quiet.
 
 `ksee-core` then combines three inputs:
 
-1. trace records, including the initial task and later task switches;
+1. trace records, including the task a recording begins in (later switches
+   are read from the calls and returns of the switch itself);
 2. packed metadata from probes, DWARF, link addresses, and UAPI headers; and
 3. end-state memory, with later stores undone to obtain an earlier moment.
 

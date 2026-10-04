@@ -1,4 +1,4 @@
-//! Kernel types (from DWARF, see `ksee pack`) and decoding memory with them.
+//! Kernel types (from DWARF, see crates/ksee-cli's pack) and decoding memory with them.
 //!
 //! The `ksee.types` custom section lists types by dense id (0 is void),
 //! one per line, tab-separated:

@@ -65,7 +65,7 @@ idles (`NO_HZ_IDLE`), so an idle CPU's next timer is a real one. While a
 call is under way, idle skips to it only if the call's runner sleeps on a
 timer of its own (an `hrtimer_sleeper` among the hrtimers, a
 `process_timer` on the timer wheel; a sleep, a wait with a timeout,
-however long; the runtime's `timer_wakes` reads them by the kernel's
+however long; `ksee_core::arch::sleeping` reads them by the kernel's
 types, no kernel change); else the call is blocked: it waits for another
 call, and the machine is quiet at once.
 

@@ -30,7 +30,7 @@ pub trait Env {
 }
 
 /// Numbers by name only (the kernel's constants as they are defined, in
-/// ksee pack; a test's).
+/// crates/ksee-cli's pack; a test's).
 impl<F: Fn(&str) -> Option<i64> + ?Sized> Env for F {
     fn sym(&self, name: &str) -> Option<Sym> {
         self(name).map(|v| Sym::Value { v, to: None })

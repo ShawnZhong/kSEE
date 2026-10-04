@@ -12,7 +12,7 @@ pub const SYSCALL: &str = "wasm_syscall";
 /// `__wasm_sys_read`), the one function SYSCALL_DEFINE makes for it: its
 /// source's parameters (the SYSCALL_DEFINE line's) are the syscall's
 /// arguments, on the entry's record.
-/// (ksee pack has it too: the syscalls are the table's entries' names.)
+/// (crates/ksee-cli's pack names the syscalls by it: the table's entries.)
 pub const SYSCALL_WRAPPER: &str = "__wasm_sys_";
 /// The machine's own primitives (arch/wasm/include/asm and the generic
 /// half of the arch layer: `current`, the interrupt flag, atomics, bit

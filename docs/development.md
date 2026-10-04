@@ -44,20 +44,20 @@ dependency set, then runs it. `ksee build` performs these stages:
 
 1. `make` (the Makefile: the kernel's half, C and LLVM): require LLVM 22; fetch
    Linux stable `v7.2.7` into `linux/` if it is absent, verify the pinned
-   commit, apply `linux.patch` and copy `arch/wasm/` in; build `plugin/ksee-trace.so`; run kbuild
+   commit, apply `linux.patch` and link `arch/wasm/` in; build `plugin/ksee-trace.so`; run kbuild
    for the WebAssembly kernel and its UAPI headers (a hash of the plugin's
    source is part of the kernel flags, so changing the pass rebuilds the
-   kernel); compile freestanding `user/init.c` and `user/prog.c`, make the ext4
-   image of `user/disk/`, and archive them with `user/note.txt` as
-   `user/initramfs.list` says (the kernel's `gen_init_cpio`).
-2. Create `target/site/` and link the current static files from `web/`.
-3. Pack `linux/vmlinux`: combine probe descriptions with DWARF-derived types,
-   symbols, syscalls, constants, and declaration locations; copy referenced
-   kernel sources; strip DWARF; and write `target/site/vmlinux.gz`, then
-   `target/site/initramfs.cpio.gz`.
-4. Combine `user/examples/*.json` in course order into
-   `target/site/examples.json`.
-5. Build `ksee-page` for `wasm32-unknown-unknown` with `--locked --release`.
+   kernel); compile freestanding `user/init.c` and `user/prog.c` and archive
+   them with `user/note.txt` as `user/initramfs.list` says (the kernel's
+   `gen_init_cpio`); make the disk, an ext4 image of `user/disk/`.
+2. Pack `linux/vmlinux` into `target/site/`: combine probe descriptions with
+   DWARF-derived types, symbols, syscalls, constants, and declaration
+   locations; copy referenced kernel sources; strip DWARF; and write
+   `vmlinux.gz`, then `initramfs.cpio.gz` and `disk.img.gz`.
+3. Write the lessons (`lessons.rs`): `user/examples/*.json` in course order
+   into `examples.json`, a page per lesson from `web/index.html`, and
+   `sitemap.xml`.
+4. Build `ksee-page` for `wasm32-unknown-unknown` with `--locked --release`.
    Cargo links `ksee-host` and `ksee-core` into the same outer module, then
    wasm-bindgen writes `target/site/pkg/`.
 
@@ -87,7 +87,7 @@ and passes all arguments through.
 | `./ksee.sh` | Build changed outputs, then serve `target/site/` on port 8000. |
 | `./ksee.sh build` | Build the plugin, kernel, browser module, programs, metadata, lessons, and site. |
 | `./ksee.sh serve [--port=N]` | Serve the existing `target/site/` without rebuilding it. |
-| `./ksee.sh test [--ui \| NAME ...]` | Run native tests, build, then run the selected browser suites in headless Chrome; the default is `kernel`. |
+| `./ksee.sh test [--built] [--ui \| NAME ...]` | Run native tests, build (`--built`: not, the site is), then the selected browser suites in headless Chrome; the default is `kernel` and `lessons`. |
 | `./ksee.sh deploy` | Build, then publish the generated site to the remote `gh-pages` branch. |
 | `./ksee.sh patch` | Write `linux.patch` from Linux's own files' difference between `linux/` and `v7.2.7` (`make patch`). |
 
@@ -137,7 +137,7 @@ runtime's WebAssembly module and calls `Machine` directly.
 
 The kernel's own suite is `ksee-host`'s `test/` (harness, trace, program,
 metadata, lifecycle, timings): it checks the Machine, with no page. The tests
-are always in the shipped module (about 80 KB gzipped); a URL naming one,
+are always in the shipped module; a URL naming one,
 `#test=NAME`, runs it.
 
 The central state is the selected syscall, reconstructed line cursor, selected
@@ -162,7 +162,7 @@ workspace's default members (a bare `cargo test`) are the native crates.
 
 `./ksee.sh test` runs layers in this order:
 
-1. `cargo test --locked -p ksee-core -p ksee-cli` runs native
+1. `cargo test --locked --release -p ksee-core -p ksee-cli` runs native
    reconstruction, view, program-language, source/text, chart-window, packing,
    and CLI tests.
 2. The site is built, as `ksee build` builds it: the tests are in its module.
@@ -201,7 +201,7 @@ The port is `arch/wasm/` (the architecture: its own files) and `linux.patch`
 the pinned stable tag and applies the patch once; every build copies
 `arch/wasm/`'s changed files into `linux/arch/wasm/`. To change the port:
 
-1. Edit `arch/wasm/` in the repository (not its copy in `linux/`); change
+1. Edit `arch/wasm/` in the repository (`linux/arch/wasm` is a link to it); change
    Linux's own files, in `linux/`, only where the port requires it.
 2. Build and test the change.
 3. If Linux's own files changed, run `./ksee.sh patch` to regenerate

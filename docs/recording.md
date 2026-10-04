@@ -102,7 +102,7 @@ The instrumented kernel describes its probes in a custom section,
 concatenated by wasm-ld):
 
 - `U`: a unit's start; `P k path`: file k; `I k …`: an inline site (the
-  function, and where it is inlined into the next one out;
+  function, and where it is inlined into the next one out);
 - `F fn name FILE:line known sealed wide`: a function, which of its
   parameters call records carry, whether it is sealed (see above), and
   which parameters take two words;

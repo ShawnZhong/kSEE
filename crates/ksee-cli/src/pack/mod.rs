@@ -8,11 +8,12 @@ mod module;
 use std::collections::BTreeSet;
 use std::path::{Component, Path};
 
+use ksee_core::arch::SYSCALL_WRAPPER;
+
 /// The syscall table (arch/wasm/kernel/syscall.c): an entry per number,
-/// the function it calls, `__wasm_sys_NAME` (arch/wasm's syscall_wrapper.h:
-/// ksee_core::arch::SYSCALL_WRAPPER), NULL for one this kernel does not build.
+/// the function it calls, SYSCALL_WRAPPER's `__wasm_sys_NAME`, NULL for one
+/// this kernel does not build.
 const SYSCALL_TABLE: &str = "sys_call_table";
-const SYSCALL_WRAPPER: &str = "__wasm_sys_";
 
 /// A function's id, as the plugin's probes have it: the 32-bit FNV-1a hash
 /// of its name (of "file:name" for one local to its file).
