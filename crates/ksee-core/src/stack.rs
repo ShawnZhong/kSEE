@@ -161,15 +161,20 @@ impl Calls {
     /// The Var records of the call from record `first` (a block 0), by
     /// record `upto`, in order.
     pub(crate) fn vars_of(&self, first: usize, upto: usize) -> impl Iterator<Item = usize> + '_ {
-        let call = self.place_at(first).filter(|p| self.calls[p.call as usize].first == first).map_or(NONE, |p| p.call);
+        let call = self.call_index(first).unwrap_or(NONE);
         let from = self.vars.partition_point(|&(c, _)| c < call);
         self.vars[from..].iter().take_while(move |&&(c, i)| c == call && i as usize <= upto).map(|&(_, i)| i as usize)
     }
 
     /// The call the block 0 at record `first` begins.
     pub(crate) fn call_from(&self, first: usize) -> Option<&Call> {
-        let c = self.calls.get(self.place_at(first)?.call as usize)?;
-        (c.first == first).then_some(c)
+        self.calls.get(self.call_index(first)? as usize)
+    }
+
+    /// The index of the call the block 0 at record `first` begins.
+    fn call_index(&self, first: usize) -> Option<u32> {
+        let call = self.place_at(first)?.call;
+        (self.calls.get(call as usize)?.first == first).then_some(call)
     }
 
     /// Where the call from record `first` (a block 0) ends: the record

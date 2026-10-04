@@ -230,7 +230,7 @@ impl Types {
             Kind::Pointer(_) => alloc::vec![(String::new(), 0)],
             Kind::Struct(_) | Kind::Union(_) => self.members(&t.kind).iter().filter(|m| m.bit_size == 0).flat_map(|m| {
                 self.pointers(m.ty).into_iter().map(|(p, off)| {
-                    (if p.is_empty() || p.starts_with('[') { alloc::format!("{}{p}", m.name) } else { alloc::format!("{}.{p}", m.name) }, m.bit_offset / 8 + off)
+                    (join_path(&m.name, &p), m.bit_offset / 8 + off)
                 }).collect::<Vec<_>>()
             }).collect(),
             &Kind::Array { elem, count } => {
@@ -239,7 +239,7 @@ impl Types {
                     return Vec::new();
                 }
                 (0..count).flat_map(|i| inner.iter().map(move |(p, off)| {
-                    (if p.is_empty() || p.starts_with('[') { alloc::format!("[{i}]{p}") } else { alloc::format!("[{i}].{p}") }, i * size + off)
+                    (join_path(&alloc::format!("[{i}]"), p), i * size + off)
                 })).collect()
             }
             _ => Vec::new(),
@@ -353,14 +353,13 @@ impl Types {
             Kind::Base(b) => {
                 let size = self.get(ty).size.max(t.size).min(8);
                 let v = self.read_int(mem, addr, size, bit_off, bit_size);
-                let signed = |v: u64, bits: u32| (v << (64 - bits)) as i64 >> (64 - bits);
                 let bits = if bit_size > 0 { bit_size } else { size * 8 };
                 let _ = match b {
-                    Base::Signed if bits > 0 => write!(&mut out, "{}", signed(v, bits)),
+                    Base::Signed if bits > 0 => write!(&mut out, "{}", sign_extend(v, bits)),
                     Base::Bool => write!(&mut out, "{}", v != 0),
                     // (A char: its number, and the character if it is one.)
                     Base::Char if (0x20..0x7f).contains(&v) => write!(&mut out, "{} '{}'", v, v as u8 as char),
-                    Base::Char => write!(&mut out, "{}", signed(v, bits.max(1))),
+                    Base::Char => write!(&mut out, "{}", sign_extend(v, bits.max(1))),
                     Base::Float if size == 4 => write!(&mut out, "{}", f32::from_bits(v as u32)),
                     Base::Float => write!(&mut out, "{}", f64::from_bits(v)),
                     // Unsigned: as num, but flags in hex and file modes in octal.
@@ -373,7 +372,7 @@ impl Types {
                 // (An enumerator may be negative: as the value's bits, or signed.)
                 let bits = if bit_size > 0 { bit_size } else { t.size.min(8) * 8 };
                 let u = self.read_int(mem, addr, t.size.min(8), bit_off, bit_size);
-                let v = if bits > 0 && bits < 64 { (u << (64 - bits)) as i64 >> (64 - bits) } else { u as i64 };
+                let v = if bits > 0 { sign_extend(u, bits) } else { u as i64 };
                 match values.iter().find(|(_, x)| *x == v || *x == u as i64) {
                     Some((name, _)) => out.push_str(name),
                     None => {
@@ -525,6 +524,16 @@ pub(crate) fn quote(b: &[u8]) -> String {
         s.push('…');
     }
     s
+}
+
+/// `v`'s low `bits` (1 to 64), a signed number.
+fn sign_extend(v: u64, bits: u32) -> i64 {
+    (v << (64 - bits)) as i64 >> (64 - bits)
+}
+
+/// A member's path after `head`: "a.b", or "a[2]" (an index right after).
+fn join_path(head: &str, tail: &str) -> String {
+    if tail.is_empty() || tail.starts_with('[') { alloc::format!("{head}{tail}") } else { alloc::format!("{head}.{tail}") }
 }
 
 #[cfg(test)]
