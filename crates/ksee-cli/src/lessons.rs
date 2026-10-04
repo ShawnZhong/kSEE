@@ -49,6 +49,14 @@ pub fn write() {
         out(&format!("{}.html", s(ex, "name")), fill(&page, &format!("{} — kSEE", s(ex, "title")), s(ex, "question"), &lesson(ex)));
     }
     out("index.html", fill(&page, TITLE, DESCRIPTION, &contents(&all)));
+    // (For search engines: every page, at the address the site is published
+    // at, if it is known. Given to them by hand (Google's Search Console):
+    // a robots.txt naming it would have to be at the host's root.)
+    if let Some(base) = crate::build::published() {
+        let urls: String = std::iter::once(String::new()).chain(all.iter().map(|ex| format!("{}.html", s(ex, "name"))))
+            .map(|page| format!("  <url><loc>{base}{page}</loc></url>\n")).collect();
+        out("sitemap.xml", format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n{urls}</urlset>\n"));
+    }
 }
 
 const TITLE: &str = "kSEE, the kernel Syscall Execution Explorer: step through a real Linux kernel in your browser";

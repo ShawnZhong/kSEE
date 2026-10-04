@@ -73,14 +73,31 @@ fn assets() {
 /// the commit (+: with changes not committed) and where the source is,
 /// GitHub's page of the origin remote; neither without git.
 fn built(cargo: &mut Command) -> &mut Command {
-    let git = |args: &[&str]| Command::new("git").args(args).output().ok().filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-    if let (Some(commit), Some(remote)) = (git(&["rev-parse", "--short=12", "HEAD"]), git(&["remote", "get-url", "origin"])) {
+    if let (Some(commit), Some(source)) = (git(&["rev-parse", "--short=12", "HEAD"]), source()) {
         let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
-        let source = remote.trim_end_matches(".git").replacen("git@github.com:", "https://github.com/", 1);
         cargo.env("KSEE_COMMIT", format!("{commit}{}", if dirty { "+" } else { "" })).env("KSEE_SOURCE", source);
     }
     cargo
+}
+
+/// git's output for `args`, if it ran.
+fn git(args: &[&str]) -> Option<String> {
+    Command::new("git").args(args).output().ok().filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
+/// The source's page: the origin remote's on GitHub (https://github.com/OWNER/REPO).
+fn source() -> Option<String> {
+    Some(git(&["remote", "get-url", "origin"])?.trim_end_matches(".git").replacen("git@github.com:", "https://github.com/", 1))
+}
+
+/// Where `ksee deploy` publishes the site: the origin's GitHub Pages
+/// (https://OWNER.github.io/REPO/; OWNER.github.io's own, at its root).
+pub(crate) fn published() -> Option<String> {
+    let source = source()?;
+    let (owner, repo) = source.strip_prefix("https://github.com/")?.split_once('/')?;
+    let host = format!("{}.github.io", owner.to_lowercase());
+    Some(if repo.eq_ignore_ascii_case(&host) { format!("https://{host}/") } else { format!("https://{host}/{repo}/") })
 }
 
 /// pkg/: the runtime and the page, one module (the page calls the Machine).
