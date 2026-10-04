@@ -35,8 +35,8 @@ use lesson::Example;
 use state::Ui;
 
 thread_local! {
-    /// The Machine (one thread: the page's), once booted; until then, its
-    /// boot (a promise: `mount`'s).
+    /// The Machine's boot (a promise: `mount`'s), and the Machine (one
+    /// thread: the page's), once booted (App's).
     static BOOT: RefCell<Option<Promise>> = const { RefCell::new(None) };
     static MACHINE: RefCell<Option<Rc<Machine>>> = const { RefCell::new(None) };
     /// The lessons (`mount`'s, the page's life long).
