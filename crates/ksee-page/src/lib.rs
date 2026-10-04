@@ -4,9 +4,9 @@
 //! on a fresh kernel. Beside it, the recording: the timeline (chart.rs),
 //! the source where the cursor is (source.rs), and the tabs: the Stack,
 //! the tasks, the objects the call selected changed, and the console
-//! (stack.rs, panels.rs). The state is three things (state.rs): the
-//! call selected, the cursor in it (a line it ran), and the frame chosen on
-//! the Stack.
+//! (stack.rs, panels.rs); the header, the URL (nav.rs). The state
+//! (state.rs): the lesson and its program, the moment shown (the call
+//! selected, the cursor in it, the frame chosen), and the views of them.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

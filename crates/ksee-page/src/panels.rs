@@ -80,11 +80,8 @@ fn Objects() -> Element {
 
 /// Box `k` in view.
 fn show(k: usize) {
-    if let Some(element) = web_sys::window()
-        .and_then(|window| window.document())
-        .and_then(|document| document.get_element_by_id(&format!("obj{k}")))
-    {
-        element.scroll_into_view();
+    if let Some(e) = crate::chart::element(&format!("obj{k}")) {
+        e.scroll_into_view();
     }
 }
 

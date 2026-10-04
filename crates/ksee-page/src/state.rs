@@ -74,13 +74,18 @@ fn moment_step(at: &Moment, lines: &[Line]) -> Option<f64> {
     Some((machine().view(|v| v.rec.first_step(i)) + k) as f64)
 }
 
+/// Syscall `s`'s lines (its task's).
+fn lines_of(s: &ksee_core::view::SyscallSummary) -> Vec<Line> {
+    machine().view(|v| v.lines(s.first, s.last, s.task.addr))
+}
+
 impl Derived {
     /// The memos (a component's hooks: the App's).
     pub fn new(ui: Ui) -> Derived {
         let shown = use_memo(move || (ui.peek)().or((ui.at)()));
         let syscall = use_memo(move || {
             (ui.snapshot)();
-            if !matches!((ui.kernel)(), Some(Ok(()))) {
+            if !ui.up() {
                 return None;
             }
             let k = shown()?.call;
@@ -88,12 +93,10 @@ impl Derived {
         });
         let lines = use_memo(move || {
             (ui.snapshot)();
-            Shared(Rc::new(syscall.cloned().map_or_else(Vec::new, |s| {
-                machine().view(|v| v.lines(s.first, s.last, s.task.addr))
-            })))
+            Shared(Rc::new(syscall.cloned().map_or_else(Vec::new, |s| lines_of(&s))))
         });
         // (The chart's: none before the kernel is up.)
-        let up = move || matches!((ui.kernel)(), Some(Ok(())));
+        let up = move || ui.up();
         let window = use_memo(move || {
             (ui.snapshot)();
             let end = if up() { machine().view(|v| v.rec.steps.len()).saturating_sub(1) } else { 0 };
@@ -210,6 +213,11 @@ impl Ui {
         }
     }
 
+    /// Whether the kernel is up (booted, not failed).
+    pub fn up(&self) -> bool {
+        matches!((self.kernel)(), Some(Ok(())))
+    }
+
     /// The call selected (the cursor's).
     pub fn call(&self) -> Option<usize> {
         self.at.read().as_ref().map(|m| m.call)
@@ -217,10 +225,7 @@ impl Ui {
 
     /// Syscall `k`'s lines (its task's), as the snapshot has them.
     pub fn lines_of(k: usize) -> Vec<Line> {
-        machine().view(|v| {
-            let Some(s) = v.syscall(k) else { return Vec::new() };
-            v.lines(s.first, s.last, s.task.addr)
-        })
+        machine().view(|v| v.syscall(k)).map_or_else(Vec::new, |s| lines_of(&s))
     }
 
     /// Select call `k` (an index in the syscalls), the cursor at its own
@@ -261,7 +266,7 @@ impl Ui {
 
     /// The moment at record `i` (in the chart: at its `step`), on frame `frame` there:
     /// the call it is in, its line there (the last at or before it).
-    pub fn moment_at(&self, i: usize, step: Option<usize>, frame: Option<usize>, shown: Option<usize>, shown_lines: &[Line]) -> Option<Moment> {
+    pub fn moment_at(d: Derived, i: usize, step: Option<usize>, frame: Option<usize>) -> Option<Moment> {
         let (call, own, first) = machine().view(|v| (v.rec.syscall_at(i), v.line_of(i), v.rec.first_step(i)));
         let call = call?;
         // (A step: the line it is, its record's lines being its steps; a
@@ -272,15 +277,15 @@ impl Ui {
             (None, Some((r, nth))) => lines.iter().rposition(|l| l.i == r && l.nth <= nth),
             (None, None) => lines.iter().position(|l| l.i == i),
         }.or_else(|| lines.iter().rposition(|l| l.i <= i)).unwrap_or(0);
-        let line = if shown == Some(call) { line(shown_lines) } else { line(&Ui::lines_of(call)) };
+        // (The call shown's lines, as the memo has them; another's, read.)
+        let line = if d.shown.peek().as_ref().map(|m| m.call) == Some(call) { line(&d.lines.peek()) } else { line(&Ui::lines_of(call)) };
         Some(Moment { call, line, frame })
     }
 
     /// The cursor to record `i`, at the level chosen.
     pub fn go_record(self, d: Derived, i: usize) {
-        let shown = d.shown.peek().as_ref().map(|m| m.call);
         let frame = self.at.peek().as_ref().and_then(|m| m.frame);
-        if let Some(m) = self.moment_at(i, None, frame, shown, &d.lines.read()) {
+        if let Some(m) = Ui::moment_at(d, i, None, frame) {
             self.commit(Some(m));
         }
     }

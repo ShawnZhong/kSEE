@@ -103,34 +103,26 @@ pub(crate) fn ObjectsView(
             format!("; left {} as it was", count(same.len()))
         },
     );
-    let others: Vec<(String, String, Vec<usize>)> = others
-        .into_iter()
-        .map(|(task, list)| {
-            (
-                task,
-                format!("{}: {}", count(list.len()), names(&list)),
-                list,
-            )
-        })
-        .collect();
-    let same_labels = names(&same);
+    // (Its own; then each other task's, under a head; then those left as
+    // they were, under one.)
+    let mut sections: Vec<(Option<(&str, &str, String)>, Vec<usize>)> = vec![(None, own)];
+    for (task, list) in others {
+        let said = format!("By {task}, while it ran: {}: {}", count(list.len()), names(&list));
+        sections.push((Some(("ohead", "a task that ran while it did (one it woke, or waited for), and first wrote these", said)), list));
+    }
+    if !same.is_empty() {
+        let said = format!("Left as it was, changed and changed back: {}", names(&same));
+        sections.push((Some(("ohead dim", "changed, then changed back by the end (a lock taken and released, a count taken and dropped)", said)), same));
+    }
 
     rsx! {
         div { class: "objects",
             div { class: "ohead", "{head}" }
-            for k in own {
-                ObjectBox { nodes: nodes.clone(), definitions: definitions.clone(), k, depth: depth[k], cursor, on_record, on_definition, on_object }
-            }
-            for (task, said, list) in others {
-                div { class: "ohead", title: "a task that ran while it did (one it woke, or waited for), and first wrote these", "By {task}, while it ran: {said}" }
-                for k in list {
-                    ObjectBox { nodes: nodes.clone(), definitions: definitions.clone(), k, depth: depth[k], cursor, on_record, on_definition, on_object }
+            for (h , list) in sections {
+                if let Some((class, title, said)) = h {
+                    div { class, title, "{said}" }
                 }
-            }
-            if !same.is_empty() {
-                div { class: "ohead dim", title: "changed, then changed back by the end (a lock taken and released, a count taken and dropped)",
-                    "Left as it was, changed and changed back: {same_labels}" }
-                for k in same {
+                for k in list {
                     ObjectBox { nodes: nodes.clone(), definitions: definitions.clone(), k, depth: depth[k], cursor, on_record, on_definition, on_object }
                 }
             }

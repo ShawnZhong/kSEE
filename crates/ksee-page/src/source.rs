@@ -141,10 +141,9 @@ struct Tip {
 /// What the tip over expression `e` says: its value, then its members'
 /// (the first 16).
 fn said(e: &str, o: &Object) -> Vec<String> {
-    let value = |o: &Object| o.shown();
     let kids = o.children.as_deref().unwrap_or_default();
-    std::iter::once(format!("{e} = {}", value(o)))
-        .chain(kids.iter().take(16).map(|c| format!("{} = {}", c.name, value(c))))
+    std::iter::once(format!("{e} = {}", o.shown()))
+        .chain(kids.iter().take(16).map(|c| format!("{} = {}", c.name, c.shown())))
         .chain((kids.len() > 16).then(|| format!("… {} more", kids.len() - 16)))
         .collect()
 }

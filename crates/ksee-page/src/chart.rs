@@ -165,7 +165,7 @@ struct Pan {
     pointer_id: i32,
 }
 
-fn element(id: &str) -> Option<web_sys::HtmlElement> {
+pub(crate) fn element(id: &str) -> Option<web_sys::HtmlElement> {
     web_sys::window()?
         .document()?
         .get_element_by_id(id)?
@@ -231,11 +231,7 @@ fn canvas_context(
     web_sys::HtmlCanvasElement,
     web_sys::CanvasRenderingContext2d,
 )> {
-    let canvas = web_sys::window()?
-        .document()?
-        .get_element_by_id(id)?
-        .dyn_into::<web_sys::HtmlCanvasElement>()
-        .ok()?;
+    let canvas: web_sys::HtmlCanvasElement = element(id)?.dyn_into().ok()?;
     let ctx = canvas
         .get_context("2d")
         .ok()
@@ -420,15 +416,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let bar = (y < height && dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len())
             .then(|| chart.cols[k].frames[dd as usize] as usize);
         let frame = bar.map(|_| dd as usize).or(off);
-        let shown = d.shown.peek().as_ref().map(|m| m.call);
         Some((
-            ui.moment_at(
-                chart.cols[k].i,
-                Some(chart.cols[k].step),
-                frame,
-                shown,
-                &d.lines.read(),
-            ),
+            Ui::moment_at(d, chart.cols[k].i, Some(chart.cols[k].step), frame),
             bar,
         ))
     };
@@ -468,7 +457,6 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             onpointermove: {
                 let chart = chart.clone();
                 move |e: PointerEvent| {
-                    let ui = ui;
                     if let Some(p) = pan() {
                         if p.pointer_id != e.pointer_id() { return }
                         let at = e.client_coordinates();
@@ -527,7 +515,6 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 let chart = chart.clone();
                 move |e: MouseEvent| {
                     if dragged() { dragged.set(false); return }
-                    let ui = ui;
                     let p = e.client_coordinates();
                     if let Some(moment) = chart_coordinates(p.x, p.y).and_then(|(x, y)| hit(&chart, x, y, None)).and_then(|h| h.0) {
                         ui.commit(Some(moment));

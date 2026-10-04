@@ -35,8 +35,7 @@ body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.45 syste
 a { color: var(--accent); cursor: pointer; text-decoration: none; }
 a:hover { text-decoration: underline; }
 button { font: inherit; font-size: 12px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg); cursor: pointer; }
-button:hover:not(:disabled) { border-color: var(--accent); }
-button:disabled { color: var(--dim); cursor: default; opacity: .6; }
+button:hover { border-color: var(--accent); }
 button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dim { color: var(--dim); }
 .mono, code, textarea { font-family: var(--mono); font-size: 12px; }
@@ -48,7 +47,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .page { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--left) 5px minmax(0, 1fr); }
 .side { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--line); position: relative; }
 .lesson { overflow: auto; flex: 1; min-height: 0; padding-bottom: 24px; }
-.work { display: flex; flex-direction: column; min-width: 0; min-height: 0; outline: none; }
+.work { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .below { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 1fr) 5px var(--right); }
 .vsplit { cursor: col-resize; background: var(--line); opacity: .5; }
 .hsplit { cursor: row-resize; height: 4px; background: var(--line); opacity: .5; flex: none; }
@@ -65,12 +64,14 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .topbar b span { font-weight: normal; }
 .topbar .build { font-size: 11px; color: var(--dim); }
 .topbar .contents.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
-.topbar .crumb { margin-left: 8px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
+/* (The small headings: the chapter, the menu's chapters, the program's title.) */
+.topbar .crumb, .menu .chapter, .ptitle { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.topbar .crumb { margin-left: 8px; color: var(--dim); }
 .topbar .menu { top: 100%; left: 0; width: min(340px, 92vw); max-height: 70dvh; }
 .menuback { position: fixed; inset: 0; z-index: 9; }
 .menu { position: absolute; z-index: 10; overflow-y: auto; background: var(--panel);
   border-top: 1px solid var(--line); padding: 4px 0 12px; box-shadow: 0 6px 16px rgb(0 0 0 / .12); }
-.menu .chapter { margin: 12px 12px 2px; font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
+.menu .chapter { margin: 12px 12px 2px; font-weight: 600; color: var(--dim); }
 .menu .item { display: block; padding: 4px 12px; color: var(--fg); }
 .menu .item:hover { background: var(--sel); text-decoration: none; }
 .menu .item.on { background: var(--sel); font-weight: 600; }
@@ -84,7 +85,7 @@ h1 { margin: 12px 12px 0; font-size: 17px; line-height: 1.3; font-weight: 600; }
 .explain a.try { border: 1px solid var(--accent); border-radius: 3px; padding: 0 5px; font-size: 12px; white-space: nowrap; }
 .explain a.try:hover { text-decoration: none; background: var(--sel); }
 /* The program: a line each (its editor, its result); a column per task */
-.ptitle { margin: 10px 12px 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: baseline; }
+.ptitle { margin: 10px 12px 0; display: flex; align-items: baseline; }
 .ptitle a { margin-left: auto; text-transform: none; letter-spacing: 0; }
 .program { overflow-x: auto; }
 .turn { display: flex; flex-direction: column; gap: 2px; padding: 6px 12px; border-top: 1px solid var(--line); flex: none; }
@@ -138,7 +139,6 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .flamescroll { position: relative; height: var(--chart); overflow: hidden auto; overscroll-behavior: contain; }
 .chart { position: relative; cursor: crosshair; user-select: none; touch-action: none; }
 .timeline-canvas { display: block; pointer-events: none; }
-.task-canvas { height: 12px; }
 .transport { display: flex; gap: 4px; align-items: center; padding-top: 4px; font-size: 11.5px; }
 .transport .where { margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
@@ -164,9 +164,10 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .code .num { color: var(--num); } .code .pp { color: var(--pp); }
 .code .fn { color: var(--fn); } .code .fld { color: var(--fld); } .code .mac { color: var(--mac); } .code .bl { color: var(--bl); } .code .esc { color: var(--esc); }
 .code .val { text-decoration: underline dotted var(--dim); text-underline-offset: 3px; cursor: help; }
-.code a.stored { color: var(--dim); font-style: italic; margin-left: 3ch; display: inline-block; max-width: 45%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.code a.stored, .code .values { font-style: italic; margin-left: 3ch; display: inline-block; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.code a.stored { color: var(--dim); max-width: 45%; }
 .code a.stored:hover { color: var(--accent); }
-.code .values { color: var(--accent); font-style: italic; margin-left: 3ch; display: inline-block; max-width: 60%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.code .values { color: var(--accent); max-width: 60%; }
 
 /* The tabs: the Stack, the Objects, the Tasks, the Console */
 .panels { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel); border-left: 1px solid var(--line); }
@@ -232,7 +233,7 @@ table.objs tr.later { opacity: .45; }
 <div id="root"></div>
 <noscript><p>kSEE, the kernel Syscall Execution Explorer, runs a real Linux kernel in your browser and lets you step through what a system call does, line by line. It needs JavaScript and WebAssembly (with JSPI: Chrome 137, Firefox 153, Safari 27 or later).</p></noscript>
 <script>
-// (The theme kept, before the page is drawn: lesson.rs's Theme.)
+// (The theme kept, before the page is drawn: nav.rs's Theme.)
 const theme = localStorage.getItem("ksee.theme");
 if (theme) document.documentElement.dataset.theme = theme;
 </script>

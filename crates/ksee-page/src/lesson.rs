@@ -148,7 +148,7 @@ pub fn Lesson() -> Element {
     let mine = program == ex.steps;
     let outcomes = ui.outcomes.read().clone();
     // (Task columns: the program's first, then those used or made.)
-    let active = if matches!((ui.kernel)(), Some(Ok(()))) { machine().task_columns(program.len()) } else { Vec::new() };
+    let active = if ui.up() { machine().task_columns(program.len()) } else { Vec::new() };
     let mut columns: Vec<Option<String>> = vec![None];
     for task in program.iter().filter_map(|step| step.task()).chain(active.iter().map(String::as_str)) {
         if !columns.iter().any(|column| column.as_deref() == Some(task)) {
@@ -206,8 +206,7 @@ pub fn Lesson() -> Element {
                                 div { class: "cell", style: if many { format!("grid-column: {}", c + 1) } else { String::new() },
                                     crate::editor::Editor { key: "{program.len()}:{c}", text: String::new(), task: task.clone(), line: program.len(),
                                         placeholder: by,
-                                        done: move |text: String| if !text.is_empty() { ui.program.write().push(Step::on(task.as_deref(), text)); },
-                                        focus: move |_| {} }
+                                        done: move |text: String| if !text.is_empty() { ui.program.write().push(Step::on(task.as_deref(), text)); } }
                                 }
                             }
                         }
