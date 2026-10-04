@@ -105,10 +105,9 @@ pub fn listen(ui: Ui) {
 }
 
 /// The calls at the moment shown, at the bottom of the pane as the chart
-/// stacks them (the outermost lowest): over the chart, the pointer's frames
-/// alone (so that only the top of the stack moves); at the cursor, under
-/// the frame chosen, its arguments and locals as memory was then. A click
-/// on another: it chosen. Under them, the task running.
+/// stacks them (the outermost lowest); under the frame chosen, its
+/// arguments and locals as memory was then. A click on another: it chosen.
+/// Under them, the task running.
 #[component]
 pub fn Stack() -> Element {
     let ui = use_context::<Ui>();
@@ -117,16 +116,12 @@ pub fn Stack() -> Element {
     let d = use_context::<Derived>();
     let chosen = d.frame.cloned();
     let at = d.line.cloned().map_or(0, |l| l.at);
-    let previewing = (ui.peek)().is_some();
     let task = machine().view(|v| v.rec.tasks.get(at).map(|&t| v.task(t, at)));
     let mut open = use_context::<Signal<BTreeSet<String>>>();
     // (The chosen frame, its row and values, scrolled into view: as little
     // as it takes, its row first.)
     use_effect(move || {
         let _ = (d.frame.read(), d.stack.read());
-        if ui.peek.peek().is_some() {
-            return;
-        }
         let doc = web_sys::window().and_then(|w| w.document());
         let pick = |s: &str| doc.as_ref().and_then(|d| d.query_selector(s).ok().flatten());
         let (Some(pane), Some(on)) = (pick(".stack"), pick(".stack tbody.on")) else { return };
@@ -155,7 +150,7 @@ pub fn Stack() -> Element {
                             if let Some(s) = &f.syscall { span { class: "dim", " · {s}" } }
                         }
                     }
-                    if k == chosen && !previewing {
+                    if k == chosen {
                         for o in f.args.into_iter().chain(f.locals) {
                             Value { o: o.clone(), path: format!("{k}.{}", o.name), depth: 1, at }
                         }
