@@ -8,23 +8,27 @@ mod module;
 use std::collections::BTreeSet;
 use std::path::{Component, Path};
 
-/// The kernel's syscall table, and its entries' functions' prefix: each is
-/// `__wasm_sys_NAME` (arch/wasm). (Its names, as ksee_core::arch has them.)
+/// The syscall table (arch/wasm/kernel/syscall.c): an entry per number,
+/// the function it calls, `__wasm_sys_NAME` (arch/wasm's syscall_wrapper.h:
+/// ksee_core::arch::SYSCALL_WRAPPER), NULL for one this kernel does not build.
 const SYSCALL_TABLE: &str = "sys_call_table";
 const SYSCALL_WRAPPER: &str = "__wasm_sys_";
 
-/// A function's id, as the plugin's probes and the page have it: its
-/// name's 32-bit FNV-1a hash (ksee_core::tables::Tables::id).
+/// A function's id, as the plugin's probes have it: the 32-bit FNV-1a hash
+/// of its name (of "file:name" for one local to its file).
 pub fn id(name: &str) -> u32 {
     name.bytes().fold(2166136261u32, |h, c| (h ^ c as u32).wrapping_mul(16777619))
 }
 
-/// Column `k` of each of `text`'s lines of kind `kind` (tab-separated).
+/// The columns after the first of each of `text`'s lines of kind `kind`
+/// (tab-separated: ksee.probes', ksee.types').
+fn rows<'a>(text: &'a str, kind: &'a str) -> impl Iterator<Item = Vec<&'a str>> {
+    text.lines().filter_map(move |l| l.strip_prefix(kind)?.strip_prefix('\t').map(|r| r.split('\t').collect()))
+}
+
+/// Column `k` (from 1) of `text`'s lines of kind `kind`.
 fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'a str> {
-    text.lines().filter_map(move |l| {
-        let mut cols = l.split('\t');
-        (cols.next() == Some(kind)).then(|| cols.nth(k - 1)).flatten()
-    })
+    rows(text, kind).filter_map(move |c| c.get(k - 1).copied())
 }
 
 /// Write the packed image and its referenced sources to their final paths.
@@ -179,15 +183,9 @@ fn evaluate(text: &str, known: &[(String, i64)]) -> Option<i64> {
 /// by its index in the function table; NULL for a syscall it does not
 /// build: (number, NAME).
 fn syscalls(image: &[u8], types: &str) -> Vec<(u32, String)> {
-    let table = types.lines().find_map(|l| {
-        let c: Vec<&str> = l.split('\t').collect();
-        (c.len() == 4 && c[0] == "G" && c[1] == SYSCALL_TABLE).then(|| Some((c[2].parse::<u32>().ok()?, c[3])))?
-    });
-    let Some((addr, ty)) = table else { return Vec::new() };
-    let size = types.lines().find_map(|l| {
-        let c: Vec<&str> = l.split('\t').collect();
-        (c.len() >= 5 && c[0] == "T" && c[1] == ty).then(|| c[4].parse::<u32>().ok())?
-    }).unwrap_or(0);
+    let Some((addr, ty)) = rows(types, "G").find(|c| c.first() == Some(&SYSCALL_TABLE))
+        .and_then(|c| Some((c.get(1)?.parse::<u32>().ok()?, *c.get(2)?))) else { return Vec::new() };
+    let size = rows(types, "T").find(|c| c.first() == Some(&ty)).and_then(|c| c.get(3)?.parse().ok()).unwrap_or(0);
     let entries = module::memory(image, addr, size);
     let (table, names) = (module::table(image), module::function_names(image));
     entries.chunks(4).enumerate().filter_map(|(nr, e)| {
@@ -363,6 +361,12 @@ mod image_tests {
     #[test]
     fn syscalls_names_come_from_the_table() {
         assert_eq!(syscalls(&syscall_image(), "T\t1\tbase\tint\t8\tu\nG\tsys_call_table\t256\t1\n"), [(0, "read".to_string())]);
+    }
+
+    #[test]
+    fn ids_are_the_plugins() {
+        // (From a kernel's ksee.probes section.)
+        assert_eq!(id("try_to_wake_up"), 2218239081);
     }
 
     #[test]

@@ -326,12 +326,6 @@ impl Tables {
     pub fn find(&self, name: &str) -> Option<u32> {
         self.functions.iter().find(|(_, f)| f.name == name).map(|(&id, _)| id)
     }
-
-    /// The plugin's FNV-1a hash (function ids hash the name, prefixed with
-    /// the source file for functions local to a file).
-    pub fn id(name: &str) -> u32 {
-        name.bytes().fold(2166136261u32, |h, c| (h ^ c as u32).wrapping_mul(16777619))
-    }
 }
 
 #[cfg(test)]
@@ -374,11 +368,5 @@ mod tests {
         // f(int a, loff_t b, int c): b is wide (bit 1).
         let t = Tables::parse("F\t7\tf\t0:1\t7\t0\t2\n", "");
         assert_eq!(t.values(7, &[1, 2, 3, 4]), [1, 3 << 32 | 2, 4]);
-    }
-
-    #[test]
-    fn id_matches_the_plugin() {
-        // From the kernel's ksee.probes section.
-        assert_eq!(Tables::id("try_to_wake_up"), 2218239081);
     }
 }
