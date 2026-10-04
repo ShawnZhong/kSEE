@@ -99,7 +99,7 @@ fn trace_plugin() -> (String, std::path::PathBuf) {
     }
     // A stable source hash in the flags makes kbuild rebuild only when the
     // instrumentation changes, not when an equivalent shared object is relinked.
-    let id = format!("{:08x}", ksee_core::tables::Tables::id(&String::from_utf8_lossy(&crate::read(Path::new("plugin/ksee-trace.cpp")))));
+    let id = format!("{:08x}", crate::pack::id(&String::from_utf8_lossy(&crate::read(Path::new("plugin/ksee-trace.cpp")))));
     let path = Path::new("plugin/ksee-trace.so").canonicalize().unwrap();
     (id, path)
 }

@@ -22,19 +22,18 @@ shape the code.
 The crate dependencies are intentional:
 
 ```text
-ksee-core
-  ^        ^
-  |        |
-ksee-host      ksee-cli
-  ^            |
-  |            +-- uses ksee-core while packing metadata
-  |
-ksee-page -- also uses ksee-core directly
+ksee-core <- ksee-host <- ksee-page
+    ^                        |
+    +------------------------+    (the page also uses core's views directly)
+
+ksee-cli                          (no ksee crate: it writes the formats)
 ```
 
-`ksee-page` depends on both `ksee-host` and `ksee-core`. The host depends
-on core. The CLI also depends on core for packing, but it is a native build
-tool rather than part of the browser module.
+`ksee-page` depends on both `ksee-host` and `ksee-core`; the host depends on
+core. The CLI shares no code with them: it writes the formats core reads
+(`ksee.types`, see `types.rs`; the probes' function ids, FNV-1a of the name,
+see `tables.rs` and the plugin), so the two meet only in those texts, which the
+kernel suite checks end to end.
 
 ## Build pipeline
 

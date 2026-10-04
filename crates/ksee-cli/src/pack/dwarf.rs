@@ -6,8 +6,6 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use gimli::{AttributeValue, DwAt, DwTag, EndianSlice, LittleEndian, UnitOffset, constants as dw};
-use ksee_core::tables::Tables;
-
 use super::module;
 
 type R<'a> = EndianSlice<'a, LittleEndian>;
@@ -32,7 +30,7 @@ pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
         // (A function's id, as the plugin has it: its name's hash, or, local
         // to its file, "file:name"'s, the file the unit's own.)
         let file = unit.name.map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let id = |name: &str, external: bool| if external { Tables::id(name) } else { Tables::id(&format!("{file}:{name}")) };
+        let id = |name: &str, external: bool| if external { super::id(name) } else { super::id(&format!("{file}:{name}")) };
         let mut cu = Cu { dwarf: &dwarf, unit: &unit, memo: HashMap::new(), files: HashMap::new() };
         // Every type in the unit, so that unused ones are listed too, and
         // every variable with a fixed address.

@@ -5,20 +5,37 @@
 mod dwarf;
 mod module;
 
+use std::collections::BTreeSet;
 use std::path::{Component, Path};
 
-use ksee_core::tables::Tables;
+/// The kernel's syscall table, and its entries' functions' prefix: each is
+/// `__wasm_sys_NAME` (arch/wasm). (Its names, as ksee_core::arch has them.)
+const SYSCALL_TABLE: &str = "sys_call_table";
+const SYSCALL_WRAPPER: &str = "__wasm_sys_";
+
+/// A function's id, as the plugin's probes and the page have it: its
+/// name's 32-bit FNV-1a hash (ksee_core::tables::Tables::id).
+pub fn id(name: &str) -> u32 {
+    name.bytes().fold(2166136261u32, |h, c| (h ^ c as u32).wrapping_mul(16777619))
+}
+
+/// Column `k` of each of `text`'s lines of kind `kind` (tab-separated).
+fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'a str> {
+    text.lines().filter_map(move |l| {
+        let mut cols = l.split('\t');
+        (cols.next() == Some(kind)).then(|| cols.nth(k - 1)).flatten()
+    })
+}
 
 /// Write the packed image and its referenced sources to their final paths.
 pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
     let mut types = crate::or_fail(dwarf::types(&image), "DWARF");
     let probes = String::from_utf8_lossy(&module::custom_section(&image, "ksee.probes")).into_owned();
-    let tables = Tables::parse(&probes, &types);
     for (name, value) in constants(&kernel.join("usr/include")) {
         types += &format!("C\t{name}\t{value}\n");
     }
-    let calls = syscalls(&image, &tables.types);
+    let calls = syscalls(&image, &types);
     for (nr, name) in &calls {
         types += &format!("S\t{nr}\t{name}\n");
     }
@@ -31,10 +48,12 @@ pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     // The sources, for the page's source view.
     // (The functions the trace has whose parameters DWARF gave, by id: the
     // two agree on what a function is.)
-    let known = tables.functions.keys().filter(|id| tables.types.params.contains_key(id)).count();
-    let (files, bytes) = publish_sources(kernel, &tables.files, sources_out);
+    let functions: BTreeSet<&str> = column(&probes, "F", 1).collect();
+    let known = column(&types, "P", 1).collect::<BTreeSet<_>>().intersection(&functions).count();
+    let sources: Vec<String> = column(&probes, "P", 2).map(String::from).collect();
+    let (files, bytes) = publish_sources(kernel, &sources, sources_out);
     eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} -> {} KiB; {files} sources, {} KiB",
-              image_out.display(), types.lines().filter(|l| l.starts_with('T')).count(), calls.len(), tables.functions.len(),
+              image_out.display(), column(&types, "T", 1).count(), calls.len(), functions.len(),
               image.len() >> 10, packed.len() >> 10, bytes >> 10);
 }
 
@@ -93,7 +112,7 @@ fn constants(include: &Path) -> Vec<(String, i64)> {
             if name.contains('(') || known.iter().any(|(n, _)| n == name) {
                 continue;
             }
-            if let Ok(v) = ksee_core::program::expression(value).and_then(|e| ksee_core::program::value(&e, None, &|n: &str| known.iter().find(|(k, _)| k == n).map(|&(_, v)| v))) {
+            if let Some(v) = evaluate(value, &known) {
                 known.push((name.to_string(), v));
                 if prefixes.iter().any(|p| name.starts_with(p)) && !name.starts_with("__") {
                     out.push((name.to_string(), v));
@@ -104,18 +123,76 @@ fn constants(include: &Path) -> Vec<(String, i64)> {
     out
 }
 
-/// The syscalls this kernel builds, as its syscall table (arch::
-/// SYSCALL_TABLE) is in the image: each entry the function a number
-/// calls, `__wasm_sys_NAME` (arch::SYSCALL_WRAPPER), by its index in the
-/// function table; NULL for a syscall it does not build: (number, NAME).
-fn syscalls(image: &[u8], t: &ksee_core::types::Types) -> Vec<(u32, String)> {
-    use ksee_core::arch;
-    let Some(&(addr, ty)) = t.globals.get(arch::SYSCALL_TABLE) else { return Vec::new() };
-    let entries = module::memory(image, addr, t.size_of(ty));
+/// A `#define`'s value: numbers (C's: octal, hex), the constants `known`,
+/// parentheses, unary `-` and `~`, and `| & << >> + -` (C's precedence).
+fn evaluate(text: &str, known: &[(String, i64)]) -> Option<i64> {
+    // (Tokens: numbers and names whole, else one character, or a shift's two.)
+    let mut toks: Vec<&str> = Vec::new();
+    let mut rest = text.trim();
+    while !rest.is_empty() {
+        let n = if rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
+            rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(rest.len())
+        } else if rest.starts_with("<<") || rest.starts_with(">>") { 2 } else { 1 };
+        toks.push(&rest[..n]);
+        rest = rest[n..].trim_start();
+    }
+    const LEVELS: [&[&str]; 4] = [&["|"], &["&"], &["<<", ">>"], &["+", "-"]];
+    fn binary(t: &[&str], at: &mut usize, level: usize, known: &[(String, i64)]) -> Option<i64> {
+        let Some(ops) = LEVELS.get(level) else { return unary(t, at, known) };
+        let mut v = binary(t, at, level + 1, known)?;
+        while let Some(&op) = t.get(*at).filter(|op| ops.contains(op)) {
+            *at += 1;
+            let r = binary(t, at, level + 1, known)?;
+            v = match op { "|" => v | r, "&" => v & r, "<<" => v << r, ">>" => v >> r, "+" => v + r, _ => v - r };
+        }
+        Some(v)
+    }
+    fn unary(t: &[&str], at: &mut usize, known: &[(String, i64)]) -> Option<i64> {
+        let tok = *t.get(*at)?;
+        *at += 1;
+        match tok {
+            "-" => Some(-unary(t, at, known)?),
+            "~" => Some(!unary(t, at, known)?),
+            "(" => {
+                let v = binary(t, at, 0, known)?;
+                (t.get(*at) == Some(&")")).then(|| { *at += 1; v })
+            }
+            _ if tok.starts_with(|c: char| c.is_ascii_digit()) => {
+                let digits = tok.trim_end_matches(['u', 'U', 'l', 'L']);
+                match digits.strip_prefix("0x").or(digits.strip_prefix("0X")) {
+                    Some(hex) => i64::from_str_radix(hex, 16).ok(),
+                    None if digits.len() > 1 && digits.starts_with('0') => i64::from_str_radix(&digits[1..], 8).ok(),
+                    None => digits.parse().ok(),
+                }
+            }
+            _ => known.iter().find(|(k, _)| k == tok).map(|&(_, v)| v),
+        }
+    }
+    let mut at = 0;
+    let v = binary(&toks, &mut at, 0, known)?;
+    (at == toks.len()).then_some(v)
+}
+
+/// The syscalls this kernel builds, as its syscall table (SYSCALL_TABLE,
+/// its G line in `types`, its size its type's T line's) is in the image:
+/// each entry the function a number calls, SYSCALL_WRAPPER and its name,
+/// by its index in the function table; NULL for a syscall it does not
+/// build: (number, NAME).
+fn syscalls(image: &[u8], types: &str) -> Vec<(u32, String)> {
+    let table = types.lines().find_map(|l| {
+        let c: Vec<&str> = l.split('\t').collect();
+        (c.len() == 4 && c[0] == "G" && c[1] == SYSCALL_TABLE).then(|| Some((c[2].parse::<u32>().ok()?, c[3])))?
+    });
+    let Some((addr, ty)) = table else { return Vec::new() };
+    let size = types.lines().find_map(|l| {
+        let c: Vec<&str> = l.split('\t').collect();
+        (c.len() >= 5 && c[0] == "T" && c[1] == ty).then(|| c[4].parse::<u32>().ok())?
+    }).unwrap_or(0);
+    let entries = module::memory(image, addr, size);
     let (table, names) = (module::table(image), module::function_names(image));
     entries.chunks(4).enumerate().filter_map(|(nr, e)| {
         let f = table.get(&u32::from_le_bytes(e.try_into().ok()?))?;
-        Some((nr as u32, names.get(f)?.strip_prefix(arch::SYSCALL_WRAPPER)?.to_string()))
+        Some((nr as u32, names.get(f)?.strip_prefix(SYSCALL_WRAPPER)?.to_string()))
     }).collect()
 }
 
@@ -285,13 +362,11 @@ mod image_tests {
 
     #[test]
     fn syscalls_names_come_from_the_table() {
-        let t = ksee_core::types::Types::parse("T\t1\tbase\tint\t8\tu\nG\tsys_call_table\t256\t1\n");
-        assert_eq!(syscalls(&syscall_image(), &t), [(0, "read".to_string())]);
+        assert_eq!(syscalls(&syscall_image(), "T\t1\tbase\tint\t8\tu\nG\tsys_call_table\t256\t1\n"), [(0, "read".to_string())]);
     }
 
     #[test]
     fn syscalls_without_a_table_are_none() {
-        let t = ksee_core::types::Types::parse("T\t1\tbase\tint\t8\tu\n");
-        assert!(syscalls(&syscall_image(), &t).is_empty());
+        assert!(syscalls(&syscall_image(), "T\t1\tbase\tint\t8\tu\n").is_empty());
     }
 }
