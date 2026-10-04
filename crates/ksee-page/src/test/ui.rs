@@ -98,13 +98,13 @@ pub(super) async fn read() -> Check {
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     sleep(300).await;
     let at = place();
-    press("▶", false);
+    press("Line ▶", false);
     sleep(200).await;
     let into = place();
-    press("◀", false);
+    press("◀ Line", false);
     sleep(200).await;
     for _ in 0..3 {
-        press("▶", true);
+        press("Line ▶", true);
         sleep(150).await;
     }
     let over = place();
@@ -170,7 +170,7 @@ pub(super) async fn read() -> Check {
     let hover = (now() - t0) / 30.0;
     let t0 = now();
     for _ in 0..20 {
-        press("▶", false);
+        press("Line ▶", false);
         sleep(0).await;
     }
     let step = (now() - t0) / 20.0;
@@ -456,7 +456,7 @@ pub(super) async fn responsive() -> Check {
         .unwrap_or(0.0) as i32;
     check(order && wide <= screen, "the phone", (order, wide, screen))?;
     let at = place();
-    press("▶", false);
+    press("Line ▶", false);
     sleep(300).await;
     Ok(format!("{at} → {}", place()))
 }

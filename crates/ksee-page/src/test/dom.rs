@@ -117,9 +117,9 @@ pub(super) fn done(n: usize) -> bool {
     c.len() >= n && c[..n].iter().all(|(_, r)| !r.is_empty() && r != "…")
 }
 
-/// Where the cursor is, as the transport says ("task · func file:line · in call"): "func file:line".
+/// Where the cursor is, as the transport says ("func file:line · turn 2"): "func file:line".
 pub(super) fn place() -> String {
-    one(".transport .where").map(|w| text(&w)).and_then(|t| t.split(" · ").nth(1).map(String::from)).unwrap_or_default()
+    one(".transport .where").map(|w| text(&w)).and_then(|t| t.split(" · ").next().map(String::from)).unwrap_or_default()
 }
 
 /// A click on a transport button (Shift held: over the calls).

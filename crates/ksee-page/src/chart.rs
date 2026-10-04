@@ -610,15 +610,13 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
 }
 
 /// Under the strip: steps through the call's lines (◀ ▶; Shift: over the
-/// calls, as ← → are), the frame up or down the
-/// Stack (▲ ▼, as ↑ ↓), and where the cursor is.
+/// calls, as ← → are), the frame up or down the Stack (▲ ▼, as ↑ ↓), and
+/// where the cursor is (its task: the overview's, the Stack's).
 #[component]
 fn Transport() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     let here = d.line.cloned();
-    let s = d.syscall.cloned();
-    let task = s.as_ref().map(|s| s.task.named()).unwrap_or_default();
     let place = here
         .as_ref()
         .map(|l| {
@@ -645,11 +643,11 @@ fn Transport() -> Element {
         .unwrap_or_default();
     rsx! {
         div { class: "transport",
-            button { title: "the line before (←); Shift: back over the calls", onclick: move |e| crate::stack::walk(ui, -1, e.modifiers().shift()), "◀" }
-            button { title: "the next line (→); Shift: over the calls", onclick: move |e| crate::stack::walk(ui, 1, e.modifiers().shift()), "▶" }
-            button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| crate::stack::frame(ui, d, -1), "▲" }
-            button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| crate::stack::frame(ui, d, 1), "▼" }
-            span { class: "where mono dim", "{task} · {place}{turn}{returned}" }
+            button { title: "the line before (←); Shift: back over the calls", onclick: move |e| crate::stack::walk(ui, -1, e.modifiers().shift()), "◀ Line" }
+            button { title: "the next line (→); Shift: over the calls", onclick: move |e| crate::stack::walk(ui, 1, e.modifiers().shift()), "Line ▶" }
+            button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| crate::stack::frame(ui, d, -1), "▲ Callee" }
+            button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| crate::stack::frame(ui, d, 1), "▼ Caller" }
+            span { class: "where mono dim", "{place}{turn}{returned}" }
         }
     }
 }
