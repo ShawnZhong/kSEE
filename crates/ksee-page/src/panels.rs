@@ -50,10 +50,7 @@ fn Objects() -> Element {
         (ui.snapshot)();
         let machine = machine();
         let nodes = derived.syscall.cloned().map_or_else(Vec::new, |syscall| {
-            machine.view(|view| view.objects(
-                syscall.first,
-                syscall.last.unwrap_or(machine.records().saturating_sub(1)),
-            ))
+            machine.view(|view| view.objects(syscall.first, syscall.last))
         });
         let definitions: Vec<Option<ObjectDefinition>> = nodes.iter().map(|node| {
             (node.kind == RegionKind::Global)
@@ -151,9 +148,9 @@ fn Tasks() -> Element {
                     let p = format!("task/{}", t.task.addr);
                     let is_open = running != open.read().contains(&p);
                     let (said, title) = state(t.state);
-                    let place = if t.last.is_some() { t.syscall.clone().or(t.func.clone()).map_or(String::new(), |s| format!(" in {s}")) } else { String::new() };
+                    let place = t.doing.as_ref().map_or(String::new(), |s| format!(" in {s}"));
                     let class = format!("frame{}{}", if running { " on" } else { "" }, if matches!(t.state, TaskState::Later | TaskState::Exited) { " later" } else { "" });
-                    let fields = if is_open { m.at_moment(at, |v, mem| v.task_fields(mem, t.task.addr)).fields } else { Vec::new() };
+                    let fields = if is_open { m.view(|v| v.task_fields(t.task.addr, at)) } else { Vec::new() };
                     let name = t.task.named();
                     let q = p.clone();
                     rsx! {

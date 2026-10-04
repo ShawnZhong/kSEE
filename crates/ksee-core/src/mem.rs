@@ -36,11 +36,6 @@ impl History {
         &self.stores[self.stores.partition_point(|&i| i < from)..self.stores.partition_point(|&i| i <= to)]
     }
 
-    /// How many stores the trace has after record `at`.
-    pub fn after(&self, at: usize) -> usize {
-        self.stores.len() - self.stores.partition_point(|&i| i <= at)
-    }
-
     /// Undo in `buf` (memory at `addr`, as the trace ended) the stores after
     /// record `at`: each byte as the oldest later store covering it found it.
     fn undo(&self, addr: u32, buf: &mut [u8], at: usize) {
@@ -64,30 +59,14 @@ impl History {
         }
     }
 
-    /// Whether a store in records `from..=to` wrote any of `addr..addr + len`.
-    pub fn written(&self, addr: u32, len: u32, from: usize, to: usize) -> bool {
-        self.by_addr.range(addr.saturating_sub(7)..addr.saturating_add(len)).any(|(&start, list)| {
-            let later = &list[list.partition_point(|&(i, _, _)| i < from)..];
-            later.iter().take_while(|&&(i, _, _)| i <= to).any(|&(_, size, _)| start.saturating_add(size) > addr)
-        })
-    }
-
-    /// The stores to any of `addr..addr + len`, oldest first: their records.
-    pub fn writes(&self, addr: u32, len: u32) -> Vec<usize> {
-        let end = addr.saturating_add(len);
-        let mut out: Vec<usize> = self.by_addr.range(addr.saturating_sub(7)..end)
-            .flat_map(|(&start, list)| list.iter().filter(move |&&(_, size, _)| start.saturating_add(size) > addr).map(|&(i, _, _)| i))
-            .collect();
-        out.sort_unstable();
-        out
-    }
-
     /// The newest store to any of `addr..addr + len` at or before record
     /// `at`: (its record, the old value).
-    pub(crate) fn last_write(&self, records: &[Record], addr: u32, len: u32, at: usize) -> Option<(usize, u64)> {
-        let i = self.writes(addr, len).into_iter().take_while(|&i| i <= at).last()?;
-        let Record::Store { old, .. } = records[i] else { return None };
-        Some((i, old))
+    pub(crate) fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<(usize, u64)> {
+        // (Each start's newest by then that reaches `addr`; of those, the newest.)
+        self.by_addr.range(addr.saturating_sub(7)..addr.saturating_add(len)).filter_map(|(&start, list)| {
+            list[..list.partition_point(|&(i, _, _)| i <= at)].iter().rev()
+                .find(|&&(_, size, _)| start.saturating_add(size) > addr).map(|&(i, _, old)| (i, old))
+        }).max_by_key(|&(i, _)| i)
     }
 }
 
@@ -118,11 +97,11 @@ mod tests {
     }
 
     #[test]
-    fn a_slot_is_written_in_a_span_or_not() {
+    fn a_slot_is_written_by_a_store_that_covers_it() {
         let r = [Record::Store { addr: 0x10, size: 4, old: 0, line: 0, from: None }, Record::Block { func: 1, n: 1 }, Record::Store { addr: 0x20, size: 8, old: 0, line: 0, from: None }];
         let h = History::new(&r);
-        assert!(h.written(0x10, 4, 0, 2) && !h.written(0x10, 4, 1, 2));
-        assert!(h.written(0x24, 4, 1, 2) && !h.written(0x28, 4, 0, 2));
+        assert_eq!((h.last_write(0x10, 4, 2), h.last_write(0x24, 4, 2), h.last_write(0x24, 4, 1)), (Some((0, 0)), Some((2, 0)), None));
+        assert_eq!(h.last_write(0x28, 4, 2), None);
     }
 
     #[test]
@@ -136,13 +115,13 @@ mod tests {
         let h = History::new(&r);
         let at = |i: usize| PastMemory { base: &live, history: &h, at: i }.read_u32(4);
         assert_eq!((at(0), at(2), at(4)), (1, 2, 3));
-        assert_eq!((h.after(0), h.after(2), h.after(4)), (2, 1, 0));
+        assert_eq!((h.between(1, 4).len(), h.between(3, 4).len(), h.between(5, 4).len()), (2, 1, 0));
         // (Bytes of one store undone by an older, narrower one at another start.)
         let r2 = [b, Record::Store { addr: 5, size: 1, old: 9, line: 0, from: None }, Record::Store { addr: 4, size: 4, old: 0x0102_0304, line: 0, from: None }];
         let h2 = History::new(&r2);
         assert_eq!(PastMemory { base: &live, history: &h2, at: 0 }.read_u32(4), 0x0102_0904);
         assert_eq!(PastMemory { base: &live, history: &h2, at: 1 }.read_u32(4), 0x0102_0304);
-        assert_eq!(h.last_write(&r, 4, 4, 2), Some((1, 1)));
-        assert_eq!(h.last_write(&r, 4, 4, 0), None);
+        assert_eq!(h.last_write(4, 4, 2), Some((1, 1)));
+        assert_eq!(h.last_write(4, 4, 0), None);
     }
 }

@@ -83,13 +83,12 @@ impl Derived {
                 return None;
             }
             let k = shown()?.call;
-            machine().view(|v| v.syscalls().into_iter().nth(k))
+            machine().view(|v| v.syscall(k))
         });
         let lines = use_memo(move || {
             (ui.snapshot)();
             Shared(Rc::new(syscall.cloned().map_or_else(Vec::new, |s| {
-                let m = machine();
-                m.view(|v| v.lines(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), s.task.addr))
+                machine().view(|v| v.lines(s.first, s.last, s.task.addr))
             })))
         });
         // (The chart's: none before the kernel is up.)
@@ -110,7 +109,7 @@ impl Derived {
         let stack = use_memo(move || {
             (ui.snapshot)();
             Shared(Rc::new(line.cloned().map_or_else(Vec::new, |l| {
-                machine().at_moment(l.at, |v, mem| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, mem, l.at))
+                machine().view(|v| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, l.at))
             })))
         });
         let frame = use_memo(move || shown().and_then(|m| m.frame).and_then(|(first, func)| stack.read().iter().position(|f| f.first == first && f.func == func)).unwrap_or(0));
@@ -284,8 +283,8 @@ impl Ui {
 
     pub fn lines_of_machine(machine: &ksee_host::machine::Machine, k: usize) -> Vec<Line> {
         machine.view(|v| {
-            let Some(s) = v.syscalls().into_iter().nth(k) else { return Vec::new() };
-            v.lines(s.first, s.last.unwrap_or(machine.records().saturating_sub(1)), s.task.addr)
+            let Some(s) = v.syscall(k) else { return Vec::new() };
+            v.lines(s.first, s.last, s.task.addr)
         })
     }
 
@@ -310,8 +309,8 @@ impl Ui {
 
     pub fn zoom_machine(self, machine: &ksee_host::machine::Machine, k: usize) {
         let Some((a, b)) = machine.view(|v| {
-            let s = v.syscalls().into_iter().nth(k)?;
-            Some((v.rec.step_of(s.first), v.rec.step_of(s.last.unwrap_or(v.rec.len().saturating_sub(1)))))
+            let s = v.syscall(k)?;
+            Some((v.rec.step_of(s.first), v.rec.step_of(s.last)))
         }) else { return };
         let room = ((b - a) / 50).max(4);
         self.view_machine(machine, a as f64 - room as f64, b - a + 2 * room);

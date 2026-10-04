@@ -287,10 +287,13 @@ impl Tables {
     /// debug info's inline sites say where). What coverage counts, and what
     /// "run to a line" looks for.
     pub fn runs(&self, func: u32, n: u32) -> impl Iterator<Item = Loc> + '_ {
-        self.block(func, n).into_iter().flat_map(|b| &b.steps).flat_map(move |s| {
-            let sites = s.inlined.and_then(|k| self.inlines.get(k as usize)).map_or(&[][..], Vec::as_slice);
-            core::iter::once(s.loc).chain(sites.iter().map(|&(_, site)| site))
-        })
+        self.block(func, n).into_iter().flat_map(|b| &b.steps)
+            .flat_map(move |s| core::iter::once(s.loc).chain(self.chain(s.inlined).iter().map(|&(_, site)| site)))
+    }
+
+    /// Inline chain `k` (see inlines), or none.
+    pub fn chain(&self, k: Option<u32>) -> &[(u32, Loc)] {
+        k.and_then(|k| self.inlines.get(k as usize)).map_or(&[], Vec::as_slice)
     }
 
     /// Stretch `seg` of block `n` of `func`'s lines (none past the last).
@@ -310,9 +313,9 @@ impl Tables {
         out
     }
 
-    /// The blocks of `func`, in order.
-    pub fn blocks_of(&self, func: u32) -> impl Iterator<Item = (u32, Loc)> + '_ {
-        self.blocks.range((func, 0)..=(func, u32::MAX)).map(|(&(_, n), b)| (n, b.loc()))
+    /// Where the blocks of `func` begin, in order.
+    pub fn blocks_of(&self, func: u32) -> impl Iterator<Item = Loc> + '_ {
+        self.blocks.range((func, 0)..=(func, u32::MAX)).map(|(_, b)| b.loc())
     }
 
     pub fn file(&self, loc: Loc) -> &str {

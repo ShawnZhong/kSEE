@@ -143,9 +143,10 @@ The root coordinator cancels superseded work, and run IDs prevent stale async
 results from publishing even if underlying browser work finishes later.
 
 The runtime exposes a closure-based boundary: `Machine::view` lends a
-`ksee_core::view::View` over the last snapshot, while `Machine::at_moment`
-also lends reconstructed memory after a chosen record. The page does not own a
-second replay model.
+`ksee_core::view::View` over the last snapshot (its views of a moment, the
+Stack's, take the record and rebuild memory as it was), while
+`Machine::at_moment` also lends that memory, for reading a value. The page does
+not own a second replay model.
 
 Chart window calculations are split at the ownership boundary. Dioxus event
 handling and rendering remain in `ksee-page`, while `wheel_window` and its

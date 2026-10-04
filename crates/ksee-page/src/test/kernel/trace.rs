@@ -21,7 +21,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let s = t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await.syscall;
     t.check("mkdirat ran vfs_mkdir", t.ran(&s, "vfs_mkdir"));
     let nap = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {0, 30000000}, NULL)").await.syscall.unwrap();
-    let idle = m.view(|v| v.chart(v.rec.step_of(nap.first), v.rec.step_of(nap.last.unwrap_or(0)), 50).cols.iter().any(|c| v.task(c.task, nap.first).comm.as_deref() == Some("swapper/0")));
+    let idle = m.view(|v| v.chart(v.rec.step_of(nap.first), v.rec.step_of(nap.last), 50).cols.iter().any(|c| v.task(c.task, nap.first).comm.as_deref() == Some("swapper/0")));
     t.check("sleeping switched to the idle task and back", t.ran(&Some(nap.clone()), "__schedule") && idle);
     let long = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {2, 0}, NULL)").await;
     t.check("a 2 s sleep returns (the clock skipped ahead)", long.how.as_deref() == Some("returned") && long.ret == Some(0));
@@ -32,13 +32,13 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let vfs = m.view(|v| v.definition("vfs_write"));
     t.check("vfs_write: where it is", vfs.as_ref().is_some_and(|d| d.file == "fs/read_write.c" && d.last.is_some_and(|l| l > d.line)));
     {
-        let cs = m.view(|v| v.syscalls().into_iter().find(|s| s.name == "mkdirat").map(|mk| v.objects(mk.first, mk.last.unwrap_or(0)))).unwrap_or_default();
+        let cs = m.view(|v| v.syscalls().into_iter().find(|s| s.name == "mkdirat").map(|mk| v.objects(mk.first, mk.last))).unwrap_or_default();
         let globals: Vec<String> = cs.iter().filter(|c| c.kind == RegionKind::Global).map(|c| c.what.clone()).collect();
         t.check(format!("mkdirat's objects name the kernel's globals: {}; not the machine's", globals.join(", ")),
                 globals.iter().any(|g| g == "nr_inodes") && !cs.iter().any(|c| c.what == "wasm_irq_flags"));
     }
-    t.check("fs/read_write.c coverage", m.view(|v| v.coverage("fs/read_write.c", wi)).iter().any(|l| l.count > 0));
-    let wlast = t.last(&w);
+    t.check("fs/read_write.c coverage", m.view(|v| v.coverage("fs/read_write.c", wi)).values().any(|&n| n > 0));
+    let wlast = w.last;
     let chart = m.view(|v| v.chart(v.rec.step_of(w.first), v.rec.step_of(wlast), 200));
     t.check("a stack chart of write's records", chart.cols.len() == 200 && chart.cols[0].task == w.task.addr && chart.bars.len() > 10);
     let steps = m.view(|v| v.lines(w.first, wlast, w.task.addr));
@@ -56,7 +56,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         let (mut drawn, mut missing) = (0, Vec::new());
         for c in &chart.cols {
             let (_, nth, cut) = m.view(|v| v.rec.steps[c.step]);
-            let frames = m.at_moment(c.i, |v, mem| v.call_stack(c.i, Some(nth as usize), cut as usize, mem, c.i));
+            let frames = m.view(|v| v.call_stack(c.i, Some(nth as usize), cut as usize, c.i));
             for b in c.frames.iter().map(|&k| &chart.bars[k as usize]) {
                 drawn += 1;
                 if !frames.iter().any(|f| f.first == b.first && f.func == b.name && f.inlined == b.inlined) {
@@ -73,10 +73,10 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     t.check("an outer call is where it calls the next one in",
             kw.is_some_and(|f| f.file.as_deref() == Some("fs/read_write.c") && f.line > kw_def.as_ref().map(|d| d.line)));
     t.check("a past call stack, with arguments", stack.first().is_some_and(|f| f.func == "vfs_write") && kw.is_some_and(|f| value(arg(f, "count")) == "11"));
-    let undone = |i: usize| m.view(|v| v.rec.stores().after(i));
+    let undone = |i: usize| m.view(|v| v.rec.stores().between(i + 1, usize::MAX).len());
     t.check("memory as it was: writes undone", undone(w.first) > undone(wlast));
     let in_write = m.first_call("vfs_write", w.first, wlast, Some(w.task.addr)).unwrap_or(0);
-    let comm = m.at_moment(in_write, |v, mem| v.task_fields(mem, w.task.addr)).fields.into_iter().find(|c| c.name == "comm").and_then(|c| c.value);
+    let comm = m.view(|v| v.task_fields(w.task.addr, in_write)).into_iter().find(|c| c.name == "comm").and_then(|c| c.value);
     t.check("the task, as it was", comm.as_deref() == Some("\"prog\""));
     let rq = m.at_moment(in_write, |v, mem| v.tables.types.globals.get("runqueues").map(|&(a, ty)| v.tables.types.object(mem, "runqueues", a, ty, 1)));
     t.check("a global", rq.is_some_and(|o| child(&o, "nr_running").is_some()));

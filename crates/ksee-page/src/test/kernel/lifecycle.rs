@@ -27,7 +27,7 @@ pub(super) async fn run(t: &mut KernelHarness, examples: &[crate::lesson::Exampl
         let mut runs = Vec::new();
         for _ in 0..2 {
             let ids = t.program(&ex.steps).await;
-            let seen: Vec<_> = ids.iter().flatten().map(|&id| t.syscall(id).map(|s| (s.id, s.first, s.last, t.finished.get(&id).map(|f| f.ret)))).collect();
+            let seen: Vec<_> = ids.iter().flatten().map(|&id| t.syscall(id).map(|s| (s.first, s.last, t.finished.get(&id).map(|f| f.ret)))).collect();
             runs.push((m.records(), seen));
         }
         t.check(format!("deterministic: the same calls, the same records ({name}: {} records)", runs[0].0), runs[0] == runs[1]);

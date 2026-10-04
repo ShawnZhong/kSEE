@@ -101,8 +101,8 @@ pub fn Source() -> Element {
 fn ran(ui: Ui, syscall: Option<SyscallSummary>, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
     let m = machine();
     let k = ui.call();
-    let counts = m.view(|v| v.coverage(file, k)).into_iter().map(|c| (c.line, c.count)).collect();
-    let notes = syscall.map(|s| m.view(|v| v.notes(s.first, s.last.unwrap_or(m.records().saturating_sub(1)), file, at)))
+    let counts = m.view(|v| v.coverage(file, k));
+    let notes = syscall.map(|s| m.view(|v| v.notes(s.first, s.last, file, at)))
         .unwrap_or_default().into_iter().map(|n| (n.line, (n.short, n.full, n.i))).collect();
     (counts, notes)
 }
@@ -113,7 +113,7 @@ fn value_of(e: &str, f: &Frame, at: usize) -> Option<Object> {
     let path: Vec<&str> = e.split("->").flat_map(|p| p.split('.')).collect();
     let m = machine();
     m.at_moment(at, |v, mem| {
-        let mut o = f.args.iter().flatten().chain(f.locals.iter().flatten()).find(|o| o.name == path[0]).cloned()
+        let mut o = f.args.iter().chain(&f.locals).find(|o| o.name == path[0]).cloned()
             .or_else(|| v.tables.types.globals.get(path[0]).map(|&(a, ty)| v.tables.types.object(mem, path[0], a, ty, 1)))?;
         let kids = |o: &Object| o.children.clone().or_else(|| o.open.and_then(|t| v.tables.types.object(mem, &o.name, t.addr, t.ty, 1).children));
         for field in &path[1..] {
@@ -210,12 +210,12 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, a
         });
         let returned = shown.as_ref().and_then(|l| [Some(l), before.as_ref()].into_iter().flatten().find_map(|c| c.called.as_ref())
             .filter(|c| c.at <= l.at).map(|c| format!("{} → {}", c.func, machine().tables().types.result(c.value))));
-        frame.args.iter().flatten().chain(frame.locals.iter().flatten())
+        frame.args.iter().chain(&frame.locals)
             .filter(|o| words.contains(&o.name.as_str()) && o.none != Some(ksee_core::view::Missing::NotRecorded))
             .map(|o| format!("{} = {}", o.name, o.value.clone().unwrap_or_else(|| "{…}".into())))
             .chain(shown.map(|l| l.tests).unwrap_or_default()).chain(returned).collect()
     } else { Vec::new() };
-    let names: Vec<String> = frame.args.iter().flatten().chain(frame.locals.iter().flatten()).map(|o| o.name.clone()).collect();
+    let names: Vec<String> = frame.args.iter().chain(&frame.locals).map(|o| o.name.clone()).collect();
     // (The lines in view, and a margin: the rest, spacers.)
     let first = ((top() / LINE) as usize).saturating_sub(MARGIN).min(total);
     let last = ((((top() + view()) / LINE) as usize) + MARGIN).min(total);
@@ -265,7 +265,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, a
                                                     },
                                                     onclick: move |ev| if ev.modifiers().ctrl() || ev.modifiers().meta() {
                                                         // (Its definition: a function, a type, a global; a member, of the one struct with it.)
-                                                        let d = machine().view(|v| v.definition(&word).or_else(|| v.member_definition(None, &word)));
+                                                        let d = machine().view(|v| v.definition(&word).or_else(|| v.member_definition(&word)));
                                                         if let Some(d) = d { seen.set(Some((d.file, d.line))); }
                                                     },
                                                     "{p.text}"

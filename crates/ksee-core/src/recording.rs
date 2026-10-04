@@ -63,7 +63,7 @@ pub struct Recording {
     pub names: core::cell::RefCell<alloc::collections::BTreeMap<(u32, Option<usize>), crate::types::TaskId>>,
     /// The last span's stores, named (View::stores: what Objects and the
     /// source's notes ask again at each moment), by its first and last.
-    pub named: core::cell::RefCell<Option<((usize, usize), alloc::rc::Rc<crate::view::Named>)>>,
+    pub(crate) named: core::cell::RefCell<Option<((usize, usize), alloc::rc::Rc<crate::view::Named>)>>,
     /// The stores, indexed (once asked for).
     stores: OnceCell<mem::History>,
 }
@@ -219,25 +219,6 @@ impl Recording {
     /// The source lines run in records `first..=last` of the task at `task`.
     pub(crate) fn lines(&self, t: &Tables, first: usize, last: usize, task: u32) -> Vec<LineStep> {
         self.calls.lines(t, &self.records, &self.tasks, first, last, task)
-    }
-
-    /// The newest store to `addr..addr + len` at or before record `at` (or
-    /// the end): (its record, the value it overwrote, the line that made it:
-    /// where the function running then was).
-    pub(crate) fn last_write(&self, t: &Tables, addr: u32, len: u32, at: usize) -> Option<(usize, u64, Option<LineStep>)> {
-        let at = at.min(self.len().checked_sub(1)?);
-        let (i, old) = self.stores().last_write(&self.records, addr, len, at)?;
-        Some((i, old, self.line_at(t, i)))
-    }
-
-    /// Where the store at record `i` copied its byte at `addr` from, if it
-    /// is a copy (its record says where its bytes come from).
-    pub(crate) fn copied_from(&self, i: usize, addr: u32) -> Option<u32> {
-        match self.records.get(i)? {
-            // (From where the store and the value overlap.)
-            Record::Store { addr: at, from: Some(from), .. } => Some(from.get().wrapping_add(addr.max(*at) - at)),
-            _ => None,
-        }
     }
 
     /// The line the store at record `i` is on.

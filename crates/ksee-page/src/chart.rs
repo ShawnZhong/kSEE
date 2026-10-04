@@ -586,14 +586,14 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
         return vec![(format!("{name} (inlined)"), "")];
     }
     let m = machine();
-    m.at_moment(first, |v, mem| {
+    m.view(|v| {
         let frame = v
-            .call_stack(first, None, 0, mem, first)
+            .call_stack(first, None, 0, first)
             .into_iter()
             .find(|f| !f.inlined);
         let args: Vec<(String, String)> = frame
             .as_ref()
-            .and_then(|f| f.args.clone())
+            .map(|f| f.args.clone())
             .unwrap_or_default()
             .into_iter()
             .map(|a| (a.name, a.value.unwrap_or_else(|| "{…}".into())))

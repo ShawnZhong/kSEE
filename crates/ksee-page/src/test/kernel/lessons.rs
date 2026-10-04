@@ -23,7 +23,7 @@ pub(super) async fn run(t: &mut KernelHarness, examples: &[crate::lesson::Exampl
                     Some(LessonTarget::Recording { call, function, any_task, .. }) => {
                         let s = calls.get(call - 1).copied().flatten().and_then(|id| t.syscall(id));
                         s.as_ref().is_some_and(|s| function.as_ref().is_none_or(|f|
-                            m.first_call(f, s.first, t.last(s), (!any_task).then_some(s.task.addr)).is_some()
+                            m.first_call(f, s.first, s.last, (!any_task).then_some(s.task.addr)).is_some()
                         ))
                     }
                     None => false,

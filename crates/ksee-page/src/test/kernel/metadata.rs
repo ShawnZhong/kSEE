@@ -2,17 +2,17 @@ use std::collections::BTreeMap;
 
 use super::harness::{value, KernelHarness};
 
-pub(super) async fn run(t: &mut KernelHarness, file_id: u32) {
+pub(super) async fn run(t: &mut KernelHarness) {
     let m = t.machine.clone();
     let def = |n: &str| m.view(|v| v.definition(n));
     t.check("definitions: a function, a type, a global",
             def("vfs_write").is_some_and(|d| d.file == "fs/read_write.c") && def("task_struct").is_some_and(|d| d.file == "include/linux/sched.h")
             && def("runqueues").is_some_and(|d| d.line > 0) && def("no_such").is_none()
             && def("list_add").is_some_and(|d| d.file == "include/linux/list.h" && d.last.is_none()));
-    let member = |ty: Option<u32>, n: &str| m.view(|v| v.member_definition(ty, n));
-    t.check("a field's declaration: file.f_pos, by its struct (or a pointer to it), or of the one struct with it; not of many",
-            def("file.f_pos").is_some_and(|d| d.file == "include/linux/fs.h") && member(Some(file_id), "f_pos").is_some_and(|d| d.file == "include/linux/fs.h")
-            && member(None, "f_pos").is_some_and(|d| d.file == "include/linux/fs.h") && member(None, "next").is_none());
+    let member = |n: &str| m.view(|v| v.member_definition(n));
+    t.check("a field's declaration: file.f_pos, by its struct, or of the one struct with it; not of many",
+            def("file.f_pos").is_some_and(|d| d.file == "include/linux/fs.h")
+            && member("f_pos").is_some_and(|d| d.file == "include/linux/fs.h") && member("next").is_none());
     {
         let aio = m.make(None, "io_setup(1, NULL)").err().unwrap_or_default();
         let uring = m.make(None, "io_uring_setup(1, NULL)").err().unwrap_or_default();
@@ -28,7 +28,7 @@ pub(super) async fn run(t: &mut KernelHarness, file_id: u32) {
     t.check("a syscall's parameters, as C declares them", m.tables().types.params_of("openat") == Some(vec!["int dfd".into(), "char *filename".into(), "int flags".into(), "umode_t mode".into()]));
     {
         let op = m.view(|v| v.syscalls().into_iter().find(|s| s.name == "openat")).unwrap();
-        let oplast = t.last(&op);
+        let oplast = op.last;
         let at = m.first_call("do_sys_openat2", op.first, oplast, None).unwrap_or(0);
         let stack = t.stack(at, None, at);
         let ops = m.view(|v| v.objects(op.first, oplast));
@@ -36,19 +36,19 @@ pub(super) async fn run(t: &mut KernelHarness, file_id: u32) {
         let dso_def = def("do_sys_openat2");
         t.check("a call begins at its signature line", stack.first().zip(dso_def.as_ref()).is_some_and(|(a, d)| a.line == Some(d.line) && a.file.as_deref() == Some(&d.file)));
         let e = stack.last();
-        let args: Vec<String> = e.map(|e| e.args.clone().unwrap_or_default().iter().map(|a| value(Some(a))).collect()).unwrap_or_default();
+        let args: Vec<String> = e.map(|e| e.args.iter().map(|a| value(Some(a))).collect()).unwrap_or_default();
         t.check(format!("the entry frame: the syscall {:?}({})", e.and_then(|e| e.syscall.clone()), args.join(", ")),
                 e.is_some_and(|e| e.func == "wasm_syscall" && e.syscall.as_deref() == Some("openat")) && args.first().map(String::as_str) == Some("AT_FDCWD")
                 && args.get(2).map(String::as_str) == Some("O_WRONLY | O_CREAT | O_TRUNC")
-                && stack.iter().any(|f| f.func == "__wasm_sys_openat" && !f.inlined && f.args.as_ref().and_then(|a| a.first()).is_some_and(|a| a.name == "dfd" && a.value.as_deref() == Some("AT_FDCWD"))));
+                && stack.iter().any(|f| f.func == "__wasm_sys_openat" && !f.inlined && f.args.first().is_some_and(|a| a.name == "dfd" && a.value.as_deref() == Some("AT_FDCWD"))));
     }
     {
         let mm = t.line("mmap2(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 7)").await.syscall.unwrap();
-        let mmlast = t.last(&mm);
+        let mmlast = mm.last;
         let i = m.view(|v| v.lines(mm.first, mmlast, mm.task.addr)).into_iter().find(|x| x.func == "vm_mmap_pgoff").map_or(0, |x| x.i);
         let stack = t.stack(i, None, i);
         let e = stack.last();
-        let args = e.and_then(|e| e.args.clone()).unwrap_or_default();
+        let args = e.map(|e| e.args.clone()).unwrap_or_default();
         t.check(format!("a syscall's six arguments, at the bottom of its stack: {:?}", e.and_then(|e| e.syscall.clone())),
                 e.is_some_and(|e| e.syscall.as_deref() == Some("mmap2")) && args.len() == 6 && args[5].name == "pgoff" && args[5].value.as_deref() == Some("7"));
     }

@@ -39,8 +39,8 @@ pub(super) async fn run(machine: Rc<Machine>) -> Result<(), String> {
     m.snapshot();
     t.check("nothing recorded at first", m.records() == 0);
     trace::run(&mut t, main).await;
-    let file_id = program::run(&mut t, main).await;
-    metadata::run(&mut t, file_id).await;
+    program::run(&mut t, main).await;
+    metadata::run(&mut t).await;
     lessons::run(&mut t, &examples).await;
     lifecycle::run(&mut t, &examples).await;
     if t.failures.is_empty() {

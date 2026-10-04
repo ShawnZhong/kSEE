@@ -211,10 +211,8 @@ impl Types {
         if p == 0 {
             return None;
         }
-        let mut name = alloc::vec![0; comm.1 as usize];
-        mem.read(p + comm.0, &mut name);
-        let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
-        Some(TaskId { pid: mem.read_u32(p + pid.0) as i32, comm: String::from_utf8_lossy(&name[..len]).into() })
+        let comm = c_str(mem, p + comm.0, comm.1);
+        Some(TaskId { pid: mem.read_u32(p + pid.0) as i32, comm: String::from_utf8_lossy(&comm).into() })
     }
 
     /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY).
@@ -394,10 +392,7 @@ impl Types {
             }
             // (A char array: its string.)
             Kind::Array { elem, count } if self.is_string(*elem) => {
-                let mut buf = alloc::vec![0u8; (*count).min(256) as usize];
-                mem.read(addr, &mut buf);
-                let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-                out.push_str(&quote(&buf[..len]));
+                out.push_str(&quote(&c_str(mem, addr, (*count).min(256))));
             }
             Kind::Array { .. } | Kind::Struct(_) | Kind::Union(_) => out.push_str("{...}"),
             Kind::Func => out.push_str("<function>"),
@@ -505,6 +500,14 @@ const HEX_ABOVE: u64 = 0xffff;
 /// A number as the page shows one: in hex past HEX_ABOVE.
 pub(crate) fn num(v: u64) -> String {
     if v > HEX_ABOVE { alloc::format!("{v:#x}") } else { v.to_string() }
+}
+
+/// The C string at `addr`, to its NUL, of at most `max` bytes.
+pub(crate) fn c_str(mem: &dyn Memory, addr: u32, max: u32) -> Vec<u8> {
+    let mut buf = alloc::vec![0u8; max as usize];
+    mem.read(addr, &mut buf);
+    buf.truncate(buf.iter().position(|&c| c == 0).unwrap_or(buf.len()));
+    buf
 }
 
 /// Bytes as a C string literal: text as text, the rest escaped (\n, \t,

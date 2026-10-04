@@ -18,7 +18,7 @@ fn named(what: &str, within: &Option<String>) -> String {
 /// Records `first..=last`'s writes, a member each: (record, what, kind, member, before, after).
 fn writes(v: &View, first: usize, last: usize) -> Vec<(usize, String, RegionKind, String, String, String)> {
     let n = v.stores(first, last);
-    let mut out: Vec<_> = v.things(&n).iter().flat_map(|t| {
+    let mut out: Vec<_> = n.things.iter().flat_map(|t| {
         let r = &n.regions[t.region as usize];
         (0..t.writes.len()).map(|k| {
             let (before, after) = v.change(&n, t, k);
@@ -41,7 +41,7 @@ fn a_variable_in_a_wasm_local_has_its_last_value() {
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
     let mem = Mem(alloc::vec![0; 128]);
     let v = View { tables: &t, rec: &rec, now: &mem };
-    let x = |i| v.call_stack(i, None, 0, &mem, i)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
+    let x = |i| v.call_stack(i, None, 0, i)[0].locals.clone().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
     assert_eq!((x(0), x(2), x(3)), (Some("(not recorded)".into()), Some("5".into()), Some("7".into())));
 }
 
@@ -57,7 +57,7 @@ fn a_memory_slot_never_stored_to_is_uninitialized() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0], args);
     let mem = Mem(alloc::vec![0; 128]);
     let v = View { tables: &t, rec: &rec, now: &mem };
-    let y = v.call_stack(0, None, 0, &mem, 0)[0].locals.clone().unwrap_or_default().into_iter().find(|o| o.name == "y").and_then(|o| o.value);
+    let y = v.call_stack(0, None, 0, 0)[0].locals.clone().into_iter().find(|o| o.name == "y").and_then(|o| o.value);
     assert_eq!(y, Some("(uninitialized)".into()));
 }
 
@@ -74,7 +74,7 @@ fn each_task_where_it_last_ran() {
     let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.last)).collect::<Vec<_>>();
     assert_eq!(at(0), [(0x100, TaskState::Running, Some(0)), (0x200, TaskState::Sleeping, None)]);
     assert_eq!(at(3), [(0x100, TaskState::Sleeping, Some(1)), (0x200, TaskState::Running, Some(3))]);
-    assert_eq!(v.tasks(3)[0].func.as_deref(), Some("f"));
+    assert_eq!(v.tasks(3)[0].doing.as_deref(), Some("f"));
 }
 
 #[test]
@@ -390,7 +390,7 @@ fn frames_are_where_their_calls_are() {
     let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
     let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
-    let lines: Vec<_> = v.call_stack(1, None, 0, &Mem(Vec::new()), 1).iter().map(|f| (f.func.clone(), f.line)).collect();
+    let lines: Vec<_> = v.call_stack(1, None, 0, 1).iter().map(|f| (f.func.clone(), f.line)).collect();
     assert_eq!(lines, [("g".into(), Some(10)), ("f".into(), Some(2))]);
 }
 
@@ -403,12 +403,12 @@ fn inlined_code_is_a_frame_of_its_own() {
     let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
     let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
-    let frames: Vec<_> = v.call_stack(1, None, 0, &Mem(Vec::new()), 1).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
+    let frames: Vec<_> = v.call_stack(1, None, 0, 1).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
     assert_eq!(frames, [("g".into(), Some(10), false), ("h".into(), Some(20), true), ("f".into(), Some(2), false)]);
     // (Line 2, where h is inlined, ran too: h's line 20 ran for it.)
-    assert!(v.coverage("f.c", None).iter().any(|l| l.line == 2));
+    assert!(v.coverage("f.c", None).contains_key(&2));
     // At record 0, its first line (nth 0): f at line 1, nothing inlined.
-    let first: Vec<_> = v.call_stack(0, Some(0), 0, &Mem(Vec::new()), 0).iter().map(|f| (f.func.clone(), f.line)).collect();
+    let first: Vec<_> = v.call_stack(0, Some(0), 0, 0).iter().map(|f| (f.func.clone(), f.line)).collect();
     assert_eq!(first, [("f".into(), Some(1))]);
 }
 
@@ -423,7 +423,7 @@ fn two_inlined_frames_of_one_call_are_bars_of_their_own() {
     let r = [Record::Block { func: 1, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0], Args::default());
     let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
-    let frames: Vec<_> = v.call_stack(0, None, 0, &Mem(Vec::new()), 0).iter().map(|f| (f.func.clone(), f.inlined)).collect();
+    let frames: Vec<_> = v.call_stack(0, None, 0, 0).iter().map(|f| (f.func.clone(), f.inlined)).collect();
     assert_eq!(frames, [("g".into(), true), ("h".into(), true), ("f".into(), false)]);
     // (Three steps, as stepping enters them: the lines calling h and g, then g's.)
     let chart = v.chart(0, 2, 3);
@@ -552,7 +552,7 @@ fn a_chart_folds_into_runs() {
 fn steps_go_into_or_over() {
     // f (depth 0) line 1, calls g (depth 1): lines 10, 11; then f's line 2.
     let line = |depth, line| Line { i: 0, at: 0, nth: 0, cut: 0, func: String::new(), file: String::new(), line, inlined: None, depth, inl: 0, run: 1,
-                                   tests: Vec::new(), ret: None, called: None };
+                                   tests: Vec::new(), called: None };
     let lines = [line(0, 1), line(1, 10), line(1, 11), line(0, 2)];
     assert_eq!((step(&lines, 0, 1, false), step(&lines, 0, 1, true), step(&lines, 1, 1, true)), (Some(1), Some(3), Some(2)));
     assert_eq!((step(&lines, 3, -1, true), step(&lines, 0, -1, false)), (Some(0), None));
@@ -562,7 +562,7 @@ fn steps_go_into_or_over() {
 #[test]
 fn run_to_finds_an_exact_line_step() {
     let line = |i, nth, cut, file: &str, line| Line { i, at: i, nth, cut, func: String::new(), file: file.into(), line, inlined: None, depth: 0, inl: 0, run: 1,
-                                                         tests: Vec::new(), ret: None, called: None };
+                                                         tests: Vec::new(), called: None };
     // Two lines share block record 0; h's line is an inline stop there; f's
     // line 3 resumes at g's Return record 2; then f's line 2 runs again.
     let lines = [line(0, 0, 0, "f.c", 1), line(0, 1, 0, "f.c", 2), line(0, 1, 1, "h.c", 3),
@@ -586,7 +586,7 @@ fn an_inlined_call_is_stepped_into_as_a_call_is() {
     let lines = v.lines(0, 0, 0);
     let at: Vec<_> = lines.iter().map(|l| (l.file.as_str(), l.line, l.inl)).collect();
     assert_eq!(at, [("f.c", 1, 0), ("f.c", 2, 0), ("h.c", 3, 1), ("g.c", 30, 2), ("f.c", 4, 0)]);
-    let stack = |l: &Line| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, &Mem(Vec::new()), l.i).iter().map(|f| (f.func.clone(), f.line)).collect::<Vec<_>>();
+    let stack = |l: &Line| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, l.i).iter().map(|f| (f.func.clone(), f.line)).collect::<Vec<_>>();
     assert_eq!(stack(&lines[1]), [("f".into(), Some(2))]);
     assert_eq!(stack(&lines[2]), [("h".into(), Some(3)), ("f".into(), Some(2))]);
     assert_eq!(stack(&lines[3]), [("g".into(), Some(30)), ("h".into(), Some(3)), ("f".into(), Some(2))]);

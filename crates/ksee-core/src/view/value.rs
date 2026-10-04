@@ -8,8 +8,6 @@ use super::*;
 pub struct Object {
     pub name: String,
     pub ty: String,
-    /// Its type's id (typedefs resolved).
-    pub id: u32,
     pub addr: u32,
     /// Its size in bytes.
     pub size: u32,
@@ -74,7 +72,7 @@ impl Types {
         let id = self.resolve(ty);
         let t = self.get(id);
         let mut o = Object {
-            name: name.to_string(), ty: self.name(ty), id, addr, size: self.size_of(ty),
+            name: name.to_string(), ty: self.name(ty), addr, size: self.size_of(ty),
             value: None, none: None, children: None, open: None,
         };
         match &t.kind {
@@ -100,7 +98,7 @@ impl Types {
                     }).collect();
                     // (Past the first SHOWN: a row saying how many more.)
                     if *count > SHOWN {
-                        shown.push(Object { name: format!("[{SHOWN}…{}]", count - 1), ty: String::new(), id: 0, addr: addr + SHOWN * esize, size: 0,
+                        shown.push(Object { name: format!("[{SHOWN}…{}]", count - 1), ty: String::new(), addr: addr + SHOWN * esize, size: 0,
                                             value: Some(format!("… {} more", count - SHOWN)), none: None, children: None, open: None });
                     }
                     o.children = Some(shown);
@@ -108,8 +106,9 @@ impl Types {
             }
             Kind::Pointer(to) => {
                 let p = mem.read_u32(addr);
-                // (A char *: and the string it points to: "0x1d40130 → \"/sub\"", as any pointer's target.)
-                let text = (p != 0 && self.is_string(*to)).then(|| c_string(mem, p));
+                // (A char *: and the string it points to: "0x1d40130 → \"/sub\"", as any pointer's target;
+                // a __user one too: a program's memory is kernel memory. Past 64 characters, "…".)
+                let text = (p != 0 && self.is_string(*to)).then(|| quote(&c_str(mem, p, 65)));
                 o.value = Some(match text {
                     _ if p == 0 => "NULL".into(),
                     Some(t) => format!("{p:#x} → {t}"),

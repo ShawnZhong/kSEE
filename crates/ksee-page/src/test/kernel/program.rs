@@ -3,7 +3,7 @@ use ksee_core::view::run_to;
 
 use super::harness::{arg, child, local, value, KernelHarness};
 
-pub(super) async fn run(t: &mut KernelHarness, main: u32) -> u32 {
+pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let m = t.machine.clone();
     // A read: f_pos over time, who wrote it, a local.
     t.line("int fd = openat(AT_FDCWD, \"/tmp/note\", O_CREAT | O_TRUNC | O_WRONLY, 0644)").await;
@@ -12,12 +12,12 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) -> u32 {
     t.line("int rfd = openat(AT_FDCWD, \"/tmp/note\", O_RDONLY)").await;
     let got = t.line("char got[64]").await.var.unwrap();
     let read = t.line("read(rfd, got, 64)").await.syscall.unwrap();
-    let rlast = t.last(&read);
+    let rlast = read.last;
     t.check("read 26 bytes back", read.ret == Some(26) && m.show(got.0, got.1, Some(64)).starts_with("\"hello from the page cache"));
     let read_steps = m.view(|v| v.lines(read.first, rlast, read.task.addr));
     let in_read = read_steps.iter().find(|x| x.func == "vfs_read").map_or(0, |x| x.i);
-    let last = read_steps.iter().rev().find(|x| x.func == "vfs_read");
-    t.check(format!("vfs_read's last line ({:?}) says what it returns: {:?}", last.map(|l| l.line), last.and_then(|l| l.ret)), last.and_then(|l| l.ret) == Some(26));
+    let returned = read_steps.iter().find_map(|x| x.called.as_ref().filter(|c| c.func == "vfs_read")).map(|c| c.value);
+    t.check(format!("the line calling vfs_read says what it returned: {returned:?}"), returned == Some(26));
     let file = t.stack(in_read, None, in_read).first().and_then(|f| arg(f, "file").cloned()).unwrap();
     let open = file.open.unwrap();
     let fpos = |i: usize| m.at_moment(i, |v, mem| value(child(&v.tables.types.object(mem, "file", open.addr, open.ty, 1), "f_pos")));
@@ -73,7 +73,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) -> u32 {
     {
         t.line("long long res").await;
         let ls = t.line("llseek(rfd, 1, 0, &res, 0)").await.syscall.unwrap();
-        let lslast = t.last(&ls);
+        let lslast = ls.last;
         let at = m.first_call("vfs_llseek", ls.first, lslast, Some(ls.task.addr));
         let off = at.map(|i| t.stack(i, None, i)).and_then(|s| s.into_iter().find(|f| f.func == "vfs_llseek")).map(|f| value(arg(&f, "offset")));
         t.check(format!("a 64-bit argument whole: vfs_llseek's offset {off:?}"), off.as_deref() == Some("4294967296"));
@@ -100,12 +100,11 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) -> u32 {
     // A char * shows its string: mkdir's struct filename, its name.
     {
         let mk = t.line("mkdirat(AT_FDCWD, \"/mnt/named\", 0755)").await.syscall.unwrap();
-        let mklast = t.last(&mk);
+        let mklast = mk.last;
         let i = m.first_call("filename_create", mk.first, mklast, None).unwrap_or(0);
-        let a = t.stack(i, None, i).into_iter().find(|f| f.func == "filename_create").and_then(|f| f.args.unwrap_or_default().into_iter().find(|a| a.ty == "struct filename *"));
+        let a = t.stack(i, None, i).into_iter().find(|f| f.func == "filename_create").and_then(|f| f.args.into_iter().find(|a| a.ty == "struct filename *"));
         let name = a.and_then(|a| a.open).map(|o| m.at_moment(i, |v, mem| value(child(&v.tables.types.object(mem, "name", o.addr, o.ty, 1), "name"))));
         t.check(format!("a char * with its string: filename->name = {name:?}"), name.is_some_and(|n| n.ends_with("\"/mnt/named\"")));
         t.line("unlinkat(AT_FDCWD, \"/mnt/named\", AT_REMOVEDIR)").await;
     }
-    file.id
 }

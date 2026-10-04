@@ -39,7 +39,7 @@ pub fn walk(ui: Ui, machine: &ksee_host::machine::Machine, dir: isize, over: boo
         ui.go(j);
         return;
     }
-    let task = machine.view(|v| v.syscalls().into_iter().nth(k).map(|s| s.task.addr));
+    let task = machine.view(|v| v.syscall(k).map(|s| s.task.addr));
     let Some(task) = task else { return };
     let next = machine.view(|v| {
         let all = v.syscalls();
@@ -143,7 +143,7 @@ pub fn Stack() -> Element {
                 div { class: "frame-details",
                     div { class: "frame-title mono", "{f.func}" }
                     table { class: "objs",
-                        for o in f.args.unwrap_or_default().into_iter().chain(f.locals.unwrap_or_default()) {
+                        for o in f.args.into_iter().chain(f.locals) {
                             Value { o: o.clone(), path: format!("{chosen}.{}", o.name), depth: 1, at }
                         }
                     }

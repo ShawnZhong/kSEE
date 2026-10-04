@@ -100,7 +100,7 @@ impl View<'_> {
         let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
         let own = self.rec.tasks.get(first).copied();
         let mut nodes: Vec<(Node, Vec<Option<u32>>)> = Vec::new();
-        for t in self.things(named) {
+        for t in &named.things {
             let r = &named.regions[t.region as usize];
             // (The kernel's data, not a stack's: a call's locals, and what a
             // pointer reaches on a stack, are the Stack's.)

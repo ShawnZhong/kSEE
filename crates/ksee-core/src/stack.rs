@@ -158,11 +158,6 @@ impl Calls {
         self.calls.get(self.place_at(i)?.call as usize)
     }
 
-    /// The function running at record `i` (its task's innermost call's).
-    pub(crate) fn func_at(&self, i: usize) -> Option<u32> {
-        Some(self.call_at(i)?.func)
-    }
-
     /// The Var records of the call from record `first` (a block 0), by
     /// record `upto`, in order.
     pub(crate) fn vars_of(&self, first: usize, upto: usize) -> impl Iterator<Item = usize> + '_ {
@@ -225,7 +220,7 @@ impl Calls {
                 (*steps.last()?, steps.len() as u32 - 1)
             }
         };
-        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run: 0, ret: None, callee: None })
+        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run: 0, callee: None })
     }
 
     /// The source lines task `task` ran in records `from..=to`, in order: each block's lines up to its first call, then, as
@@ -259,9 +254,8 @@ impl Calls {
             // ones: a store says which it is on; the first store of each line,
             // among the records up to the task's next block or return.)
             let base = t.block(c.func, p.n).map_or(0, |b| b.start(p.seg));
-            // (And if the call returns there, its value: its last line's.)
             let mut first_at: BTreeMap<u32, usize> = BTreeMap::new();
-            let (mut ret, mut last) = (None, i);
+            let mut last = i;
             for (j, r) in records[i + 1..].iter().enumerate().map(|(k, r)| (i + 1 + k, r)) {
                 if tasks[j] != tk {
                     continue;
@@ -271,10 +265,6 @@ impl Calls {
                     // instruction that does what it says, its assignment or
                     // its test, as the debug info's key instructions have it.)
                     Record::Store { line, .. } | Record::Compare { line, .. } | Record::Var { line, .. } => { first_at.entry(line).or_insert(j); }
-                    Record::Return { func, value } => {
-                        ret = (func == c.func).then_some(value);
-                        break;
-                    }
                     _ => break,
                 }
                 last = j;
@@ -288,22 +278,21 @@ impl Calls {
                 // before it left it: the record before the first on it or a
                 // later one; with none, after the stretch's last.)
                 let at = first_at.range((base + nth) as u32..).map(|(_, &j)| j).min().map_or(last, |j| j - 1).max(i);
-                let step = LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run, ret: None, callee: None };
+                let step = LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run, callee: None };
                 // (Code inlined it enters, as a call would be: first the line
                 // calling each function it enters, in the one calling it, the
                 // outermost first; from this call's line before, or, the
                 // call just entered, from none.)
-                let chain = |k: Option<u32>| k.and_then(|k| t.inlines.get(k as usize)).map_or(&[][..], |c| c.as_slice());
                 let before = match out.iter().rev().find(|l| l.depth <= c.depth) {
-                    Some(l) if (l.func, l.depth) == (c.func, c.depth) => &chain(l.inlined)[l.cut as usize..],
+                    Some(l) if (l.func, l.depth) == (c.func, c.depth) => &t.chain(l.inlined)[l.cut as usize..],
                     _ => &[][..],
                 };
-                let into = chain(s.inlined);
+                let into = t.chain(s.inlined);
                 let same = into.iter().rev().zip(before.iter().rev()).take_while(|(a, b)| a == b).count();
                 for level in (0..into.len() - same).rev() {
                     let (loc, outer) = (into[level].1, &into[level + 1..]);
                     // (A site with no line, the compiler's own: no step, as for lines.)
-                    if loc.line != 0 && !out.last().is_some_and(|l| l.loc == loc && &chain(l.inlined)[l.cut as usize..] == outer) {
+                    if loc.line != 0 && !out.last().is_some_and(|l| l.loc == loc && &t.chain(l.inlined)[l.cut as usize..] == outer) {
                         out.push(LineStep { loc, cut: level as u32 + 1, ..step });
                     }
                 }
@@ -311,9 +300,6 @@ impl Calls {
                     continue;
                 }
                 out.push(step);
-            }
-            if let Some(l) = out.last_mut().filter(|l| l.record == i) {
-                l.ret = ret;
             }
         }
         out
@@ -339,8 +325,7 @@ pub(crate) struct StackCall {
 /// as a debugger stops before a line. `run`:
 /// the how-manieth time its call enters its block (in the lines asked
 /// for; 0 if not counted): a block runs again in a call only in a loop,
-/// so a loop's turn. `ret`: the last line before the call returns,
-/// what it returned.
+/// so a loop's turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineStep {
     pub record: usize,
@@ -356,7 +341,6 @@ pub struct LineStep {
     /// of its inline chain's functions, innermost first, it is not in.
     pub cut: u32,
     pub run: u32,
-    pub ret: Option<i64>,
     /// A line that made a call: the call's function, what it returned,
     /// and where (its Return record).
     pub callee: Option<(u32, i64, usize)>,
@@ -431,11 +415,9 @@ mod tests {
         let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 0 }, Record::Return { func: 1, value: 0 }];
         let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, 7).iter().map(|s| (s.loc.line, s.record, s.depth)).collect();
         assert_eq!(got, [(1, 0, 0), (2, 0, 0), (10, 1, 1), (3, 2, 0)]);
-        // g's line and f's last are where they return (both 0 here: 7, 9).
+        // f's line 2 made the call to g: it says g returned 7.
         let r = [b(1, 0), b(2, 0), Record::Return { func: 2, value: 7 }, Record::Return { func: 1, value: 9 }];
         let got = lines(&t, &r, &[7; 4], 0, 3, 7);
-        assert_eq!(got.iter().map(|s| s.ret).collect::<Vec<_>>(), [None, None, Some(7), Some(9)]);
-        // f's line 2 made the call to g: it says g returned 7.
         assert_eq!(got.iter().map(|s| s.callee.map(|(f, v, _)| (f, v))).collect::<Vec<_>>(), [None, Some((2, 7)), None, None]);
         // A loop: f's block 1 (lines 5, 6) three times; each turn counted.
         let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nL\t1\t0\t0:1\nL\t1\t1\t0:5;:6\n", "");

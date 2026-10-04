@@ -68,7 +68,7 @@ impl KernelHarness {
 
     pub(super) fn syscall(&self, id: u32) -> Option<SyscallSummary> {
         let k = self.machine.syscall_of(id)?;
-        self.machine.view(|v| v.syscalls().into_iter().nth(k))
+        self.machine.view(|v| v.syscall(k))
     }
 
     /// Line `text` of the program, made on `task`; a call: the kernel run until quiet.
@@ -93,18 +93,14 @@ impl KernelHarness {
         self.line_on(None, text).await
     }
 
-    pub(super) fn last(&self, s: &SyscallSummary) -> usize {
-        s.last.unwrap_or(self.machine.records().saturating_sub(1))
-    }
-
     /// Whether syscall `s` ran function `func` (on its task).
     pub(super) fn ran(&self, s: &Option<SyscallSummary>, func: &str) -> bool {
-        s.as_ref().is_some_and(|s| s.last.is_some() && self.machine.first_call(func, s.first, self.last(s), Some(s.task.addr)).is_some())
+        s.as_ref().is_some_and(|s| s.ret.is_some() && self.machine.first_call(func, s.first, s.last, Some(s.task.addr)).is_some())
     }
 
     /// The call stack at record `i` (its `nth` line), its values as memory was after record `at`.
     pub(super) fn stack(&self, i: usize, nth: Option<usize>, at: usize) -> Vec<Frame> {
-        self.machine.at_moment(at, |v, mem| v.call_stack(i, nth, 0, mem, at))
+        self.machine.view(|v| v.call_stack(i, nth, 0, at))
     }
 
     pub(super) fn show(&self, v: (u32, u32, Option<u32>)) -> String {
@@ -130,11 +126,11 @@ pub(super) fn child<'a>(o: &'a Object, name: &str) -> Option<&'a Object> {
 }
 
 pub(super) fn arg<'a>(f: &'a Frame, name: &str) -> Option<&'a Object> {
-    f.args.as_ref()?.iter().find(|a| a.name == name)
+    f.args.iter().find(|a| a.name == name)
 }
 
 pub(super) fn local<'a>(f: &'a Frame, name: &str) -> Option<&'a Object> {
-    f.locals.as_ref()?.iter().find(|a| a.name == name)
+    f.locals.iter().find(|a| a.name == name)
 }
 
 pub(super) fn value(o: Option<&Object>) -> String {

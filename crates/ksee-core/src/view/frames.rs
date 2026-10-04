@@ -37,8 +37,6 @@ pub struct Line {
     /// The comparisons it made that decided where it went ("18 >= 0 ✓"),
     /// in order.
     pub tests: Vec<String>,
-    /// The call returns after it: what it returned (32 bits).
-    pub ret: Option<i64>,
     /// It made a call: the function, what it returned, and where (its
     /// return: the result is not known before).
     pub called: Option<Called>,
@@ -50,8 +48,6 @@ pub struct Frame {
     pub func: String,
     /// The call's first record (its block 0).
     pub first: usize,
-    /// How many calls deep it is (as line steps count: see Line::depth).
-    pub depth: u32,
     /// The syscall entry (arch::SYSCALL): the syscall's name; its
     /// arguments are the syscall's, typed as its parameters.
     pub syscall: Option<String>,
@@ -61,8 +57,8 @@ pub struct Frame {
     /// inside it; else where its function is).
     pub file: Option<String>,
     pub line: Option<u32>,
-    pub args: Option<Vec<Object>>,
-    pub locals: Option<Vec<Object>>,
+    pub args: Vec<Object>,
+    pub locals: Vec<Object>,
 }
 
 /// The line a step goes to from line `k` of `lines`, in direction `dir`
@@ -71,25 +67,23 @@ pub struct Frame {
 /// inlined counts as a level deeper).
 pub fn step(lines: &[Line], k: usize, dir: isize, over: bool) -> Option<usize> {
     let here = lines.get(k).map(|l| (l.depth, l.inl))?;
-    let mut j = k.checked_add_signed(dir)?;
-    while j < lines.len() {
-        if !over || (lines[j].depth, lines[j].inl) <= here {
-            return Some(j);
-        }
-        j = j.checked_add_signed(dir)?;
-    }
-    None
+    seek(lines, k, dir, |l| !over || (l.depth, l.inl) <= here)
 }
 
 /// The next (`dir` 1) or previous (`dir` -1) run of `file`'s `line`, from
 /// line `k` of the recording's ordered `lines`.
 pub fn run_to(lines: &[Line], k: usize, file: &str, line: u32, dir: isize) -> Option<usize> {
+    seek(lines, k, dir, |l| l.file == file && l.line == line)
+}
+
+/// The first of `lines` from line `k` in direction `dir` (none: 0) that `is` says yes to.
+fn seek(lines: &[Line], k: usize, dir: isize, is: impl Fn(&Line) -> bool) -> Option<usize> {
     if dir == 0 {
         return None;
     }
     let mut j = k.checked_add_signed(dir)?;
     while j < lines.len() {
-        if lines[j].file == file && lines[j].line == line {
+        if is(&lines[j]) {
             return Some(j);
         }
         j = j.checked_add_signed(dir)?;
@@ -113,9 +107,9 @@ impl View<'_> {
     /// Where line step `s` is (a store's, a write's place): the line, not
     /// what it compared.
     pub(super) fn line_only(&self, s: &LineStep) -> Line {
-        let chain = &self.chain(s.inlined)[s.cut as usize..];
+        let chain = &self.tables.chain(s.inlined)[s.cut as usize..];
         Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
-               inlined: chain.first().map(|&(f, _)| self.inline_name(f)), depth: s.depth, inl: chain.len() as u32, run: s.run, tests: Vec::new(), ret: s.ret,
+               inlined: chain.first().map(|&(f, _)| self.inline_name(f)), depth: s.depth, inl: chain.len() as u32, run: s.run, tests: Vec::new(),
                called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }) }
     }
 
@@ -131,17 +125,16 @@ impl View<'_> {
         self.rec.lines(self.tables, first, last, task).iter().map(|s| self.line(s)).collect()
     }
 
-    /// The call stack at record `i`, innermost first; locals read from `mem`
-    /// (memory as it was then). A call is where its last line is: at `i`,
-    /// the `nth` line that record runs (see lines), or its last. Code
-    /// inlined there is a frame of its own for each function it is inlined
-    /// from (`inlined`, with no arguments: there was no call).
-    /// (`at`: the moment `mem` is memory as it was at, for the variables'
-    /// values too: a line step's.)
+    /// The call stack at record `i`, innermost first, its values as memory
+    /// was after record `at` (a line step's). A call is where its last line
+    /// is: at `i`, the `nth` line that record runs (see lines), or its
+    /// last. Code inlined there is a frame of its own for each function it
+    /// is inlined from (`inlined`, with no arguments: there was no call).
     /// (`cut`: a line calling code inlined, the innermost frames it is not
     /// in yet left out, Line::cut.)
-    pub fn call_stack(&self, i: usize, nth: Option<usize>, cut: usize, mem: &dyn Memory, at: usize) -> Vec<Frame> {
+    pub fn call_stack(&self, i: usize, nth: Option<usize>, cut: usize, at: usize) -> Vec<Frame> {
         let t = self.tables;
+        let mem = &self.rec.memory_at(self.now, at);
         let mut out = Vec::new();
         // (At a record on a line of its own, a store, a comparison, a
         // variable set: on that line, as `at` says it.)
@@ -156,8 +149,7 @@ impl View<'_> {
         // its own DWARF one is regs).)
         let entry = t.find(arch::SYSCALL);
         let syscall = calls.iter().find(|c| Some(c.func) == entry).and_then(args_of).and_then(|(a, _)| self.syscall_args(&a, mem));
-        for (depth, c) in calls.into_iter().enumerate().rev() {
-            let depth = depth as u32;
+        for c in calls.into_iter().rev() {
             let name = self.name(c.func);
             let (raw, frame) = args_of(&c).unzip();
             let at_entry = Some(c.func) == entry;
@@ -166,6 +158,7 @@ impl View<'_> {
                 _ => self.args(c.func, raw, mem),
             });
             let syscall = syscall.as_ref().filter(|_| at_entry && args.is_some()).map(|(n, _)| n.clone());
+            let args = args.unwrap_or_default();
             // (The variables it keeps in wasm locals, as they are by now: a
             // parameter it changed, as it is; the other locals after those
             // in memory. And the code inlined into it: its own.)
@@ -178,13 +171,12 @@ impl View<'_> {
                 o.into_iter().map(|(_, o)| o).collect::<Vec<_>>()
             };
             let changed = mine(&name, true);
-            let args = args.map(|a| a.into_iter().map(|o| changed.iter().find(|p| p.name == o.name).cloned().unwrap_or(o)).collect());
-            let locals = frame.map(|f| self.locals(c.func, f, mem, c.first, at, &mine(&name, false)));
+            let args = args.into_iter().map(|o| changed.iter().find(|p| p.name == o.name).cloned().unwrap_or(o)).collect();
+            let locals = frame.map(|f| self.locals(c.func, f, mem, c.first, at, &mine(&name, false))).unwrap_or_default();
             // (The code inlined into it first, innermost first; then it.)
             let frame = |func: String, inlined, at: Option<Loc>| {
-                let (a, l) = if inlined { (mine(&func, true), mine(&func, false)) } else { (Vec::new(), Vec::new()) };
-                Frame { first: c.first, depth, syscall: None, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line),
-                        args: (!a.is_empty()).then_some(a), locals: (!l.is_empty()).then_some(l), func }
+                let (args, locals) = if inlined { (mine(&func, true), mine(&func, false)) } else { (Vec::new(), Vec::new()) };
+                Frame { first: c.first, syscall: None, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args, locals, func }
             };
             let mut nest = self.nest(&c);
             if out.is_empty() {
@@ -290,7 +282,9 @@ impl View<'_> {
             Some(off) => {
                 let addr = frame.wrapping_add(*off);
                 let o = types.object(mem, var, addr, *ty, 0);
-                if self.rec.stores().written(addr, types.size_of(*ty).max(1), first, at) { o } else { o.missing(Missing::Uninitialized) }
+                // (Stored to in the call, by `at`.)
+                let written = self.rec.stores().last_write(addr, types.size_of(*ty).max(1), at).is_some_and(|(i, _)| i >= first);
+                if written { o } else { o.missing(Missing::Uninitialized) }
             }
             None => set.iter().find(|o| &o.name == var).cloned()
                 .unwrap_or_else(|| types.object(&Arg(&[0; 8], mem), var, 0, *ty, 0).missing(Missing::NotRecorded)),
@@ -304,17 +298,12 @@ impl View<'_> {
     pub(crate) fn nest(&self, c: &stack::StackCall) -> Vec<(Option<u32>, Option<Loc>)> {
         let mut at = c.step.map(|s| s.loc).or(self.tables.functions.get(&c.func).map(|f| f.loc));
         let mut out = Vec::new();
-        for &(k, site) in self.chain(c.step.and_then(|s| s.inlined)) {
+        for &(k, site) in self.tables.chain(c.step.and_then(|s| s.inlined)) {
             out.push((Some(k), at));
             at = Some(site);
         }
         out.push((None, at));
         out
-    }
-
-    /// Inline chain `k` (Tables::inlines), or none.
-    pub fn chain(&self, k: Option<u32>) -> &[(u32, Loc)] {
-        k.and_then(|k| self.tables.inlines.get(k as usize)).map_or(&[], Vec::as_slice)
     }
 
     /// Inlined function `k`'s name (Tables::names).

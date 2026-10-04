@@ -1,22 +1,10 @@
 //! A span's stores, named as the code names what they hit (View::stores),
-//! by the things they changed (View::things): printed where shown, the
+//! by the things they changed (Named::things): printed where shown, the
 //! source's notes (View::notes) and Objects (objects.rs); and who wrote a
 //! value, back through its copies (View::origin).
 
 use super::*;
 
-/// What a span's stores hit, as the code names it (see View::stores):
-/// `what` ("file in vfs_read", "x in f", "nr_inodes", "prog(19)"; the
-/// address when nothing names it), its `kind` ("task", "object": a struct
-/// a call's argument points to, "global", "machine": one of the machine's
-/// variables, or what its functions name (arch::MACHINE), "local", "var":
-/// a variable kept in a wasm local, or "other": memory nothing names), its
-/// type `ty` (0 for none: memory nothing names; a var's, the variable's),
-/// where it is (`addr`, `size`), for a call's local (or an object in one)
-/// the call's records, its
-/// `life`, and how deep the call that names it is (the task's, 0; a
-/// global's, or memory nothing names, u32::MAX): Objects comes in that
-/// order.
 /// What a region is (see Region), as the page names it ("object").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegionKind {
@@ -29,6 +17,17 @@ pub enum RegionKind {
     Other,
 }
 
+/// What a span's stores hit, as the code names it (see View::stores):
+/// `what` ("file in vfs_read", "x in f", "nr_inodes", "prog(19)"; the
+/// address when nothing names it), its `kind` ("task", "object": a struct
+/// a call's argument points to, "global", "machine": one of the machine's
+/// variables, or what its functions name (arch::MACHINE), "local", "var":
+/// a variable kept in a wasm local, or "other": memory nothing names), its
+/// type `ty` (0 for none: memory nothing names; a var's, the variable's),
+/// where it is (`addr`, `size`), for a call's local (or an object in one)
+/// the call's records, its `life`, and how deep the call that names it is
+/// (the task's, 0; a global's, or memory nothing names, u32::MAX): Objects
+/// comes in that order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Region {
     pub what: String,
@@ -43,13 +42,12 @@ pub struct Region {
     pub depth: u32,
 }
 
-/// A span's stores and variable sets, in order, by the regions they hit;
-/// and by the things they wrote (Thing), once asked.
+/// A span's regions, and the things its stores and variable sets wrote
+/// (Thing), in the order first written.
 #[derive(Debug, Default)]
-pub struct Named {
+pub(crate) struct Named {
     pub regions: Vec<Region>,
-    pub writes: Vec<Wrote>,
-    things: core::cell::OnceCell<Vec<Thing>>,
+    pub things: Vec<Thing>,
 }
 
 /// A store or a variable set: at record `i`, to `region`, on line `at`
@@ -104,14 +102,6 @@ pub struct Write {
 }
 
 impl View<'_> {
-    /// The newest write to `addr..addr + len` at or before record `at`.
-    pub(crate) fn last_write(&self, addr: u32, len: u32, at: usize) -> Option<Write> {
-        let (i, old, line) = self.rec.last_write(self.tables, addr, len, at)?;
-        let from = self.rec.copied_from(i, addr);
-        let old = num(old);
-        Some(Write { i, addr, old, task: self.task(self.rec.tasks[i], i), at: line.map(|s| self.line_only(&s)), from })
-    }
-
     /// Where the value at `addr..addr + len` after record `at` came from:
     /// its newest write, and while that copied it from elsewhere, the
     /// newest write there before it, and so on (up to `max`): the value's
@@ -120,10 +110,14 @@ impl View<'_> {
     pub fn origin(&self, addr: u32, len: u32, at: usize, max: usize) -> Vec<Write> {
         let mut out: Vec<Write> = Vec::new();
         let (mut addr, mut at) = (addr, at);
-        while out.len() < max {
-            let Some(w) = self.last_write(addr, len, at) else { break };
-            let (i, from) = (w.i, w.from);
-            out.push(w);
+        while out.len() < max && let Some((i, old)) = self.rec.stores().last_write(addr, len, at) {
+            // (A copy: from where the store and the value overlap.)
+            let from = match self.rec.records[i] {
+                Record::Store { addr: to, from: Some(from), .. } => Some(from.get().wrapping_add(addr.max(to) - to)),
+                _ => None,
+            };
+            let line = self.rec.line_at(self.tables, i).map(|s| self.line_only(&s));
+            out.push(Write { i, addr, old: num(old), task: self.task(self.rec.tasks[i], i), at: line, from });
             let (Some(src), Some(before)) = (from, i.checked_sub(1)) else { break };
             (addr, at) = (src, before);
         }
@@ -163,31 +157,13 @@ impl View<'_> {
     /// Variable set `i` (a Var record)'s value, printed.
     fn var_value(&self, i: usize) -> String {
         let Record::Var { var, value, .. } = self.rec.records[i] else { return String::new() };
-        let v = self.rec.calls.func_at(i).and_then(|f| self.tables.vars.get(&(f, var)));
+        let v = self.rec.calls.call_at(i).and_then(|c| self.tables.vars.get(&(c.func, var)));
         v.and_then(|v| self.var_object(v, value, self.now)?.value).unwrap_or_default()
-    }
-
-    /// The things `named`'s writes changed, in the order first written.
-    pub fn things<'a>(&self, named: &'a Named) -> &'a [Thing] {
-        named.things.get_or_init(|| {
-            let mut things: Vec<Thing> = Vec::new();
-            for w in &named.writes {
-                let r = &named.regions[w.region as usize];
-                let members = if r.kind == RegionKind::Var { alloc::vec![(String::new(), None)] } else { self.members(r, w.i) };
-                for (member, leaf) in members {
-                    match things.iter_mut().find(|t| t.region == w.region && t.member == member) {
-                        Some(t) => t.writes.push(*w),
-                        None => things.push(Thing { region: w.region, member, leaf, writes: alloc::vec![*w] }),
-                    }
-                }
-            }
-            things
-        })
     }
 
     /// Thing `t`'s write `k` (of its writes), printed: from what to what (a
     /// variable from its set before, in the span).
-    pub fn change(&self, named: &Named, t: &Thing, k: usize) -> (String, String) {
+    pub(crate) fn change(&self, named: &Named, t: &Thing, k: usize) -> (String, String) {
         let (r, w) = (&named.regions[t.region as usize], &t.writes[k]);
         if r.kind == RegionKind::Var {
             let before = k.checked_sub(1).map_or_else(|| Missing::Uninitialized.text().into(), |p| self.var_value(t.writes[p].i));
@@ -209,7 +185,7 @@ impl View<'_> {
     /// span asked for, kept: a render asks the same span again (objects,
     /// each line's notes, origins), and naming it again each time would
     /// cost the span's records over.
-    pub fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Named> {
+    pub(crate) fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Named> {
         if let Some((span, got)) = &*self.rec.named.borrow() && *span == (first, last) {
             return got.clone();
         }
@@ -229,7 +205,7 @@ impl View<'_> {
         // (Each line's things, in the order first written there: the thing,
         // its last write there by `cur`, how many; and the line's last write.)
         let mut by: BTreeMap<u32, (Vec<(&Thing, usize, usize)>, usize)> = BTreeMap::new();
-        for t in self.things(&named) {
+        for t in &named.things {
             for (k, w) in t.writes.iter().enumerate().take_while(|(_, w)| w.i <= cur) {
                 let Some(at) = w.at.filter(|at| files.contains(&at.loc.file)) else { continue };
                 let (things, last) = by.entry(at.loc.line).or_default();
@@ -294,7 +270,19 @@ impl View<'_> {
         let mut writes = self.store_writes(first, last, &mut regions);
         writes.extend(self.var_writes(first, last, &mut regions));
         writes.sort_by_key(|w| w.i);
-        Named { regions, writes, things: Default::default() }
+        // (The things they changed, in the order first written.)
+        let mut things: Vec<Thing> = Vec::new();
+        for w in writes {
+            let r = &regions[w.region as usize];
+            let members = if r.kind == RegionKind::Var { alloc::vec![(String::new(), None)] } else { self.members(r, w.i) };
+            for (member, leaf) in members {
+                match things.iter_mut().find(|t| t.region == w.region && t.member == member) {
+                    Some(t) => t.writes.push(w),
+                    None => things.push(Thing { region: w.region, member, leaf, writes: alloc::vec![w] }),
+                }
+            }
+        }
+        Named { regions, things }
     }
 
     /// The task running as the span begins, by its name ("prog(19)"), and

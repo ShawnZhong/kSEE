@@ -12,7 +12,7 @@ use crate::recording::Recording;
 use crate::stack::{self, LineStep};
 use crate::tables::{Loc, Tables, Var};
 use crate::trace::Record;
-use crate::types::{num, Kind, Types};
+use crate::types::{c_str, num, quote, Kind, Types};
 use crate::Memory;
 
 
@@ -25,8 +25,8 @@ mod tests;
 
 pub use frames::{run_to, step, Called, Frame, Line};
 pub use objects::{Diff, Group, Node, Run};
-pub use stores::{RegionKind, Write};
-pub use stores::{Named, Note, Region, Wrote};
+pub use stores::{Note, RegionKind, Write};
+pub(crate) use stores::{Named, Wrote};
 pub use value::{Missing, Object, Target};
 
 /// Who a task was, at a record (see View::task).
@@ -46,19 +46,15 @@ impl Task {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SyscallSummary {
-    pub index: usize,
-    /// Its first record's id (see Recording::ids): the same in later
-    /// snapshots, where its index has moved on.
-    pub id: u32,
     pub task: Task,
     /// Its name (its number, if this kernel's table has none: see
     /// Types::syscall_name).
     pub name: String,
     /// The result (None: still running at the end of the recording).
     pub ret: Option<i32>,
-    /// Its span in the records.
+    /// Its span in the records (still running: to the last record).
     pub first: usize,
-    pub last: Option<usize>,
+    pub last: usize,
 }
 
 
@@ -171,23 +167,10 @@ fn constant_name(constants: &BTreeMap<String, i64>, prefixes: &[&str], v: i64) -
     (names.len() == v.count_ones() as usize).then(|| names.join(" | "))
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct LineCount {
-    pub line: u32,
-    pub count: u64,
-}
-
-/// A task's fields: the key ones first (arch::TASK_FIELDS, in that
-/// order), then the others.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TaskFields {
-    pub fields: Vec<Object>,
-}
-
 /// A task at a record: what the scheduler has it doing (`state`); its
 /// `last` record by then (None: it first runs after, or the recording
-/// never saw it run), and there the syscall it is in, else its
-/// outermost call (what it does: off the CPU, its innermost is always the
+/// never saw it run), and there what it is `doing`: the syscall it is in,
+/// else its outermost call (off the CPU, its innermost is always the
 /// switch).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskAt {
@@ -198,8 +181,7 @@ pub struct TaskAt {
     pub state: TaskState,
     /// Its last record by then, if the recording has one.
     pub last: Option<usize>,
-    pub syscall: Option<String>,
-    pub func: Option<String>,
+    pub doing: Option<String>,
 }
 
 /// What the scheduler has a task doing then.
@@ -253,7 +235,7 @@ impl View<'_> {
         // (Read once per snapshot and per last write to its pid or comm by
         // then: every store names its task.)
         let h = self.rec.stores();
-        let last = |f: &str| t.types.field(arch::TASK, f).and_then(|(off, len)| h.last_write(&self.rec.records, addr.wrapping_add(off), len, at)).map(|(i, _)| i);
+        let last = |f: &str| t.types.field(arch::TASK, f).and_then(|(off, len)| h.last_write(addr.wrapping_add(off), len, at)).map(|(i, _)| i);
         let key = (addr, last(arch::TASK_PID).max(last(arch::TASK_COMM)));
         let known = self.rec.names.borrow().get(&key).cloned();
         let task = known.or_else(|| {
@@ -264,13 +246,14 @@ impl View<'_> {
         Task { addr, pid: task.as_ref().map(|t| t.pid), comm: task.map(|t| t.comm) }
     }
 
-    /// The fields of the task at `addr`, in `mem` (memory as it was): the
-    /// key ones first (arch::TASK_FIELDS), then the others as declared.
-    pub fn task_fields(&self, mem: &dyn Memory, addr: u32) -> TaskFields {
+    /// The fields of the task at `addr`, as memory was after record `at`:
+    /// the key ones first (arch::TASK_FIELDS), then the others as declared.
+    pub fn task_fields(&self, addr: u32, at: usize) -> Vec<Object> {
         let types = &self.tables.types;
-        let mut fields = types.find(arch::TASK).and_then(|ty| types.object(mem, arch::CURRENT, addr, ty, 1).children).unwrap_or_default();
+        let mem = self.rec.memory_at(self.now, at);
+        let mut fields = types.find(arch::TASK).and_then(|ty| types.object(&mem, arch::CURRENT, addr, ty, 1).children).unwrap_or_default();
         fields.sort_by_key(|o| arch::TASK_FIELDS.iter().position(|&k| k == o.name).unwrap_or(usize::MAX));
-        TaskFields { fields }
+        fields
     }
 
     /// The tasks at record `i`: the kernel's, as its lists had them then
@@ -334,22 +317,28 @@ impl View<'_> {
                 task: self.task(addr, i),
                 up: up(arch::TASK_LEADER).or_else(|| up(arch::TASK_PARENT)),
                 state, last,
-                syscall: last.and_then(|j| self.rec.syscall_at(j)).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr).cloned()),
-                func: last.and_then(|j| self.rec.calls.stack_at(t, j, None).into_iter().next()).and_then(|c| t.functions.get(&c.func)).map(|f| f.name.clone()),
+                doing: last.and_then(|j| {
+                    let syscall = self.rec.syscall_at(j).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr).cloned());
+                    syscall.or_else(|| self.rec.calls.stack_at(t, j, None).into_iter().next().and_then(|c| t.functions.get(&c.func)).map(|f| f.name.clone()))
+                }),
             }
         }).collect()
     }
 
-    pub fn syscalls(&self) -> Vec<SyscallSummary> {
-        self.rec.syscalls.iter().enumerate().map(|(index, s)| SyscallSummary {
-            index,
-            id: self.rec.ids.get(s.first).copied().unwrap_or(0),
+    /// Syscall `k` (Recording::syscalls).
+    pub fn syscall(&self, k: usize) -> Option<SyscallSummary> {
+        let s = self.rec.syscalls.get(k)?;
+        Some(SyscallSummary {
             task: self.task(s.task, s.first),
             name: self.tables.types.syscall_name(s.nr),
             ret: s.ret,
             first: s.first,
-            last: s.last,
-        }).collect()
+            last: s.last.unwrap_or(last_record(self.rec)),
+        })
+    }
+
+    pub fn syscalls(&self) -> Vec<SyscallSummary> {
+        (0..self.rec.syscalls.len()).filter_map(|k| self.syscall(k)).collect()
     }
 
     /// A stack chart of steps `first..=last` in `n` columns, each a
@@ -408,32 +397,22 @@ impl View<'_> {
         Some(Place { name: name.to_string(), file: file.clone(), line: *line, last: None, sealed: false })
     }
 
-    /// Where member `member` of type `ty` (a struct or union, or a pointer
-    /// to one) is declared; with no type, of the one struct that has a
+    /// Where member `member` is declared: of the one struct that has a
     /// member so named, if only one does.
-    pub fn member_definition(&self, ty: Option<u32>, member: &str) -> Option<Place> {
-        let types = &self.tables.types;
-        let Some(ty) = ty else {
-            let suffix = format!(".{member}");
-            let mut of = types.declared.keys().filter(|k| k.ends_with(&suffix) && !k[..k.len() - suffix.len()].contains('.'));
-            return match (of.next(), of.next()) {
-                (Some(k), None) => self.definition(k),
-                _ => None,
-            };
-        };
-        let id = types.resolve(ty);
-        let id = match types.get(id).kind {
-            Kind::Pointer(to) => types.resolve(to),
-            _ => id,
-        };
-        self.definition(&format!("{}.{member}", types.get(id).name))
+    pub fn member_definition(&self, member: &str) -> Option<Place> {
+        let suffix = format!(".{member}");
+        let mut of = self.tables.types.declared.keys().filter(|k| k.ends_with(&suffix) && !k[..k.len() - suffix.len()].contains('.'));
+        match (of.next(), of.next()) {
+            (Some(k), None) => self.definition(k),
+            _ => None,
+        }
     }
 
     /// Function `id`: where it is.
     pub(crate) fn place(&self, id: u32) -> Option<Place> {
         let t = self.tables;
         let f = t.functions.get(&id)?;
-        let last = t.blocks_of(id).filter(|(_, l)| l.file == f.loc.file).map(|(_, l)| l.line).fold(f.loc.line, u32::max);
+        let last = t.blocks_of(id).filter(|l| l.file == f.loc.file).map(|l| l.line).fold(f.loc.line, u32::max);
         Some(Place { name: f.name.clone(), file: t.file(f.loc).to_string(), line: f.loc.line, last: Some(last), sealed: f.sealed })
     }
 
@@ -441,7 +420,7 @@ impl View<'_> {
     /// recording), with how often (the most of the blocks running it): the
     /// lines each block runs (Tables::runs: inlined code's, and where it is
     /// inlined, too).
-    pub fn coverage(&self, file: &str, n: Option<usize>) -> Vec<LineCount> {
+    pub fn coverage(&self, file: &str, n: Option<usize>) -> BTreeMap<u32, u64> {
         let t = self.tables;
         let counts = self.rec.block_counts(n);
         let files: Vec<u32> = (0..t.files.len() as u32).filter(|&k| t.files[k as usize] == file).collect();
@@ -452,7 +431,7 @@ impl View<'_> {
                 *e = (*e).max(c);
             }
         }
-        lines.into_iter().map(|(line, count)| LineCount { line, count }).collect()
+        lines
     }
 }
 
@@ -467,14 +446,4 @@ fn compared(r: &Record) -> Option<String> {
 /// The last record's index (0 if none).
 fn last_record(rec: &Recording) -> usize {
     rec.records.len().saturating_sub(1)
-}
-
-/// The C string at `p`, up to its NUL, quoted as C writes it (what is not
-/// printable escaped; past 64 characters, "…"), as a char * says there is.
-/// (A __user one too: a program's memory is kernel memory.)
-fn c_string(mem: &dyn Memory, p: u32) -> String {
-    let mut buf = [0u8; 65];
-    mem.read(p, &mut buf);
-    let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-    crate::types::quote(&buf[..n])
 }
