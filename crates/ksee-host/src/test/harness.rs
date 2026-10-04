@@ -2,8 +2,6 @@ use std::rc::Rc;
 
 use ksee_core::view::{Frame, Object, SyscallSummary};
 use crate::machine::Machine;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
 
 use crate::Outcome;
 
@@ -11,14 +9,7 @@ pub fn log(s: &str) {
     web_sys::console::log_1(&s.into());
 }
 
-/// A promise of `ms` milliseconds passed.
-pub async fn sleep(ms: i32) {
-    let p = js_sys::Promise::new(&mut |ok, _| {
-        let set: js_sys::Function = js_sys::Reflect::get(&js_sys::global(), &"setTimeout".into()).unwrap().into();
-        let _ = set.call2(&JsValue::NULL, &ok, &ms.into());
-    });
-    let _ = JsFuture::from(p).await;
-}
+pub use crate::js::sleep;
 
 /// A call a line made, as the kernel left it once quiet: its id, whether it
 /// finished (not: it blocked) and its result, its syscall summary.

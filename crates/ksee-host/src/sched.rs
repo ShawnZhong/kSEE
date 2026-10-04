@@ -50,20 +50,16 @@ thread_local! {
     static S: RefCell<Sched> = RefCell::default();
 }
 
-fn webassembly(name: &str) -> JsValue {
-    js::get(&js::get(&js_sys::global(), "WebAssembly"), name)
-}
-
 /// `f` as an import the kernel's stack suspends on (it returns a promise).
 pub fn suspending(f: JsValue) -> JsValue {
-    let ctor: Function = webassembly("Suspending").unchecked_into();
+    let ctor: Function = js::webassembly("Suspending").unchecked_into();
     Reflect::construct(&ctor, &js_sys::Array::of1(&f)).expect("JSPI: WebAssembly.Suspending")
 }
 
 /// Export `f` as a function that runs on a stack of its own (JSPI), until it
 /// suspends: it returns a promise.
 fn promising(f: &JsValue) -> Function {
-    let p: Function = webassembly("promising").unchecked_into();
+    let p: Function = js::webassembly("promising").unchecked_into();
     p.call1(&JsValue::NULL, f).expect("JSPI: WebAssembly.promising").unchecked_into()
 }
 

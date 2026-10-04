@@ -3,9 +3,13 @@
 
 use super::harness::KernelHarness;
 
+/// The page's clock (ms).
+fn now() -> f64 {
+    web_sys::window().and_then(|w| w.performance()).map_or(0.0, |p| p.now())
+}
+
 /// Milliseconds `f` takes, the best of `n` runs.
 fn ms(n: usize, mut f: impl FnMut()) -> f64 {
-    let now = || web_sys::window().and_then(|w| w.performance()).map_or(0.0, |p| p.now());
     (0..n).map(|_| {
         let t = now();
         f();
@@ -16,7 +20,6 @@ fn ms(n: usize, mut f: impl FnMut()) -> f64 {
 /// A boot, and a call on the fresh kernel.
 pub(super) async fn boot(t: &mut KernelHarness) -> String {
     let m = t.machine.clone();
-    let now = || web_sys::window().and_then(|w| w.performance()).map_or(0.0, |p| p.now());
     let t0 = now();
     let _ = m.restart().await;
     let boot = now() - t0;

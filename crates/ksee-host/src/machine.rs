@@ -58,7 +58,7 @@ impl Machine {
     /// Boot the built kernel and initramfs bytes in 64 MiB of RAM, with the
     /// disk image.
     pub async fn start(kernel: Uint8Array, initrd: Uint8Array, disk: Uint8Array) -> Result<Machine, JsValue> {
-        if js::get(&js::get(&js_sys::global(), "WebAssembly"), "Suspending").is_undefined() {
+        if js::webassembly("Suspending").is_undefined() {
             return Err("this browser has no JSPI (WebAssembly.Suspending): kSEE needs Chrome 137, Firefox 153, Safari 27 or later".into());
         }
         // The kernel's RAM: this module's memory, grown to it first (the
@@ -120,10 +120,8 @@ impl Machine {
     /// ever), the runtime's state emptied, and a new boot.
     pub async fn restart(&self) -> Result<(), JsValue> {
         sched::stop();
-        JsFuture::from(js_sys::Promise::new(&mut |ok, _| {
-            let set: Function = js::get(&js_sys::global(), "setTimeout").unchecked_into();
-            let _ = set.call2(&JsValue::NULL, &ok, &0.into());
-        })).await?;
+        // (Once what was under way has had its turn of the event loop.)
+        js::sleep(0).await;
         sched::stop();
         // (What waits for the old machine gives up.)
         settle(Some("the kernel started again".into()));
