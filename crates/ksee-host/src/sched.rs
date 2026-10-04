@@ -44,9 +44,6 @@ struct Sched {
     idle: Option<Function>,
     /// The boot (counted): what an earlier one left to do is not done.
     boot: u32,
-    /// Whether the machine runs (between boot and stop). A stack of a
-    /// stopped machine that suspends is never resumed.
-    running: bool,
 }
 
 thread_local! {
@@ -68,10 +65,6 @@ pub fn suspending(f: JsValue) -> JsValue {
 fn promising(f: &JsValue) -> Function {
     let p: Function = webassembly("promising").unchecked_into();
     p.call1(&JsValue::NULL, f).expect("JSPI: WebAssembly.promising").unchecked_into()
-}
-
-fn sp_get() -> u32 {
-    S.with_borrow(|s| s.sp.as_ref().and_then(|g| g.value().as_f64()).unwrap_or(0.0) as u32)
 }
 
 fn sp_set(sp: u32) {
@@ -116,7 +109,7 @@ pub fn boot(kernel: &Object) -> Result<(), JsValue> {
     S.with_borrow_mut(|s| {
         *s = Sched { task_entry: Some(promising(&js::get(kernel, "task_entry"))),
                      user_entry: Some(promising(&js::get(kernel, "user_entry"))), sp: Some(sp), boot: s.boot + 1,
-                     running: true, ..Default::default() };
+                     ..Default::default() };
     });
     let boot_stack: Function = js::get(kernel, "boot_stack").unchecked_into();
     sp_set(boot_stack.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32);
@@ -127,19 +120,16 @@ pub fn boot(kernel: &Object) -> Result<(), JsValue> {
 /// Stop the machine: forget every task (their stacks are dropped), and
 /// what it left to do (see soon).
 pub fn stop() {
-    S.with_borrow_mut(|s| {
-        s.tasks.clear();
-        s.idle = None;
-        s.boot += 1;
-        s.running = false;
-    });
+    S.with_borrow_mut(|s| *s = Sched { boot: s.boot + 1, ..Default::default() });
 }
 
 /// spawn_task: a new task, `task_entry(task)` on the stack at `sp` when it
 /// first gets the CPU.
 #[unsafe(no_mangle)]
 pub extern "C" fn spawn_task(task: u32, sp: u32) {
-    S.with_borrow_mut(|s| s.running.then(|| s.tasks.insert(task, Saved { sp, resume: None, user: false })));
+    if running() {
+        S.with_borrow_mut(|s| s.tasks.insert(task, Saved { sp, resume: None, user: false }));
+    }
 }
 
 /// restart_task (suspending): the current task's stack is dropped, and it
@@ -152,8 +142,10 @@ pub fn restart_task(task: u32, sp: u32) -> Promise {
     never()
 }
 
+/// Whether the machine runs (between boot and stop). A stack of a
+/// stopped machine that suspends is never resumed.
 fn running() -> bool {
-    S.with_borrow(|s| s.running)
+    S.with_borrow(|s| s.task_entry.is_some())
 }
 
 /// switch_task (suspending): `prev` gives the CPU to `next`; prev resumes
@@ -166,7 +158,7 @@ pub fn switch_task(prev: u32, next: u32, dead: u32) -> Promise {
     if deadline() <= k(|k| k.clock) {
         raise(IRQ_TIMER);
     }
-    let sp = sp_get();
+    let sp = S.with_borrow(|s| s.sp.as_ref().and_then(|g| g.value().as_f64()).unwrap_or(0.0) as u32);
     crate::programs::switch_user(prev, next, dead != 0);
     let back = if dead != 0 {
         S.with_borrow_mut(|s| s.tasks.remove(&prev));
@@ -227,7 +219,9 @@ const BOOT_NS: u64 = 1_000_000_000;
 ///   (7.2's linked rbtree: from the leftmost, by next);
 /// - the timer wheel (a process_timer's task: schedule_timeout, msleep):
 ///   each base's buckets' lists.
-fn timer_wakes(t: &ksee_core::types::Types, mem: &dyn ksee_core::Memory, tasks: &[u32]) -> bool {
+fn sleeping() -> bool {
+    let tasks: Vec<u32> = k(|k| k.calls.values().filter(|c| !c.done).map(|c| c.task).collect());
+    let (t, mem) = (&tables().types, &Direct);
     let off = |s: &str, f: &str| t.field(s, f).map(|(off, _)| off);
     let size = |s: &str| t.find(s).map_or(0, |id| t.size_of(id));
     // (How far a timer list is walked: kernel memory read live may be torn.)
@@ -268,11 +262,6 @@ fn timer_wakes(t: &ksee_core::types::Types, mem: &dyn ksee_core::Memory, tasks: 
     hr() == Some(true) || wheel() == Some(true)
 }
 
-fn sleeping() -> bool {
-    let tasks: Vec<u32> = k(|k| k.calls.values().filter(|c| !c.done).map(|c| c.task).collect());
-    timer_wakes(&tables().types, &Direct, &tasks)
-}
-
 /// idle (suspending): until an interrupt may be pending.
 pub fn idle() -> Promise {
     if !running() {
@@ -285,17 +274,8 @@ pub fn idle() -> Promise {
     // runner sleeps on a timer (else it blocks: it waits for another call).
     let d = deadline();
     let (waiting, booting) = k(|k| (k.waiting, k.booting));
-    let skip = match waiting {
-        Some(since) if d != u64::MAX => {
-            let ok = if booting { d.saturating_sub(since) < BOOT_NS } else { sleeping() };
-            if ok {
-                k_mut(|k| k.clock = k.clock.max(d));
-            }
-            ok
-        }
-        _ => false,
-    };
-    if skip {
+    if let Some(since) = waiting && d != u64::MAX && (if booting { d.saturating_sub(since) < BOOT_NS } else { sleeping() }) {
+        k_mut(|k| k.clock = k.clock.max(d));
         raise(IRQ_TIMER);
         return Promise::resolve(&JsValue::NULL);
     }
@@ -304,24 +284,19 @@ pub fn idle() -> Promise {
     let p = Promise::new(&mut |ok, _| wake = Some(ok));
     S.with_borrow_mut(|s| s.idle = wake);
     k_mut(|k| k.booting = false);
-    crate::machine::settle();
+    crate::machine::settle(None);
     p
 }
 
 /// Raise interrupt line `irq` (the page's), and wake the CPU if it idles.
 pub fn interrupt(irq: u32) {
     raise(irq);
-    wake();
+    if let Some(w) = S.with_borrow_mut(|s| s.idle.take()) {
+        let _ = w.call0(&JsValue::NULL);
+    }
 }
 
 /// Whether the kernel is quiet: idle, until the page's input.
 pub fn quiet() -> bool {
     S.with_borrow(|s| s.idle.is_some())
-}
-
-/// Wake the CPU if it idles (an interrupt is pending).
-fn wake() {
-    if let Some(w) = S.with_borrow_mut(|s| s.idle.take()) {
-        let _ = w.call0(&JsValue::NULL);
-    }
 }

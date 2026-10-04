@@ -37,7 +37,7 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
         _ => true,
     };
     let sel_now = sel().min(items.len().saturating_sub(1));
-    let hint = (up && !c.call.is_empty()).then(|| machine().params(&c.call)).flatten();
+    let hint = (up && !c.call.is_empty()).then(|| machine().tables().types.params_of(&c.call)).flatten();
     let mut take = move |it: Completion| {
         let (d, a) = (draft(), at().min(draft().len()));
         let c = context(&d, a);

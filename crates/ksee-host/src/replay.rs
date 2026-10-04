@@ -43,14 +43,9 @@ impl Machine {
         self.rec.borrow().first_call(tables(), name, first, last, task)
     }
 
-    /// Syscall `name`'s parameters, each as C declares it (Types::params_of):
-    /// ["int dfd", "char *filename", …]; none if this kernel has no syscall `name`.
-    pub fn params(&self, name: &str) -> Option<Vec<String>> {
-        tables().types.params_of(name)
-    }
-
-    /// A call's result as the page says it (Types::result): "3", "0x1d20000", "-2 (ENOENT)".
-    pub fn result(&self, v: i64) -> String {
-        tables().types.result(v)
+    /// The kernel's tables: its types (a call's result as the page says it,
+    /// Types::result; a syscall's parameters, Types::params_of).
+    pub fn tables(&self) -> &'static ksee_core::tables::Tables {
+        tables()
     }
 }

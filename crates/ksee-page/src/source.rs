@@ -213,7 +213,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, a
             lines[..m.line].iter().rev().find(|l| l.depth <= depth).filter(|l| l.depth == depth).cloned()
         });
         let returned = shown.as_ref().and_then(|l| [Some(l), before.as_ref()].into_iter().flatten().find_map(|c| c.called.as_ref())
-            .filter(|c| c.at <= l.at).map(|c| format!("{} → {}", c.func, machine().result(c.value))));
+            .filter(|c| c.at <= l.at).map(|c| format!("{} → {}", c.func, machine().tables().types.result(c.value))));
         frame.args.iter().flatten().chain(frame.locals.iter().flatten())
             .filter(|o| words.contains(&o.name.as_str()) && o.none != Some(ksee_core::view::Missing::NotRecorded))
             .map(|o| format!("{} = {}", o.name, o.value.clone().unwrap_or_else(|| "{…}".into())))

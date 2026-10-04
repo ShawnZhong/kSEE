@@ -13,7 +13,7 @@ use js_sys::{Object, Promise};
 use ksee_core::trace::wire::{self, EncodedRecord, StoreChunks};
 use wasm_bindgen::prelude::*;
 
-use crate::js::{self, func};
+use crate::js;
 use crate::programs::{clone_user, user_load, user_start};
 use crate::sched;
 use crate::state::*;
@@ -47,7 +47,7 @@ pub extern "C" fn get_cmdline(buf: *mut u8, len: u32) -> u32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn memory_end() -> u32 {
-    k(|k| k.ram)
+    RAM_BYTES
 }
 
 /// The kernel's clock (ns): virtual (see State::clock), a tick on at
@@ -84,14 +84,9 @@ pub fn log(addr: u32, len: u32, line: u32, from: u32) {
     }
 }
 
-/// A Task record: `task` (a task_struct) runs; where a recording begins.
-pub fn task(task: u32) {
-    ring_put(wire::task(task));
-}
-
 /// Append a complete record to the kernel's trace ring (called while the
 /// kernel runs: no kernel code writes it meanwhile).
-fn ring_put(record: EncodedRecord) {
+pub(crate) fn ring_put(record: EncodedRecord) {
     let (trace, size) = (k(|k| k.trace), tables().ring_words);
     if trace == 0 || size == 0 {
         return;
@@ -116,25 +111,20 @@ pub fn kernel() -> Object {
     for name in ["console_write", "doorbell", "get_cmdline", "memory_end", "time_ns", "spawn_task"] {
         js::set(&kernel, name, export(name));
     }
-    js::set(&kernel, "switch_task", sched::suspending(func(Closure::<dyn FnMut(u32, u32, u32) -> Promise>::new(sched::switch_task))));
-    js::set(&kernel, "idle", sched::suspending(func(Closure::<dyn FnMut() -> Promise>::new(sched::idle))));
-    js::set(&kernel, "restart_task", sched::suspending(func(Closure::<dyn FnMut(u32, u32) -> Promise>::new(sched::restart_task))));
-    js::set(&kernel, "halt", sched::suspending(func(Closure::<dyn FnMut(i32) -> Promise>::new(|code: i32| {
-        let waiters = k_mut(|k| {
-            k.halted = Some(code);
-            std::mem::take(&mut k.quiet_waiters)
-        });
-        for (_, fail) in waiters {
-            let _ = fail.call1(&JsValue::NULL, &format!("the kernel halted ({code})").into());
-        }
+    js::set(&kernel, "switch_task", sched::suspending(Closure::<dyn FnMut(u32, u32, u32) -> Promise>::new(sched::switch_task).into_js_value()));
+    js::set(&kernel, "idle", sched::suspending(Closure::<dyn FnMut() -> Promise>::new(sched::idle).into_js_value()));
+    js::set(&kernel, "restart_task", sched::suspending(Closure::<dyn FnMut(u32, u32) -> Promise>::new(sched::restart_task).into_js_value()));
+    js::set(&kernel, "halt", sched::suspending(Closure::<dyn FnMut(i32) -> Promise>::new(|code: i32| {
+        k_mut(|k| k.halted = Some(code));
+        crate::machine::settle(Some(format!("the kernel halted ({code})")));
         sched::never()
-    }))));
-    js::set(&kernel, "print_stack", func(Closure::<dyn FnMut()>::new(|| {
+    }).into_js_value()));
+    js::set(&kernel, "print_stack", Closure::<dyn FnMut()>::new(|| {
         web_sys::console::log_1(&js::get(&js_sys::Error::new("kernel stack"), "stack"));
-    })));
-    js::set(&kernel, "user_load", func(Closure::<dyn FnMut(u32, u32) -> i32>::new(user_load)));
-    js::set(&kernel, "user_start", func(Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(user_start)));
-    js::set(&kernel, "clone_user", func(Closure::<dyn FnMut(u32, u32)>::new(clone_user)));
+    }).into_js_value());
+    js::set(&kernel, "user_load", Closure::<dyn FnMut(u32, u32) -> i32>::new(user_load).into_js_value());
+    js::set(&kernel, "user_start", Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(user_start).into_js_value());
+    js::set(&kernel, "clone_user", Closure::<dyn FnMut(u32, u32)>::new(clone_user).into_js_value());
 
     let ksee = Object::new();
     js::set(&ksee, "bulk", export("bulk"));

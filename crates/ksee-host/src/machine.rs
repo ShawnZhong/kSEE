@@ -29,8 +29,6 @@ pub struct Machine {
     pub(crate) rec: RefCell<Recording>,
 }
 
-const RAM_BYTES: u32 = 64 << 20;
-
 /// Where the built initramfs goes: at the top of kernel RAM, page-aligned.
 fn initrd_at(initrd: &[u8]) -> Result<u32, JsValue> {
     let len = u32::try_from(initrd.len()).map_err(|_| JsValue::from_str("initramfs is too large"))?;
@@ -57,7 +55,6 @@ impl Machine {
         if have < RAM_BYTES {
             memory.grow((RAM_BYTES - have).div_ceil(PAGE_BYTES));
         }
-        k_mut(|k| k.ram = RAM_BYTES);
 
         let module: WebAssembly::Module =
             JsFuture::from(WebAssembly::compile(&kernel)).await?.unchecked_into();
@@ -77,8 +74,7 @@ impl Machine {
     /// instance (instantiating initializes its data), and its boot CPU; done
     /// once the program (user/prog.c) is ready for calls.
     async fn boot(&self) -> Result<(), JsValue> {
-        let ram = k(|k| k.ram);
-        unsafe { core::ptr::write_bytes(KERNEL_BASE as *mut u8, 0, (ram - KERNEL_BASE) as usize) };
+        unsafe { core::ptr::write_bytes(KERNEL_BASE as *mut u8, 0, (RAM_BYTES - KERNEL_BASE) as usize) };
         let at = initrd_at(&self.initrd)? as usize;
         unsafe { core::ptr::copy_nonoverlapping(self.initrd.as_ptr(), at as *mut u8, self.initrd.len()) };
         let inst: WebAssembly::Instance =
@@ -88,23 +84,11 @@ impl Machine {
         let trace: Function = js::get(&kernel, "ksee_trace").unchecked_into();
         let trace = trace.call0(&JsValue::NULL)?.as_f64().unwrap_or(0.0) as u32;
         let (current, pending, deadline) = (global("__current_task"), global("wasm_irq_pending"), global("wasm_timer_deadline"));
-        k_mut(|k| {
-            (k.trace, k.current, k.pending, k.deadline) = (trace, current, pending, deadline);
-            k.clock = 0;
-            k.waiting = Some(0);
-            k.booting = true;
-            k.halted = None;
-            // (Nothing of a machine before it: its console, runners, calls, the program's names.)
-            k.console_out.clear();
-            k.doorbell.clear();
-            k.runners.clear();
-            k.main = None;
-            k.heaps.clear();
-            k.calls.clear();
-            k.finished.clear();
-            k.names = Default::default();
-            k.lines = 0;
-        });
+        // (Nothing of a machine before it but its command line, and the ids of
+        // the calls asked: they are not used again.)
+        k_mut(|k| *k = State { trace, current, pending, deadline, waiting: Some(0), booting: true,
+                               cmdline: std::mem::take(&mut k.cmdline), asked: k.asked,
+                               quiet_waiters: std::mem::take(&mut k.quiet_waiters), ..Default::default() });
         crate::programs::instantiated(&kernel);
         sched::boot(&kernel)?;
         // (Quiet, with the program ready.)
@@ -128,9 +112,7 @@ impl Machine {
         })).await?;
         sched::stop();
         // (What waits for the old machine gives up.)
-        for (_, fail) in k_mut(|k| std::mem::take(&mut k.quiet_waiters)) {
-            let _ = fail.call1(&JsValue::NULL, &"the kernel started again".into());
-        }
+        settle(Some("the kernel started again".into()));
         *self.rec.borrow_mut() = Default::default();
         self.boot().await
     }
@@ -167,16 +149,15 @@ impl Machine {
         let line = k(|k| k.lines);
         let tid = task_tid(task, line)?;
         let plan = lower(text, &tables().types, &Seen(line))?;
-        let mut made = Made::default();
-        match plan {
+        let made = match plan {
             Lowered::Decl(d) => {
                 let addr = alloc(tid, d.bytes.len() as u32).map_err(|e| format!("{}: {e}", d.name))?;
                 write_logged(addr, &d.bytes);
                 k_mut(|k| k.names.set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
-                made.decl = Some(Var { name: d.name, addr, ty: d.ty, count: d.count, size: tables().types.size_of(d.ty) });
+                Made::Decl(Var { name: d.name, addr, ty: d.ty, count: d.count, bytes: d.bytes.len() as u32 })
             }
-            Lowered::Call { nr, args, result } => made.id = Some(call(tid, nr, &args, line, result)?),
-        }
+            Lowered::Call { nr, args, result } => Made::Call(call(tid, nr, &args, line, result)?),
+        };
         k_mut(|k| k.lines = line + 1);
         Ok(made)
     }
@@ -193,16 +174,12 @@ impl Machine {
     /// boundary and therefore is not included.
     pub fn task_columns(&self, line: usize) -> Vec<String> {
         k(|k| {
-            let mut columns: Vec<(usize, u32, String)> = k.runners.values().filter_map(|runner| {
-                let call = k.calls.get(&runner.source?)?;
-                let (name, _) = call.result.as_ref()?;
-                (call.line < line).then(|| (call.line, call.id, name.clone()))
-            }).collect();
-            columns.sort_by_key(|(source_line, id, _)| (*source_line, *id));
-            let mut names = Vec::new();
-            for (_, _, name) in columns {
-                if !names.contains(&name) {
-                    names.push(name);
+            let mut columns = named_runners(k, line);
+            columns.sort_by_key(|&(id, _, _)| id);
+            let mut names: Vec<String> = Vec::new();
+            for (_, name, _) in columns {
+                if !names.iter().any(|n| n == name) {
+                    names.push(name.to_string());
                 }
             }
             names
@@ -228,7 +205,7 @@ impl Machine {
         JsFuture::from(Promise::new(&mut |ok, fail| {
             k_mut(|k| k.quiet_waiters.push((ok, fail)));
             if sched::quiet() {
-                settle();
+                settle(None);
             }
         })).await?;
         Ok(k_mut(|k| std::mem::take(&mut k.finished)))
@@ -270,14 +247,19 @@ impl Machine {
 fn task_tid(task: Option<&str>, line: usize) -> Result<u32, String> {
     k(|k| match task {
         None => k.main.filter(|tid| k.runners.contains_key(tid)).ok_or_else(|| "the program is not ready".into()),
-        Some(name) => k.runners.iter().filter_map(|(&tid, runner)| {
-            let call = k.calls.get(&runner.source?)?;
-            let (result_name, _) = call.result.as_ref()?;
-            (call.line < line && result_name == name).then_some((call.line, call.id, tid))
-        }).max_by_key(|(source_line, id, _)| (*source_line, *id))
-            .map(|(_, _, tid)| tid)
-            .ok_or_else(|| format!("no task {name}")),
+        Some(name) => named_runners(k, line).into_iter().filter(|&(_, n, _)| n == name).max_by_key(|&(id, _, _)| id)
+            .map(|(_, _, tid)| tid).ok_or_else(|| format!("no task {name}")),
     })
+}
+
+/// The runners a result-bearing call before line `line` created: (that
+/// call's id, its result's name, the runner's tid). (Ids grow line by line.)
+fn named_runners(k: &State, line: usize) -> Vec<(u32, &str, u32)> {
+    k.runners.iter().filter_map(|(&tid, runner)| {
+        let call = k.calls.get(&runner.source?)?;
+        let (name, _) = call.result.as_ref()?;
+        (call.line < line).then_some((call.id, name.as_str(), tid))
+    }).collect()
 }
 
 /// Write `bytes` at `addr` into kernel memory, as the host: recorded (as a
@@ -311,20 +293,19 @@ fn alloc(tid: u32, len: u32) -> Result<u32, String> {
 }
 
 /// What a line made (Machine::make): a variable, or a call's id.
-#[derive(Default)]
-pub struct Made {
-    pub decl: Option<Var>,
-    pub id: Option<u32>,
+pub enum Made {
+    Decl(Var),
+    Call(u32),
 }
 
 /// A variable of the program's: memory of type `ty` (an array of `count`)
-/// at `addr`; `size`, an element's.
+/// at `addr`, `bytes` long.
 pub struct Var {
     pub name: String,
     pub addr: u32,
     pub ty: u32,
     pub count: Option<u32>,
-    pub size: u32,
+    pub bytes: u32,
 }
 
 /// Have runner `tid` make syscall `nr` with `args`, for line `line` (its
@@ -380,13 +361,13 @@ impl ksee_core::program::Env for Seen {
     }
 }
 
-/// The kernel is quiet: settle what waits for it (see Machine::quiet).
-pub(crate) fn settle() {
-    let waiters = k_mut(|k| std::mem::take(&mut k.quiet_waiters));
-    if waiters.is_empty() {
-        return;
-    }
-    for (ok, _) in waiters {
-        let _ = ok.call0(&JsValue::NULL);
+/// The kernel is quiet (or, `err`, gone): settle what waits for it (see
+/// Machine::quiet).
+pub(crate) fn settle(err: Option<String>) {
+    for (ok, fail) in k_mut(|k| std::mem::take(&mut k.quiet_waiters)) {
+        let _ = match &err {
+            None => ok.call0(&JsValue::NULL),
+            Some(e) => fail.call1(&JsValue::NULL, &e.into()),
+        };
     }
 }

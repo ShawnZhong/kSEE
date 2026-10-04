@@ -80,10 +80,10 @@ impl KernelHarness {
                 return Made { id: None, how: None, ret: None, syscall: None, var: None };
             }
         };
-        if let Some(v) = made.decl {
-            return Made { id: None, how: None, ret: None, syscall: None, var: Some((v.ty, v.addr, v.count)) };
-        }
-        let Some(id) = made.id else { return Made { id: None, how: None, ret: None, syscall: None, var: None } };
+        let id = match made {
+            ksee_host::machine::Made::Call(id) => id,
+            ksee_host::machine::Made::Decl(v) => return Made { id: None, how: None, ret: None, syscall: None, var: Some((v.ty, v.addr, v.count)) },
+        };
         self.quiet().await;
         let f = self.finished.get(&id);
         Made { id: Some(id), how: f.map(|f| f.how.to_string()), ret: f.map(|f| f.ret), syscall: self.syscall(id), var: None }

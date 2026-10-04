@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::imports::bulk;
-use crate::js::{self, func};
+use crate::js;
 use crate::state::*;
 use ksee_core::program::Sym;
 use ksee_core::Memory;
@@ -106,7 +106,7 @@ fn dylink(module: &WebAssembly::Module) -> Option<(u32, u32)> {
 /// Compile program `image` for the current task: the bytes its data
 /// needs, or -ENOEXEC.
 pub(crate) fn user_load(image: u32, len: u32) -> i32 {
-    let Ok(module) = WebAssembly::Module::new(&js::copy_from(image as *const u8, len)) else { return -ENOEXEC };
+    let Ok(module) = WebAssembly::Module::new(&Uint8Array::from(unsafe { core::slice::from_raw_parts(image as *const u8, len as usize) })) else { return -ENOEXEC };
     let Some((data, _)) = dylink(&module) else { return -ENOEXEC };
     PROGRAMS.with_borrow_mut(|u| u.loaded.insert(current(), module));
     data as i32
@@ -194,7 +194,7 @@ pub(crate) fn finish(tid: u32, how: &'static str, ret: i64) {
             let sym = ksee_core::program::typed(ret, ty, &tables().types).unwrap_or(Sym::Value { v: ret, to: None });
             names.set(name, c.line, sym);
         }
-        k.finished.push(Finished { id, tid, how, ret });
+        k.finished.push(Finished { id, how, ret });
         if k.calls.values().all(|c| c.done) {
             k.waiting = None;
         }
@@ -223,7 +223,7 @@ fn on_off() {
 /// one to the other; the result.
 fn runner_imports() -> Object {
     let ksee = Object::new();
-    js::set(&ksee, "ready", func(Closure::<dyn FnMut(u32, u32, u32, u32)>::new(|req: u32, heap: u32, size: u32, main: u32| {
+    js::set(&ksee, "ready", Closure::<dyn FnMut(u32, u32, u32, u32)>::new(|req: u32, heap: u32, size: u32, main: u32| {
         let (tid, task) = (tid(), current());
         k_mut(|k| {
             if main != 0 {
@@ -253,8 +253,8 @@ fn runner_imports() -> Object {
                 k.waiting = Some(k.clock);
             }
         });
-    })));
-    js::set(&ksee, "begin", func(Closure::<dyn FnMut()>::new(|| {
+    }).into_js_value());
+    js::set(&ksee, "begin", Closure::<dyn FnMut()>::new(|| {
         let tid = tid();
         let begun = k_mut(|k| {
             let Some(id) = k.in_flight(tid) else { return false };
@@ -270,17 +270,17 @@ fn runner_imports() -> Object {
         });
         if begun {
             // (Who runs: no switch in the recording says so.)
-            crate::imports::task(current());
+            crate::imports::ring_put(ksee_core::trace::wire::task(current()));
             on_off();
         }
-    })));
-    js::set(&ksee, "end", func(Closure::<dyn FnMut(i64)>::new(|ret: i64| {
+    }).into_js_value());
+    js::set(&ksee, "end", Closure::<dyn FnMut(i64)>::new(|ret: i64| {
         let tid = tid();
         let begun = k(|k| k.in_flight(tid).and_then(|id| k.calls.get(&id).map(|c| c.begun)));
         if begun == Some(true) {
             finish(tid, "returned", ret);
         }
-    })));
+    }).into_js_value());
     ksee
 }
 

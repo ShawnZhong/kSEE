@@ -2,3 +2,4 @@
 /target/
 /plugin/*.so
 /linux/
+.claude/worktrees/

@@ -700,7 +700,7 @@ fn Transport() -> Element {
         .as_ref()
         .and_then(|l| l.called.as_ref())
         .filter(|c| c.at <= here.as_ref().map_or(0, |l| l.at))
-        .map(|c| format!(" · {} returned {}", c.func, machine().result(c.value)))
+        .map(|c| format!(" · {} returned {}", c.func, machine().tables().types.result(c.value)))
         .unwrap_or_default();
     rsx! {
         div { class: "transport",

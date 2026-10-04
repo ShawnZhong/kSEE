@@ -94,16 +94,18 @@ pub(crate) async fn run(ui: Ui, run: RunId, lines: Vec<Step>) {
                 break;
             }
         };
-        if let Some(v) = made.decl {
-            let shown = m.show(v.ty, v.addr, v.count);
-            vars.push((v.name, v.ty, v.addr, v.count, v.size * v.count.unwrap_or(1), shown.clone()));
-            outcomes.push(Outcome::Declared(shown));
-            if !ui.publish_outcomes(run, outcomes.clone()) {
-                return;
+        let id = match made {
+            ksee_host::machine::Made::Call(id) => id,
+            ksee_host::machine::Made::Decl(v) => {
+                let shown = m.show(v.ty, v.addr, v.count);
+                vars.push((v.name, v.ty, v.addr, v.count, v.bytes, shown.clone()));
+                outcomes.push(Outcome::Declared(shown));
+                if !ui.publish_outcomes(run, outcomes.clone()) {
+                    return;
+                }
+                continue;
             }
-            continue;
-        }
-        let Some(id) = made.id else { continue };
+        };
         outcomes.push(Outcome::Call { id, ret: None, how: None, during: None, changed: Vec::new() });
         if !ui.publish_outcomes(run, outcomes.clone()) {
             return;
@@ -492,7 +494,7 @@ fn said(o: Option<&Outcome>) -> String {
         Some(Outcome::Failed(e)) => e.clone(),
         Some(Outcome::Call { ret: None, .. }) => "… blocked".into(),
         Some(Outcome::Call { how: Some(h), during, .. }) if h != "returned" => format!("(no return: {}{})", if h == "exec" { "it ran a program" } else { "it exited" }, later(*during)),
-        Some(Outcome::Call { ret: Some(r), during, .. }) => format!("= {}{}", machine().result(*r), later(*during)),
+        Some(Outcome::Call { ret: Some(r), during, .. }) => format!("= {}{}", machine().tables().types.result(*r), later(*during)),
     }
 }
 

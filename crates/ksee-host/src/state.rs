@@ -20,6 +20,8 @@ pub fn tables() -> &'static Tables {
 /// Where the kernel's memory starts (CONFIG_WASM_HOST_MEMORY: below it,
 /// the runtime's own static data and stack).
 pub const KERNEL_BASE: u32 = 0x100_0000;
+/// Where it ends.
+pub const RAM_BYTES: u32 = 64 << 20;
 
 /// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h).
 pub const IRQ_TIMER: u32 = 0;
@@ -38,8 +40,7 @@ pub struct State {
     pub current: u32,
     pub pending: u32,
     pub deadline: u32,
-    /// End of the kernel's RAM, and its command line.
-    pub ram: u32,
+    /// The kernel's command line.
     pub cmdline: Vec<u8>,
     /// The kernel's clock (ns): virtual, so that a run is the same each
     /// time (it moves only as the kernel does: see TICK_NS and sched).
@@ -111,7 +112,6 @@ pub struct Runner {
 /// program is running) or by its task's exit.
 pub struct Finished {
     pub id: u32,
-    pub tid: u32,
     pub how: &'static str,
     pub ret: i64,
 }

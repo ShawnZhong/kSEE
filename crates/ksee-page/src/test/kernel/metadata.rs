@@ -19,13 +19,13 @@ pub(super) async fn run(t: &mut KernelHarness, file_id: u32) {
         let uring_calls = m.complete("io_uring", 8, usize::MAX, &[]);
         let uring_constants = m.complete("close(IORING_", 13, usize::MAX, &[]);
         t.check(format!("the syscalls built: read and setuid, not aio or io_uring ({aio}; {uring})"),
-                m.params("read").is_some() && m.params("setuid").is_some() && m.params("io_setup").is_none()
-                && m.params("io_uring_setup").is_none() && aio.contains("no syscall io_setup") && uring.contains("no syscall io_uring_setup")
+                m.tables().types.params_of("read").is_some() && m.tables().types.params_of("setuid").is_some() && m.tables().types.params_of("io_setup").is_none()
+                && m.tables().types.params_of("io_uring_setup").is_none() && aio.contains("no syscall io_setup") && uring.contains("no syscall io_uring_setup")
                 && uring_calls.is_empty() && uring_constants.is_empty());
         let su = t.line("setuid(0)").await;
         t.check(format!("setuid(0) = {:?}, recorded", su.ret), su.ret == Some(0) && su.syscall.as_ref().is_some_and(|s| s.name == "setuid") && t.ran(&su.syscall, "__sys_setuid"));
     }
-    t.check("a syscall's parameters, as C declares them", m.params("openat") == Some(vec!["int dfd".into(), "char *filename".into(), "int flags".into(), "umode_t mode".into()]));
+    t.check("a syscall's parameters, as C declares them", m.tables().types.params_of("openat") == Some(vec!["int dfd".into(), "char *filename".into(), "int flags".into(), "umode_t mode".into()]));
     {
         let op = m.view(|v| v.syscalls().into_iter().find(|s| s.name == "openat")).unwrap();
         let oplast = t.last(&op);
