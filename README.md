@@ -69,12 +69,9 @@ that changed and serves `http://127.0.0.1:8000/`. Open it in a browser that
 supports JSPI (`WebAssembly.Suspending`). The first build fetches the kernel and
 creates the generated site under `target/site/`.
 
-`./ksee.sh test` runs the tests in Chrome's headless shell, a pinned version it
-fetches into `target/chrome/` the first time (`setup.sh` installs the
-libraries it needs). The test command first runs the native `ksee-core` and `ksee-cli` tests, then
-builds and runs the kernel and lessons suites in the browser. Add `--ui` for the page suites.
-See the [getting-started guide](docs/getting-started.md) for prerequisites,
-custom LLVM setup, and troubleshooting.
+`./ksee.sh test` runs the tests (`--ui`: the page's too). The
+[getting-started guide](docs/getting-started.md) has the prerequisites, a
+custom LLVM, the tests, and troubleshooting.
 
 ## Limits
 

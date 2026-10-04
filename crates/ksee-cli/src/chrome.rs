@@ -10,12 +10,10 @@ use std::time::Duration;
 
 use crate::or_fail;
 
-/// The tests (crates/ksee-page's test module), each with the page it opens
-/// (its URL's hash: the lesson, and `test`, which runs the test, POSTing
-/// `ok` or `fail` and its log to /result) and the screen it has: the
-/// kernel's (ksee-host's), every lesson made, then the page's: the read example, the write example with its
-/// program changed in the URL (raw: the JSON holds no & or %; the page
-/// decodes it), the pipe example, the read example on a phone's screen.
+/// The tests, each the page it opens and the screen it has: the URL's
+/// lesson page and hash (`test=NAME` runs it, and it POSTs `ok` or `fail`
+/// and its log to /result; history's program, changed, raw: its JSON has no
+/// & or %). The kernel's suite is ksee-host's; the rest, ksee-page's.
 pub const TESTS: &[(&str, &str, (u32, u32))] = &[
     ("kernel", "#test=kernel", SCREEN),
     ("lessons", "#test=lessons", SCREEN),

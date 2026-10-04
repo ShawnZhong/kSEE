@@ -66,13 +66,9 @@ packing steps compare output and input modification times.
 
 ### LLVM selection
 
-The build requires LLVM major version 22. The Makefile puts
-`/usr/lib/llvm-22/bin` ahead of `PATH`; without that installation, the LLVM on
-`PATH` is used. It checks `llvm-config --version` before building the plugin. It
-does not track the selected LLVM installation as an incremental-build input,
-so use one LLVM 22 toolchain for a checkout after its first build. If you
-switch toolchains, rebuild the native plugin and kernel outputs rather than
-reusing artifacts produced by the previous installation.
+LLVM 22, as [getting-started.md](getting-started.md#use-a-custom-llvm-22-build)
+says. The build does not track which LLVM it used: after switching, rebuild the
+plugin and the kernel (remove `plugin/*.so` and `linux/`).
 
 Cargo build and test commands use `--locked`, so `Cargo.lock` is the selected
 dependency set.

@@ -65,16 +65,8 @@ Open `http://127.0.0.1:8000/`. To separate the steps:
 `serve` uses the existing build. Pass a different port as
 `./ksee.sh serve --port=9000`.
 
-The first build:
-
-1. fetches Linux stable `v7.2.7` into `linux/`, applies `linux.patch` and copies
-   `arch/wasm/` in;
-2. builds the LLVM instrumentation plugin and kernel;
-3. builds the Rust page/runtime WebAssembly module;
-4. packs kernel metadata and sources;
-5. builds `/init`, `/bin/prog`, and the initramfs; and
-6. writes the deployable site to `target/site/`.
-
+The first build fetches Linux stable `v7.2.7` into `linux/` and builds
+everything, into `target/site/` (the steps: [development.md#build-pipeline](development.md#build-pipeline)).
 Later builds reuse outputs whose inputs have not changed. Use one LLVM 22
 toolchain for a checkout after its first build.
 
@@ -95,15 +87,9 @@ runtime use one thread and one non-shared WebAssembly memory.
 ./ksee.sh test --ui
 ```
 
-Browser tests run in Chrome's headless shell: the Makefile's `CHROME_VERSION`,
-fetched once into `target/chrome/` (`make chrome`) for x86-64 or arm64 Linux.
-
-The default test command runs native `ksee-core` and `ksee-cli` tests first,
-then performs a full build and runs the kernel and lessons suites on the site.
-`--ui` adds the interactive page suites.
-
-See [development.md#tests](development.md#tests) for the test layers and their
-order.
+The browser suites run in Chrome's headless shell, fetched once into
+`target/chrome/` for x86-64 or arm64 Linux; `--ui` adds the page's. What
+runs, in order: [development.md#tests](development.md#tests).
 
 ## Troubleshooting
 
