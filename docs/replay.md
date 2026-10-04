@@ -188,6 +188,6 @@ the same state, record for record; then another call can be made instead.
 ## Records keep their names
 
 The ring goes on while the page looks at a snapshot, so indexes shift from
-one snapshot to the next. Each record's **id** counts the pairs ever
-written up to it: the same record has the same id in every snapshot, so a
+one snapshot to the next. Each record's **id** counts the words ever
+written before it: the same record has the same id in every snapshot, so a
 selection (a syscall, a call's run) is found again.

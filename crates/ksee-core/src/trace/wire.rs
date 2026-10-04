@@ -1,9 +1,9 @@
-//! The trace's pairs of words: tags and fields (the plugin and
-//! arch/wasm/kernel/ksee.c write them).
-
+//! The trace's records' tags: a kind, a count of values and fields (the
+//! plugin and arch/wasm/kernel/ksee.c write them).
 
 const KIND_SHIFT: u32 = 28;
-const FIELDS: u32 = (1 << KIND_SHIFT) - 1;
+const COUNT_SHIFT: u32 = 24;
+const FIELDS: u32 = (1 << COUNT_SHIFT) - 1;
 
 /// Offset of the ring's words in the trace header.
 pub const RING: u32 = 16;
@@ -18,7 +18,6 @@ pub(super) enum Kind {
     Return = 4,
     Compare = 6,
     Store = 7,
-    Continuation = 8,
     Var = 9,
 }
 
@@ -30,7 +29,6 @@ impl Kind {
             4 => Kind::Return,
             6 => Kind::Compare,
             7 => Kind::Store,
-            8 => Kind::Continuation,
             9 => Kind::Var,
             _ => return None,
         })
@@ -39,6 +37,11 @@ impl Kind {
 
 pub(super) const fn fields(tag: u32) -> u32 {
     tag & FIELDS
+}
+
+/// How many values come before the record's head.
+pub(super) const fn count(tag: u32) -> u32 {
+    tag >> COUNT_SHIFT & 0xf
 }
 
 /// A Store record's width.

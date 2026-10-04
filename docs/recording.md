@@ -58,19 +58,20 @@ tracepoints, no syscall hooks, nothing per subsystem.
 struct { u32 pos; u32 words; u32 on; u32 pad; u32 ring[RING_WORDS]; } trace;  /* ksee.c; words: RING_WORDS */
 ```
 
-A record is a head pair of words and continuation pairs. The second word's
-top nibble tags the pair, so a reader can start at any even offset (the
-ring may have overwritten the start of a record) and skip to the next head:
+A record is its values (32-bit words), then its head, two words `[a, tag]`.
+The tag's top nibble says what the record is, the next how many values come
+before the head (ksee.c adds it), the other 24 bits its fields. So a reader
+walks back from `pos`, always a record's end, record by record, and stops at
+one the ring has partly overwritten:
 
-| Pair | Record |
+| Head | Record |
 |---|---|
-| `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call, followed by its arguments, then its frame base |
+| `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call: its values its arguments, then its frame base |
 | `[task, 3<<28]` | the `task_struct` address running when a requested syscall's recording begins |
-| `[fn, 4<<28]` | a return from fn; the value follows (low, then high for one wider than 32 bits) |
-| `[lhs, 6<<28 \| line<<4 \| p]` | a comparison deciding a branch (or a select), on its block's line `line`: lhs, then rhs follows (for 64-bit ones, then lhs's high word, rhs's); p its predicate (LLVM's icmp's, from eq) |
-| `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); the old value follows; then, if it copies, where its bytes come from |
-| `[value, 9<<28 \| line<<16 \| k]` | variable k of the function running (its V line) takes value, on its block's line `line` (12 bits); its high word follows, for a wide one |
-| `[value, 8<<28]` | a continuation |
+| `[fn, 4<<28]` | a return from fn; its values the value (low, then high for one wider than 32 bits) |
+| `[lhs, 6<<28 \| line<<4 \| p]` | a comparison deciding a branch (or a select), on its block's line `line`: lhs, its values rhs (for 64-bit ones, then lhs's high word, rhs's); p its predicate (LLVM's icmp's, from eq) |
+| `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr, on its block's line `line` (its L line's items, from 0); its values the old value, then, if it copies, where its bytes come from |
+| `[value, 9<<28 \| line<<12 \| k]` | variable k (12 bits) of the function running (its V line) takes value, on its block's line `line` (12 bits); its high word its value, for a wide one |
 
 `fn` is a hash of the function's name (for one local to its file, of
 "file:name"). `pos` counts words ever written and is stored with release

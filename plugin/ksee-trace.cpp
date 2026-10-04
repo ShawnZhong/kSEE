@@ -26,41 +26,40 @@
 // __ksee_put and __ksee_bulk (arch/wasm/kernel/ksee.c: the ring, its
 // header, and when it records).
 //
-// A record is a head pair of words and continuation pairs; the second
-// word's top nibble tags the pair, so a reader can start at any even offset
-// (the ring may have overwritten the start of a record) and skip
-// continuations until the next head:
-//   [fn, 1 << 28 | n]     block n of fn; block 0 (a call) is followed by its
+// A record is its values (32-bit words), then its head, two words [a,
+// tag]: the tag's top nibble says what the record is, the next how many
+// values come before the head (the writer's), the rest its fields (24
+// bits); so a reader walks back from the ring's end, record by record:
+//   [fn, 1 << 28 | n]     block n of fn; block 0 (a call) has its
 //                         arguments: the source's parameters, up to seven, a
 //                         word each, two (low, high) for one wider than 32
 //                         bits (see F lines; 0 for any the optimizer took
 //                         away), then its frame base (the
 //                         stack pointer after its prologue: its locals in
 //                         memory are at their DWARF offsets from it)
-//   [fn, 4 << 28]         a return from fn, followed by the value (low,
+//   [fn, 4 << 28]         a return from fn, its values the value (low,
 //                         then for one wider than 32 bits high)
 //   [addr, 7 << 28 | line << 4 | k]
-//                         a store of 1 << k bytes at addr (k < 4), followed
-//                         by the old value (low, then for 8 bytes high).
-//                         Then, if it copies (a
-//                         value loaded and stored as it is, a memcpy),
-//                         where its bytes come from. line: which of its
-//                         block's lines (the L line's items, "|" apart,
-//                         counted from 0) the store is on
+//                         a store of 1 << k bytes at addr (k < 4), its
+//                         values the old value (low, then for 8 bytes
+//                         high), then, if it copies (a value loaded and
+//                         stored as it is, a memcpy), where its bytes come
+//                         from. line: which of its block's lines (the L
+//                         line's items, "|" apart, counted from 0) the
+//                         store is on (20 bits)
 //   [lhs, 6 << 28 | line << 4 | p]
 //                         a comparison deciding a branch (or a select),
-//                         of lhs with the value after it (for one wider
-//                         than 32 bits, then lhs's high word, rhs's); p: its predicate (LLVM's icmp's, from eq:
-//                         eq ne ugt uge ult ule sgt sge slt sle); line as
-//                         a store's
-//   [value, 9 << 28 | line << 16 | k]
-//                         variable k of the function (its V line) takes
-//                         `value` here (the low word; the high one after
-//                         it, for a wide one): a named variable the code
-//                         keeps in a wasm local, not memory, as the debug
-//                         info says it changes (a #dbg_value); line as a
-//                         store's (12 bits)
-//   [value, 8 << 28]      a continuation of the head before
+//                         of lhs with its value (for one wider than 32
+//                         bits, then lhs's high word, rhs's); p: its
+//                         predicate (LLVM's icmp's, from eq: eq ne ugt uge
+//                         ult ule sgt sge slt sle); line as a store's
+//   [value, 9 << 28 | line << 12 | k]
+//                         variable k (12 bits) of the function (its V
+//                         line) takes `value` here (the low word; the high
+//                         one its value, for a wide one): a named variable
+//                         the code keeps in a wasm local, not memory, as
+//                         the debug info says it changes (a #dbg_value);
+//                         line as a store's (12 bits)
 // (The host's writes into kernel memory are logged too, through the
 // kernel's ksee_bulk export; and ksee_record(1)'s Task record starts a
 // recording: arch/wasm/kernel/ksee.c.) fn is a hash of the function's name (for a
@@ -121,10 +120,12 @@ namespace {
 
 constexpr unsigned CallArgs = 7; // the syscall entry's: the number and six
 constexpr unsigned Values = 2 * CallArgs + 1; // a record's at most: a call's arguments (wide ones two words) and its frame base
-enum class Kind : uint32_t { Block = 1, Return = 4, Compare = 6, Store = 7, Continuation = 8, Var = 9 };
+enum class Kind : uint32_t { Block = 1, Return = 4, Compare = 6, Store = 7, Var = 9 };
 
+// (The tag's bits 24-27 are the writer's: how many values the record has.)
+constexpr uint32_t Fields = 24;
 constexpr uint32_t tag(Kind kind, uint32_t fields = 0) {
-  return (static_cast<uint32_t>(kind) << 28) | (fields & 0x0fffffff);
+  return (static_cast<uint32_t>(kind) << 28) | (fields & ((1u << Fields) - 1));
 }
 
 uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
@@ -176,7 +177,7 @@ bool runsProbes(const CallBase &CB) {
 class KseeTrace : public PassInfoMixin<KseeTrace> {
   Module *M = nullptr;
   Type *i32 = nullptr;
-  // The writers: a record's head pair [a, tag] and the values in `values`;
+  // The writers: a record's values (in `values`), then its head [a, tag];
   // a write's Store records (the old bytes, read while recording only; a
   // copy's say where from).
   Function *put = nullptr, *bulk = nullptr;
@@ -191,7 +192,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     return std::to_string(files.try_emplace(path, files.size()).first->second);
   }
 
-  // Record [a, tag] and `vs`: the values in __ksee_values, then the call
+  // Record `vs` and [a, tag]: the values in __ksee_values, then the call
   // (nothing runs between: the kernel is uniprocessor).
   void record(IRBuilder<> &B, Value *a, uint32_t tag, ArrayRef<Value *> vs = {}) {
     assert(vs.size() <= Values);
@@ -311,7 +312,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       return;
     IRBuilder<> B(I);
     Value *addr = B.CreatePtrToInt(ptr, i32);
-    Value *line = B.getInt32(std::min(lineOf.lookup(I), (1u << 24) - 1));
+    Value *line = B.getInt32(std::min(lineOf.lookup(I), (1u << (Fields - 4)) - 1));
     // (A copy, a value loaded and stored as it is, or a memcpy: where from.
     // Not a value stored back where it was loaded from: that says nothing
     // of where it came from.)
@@ -434,7 +435,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       Value *v = t.R->getVariableLocationOp(0);
       int arg = argOf[{t.of, V->getName().str()}];
       auto [it, fresh] = vars.try_emplace({t.of, V->getName().str()}, vars.size());
-      if (it->second >= 1u << 16)
+      if (it->second >= 1u << 12)
         continue;
       if (fresh)
         probes += ("V\t" + Twine(id) + "\t" + Twine(it->second) + "\t" + Twine(t.of) + "\t" + t.function + "\t" + V->getName() + "\t" +
@@ -454,7 +455,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       // record goes before the next instruction, a later line's.)
       auto *D = dyn_cast<Instruction>(v);
       unsigned line = lineOf.lookup(D && D->getParent() == t.I->getParent() ? D : t.I);
-      record(B, low, tag(Kind::Var, std::min(line, (1u << 12) - 1) << 16 | it->second), w);
+      record(B, low, tag(Kind::Var, std::min(line, (1u << 12) - 1) << 12 | it->second), w);
     }
 
   }
@@ -553,7 +554,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     if (!seal) {
       for (ICmpInst *C : compares) {
         IRBuilder<> B(C->getNextNode());
-        unsigned line = std::min(lineOf.lookup(C), (1u << 24) - 1), pred = C->getPredicate() - CmpInst::FIRST_ICMP_PREDICATE;
+        unsigned line = std::min(lineOf.lookup(C), (1u << (Fields - 4)) - 1), pred = C->getPredicate() - CmpInst::FIRST_ICMP_PREDICATE;
         // (Its operands, 32 bits each; wider, their high words after.)
         // (A signed one's narrow operands sign-extended: -1 as -1, not 255.)
         auto operand = [&](unsigned k) {

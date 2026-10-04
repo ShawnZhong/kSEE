@@ -208,8 +208,8 @@ fn runner_imports() -> Object {
     js::set(&ksee, "begin", Closure::<dyn FnMut()>::new(|| {
         let tid = tid();
         // (Its recording starts here: the records' id, which counts the
-        // pairs of words ever written: see trace::ring.)
-        let begun = k_mut(|k| k.p.begin(tid, Direct.read_u32(k.trace) / 2));
+        // words ever written: see trace::ring.)
+        let begun = k_mut(|k| k.p.begin(tid, Direct.read_u32(k.trace)));
         if begun {
             on_off();
         }
