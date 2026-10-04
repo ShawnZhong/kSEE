@@ -278,11 +278,7 @@ impl Ui {
 
     /// Syscall `k`'s lines (its task's), as the snapshot has them.
     pub fn lines_of(k: usize) -> Vec<Line> {
-        Self::lines_of_machine(&machine(), k)
-    }
-
-    pub fn lines_of_machine(machine: &ksee_host::machine::Machine, k: usize) -> Vec<Line> {
-        machine.view(|v| {
+        machine().view(|v| {
             let Some(s) = v.syscall(k) else { return Vec::new() };
             v.lines(s.first, s.last, s.task.addr)
         })
@@ -292,38 +288,26 @@ impl Ui {
     /// code's first line (past the syscall entry's), on its innermost
     /// frame; the chart's window the call.
     pub fn select(self, k: usize) {
-        self.select_machine(&machine(), k);
-    }
-
-    pub fn select_machine(self, machine: &ksee_host::machine::Machine, k: usize) {
-        self.zoom_machine(machine, k);
-        let own = Ui::lines_of_machine(machine, k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
+        self.zoom(k);
+        let own = Ui::lines_of(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
         self.commit(Some(Moment { call: k, line: own.unwrap_or(0), frame: None }));
     }
 
     /// The chart's window: call `k`, with a little room either side (its
     /// lines a step or so apart, not many to a column).
     pub fn zoom(self, k: usize) {
-        self.zoom_machine(&machine(), k);
-    }
-
-    pub fn zoom_machine(self, machine: &ksee_host::machine::Machine, k: usize) {
-        let Some((a, b)) = machine.view(|v| {
+        let Some((a, b)) = machine().view(|v| {
             let s = v.syscall(k)?;
             Some((v.rec.step_of(s.first), v.rec.step_of(s.last)))
         }) else { return };
         let room = ((b - a) / 50).max(4);
-        self.view_machine(machine, a as f64 - room as f64, b - a + 2 * room);
+        self.view(a as f64 - room as f64, b - a + 2 * room);
     }
 
     /// The chart's window: `span` steps from `start`, kept in the recording
     /// (as wide, at its ends).
     pub fn view(self, start: f64, span: usize) {
-        self.view_machine(&machine(), start, span);
-    }
-
-    pub fn view_machine(self, machine: &ksee_host::machine::Machine, start: f64, span: usize) {
-        let total = machine.view(|v| v.rec.steps.len()).max(1);
+        let total = machine().view(|v| v.rec.steps.len()).max(1);
         let span = span.max(MIN_SPAN).min(total - 1);
         let a = (start.max(0.0) as usize).min(total - 1 - span);
         self.set_window(Some((a, a + span)));

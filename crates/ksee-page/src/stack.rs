@@ -11,7 +11,6 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 
 use crate::machine;
-use crate::host::Host;
 use crate::state::{Derived, Moment, Shared, Tab, Ui};
 
 /// The stack at the moment shown (the pointer's over the chart, else the
@@ -29,28 +28,28 @@ pub fn shown() -> Option<Frame> {
 }
 
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
-/// lines, into its task's syscall after it (or before). The lines read
-/// from the Machine (the window's listener calls it, outside the page).
-pub fn walk(ui: Ui, machine: &ksee_host::machine::Machine, dir: isize, over: bool) {
+/// lines, into its task's syscall after it (or before).
+pub fn walk(ui: Ui, dir: isize, over: bool) {
     let Some(at) = ui.at.peek().clone() else { return };
     let k = at.call;
-    let lines = Ui::lines_of_machine(machine, k);
+    let lines = Ui::lines_of(k);
     if let Some(j) = step(&lines, at.line, dir, over) {
         ui.go(j);
         return;
     }
-    let task = machine.view(|v| v.syscall(k).map(|s| s.task.addr));
+    let m = machine();
+    let task = m.view(|v| v.syscall(k).map(|s| s.task.addr));
     let Some(task) = task else { return };
-    let next = machine.view(|v| {
+    let next = m.view(|v| {
         let all = v.syscalls();
         let mine: Vec<usize> = (0..all.len()).filter(|&j| all[j].task.addr == task).collect();
         let at = mine.iter().position(|&j| j == k)?;
         mine.get(at.checked_add_signed(dir)?).copied()
     });
     if let Some(next) = next {
-        ui.select_machine(machine, next);
+        ui.select(next);
         if dir < 0 {
-            ui.go(Ui::lines_of_machine(machine, next).len().saturating_sub(1));
+            ui.go(Ui::lines_of(next).len().saturating_sub(1));
         }
     }
 }
@@ -70,7 +69,6 @@ pub fn frame(ui: Ui, d: Derived, dir: isize) {
 /// lines, find): arrows move the cursor there.
 pub fn listen(ui: Ui) {
     let d = use_context::<Derived>();
-    let host = use_context::<Host>();
     use_hook(move || {
         let Some(window) = web_sys::window() else { return };
         let document = window.document();
@@ -87,9 +85,11 @@ pub fn listen(ui: Ui) {
             }
             ui.set_preview(None);
             let over = e.shift_key();
+            // (← →: once the kernel is up.)
+            let up = matches!(*ui.kernel.peek(), Some(Ok(())));
             let arrow = match e.key().as_str() {
-                "ArrowLeft" => { host.machine().is_some_and(|machine| { walk(ui, &machine, -1, over); true }) }
-                "ArrowRight" => { host.machine().is_some_and(|machine| { walk(ui, &machine, 1, over); true }) }
+                "ArrowLeft" if up => { walk(ui, -1, over); true }
+                "ArrowRight" if up => { walk(ui, 1, over); true }
                 "ArrowUp" => { frame(ui, d, -1); true }
                 "ArrowDown" => { frame(ui, d, 1); true }
                 _ => false,

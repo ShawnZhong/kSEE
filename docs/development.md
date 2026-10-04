@@ -119,9 +119,8 @@ runtime's WebAssembly module and calls `Machine` directly.
 
 | Module | Responsibility |
 |---|---|
-| `lib.rs` | Mounting, boot handoff, context providers, and top-level layout. |
+| `lib.rs` | Mounting, boot handoff, the booted `Machine` and the lessons (thread-locals), context providers, and top-level layout. |
 | `coordinator.rs` | Root-owned URL synchronization and the single active lesson run. |
-| `host.rs` | Context-owned access to the booted `Machine`. |
 | `lesson.rs` | Lesson schema, navigation, execution algorithm, outcomes, links, tries, and rendering. |
 | `editor.rs` | In-place program editing, completions, signatures, and validation. |
 | `chart.rs` | Whole-recording overview, stack chart, task strip, transport, zoom/pan input, and function search. |

@@ -21,7 +21,6 @@ use wasm_bindgen_futures::JsFuture;
 mod chart;
 mod coordinator;
 mod editor;
-mod host;
 mod layout;
 mod lesson;
 mod objects_view;
@@ -32,7 +31,6 @@ mod state;
 #[cfg(feature = "browser-tests")]
 mod test;
 
-pub(crate) use host::machine;
 use lesson::Example;
 use state::Ui;
 
@@ -40,6 +38,7 @@ thread_local! {
     /// The Machine (one thread: the page's), once booted; until then, its
     /// boot (a promise: `mount`'s).
     static BOOT: RefCell<Option<Promise>> = const { RefCell::new(None) };
+    static MACHINE: RefCell<Option<Rc<Machine>>> = const { RefCell::new(None) };
     static EXAMPLES: RefCell<Vec<Example>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -54,6 +53,11 @@ pub(crate) async fn boot() -> Result<Rc<Machine>, String> {
     Ok(Rc::new(
         Machine::try_from_js_value(booted).map_err(|_| "not a Machine".to_string())?,
     ))
+}
+
+/// The booted Machine (called only once the kernel is up).
+pub(crate) fn machine() -> Rc<Machine> {
+    MACHINE.with_borrow(|m| m.clone()).expect("booted")
 }
 
 pub(crate) fn examples() -> Vec<Example> {
@@ -92,14 +96,13 @@ fn App() -> Element {
         lesson::from_url(ui);
         ui
     });
-    let host = use_context_provider(host::Host::new);
     // (The kernel booting: ready, or why not.)
     use_hook(move || {
         spawn(async move {
             let mut kernel = ui.kernel;
             kernel.set(Some(match boot().await {
                 Ok(machine) => {
-                    host.install(machine);
+                    MACHINE.with_borrow_mut(|m| *m = Some(machine));
                     Ok(())
                 }
                 Err(error) => Err(error),
