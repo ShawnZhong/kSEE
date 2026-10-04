@@ -50,7 +50,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
                 inl.first().is_some_and(|f| f.inlined && Some(&f.func) == s.inlined.as_ref() && f.line == Some(s.line)) && inl.iter().any(|f| f.func == s.func && !f.inlined));
     }
     t.check("and a bar of its own in the chart", chart.bars.iter().any(|b| b.inlined));
-    t.check(format!("a syscall's entry says the syscall: {}", chart.bars[0].label), chart.bars[0].label == "wasm_syscall · write");
+    t.check(format!("a syscall's entry is the outermost bar: {}", chart.bars[0].name), chart.bars[0].name == "wasm_syscall");
     {
         // (Each column is a moment, its record's line: the Stack there has every call it draws.)
         let (mut drawn, mut missing) = (0, Vec::new());

@@ -5,9 +5,6 @@ them).
 
 ## Page
 
-- **No ad-hoc labels**: a syscall entry's bar says `wasm_syscall · write`
-  (chart.rs, `Bar.label`): one function's special case; the bar should say
-  its function as every bar does.
 - **Stack view** jumps as the pointer moves over a bar with many calls
   under it; a design that keeps it steady (fixed height and preview-only
   modes were tried and rejected).

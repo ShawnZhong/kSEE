@@ -96,8 +96,7 @@ pub fn Timeline() -> Element {
             Overview {}
             div { class: "flamehead",
                 span { class: "dim", "{title}"
-                    if let Some(k) = ui.call() { " · " a { title: "the window at the call selected", onclick: move |_| ui.zoom(k), "zoom" } }
-                    if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.win.set(None), "whole" } }
+                    if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.win.set(None), "all" } }
                 }
                 Find {}
                 span { class: "legend",
@@ -345,7 +344,7 @@ fn draw_chart(
             ctx.rect(x, y, w - 2.0, ROW);
             ctx.clip();
             ctx.set_fill_style_str(if on { "#fff" } else { "#1f2328" });
-            let _ = ctx.fill_text(&bar.label, x + 3.0, y + ROW / 2.0);
+            let _ = ctx.fill_text(&bar.name, x + 3.0, y + ROW / 2.0);
             ctx.restore();
         }
     }
@@ -448,7 +447,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let (start, span) = wheel_view((d.window)(), x, width(), dx, dy, shift);
         ui.view(start, span);
     };
-    let labels: Vec<String> = chart.bars.iter().map(|bar| bar.label.clone()).collect();
+    let labels: Vec<String> = chart.bars.iter().map(|bar| bar.name.clone()).collect();
     let task_labels: Vec<String> = tasks.iter().map(|task| task.name.clone()).collect();
     rsx! {
         div { id: "timeline-chart", class: "chart",

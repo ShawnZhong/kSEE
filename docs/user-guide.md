@@ -51,7 +51,7 @@ A bar is an instrumented call or inlined code. Hover to preview that moment and
 see what the call was; click to move the cursor there. The task strip below the
 chart shows which task ran in each region.
 
-Use **zoom** to frame the selected syscall and **whole** to restore the full
+Selecting a syscall frames it; **all** restores the full
 recording.
 
 ### Zoom and pan

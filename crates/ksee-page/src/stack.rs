@@ -139,7 +139,6 @@ pub fn Stack() -> Element {
                             a { class: "mono", "{f.func}" }
                             span { class: "dim mono", " {f.file.clone().unwrap_or_default()}:{f.line.unwrap_or(0)}" }
                             if f.inlined { span { class: "dim", " · inlined" } }
-                            if let Some(s) = &f.syscall { span { class: "dim", " · {s}" } }
                         }
                     }
                     if k == chosen {

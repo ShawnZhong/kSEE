@@ -37,8 +37,8 @@ pub(super) async fn run(t: &mut KernelHarness) {
         t.check("a call begins at its signature line", stack.first().zip(dso_def.as_ref()).is_some_and(|(a, d)| a.line == Some(d.line) && a.file.as_deref() == Some(&d.file)));
         let e = stack.last();
         let args: Vec<String> = e.map(|e| e.args.iter().map(|a| value(Some(a))).collect()).unwrap_or_default();
-        t.check(format!("the entry frame: the syscall {:?}({})", e.and_then(|e| e.syscall.clone()), args.join(", ")),
-                e.is_some_and(|e| e.func == "wasm_syscall" && e.syscall.as_deref() == Some("openat")) && args.first().map(String::as_str) == Some("AT_FDCWD")
+        t.check(format!("the entry frame: the syscall's arguments ({})", args.join(", ")),
+                e.is_some_and(|e| e.func == "wasm_syscall") && args.first().map(String::as_str) == Some("AT_FDCWD")
                 && args.get(2).map(String::as_str) == Some("O_WRONLY | O_CREAT | O_TRUNC")
                 && stack.iter().any(|f| f.func == "__wasm_sys_openat" && !f.inlined && f.args.first().is_some_and(|a| a.name == "dfd" && a.value.as_deref() == Some("AT_FDCWD"))));
     }
@@ -49,8 +49,8 @@ pub(super) async fn run(t: &mut KernelHarness) {
         let stack = t.stack(i, None, i);
         let e = stack.last();
         let args = e.map(|e| e.args.clone()).unwrap_or_default();
-        t.check(format!("a syscall's six arguments, at the bottom of its stack: {:?}", e.and_then(|e| e.syscall.clone())),
-                e.is_some_and(|e| e.syscall.as_deref() == Some("mmap2")) && args.len() == 6 && args[5].name == "pgoff" && args[5].value.as_deref() == Some("7"));
+        t.check(format!("a syscall's six arguments, at the bottom of its stack: {:?}", e.map(|e| &e.func)),
+                e.is_some_and(|e| e.func == "wasm_syscall") && args.len() == 6 && args[5].name == "pgoff" && args[5].value.as_deref() == Some("7"));
     }
     {
         let done = |text: &str| m.complete(text, text.len(), usize::MAX, &[]).into_iter().map(|c| (c.label, c.detail)).collect::<BTreeMap<_, _>>();

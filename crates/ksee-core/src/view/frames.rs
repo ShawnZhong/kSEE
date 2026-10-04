@@ -48,9 +48,6 @@ pub struct Frame {
     pub func: String,
     /// The call's first record (its block 0).
     pub first: usize,
-    /// The syscall entry (arch::SYSCALL): the syscall's name; its
-    /// arguments are the syscall's, typed as its parameters.
-    pub syscall: Option<String>,
     /// Code inlined into the call (the frame outside it), not a call.
     pub inlined: bool,
     /// Where the call is (the line it runs, or the one calling the frame
@@ -154,10 +151,9 @@ impl View<'_> {
             let (raw, frame) = args_of(&c).unzip();
             let at_entry = Some(c.func) == entry;
             let args = raw.map(|raw| match &syscall {
-                Some((_, a)) if at_entry || name.starts_with(arch::SYSCALL_WRAPPER) => a.clone(),
+                Some(a) if at_entry || name.starts_with(arch::SYSCALL_WRAPPER) => a.clone(),
                 _ => self.args(c.func, raw, mem),
             });
-            let syscall = syscall.as_ref().filter(|_| at_entry && args.is_some()).map(|(n, _)| n.clone());
             let args = args.unwrap_or_default();
             // (The variables it keeps in wasm locals, as they are by now: a
             // parameter it changed, as it is; the other locals after those
@@ -176,7 +172,7 @@ impl View<'_> {
             // (The code inlined into it first, innermost first; then it.)
             let frame = |func: String, inlined, at: Option<Loc>| {
                 let (args, locals) = if inlined { (mine(&func, true), mine(&func, false)) } else { (Vec::new(), Vec::new()) };
-                Frame { first: c.first, syscall: None, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args, locals, func }
+                Frame { first: c.first, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args, locals, func }
             };
             let mut nest = self.nest(&c);
             if out.is_empty() {
@@ -184,7 +180,7 @@ impl View<'_> {
             }
             let (&(_, at), inner) = nest.split_last().expect("a call");
             out.extend(inner.iter().map(|&(k, at)| frame(self.inline_name(k.unwrap_or(0)), true, at)));
-            out.push(Frame { args, locals, syscall, ..frame(name, false, at) });
+            out.push(Frame { args, locals, ..frame(name, false, at) });
         }
         out
     }
@@ -236,9 +232,9 @@ impl View<'_> {
 
 
     /// The syscall entry's arguments (the number, then the syscall's): the
-    /// syscall's name, and its arguments as its parameters have them (with
-    /// the constants that name them).
-    fn syscall_args(&self, entry: &[u64], mem: &dyn Memory) -> Option<(String, Vec<Object>)> {
+    /// syscall's arguments as its parameters have them (with the constants
+    /// that name them).
+    fn syscall_args(&self, entry: &[u64], mem: &dyn Memory) -> Option<Vec<Object>> {
         let types = &self.tables.types;
         let name = types.syscalls.get(&(*entry.first()? as u32))?;
         let params = types.syscall_params(name)?;
@@ -248,7 +244,7 @@ impl View<'_> {
             o.value = names.or(o.value);
             o
         }).collect();
-        Some((name.clone(), args))
+        Some(args)
     }
 
     /// Function `func`'s arguments, their values `args`: the source's

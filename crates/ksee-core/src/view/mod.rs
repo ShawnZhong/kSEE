@@ -139,13 +139,11 @@ pub struct Column {
 }
 
 /// A bar: a call from record `first`, or code inlined into it; its
-/// function's name (the inlined one's), what the bar says (a syscall's
-/// entry with the syscall: "wasm_syscall · read"), and the call's file.
+/// function's name (the inlined one's), and the call's file.
 #[derive(Debug)]
 pub struct Bar {
     pub first: usize,
     pub name: String,
-    pub label: String,
     pub file: Option<String>,
     pub inlined: bool,
 }
@@ -380,13 +378,7 @@ impl View<'_> {
                     let bar = *known.entry((c.first, k)).or_insert_with(|| {
                         let place = self.place(c.func);
                         let name = k.map_or_else(|| place.as_ref().map_or("?".into(), |p| p.name.clone()), |k| self.inline_name(k));
-                        // (A syscall's entry, from its first record: with the syscall, as the Stack has it.)
-                        let syscall = rec.syscalls.binary_search_by_key(&c.first, |s| s.first).ok().filter(|_| k.is_none()).map(|s| &rec.syscalls[s]);
-                        let label = match syscall {
-                            Some(s) => format!("{name} · {}", t.types.syscall_name(s.nr)),
-                            None => name.clone(),
-                        };
-                        chart.bars.push(Bar { first: c.first, name, label, file: place.map(|p| p.file), inlined: k.is_some() });
+                        chart.bars.push(Bar { first: c.first, name, file: place.map(|p| p.file), inlined: k.is_some() });
                         chart.bars.len() as u32 - 1
                     });
                     frames.push(bar);
