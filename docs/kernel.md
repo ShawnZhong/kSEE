@@ -1,10 +1,11 @@
 # The kernel: arch/wasm
 
 Linux stable `v7.2.7` is compiled directly to WebAssembly, with nothing
-emulated. `arch/wasm` is a minimal architecture port kept in `linux.patch`;
-the build fetches that stable release into `linux/` and applies the patch.
-Almost everything else is generic kernel code. Outside `arch/wasm`, the patch
-contains only build and portability changes required by the port.
+emulated. `arch/wasm` is a minimal architecture port, the repository's `arch/wasm/`;
+the build fetches that stable release into `linux/`, applies `linux.patch`
+and copies `arch/wasm/` in. Almost everything else is generic kernel code:
+`linux.patch` holds only the build and portability changes the port needs
+in Linux's own files.
 
 The configuration: wasm32, no MMU, one CPU, an initramfs, a console
 (output), a timer; the block layer, the loop device and ext4.

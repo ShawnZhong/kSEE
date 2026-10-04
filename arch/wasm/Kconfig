@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# WebAssembly: the kernel runs as a wasm32 module, one instance on one
+# host thread; each task is a call stack of it, which the host suspends and
+# resumes at context switches (JavaScript Promise Integration).
+
+config WASM
+	def_bool y
+	select ARCH_HAS_STRNCPY_FROM_USER
+	select ARCH_HAS_STRNLEN_USER
+	select ARCH_HAS_SYSCALL_WRAPPER
+	select ARCH_NO_PREEMPT
+	select GENERIC_ATOMIC64
+	select GENERIC_ENTRY
+	select HAVE_PAGE_SIZE_4KB
+	# Required by GENERIC_ENTRY; tracing itself stays off (TRACEPOINTS=n).
+	select HAVE_SYSCALL_TRACEPOINTS
+	select THREAD_INFO_IN_TASK
+	select UACCESS_MEMCPY
+
+config MMU
+	def_bool n
+
+config NR_CPUS
+	int
+	default 1
+
+config HZ
+	int
+	default 100
+
+config GENERIC_HWEIGHT
+	def_bool y
+
+config WASM_HOST_MEMORY
+	hex "Memory reserved for the host runtime"
+	default 0x1000000
+	help
+	  The host runtime (wasm too, whose memory the kernel imports) owns
+	  linear memory below this address; the kernel image is linked above
+	  it.
+
+# No port I/O: ioport_map() would add to a NULL PCI_IOBASE.
+config NO_IOPORT_MAP
+	def_bool y

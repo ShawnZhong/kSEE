@@ -8,7 +8,8 @@ shape the code.
 
 | Path | Responsibility |
 |---|---|
-| `linux.patch` | Complete `arch/wasm` port and required generic-kernel changes against stable `v7.2.7`. |
+| `arch/wasm/` | The port: the WebAssembly architecture, copied into `linux/arch/wasm/` by the build. |
+| `linux.patch` | The port's few edits to Linux's own files, against stable `v7.2.7`. |
 | `linux/` | Fetched working kernel tree with the patch applied; created on the first build. |
 | `plugin/` | LLVM 22 pass that instruments kernel functions. |
 | `crates/ksee-core/` | `no_std` trace decoding, packed tables, reconstruction, views, program parsing/evaluation, text parsing, and source highlighting. |
@@ -42,7 +43,7 @@ dependency set, then runs it. `ksee build` performs these stages:
 
 1. `make` (the Makefile: the kernel's half, C and LLVM): require LLVM 22; fetch
    Linux stable `v7.2.7` into `linux/` if it is absent, verify the pinned
-   commit, and apply `linux.patch`; build `plugin/ksee-trace.so`; run kbuild
+   commit, apply `linux.patch` and copy `arch/wasm/` in; build `plugin/ksee-trace.so`; run kbuild
    for the WebAssembly kernel and its UAPI headers (a hash of the plugin's
    source is part of the kernel flags, so changing the pass rebuilds the
    kernel); compile freestanding `user/init.c` and `user/prog.c`, make the ext4
@@ -87,7 +88,7 @@ and passes all arguments through.
 | `./ksee.sh serve [--port=N]` | Serve the existing `target/site/` without rebuilding it. |
 | `./ksee.sh test [--ui \| NAME ...]` | Run native tests, build, then run the selected browser suites through `$CHROME`; the default is `kernel`. |
 | `./ksee.sh deploy` | Build, then publish the generated site to the remote `gh-pages` branch. |
-| `./ksee.sh patch` | Write `linux.patch` from the current difference between `linux/` and `v7.2.7`. |
+| `./ksee.sh patch` | Write `linux.patch` from Linux's own files' difference between `linux/` and `v7.2.7` (`make patch`). |
 
 `build`, `test`, and the default command can fetch the kernel on their first
 run. `serve` expects an existing site.
@@ -188,15 +189,19 @@ cargo test --locked -p ksee-cli
 
 ## Linux patch workflow
 
-`linux.patch` is the port. The first build creates `linux/` from the pinned
-stable tag and applies the patch once. To change the port:
+The port is `arch/wasm/` (the architecture: its own files) and `linux.patch`
+(its few edits to Linux's own files). The first build creates `linux/` from
+the pinned stable tag and applies the patch once; every build copies
+`arch/wasm/`'s changed files into `linux/arch/wasm/`. To change the port:
 
-1. Edit the working tree under `linux/`, preferring `arch/wasm` and changing
-   generic kernel code only where the port requires it.
+1. Edit `arch/wasm/` in the repository (not its copy in `linux/`); change
+   Linux's own files, in `linux/`, only where the port requires it.
 2. Build and test the change.
-3. Run `./ksee.sh patch` to regenerate `linux.patch` from the difference
-   against `v7.2.7`.
-4. Review and commit `linux.patch` with the related source and documentation.
+3. If Linux's own files changed, run `./ksee.sh patch` to regenerate
+   `linux.patch` from their difference against `v7.2.7` (files the port adds
+   are `arch/wasm/`'s, untracked in `linux/`'s git).
+4. Review and commit `arch/wasm/` and `linux.patch` with the related source
+   and documentation.
 
 The normal build never rewrites the patch. If you need to apply a revised patch
 to a clean kernel tree, remove or relocate the generated `linux/` tree first;

@@ -27,10 +27,12 @@ layout, generated files, and the Linux patch workflow.
   made-up records. ksee-host owns the kernel's memory and execution. The
   Dioxus page drives `Machine` directly and owns UI state and presentation;
   it does not maintain a second replay model.
-- **The port is linux.patch** (to the stable tree's v7.2.7: the build
-  fetches it into linux/ and applies the patch). Change linux/ in
-  arch/wasm where possible, elsewhere only what the port needs; `ksee
-  patch` writes linux.patch from it (never the build): commit that.
+- **The port is arch/wasm/ and linux.patch** (to the stable tree's
+  v7.2.7: the build fetches it into linux/, applies the patch and copies
+  arch/wasm/ in). Change arch/wasm/ (in the repository, not linux/)
+  where possible; Linux's own files only where the port needs it, in
+  linux/, then `make patch` writes linux.patch from it (never the build):
+  commit that.
 - **Commit promptly.** Once a coherent change passes its focused checks,
   commit it instead of leaving finished work mixed with later exploration.
 - **Before you finish:** `./ksee.sh test` (`--ui` with `$CHROME` runs the

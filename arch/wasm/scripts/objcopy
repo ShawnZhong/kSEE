@@ -1,0 +1,12 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# llvm-objcopy wrapper. The generic vmlinux rule strips .modinfo with
+# ELF-only options; in wasm, .modinfo is a data segment, not a section, and
+# stays. Copy the file instead.
+
+case "$1" in
+--set-section-flags)	cp "$3" "$4" ;;	# --set-section-flags X in out
+--remove-section=.modinfo) ;;
+*)			exec llvm-objcopy "$@" ;;
+esac

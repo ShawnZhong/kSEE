@@ -66,7 +66,8 @@ Open `http://127.0.0.1:8000/`. To separate the steps:
 
 The first build:
 
-1. fetches Linux stable `v7.2.7` into `linux/` and applies `linux.patch`;
+1. fetches Linux stable `v7.2.7` into `linux/`, applies `linux.patch` and copies
+   `arch/wasm/` in;
 2. builds the LLVM instrumentation plugin and kernel;
 3. builds the Rust page/runtime WebAssembly module;
 4. packs kernel metadata and sources;

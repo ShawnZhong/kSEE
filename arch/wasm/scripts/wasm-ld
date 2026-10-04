@@ -1,0 +1,28 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# wasm-ld wrapper. wasm-ld has no linker scripts: the "script"
+# (arch/wasm/kernel/vmlinux.lds.S) is wasm assembly that fixes the data
+# layout, so assemble it and link it ahead of everything else. Also drop the
+# GNU ld options wasm-ld rejects.
+
+set -e
+script=
+skip=
+for arg; do
+	shift
+	[ -n "$skip" ] && { skip=; continue; }
+	case $arg in
+	--script=*)	script=${arg#--script=} ;;
+	-z)		skip=1 ;;
+	--start-group|--end-group) ;;
+	*)		set -- "$@" "$arg" ;;
+	esac
+done
+
+[ -z "$script" ] && exec wasm-ld "$@"
+
+head=$(mktemp "${TMPDIR:-/tmp}/wasm-ld.XXXXXX.o")
+trap 'rm -f "$head"' EXIT
+clang --target=wasm32 -x assembler -c "$script" -o "$head"
+wasm-ld "$head" "$@"

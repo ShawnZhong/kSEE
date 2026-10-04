@@ -47,7 +47,7 @@ scheduled with JSPI.
 
 | Component | Responsibility |
 |---|---|
-| `linux.patch` and `linux/` | The `arch/wasm` port against Linux stable `v7.2.7`; `linux/` is fetched and patched on the first build. |
+| `arch/wasm/`, `linux.patch` and `linux/` | The port against Linux stable `v7.2.7`: its architecture, and its few edits to Linux's own files; `linux/` is fetched and patched on the first build, and `arch/wasm/` copied in. |
 | `plugin/` | The LLVM 22 pass that inserts trace probes. |
 | `ksee-host` | Owns memory, boots Linux, schedules JSPI-suspended task stacks, drives syscall runners, and takes snapshots. |
 | `ksee-core` | Decodes trace records and packed metadata, then combines them with end-state memory to reconstruct stacks, lines, values, tasks, and objects. |

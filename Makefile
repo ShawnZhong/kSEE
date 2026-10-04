@@ -2,7 +2,9 @@
 # runs it, then packs the kernel and builds the site
 # (crates/ksee-cli/src/build.rs).
 #
-#   linux/                       Linux, the stable tree's LINUX_TAG, fetched once, linux.patch applied
+#   linux/                       Linux, the stable tree's LINUX_TAG, fetched once; linux.patch
+#                                (the port's edits to Linux's own files) applied, and arch/wasm/
+#                                (the port's own files) copied in, as they change
 #   plugin/ksee-trace.so         the LLVM pass that instruments the kernel
 #   linux/vmlinux                the kernel, instrumented (kbuild), and its UAPI headers
 #   target/initramfs/initramfs.cpio
@@ -10,7 +12,8 @@
 #                                (user/note.txt), and an ext4 disk image of user/disk/:
 #                                user/initramfs.list
 #
-# `make patch` writes linux.patch from linux/ (never the build).
+# `make patch` writes linux.patch from linux/ (never the build). The port's own
+# files are edited in arch/wasm/, not linux/.
 
 # The release the port is a patch to: the stable tree's tag, and the commit
 # it must be (what is fetched, checked).
@@ -30,13 +33,13 @@ KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=1 \
 	KCFLAGS="-g -finline-hint-functions -fpass-plugin=$(CURDIR)/$(PLUGIN) -DKSEE_ID=$(shell cksum < plugin/ksee-trace.cpp | cut -d' ' -f1)"
 
 all: linux/vmlinux $(OUT)/initramfs.cpio
-.PHONY: all linux/vmlinux patch llvm
+.PHONY: all linux/vmlinux port patch llvm
 
 llvm:
 	@v=$$(llvm-config --version); test "$${v%%.*}" = 22 || { echo "LLVM 22 is required, found $$v" >&2; exit 1; }
 
-# linux/: the release (a shallow git repo: its one commit), and the port,
-# the first time only (to apply an updated linux.patch, remove linux/).
+# linux/: the release (a shallow git repo: its one commit), and
+# linux.patch, the first time only (to apply an updated one, remove linux/).
 linux/Makefile:
 	mkdir -p linux
 	git -C linux init -q
@@ -48,15 +51,19 @@ linux/Makefile:
 $(PLUGIN): plugin/ksee-trace.cpp | llvm
 	clang++ -shared -fPIC -O2 $< -o $@ $$(llvm-config --cxxflags)
 
-# (The fetch makes the port's files: make knows them only from it.)
-linux/arch/wasm/configs/defconfig linux/usr/gen_init_cpio.c: linux/Makefile ;
+# arch/wasm/'s files into linux/, those newer than their copies (kbuild then
+# rebuilds what they make).
+port: linux/Makefile
+	cp -r -u arch/. linux/arch/
 
 # (Every Kconfig the port has: a new one runs defconfig again.)
-linux/.config: linux/Makefile linux/arch/wasm/configs/defconfig $(wildcard linux/arch/wasm/Kconfig*)
+linux/.config: arch/wasm/configs/defconfig $(wildcard arch/wasm/Kconfig*) | port
 	$(KMAKE) defconfig
 
-# (kbuild knows the kernel's own dependencies: it is always asked.)
-linux/vmlinux: $(PLUGIN) linux/.config
+# (kbuild knows the kernel's own dependencies: it is always asked; it
+# builds gen_init_cpio too, the kernel's own initramfs writer.)
+linux/usr/gen_init_cpio: linux/vmlinux ;
+linux/vmlinux: $(PLUGIN) linux/.config port
 	$(KMAKE)
 	$(KMAKE) headers
 
@@ -75,19 +82,14 @@ $(OUT)/disk.img: $(shell find user/disk)
 	rm -f $@
 	mkfs.ext4 -q -F -b 1024 -L ksee -N 32 -d user/disk -E lazy_itable_init=0,lazy_journal_init=0 $@ 2M
 
-# The kernel's own initramfs writer, for this machine.
-$(OUT)/gen_init_cpio: linux/usr/gen_init_cpio.c
-	@mkdir -p $(OUT)
-	clang -O2 -o $@ $<
-
 # The archive (all times 0): the console (the kernel opens it before init),
 # the programs, the note, the disk.
-$(OUT)/initramfs.cpio: user/initramfs.list $(OUT)/gen_init_cpio $(OUT)/init.wasm $(OUT)/prog.wasm user/note.txt $(OUT)/disk.img
-	$(OUT)/gen_init_cpio -t 0 $< > $@
+$(OUT)/initramfs.cpio: user/initramfs.list linux/usr/gen_init_cpio $(OUT)/init.wasm $(OUT)/prog.wasm user/note.txt $(OUT)/disk.img
+	linux/usr/gen_init_cpio -t 0 $< > $@
 
-# linux.patch: the port, all of it (the files new too), as linux/ differs
-# from the release.
+# linux.patch: the port's edits to Linux's own files, as linux/ differs from
+# the release (the files it adds are arch/wasm/'s: git leaves them untracked).
 patch:
 	@test -f linux/Makefile || { echo "no linux/: run ./ksee.sh build first" >&2; exit 1; }
-	git -C linux add -A --intent-to-add
+	git -C linux reset -q
 	git -C linux diff --no-color $(LINUX_TAG) > linux.patch
