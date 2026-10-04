@@ -60,7 +60,7 @@ pub enum Outcome {
     Declared(String),
     /// (`during`: the line during which it finished, if a later one's;
     /// `changed`: the variables it changed, as they are then.)
-    Call { id: u32, ret: Option<i64>, how: Option<String>, during: Option<usize>, changed: Vec<String> },
+    Call { id: u32, done: bool, ret: Option<i64>, during: Option<usize>, changed: Vec<String> },
     Failed(String),
 }
 
@@ -98,13 +98,13 @@ pub(crate) async fn run(mut ui: Ui, lines: Vec<Step>) {
                 continue;
             }
         };
-        outcomes.push(Outcome::Call { id, ret: None, how: None, during: None, changed: Vec::new() });
+        outcomes.push(Outcome::Call { id, done: false, ret: None, during: None, changed: Vec::new() });
         ui.outcomes.set(outcomes.clone());
         let Ok(finished) = m.quiet().await else { return };
         for f in finished {
             for (k, outcome) in outcomes.iter_mut().enumerate() {
-                if let Outcome::Call { id, ret, how, during, .. } = outcome && *id == f.id {
-                    (*ret, *how, *during) = (Some(f.ret), Some(f.how.to_string()), (k != j).then_some(j));
+                if let Outcome::Call { id, done, ret, during, .. } = outcome && *id == f.id {
+                    (*done, *ret, *during) = (true, f.ret, (k != j).then_some(j));
                 }
             }
         }
@@ -350,7 +350,7 @@ pub fn Lesson() -> Element {
     // (A task waits at row r while one of its earlier calls has not returned.)
     let waits = |r: usize| -> Vec<usize> {
         let mut waiting: Vec<usize> = program.iter().enumerate().filter(|&(j, _)| j < r).filter_map(|(j, step)| match outcomes.get(j) {
-            Some(Outcome::Call { ret, during, .. }) if ret.is_none() || during.is_some_and(|d| d >= r) => Some(col(step)),
+            Some(Outcome::Call { done, during, .. }) if !done || during.is_some_and(|d| d >= r) => Some(col(step)),
             _ => None,
         }).collect();
         waiting.dedup();
@@ -435,7 +435,7 @@ fn Cell(j: usize, step: Step, outcome: Option<Outcome>, call: Option<usize>, col
     let mut ui = use_context::<Ui>();
     let selected = call.is_some() && call.and_then(|n| call_of(ui, n)) == ui.call();
     let style = column.as_ref().map_or(String::new(), |(c, h)| format!("grid-column: {}; --hue: {h}", c + 1));
-    let blocked = matches!(outcome, Some(Outcome::Call { ret: None, .. }));
+    let blocked = matches!(outcome, Some(Outcome::Call { done: false, .. }));
     let class = format!("cell{}{}", if selected { " on" } else { "" }, if blocked { " blocked" } else { "" });
     rsx! {
         div { class, style: "{style}",
@@ -479,8 +479,8 @@ fn said(o: Option<&Outcome>) -> String {
         None => "…".into(),
         Some(Outcome::Declared(v)) => format!("= {v}"),
         Some(Outcome::Failed(e)) => e.clone(),
-        Some(Outcome::Call { ret: None, .. }) => "… blocked".into(),
-        Some(Outcome::Call { how: Some(h), during, .. }) if h != "returned" => format!("(no return: {}{})", if h == "exec" { "it ran a program" } else { "it exited" }, later(*during)),
+        Some(Outcome::Call { done: false, .. }) => "… blocked".into(),
+        Some(Outcome::Call { ret: None, during, .. }) => format!("(no return{})", later(*during)),
         Some(Outcome::Call { ret: Some(r), during, .. }) => format!("= {}{}", machine().tables().types.result(*r), later(*during)),
     }
 }

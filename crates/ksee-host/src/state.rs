@@ -108,12 +108,11 @@ pub struct Runner {
     pub source: Option<u32>,
 }
 
-/// A call finished: returned (its result), or ended by an execve (the new
-/// program is running) or by its task's exit.
+/// A call finished: returned, its result; or not (none: an execve ran a
+/// new program, or its task exited).
 pub struct Finished {
     pub id: u32,
-    pub how: &'static str,
-    pub ret: i64,
+    pub ret: Option<i64>,
 }
 
 thread_local! {

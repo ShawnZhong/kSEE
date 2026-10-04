@@ -24,9 +24,9 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let idle = m.view(|v| v.chart(v.rec.step_of(nap.first), v.rec.step_of(nap.last), 50).cols.iter().any(|c| v.task(c.task, nap.first).comm.as_deref() == Some("swapper/0")));
     t.check("sleeping switched to the idle task and back", t.ran(&Some(nap.clone()), "__schedule") && idle);
     let long = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {2, 0}, NULL)").await;
-    t.check("a 2 s sleep returns (the clock skipped ahead)", long.how.as_deref() == Some("returned") && long.ret == Some(0));
+    t.check("a 2 s sleep returns (the clock skipped ahead)", long.ret == Some(0));
     let sel = t.line("pselect6(0, NULL, NULL, NULL, {1, 0}, NULL)").await;
-    t.check("a 1 s select() times out", sel.how.as_deref() == Some("returned") && sel.ret == Some(0));
+    t.check("a 1 s select() times out", sel.ret == Some(0));
     m.snapshot();
     let wi = m.view(|v| v.syscalls().iter().position(|s| s.first == w.first));
     let vfs = m.view(|v| v.definition("vfs_write"));

@@ -74,6 +74,9 @@ pub fn Source() -> Element {
     let seen = ui.seen;
     // (The frame shown: the one chosen (or under the pointer), else the innermost.)
     let frames = d.stack.cloned();
+    // (The innermost's line is the line run: what it compared and what a
+    // call on it returned are said there only, not at a caller's.)
+    let leaf = frames.get(d.frame.cloned()).is_none() || d.frame.cloned() == 0;
     let Some(f) = frames.get(d.frame.cloned()).or(frames.first()).cloned() else { return rsx! { div { class: "source" } } };
     let (Some(path), Some(line)) = (f.file.clone(), f.line) else { return rsx! { div { class: "source" } } };
     let (path, line, def_of) = match seen() {
@@ -93,7 +96,7 @@ pub fn Source() -> Element {
                 if sealed { span { title: "it loops, writes nothing and calls nothing: only its call and its return are recorded, not each turn", " · sealed: a box, its turns not recorded" } }
                 if def_of { a { onclick: move |_| ui.seen.set(None), "back to the cursor" } }
             }
-            Code { path: path.clone(), from, to, line, here: !def_of, frame: f, at, seen }
+            Code { path: path.clone(), from, to, line, here: !def_of, leaf, frame: f, at, seen }
         }
     }
 }
@@ -165,7 +168,7 @@ fn place(line: u32, top: f64, view: f64) -> Option<f64> {
 /// its values under it, and kept in view), the function's `from..=to`
 /// edged.
 #[component]
-fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, at: usize, seen: Signal<Option<(String, u32)>>) -> Element {
+fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, frame: Frame, at: usize, seen: Signal<Option<(String, u32)>>) -> Element {
     let ui = use_context::<Ui>();
     (ui.snapshot)();
     let p = path.clone();
@@ -215,7 +218,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, a
         frame.args.iter().chain(&frame.locals)
             .filter(|o| words.contains(&o.name.as_str()) && o.none != Some(ksee_core::view::Missing::NotRecorded))
             .map(|o| format!("{} = {}", o.name, o.value.clone().unwrap_or_else(|| "{…}".into())))
-            .chain(shown.map(|l| l.tests).unwrap_or_default()).chain(returned).collect()
+            .chain(shown.filter(|_| leaf).map(|l| l.tests).unwrap_or_default()).chain(returned.filter(|_| leaf)).collect()
     } else { Vec::new() };
     let names: Vec<String> = frame.args.iter().chain(&frame.locals).map(|o| o.name.clone()).collect();
     // (The lines in view, and a margin: the rest, spacers.)

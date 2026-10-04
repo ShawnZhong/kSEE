@@ -200,8 +200,8 @@ impl Machine {
     }
 
     /// The kernel quiet (now, or once it is): the calls finished since the
-    /// last time (Finished: "returned"; "exec", an execve, the new program
-    /// running; "exited", its task); an error if it started again meanwhile.
+    /// last time (Finished: its result, if it returned); an error if it
+    /// started again meanwhile.
     pub async fn quiet(&self) -> Result<Vec<Finished>, JsValue> {
         JsFuture::from(Promise::new(&mut |ok, fail| {
             k_mut(|k| k.quiet_waiters.push((ok, fail)));

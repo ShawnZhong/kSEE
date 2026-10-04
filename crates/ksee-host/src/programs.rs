@@ -68,7 +68,7 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
             tid.inspect(|&t| k.forget(t))
         });
         if let Some(tid) = gone {
-            finish(tid, "exited", 0);
+            finish(tid, None);
         }
     }
 }
@@ -180,7 +180,7 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
         // (A runner's call that was this execve is over: the new program
         // runs. A runner again only if it says so: ksee.ready.)
         let tid = tid();
-        finish(tid, "exec", 0);
+        finish(tid, None);
         k_mut(|k| k.forget(tid));
         Ok(start)
     };
@@ -194,17 +194,17 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
 
 /// Finish runner `tid`'s call, if it has one (for Machine::quiet); the
 /// page waits no more once none is left.
-pub(crate) fn finish(tid: u32, how: &'static str, ret: i64) {
+pub(crate) fn finish(tid: u32, ret: Option<i64>) {
     let done = k_mut(|k| {
         let Some(id) = k.in_flight(tid) else { return false };
         let (calls, names) = (&mut k.calls, &mut k.names);
         let c = calls.get_mut(&id).unwrap();
         c.done = true;
         // (Its result: the name it was declared with stands for it now.)
-        if let (Some((name, to)), "returned") = (&c.result, how) {
-            names.set(name, c.line, Sym::Value { v: ret, to: *to });
+        if let (Some((name, to)), Some(v)) = (&c.result, ret) {
+            names.set(name, c.line, Sym::Value { v, to: *to });
         }
-        k.finished.push(Finished { id, how, ret });
+        k.finished.push(Finished { id, ret });
         if k.calls.values().all(|c| c.done) {
             k.waiting = None;
         }
@@ -286,7 +286,7 @@ fn runner_imports() -> Object {
         let tid = tid();
         let begun = k(|k| k.in_flight(tid).and_then(|id| k.calls.get(&id).map(|c| c.begun)));
         if begun == Some(true) {
-            finish(tid, "returned", ret);
+            finish(tid, Some(ret));
         }
     }).into_js_value());
     ksee

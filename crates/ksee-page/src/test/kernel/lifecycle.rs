@@ -37,8 +37,8 @@ pub(super) async fn run(t: &mut KernelHarness, examples: &[crate::lesson::Exampl
         let lines = [Step::Main("pid_t child = clone(CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL, 0)".into()),
                      Step::Task { task: "child".into(), text: "execve(\"/bin/prog\", {\"prog\", \"-x\", NULL}, NULL)".into() }];
         let ids = t.program(&lines).await;
-        let how = ids[1].and_then(|id| t.finished.get(&id)).map(|f| f.how.to_string());
-        t.check(format!("an execve with argv runs the program ({how:?})"), how.as_deref() == Some("exec") && !t.console_output.contains("NULL argv"));
+        let ended = ids[1].and_then(|id| t.finished.get(&id)).map(|f| f.ret);
+        t.check(format!("an execve with argv runs the program, no return ({ended:?})"), ended == Some(None) && !t.console_output.contains("NULL argv"));
     }
     // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts).
     let _ = m.restart().await;

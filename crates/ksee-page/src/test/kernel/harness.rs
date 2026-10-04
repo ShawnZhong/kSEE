@@ -23,11 +23,11 @@ pub(super) async fn sleep(ms: i32) {
     let _ = JsFuture::from(p).await;
 }
 
-/// A call a line made, as the kernel left it once quiet: its id, how it
-/// finished (none: it blocked) and its result, its syscall summary.
+/// A call a line made, as the kernel left it once quiet: its id, whether it
+/// finished (not: it blocked) and its result, its syscall summary.
 pub(super) struct Made {
     pub(super) id: Option<u32>,
-    pub(super) how: Option<String>,
+    pub(super) done: bool,
     pub(super) ret: Option<i64>,
     pub(super) syscall: Option<SyscallSummary>,
     pub(super) var: Option<(u32, u32, Option<u32>)>,
@@ -77,16 +77,16 @@ impl KernelHarness {
             Ok(m) => m,
             Err(e) => {
                 self.check(format!("{text}: {e}"), false);
-                return Made { id: None, how: None, ret: None, syscall: None, var: None };
+                return Made { id: None, done: false, ret: None, syscall: None, var: None };
             }
         };
         let id = match made {
             ksee_host::machine::Made::Call(id) => id,
-            ksee_host::machine::Made::Decl(v) => return Made { id: None, how: None, ret: None, syscall: None, var: Some((v.ty, v.addr, v.count)) },
+            ksee_host::machine::Made::Decl(v) => return Made { id: None, done: false, ret: None, syscall: None, var: Some((v.ty, v.addr, v.count)) },
         };
         self.quiet().await;
         let f = self.finished.get(&id);
-        Made { id: Some(id), how: f.map(|f| f.how.to_string()), ret: f.map(|f| f.ret), syscall: self.syscall(id), var: None }
+        Made { id: Some(id), done: f.is_some(), ret: f.and_then(|f| f.ret), syscall: self.syscall(id), var: None }
     }
 
     pub(super) async fn line(&mut self, text: &str) -> Made {
