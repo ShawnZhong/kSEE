@@ -219,9 +219,9 @@ pub(crate) fn finish(tid: u32, how: &'static str, ret: i64) {
 /// and its end (a call's syscall, entry to return; what the kernel does
 /// meanwhile with it), else 2 (stores only: memory stays exact between
 /// recordings; the runner's way back to its wait, idle, are not shown).
-fn on_off() {
-    let (trace, on) = k(|k| (k.trace, k.calls.values().any(|c| c.begun && !c.done)));
-    Direct.write_u32(trace + ksee_core::trace::ON, if on { 1 } else { 2 });
+pub(crate) fn on_off() {
+    let on = k(|k| k.calls.values().any(|c| c.begun && !c.done));
+    crate::imports::record(if on { 1 } else { 2 });
 }
 
 /// The imports of a runner (user/prog.c), module ksee. ready(req, heap,
@@ -279,9 +279,7 @@ fn runner_imports() -> Object {
             true
         });
         if begun {
-            // (Recording on; then who runs: no switch in the recording says so.)
             on_off();
-            crate::imports::task(current());
         }
     }).into_js_value());
     js::set(&ksee, "end", Closure::<dyn FnMut(i64)>::new(|ret: i64| {

@@ -9,8 +9,6 @@ const FIELDS: u32 = (1 << KIND_SHIFT) - 1;
 pub const RING: u32 = 16;
 /// Offset of the ring's size in words (arch/wasm/kernel/ksee.c).
 pub const WORDS: u32 = 4;
-/// Offset of the `on` word (probes record only while it is nonzero).
-pub const ON: u32 = 8;
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u32)]

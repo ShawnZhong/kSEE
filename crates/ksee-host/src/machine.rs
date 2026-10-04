@@ -266,14 +266,10 @@ fn named_runners(k: &State, line: usize) -> Vec<(u32, &str, u32)> {
 /// Write `bytes` at `addr` into kernel memory, as the host: recorded (as a
 /// call's writes into its request are), so memory as it was stays exact.
 fn write_logged(addr: u32, bytes: &[u8]) {
-    let trace = k(|k| k.trace);
     // (Stores recorded from the first write of the host's on, a variable
-    // declared before any call (see programs::on_off: after the boot,
-    // what it left for later runs unrecorded): memory as it was exact from
-    // there.)
-    if Direct.read_u32(trace + trace::ON) == 0 {
-        Direct.write_u32(trace + trace::ON, 2);
-    }
+    // declared before any call (after the boot, what it left for later
+    // runs unrecorded): memory as it was exact from there.)
+    crate::programs::on_off();
     imports::logged(addr, bytes.len() as u32);
     unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), addr as *mut u8, bytes.len()) };
 }

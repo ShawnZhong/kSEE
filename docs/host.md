@@ -113,10 +113,11 @@ selection is not part of the program expression language. See
 ## Recording boundaries
 
 The runner brackets its syscall with `ksee.begin` and `ksee.end(ret)`.
-At `begin`, the runtime enables full probe recording, then has the kernel
-write a `Task` record (its `ksee_task` export) naming the currently running
-`task_struct`, because no context switch inside the new recording necessarily
-identifies it.
+At `begin`, the runtime tells the kernel to record everything (its
+`ksee_record(1)` export), which starts with a `Task` record naming the
+currently running `task_struct`, because no context switch inside the new
+recording necessarily identifies it. Between requested calls it asks for
+stores only (`ksee_record(2)`).
 
 While at least one begun call is unfinished, trace level `1` records blocks,
 calls, returns, variables, comparisons, and stores. Outside requested calls,

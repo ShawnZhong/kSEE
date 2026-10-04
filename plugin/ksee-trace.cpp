@@ -23,8 +23,8 @@
 // Compile with -g: locations and parameters come from debug info.
 //
 // Probes append records to the kernel's ring through its writers,
-// __ksee_put* (arch/wasm/kernel/ksee.c: the ring, its header, and when it
-// records).
+// __ksee_put and __ksee_bulk (arch/wasm/kernel/ksee.c: the ring, its
+// header, and when it records).
 //
 // A record is a head pair of words and continuation pairs; the second
 // word's top nibble tags the pair, so a reader can start at any even offset
@@ -62,7 +62,7 @@
 //                         store's (12 bits)
 //   [value, 8 << 28]      a continuation of the head before
 // (The host's writes into kernel memory are logged too, through the
-// kernel's ksee_bulk export; and ksee_task's Task record starts a
+// kernel's ksee_bulk export; and ksee_record(1)'s Task record starts a
 // recording: arch/wasm/kernel/ksee.c.) fn is a hash of the function's name (for a
 // function local to its file, of "file:name").
 //
@@ -176,13 +176,11 @@ bool runsProbes(const CallBase &CB) {
 class KseeTrace : public PassInfoMixin<KseeTrace> {
   Module *M = nullptr;
   Type *i32 = nullptr;
-  // The writers: a record's head pair [a, tag] and k values after it; a
-  // store of 1, 2, 4 or 8 bytes at an address (the old value, read while
-  // recording only), and one that copies (where from, after).
-  Function *put = nullptr;
+  // The writers: a record's head pair [a, tag] and the values in `values`;
+  // a write's Store records (the old bytes, read while recording only; a
+  // copy's say where from).
+  Function *put = nullptr, *bulk = nullptr;
   GlobalVariable *values = nullptr;
-  Function *putStore[4] = {}, *putCopy[4] = {};
-  FunctionCallee bulk;
   // Each write's line: the index of its line among its block's (see blockLines).
   DenseMap<const Instruction *, unsigned> lineOf;
   std::string probes;
@@ -210,10 +208,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     };
     put = function("__ksee_put", 3);
     values = cast<GlobalVariable>(M->getOrInsertGlobal("__ksee_values", ArrayType::get(i32, Values)));
-    for (unsigned k = 0; k < 4; k++)
-      putStore[k] = function("__ksee_put_store" + std::to_string(1 << k), 2);
-    for (unsigned k = 0; k < 4; k++)
-      putCopy[k] = function("__ksee_put_copy" + std::to_string(1 << k), 3);
     bulk = function("__ksee_bulk", 4);
   }
 
@@ -317,7 +311,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       return;
     IRBuilder<> B(I);
     Value *addr = B.CreatePtrToInt(ptr, i32);
-    int k = size == 1 ? 0 : size == 2 ? 1 : size == 4 ? 2 : size == 8 ? 3 : -1;
     Value *line = B.getInt32(std::min(lineOf.lookup(I), (1u << 24) - 1));
     // (A copy, a value loaded and stored as it is, or a memcpy: where from.
     // Not a value stored back where it was loaded from: that says nothing
@@ -329,13 +322,9 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       from = nullptr;
     else if (auto *MT = dyn_cast<MemTransferInst>(I))
       from = MT->getRawSource();
-    Value *src = from ? B.CreatePtrToInt(from, i32) : nullptr;
-    if (!len && k >= 0 && src)
-      B.CreateCall(putCopy[k], {addr, line, src});
-    else if (!len && k >= 0)
-      B.CreateCall(putStore[k], {addr, line});
-    else
-      B.CreateCall(bulk, {addr, len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size), line, src ? src : B.getInt32(0)});
+    // (One of 1, 2, 4 or 8 bytes is one Store record of that size.)
+    B.CreateCall(bulk, {addr, len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size), line,
+                        from ? B.CreatePtrToInt(from, i32) : B.getInt32(0)});
   }
 
   // A struct passed by value (byval) is copied by the backend, after this

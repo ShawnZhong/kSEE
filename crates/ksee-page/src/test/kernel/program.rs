@@ -90,7 +90,8 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     t.check("run to a line sharing a record or resumed at a return: its exact step", exact_run);
     let ksys_last = read_steps.iter().rev().find(|x| x.func == "ksys_read").map_or(0, |x| x.i);
     let pos = |i: usize| t.stack(i, None, i).iter().find(|c| c.func == "ksys_read").map(|f| value(local(f, "pos")));
-    t.check("a local on the stack, as it was: ksys_read's pos, 0 then 26", pos(in_read).as_deref() == Some("0") && pos(ksys_last).as_deref() == Some("26"));
+    let (before, after) = (pos(in_read), pos(ksys_last));
+    t.check(format!("a local on the stack, as it was: ksys_read's pos, 0 then 26 ({before:?}, {after:?})"), before.as_deref() == Some("0") && after.as_deref() == Some("26"));
     let ret = t.stack(ksys_last, None, ksys_last).iter().find(|c| c.func == "ksys_read").map(|f| value(local(f, "ret")));
     t.check(format!("a local in a wasm local: ksys_read's ret = {ret:?}"), ret.as_deref() == Some("26"));
     t.line("close(rfd)").await;

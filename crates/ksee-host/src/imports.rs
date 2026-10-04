@@ -60,14 +60,14 @@ pub extern "C" fn time_ns() -> u64 {
 }
 
 thread_local! {
-    /// The kernel's own trace writers (arch/wasm/kernel/ksee.c): ksee_bulk
-    /// and ksee_task, its exports.
+    /// The kernel's trace exports (arch/wasm/kernel/ksee.c): ksee_bulk and
+    /// ksee_record.
     static WRITERS: RefCell<Option<(Function, Function)>> = const { RefCell::new(None) };
 }
 
 /// The kernel instance's exports: its trace writers.
 pub fn instantiated(kernel: &Object) {
-    WRITERS.set(Some((js::get(kernel, "ksee_bulk").unchecked_into(), js::get(kernel, "ksee_task").unchecked_into())));
+    WRITERS.set(Some((js::get(kernel, "ksee_bulk").unchecked_into(), js::get(kernel, "ksee_record").unchecked_into())));
 }
 
 /// What the host writes into kernel memory (a variable, a call's request, a
@@ -80,10 +80,11 @@ pub fn logged(addr: u32, len: u32) {
     });
 }
 
-/// A Task record: `task` (a task_struct) runs, where a recording begins.
-pub fn task(task: u32) {
-    WRITERS.with_borrow(|w| if let Some((_, put)) = w {
-        let _ = put.call1(&JsValue::NULL, &task.into());
+/// What the kernel records: 1, everything (a Task record first, as it
+/// begins); 2, stores only.
+pub fn record(level: u32) {
+    WRITERS.with_borrow(|w| if let Some((_, record)) = w {
+        let _ = record.call1(&JsValue::NULL, &level.into());
     });
 }
 

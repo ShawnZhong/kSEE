@@ -77,11 +77,11 @@ ring may have overwritten the start of a record) and skip to the next head:
 order after each record, so a reader sees whole records. One writer runs at a
 time because the kernel is uniprocessor.
 
-Block, return, comparison, variable, and instrumented store records come from
-the LLVM pass; bulk writes' from `ksee.c`. Only the kernel writes its ring:
-when `ksee.begin` starts a requested syscall recording, the runtime turns full
-probes on and calls the kernel's `ksee_task` export, which writes the `Task`
-record; and the host's own writes into kernel memory (a runner request, a
+Block, return, comparison and variable records come from the LLVM
+pass's probes, store records from the writes they see, all written by
+`ksee.c`. Only the kernel writes its ring: when `ksee.begin` starts a requested
+syscall recording, the runtime calls the kernel's `ksee_record(1)` export,
+which turns full probes on and writes the `Task` record; and the host's own writes into kernel memory (a runner request, a
 lesson variable) go through its `ksee_bulk` export first. The initial task record identifies a
 recording that may contain no preceding context switch; later task changes
 are inferred from kernel call and return records.

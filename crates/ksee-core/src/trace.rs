@@ -8,7 +8,7 @@ use core::num::NonZeroU32;
 use crate::Memory;
 use wire::{Kind, StoreSize};
 
-pub use wire::{ON, RING};
+pub use wire::RING;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Record {
