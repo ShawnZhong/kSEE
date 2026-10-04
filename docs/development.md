@@ -169,9 +169,12 @@ workspace's default members (a bare `cargo test`) are the native crates.
    phone-layout suites through the DOM. Test names can also be given directly
    for focused runs, such as `./ksee.sh test read`.
 
-CI separates launcher compilation, the kernel/site build, and tests. Its test
-step uses `ksee test --built`, which runs native tests and the selected browser
-suites on the site already built.
+CI builds the kernel in a job of its own, cached by what builds it (the port,
+the plugin, the Makefile's lines for Linux) and saved even if the tests fail;
+the test job restores it, builds the rest of the site (the user programs, the
+initramfs, the page) and runs `ksee test --built --ui`. The port's files are
+copied into linux/ only when their contents differ, so a checkout's new file
+times rebuild nothing.
 
 The browser is Chrome's headless shell at the Makefile's `CHROME_VERSION`,
 fetched into `target/chrome/` by `make chrome`, which `ksee test` runs.

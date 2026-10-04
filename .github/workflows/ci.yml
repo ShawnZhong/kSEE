@@ -1,26 +1,68 @@
 name: CI
 on: [push, pull_request]
 
+# The kernel (linux/: the plugin, vmlinux, its UAPI headers) is its own job,
+# cached by what builds it, so a change elsewhere (the page, the user
+# programs, the rest of the Makefile) reuses it; and it is saved even when
+# the tests then fail.
 jobs:
-  ci:
+  kernel:
     runs-on: ubuntu-26.04
+    outputs:
+      key: ${{ steps.key.outputs.key }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Restore Linux build cache
-        uses: actions/cache@v5
+      - name: What builds the kernel
+        id: key
+        run: |
+          # (The port, the plugin, and the Makefile's lines for Linux: its
+          # release and kbuild's command.)
+          make=$(grep -E '^(LINUX_|KMAKE|	KCFLAGS)' Makefile | sha256sum | cut -c1-16)
+          echo "key=linux-v3-${{ runner.arch }}-llvm22-${{ hashFiles('linux.patch', 'arch/wasm/**', 'plugin/ksee-trace.cpp') }}-$make" >> "$GITHUB_OUTPUT"
+      - name: Restore the kernel
+        id: cache
+        uses: actions/cache/restore@v5
         with:
           path: |
             linux
             !linux/.git
-          key: linux-v2-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-llvm22-${{ hashFiles('linux.patch', 'arch/wasm/**', 'plugin/ksee-trace.cpp', 'Makefile') }}
+            plugin/ksee-trace.so
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+      - name: Build the kernel
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: make -j$(nproc) linux/vmlinux
+      - name: Save the kernel
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            linux
+            !linux/.git
+            plugin/ksee-trace.so
+          key: ${{ steps.key.outputs.key }}
+
+  test:
+    needs: kernel
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Restore the kernel
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            linux
+            !linux/.git
+            plugin/ksee-trace.so
+          key: ${{ needs.kernel.outputs.key }}
+          fail-on-cache-miss: true
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
-      - name: Build the kernel, plugin and initramfs (cached linux/)
-        run: make -j$(nproc)
       - name: Build ksee CLI
         run: cargo build --locked --release -p ksee-cli
-      - name: Build the site
+      - name: Build the site (the user programs, the initramfs, the page)
         run: target/release/ksee build
       - name: Test
-        run: target/release/ksee test --built
+        run: target/release/ksee test --built --ui
