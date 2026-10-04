@@ -6,8 +6,6 @@
 
 config WASM
 	def_bool y
-	select ARCH_HAS_STRNCPY_FROM_USER
-	select ARCH_HAS_STRNLEN_USER
 	select ARCH_HAS_SYSCALL_WRAPPER
 	select ARCH_NO_PREEMPT
 	select GENERIC_ATOMIC64
