@@ -42,16 +42,15 @@ or another browser.
 
 ### Use a custom LLVM 22 build
 
-By default, kSEE uses Homebrew's `llvm@22` on macOS and
-`/usr/lib/llvm-22/bin` on Linux. Set `KSEE_LLVM_BIN` to use another LLVM 22
-installation:
+The build puts Homebrew's `llvm@22` (macOS) or `/usr/lib/llvm-22/bin` (Linux)
+ahead of `PATH`. Without that installation, it uses the LLVM on `PATH`:
 
 ```sh
-KSEE_LLVM_BIN=/absolute/path/to/llvm/bin ./ksee.sh build
+PATH=/absolute/path/to/llvm/bin:$PATH ./ksee.sh build
 ```
 
-The value must be an absolute path to an existing directory. The build checks
-`llvm-config --version` and refuses any LLVM major version other than 22.
+The build checks `llvm-config --version` and refuses any LLVM major version
+other than 22.
 
 ## Build and serve
 
@@ -133,14 +132,10 @@ directories.
 
 ### Wrong LLVM is selected
 
-Run the build with an explicit absolute directory:
-
-```sh
-KSEE_LLVM_BIN=/absolute/path/to/llvm-22/bin ./ksee.sh build
-```
-
-The error reports the version seen through `llvm-config`. The directory must
-also contain compatible `clang` and `wasm-ld` binaries.
+Install LLVM 22 with `./setup.sh`, or put another LLVM 22 first on `PATH` (see
+[Use a custom LLVM 22 build](#use-a-custom-llvm-22-build)). The error reports
+the version seen through `llvm-config`. The directory must also contain
+compatible `clang` and `wasm-ld` binaries.
 
 ### Browser tests ask for `CHROME`
 

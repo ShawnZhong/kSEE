@@ -23,39 +23,17 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::LazyLock;
 
-fn brew_prefix(formula: &str) -> String {
-    String::from_utf8_lossy(&stdout(Command::new("brew").args(["--prefix", formula])))
-        .trim().to_string()
-}
-
-/// LLVM 22's binaries. An override is useful for a custom toolchain, but is
-/// absolute so builds do not silently change with their working directory.
-static LLVM_BIN: LazyLock<String> = LazyLock::new(|| {
-    if let Ok(bin) = std::env::var("KSEE_LLVM_BIN") {
-        if !Path::new(&bin).is_absolute() || !Path::new(&bin).is_dir() {
-            crate::fail("KSEE_LLVM_BIN must be an absolute directory");
-        }
-        bin
-    } else if cfg!(target_os = "macos") {
-        format!("{}/bin", brew_prefix("llvm@22"))
-    } else {
-        "/usr/lib/llvm-22/bin".into()
-    }
-});
-
-/// setup.sh's dirs first, then the caller's PATH. macOS also needs Homebrew's
-/// lld, GNU make and sed, and mkfs.ext4.
+/// setup.sh's dirs first, then the caller's PATH: LLVM 22's, and on macOS
+/// Homebrew's lld, GNU make and sed, and mkfs.ext4.
 static PATH: LazyLock<String> = LazyLock::new(|| {
-    let mut dirs = vec![(*LLVM_BIN).clone()];
-    if cfg!(target_os = "macos") {
-        dirs.extend([
-            format!("{}/bin", brew_prefix("lld@22")),
-            format!("{}/libexec/gnubin", brew_prefix("make")),
-            format!("{}/libexec/gnubin", brew_prefix("gnu-sed")),
-            format!("{}/sbin", brew_prefix("e2fsprogs")),
-        ]);
-    }
-    format!("{}:{}", dirs.join(":"), std::env::var("PATH").unwrap_or_default())
+    let dirs = if cfg!(target_os = "macos") {
+        let brew = String::from_utf8_lossy(&stdout(Command::new("brew").arg("--prefix"))).trim().to_string();
+        ["llvm@22/bin", "lld@22/bin", "make/libexec/gnubin", "gnu-sed/libexec/gnubin", "e2fsprogs/sbin"]
+            .map(|d| format!("{brew}/opt/{d}")).join(":")
+    } else {
+        "/usr/lib/llvm-22/bin".to_string()
+    };
+    format!("{dirs}:{}", std::env::var("PATH").unwrap_or_default())
 });
 
 /// A command with the tools on its PATH.
@@ -99,10 +77,6 @@ fn stale(out: &str, inputs: &[&str]) -> bool {
     let time = |p: &str| std::fs::metadata(p).and_then(|m| m.modified()).ok();
     let Some(t) = time(out) else { return true };
     inputs.iter().any(|i| time(i).is_none_or(|ti| ti > t))
-}
-
-fn any_stale(outputs: &[&str], inputs: &[&str]) -> bool {
-    outputs.iter().any(|out| stale(out, inputs))
 }
 
 fn check_llvm() {
@@ -165,17 +139,28 @@ pub fn build() {
     check_llvm();
     kernel();
     site();
-    // (The runtime and the page, one module: the page calls the Machine.)
+    page();
+    packed_kernel();
+    initramfs();
+    examples();
+}
+
+/// pkg/: the runtime and the page, one module (the page calls the Machine).
+fn page() {
     run(cmd("cargo").args(["build", "--locked", "--release", "-p", "ksee-page",
         "--target", "wasm32-unknown-unknown"]));
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
+}
 
+/// The kernel for the page: target/vmlinux and the sources (pack), and
+/// vmlinux.gz.
+fn packed_kernel() {
     // (Packed again for a new kernel or pack implementation, or to restore
     // either required result after a partial clean.)
     let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
     let pack_inputs = ["linux/vmlinux", me.as_str()];
     let sources = format!("{SITE}/src");
-    if any_stale(&["target/vmlinux", &sources], &pack_inputs) {
+    if stale("target/vmlinux", &pack_inputs) || stale(&sources, &pack_inputs) {
         eprintln!("+ (pack) linux -> target/vmlinux, {sources}");
         crate::pack::kernel(Path::new("linux"), Path::new("target/vmlinux"), Path::new(&sources));
     }
@@ -183,6 +168,10 @@ pub fn build() {
     if stale(&packed, &["target/vmlinux"]) {
         gzip("target/vmlinux", &packed);
     }
+}
+
+/// initramfs.cpio.gz: the programs, a note, and an ext4 disk image.
+fn initramfs() {
     // The programs (/init, /bin/prog): plain C, no C library (their syscalls:
     // user/syscall.h), with the kernel's UAPI headers.
     let programs = ["init", "prog"];
@@ -225,7 +214,6 @@ pub fn build() {
     if stale(&compressed, &[&cpio_out]) {
         gzip(&cpio_out, &compressed);
     }
-    examples();
 }
 
 /// The release the port is a patch to: the stable tree's tag, and the
@@ -402,10 +390,6 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&first, b"new output").unwrap();
         assert!(!stale(&first_s, &[&input_s]));
-        assert!(any_stale(&[&first_s, &second_s], &[&input_s]));
-
-        std::fs::write(&second, b"new output").unwrap();
-        assert!(!any_stale(&[&first_s, &second_s], &[&input_s]));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
