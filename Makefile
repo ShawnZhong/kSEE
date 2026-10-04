@@ -48,6 +48,9 @@ linux/Makefile:
 $(PLUGIN): plugin/ksee-trace.cpp | llvm
 	clang++ -shared -fPIC -O2 $< -o $@ $$(llvm-config --cxxflags)
 
+# (The fetch makes the port's files: make knows them only from it.)
+linux/arch/wasm/configs/defconfig linux/usr/gen_init_cpio.c: linux/Makefile ;
+
 # (Every Kconfig the port has: a new one runs defconfig again.)
 linux/.config: linux/Makefile linux/arch/wasm/configs/defconfig $(wildcard linux/arch/wasm/Kconfig*)
 	$(KMAKE) defconfig
