@@ -27,14 +27,16 @@ const ZOOM: f64 = 0.002;
 /// The task lane fixed under the stack rows (px).
 const TASK_LANE: f64 = 12.0;
 
-/// A task's hue, by its pid (the strip, the overview, the program's lanes).
+/// A task's hue, by its pid (the strip, the overview, the program's lanes):
+/// one of a few calm ones, neighbors apart.
 pub fn hue(pid: i32) -> i32 {
-    pid * 137 % 360
+    const HUES: [i32; 8] = [210, 30, 160, 260, 95, 15, 190, 45];
+    HUES[pid.unsigned_abs() as usize % HUES.len()]
 }
 
-/// A task's color: the idle task's (0) pale.
+/// A task's color: the idle task's (0, the CPU waiting) gray.
 fn task_color(pid: i32) -> String {
-    format!("hsl({} 50% {}%)", hue(pid), if pid == 0 { 85 } else { 62 })
+    if pid == 0 { "hsl(0 0% 82%)".into() } else { format!("hsl({} 50% 62%)", hue(pid)) }
 }
 
 /// A call's color, by the first kernel area its source file belongs to

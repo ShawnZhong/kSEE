@@ -14,6 +14,7 @@
 #include <asm/wasm.h>
 
 static struct blk_mq_tag_set wasm_disk_set;
+
 static blk_status_t wasm_disk_queue_rq(struct blk_mq_hw_ctx *hctx,
 				       const struct blk_mq_queue_data *bd)
 {
