@@ -1,7 +1,7 @@
 //! The kernel's imports (arch/wasm/include/asm/wasm.h).
 //!
-//! Frequent ones (time, console, command line, spawn_task, the doorbell)
-//! are this module's exports, so the kernel calls them
+//! Frequent ones (time, console, command line, spawn_task, the doorbell,
+//! the disk) are this module's exports, so the kernel calls them
 //! directly. The rest need JS objects (promises, programs' modules) and are
 //! closures reached through wasm-bindgen: the tasks' (sched.rs: switch_task,
 //! idle, restart_task and halt suspend the kernel's stack) and the
@@ -12,6 +12,8 @@ use std::cell::RefCell;
 use js_sys::{Function, Object, Promise};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+
+use ksee_core::Memory;
 
 use crate::js;
 use crate::programs::{clone_user, user_load, user_start};
@@ -59,6 +61,51 @@ pub extern "C" fn time_ns() -> u64 {
     })
 }
 
+// ---- The disk (the kernel's disk.c) ------------------------------------------
+
+#[unsafe(no_mangle)]
+pub extern "C" fn disk_sectors() -> u64 {
+    k(|k| k.disk.len() as u64 / 512)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn disk_submit(sector: u64, buf: u32, len: u32, write: u32) {
+    k_mut(|k| k.transfers.push((sector, buf, len, write != 0)));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn disk_queue(rq: u32) {
+    k_mut(|k| k.requests.push(rq));
+}
+
+/// The next request done, or 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn disk_done() -> u32 {
+    k_mut(|k| k.done.pop_front().unwrap_or(0))
+}
+
+/// The disk at work, as the CPU idles: the transfers handed to it made (a
+/// read written into kernel memory as the host's writes are, logged), its
+/// requests done; whether there were any (then WASM_IRQ_DISK is due).
+pub fn disk_work() -> bool {
+    let (transfers, requests) = k_mut(|k| (std::mem::take(&mut k.transfers), std::mem::take(&mut k.requests)));
+    for (sector, buf, len, write) in transfers {
+        let at = sector as usize * 512;
+        k_mut(|k| {
+            let Some(blocks) = k.disk.get_mut(at..at + len as usize) else { return };
+            if write {
+                Direct.read(buf, blocks);
+            } else {
+                logged(buf, len);
+                unsafe { core::ptr::copy_nonoverlapping(blocks.as_ptr(), buf as *mut u8, len as usize) };
+            }
+        });
+    }
+    let any = !requests.is_empty();
+    k_mut(|k| k.done.extend(requests));
+    any
+}
+
 thread_local! {
     /// The kernel's trace exports (arch/wasm/kernel/ksee.c): ksee_bulk and
     /// ksee_record.
@@ -95,7 +142,8 @@ pub fn kernel() -> Object {
     let export = |name: &str| js::get(&rt, name);
 
     let kernel = Object::new();
-    for name in ["console_write", "doorbell", "get_cmdline", "memory_end", "time_ns", "spawn_task"] {
+    for name in ["console_write", "doorbell", "get_cmdline", "memory_end", "time_ns", "spawn_task",
+                 "disk_sectors", "disk_submit", "disk_queue", "disk_done"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "switch_task", sched::suspending(Closure::<dyn FnMut(u32, u32, u32) -> Promise>::new(sched::switch_task).into_js_value()));

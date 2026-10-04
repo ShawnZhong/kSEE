@@ -1,6 +1,6 @@
 # The initramfs (gen_init_cpio's list; ${OUT}: the Makefile's): the console
 # (the kernel opens it before init; its own initramfs is empty), the
-# programs, a note for the examples (the disk has its own), and the disk.
+# programs, and a note for the examples (the disk, /dev/wda, has its own).
 dir /dev 0755 0 0
 nod /dev/console 0600 0 0 c 5 1
 file /init ${OUT}/init.wasm 0755 0 0
@@ -8,4 +8,3 @@ file /note.txt user/note.txt 0644 0 0
 dir /bin 0755 0 0
 file /bin/prog ${OUT}/prog.wasm 0755 0 0
 dir /mnt 0755 0 0
-file /disk.img ${OUT}/disk.img 0644 0 0

@@ -48,6 +48,8 @@ void wasm_deliver_irqs(void)
 			wasm_timer_interrupt();
 		if (pending & BIT(WASM_IRQ_DOORBELL))
 			wasm_ring();
+		if (pending & BIT(WASM_IRQ_DISK))
+			wasm_disk_interrupt();
 		irq_exit();
 		set_irq_regs(old_regs);
 		wasm_irq_flags = ARCH_IRQ_ENABLED;

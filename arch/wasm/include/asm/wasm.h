@@ -101,6 +101,22 @@ __wasm_import(user_start)
 unsigned long wasm_user_start(unsigned long base, unsigned long top,
 			      unsigned long *clone_entry);
 
+/*
+ * The disk (kernel/disk.c): its size, in 512-byte sectors (0: none);
+ * request @rq's segments, each @len bytes of it to (or, @write, from) @buf
+ * at @sector, then @rq itself, handed to it; and the next request it has
+ * done (WASM_IRQ_DISK), or NULL: none left.
+ */
+__wasm_import(disk_sectors)
+u64 wasm_disk_sectors(void);
+__wasm_import(disk_submit)
+void wasm_disk_submit(u64 sector, void *buf, unsigned int len, bool write);
+__wasm_import(disk_queue)
+void wasm_disk_queue(void *rq);
+__wasm_import(disk_done)
+void *wasm_disk_done(void);
+void wasm_disk_interrupt(void);
+
 /* Exports, called by the host. */
 void *wasm_boot_stack(void);
 void wasm_boot(void);
@@ -114,6 +130,7 @@ void __noreturn wasm_enter_user(void);
 /* Interrupt lines, as bits of wasm_irq_pending. */
 #define WASM_IRQ_TIMER		0
 #define WASM_IRQ_DOORBELL	1	/* the host rings tasks (irq.c) */
+#define WASM_IRQ_DISK		2	/* the disk has done requests (disk.c) */
 
 /* Absolute time_ns of the next timer interrupt, U64_MAX if none. */
 extern u64 wasm_timer_deadline;

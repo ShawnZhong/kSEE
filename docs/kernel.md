@@ -8,7 +8,7 @@ and copies `arch/wasm/` in. Almost everything else is generic kernel code:
 in Linux's own files.
 
 The configuration: wasm32, no MMU, one CPU, an initramfs, a console
-(output), a timer; the block layer, a RAM disk and ext4.
+(output), a timer, a disk; the block layer and ext4.
 
 ## Tasks: stacks the host suspends
 
@@ -150,12 +150,16 @@ wakes it.
 
 ## A disk
 
-The disk is a RAM disk, `/dev/ram0` (`brd`, the kernel's own driver: its
-blocks are pages of memory, a request copied to or from them as it is
-submitted). The initramfs holds an ext4 image (`/disk.img`, made by
-`mkfs.ext4` at build time); /init copies it onto the disk, removes it, and
-mounts the disk on `/mnt`. So ext4, jbd2, the block layer and the driver are
-all the real kernel's. The image
+The disk, `/dev/wda`, is the host's: its blocks are an ext4 image
+(`disk.img`, made by `mkfs.ext4` at build time; each boot starts from it),
+and kernel/disk.c drives it as a disk controller is driven. Its blk-mq
+`queue_rq` hands the host a request's segments and returns: the task that
+wants the blocks sleeps (another runs, or the CPU idles). The host moves the
+blocks when the CPU next idles (a read: written into kernel memory, logged,
+as the host's writes are), and raises `WASM_IRQ_DISK`; the interrupt ends
+the requests, which wakes their waiters. /init mounts it on `/mnt`. So
+ext4, jbd2, the block layer and the request queue are all the real
+kernel's. The image
 comes with files for the examples to start from (`mkfs.ext4 -d user/disk`):
 `/mnt/note.txt`, `/mnt/dir/a.txt`.
 

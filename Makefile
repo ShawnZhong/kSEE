@@ -8,9 +8,10 @@
 #   plugin/ksee-trace.so         the LLVM pass that instruments the kernel
 #   linux/vmlinux                the kernel, instrumented (kbuild), and its UAPI headers
 #   target/initramfs/initramfs.cpio
-#                                /init and /bin/prog (user/: plain C, no C library), a note
-#                                (user/note.txt), and an ext4 disk image of user/disk/:
-#                                user/initramfs.list
+#                                /init and /bin/prog (user/: plain C, no C library), and a
+#                                note (user/note.txt): user/initramfs.list
+#   target/initramfs/disk.img    the disk (the host's: the kernel's /dev/wda), ext4, of
+#                                user/disk/
 #   target/chrome/               the tests' browser: Chrome for Testing's headless shell,
 #                                CHROME_VERSION, fetched once (`make chrome`: `ksee test` runs it)
 #
@@ -37,7 +38,7 @@ PLUGIN := plugin/ksee-trace.so
 KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=1 \
 	KCFLAGS="-g -finline-hint-functions -fpass-plugin=$(CURDIR)/$(PLUGIN) -DKSEE_ID=$(shell cksum < plugin/ksee-trace.cpp | cut -d' ' -f1)"
 
-all: linux/vmlinux $(OUT)/initramfs.cpio
+all: linux/vmlinux $(OUT)/initramfs.cpio $(OUT)/disk.img
 .PHONY: all linux/vmlinux patch llvm chrome
 
 llvm:
@@ -77,7 +78,7 @@ $(OUT)/%.wasm: user/%.c user/syscall.h | linux/vmlinux
 	clang --target=wasm32 -O2 -g0 -ffreestanding -nostdlib -fPIC -Wl,-pie -Wl,--experimental-pic \
 		-Wl,--import-memory -Wl,--no-entry -nostdinc -isystem linux/usr/include -o $@ $<
 
-# The ext4 disk /init mounts (a file, through the loop device): user/disk/,
+# The disk /init mounts (/dev/wda: its blocks the host's), ext4: user/disk/,
 # the files the examples start from; initialized in full: no background
 # work after the mount (ext4lazyinit's).
 $(OUT)/disk.img: $(shell find user/disk)
@@ -86,8 +87,8 @@ $(OUT)/disk.img: $(shell find user/disk)
 	mkfs.ext4 -q -F -b 1024 -L ksee -N 32 -d user/disk -E lazy_itable_init=0,lazy_journal_init=0 $@ 2M
 
 # The archive (all times 0): the console (the kernel opens it before init),
-# the programs, the note, the disk.
-$(OUT)/initramfs.cpio: user/initramfs.list linux/usr/gen_init_cpio $(OUT)/init.wasm $(OUT)/prog.wasm user/note.txt $(OUT)/disk.img
+# the programs, the note.
+$(OUT)/initramfs.cpio: user/initramfs.list linux/usr/gen_init_cpio $(OUT)/init.wasm $(OUT)/prog.wasm user/note.txt
 	linux/usr/gen_init_cpio -t 0 $< > $@
 
 # linux.patch: the port's edits to Linux's own files, as linux/ differs from

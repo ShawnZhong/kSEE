@@ -27,6 +27,7 @@ pub const RAM_BYTES: u32 = 64 << 20;
 /// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h).
 pub const IRQ_TIMER: u32 = 0;
 pub const IRQ_DOORBELL: u32 = 1;
+pub const IRQ_DISK: u32 = 2;
 
 /// The kernel's clock advances this much at each read (so that a loop on
 /// it ends), besides where idle skips to the next timer (see sched).
@@ -58,6 +59,13 @@ pub struct State {
     pub console_out: Vec<u8>,
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
     pub doorbell: VecDeque<u32>,
+    /// The disk (the kernel's disk.c): its blocks; the transfers handed to
+    /// it and not yet made (sector, buffer, length, whether a write), the
+    /// requests they are, and the requests done (WASM_IRQ_DISK).
+    pub disk: Vec<u8>,
+    pub transfers: Vec<(u64, u32, u32, bool)>,
+    pub requests: Vec<u32>,
+    pub done: VecDeque<u32>,
     /// The page's program: its runners, calls and lines.
     pub p: Session,
 }

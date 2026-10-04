@@ -2,7 +2,7 @@
   "title": "Reading from a disk",
   "question": "The same read(), of a file on ext4: where do the bytes come from the first time?",
   "text": [
-    "So far every file was in memory. Now a disk: the same read, of a file on ext4 (on a RAM disk). Where do the bytes come from the first time?",
+    "So far every file was in memory. Now a disk: the same read, of a file on ext4 (on a disk). Where do the bytes come from the first time?",
     "1. Opening it: the name is not in the dentry cache yet, so [ext4_lookup](1:ext4_lookup) reads the directory's block from the disk to find it.",
     "Try: [read twice](try:1): the page is in the cache after the first read, so the second has no block layer and no ext4 read path in it: the timeline shows it much shorter.",
     "Try: [read twice](try:1): the page is in the cache after the first read, so the second has no block layer and no ext4 read path in it, and a much shorter Calls list."

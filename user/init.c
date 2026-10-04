@@ -1,5 +1,5 @@
-// /init: the first process. It mounts the ext4 disk (the image /disk.img,
-// copied to a RAM disk, /dev/ram0, on /mnt), then runs the page's
+// /init: the first process. It mounts the ext4 disk (/dev/wda, the host's
+// blocks: the kernel's disk.c) on /mnt, then runs the page's
 // program, /bin/prog, as a child (a vfork: no MMU, no fork), and again
 // when it exits. Plain C, with no C library: its syscalls as syscall.h
 // makes them.
@@ -11,23 +11,12 @@
 
 #define say(s) sys(__NR_write, 1, s, sizeof(s) - 1)
 
-// (No background work after the mount: the image is initialized in full,
-// and ext4lazyinit need not prefetch its block bitmaps.)
+// The disk, /dev/wda, on /mnt. (No background work after the mount: the
+// image is initialized in full, and ext4lazyinit need not prefetch its
+// block bitmaps.)
 static void disk(void)
 {
-	static char buf[64 << 10];
-	long img = sys(__NR_openat, AT_FDCWD, "/disk.img", O_RDONLY);
-	long ram = sys(__NR_openat, AT_FDCWD, "/dev/ram0", O_WRONLY);
-	long n = 0;
-
-	// (The image onto the disk, then gone: the disk holds it now.)
-	while (img >= 0 && ram >= 0 && (n = sys(__NR_read, img, buf, sizeof(buf))) > 0 &&
-	       sys(__NR_write, ram, buf, n) == n)
-		;
-	sys(__NR_close, img);
-	sys(__NR_close, ram);
-	sys(__NR_unlinkat, AT_FDCWD, "/disk.img", 0);
-	if (img < 0 || ram < 0 || n != 0 || sys(__NR_mount, "/dev/ram0", "/mnt", "ext4", 0, "no_prefetch_block_bitmaps"))
+	if (sys(__NR_mount, "/dev/wda", "/mnt", "ext4", 0, "no_prefetch_block_bitmaps"))
 		say("init: no ext4 disk on /mnt\n");
 }
 

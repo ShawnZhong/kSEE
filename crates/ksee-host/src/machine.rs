@@ -25,6 +25,8 @@ pub struct Machine {
     /// initramfs (at the top of RAM).
     module: WebAssembly::Module,
     initrd: Vec<u8>,
+    /// The disk as built (each boot's starts as it).
+    disk: Vec<u8>,
     /// The last snapshot of the trace.
     pub(crate) rec: RefCell<Recording>,
 }
@@ -53,8 +55,9 @@ fn section(kernel: &Uint8Array, name: &str) -> String {
 
 #[wasm_bindgen]
 impl Machine {
-    /// Boot the built kernel and initramfs bytes in 64 MiB of RAM.
-    pub async fn start(kernel: Uint8Array, initrd: Uint8Array) -> Result<Machine, JsValue> {
+    /// Boot the built kernel and initramfs bytes in 64 MiB of RAM, with the
+    /// disk image.
+    pub async fn start(kernel: Uint8Array, initrd: Uint8Array, disk: Uint8Array) -> Result<Machine, JsValue> {
         if js::get(&js::get(&js_sys::global(), "WebAssembly"), "Suspending").is_undefined() {
             return Err("this browser has no JSPI (WebAssembly.Suspending): kSEE needs Chrome 137, Firefox 153, Safari 27 or later".into());
         }
@@ -75,7 +78,7 @@ impl Machine {
         let initrd = initrd.to_vec();
         let at = initrd_at(&initrd)?;
         k_mut(|k| k.cmdline = format!("initrd={at:#x},{}", initrd.len()).into_bytes());
-        let m = Machine { module, initrd, rec: Default::default() };
+        let m = Machine { module, initrd, disk: disk.to_vec(), rec: Default::default() };
         m.boot().await?;
         Ok(m)
     }
@@ -97,7 +100,7 @@ impl Machine {
         // (Nothing of a machine before it but its command line, and the ids of
         // the calls asked: they are not used again.)
         k_mut(|k| *k = State { trace, current, pending, deadline, waiting: Some(0), booting: true,
-                               cmdline: std::mem::take(&mut k.cmdline), p: k.p.again(),
+                               cmdline: std::mem::take(&mut k.cmdline), p: k.p.again(), disk: self.disk.clone(),
                                quiet_waiters: std::mem::take(&mut k.quiet_waiters), ..Default::default() });
         crate::programs::instantiated(&kernel);
         imports::instantiated(&kernel);

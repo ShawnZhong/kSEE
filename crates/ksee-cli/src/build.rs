@@ -5,7 +5,8 @@
 //! (what `ksee serve` serves and `ksee deploy` pushes):
 //!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
 //!   vmlinux.gz, src/       the kernel for the page (pack; target/vmlinux)
-//!   initramfs.cpio.gz      the Makefile's target/initramfs/initramfs.cpio
+//!   initramfs.cpio.gz, disk.img.gz
+//!                          the Makefile's target/initramfs/initramfs.cpio, disk.img
 //!   examples.json, NAME.html the lessons (user/examples/*.json): the page's, and
 //!                          a page of it each (see lessons.rs)
 //!
@@ -51,9 +52,11 @@ fn assets() {
     run(Command::new("make").args(["--no-print-directory", &jobs]));
     crate::or_fail(std::fs::create_dir_all(SITE), SITE);
     packed_kernel();
-    let (cpio, compressed) = ("target/initramfs/initramfs.cpio", format!("{SITE}/initramfs.cpio.gz"));
-    if stale(&compressed, &[cpio]) {
-        gzip(cpio, &compressed);
+    for name in ["initramfs.cpio", "disk.img"] {
+        let (from, to) = (format!("target/initramfs/{name}"), format!("{SITE}/{name}.gz"));
+        if stale(&to, &[&from]) {
+            gzip(&from, &to);
+        }
     }
     crate::lessons::write();
 }

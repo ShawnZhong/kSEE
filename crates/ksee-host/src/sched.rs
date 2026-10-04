@@ -227,6 +227,11 @@ pub fn idle() -> Promise {
     if Direct.read_u32(k(|k| k.pending)) != 0 {
         return Promise::resolve(&JsValue::NULL);
     }
+    // (The disk works while the CPU idles: what it was handed, done.)
+    if crate::imports::disk_work() {
+        raise(IRQ_DISK);
+        return Promise::resolve(&JsValue::NULL);
+    }
     // The page waits: on to the timer's deadline, now. For a call, if its
     // runner sleeps on a timer (else it blocks: it waits for another call).
     let d = deadline();
