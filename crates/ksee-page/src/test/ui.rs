@@ -109,16 +109,10 @@ pub(super) async fn lesson() -> Check {
     )?;
     // (Hover and click resolve the same canvas bar and moment.)
     let canvas = one("#timeline-canvas").ok_or("no timeline canvas")?;
-    let point = canvas
-        .get_attribute("data-test-vfs-read")
-        .ok_or("no vfs_read canvas bar")?;
-    let (x, y) = point.split_once(',').ok_or("bad vfs_read canvas point")?;
+    let (x, y) = bar(&canvas, "vfs_read").ok_or("no vfs_read canvas bar")?;
     let b = canvas.get_bounding_client_rect();
     let chart = one(".chart").ok_or("no chart")?;
-    let (x, y) = (
-        b.left() + x.parse::<f64>().map_err(|_| "bad canvas x")?,
-        b.top() + y.parse::<f64>().map_err(|_| "bad canvas y")?,
-    );
+    let (x, y) = (b.left() + x, b.top() + y);
     pointer(&chart, "pointermove", x, y);
     sleep(200).await;
     let hovered = place();
@@ -153,7 +147,7 @@ pub(super) async fn lesson() -> Check {
     let mid = (b.left() + b.right()) / 2.0;
     wheel(&chart, mid, y, -800.0);
     sleep(300).await;
-    let bar_x = || canvas.get_attribute("data-test-vfs-read").and_then(|p| p.split_once(',')?.0.parse::<f64>().ok()).unwrap_or(f64::NAN);
+    let bar_x = || bar(&canvas, "vfs_read").map_or(f64::NAN, |p| p.0);
     let win = || one(".overview .win").and_then(|w| w.get_attribute("style")).unwrap_or_default();
     let (x0, w0) = (bar_x(), win());
     pointer(&chart, "pointerdown", mid, y);
@@ -315,9 +309,7 @@ pub(super) async fn responsive() -> Check {
     wait(
         || {
             done(3)
-                && one("#timeline-canvas")
-                    .and_then(|c| c.get_attribute("data-test-vfs-read"))
-                    .is_some()
+                && one("#timeline-canvas").and_then(|c| bar(&c, "vfs_read")).is_some()
         },
         300,
         "the calls made",
@@ -347,4 +339,12 @@ pub(super) async fn responsive() -> Check {
     press("▶", false);
     sleep(300).await;
     Ok(format!("{at} → {}", place()))
+}
+
+/// Where the chart drew function `name`'s first bar (its middle, on the canvas).
+fn bar(canvas: &web_sys::Element, name: &str) -> Option<(f64, f64)> {
+    canvas.get_attribute("data-test-bars")?.lines().find_map(|l| {
+        let (x, y) = l.strip_prefix(name)?.strip_prefix(' ')?.split_once(',')?;
+        Some((x.parse().ok()?, y.parse().ok()?))
+    })
 }

@@ -9,6 +9,7 @@
 //! cursor there. Find a function by any part of its name.
 
 use dioxus::prelude::*;
+use ksee_core::arch::AREAS;
 use ksee_core::trace::Record;
 use ksee_core::view::{Chart, wheel_window};
 use wasm_bindgen::JsCast;
@@ -36,17 +37,6 @@ pub(crate) fn wheel_view(
 ) -> (f64, usize) {
     wheel_window(window, x, width, dx, dy, shift, (dy * ZOOM).exp())
 }
-/// Kernel areas in timeline legend order; unmatched files use gray.
-const AREAS: &[(&str, &str)] = &[
-    ("fs/", "fs"),
-    ("mm/", "mm"),
-    ("kernel/sched/", "sched"),
-    ("kernel/", "kernel"),
-    ("drivers/", "drivers"),
-    ("lib/", "lib"),
-    ("include/", "include"),
-    ("arch/", "arch"),
-];
 
 /// A task's hue, by its pid (the strip, the overview, the program's lanes).
 pub fn hue(pid: i32) -> i32 {
@@ -58,7 +48,8 @@ fn task_color(pid: i32) -> String {
     format!("hsl({} 50% {}%)", hue(pid), if pid == 0 { 85 } else { 62 })
 }
 
-/// A call's color, by the first kernel area its source file belongs to.
+/// A call's color, by the first kernel area its source file belongs to
+/// (unmatched: gray).
 pub(crate) fn call_color(file: Option<&str>, on: bool) -> String {
     const HUES: [i32; 7] = [210, 135, 28, 48, 280, 175, 330];
     let l = if on { 50 } else { 74 };
@@ -303,7 +294,7 @@ fn draw_chart(
     let Some((canvas, ctx)) = canvas_context("timeline-canvas", width, height) else {
         return;
     };
-    let Some((task_canvas, task_ctx)) = canvas_context("timeline-task-canvas", width, TASK_LANE)
+    let Some((_, task_ctx)) = canvas_context("timeline-task-canvas", width, TASK_LANE)
     else {
         return;
     };
@@ -329,7 +320,8 @@ fn draw_chart(
     }
     ctx.set_font("11px ui-monospace, SFMono-Regular, Menlo, monospace");
     ctx.set_text_baseline("middle");
-    let mut test_vfs = None;
+    // (For the tests: each function's first bar, its middle; the bars found.)
+    let mut points: Vec<String> = Vec::new();
     let mut found_count = 0;
     for (dd, a, e, b) in chart.bar_runs() {
         let bar = &chart.bars[b as usize];
@@ -347,8 +339,8 @@ fn draw_chart(
         if found {
             found_count += 1;
         }
-        if test_vfs.is_none() && bar.name == "vfs_read" {
-            test_vfs = Some((x + w / 2.0, y + ROW / 2.0));
+        if cfg!(feature = "browser-tests") && !points.iter().any(|p| p.split(' ').next() == Some(&bar.name)) {
+            points.push(format!("{} {},{}", bar.name, x + w / 2.0, y + ROW / 2.0));
         }
         if x + w <= 0.0 || x >= width {
             continue;
@@ -379,32 +371,14 @@ fn draw_chart(
     }
     ctx.set_global_alpha(1.0);
     if cfg!(feature = "browser-tests") {
-        match test_vfs {
-            Some((x, y)) => {
-                let _ = canvas.set_attribute("data-test-vfs-read", &format!("{x},{y}"));
-            }
-            None => {
-                let _ = canvas.remove_attribute("data-test-vfs-read");
-            }
-        }
+        let _ = canvas.set_attribute("data-test-bars", &points.join("\n"));
         let _ = canvas.set_attribute("data-test-found", &found_count.to_string());
-        for (name, value) in [("data-test-peek", peeked), ("data-test-now", now)] {
-            match value {
-                Some(value) => {
-                    let _ = canvas.set_attribute(name, &value.to_string());
-                }
-                None => {
-                    let _ = canvas.remove_attribute(name);
-                }
-            }
-        }
-        let task_names = tasks
-            .iter()
-            .map(|t| t.name.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let _ = canvas.set_attribute("data-test-tasks", &task_names);
-        let _ = task_canvas.set_attribute("data-test-tasks", &task_names);
+        match now {
+            Some(now) => canvas.set_attribute("data-test-now", &now.to_string()),
+            None => canvas.remove_attribute("data-test-now"),
+        }.ok();
+        let task_names: Vec<&str> = tasks.iter().map(|t| t.name.as_str()).collect();
+        let _ = canvas.set_attribute("data-test-tasks", &task_names.join("\n"));
     }
 }
 

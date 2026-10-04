@@ -89,3 +89,16 @@ pub(crate) const OCTAL_TYPES: &[&str] = &["umode_t"];
 /// The variables the kernel's macros make up (`__UNIQUE_ID`: min_t's,
 /// max_t's temporaries), not the source's own: not shown.
 pub(crate) const MADE_UP: &str = "__UNIQUE_ID_";
+
+/// The kernel's areas, by where their sources are: the timeline colors a
+/// call by the first its file is in (its legend, in this order).
+pub const AREAS: &[(&str, &str)] = &[
+    ("fs/", "fs"),
+    ("mm/", "mm"),
+    ("kernel/sched/", "sched"),
+    ("kernel/", "kernel"),
+    ("drivers/", "drivers"),
+    ("lib/", "lib"),
+    ("include/", "include"),
+    ("arch/", "arch"),
+];
