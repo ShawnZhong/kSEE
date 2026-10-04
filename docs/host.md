@@ -41,7 +41,13 @@ programs.rs   user modules, per-task user stack pointers, syscall runners
 replay.rs     Machine::view, Machine::at_moment, and snapshot lookups
 state.rs      machine state shared by those modules
 js.rs         small Web API reflection helpers
+test/         the kernel's test suite (`ksee test`'s `kernel`) and its harness
 ```
+
+The rules of a program run (its runners, heaps, calls, names, each line's
+outcome) are `ksee_core::program::Session`, which the state holds; the
+kernel's timer layout is `ksee_core::arch::sleeping`, and a module's custom
+sections `ksee_core::wasm`: all tested natively.
 
 Page modules and Dioxus state are documented in
 [development.md#page-modules-and-state](development.md#page-modules-and-state).
