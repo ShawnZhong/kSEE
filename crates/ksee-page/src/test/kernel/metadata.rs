@@ -62,7 +62,7 @@ pub(super) async fn run(t: &mut KernelHarness) {
         t.check("the kernel's constants, completed; for flags, O_ first",
                 get("O_CREAT") == "64" && get("AT_FDCWD") == "-100" && get("AT_REMOVEDIR") == "512" && get("ENOTEMPTY") == "39" && flags.first().is_some_and(|f| f.label.starts_with("O_")));
         let names = m.complete("clos", 4, usize::MAX, &[]);
-        t.check("syscall names completed, with their signatures", names.first().is_some_and(|n| n.label == "close" && n.detail == "close(unsigned int fd)"));
+        t.check("syscall names completed, with their parameters", names.first().is_some_and(|n| n.label == "close" && n.detail == "(unsigned int fd)"));
     }
     let refusal = |text: &str, line: usize| m.can_make(None, text, line).err().unwrap_or_default();
     t.check("a line checked: too many positional values, a name not made yet, too many arguments",

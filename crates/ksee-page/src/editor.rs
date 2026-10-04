@@ -97,7 +97,8 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
                     for (k , it) in items.into_iter().enumerate() {
                         li { class: if k == sel_now { "on" } else { "" },
                             onmousedown: move |e| { e.prevent_default(); take(it.clone()); },
-                            span { class: "mono", "{it.label}" } " " span { class: "dim", "{it.detail}" }
+                            // (A syscall's parameters right after its name, as a call writes them.)
+                            span { class: "mono", "{it.label}" } if !it.name { " " } span { class: "dim mono", "{it.detail}" }
                         }
                     }
                 }

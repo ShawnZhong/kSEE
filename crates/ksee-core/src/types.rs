@@ -271,11 +271,6 @@ impl Types {
         }).collect())
     }
 
-    /// Syscall `name`'s signature, as C declares it: "close(unsigned int fd)".
-    pub(crate) fn signature(&self, name: &str) -> Option<String> {
-        Some(alloc::format!("{name}({})", self.params_of(name)?.join(", ")))
-    }
-
     /// The errno name of `n` (a failed call's result is -n): ENOENT for 2.
     pub(crate) fn errno(&self, n: i64) -> Option<&str> {
         let is = |k: &str| k.strip_prefix(crate::arch::ERRNO).is_some_and(|r| !r.is_empty() && r.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));

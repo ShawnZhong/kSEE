@@ -22,7 +22,7 @@ pub struct Completion {
 
 /// What fits `c`: a syscall's name, those in `common` first, then those
 /// starting with what is written, then those with it inside, each with its
-/// signature; in an argument, the names `names` has (a result, a variable),
+/// parameters; in an argument, the names `names` has (a result, a variable),
 /// then the constants starting with the word, those that fit the
 /// parameter first (arch::SYSCALL_CONSTS).
 pub fn completions(
@@ -56,7 +56,7 @@ pub fn completions(
             .map(|n| Completion {
                 text: format!("{n}("),
                 label: n.into(),
-                detail: types.signature(n).unwrap_or_default(),
+                detail: types.params_of(n).map_or(String::new(), |ps| alloc::format!("({})", ps.join(", "))),
                 name: true,
             })
             .collect();
