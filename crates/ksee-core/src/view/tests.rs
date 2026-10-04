@@ -425,11 +425,12 @@ fn two_inlined_frames_of_one_call_are_bars_of_their_own() {
     let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
     let frames: Vec<_> = v.call_stack(0, None, 0, &Mem(Vec::new()), 0).iter().map(|f| (f.func.clone(), f.inlined)).collect();
     assert_eq!(frames, [("g".into(), true), ("h".into(), true), ("f".into(), false)]);
-    let chart = v.chart(0, 0, 1);
-    let bars: Vec<_> = chart.cols[0].frames.iter().map(|&b| (chart.bars[b as usize].first, chart.bars[b as usize].name.clone())).collect();
+    // (Three steps, as stepping enters them: the lines calling h and g, then g's.)
+    let chart = v.chart(0, 2, 3);
+    let bars: Vec<_> = chart.cols[2].frames.iter().map(|&b| (chart.bars[b as usize].first, chart.bars[b as usize].name.clone())).collect();
     assert_eq!(bars, [(0, "f".into()), (0, "h".into()), (0, "g".into())]);
     // (Each bar runs alone: no two share an identity.)
-    assert_eq!(chart.bar_runs(), alloc::vec![(0, 0, 1, 0), (1, 0, 1, 1), (2, 0, 1, 2)]);
+    assert_eq!(chart.bar_runs(), alloc::vec![(0, 0, 3, 0), (1, 1, 3, 1), (2, 2, 3, 2)]);
 }
 
 #[test]
@@ -534,9 +535,9 @@ fn a_chart_folds_into_runs() {
     let chart = Chart {
         bars: Vec::new(),
         cols: alloc::vec![
-            Column { i: 0, nth: 0, task: 7, frames: alloc::vec![0] },
-            Column { i: 1, nth: 0, task: 7, frames: alloc::vec![0, 1] },
-            Column { i: 2, nth: 0, task: 8, frames: alloc::vec![1] },
+            Column { step: 0, i: 0, task: 7, frames: alloc::vec![0] },
+            Column { step: 1, i: 1, task: 7, frames: alloc::vec![0, 1] },
+            Column { step: 2, i: 2, task: 8, frames: alloc::vec![1] },
         ],
     };
     // (Each row's runs: row 0 has bar 0 over columns 0..2, then bar 1 at
@@ -591,4 +592,19 @@ fn an_inlined_call_is_stepped_into_as_a_call_is() {
     assert_eq!(stack(&lines[3]), [("g".into(), Some(30)), ("h".into(), Some(3)), ("f".into(), Some(2))]);
     // (Over the call at f's line 2: its next line, 4.)
     assert_eq!(step(&lines, 1, 1, true), Some(4));
+}
+
+#[test]
+fn the_steps_are_the_lines_stepping_visits() {
+    // f's lines 1 and 4, between them g's line 30 inlined in h inlined in
+    // f: a step for each line View::lines has, the lines calling h and g too.
+    let t = Tables::parse("U\nP\t0\tf.c\nP\t1\th.c\nP\t2\tg.c\nF\t1\tf\t0:1\t0\n\
+                           I\t0\th\t0:2\nI\t1\tg\t1:3\nL\t1\t0\t0:1;2:30@1@0;0:4\n", "");
+    let rec = Recording::new(&t, alloc::vec![Record::Block { func: 1, n: 0 }], alloc::vec![0], Args::default());
+    let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
+    let lines: Vec<_> = v.lines(0, 0, 0).iter().map(|l| (l.i, l.nth, l.cut)).collect();
+    assert_eq!(rec.steps, lines);
+    // (A column a step: each its line's stack.)
+    let depths: Vec<_> = v.chart(0, 4, 5).cols.iter().map(|c| c.frames.len()).collect();
+    assert_eq!(depths, [1, 1, 2, 3, 1]);
 }

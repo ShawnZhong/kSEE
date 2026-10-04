@@ -51,8 +51,7 @@ pub struct Moment {
 /// changes: the moment shown (the pointer's, else the cursor's), its call
 /// (as the snapshot has it) and lines; the chart's window and the chart;
 /// its line, stack, and the frame shown on it; and where the cursor is, in
-/// steps (the chart's line: its line's share of
-/// its block's step).
+/// steps (its line's: the chart's line).
 #[derive(Clone, Copy)]
 pub struct Derived {
     pub shown: Memo<Option<Moment>>,
@@ -67,14 +66,11 @@ pub struct Derived {
     pub preview: Memo<Option<f64>>,
 }
 
-/// A moment's position in recording steps. Lines in one block divide the
-/// block's step range evenly, so preview and committed cursors agree.
+/// A moment's step: its line's (the steps are the lines stepping visits).
 fn moment_step(at: &Moment, lines: &[Line]) -> Option<f64> {
     let i = lines.get(at.line)?.i;
-    let (k, n) = (lines[..at.line].iter().rev().take_while(|l| l.i == i).count(), lines.iter().filter(|l| l.i == i).count());
-    let (first, last) = machine().view(|v| (v.rec.blocks.partition_point(|&b| b < i), v.rec.step_of(i)));
-    let first = first.min(last);
-    Some(first as f64 + (last + 1 - first) as f64 * k as f64 / n as f64)
+    let k = lines[..at.line].iter().rev().take_while(|l| l.i == i).count();
+    Some((machine().view(|v| v.rec.first_step(i)) + k) as f64)
 }
 
 impl Derived {
@@ -100,7 +96,7 @@ impl Derived {
         let up = move || matches!((ui.kernel)(), Some(Ok(())));
         let window = use_memo(move || {
             (ui.snapshot)();
-            let end = if up() { machine().view(|v| v.rec.steps()).saturating_sub(1) } else { 0 };
+            let end = if up() { machine().view(|v| v.rec.steps.len()).saturating_sub(1) } else { 0 };
             (ui.win)().unwrap_or((0, end))
         });
         let chart = use_memo(move || {
@@ -333,7 +329,7 @@ impl Ui {
     }
 
     pub fn view_machine(self, machine: &ksee_host::machine::Machine, start: f64, span: usize) {
-        let total = machine.view(|v| v.rec.steps()).max(1);
+        let total = machine.view(|v| v.rec.steps.len()).max(1);
         let span = span.max(MIN_SPAN).min(total - 1);
         let a = (start.max(0.0) as usize).min(total - 1 - span);
         self.set_window(Some((a, a + span)));
@@ -356,15 +352,18 @@ impl Ui {
         }
     }
 
-    /// The moment at record `i` (in the chart: its `nth` line), on frame `frame` there:
+    /// The moment at record `i` (in the chart: at its `step`), on frame `frame` there:
     /// the call it is in, its line there (the last at or before it).
-    pub fn moment_at(&self, i: usize, nth: Option<usize>, frame: Option<(usize, String)>, shown: Option<usize>, shown_lines: &[Line]) -> Option<Moment> {
-        let (call, own) = machine().view(|v| (v.rec.syscall_at(i), v.line_of(i).or(nth.map(|n| (i, n as u32)))));
+    pub fn moment_at(&self, i: usize, step: Option<usize>, frame: Option<(usize, String)>, shown: Option<usize>, shown_lines: &[Line]) -> Option<Moment> {
+        let (call, own, first) = machine().view(|v| (v.rec.syscall_at(i), v.line_of(i), v.rec.first_step(i)));
         let call = call?;
-        // (A write, a comparison: its own line; a block: its first line; else the last before.)
-        let line = |lines: &[Line]| match own {
-            Some((r, nth)) => lines.iter().rposition(|l| l.i == r && l.nth <= nth),
-            None => lines.iter().position(|l| l.i == i),
+        // (A step: the line it is, its record's lines being its steps; a
+        // write, a comparison: its own line; a block: its first line; else
+        // the last before.)
+        let line = |lines: &[Line]| match (step, own) {
+            (Some(s), _) => lines.iter().position(|l| l.i == i).map(|p| p + s.saturating_sub(first)),
+            (None, Some((r, nth))) => lines.iter().rposition(|l| l.i == r && l.nth <= nth),
+            (None, None) => lines.iter().position(|l| l.i == i),
         }.or_else(|| lines.iter().rposition(|l| l.i <= i)).unwrap_or(0);
         let line = if shown == Some(call) { line(shown_lines) } else { line(&Ui::lines_of(call)) };
         Some(Moment { call, line, frame })

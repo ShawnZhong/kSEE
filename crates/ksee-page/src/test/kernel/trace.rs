@@ -55,7 +55,8 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         // (Each column is a moment, its record's line: the Stack there has every call it draws.)
         let (mut drawn, mut missing) = (0, Vec::new());
         for c in &chart.cols {
-            let frames = t.stack(c.i, Some(c.nth), c.i);
+            let (_, nth, cut) = m.view(|v| v.rec.steps[c.step]);
+            let frames = m.at_moment(c.i, |v, mem| v.call_stack(c.i, Some(nth as usize), cut as usize, mem, c.i));
             for b in c.frames.iter().map(|&k| &chart.bars[k as usize]) {
                 drawn += 1;
                 if !frames.iter().any(|f| f.first == b.first && f.func == b.name && f.inlined == b.inlined) {

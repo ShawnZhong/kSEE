@@ -94,9 +94,11 @@ These are related but not interchangeable units:
   chart uses a fixed column count, so it can omit steps from a wide window or
   repeat positions in a narrow one.
 
-The timeline's axis is reconstructed steps. A column still carries the raw
-record and the line ordinal within that record's stretch so the page can map a
-hover or click back to a cursor moment.
+The timeline's axis is the line steps themselves (`Recording::steps`): each
+syscall's lines exactly as stepping walks them (`View::lines`), and between
+syscalls each task's. So a call's bar is as wide as the steps it takes, and
+one step of the cursor moves it one step across the chart. A column carries
+its step, so the page maps a hover or click back to that line.
 
 ## Inlined code
 

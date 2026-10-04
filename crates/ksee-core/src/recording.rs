@@ -51,10 +51,11 @@ pub struct Recording {
     pub tasks: Vec<u32>,
     /// In the order they began.
     pub syscalls: Vec<Syscall>,
-    /// The steps: the block records (their indexes), in order. A step is
-    /// the recording's unit of time (the timeline's axis): one basic block
-    /// run; stores take none (a memset is not longer than a line).
-    pub blocks: Vec<usize>,
+    /// The steps, in order: the recording's unit of time (the timeline's
+    /// axis), a source line run, as stepping visits them (View::lines): its
+    /// record, which of the lines the record's stretch runs it is, and the
+    /// inlined frames it has not entered yet (LineStep::cut).
+    pub steps: Vec<(usize, u32, u32)>,
     /// The calls, and where each record's task is in them.
     pub calls: stack::Calls,
     /// Who each task was (by its task_struct's address, and the last write
@@ -105,43 +106,40 @@ impl Recording {
         }
         let calls = stack::Calls::new(t, &records, &tasks);
         let syscalls = split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args, &calls);
-        // (A stretch of a block's lines (from its block, or a return into
-        // it) is as many steps as its lines: a call's width in the chart is
-        // how much of its code ran, line by line; a column, a line.)
-        let blocks: Vec<usize> = (0..records.len()).flat_map(|i| {
-            let lines = calls.lines_at(t, i);
-            core::iter::repeat_n(i, if matches!(records[i], Record::Block { .. }) { lines.max(1) } else { lines })
-        }).collect();
-        Recording { records, ids, args, tasks, syscalls, blocks, calls, stores: OnceCell::new(), names: Default::default(), named: Default::default() }
+        // (The lines each syscall ran, as stepping walks them, and between
+        // them its task's: a call's width in the chart is the steps it takes.)
+        let mut steps: Vec<(usize, u32, u32)> = Vec::new();
+        let mut add = |from: usize, to: usize, task: u32| if from < to {
+            steps.extend(calls.lines(t, &records, &tasks, from, to - 1, task).iter().map(|l| (l.record, l.nth, l.cut)));
+        };
+        for task in tasks.iter().copied().collect::<alloc::collections::BTreeSet<u32>>() {
+            let mut from = 0;
+            for s in syscalls.iter().filter(|s| s.task == task) {
+                let end = s.last.map_or(records.len(), |l| l + 1);
+                add(from, s.first, task);
+                add(s.first, end, task);
+                from = end;
+            }
+            add(from, records.len(), task);
+        }
+        steps.sort_by_key(|s| s.0);
+        Recording { records, ids, args, tasks, syscalls, steps, calls, stores: OnceCell::new(), names: Default::default(), named: Default::default() }
     }
 
-    /// How many steps (a block's lines each) the recording has.
-    pub fn steps(&self) -> usize {
-        self.blocks.len()
-    }
-
-    /// Record `i`'s step: the steps up to it (its own, its last line's,
-    /// included), so records between two blocks are at the earlier one's.
+    /// Record `i`'s step: its last line's, so a record between two lines
+    /// is at the earlier one's.
     pub fn step_of(&self, i: usize) -> usize {
-        self.blocks.partition_point(|&b| b <= i).saturating_sub(1)
+        self.steps.partition_point(|&(r, _, _)| r <= i).saturating_sub(1)
     }
 
-    /// The record step `k` begins at (its block), the last record if past
-    /// the end.
+    /// The first step at or after record `i` (its first line's, if it runs any).
+    pub fn first_step(&self, i: usize) -> usize {
+        self.steps.partition_point(|&(r, _, _)| r < i)
+    }
+
+    /// The record step `k` is at, the last record if past the end.
     pub fn record_of(&self, k: usize) -> usize {
-        self.blocks.get(k).copied().unwrap_or(self.records.len().saturating_sub(1))
-    }
-
-    /// The moments `n` columns of steps `from..=to` are at, for a chart:
-    /// the k-th column's, step from + k * span / n: its record, and which
-    /// of the lines its stretch runs there.
-    pub(crate) fn columns(&self, from: usize, to: usize, n: usize) -> Vec<(usize, usize)> {
-        let span = to.saturating_sub(from) + 1;
-        (0..n).map(|k| {
-            let step = from + k * span / n;
-            let i = self.record_of(step);
-            (i, step.saturating_sub(self.blocks.partition_point(|&b| b < i)))
-        }).collect()
+        self.steps.get(k).map_or(self.records.len().saturating_sub(1), |&(r, _, _)| r)
     }
 
     pub fn len(&self) -> usize {

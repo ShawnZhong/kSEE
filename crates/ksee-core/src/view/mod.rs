@@ -121,13 +121,12 @@ impl Chart {
     }
 }
 
-/// A column: its record, the task running there, and its stack then, as
-/// bars (indexes in Chart::bars), outermost first.
+/// A column: its step and record, the task running there, and its stack
+/// then, as bars (indexes in Chart::bars), outermost first.
 #[derive(Debug)]
 pub struct Column {
+    pub step: usize,
     pub i: usize,
-    /// Which of the lines its record's stretch runs it is at.
-    pub nth: usize,
     pub task: u32,
     pub frames: Vec<u32>,
 }
@@ -354,20 +353,30 @@ impl View<'_> {
     }
 
     /// A stack chart of steps `first..=last` in `n` columns, each a
-    /// moment spread evenly over the steps (Recording::columns): the task
+    /// moment spread evenly over the steps (Recording::steps): the task
     /// there and its call stack then, outermost first, each call and the
     /// code inlined into it a bar (in `bars`, once each).
     pub fn chart(&self, first: usize, last: usize, n: usize) -> Chart {
         let (t, rec) = (self.tables, self.rec);
         let mut chart = Chart::default();
-        if rec.steps() == 0 || n == 0 || first > last {
+        let last = last.min(rec.steps.len().saturating_sub(1));
+        if rec.steps.is_empty() || n == 0 || first > last {
             return chart;
         }
         let mut known: BTreeMap<(usize, Option<u32>), u32> = BTreeMap::new();
-        for (i, nth) in rec.columns(first, last.min(rec.steps() - 1), n) {
+        // (The k-th column: step first + k * span / n.)
+        let span = last - first + 1;
+        for step in (0..n).map(|k| first + k * span / n) {
+            let (i, nth, cut) = rec.steps[step];
             let mut frames = Vec::new();
-            for c in rec.calls.stack_at(t, i, Some(nth)) {
-                for (k, _) in self.nest(&c).into_iter().rev() {
+            let stack = rec.calls.stack_at(t, i, Some(nth as usize));
+            for (d, c) in stack.iter().enumerate() {
+                // (The innermost call without the code inlined its line has not entered yet, as the Stack has it.)
+                let mut nest = self.nest(c);
+                if d + 1 == stack.len() {
+                    nest.drain(..(cut as usize).min(nest.len() - 1));
+                }
+                for (k, _) in nest.into_iter().rev() {
                     let bar = *known.entry((c.first, k)).or_insert_with(|| {
                         let place = self.place(c.func);
                         let name = k.map_or_else(|| place.as_ref().map_or("?".into(), |p| p.name.clone()), |k| self.inline_name(k));
@@ -383,7 +392,7 @@ impl View<'_> {
                     frames.push(bar);
                 }
             }
-            chart.cols.push(Column { i, nth, task: rec.tasks.get(i).copied().unwrap_or(0), frames });
+            chart.cols.push(Column { step, i, task: rec.tasks.get(i).copied().unwrap_or(0), frames });
         }
         chart
     }

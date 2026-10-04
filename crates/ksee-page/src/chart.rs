@@ -137,7 +137,7 @@ fn Overview() -> Element {
     let m = machine();
     let cursor = d.cursor.cloned();
     let (n, tasks, starts, (wa, wb), at) = m.view(|v| {
-        let n = v.rec.steps().max(1);
+        let n = v.rec.steps.len().max(1);
         let tasks: Vec<i32> = (0..BUCKETS)
             .map(|k| {
                 let i = v.rec.record_of(k * n / BUCKETS);
@@ -413,7 +413,7 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     let chart = d.chart.cloned();
-    let steps = machine().view(|v| v.rec.steps().max(1));
+    let steps = machine().view(|v| v.rec.steps.len().max(1));
     let tasks = task_runs(&chart);
     let mut pan = use_signal(|| None::<Pan>);
     // (Latched through pointer-up: a click fires after it, when pan is
@@ -514,7 +514,7 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
         Some((
             ui.moment_at(
                 chart.cols[k].i,
-                Some(chart.cols[k].nth),
+                Some(chart.cols[k].step),
                 frame,
                 shown,
                 &d.lines.read(),

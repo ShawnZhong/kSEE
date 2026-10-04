@@ -153,11 +153,6 @@ impl Calls {
         Some((p, t.stretch(self.calls[p.call as usize].func, p.n, p.seg)))
     }
 
-    /// How many lines the stretch record `i` starts runs (none: it starts none).
-    pub(crate) fn lines_at(&self, t: &Tables, i: usize) -> usize {
-        self.stretch(t, i).map_or(0, |(_, steps)| steps.len())
-    }
-
     /// The call running at record `i` (its task's innermost).
     pub(crate) fn call_at(&self, i: usize) -> Option<&Call> {
         self.calls.get(self.place_at(i)?.call as usize)

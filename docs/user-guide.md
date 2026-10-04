@@ -35,12 +35,11 @@ units:
   comparison, or variable update.
 - A **line step** is a reconstructed source-line position. One basic-block
   record can produce several line steps.
-- A **chart column** samples one line step in the current window. Several steps
-  may map into a fixed-width chart, or a block with several source lines may
-  contribute several positions.
+- A **chart column** samples one line step in the current window. A wide window
+  has more steps than columns, so a column stands for several.
 
-The cursor names a reconstructed line step, not necessarily a unique raw
-record or chart column.
+The chart's axis is line steps: a bar is as wide as the steps its call takes,
+and stepping (← →) moves the cursor one step across it.
 
 ### Timeline
 
