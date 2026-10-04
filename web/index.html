@@ -11,8 +11,7 @@
   --dim: light-dark(#6b7280, #8b949e); --line: light-dark(#e3e3e0, #30363d);
   --sel: light-dark(#e8f0fe, #1f2d3d); --ran: light-dark(#dafbe1, #12301c); --miss: light-dark(#cf222e, #f85149);
   --accent: light-dark(#0969da, #58a6ff);
-  --at: light-dark(#fff3bf, #3d3207); --chg: light-dark(#fff8c5, #3a3000); --run: light-dark(#1a7f37, #3fb950);
-  --found: light-dark(#f0a6f7, #c86fd0);
+  --at: light-dark(#fff3bf, #3d3207); --run: light-dark(#1a7f37, #3fb950);
   --kw: light-dark(#8250df, #d2a8ff); --ty: light-dark(#0550ae, #79c0ff); --str: light-dark(#0a3069, #a5d6ff);
   --com: light-dark(#6e7781, #8b949e); --num: light-dark(#0550ae, #79c0ff); --pp: light-dark(#953800, #ffa657);
   --fn: light-dark(#0000ff, #61afef); --fld: light-dark(#0000cc, #e06c75); --mac: light-dark(#225566, #e06c75);
@@ -180,14 +179,12 @@ table.objs tr.frame.on td { background: var(--sel); }
 table.objs tr.frame a { font-weight: 600; }
 .stack { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .frame-list { flex: 1; min-height: 0; overflow: auto; }
-.frame-details
 .frame-details { height: 112px; flex: none; overflow: auto; border-top: 1px solid var(--line); }
 .frame-title { position: sticky; top: 0; z-index: 1; padding: 4px 8px; background: var(--bg); color: var(--dim); }
 .tw { color: var(--dim); display: inline-block; width: 1.2em; }
 tr.opens { cursor: pointer; }
 .current { padding: 6px 8px; border-top: 1px solid var(--line); font-size: 12px; flex: none; }
 table.objs tr.later { opacity: .45; }
-.stackhead { padding: 4px 12px; font-size: 11.5px; border-bottom: 1px solid var(--line); flex: none; }
 /* The Objects: a box per object, a row a run of writes (the moment's marked, those after it gray) */
 .objects { padding: 0 10px 12px; }
 .ohead { padding: 6px 2px 2px; font-size: 11.5px; }
@@ -198,7 +195,6 @@ table.objs tr.later { opacity: .45; }
 .obj tr { cursor: pointer; }
 .obj tr.on td { background: var(--at); }
 .obj tr.same td { color: var(--dim); }
-.obj tr.later td { opacity: .4; }
 .console { margin: 0; padding: 6px 12px; font: 11px var(--mono); white-space: pre-wrap; word-break: break-word; }
 
 /* A phone's screen: one under another, the page scrolling; no splits */

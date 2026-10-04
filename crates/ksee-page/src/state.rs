@@ -130,13 +130,8 @@ impl Derived {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
-pub enum Tab {
-    Stack,
-    Objects,
-    Tasks,
-    Console,
-}
+/// A panel: what a lesson's link opens too.
+pub use ksee_core::text::LessonTab as Tab;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RunId(u64);

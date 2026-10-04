@@ -12,7 +12,7 @@ pub(crate) fn ParagraphView(
     follow: EventHandler<LessonTarget>,
 ) -> Element {
     rsx! {
-        p { class: "para",
+        p {
             for piece in pieces {
                 match piece {
                     Piece::Text(text) => rsx! { "{text}" },

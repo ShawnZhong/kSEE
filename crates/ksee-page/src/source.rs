@@ -70,12 +70,8 @@ async fn file(file: String) -> Option<Rc<File>> {
 pub fn Source() -> Element {
     let d = use_context::<Derived>();
     let ui = use_context::<Ui>();
+    // (A definition shown until the cursor moves: Ui::commit.)
     let seen = ui.seen;
-    // (The cursor moved: back to its place.)
-    use_effect(move || {
-        let _ = d.line.read();
-        ui.show_definition(None);
-    });
     let Some(f) = crate::stack::shown() else { return rsx! { div { class: "source" } } };
     let (Some(path), Some(line)) = (f.file.clone(), f.line) else { return rsx! { div { class: "source" } } };
     let (path, line, def_of) = match seen() {

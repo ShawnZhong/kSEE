@@ -7,8 +7,8 @@ use dioxus::prelude::*;
 use ksee_core::program::{statement, Expr, Line};
 use serde::{Deserialize, Serialize};
 
-use crate::state::{RunId, Tab, Ui};
-use ksee_core::text::{self, LessonTab as LinkTab, LessonTarget, Piece};
+use crate::state::{RunId, Ui};
+use ksee_core::text::{self, LessonTarget, Piece};
 use crate::lesson_view::ParagraphView;
 use crate::{examples, machine};
 
@@ -197,12 +197,7 @@ fn follow(ui: Ui, target: LessonTarget) {
         }
     }
     if let Some(tab) = tab {
-        ui.set_tab(match tab {
-            LinkTab::Stack => Tab::Stack,
-            LinkTab::Objects => Tab::Objects,
-            LinkTab::Tasks => Tab::Tasks,
-            LinkTab::Console => Tab::Console,
-        });
+        ui.set_tab(tab);
     }
 }
 
@@ -373,18 +368,11 @@ pub fn Lesson() -> Element {
     rsx! {
         h1 { "{ex.title}" }
         p { class: "question", "{ex.question}" }
-        if mine {
-            div { class: "explain", for p in ex.text.iter() {
-                ParagraphView { pieces: text::pieces(p), stale: false, follow: move |target| follow(ui, target) }
-            } }
-        } else {
-            // (A try: its own text kept, the lesson's still shown; its call
-            // links no longer apply.)
-            div { class: "explain", for p in ex.text.iter() {
-                ParagraphView { pieces: text::pieces(p), stale: true, follow: move |target| follow(ui, target) }
-            } }
-            p { class: "explain dim", "A try, not the lesson's own program." }
-        }
+        // (A try: the lesson's text still shown, its call links no longer apply.)
+        div { class: "explain", for p in ex.text.iter() {
+            ParagraphView { pieces: text::pieces(p), stale: !mine, follow: move |target| follow(ui, target) }
+        } }
+        if !mine { p { class: "explain dim", "A try, not the lesson's own program." } }
         div { class: "ptitle dim", "Program"
             if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| open(ui, (ui.lesson)()), "↺ reset" } }
         }
