@@ -53,35 +53,15 @@ static __always_inline void put(bool store, u32 a, u32 tag, const u32 *v, u32 n)
 	__atomic_store_n(&trace.pos, p + 2 + 2 * n, __ATOMIC_RELEASE);
 }
 
-/* The probes' records: [a, tag] and k values (k up to 15: a call's seven
- * arguments, wide ones two words, and its frame base). */
-#define U u32
-void __ksee_put0(U a, U t) { put(false, a, t, NULL, 0); }
-void __ksee_put1(U a, U t, U v0) { U v[] = { v0 }; put(false, a, t, v, 1); }
-void __ksee_put2(U a, U t, U v0, U v1) { U v[] = { v0, v1 }; put(false, a, t, v, 2); }
-void __ksee_put3(U a, U t, U v0, U v1, U v2) { U v[] = { v0, v1, v2 }; put(false, a, t, v, 3); }
-void __ksee_put4(U a, U t, U v0, U v1, U v2, U v3) { U v[] = { v0, v1, v2, v3 }; put(false, a, t, v, 4); }
-void __ksee_put5(U a, U t, U v0, U v1, U v2, U v3, U v4) { U v[] = { v0, v1, v2, v3, v4 }; put(false, a, t, v, 5); }
-void __ksee_put6(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5) { U v[] = { v0, v1, v2, v3, v4, v5 }; put(false, a, t, v, 6); }
-void __ksee_put7(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6)
-{ U v[] = { v0, v1, v2, v3, v4, v5, v6 }; put(false, a, t, v, 7); }
-void __ksee_put8(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7)
-{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7 }; put(false, a, t, v, 8); }
-void __ksee_put9(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8)
-{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8 }; put(false, a, t, v, 9); }
-void __ksee_put10(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9)
-{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9 }; put(false, a, t, v, 10); }
-void __ksee_put11(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9, U v10)
-{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10 }; put(false, a, t, v, 11); }
-void __ksee_put12(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9, U v10, U v11)
-{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 }; put(false, a, t, v, 12); }
-void __ksee_put13(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9, U v10, U v11, U v12)
-{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12 }; put(false, a, t, v, 13); }
-void __ksee_put14(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9, U v10, U v11, U v12, U v13)
-{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13 }; put(false, a, t, v, 14); }
-void __ksee_put15(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9, U v10, U v11, U v12, U v13, U v14)
-{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14 }; put(false, a, t, v, 15); }
-#undef U
+/* The probes' records: [a, tag] and the n values the probe put in
+ * __ksee_values (up to 15: a call's seven arguments, wide ones two words,
+ * and its frame base) just before. */
+u32 __ksee_values[15];
+
+void __ksee_put(u32 a, u32 tag, u32 n)
+{
+	put(false, a, tag, __ksee_values, n);
+}
 
 /* A store of 1 << k bytes at addr, on a line: its old value (before the
  * write), low word first; a copy's says where from. */

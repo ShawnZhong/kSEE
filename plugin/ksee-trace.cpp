@@ -179,7 +179,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   // The writers: a record's head pair [a, tag] and k values after it; a
   // store of 1, 2, 4 or 8 bytes at an address (the old value, read while
   // recording only), and one that copies (where from, after).
-  Function *put[Values + 1] = {};
+  Function *put = nullptr;
+  GlobalVariable *values = nullptr;
   Function *putStore[4] = {}, *putCopy[4] = {};
   FunctionCallee bulk;
   // Each write's line: the index of its line among its block's (see blockLines).
@@ -192,11 +193,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     return std::to_string(files.try_emplace(path, files.size()).first->second);
   }
 
-  // Record [a, tag] and `values`.
-  void record(IRBuilder<> &B, Value *a, uint32_t tag, ArrayRef<Value *> values = {}) {
-    SmallVector<Value *, 2 + Values> args{a, B.getInt32(tag)};
-    args.append(values.begin(), values.end());
-    B.CreateCall(put[values.size()], args);
+  // Record [a, tag] and `vs`: the values in __ksee_values, then the call
+  // (nothing runs between: the kernel is uniprocessor).
+  void record(IRBuilder<> &B, Value *a, uint32_t tag, ArrayRef<Value *> vs = {}) {
+    assert(vs.size() <= Values);
+    for (auto [i, v] : enumerate(vs))
+      B.CreateStore(v, B.CreateConstInBoundsGEP2_32(values->getValueType(), values, 0, i));
+    B.CreateCall(put, {a, B.getInt32(tag), B.getInt32(vs.size())});
   }
 
   // The writers (arch/wasm/kernel/ksee.c, which holds the ring), declared.
@@ -205,8 +208,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     auto function = [&](const std::string &name, unsigned n) {
       return cast<Function>(M->getOrInsertFunction(name, FunctionType::get(vd, SmallVector<Type *>(n, i32), false)).getCallee());
     };
-    for (unsigned k = 0; k <= Values; k++)
-      put[k] = function("__ksee_put" + std::to_string(k), 2 + k);
+    put = function("__ksee_put", 3);
+    values = cast<GlobalVariable>(M->getOrInsertGlobal("__ksee_values", ArrayType::get(i32, Values)));
     for (unsigned k = 0; k < 4; k++)
       putStore[k] = function("__ksee_put_store" + std::to_string(1 << k), 2);
     for (unsigned k = 0; k < 4; k++)

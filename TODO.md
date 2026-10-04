@@ -3,15 +3,6 @@
 What is decided but not done yet. Done items leave this file (git log has
 them).
 
-## In progress
-
-- **Write the ring writers in C, not in the plugin.** `__ksee_trace`,
-  `__ksee_put*`, `__ksee_put_store*`, `__ksee_put_copy*` are generated as IR
-  by `plugin/ksee-trace.cpp`; in `ksee.c` they would be plain C the plugin
-  only calls. Watch the hot path (every block): fixed-arity functions.
-- **The test runner says "timed out"** instead of an empty log
-  (`crates/ksee-cli/src/chrome.rs`).
-
 ## Page
 
 - **Header**: kSEE centered; the lesson buttons at the upper left named
