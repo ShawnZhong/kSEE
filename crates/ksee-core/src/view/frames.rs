@@ -308,3 +308,41 @@ impl View<'_> {
         self.tables.names.get(k as usize).cloned().unwrap_or_default()
     }
 }
+
+/// Value `v` as the constants whose names start with one of `prefixes`
+/// name it: one equal to it, or flags (one bit each) that make it up.
+fn constant_name(constants: &BTreeMap<String, i64>, prefixes: &[&str], v: i64) -> Option<String> {
+    let fits: Vec<(&String, i64)> = constants.iter().filter(|(n, _)| prefixes.iter().any(|p| n.starts_with(p))).map(|(n, &x)| (n, x)).collect();
+    if let Some((n, _)) = fits.iter().find(|(_, x)| *x == v) {
+        return Some((*n).clone());
+    }
+    if v <= 0 {
+        return None;
+    }
+    let names: Vec<&str> = (0..32).filter(|b| v >> b & 1 != 0)
+        .filter_map(|b| fits.iter().find(|(_, x)| *x == 1 << b).map(|(n, _)| n.as_str())).collect();
+    (names.len() == v.count_ones() as usize).then(|| names.join(" | "))
+}
+
+/// An argument's value, as if it were memory at address 0; past it, memory
+/// (what a pointer argument points to).
+struct Arg<'a>(&'a [u8], &'a dyn Memory);
+
+impl Memory for Arg<'_> {
+    fn read(&self, addr: u32, buf: &mut [u8]) {
+        if addr as usize >= self.0.len() {
+            return self.1.read(addr, buf);
+        }
+        for (i, b) in buf.iter_mut().enumerate() {
+            *b = self.0.get(addr as usize + i).copied().unwrap_or(0);
+        }
+    }
+}
+
+/// A comparison, its operands and whether it held: "18 >= 0 ✓" (signed
+/// ones as such, else as numbers are).
+fn compared(r: &Record) -> Option<String> {
+    let (lhs, op, rhs, signed, held) = r.comparison()?;
+    let v = |x: i128| if signed { x.to_string() } else { num(x as u64) };
+    Some(format!("{} {op} {} {}", v(lhs), v(rhs), if held { "✓" } else { "✗" }))
+}
