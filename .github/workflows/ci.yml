@@ -1,13 +1,11 @@
 name: CI
 on: [push, pull_request]
 
-# The kernel (linux/ and arch/wasm/'s objects, which kbuild writes through
-# the link; the plugin; vmlinux, its UAPI headers) is its own job, its cache
-# with the sources that built it (restored, they are as old as the objects:
-# nothing is rebuilt),
-# cached by what builds it, so a change elsewhere (the page, the user
-# programs, the rest of the Makefile) reuses it; and it is saved even when
-# the tests then fail.
+# The kernel is its own job, cached by what builds it (the port, the
+# plugin, the Makefile's Linux lines), so a change elsewhere reuses it; saved
+# even when the tests fail. The cache: linux/, arch/wasm/ (its objects, which
+# kbuild writes through the link, and its sources), the plugin. Restored
+# over the checkout, the sources are as old as the objects: nothing rebuilt.
 jobs:
   kernel:
     runs-on: ubuntu-26.04
