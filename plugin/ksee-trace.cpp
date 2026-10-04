@@ -22,15 +22,9 @@
 // inside is then a box: what it read and what it returned.)
 // Compile with -g: locations and parameters come from debug info.
 //
-// Probes append records to a ring in the module's own memory, defined in
-// the object that defines start_kernel (wasm-ld keeps every copy of weak
-// or COMDAT data): __ksee_trace = { u32 pos; u32 pad; u32 on; u32 pad;
-// u32 ring[RING_WORDS]; }; the exported ksee_trace() returns its address.
-// pos counts words ever written (the ring keeps the most recent), stored
-// with release order after each record, so a reader that loads it sees
-// whole records. Probes record only while on is nonzero: 1, everything;
-// 2, stores only (the host sets it: 1 within a syscall the page asked
-// for, 2 between, so that memory stays exact throughout). One writer at a time: the kernel is uniprocessor.
+// Probes append records to the kernel's ring through its writers,
+// __ksee_put* (arch/wasm/kernel/ksee.c: the ring, its header, and when it
+// records).
 //
 // A record is a head pair of words and continuation pairs; the second
 // word's top nibble tags the pair, so a reader can start at any even offset
@@ -80,7 +74,6 @@
 //                P \t k \t path       file k
 //                I \t k \t function \t FILE:line
 //                                     inline site k: function, inlined at FILE:line
-//                R \t ring words
 //                F \t fn \t name \t FILE:line \t known \t sealed \t wide
 //                  (known: a bit mask of the source's parameters that call
 //                  records carry; the others were optimized away. sealed:
@@ -126,7 +119,6 @@ using namespace llvm;
 
 namespace {
 
-constexpr unsigned RingWords = 1u << 21;
 constexpr unsigned CallArgs = 7; // the syscall entry's: the number and six
 constexpr unsigned Values = 2 * CallArgs + 1; // a record's at most: a call's arguments (wide ones two words) and its frame base
 enum class Kind : uint32_t { Block = 1, Return = 4, Compare = 6, Store = 7, Continuation = 8, Var = 9 };
@@ -200,11 +192,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     return std::to_string(files.try_emplace(path, files.size()).first->second);
   }
 
-  template <typename T> T *hidden(T *GV) {
-    GV->setVisibility(GlobalValue::HiddenVisibility);
-    return GV;
-  }
-
   // Record [a, tag] and `values`.
   void record(IRBuilder<> &B, Value *a, uint32_t tag, ArrayRef<Value *> values = {}) {
     SmallVector<Value *, 2 + Values> args{a, B.getInt32(tag)};
@@ -212,20 +199,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     B.CreateCall(put[values.size()], args);
   }
 
-  // The writers: declared, or (in the object that defines start_kernel)
-  // defined, with the ring and the export that finds it.
-  void createRuntime() {
-    LLVMContext &C = M->getContext();
-    Type *vd = Type::getVoidTy(C);
-    GlobalValue *home = M->getNamedValue("start_kernel");
-    bool define = home && !home->isDeclaration();
+  // The writers (arch/wasm/kernel/ksee.c, which holds the ring), declared.
+  void declareRuntime() {
+    Type *vd = Type::getVoidTy(M->getContext());
     auto function = [&](const std::string &name, unsigned n) {
-      auto *T = FunctionType::get(vd, SmallVector<Type *>(n, i32), false);
-      if (!define)
-        return cast<Function>(M->getOrInsertFunction(name, T).getCallee());
-      Function *F = hidden(Function::Create(T, GlobalValue::ExternalLinkage, name, M));
-      F->addFnAttr(Attribute::NoInline);
-      return F;
+      return cast<Function>(M->getOrInsertFunction(name, FunctionType::get(vd, SmallVector<Type *>(n, i32), false)).getCallee());
     };
     for (unsigned k = 0; k <= Values; k++)
       put[k] = function("__ksee_put" + std::to_string(k), 2 + k);
@@ -233,69 +211,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       putStore[k] = function("__ksee_put_store" + std::to_string(1 << k), 2);
     for (unsigned k = 0; k < 4; k++)
       putCopy[k] = function("__ksee_put_copy" + std::to_string(1 << k), 3);
-    bulk = M->getOrInsertFunction("__ksee_bulk", FunctionType::get(vd, {i32, i32, i32, i32}, false));
-    if (!define)
-      return;
-
-    auto *traceTy = StructType::get(C, {i32, i32, i32, i32, ArrayType::get(i32, RingWords)});
-    auto *trace = hidden(new GlobalVariable(*M, traceTy, false, GlobalValue::ExternalLinkage,
-                                            ConstantAggregateZero::get(traceTy), "__ksee_trace"));
-    trace->setAlignment(Align(8));
-    Function *info = hidden(Function::Create(FunctionType::get(i32, false), GlobalValue::ExternalLinkage,
-                                             "__ksee_trace_info", M));
-    info->addFnAttr("wasm-export-name", "ksee_trace");
-    IRBuilder<> IB(BasicBlock::Create(C, "", info));
-    IB.CreateRet(IB.CreatePtrToInt(trace, i32));
-    auto field = [&](IRBuilder<> &B, unsigned k) { return B.CreateStructGEP(traceTy, trace, k); };
-
-    // Writer F's body: while on (1: everything; 2: stores only, so memory
-    // stays exact between recordings), the words `words` makes, into the ring.
-    auto body = [&](Function *F, bool store, auto words) {
-      IRBuilder<> B(BasicBlock::Create(C, "", F));
-      BasicBlock *write = BasicBlock::Create(C, "write", F), *done = BasicBlock::Create(C, "done", F);
-      Value *on = B.CreateLoad(i32, field(B, 2));
-      B.CreateCondBr(store ? B.CreateICmpNE(on, B.getInt32(0)) : B.CreateICmpEQ(on, B.getInt32(1)), write, done);
-      B.SetInsertPoint(write);
-      SmallVector<Value *> w;
-      // Continuation pairs: [value, tag(Kind::Continuation)].
-      auto value = [&](Value *v) {
-        w.push_back(v);
-        w.push_back(B.getInt32(tag(Kind::Continuation)));
-      };
-      words(B, w, value);
-      Value *p = B.CreateLoad(i32, field(B, 0));
-      for (auto [i, v] : enumerate(w)) {
-        Value *idx = B.CreateAnd(B.CreateAdd(p, B.getInt32(i)), B.getInt32(RingWords - 1));
-        B.CreateStore(v, B.CreateGEP(i32, field(B, 4), idx));
-      }
-      B.CreateAlignedStore(B.CreateAdd(p, B.getInt32(w.size())), field(B, 0), Align(4))
-          ->setAtomic(AtomicOrdering::Release);
-      B.CreateBr(done);
-      B.SetInsertPoint(done);
-      B.CreateRetVoid();
-    };
-    for (Function *F : put)
-      body(F, false, [&](IRBuilder<> &B, auto &w, auto value) {
-        w.push_back(F->getArg(0));
-        w.push_back(F->getArg(1));
-        for (unsigned i = 2; i < F->arg_size(); i++)
-          value(F->getArg(i));
-      });
-    for (unsigned k = 0; k < 4; k++)
-      for (Function *F : {putStore[k], putCopy[k]})
-        body(F, true, [&, F](IRBuilder<> &B, auto &w, auto value) {
-          Value *addr = F->getArg(0);
-          Value *old = B.CreateZExt(B.CreateAlignedLoad(IntegerType::get(C, 8 << k),
-                                                        B.CreateIntToPtr(addr, PointerType::getUnqual(C)), Align(1)), B.getInt64Ty());
-          w.push_back(addr);
-          w.push_back(B.CreateOr(B.getInt32(tag(Kind::Store, k)), B.CreateShl(F->getArg(1), 4)));
-          value(B.CreateTrunc(old, i32));
-          if (k == 3)
-            value(B.CreateTrunc(B.CreateLShr(old, 32), i32));
-          if (F == putCopy[k])
-            value(F->getArg(2));
-        });
-    probes += "R\t" + std::to_string(RingWords) + "\n";
+    bulk = function("__ksee_bulk", 4);
   }
 
   // The block's lines, as for an L line. (And each write's line, for
@@ -680,7 +596,7 @@ public:
     for (Function &F : Mod)
       if (!F.isDeclaration() && !F.getName().starts_with("__ksee_"))
         todo.push_back(&F);
-    createRuntime();
+    declareRuntime();
     for (Function *F : todo)
       copyByval(*F);
     // (No byval left: every call makes its copy itself, see copyByval.)

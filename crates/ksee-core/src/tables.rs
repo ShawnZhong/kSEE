@@ -100,8 +100,6 @@ impl Block {
 
 #[derive(Debug, Default)]
 pub struct Tables {
-    /// Size of the trace ring in words.
-    pub ring_words: u32,
     pub functions: BTreeMap<u32, Function>,
     /// (function, n) -> its block n.
     pub blocks: BTreeMap<(u32, u32), Block>,
@@ -190,7 +188,6 @@ impl Tables {
                         t.vars.insert((id, k), Var { of, function: function.to_string(), name: name.to_string(), param, arg });
                     }
                 }
-                ["R", words] => t.ring_words = words.parse().unwrap_or(0),
                 ["F", id, name, location, known, rest @ ..] => {
                     let Ok(id) = id.parse() else { continue };
                     let loc = unit.loc(location);
@@ -334,9 +331,8 @@ mod tests {
 
     #[test]
     fn parses_probes_and_types() {
-        let probes = "U\nP\t0\t/s/p.c\nP\t1\t/s/q.h\nR\t64\nF\t7\tpick\t0:2\t3\t0\nL\t7\t0\t1:2\nU\nP\t0\t/s/p.c\nF\t7\tpick\t0:2\t3\t0\nF\t8\tcrc\t0:9\t1\t1\n";
+        let probes = "U\nP\t0\t/s/p.c\nP\t1\t/s/q.h\nF\t7\tpick\t0:2\t3\t0\nL\t7\t0\t1:2\nU\nP\t0\t/s/p.c\nF\t7\tpick\t0:2\t3\t0\nF\t8\tcrc\t0:9\t1\t1\n";
         let t = Tables::parse(probes, "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ttask_struct\t740\nM\t2\tpid\t5888\t0\t1\n");
-        assert_eq!(t.ring_words, 64);
         let f = &t.functions[&7];
         assert_eq!((f.known, f.sealed, t.functions[&8].sealed), (3, false, true));
         assert_eq!((t.file(f.loc), f.loc.line), ("/s/p.c", 2));

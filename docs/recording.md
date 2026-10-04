@@ -2,10 +2,10 @@
 
 Most of what the kernel does is recorded by the compiler:
 `plugin/ksee-trace.cpp`, an LLVM pass plugin, instruments every kernel
-function the same way, with no settings and no list of functions. The runtime
-adds the initial task and host-side stores to the same ring. The format is
-specified at the top of the plugin and extended by the shared tags in
-`ksee-core`; `trace.rs` decodes it.
+function the same way, with no settings and no list of functions; its probes
+call the kernel's writers, `arch/wasm/kernel/ksee.c`, which holds the ring
+(the host has it write the initial task and its own stores too). The format
+is specified at the top of the plugin and in `ksee.c`; `trace.rs` decodes it.
 
 ## What is recorded
 
@@ -55,7 +55,7 @@ tracepoints, no syscall hooks, nothing per subsystem.
 ## The ring
 
 ```c
-struct { u32 pos; u32 pad; u32 on; u32 pad; u32 ring[RING_WORDS]; } __ksee_trace;
+struct { u32 pos; u32 words; u32 on; u32 pad; u32 ring[RING_WORDS]; } trace;  /* ksee.c; words: RING_WORDS */
 ```
 
 A record is a head pair of words and continuation pairs. The second word's
@@ -101,8 +101,7 @@ The instrumented kernel describes its probes in a custom section,
 concatenated by wasm-ld):
 
 - `U`: a unit's start; `P k path`: file k; `I k …`: an inline site (the
-  function, and where it is inlined into the next one out); `R words`: the
-  ring's size;
+  function, and where it is inlined into the next one out;
 - `F fn name FILE:line known sealed wide`: a function, which of its
   parameters call records carry, whether it is sealed (see above), and
   which parameters take two words;

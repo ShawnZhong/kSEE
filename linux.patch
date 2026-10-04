@@ -1152,33 +1152,121 @@ index 000000000..da44de98e
 +}
 diff --git a/arch/wasm/kernel/ksee.c b/arch/wasm/kernel/ksee.c
 new file mode 100644
-index 000000000..ca8774e2d
+index 000000000..d6264584a
 --- /dev/null
 +++ b/arch/wasm/kernel/ksee.c
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,139 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
-+ * The trace's records that are not one instruction's (the kSEE plugin's
-+ * probes write the rest, inline): a bulk write's (memcpy, memset, a store
-+ * wider than 8 bytes; and the host's own writes into kernel memory), and
-+ * the task running where a recording begins. Not instrumented (the plugin
-+ * leaves __ksee_* alone); the plugin defines the ring and its writers.
++ * The trace: a ring of the kernel's records, and its writers. The kSEE
++ * plugin's probes call them (a block, a return, a store, ...); the host
++ * reads the ring (ksee_core::trace) and calls two of them for its own
++ * writes (ksee_bulk) and where a recording begins (ksee_task). Not
++ * instrumented: the plugin leaves __ksee_* alone.
++ *
++ * A record is a head pair of words [a, tag] and continuation pairs
++ * [value, CONT]; a tag's top nibble says what it is (the plugin's header).
 + */
 +
 +#include <linux/types.h>
 +#include <asm/wasm.h>
 +
-+/* The plugin's writers: a Store record of the bytes at addr (their old
-+ * value, before the write), on a line; a copy's says where from. */
-+void __ksee_put_store1(u32 addr, u32 line);
-+void __ksee_put_store2(u32 addr, u32 line);
-+void __ksee_put_store4(u32 addr, u32 line);
-+void __ksee_put_store8(u32 addr, u32 line);
-+void __ksee_put_copy1(u32 addr, u32 line, u32 from);
-+void __ksee_put_copy2(u32 addr, u32 line, u32 from);
-+void __ksee_put_copy4(u32 addr, u32 line, u32 from);
-+void __ksee_put_copy8(u32 addr, u32 line, u32 from);
-+void __ksee_put0(u32 a, u32 tag);
++#define RING_WORDS (1u << 21)
++#define CONT (8u << 28)
++#define STORE (7u << 28)
++#define TASK (3u << 28)
++
++/*
++ * pos counts the words ever written (the ring keeps the most recent),
++ * stored with release order after each record, so a reader that loads it
++ * sees whole records; words, the ring's size; on: probes record only while
++ * it is nonzero: 1, everything; 2, stores only (the host sets it: 1 within
++ * a syscall the page asked for, 2 between, so that memory stays exact
++ * throughout). One writer at a time: the kernel is uniprocessor.
++ */
++static struct {
++	u32 pos, words, on, pad;
++	u32 ring[RING_WORDS];
++} trace __aligned(8) = { .words = RING_WORDS };
++
++__wasm_export(ksee_trace) u32 __ksee_trace_info(void)
++{
++	return (u32)(unsigned long)&trace;
++}
++
++/* Record [a, tag] and n values, if the recording takes it (`store`: a
++ * store's, taken at either level). */
++static __always_inline void put(bool store, u32 a, u32 tag, const u32 *v, u32 n)
++{
++	u32 p = trace.pos, i;
++
++	if (store ? !trace.on : trace.on != 1)
++		return;
++	trace.ring[p & (RING_WORDS - 1)] = a;
++	trace.ring[(p + 1) & (RING_WORDS - 1)] = tag;
++	for (i = 0; i < n; i++) {
++		trace.ring[(p + 2 + 2 * i) & (RING_WORDS - 1)] = v[i];
++		trace.ring[(p + 3 + 2 * i) & (RING_WORDS - 1)] = CONT;
++	}
++	__atomic_store_n(&trace.pos, p + 2 + 2 * n, __ATOMIC_RELEASE);
++}
++
++/* The probes' records: [a, tag] and k values (k up to 15: a call's seven
++ * arguments, wide ones two words, and its frame base). */
++#define U u32
++void __ksee_put0(U a, U t) { put(false, a, t, NULL, 0); }
++void __ksee_put1(U a, U t, U v0) { U v[] = { v0 }; put(false, a, t, v, 1); }
++void __ksee_put2(U a, U t, U v0, U v1) { U v[] = { v0, v1 }; put(false, a, t, v, 2); }
++void __ksee_put3(U a, U t, U v0, U v1, U v2) { U v[] = { v0, v1, v2 }; put(false, a, t, v, 3); }
++void __ksee_put4(U a, U t, U v0, U v1, U v2, U v3) { U v[] = { v0, v1, v2, v3 }; put(false, a, t, v, 4); }
++void __ksee_put5(U a, U t, U v0, U v1, U v2, U v3, U v4) { U v[] = { v0, v1, v2, v3, v4 }; put(false, a, t, v, 5); }
++void __ksee_put6(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5) { U v[] = { v0, v1, v2, v3, v4, v5 }; put(false, a, t, v, 6); }
++void __ksee_put7(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6)
++{ U v[] = { v0, v1, v2, v3, v4, v5, v6 }; put(false, a, t, v, 7); }
++void __ksee_put8(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7)
++{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7 }; put(false, a, t, v, 8); }
++void __ksee_put9(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8)
++{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8 }; put(false, a, t, v, 9); }
++void __ksee_put10(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9)
++{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9 }; put(false, a, t, v, 10); }
++void __ksee_put11(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9, U v10)
++{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10 }; put(false, a, t, v, 11); }
++void __ksee_put12(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9, U v10, U v11)
++{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 }; put(false, a, t, v, 12); }
++void __ksee_put13(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9, U v10, U v11, U v12)
++{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12 }; put(false, a, t, v, 13); }
++void __ksee_put14(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9, U v10, U v11, U v12, U v13)
++{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13 }; put(false, a, t, v, 14); }
++void __ksee_put15(U a, U t, U v0, U v1, U v2, U v3, U v4, U v5, U v6, U v7, U v8, U v9, U v10, U v11, U v12, U v13, U v14)
++{ U v[] = { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14 }; put(false, a, t, v, 15); }
++#undef U
++
++/* A store of 1 << k bytes at addr, on a line: its old value (before the
++ * write), low word first; a copy's says where from. */
++static __always_inline void store(u32 k, u32 addr, u32 line, u32 from, bool copy)
++{
++	u64 old = 0;
++	u32 v[3], n = 0;
++
++	if (!trace.on)
++		return;
++	__builtin_memcpy(&old, (void *)(unsigned long)addr, 1u << k);
++	v[n++] = (u32)old;
++	if (k == 3)
++		v[n++] = (u32)(old >> 32);
++	if (copy)
++		v[n++] = from;
++	put(true, addr, STORE | line << 4 | k, v, n);
++}
++
++void __ksee_put_store1(u32 addr, u32 line) { store(0, addr, line, 0, false); }
++void __ksee_put_store2(u32 addr, u32 line) { store(1, addr, line, 0, false); }
++void __ksee_put_store4(u32 addr, u32 line) { store(2, addr, line, 0, false); }
++void __ksee_put_store8(u32 addr, u32 line) { store(3, addr, line, 0, false); }
++void __ksee_put_copy1(u32 addr, u32 line, u32 from) { store(0, addr, line, from, true); }
++void __ksee_put_copy2(u32 addr, u32 line, u32 from) { store(1, addr, line, from, true); }
++void __ksee_put_copy4(u32 addr, u32 line, u32 from) { store(2, addr, line, from, true); }
++void __ksee_put_copy8(u32 addr, u32 line, u32 from) { store(3, addr, line, from, true); }
 +
 +/* The writes of len bytes at addr, as Store records of up to 8 bytes each;
 + * from: where a copy takes them from, else 0. A copy whose higher
@@ -1191,37 +1279,21 @@ index 000000000..ca8774e2d
 +
 +	while (back ? off : off < len) {
 +		u32 left = back ? off : len - off;
-+		u32 size = left >= 8 ? 8 : left >= 4 ? 4 : left >= 2 ? 2 : 1;
-+		u32 at;
++		u32 k = left >= 8 ? 3 : left >= 4 ? 2 : left >= 2 ? 1 : 0;
 +
 +		if (back)
-+			off -= size;
-+		at = addr + off;
-+		if (!from) {
-+			switch (size) {
-+			case 1: __ksee_put_store1(at, line); break;
-+			case 2: __ksee_put_store2(at, line); break;
-+			case 4: __ksee_put_store4(at, line); break;
-+			default: __ksee_put_store8(at, line);
-+			}
-+		} else {
-+			switch (size) {
-+			case 1: __ksee_put_copy1(at, line, from + off); break;
-+			case 2: __ksee_put_copy2(at, line, from + off); break;
-+			case 4: __ksee_put_copy4(at, line, from + off); break;
-+			default: __ksee_put_copy8(at, line, from + off);
-+			}
-+		}
++			off -= 1u << k;
++		store(k, addr + off, line, from ? from + off : 0, from);
 +		if (!back)
-+			off += size;
++			off += 1u << k;
 +	}
 +}
 +
-+/* A Task record (ksee_core::trace's kind 3): task runs, where a requested
-+ * recording begins (no switch in it says so). */
++/* A Task record: task runs, where a requested recording begins (no switch
++ * in it says so). */
 +__wasm_export(ksee_task) void __ksee_task(u32 task)
 +{
-+	__ksee_put0(task, 3u << 28);
++	put(false, task, TASK, NULL, 0);
 +}
 diff --git a/arch/wasm/kernel/process.c b/arch/wasm/kernel/process.c
 new file mode 100644

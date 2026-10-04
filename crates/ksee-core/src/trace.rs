@@ -82,8 +82,13 @@ impl Args {
 /// The ring at `trace`, decoded, with each record's id: the number of the
 /// pair it starts at, counting every pair ever written (so an id stays the
 /// same while the ring goes on; indexes do not); and the calls' arguments.
-pub fn ring(mem: &dyn Memory, trace: u32, words: u32) -> (Vec<Record>, Vec<u32>, Args) {
-    // The ring's current contents: `len` pairs from pair `first`.
+pub fn ring(mem: &dyn Memory, trace: u32) -> (Vec<Record>, Vec<u32>, Args) {
+    // The ring's current contents: `len` pairs from pair `first` (of
+    // `words`, its size, as its header says).
+    let words = mem.read_u32(trace + wire::WORDS);
+    if words < 2 {
+        return Default::default();
+    }
     let pos = mem.read_u32(trace) & !1;
     let len = pos.min(words) / 2;
     let first = pos / 2 - len;
@@ -334,12 +339,13 @@ pub(crate) mod tests {
         // A 4-word ring after 6 words (blocks 0, 1, 2) were written.
         let mut m = alloc::vec![0u8; 32];
         m[0..4].copy_from_slice(&6u32.to_le_bytes());
+        m[4..8].copy_from_slice(&4u32.to_le_bytes());
         let words = [block(9, 2), block(9, 1)].concat();
         for (slot, w) in words.iter().enumerate() {
             let at = RING as usize + slot * 4;
             m[at..at + 4].copy_from_slice(&w.to_le_bytes());
         }
-        let (got, ids, _) = ring(&Ring(m), 0, 4);
+        let (got, ids, _) = ring(&Ring(m), 0);
         assert_eq!(got, [Record::Block { func: 9, n: 1 }, Record::Block { func: 9, n: 2 }]);
         assert_eq!(ids, [1, 2]);
     }
