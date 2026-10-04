@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>kSEE — watch the Linux kernel run</title>
+<title>kSEE, the kernel Syscall Execution Explorer: step through a real Linux kernel in your browser</title>
+<meta name="description" content="kSEE runs a real Linux kernel in your browser and records everything a system call does: step through its source line by line, with the call stack, its arguments and locals, and every write to memory, as they were.">
+<meta property="og:title" content="kSEE, the kernel Syscall Execution Explorer">
+<meta property="og:description" content="Step through a real Linux kernel, in your browser: what a system call does, line by line.">
+<meta property="og:type" content="website">
 <style>
 :root {
   color-scheme: light dark;
@@ -223,6 +227,7 @@ table.objs tr.later { opacity: .45; }
 </head>
 <body>
 <div id="root"></div>
+<noscript><p>kSEE, the kernel Syscall Execution Explorer, runs a real Linux kernel in your browser and lets you step through what a system call does, line by line. It needs JavaScript and WebAssembly (with JSPI: Chrome 137, Firefox 153, Safari 27 or later).</p></noscript>
 <script>
 // (The theme kept, before the page is drawn: lesson.rs's Theme.)
 const theme = localStorage.getItem("ksee.theme");

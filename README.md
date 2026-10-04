@@ -2,7 +2,7 @@
 
 *Watch the real Linux kernel run, line by line, in your browser.*
 
-kSEE (see the kernel) records an instrumented Linux run and lets you move
+kSEE (see the kernel; the kernel Syscall Execution Explorer) records an instrumented Linux run and lets you move
 through it in both directions. You can follow source lines and call stacks,
 inspect tasks and memory as they were at a selected moment, and see which
 kernel objects a syscall changed.
