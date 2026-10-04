@@ -42,6 +42,20 @@ pub struct Region {
     pub depth: u32,
 }
 
+/// A region as the code names it (see name_stores): what it is called,
+/// and the function calling it so; its kind, type and address; for a
+/// call's local or frame, the call it lives in (its life); the record that
+/// names it (its call's depth).
+struct Naming {
+    what: String,
+    within: Option<String>,
+    kind: RegionKind,
+    ty: u32,
+    addr: u32,
+    call: Option<usize>,
+    by: Option<usize>,
+}
+
 /// A span's regions, and the things its stores and variable sets wrote
 /// (Thing), in the order first written.
 #[derive(Debug, Default)]
@@ -257,13 +271,12 @@ impl View<'_> {
         let task = self.rec.tasks.get(first).copied().unwrap_or(0);
         let mut regions: Vec<Region> = Vec::new();
         let mut seen = alloc::collections::BTreeSet::new();
-        // (Named at record `by`: by the call there, its depth.)
-        let mut add = |(what, within): (String, Option<String>), kind: RegionKind, ty: u32, addr: u32, size: Option<u32>, call: Option<usize>, by: Option<usize>| {
-            let ty = types.resolve(ty);
-            if addr != 0 && seen.insert((addr, ty, call)) {
-                let life = call.map(|c| (c, self.rec.calls.call_end(c).unwrap_or(usize::MAX)));
-                let depth = by.and_then(|i| self.rec.calls.call_at(i)).map_or(0, |c| c.depth);
-                regions.push(Region { what, within, kind, ty, addr, size: size.unwrap_or_else(|| types.size_of(ty)), life, depth });
+        let mut add = |n: Naming| {
+            let ty = types.resolve(n.ty);
+            if n.addr != 0 && seen.insert((n.addr, ty, n.call)) {
+                let life = n.call.map(|c| (c, self.rec.calls.call_end(c).unwrap_or(usize::MAX)));
+                let depth = n.by.and_then(|i| self.rec.calls.call_at(i)).map_or(0, |c| c.depth);
+                regions.push(Region { what: n.what, within: n.within, kind: n.kind, ty, addr: n.addr, size: types.size_of(ty), life, depth });
             }
         };
         self.task_regions(task, first, last, &mut add);
@@ -291,14 +304,14 @@ impl View<'_> {
     /// The task running as the span begins, by its name ("prog(19)"), and
     /// what its pointer members point to as the span ends.
     fn task_regions(&self, task: u32, first: usize, last: usize,
-                    add: &mut impl FnMut((String, Option<String>), RegionKind, u32, u32, Option<u32>, Option<usize>, Option<usize>)) {
+                    add: &mut impl FnMut(Naming)) {
         let types = &self.tables.types;
         let Some(ty) = types.find(arch::TASK) else { return };
         // (By its name, "prog(19)": the task running as the span begins,
         // which another may follow in it; not "current".)
         let who = self.task(task, first);
         let who = who.named();
-        add((who.clone(), None), RegionKind::Task, ty, task, None, None, None);
+        add(Naming { what: who.clone(), within: None, kind: RegionKind::Task, ty, addr: task, call: None, by: None });
         // (And what its pointer members point to, as the span ends:
         // current->files, ->fs, ->mm: "files->next_fd" through a local
         // the optimizer kept in a register is reached this way.)
@@ -306,7 +319,8 @@ impl View<'_> {
         if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
             for mb in members.iter().filter(|mb| mb.bit_size == 0) {
                 if let Some(to) = types.struct_target(mb.ty) {
-                    add((format!("{who}->{}", mb.name), None), RegionKind::Object, to, end.read_u32(task.wrapping_add(mb.bit_offset / 8)), None, None, None);
+                    add(Naming { what: format!("{who}->{}", mb.name), within: None, kind: RegionKind::Object, ty: to,
+                                 addr: end.read_u32(task.wrapping_add(mb.bit_offset / 8)), call: None, by: None });
                 }
             }
         }
@@ -316,7 +330,7 @@ impl View<'_> {
     /// pointer argument to a struct, its locals, and what its wasm-local
     /// variables point to.
     fn call_regions(&self, first: usize, last: usize,
-                    add: &mut impl FnMut((String, Option<String>), RegionKind, u32, u32, Option<u32>, Option<usize>, Option<usize>)) {
+                    add: &mut impl FnMut(Naming)) {
         let (t, types) = (self.tables, &self.tables.types);
         let (records, calls, args) = (&self.rec.records, &self.rec.calls, &self.rec.args);
         let last = last.min(self.rec.last());
@@ -329,18 +343,21 @@ impl View<'_> {
             for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
                 let v = v as u32;
                 if let Some(to) = types.struct_target(*ty) {
-                    add((pname.clone(), Some(f.name.clone())), kind(RegionKind::Object), to, v, None, Self::frame_of(calls, args, i, v), Some(i));
+                    add(Naming { what: pname.clone(), within: Some(f.name.clone()), kind: kind(RegionKind::Object), ty: to, addr: v,
+                                 call: Self::frame_of(calls, args, i, v), by: Some(i) });
                 }
             }
             // (Where its pointers point as the call ends.)
             let end = calls.call_end(i).unwrap_or(last).min(last);
             for (var, ty, off) in types.locals.get(&func).into_iter().flatten().filter_map(|(v, t, o)| Some((v, t, (*o)?))) {
-                add((var.clone(), Some(f.name.clone())), kind(RegionKind::Local), *ty, frame.wrapping_add(off), None, Some(i), Some(i));
+                add(Naming { what: var.clone(), within: Some(f.name.clone()), kind: kind(RegionKind::Local), ty: *ty, addr: frame.wrapping_add(off),
+                             call: Some(i), by: Some(i) });
                 // (A local pointing at a struct: that too ("files->next_fd"
                 // through `struct files_struct *files = current->files`).)
                 if let Some(to) = types.struct_target(*ty) {
                     let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
-                    add((var.clone(), Some(f.name.clone())), kind(RegionKind::Object), to, v, None, Self::frame_of(calls, args, i, v), Some(i));
+                    add(Naming { what: var.clone(), within: Some(f.name.clone()), kind: kind(RegionKind::Object), ty: to, addr: v,
+                                 call: Self::frame_of(calls, args, i, v), by: Some(i) });
                 }
             }
             // (One the code keeps in a wasm local, pointing at a struct
@@ -358,7 +375,8 @@ impl View<'_> {
             }
             for (v, value) in values {
                 if let Some(to) = self.var_ty(v).and_then(|ty| types.struct_target(ty)) {
-                    add((v.name.clone(), Some(v.function.clone())), kind(RegionKind::Object), to, value, None, Self::frame_of(calls, args, i, value), Some(i));
+                    add(Naming { what: v.name.clone(), within: Some(v.function.clone()), kind: kind(RegionKind::Object), ty: to, addr: value,
+                                 call: Self::frame_of(calls, args, i, value), by: Some(i) });
                 }
             }
         }
