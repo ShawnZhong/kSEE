@@ -89,12 +89,6 @@ impl Memory for PastMemory<'_> {
 mod tests {
     use super::*;
 
-    struct Mem(Vec<u8>);
-    impl Memory for Mem {
-        fn read(&self, addr: u32, buf: &mut [u8]) {
-            buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
-        }
-    }
 
     #[test]
     fn a_slot_is_written_by_a_store_that_covers_it() {
@@ -111,7 +105,7 @@ mod tests {
         let r = [b, Record::Store { addr: 4, size: 4, old: 1, line: 0, from: None }, b, Record::Store { addr: 4, size: 4, old: 2, line: 0, from: None }, b];
         let mut m = alloc::vec![0u8; 16];
         m[4] = 3;
-        let live = Mem(m);
+        let live = m;
         let h = History::new(&r);
         let at = |i: usize| PastMemory { base: &live, history: &h, at: i }.read_u32(4);
         assert_eq!((at(0), at(2), at(4)), (1, 2, 3));

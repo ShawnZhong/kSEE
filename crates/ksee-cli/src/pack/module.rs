@@ -162,25 +162,10 @@ pub fn sections(module: &[u8]) -> impl Iterator<Item = (u8, &str, &[u8])> {
     })
 }
 
-/// Custom sections: (name, contents).
-pub fn custom_sections(module: &[u8]) -> impl Iterator<Item = (&str, &[u8])> {
-    sections(module).filter(|s| s.0 == 0).map(|(_, name, raw)| {
-        let mut p = 1;
-        let _ = uleb(raw, &mut p); // section size
-        let n = uleb(raw, &mut p).unwrap_or(0) as usize;
-        (name, &raw[p + n..])
-    })
-}
-
-/// The contents of every custom section called `name`, concatenated.
+/// The contents of every custom section called `name`, concatenated
+/// (ksee_core::wasm's).
 pub fn custom_section(module: &[u8], name: &str) -> Vec<u8> {
-    let mut out = Vec::new();
-    for (n, data) in custom_sections(module) {
-        if n == name {
-            out.extend_from_slice(data);
-        }
-    }
-    out
+    ksee_core::wasm::section(&module, 0, module.len() as u32, name)
 }
 
 #[cfg(test)]

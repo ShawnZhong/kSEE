@@ -531,12 +531,6 @@ pub(crate) fn quote(b: &[u8]) -> String {
 mod tests {
     use super::*;
 
-    struct Mem(Vec<u8>);
-    impl Memory for Mem {
-        fn read(&self, addr: u32, buf: &mut [u8]) {
-            buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
-        }
-    }
 
     const TYPES: &str = "T\t1\tbase\tint\t4\ts\n\
                          T\t2\tbase\tchar\t1\tc\n\
@@ -557,7 +551,7 @@ mod tests {
         let mut m = alloc::vec![0u8; 0x200];
         m[0x100..0x104].copy_from_slice(&7u32.to_le_bytes());
         m[0x104..0x108].copy_from_slice(b"ping");
-        assert_eq!(t.read_task(&Mem(m), 0x100), Some(TaskId { pid: 7, comm: "ping".into() }));
+        assert_eq!(t.read_task(&m, 0x100), Some(TaskId { pid: 7, comm: "ping".into() }));
     }
 
     #[test]
@@ -607,7 +601,7 @@ mod tests {
         m[4..8].copy_from_slice(b"init");
         m[12..16].copy_from_slice(&0x40u32.to_le_bytes());
         m[16] = 0b0101; // flags: 3 bits = 5
-        let mem = Mem(m);
+        let mem = m;
         let at = |addr, ty, off, size| {
             let out = t.print(&mem, addr, ty, off, size);
             out

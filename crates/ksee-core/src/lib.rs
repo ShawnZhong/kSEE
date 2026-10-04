@@ -51,3 +51,20 @@ pub trait Memory {
         u32::from_le_bytes(b)
     }
 }
+
+/// Bytes as memory, each at its index (a module's, a test's): past their
+/// end, zeros.
+impl Memory for &[u8] {
+    fn read(&self, addr: u32, buf: &mut [u8]) {
+        let at = (addr as usize).min(self.len());
+        let n = buf.len().min(self.len() - at);
+        buf[..n].copy_from_slice(&self[at..at + n]);
+        buf[n..].fill(0);
+    }
+}
+
+impl Memory for alloc::vec::Vec<u8> {
+    fn read(&self, addr: u32, buf: &mut [u8]) {
+        (&self[..]).read(addr, buf)
+    }
+}

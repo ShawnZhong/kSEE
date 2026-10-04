@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use gimli::{AttributeValue, DwAt, DwTag, EndianSlice, LittleEndian, UnitOffset, constants as dw};
-use super::module;
 
 type R<'a> = EndianSlice<'a, LittleEndian>;
 
@@ -15,9 +14,9 @@ type R<'a> = EndianSlice<'a, LittleEndian>;
 /// arguments). (The syscalls' names, `S nr name`, come after: see
 /// syscalls.)
 pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
-    let sections: HashMap<String, Vec<u8>> = module::custom_sections(image)
-        .filter(|(name, _)| name.starts_with(".debug_"))
-        .map(|(name, data)| (name.to_string(), data.to_vec()))
+    let sections: HashMap<String, Vec<u8>> = ksee_core::wasm::custom_sections(&image, 0, image.len() as u32).into_iter()
+        .filter(|(name, _, _)| name.starts_with(".debug_"))
+        .map(|(name, at, n)| (name, image[at as usize..(at + n) as usize].to_vec()))
         .collect();
     let dwarf = gimli::Dwarf::load(|id| -> Result<R, gimli::Error> {
         let data = sections.get(id.name()).map_or(&[][..], Vec::as_slice);

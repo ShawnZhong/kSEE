@@ -3,12 +3,6 @@
 use super::*;
 use crate::trace::Args;
 
-struct Mem(Vec<u8>);
-impl Memory for Mem {
-    fn read(&self, addr: u32, buf: &mut [u8]) {
-        buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
-    }
-}
 
 /// A name as the page says it: "p in f".
 fn named(what: &str, within: &Option<String>) -> String {
@@ -39,7 +33,7 @@ fn a_variable_in_a_wasm_local_has_its_last_value() {
     let mut args = Args::default();
     args.push(0, &[64]);
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
-    let mem = Mem(alloc::vec![0; 128]);
+    let mem = alloc::vec![0; 128];
     let v = View { tables: &t, rec: &rec, now: &mem };
     let x = |i| v.call_stack(i, None, 0, i)[0].locals.clone().into_iter().find(|o| o.name == "x").and_then(|o| o.value);
     assert_eq!((x(0), x(2), x(3)), (Some("(not recorded)".into()), Some("5".into()), Some("7".into())));
@@ -55,7 +49,7 @@ fn a_memory_slot_never_stored_to_is_uninitialized() {
     let mut args = Args::default();
     args.push(0, &[32]);
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0], args);
-    let mem = Mem(alloc::vec![0; 128]);
+    let mem = alloc::vec![0; 128];
     let v = View { tables: &t, rec: &rec, now: &mem };
     let y = v.call_stack(0, None, 0, 0)[0].locals.clone().into_iter().find(|o| o.name == "y").and_then(|o| o.value);
     assert_eq!(y, Some("(uninitialized)".into()));
@@ -70,7 +64,7 @@ fn each_task_where_it_last_ran() {
     let mut args = Args::default();
     args.push(1, &[0x100, 0x200, 0]);
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
-    let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 16]) };
+    let v = View { tables: &t, rec: &rec, now: &alloc::vec![0; 16] };
     let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.last)).collect::<Vec<_>>();
     assert_eq!(at(0), [(0x100, TaskState::Running, Some(0)), (0x200, TaskState::Sleeping, None)]);
     assert_eq!(at(3), [(0x100, TaskState::Sleeping, Some(1)), (0x200, TaskState::Running, Some(3))]);
@@ -97,7 +91,7 @@ fn the_tasks_are_the_kernels_list_then_the_recordings_others() {
     m[0x214] = 1;
     let r = [Record::Task { task: 0x300 }, Record::Block { func: 1, n: 0 }, Record::Task { task: 0x200 }, Record::Block { func: 1, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), Args::default());
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.last)).collect::<Vec<_>>();
     assert_eq!(at(1), [(0x100, TaskState::Sleeping, None), (0x200, TaskState::Runnable, None), (0x300, TaskState::Running, Some(1))]);
     assert_eq!(at(3), [(0x100, TaskState::Sleeping, None), (0x200, TaskState::Running, Some(3)), (0x300, TaskState::Exited, Some(1))]);
@@ -116,7 +110,7 @@ fn a_store_is_a_change_to_its_member() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], args);
     let mut m = alloc::vec![0u8; 16];
     (m[8], m[5]) = (2, 5);
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let got: Vec<_> = writes(&v, 0, 3).into_iter().map(|(i, _, _, member, before, after)| (i, member, before, after)).collect();
     assert_eq!(got, [(1, "b".into(), "1".into(), "2".into()), (3, "a".into(), "0".into(), "1280".into())]);
 }
@@ -134,7 +128,7 @@ fn one_store_copying_a_struct_changes_each_member() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 2], args);
     let mut m = alloc::vec![0u8; 32];
     (m[8], m[12]) = (5, 6);
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let nodes = v.objects(0, 1);
     let got: Vec<_> = nodes[0].changes.iter().map(|d| (d.member.clone(), d.after.clone())).collect();
     assert_eq!(got, [("mnt".into(), "0x5".into()), ("dentry".into(), "0x6".into())]);
@@ -159,7 +153,7 @@ fn a_lines_note_says_a_name_once() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 7], args);
     let mut m = alloc::vec![0u8; 32];
     (m[8], m[20]) = (2, 4);
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let notes = v.notes(0, 6, "f.c", 6);
     assert_eq!((notes[0].line, notes[0].short.as_str()), (3, "b: 1 → 2, 3 → 4"));
     assert_eq!(notes[0].full.as_str(), "p->b in g: 1 → 2; p->b in g: 3 → 4");
@@ -185,7 +179,7 @@ fn a_calls_stores_are_named_as_the_code_names_them() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 8], args);
     let mut m = alloc::vec![0u8; 128];
     (m[8], m[36], m[20], m[100]) = (2, 7, 9, 5);
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let got: Vec<_> = writes(&v, 0, 7).into_iter().map(|(_, what, kind, member, _, after)| (what, kind, member, after)).collect();
     assert_eq!(got, [("p in f".into(), RegionKind::Object, "b".into(), "2".into()), ("x in f".into(), RegionKind::Local, "".into(), "7".into()),
                      ("0x14".into(), RegionKind::Other, "".into(), "9".into()), ("0x64".into(), RegionKind::Other, "".into(), "5".into()),
@@ -204,7 +198,7 @@ fn a_store_through_a_pointer_in_a_wasm_local_is_named_by_it() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
     let mut m = alloc::vec![0u8; 128];
     m[8] = 2;
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let got: Vec<_> = writes(&v, 0, 2).into_iter().map(|(_, what, _, member, _, after)| (what, member, after)).collect();
     assert_eq!(got, [("q in f".into(), "".into(), "0x4".into()), ("q in f".into(), "b".into(), "2".into())]);
 }
@@ -224,7 +218,7 @@ fn the_objects_a_call_wrote_are_a_graph() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], args);
     let mut m = alloc::vec![0u8; 64];
     (m[8], m[32], m[36]) = (2, 7, 4);
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let nodes = v.objects(0, 3);
     let got: Vec<_> = nodes.iter().map(|n| (named(&n.what, &n.within), n.changes.iter().map(|d| (d.member.clone(), format!("{} → {}", d.before, d.after), d.to)).collect::<Vec<_>>())).collect();
     // (As a tree, in the order shown: q, then p under it, by its link.)
@@ -248,7 +242,7 @@ fn another_tasks_objects_come_after_the_spans_own() {
     let rec = Recording::new(&t, r.to_vec(), (0..6).collect(), args);
     let mut m = alloc::vec![0u8; 64];
     (m[8], m[20]) = (2, 4);
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let got: Vec<_> = v.objects(0, 5).into_iter().map(|n| (named(&n.what, &n.within), n.by.map(|t| t.addr))).collect();
     assert_eq!(got, [("p in f".into(), None), ("q in g".into(), Some(40))]);
 }
@@ -264,7 +258,7 @@ fn a_calls_locals_are_not_objects() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
     let mut m = alloc::vec![0u8; 64];
     m[36] = 7;
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     assert!(v.objects(0, 2).is_empty() && v.objects(0, 1).is_empty());
 }
 
@@ -283,7 +277,7 @@ fn an_object_inside_another_is_its_member() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
     let mut m = alloc::vec![0u8; 128];
     m[12] = 3;
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let got: Vec<_> = v.objects(0, 2).into_iter().map(|n| (named(&n.what, &n.within), n.changes.into_iter().map(|d| (d.member, format!("{} → {}", d.before, d.after))).collect::<Vec<_>>())).collect();
     assert_eq!(got, [("p in f".into(), alloc::vec![("inner.b".into(), "0 → 3".into())])]);
 }
@@ -302,7 +296,7 @@ fn two_objects_of_one_name_are_numbered() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 6], args);
     let mut m = alloc::vec![0u8; 128];
     (m[8], m[24]) = (1, 2);
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let got: Vec<_> = v.objects(0, 5).into_iter().map(|n| named(&n.what, &n.within)).collect();
     assert_eq!(got, ["p in f", "p #2 in f"]);
 }
@@ -322,7 +316,7 @@ fn a_members_changes_are_a_run_a_function() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 5], args);
     let mut m = alloc::vec![0u8; 128];
     m[8] = 1;
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let nodes = v.objects(0, 4);
     let d = &nodes[0].changes[0];
     let runs: Vec<_> = d.runs.iter().map(|r| (r.at.as_ref().map(|l| l.func.clone()), r.before.clone(), r.after.clone(), r.last)).collect();
@@ -345,7 +339,7 @@ fn a_member_one_function_writes_back_is_no_change() {
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 3], args);
     let mut m = alloc::vec![0u8; 64];
     m[8] = 1;
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     assert!(v.objects(0, 2).is_empty());
 }
 
@@ -358,7 +352,7 @@ fn a_value_is_followed_through_its_copies() {
     let st = |addr, from| Record::Store { addr, size: 4, old: 0, line: 0, from: core::num::NonZeroU32::new(from) };
     let r = [st(0x30, 0), st(0x10, 0x30), st(0x20, 0x10), st(0x24, 0x14)];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], Args::default());
-    let v = View { tables: &t, rec: &rec, now: &Mem(alloc::vec![0; 64]) };
+    let v = View { tables: &t, rec: &rec, now: &alloc::vec![0; 64] };
     let way = |a| v.origin(a, 4, 3, 8).iter().map(|w| (w.i, w.addr, w.from)).collect::<Vec<_>>();
     assert_eq!(way(0x20), [(2, 0x20, Some(0x10)), (1, 0x10, Some(0x30)), (0, 0x30, None)]);
     assert_eq!(way(0x24), [(3, 0x24, Some(0x14))]);
@@ -371,7 +365,7 @@ fn overlapping_copy_chunks_do_not_become_each_others_origins() {
     let copy = |addr: u32| Record::Store { addr, size: 8, old: 0, line: 0, from: core::num::NonZeroU32::new(addr - 4) };
     let r: Vec<Record> = alloc::vec![copy(0x1c), copy(0x14)];
     let rec = Recording::new(&Tables::default(), r, alloc::vec![0; 2], Args::default());
-    let v = View { tables: &Tables::default(), rec: &rec, now: &Mem(alloc::vec![0; 64]) };
+    let v = View { tables: &Tables::default(), rec: &rec, now: &alloc::vec![0; 64] };
     let way = |addr| v.origin(addr, 4, 1, 8).iter().map(|w| (w.addr, w.from)).collect::<Vec<_>>();
     assert_eq!(way(0x1c), [(0x1c, Some(0x18))]);
     assert_eq!(way(0x14), [(0x14, Some(0x10))]);
@@ -384,7 +378,7 @@ fn frames_are_where_their_calls_are() {
                            L\t1\t0\t0:1;:2;|;:3\nL\t2\t0\t0:10\n", "");
     let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
-    let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
+    let v = View { tables: &t, rec: &rec, now: &Vec::new() };
     let lines: Vec<_> = v.call_stack(1, None, 0, 1).iter().map(|f| (f.func.clone(), f.line)).collect();
     assert_eq!(lines, [("g".into(), Some(10)), ("f".into(), Some(2))]);
 }
@@ -397,7 +391,7 @@ fn inlined_code_is_a_frame_of_its_own() {
                            I\t0\th\t0:2\nL\t1\t0\t0:1;:20@0;|\nL\t2\t0\t0:10\n", "");
     let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
-    let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
+    let v = View { tables: &t, rec: &rec, now: &Vec::new() };
     let frames: Vec<_> = v.call_stack(1, None, 0, 1).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
     assert_eq!(frames, [("g".into(), Some(10), false), ("h".into(), Some(20), true), ("f".into(), Some(2), false)]);
     // (Line 2, where h is inlined, ran too: h's line 20 ran for it.)
@@ -417,7 +411,7 @@ fn two_inlined_frames_of_one_call_are_bars_of_their_own() {
                            I\t0\th\t0:2\nI\t1\tg\t1:3\nL\t1\t0\t2:30@1@0\n", "");
     let r = [Record::Block { func: 1, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0], Args::default());
-    let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
+    let v = View { tables: &t, rec: &rec, now: &Vec::new() };
     let frames: Vec<_> = v.call_stack(0, None, 0, 0).iter().map(|f| (f.func.clone(), f.inlined)).collect();
     assert_eq!(frames, [("g".into(), true), ("h".into(), true), ("f".into(), false)]);
     // (Three steps, as stepping enters them: the lines calling h and g, then g's.)
@@ -436,7 +430,7 @@ fn char_pointers_show_their_strings() {
     m[8..12].copy_from_slice(b"tmp\0");
     m[4..8].copy_from_slice(&16u32.to_le_bytes()); // (to bytes not printable: escaped, as C writes them)
     m[16] = 0xff;
-    let value = |at| t.object(&Mem(m.clone()), "p", at, 2, 0).value.unwrap();
+    let value = |at| t.object(&m.clone(), "p", at, 2, 0).value.unwrap();
     assert_eq!((value(0).as_str(), value(4).as_str()), ("0x8 → \"tmp\"", "0x10 → \"\\xff\""));
 }
 
@@ -446,7 +440,7 @@ fn scalar_pointers_show_what_they_point_to() {
     let mut m = alloc::vec![0u8; 16];
     m[0..4].copy_from_slice(&8u32.to_le_bytes());
     m[8..12].copy_from_slice(&(-3i32).to_le_bytes());
-    let o = t.object(&Mem(m), "pos", 0, 2, 0);
+    let o = t.object(&m, "pos", 0, 2, 0);
     assert_eq!((o.value.as_deref(), o.open), (Some("0x8 → -3"), None));
 }
 
@@ -457,7 +451,7 @@ fn objects_expose_pointer_targets() {
     let mut m = alloc::vec![0u8; 16];
     m[0..4].copy_from_slice(&7i32.to_le_bytes());
     m[4..8].copy_from_slice(&8u32.to_le_bytes());
-    let o = t.object(&Mem(m), "n", 0, 2, 1);
+    let o = t.object(&m, "n", 0, 2, 1);
     let c = o.children.unwrap();
     assert_eq!((c[0].value.as_deref(), c[1].value.as_deref(), c[1].open), (Some("7"), Some("0x8"), Some(Target { ty: 2, addr: 8 })));
 }
@@ -466,7 +460,7 @@ fn objects_expose_pointer_targets() {
 fn a_member_of_size_0_is_not_shown() {
     // struct s { int a; struct e {} e; }: the config left e empty, nothing in it.
     let t = Tables::parse("U\n", "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ts\t4\nM\t2\ta\t0\t0\t1\nM\t2\te\t32\t0\t3\nT\t3\tstruct\te\t0\n");
-    let o = t.types.object(&Mem(alloc::vec![0u8; 8]), "x", 0, 2, 1);
+    let o = t.types.object(&alloc::vec![0u8; 8], "x", 0, 2, 1);
     assert_eq!(o.children.unwrap().iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["a"]);
 }
 
@@ -474,7 +468,7 @@ fn a_member_of_size_0_is_not_shown() {
 fn a_long_array_says_how_many_more() {
     // int a[100]: the first 64, then "… 36 more".
     let t = Tables::parse("U\n", "T\t1\tbase\tint\t4\ts\nT\t2\tarray\t\t400\t1\t100\n");
-    let c = t.types.object(&Mem(alloc::vec![0u8; 400]), "a", 0, 2, 1).children.unwrap();
+    let c = t.types.object(&alloc::vec![0u8; 400], "a", 0, 2, 1).children.unwrap();
     assert_eq!((c.len(), c[64].name.as_str(), c[64].value.as_deref()), (65, "[64…99]", Some("… 36 more")));
 }
 
@@ -490,7 +484,7 @@ fn a_task_is_named_as_it_was_then() {
     let mut m = alloc::vec![0u8; 128];
     m[0x40] = 19;
     m[0x44..0x47].copy_from_slice(b"hi\0");
-    let v = View { tables: &t, rec: &rec, now: &Mem(m) };
+    let v = View { tables: &t, rec: &rec, now: &m };
     let name = |i| v.task(0x40, i).comm;
     assert_eq!((name(1), name(3), v.task(0x40, 3).pid), (Some("prog".into()), Some("hi".into()), Some(19)));
 }
@@ -577,7 +571,7 @@ fn an_inlined_call_is_stepped_into_as_a_call_is() {
     let t = Tables::parse("U\nP\t0\tf.c\nP\t1\th.c\nP\t2\tg.c\nF\t1\tf\t0:1\t0\n\
                            I\t0\th\t0:2\nI\t1\tg\t1:3\nL\t1\t0\t0:1;2:30@1@0;0:4\n", "");
     let rec = Recording::new(&t, alloc::vec![Record::Block { func: 1, n: 0 }], alloc::vec![0], Args::default());
-    let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
+    let v = View { tables: &t, rec: &rec, now: &Vec::new() };
     let lines = v.lines(0, 0, 0);
     let at: Vec<_> = lines.iter().map(|l| (l.file.as_str(), l.line, l.inl)).collect();
     assert_eq!(at, [("f.c", 1, 0), ("f.c", 2, 0), ("h.c", 3, 1), ("g.c", 30, 2), ("f.c", 4, 0)]);
@@ -596,7 +590,7 @@ fn the_steps_are_the_lines_stepping_visits() {
     let t = Tables::parse("U\nP\t0\tf.c\nP\t1\th.c\nP\t2\tg.c\nF\t1\tf\t0:1\t0\n\
                            I\t0\th\t0:2\nI\t1\tg\t1:3\nL\t1\t0\t0:1;2:30@1@0;0:4\n", "");
     let rec = Recording::new(&t, alloc::vec![Record::Block { func: 1, n: 0 }], alloc::vec![0], Args::default());
-    let v = View { tables: &t, rec: &rec, now: &Mem(Vec::new()) };
+    let v = View { tables: &t, rec: &rec, now: &Vec::new() };
     let lines: Vec<_> = v.lines(0, 0, 0).iter().map(|l| (l.i, l.nth, l.cut)).collect();
     assert_eq!(rec.steps, lines);
     // (A column a step: each its line's stack.)

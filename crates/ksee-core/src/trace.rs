@@ -225,12 +225,6 @@ pub(crate) mod tests {
         assert_eq!(got, [Record::Block { func: 5, n: 3 }, Record::Return { func: 5, value: Some(42) }]);
     }
 
-    struct Ring(Vec<u8>);
-    impl Memory for Ring {
-        fn read(&self, addr: u32, buf: &mut [u8]) {
-            buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
-        }
-    }
 
     #[test]
     fn calls_carry_arguments_and_stores_old_values() {
@@ -304,7 +298,7 @@ pub(crate) mod tests {
             let at = RING as usize + i % 5 * 4;
             m[at..at + 4].copy_from_slice(&w.to_le_bytes());
         }
-        let (got, ids, _) = ring(&Ring(m), 0);
+        let (got, ids, _) = ring(&m, 0);
         assert_eq!(got, [Record::Block { func: 9, n: 1 }, Record::Block { func: 9, n: 2 }]);
         assert_eq!(ids, [3, 5]);
     }

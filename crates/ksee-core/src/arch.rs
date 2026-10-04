@@ -154,12 +154,6 @@ pub fn sleeping(t: &Types, mem: &dyn Memory, tasks: &[u32]) -> bool {
 mod tests {
     use super::*;
 
-    struct Mem(alloc::vec::Vec<u8>);
-    impl Memory for Mem {
-        fn read(&self, addr: u32, buf: &mut [u8]) {
-            buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
-        }
-    }
 
     #[test]
     fn a_task_on_the_timer_wheel_sleeps() {
@@ -176,7 +170,7 @@ mod tests {
         let mut m = alloc::vec![0u8; 1024];
         m[260..264].copy_from_slice(&512u32.to_le_bytes());
         m[524..528].copy_from_slice(&0x777u32.to_le_bytes());
-        let mem = Mem(m);
+        let mem = m;
         assert!(sleeping(&t, &mem, &[0x777]));
         assert!(!sleeping(&t, &mem, &[0x778]));
     }

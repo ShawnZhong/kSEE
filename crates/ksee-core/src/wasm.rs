@@ -75,12 +75,6 @@ pub fn dylink(m: &dyn Memory, base: u32, len: u32) -> Option<(u32, u32)> {
 mod tests {
     use super::*;
 
-    struct Mem(Vec<u8>);
-    impl Memory for Mem {
-        fn read(&self, addr: u32, buf: &mut [u8]) {
-            buf.copy_from_slice(&self.0[addr as usize..addr as usize + buf.len()]);
-        }
-    }
 
     /// A module: its header, then each section (id, contents).
     fn module(sections: &[(u8, Vec<u8>)]) -> Vec<u8> {
@@ -104,7 +98,7 @@ mod tests {
     #[test]
     fn custom_sections_by_name_past_the_others() {
         let b = module(&[custom("ksee.types", b"T\t1"), (1, alloc::vec![0x60, 0, 0]), custom("ksee.types", b"\nM"), custom("x", b"")]);
-        let m = Mem(b.clone());
+        let m = b.clone();
         assert_eq!(section(&m, 0, b.len() as u32, "ksee.types"), b"T\t1\nM");
         assert_eq!(custom_sections(&m, 0, b.len() as u32).len(), 3);
     }
@@ -116,6 +110,6 @@ mod tests {
         // (At an address, as a program in kernel memory is.)
         let mut at = alloc::vec![0u8; 16];
         at.extend(&b);
-        assert_eq!(dylink(&Mem(at), 16, b.len() as u32), Some((300, 7)));
+        assert_eq!(dylink(&at, 16, b.len() as u32), Some((300, 7)));
     }
 }

@@ -99,11 +99,6 @@ impl Env for Prog {
         Some(&self.1 as &dyn Memory)
     }
 }
-impl Memory for Vec<u8> {
-    fn read(&self, addr: u32, buf: &mut [u8]) {
-        buf.copy_from_slice(&self[addr as usize..addr as usize + buf.len()]);
-    }
-}
 
 #[test]
 fn expressions_as_c_reads_them() {
