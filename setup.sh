@@ -1,6 +1,6 @@
 #!/bin/sh
 # What ./ksee.sh needs: LLVM 22 (clang, lld's wasm-ld, the pass's headers),
-# GNU make and sed, mkfs.ext4, gzip, Rust, its wasm target and wasm-bindgen;
+# GNU make and sed, mkfs.ext4, gzip, Rust and its wasm target;
 # from Homebrew or apt plus Cargo. ./ksee.sh test also needs Chromium, in $CHROME.
 set -e
 cd "$(dirname "$0")"
