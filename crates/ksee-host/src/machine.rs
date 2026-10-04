@@ -36,12 +36,19 @@ fn initrd_at(initrd: &[u8]) -> Result<u32, JsValue> {
         .ok_or_else(|| JsValue::from_str("initramfs does not fit in RAM"))
 }
 
-fn section(module: &WebAssembly::Module, name: &str) -> String {
-    let mut text = Vec::new();
-    for b in WebAssembly::Module::custom_sections(module, name).iter() {
-        text.extend(Uint8Array::new(&b).to_vec());
+/// Bytes outside the module's memory (the kernel's image, a JS array):
+/// read in place.
+struct Bytes<'a>(&'a Uint8Array);
+
+impl Memory for Bytes<'_> {
+    fn read(&self, addr: u32, buf: &mut [u8]) {
+        self.0.subarray(addr, addr + buf.len() as u32).copy_to(buf);
     }
-    String::from_utf8_lossy(&text).into_owned()
+}
+
+/// Custom section `name` of the kernel's image, as text.
+fn section(kernel: &Uint8Array, name: &str) -> String {
+    String::from_utf8_lossy(&ksee_core::wasm::section(&Bytes(kernel), 0, kernel.length(), name)).into_owned()
 }
 
 #[wasm_bindgen]
@@ -58,7 +65,7 @@ impl Machine {
 
         let module: WebAssembly::Module =
             JsFuture::from(WebAssembly::compile(&kernel)).await?.unchecked_into();
-        let tables = Tables::parse(&section(&module, "ksee.probes"), &section(&module, "ksee.types"));
+        let tables = Tables::parse(&section(&kernel, "ksee.probes"), &section(&kernel, "ksee.types"));
         TABLES.set(tables).map_err(|_| "one machine per page")?;
 
         // The initramfs goes at the top of RAM; the kernel reserves it.

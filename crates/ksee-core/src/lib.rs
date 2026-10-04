@@ -31,10 +31,17 @@ pub mod text;
 pub mod trace;
 pub mod types;
 pub mod view;
+pub mod wasm;
 
-/// Read access to kernel memory.
+/// Read access to memory: the kernel's (or bytes anywhere: see wasm).
 pub trait Memory {
     fn read(&self, addr: u32, buf: &mut [u8]);
+
+    fn read_u8(&self, addr: u32) -> u8 {
+        let mut b = [0; 1];
+        self.read(addr, &mut b);
+        b[0]
+    }
 
     fn read_u32(&self, addr: u32) -> u32 {
         let mut b = [0; 4];

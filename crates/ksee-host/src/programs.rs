@@ -22,7 +22,7 @@ use ksee_core::Memory;
 /// task's own value is put back in it when the task gets the CPU.
 #[derive(Default)]
 struct Programs {
-    loaded: BTreeMap<u32, WebAssembly::Module>,
+    loaded: BTreeMap<u32, (WebAssembly::Module, u32)>,
     users: BTreeMap<u32, User>,
     /// The kernel's syscall export (a program's import), and its function
     /// table (the programs' functions go in it too, and their entries).
@@ -86,40 +86,12 @@ pub(crate) fn clone_user(p: u32, sp: u32) {
 
 const ENOEXEC: i32 = 8;
 
-/// A module's dylink.0 memory info (the tool conventions' dynamic linking):
-/// the bytes its data needs, and the table entries.
-fn dylink(module: &WebAssembly::Module) -> Option<(u32, u32)> {
-    let sections = WebAssembly::Module::custom_sections(module, "dylink.0");
-    let b = Uint8Array::new(&sections.get(0)).to_vec();
-    let mut at = 0;
-    // (An unsigned LEB128 number.)
-    let mut leb = || {
-        let mut v = 0u32;
-        for shift in (0..32).step_by(7) {
-            let x = *b.get(at)?;
-            at += 1;
-            v |= ((x & 0x7f) as u32) << shift;
-            if x < 0x80 {
-                return Some(v);
-            }
-        }
-        None
-    };
-    // (Subsection 1, WASM_DYLINK_MEM_INFO, comes first.)
-    let (kind, _len) = (leb()?, leb()?);
-    if kind != 1 {
-        return None;
-    }
-    let (mem_size, _align, table_size) = (leb()?, leb()?, leb()?);
-    Some((mem_size, table_size))
-}
-
 /// Compile program `image` for the current task: the bytes its data
 /// needs, or -ENOEXEC.
 pub(crate) fn user_load(image: u32, len: u32) -> i32 {
+    let Some((data, entries)) = ksee_core::wasm::dylink(&Direct, image, len) else { return -ENOEXEC };
     let Ok(module) = WebAssembly::Module::new(&Uint8Array::from(unsafe { core::slice::from_raw_parts(image as *const u8, len as usize) })) else { return -ENOEXEC };
-    let Some((data, _)) = dylink(&module) else { return -ENOEXEC };
-    PROGRAMS.with_borrow_mut(|u| u.loaded.insert(current(), module));
+    PROGRAMS.with_borrow_mut(|u| u.loaded.insert(current(), (module, entries)));
     data as i32
 }
 
@@ -135,9 +107,8 @@ fn global(value: u32, mutable: bool) -> Result<WebAssembly::Global, JsValue> {
 /// or 0; its __wasm_clone_start's (or 0) at `clone_entry`.
 pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
     let (module, syscall, table) = PROGRAMS.with_borrow_mut(|u| (u.loaded.remove(&current()), u.syscall.clone(), u.table.clone()));
-    let (Some(module), Some(table)) = (module, table) else { return 0 };
+    let (Some((module, entries)), Some(table)) = (module, table) else { return 0 };
     let start = || -> Result<u32, JsValue> {
-        let (_, entries) = dylink(&module).ok_or("no dylink.0")?;
         // (Room for its table entries and the two below, grown once.)
         let table_base = table.grow(entries + 2)?;
         let sp = global(top, true)?;

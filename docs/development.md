@@ -12,7 +12,7 @@ shape the code.
 | `linux.patch` | The port's few edits to Linux's own files, against stable `v7.2.7`. |
 | `linux/` | Fetched working kernel tree with the patch applied; created on the first build. |
 | `plugin/` | LLVM 22 pass that instruments kernel functions. |
-| `crates/ksee-core/` | `no_std` trace decoding, packed tables, reconstruction, views, program parsing/evaluation, text parsing, and source highlighting. |
+| `crates/ksee-core/` | `no_std` trace decoding, packed tables, reconstruction, views, program parsing/evaluation, text parsing, source highlighting, a wasm module's custom sections, and the kernel's timers. |
 | `crates/ksee-host/` | Browser host for the kernel: shared memory, JSPI task scheduling, programs, snapshots, and the `Machine` API. |
 | `crates/ksee-page/` | Dioxus UI built into the same WebAssembly module as the runtime. |
 | `crates/ksee-cli/` | Build, packing, test, browser driver, server, deployment, and patch commands. |
