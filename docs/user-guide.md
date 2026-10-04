@@ -93,8 +93,9 @@ writes no reconstructible memory and makes no calls.
 
 ### Stack
 
-The Stack tab lists calls at the current moment at the bottom of the pane, the
-outermost lowest, as the chart stacks them. Select a frame to show its source.
+The Stack tab lists calls at the cursor at the bottom of the pane, the
+outermost lowest, as the chart stacks them. It stays put while the pointer
+moves over the chart (a bar's tip says its call). Select a frame to show its source.
 Under the chosen frame, and only there, are its recorded arguments and locals
 as they were just before the current line. Pointers and compound values can be
 opened. Hover a value to see its most recent recorded writer and, when the
