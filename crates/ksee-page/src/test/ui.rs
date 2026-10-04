@@ -323,7 +323,7 @@ pub(super) async fn lesson() -> Check {
     .await?;
     // (And back: the link says the lesson's title.)
     let back = all(".turn a").into_iter().next().ok_or("no lesson end")?;
-    if text(&back) != format!("◀ {title}") {
+    if !text(&back).ends_with(&title) {
         return Err(format!("the lesson's end says {:?}, not the lesson before", text(&back)));
     }
     click(&back);

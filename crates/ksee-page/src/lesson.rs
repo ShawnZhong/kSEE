@@ -303,8 +303,12 @@ fn Turn() -> Element {
     let at = (ui.lesson)();
     rsx! {
         nav { class: "turn",
-            if let Some(e) = at.checked_sub(1).map(|k| &all[k]) { a { onclick: move |_| ui.open(at - 1, all[at - 1].steps.clone()), "◀ {e.title}" } }
-            if let Some(e) = all.get(at + 1) { a { class: "next", onclick: move |_| ui.open(at + 1, all[at + 1].steps.clone()), "{e.title} ▶" } }
+            if let Some(e) = at.checked_sub(1).map(|k| &all[k]) {
+                a { onclick: move |_| ui.open(at - 1, all[at - 1].steps.clone()), span { class: "dim", "◀ Previous" } "{e.title}" }
+            }
+            if let Some(e) = all.get(at + 1) {
+                a { class: "next", onclick: move |_| ui.open(at + 1, all[at + 1].steps.clone()), span { class: "dim", "Next ▶" } "{e.title}" }
+            }
         }
     }
 }
