@@ -3,10 +3,11 @@
 //! referenced by its probes.
 
 mod dwarf;
+mod module;
 
 use std::path::{Component, Path};
 
-use ksee_core::{module, tables::Tables};
+use ksee_core::tables::Tables;
 
 /// Write the packed image and its referenced sources to their final paths.
 pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {

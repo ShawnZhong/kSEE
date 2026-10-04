@@ -6,7 +6,9 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use gimli::{AttributeValue, DwAt, DwTag, EndianSlice, LittleEndian, UnitOffset, constants as dw};
-use ksee_core::{module, tables::Tables};
+use ksee_core::tables::Tables;
+
+use super::module;
 
 type R<'a> = EndianSlice<'a, LittleEndian>;
 

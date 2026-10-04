@@ -24,7 +24,6 @@ pub mod arch;
 pub mod highlight;
 pub mod program;
 pub mod mem;
-pub mod module;
 pub mod recording;
 pub mod stack;
 pub mod tables;

@@ -2,9 +2,7 @@
 //! self-description), and what its linker put in memory and in its
 //! function table (the kernel's syscall table: see ksee pack).
 
-use alloc::collections::BTreeMap;
-use alloc::string::String;
-use alloc::vec::Vec;
+use std::collections::BTreeMap;
 
 /// An unsigned LEB128 value at `*pos` in `buf`, `*pos` past it.
 pub fn uleb(buf: &[u8], pos: &mut usize) -> Option<u32> {
@@ -73,7 +71,7 @@ fn body(module: &[u8], id: u8) -> Option<&[u8]> {
 /// `len` bytes of memory at `addr` as the module's active data segments
 /// set it (zero where none does).
 pub fn memory(module: &[u8], addr: u32, len: u32) -> Vec<u8> {
-    let mut out = alloc::vec![0u8; len as usize];
+    let mut out = vec![0u8; len as usize];
     let Some(b) = body(module, 11) else { return out };
     let mut p = 0;
     let n = uleb(b, &mut p).unwrap_or(0);
