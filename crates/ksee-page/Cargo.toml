@@ -11,16 +11,26 @@ crate-type = ["cdylib"]
 [dependencies]
 ksee-core = { path = "../ksee-core" }
 ksee-host = { path = "../ksee-host" }
-dioxus = { version = "0.7.10", default-features = false, features = ["web", "macro", "html", "signals", "hooks", "launch", "mounted"] }
+dioxus = { version = "0.7.10", default-features = false, features = [
+    "web", "macro", "html", "signals", "hooks", "launch", "mounted",
+] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6.5"
 wasm-bindgen = "=0.2.128"
 wasm-bindgen-futures = "0.4.78"
 js-sys = "0.3.105"
-web-sys = { version = "0.3.105", features = ["Window", "Response", "Document", "Element", "Event", "EventTarget", "HtmlCanvasElement", "CanvasRenderingContext2d", "CssStyleDeclaration", "DomRect", "HtmlElement", "HtmlTextAreaElement", "KeyboardEvent", "Location", "History", "console", "Storage"] }
+web-sys = { version = "0.3.105", features = [
+    "Window", "Response", "Document", "Element", "Event", "EventTarget", "HtmlElement",
+    "HtmlCanvasElement", "HtmlTextAreaElement", "CanvasRenderingContext2d",
+    "CssStyleDeclaration", "DomRect", "KeyboardEvent", "Location", "History", "Storage",
+    "console",
+] }
 
 [features]
 # (The tests run in the page: the kernel integration and DOM suites in src/test/.)
-browser-tests = ["web-sys/HtmlElement", "web-sys/HtmlInputElement", "web-sys/EventInit", "web-sys/KeyboardEvent",
-            "web-sys/KeyboardEventInit", "web-sys/MouseEvent", "web-sys/MouseEventInit", "web-sys/PointerEvent", "web-sys/PointerEventInit", "web-sys/WheelEvent", "web-sys/WheelEventInit",
-            "web-sys/DomRect", "web-sys/NodeList", "web-sys/Request", "web-sys/RequestInit"]
+browser-tests = [
+    "web-sys/HtmlInputElement", "web-sys/EventInit", "web-sys/KeyboardEventInit",
+    "web-sys/MouseEvent", "web-sys/MouseEventInit", "web-sys/PointerEvent",
+    "web-sys/PointerEventInit", "web-sys/WheelEvent", "web-sys/WheelEventInit",
+    "web-sys/NodeList", "web-sys/Request", "web-sys/RequestInit",
+]
