@@ -367,7 +367,9 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let d = use_context::<Derived>();
     let chart = d.chart.cloned();
     let steps = machine().view(|v| v.rec.steps.len().max(1));
-    let tasks = task_runs(&chart);
+    // (The task strip's runs: the labels' and the drawing's.)
+    let runs = use_memo(move || crate::state::Shared(std::rc::Rc::new(task_runs(&d.chart.read()))));
+    let tasks = runs.cloned().0;
     let mut pan = use_signal(|| None::<Pan>);
     // (Latched through pointer-up: a click fires after it, when pan is
     // already none — so a drag never ends in a click.)
@@ -396,7 +398,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let calls: Vec<(usize, String)> = stack.iter().map(|f| (f.first, f.func.clone())).collect();
         // (The bar outlined: the one under the pointer, else the frame shown's call.)
         let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
-        draw_chart(&chart, &task_runs(&chart), width(), height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
+        draw_chart(&chart, &runs.read().0, width(), height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
                    d.preview.cloned().or(d.cursor.cloned()).and_then(x), stack.len().checked_sub(1 + d.frame.cloned()),
                    ui.at.read().as_ref().and_then(|m| m.frame), offset());
         if let Some(scroll) = element("timeline-scroll") {
