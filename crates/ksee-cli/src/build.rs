@@ -7,7 +7,8 @@
 //!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
 //!   vmlinux.gz, src/       the kernel for the page (pack; target/vmlinux)
 //!   initramfs.cpio.gz      the Makefile's target/initramfs/initramfs.cpio
-//!   examples.json          the examples (user/examples/*.json)
+//!   examples.json, lessons/ the lessons (user/examples/*.json): the page's, and
+//!                          a page each (see lessons.rs)
 //!
 //! (Gzipped by the build: hosts compress them less, or not at all; the
 //! page unpacks them.)
@@ -65,7 +66,7 @@ fn assets() {
     if stale(&compressed, &[cpio]) {
         gzip(cpio, &compressed);
     }
-    examples();
+    crate::lessons::write();
 }
 
 /// `cargo` building the page, told what it is built from (the page says it):
@@ -155,31 +156,6 @@ mod tests {
         std::fs::write(&first, b"new output").unwrap();
         assert!(!stale(&first_s, &[&input_s]));
     }
-}
-
-/// The course: its chapters, each its examples (user/examples/NAME.json)
-/// in order, from the simplest.
-const EXAMPLES: &[(&str, &[&str])] = &[
-    ("Start here", &["umask", "umask-inside"]),
-    ("A process", &["getpid", "prctl", "exec", "thread"]),
-    ("Files, in memory", &["hello", "open-close", "dup", "read", "write", "open-fails", "create", "dir"]),
-    ("Files on a disk (ext4)", &["ext4-read", "ext4-create", "ext4-write", "durable", "ext4-dir", "link", "remove"]),
-    ("Waiting and waking", &["sleep", "futex", "join", "pipe", "kill"]),
-    ("Your own", &["yours"]),
-];
-
-/// examples.json: the examples (user/examples/NAME.json: each a list
-/// of syscalls for /init to make, one at a time), in the course's order,
-/// with their names and chapters (`group`). (A file not in the course is
-/// left out.)
-fn examples() {
-    eprintln!("+ (examples) user/examples/*.json -> {SITE}/examples.json");
-    let index: Vec<String> = EXAMPLES.iter().flat_map(|&(group, names)| names.iter().map(move |&name| {
-        let text = String::from_utf8_lossy(&crate::read(Path::new(&format!("user/examples/{name}.json")))).into_owned();
-        format!("  {{ \"name\": \"{name}\", \"group\": \"{group}\", {}", text.trim().strip_prefix('{').unwrap_or("}").trim_start())
-    })).collect();
-    let out = format!("{SITE}/examples.json");
-    crate::or_fail(std::fs::write(&out, format!("[\n{}\n]\n", index.join(",\n"))), &out);
 }
 
 /// Links in the site to web/'s files (so an edit there needs no build), and

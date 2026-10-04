@@ -106,6 +106,7 @@ Do not edit generated output as source:
 | `target/site/src/` | Kernel source files referenced by probe metadata. |
 | `target/site/initramfs.cpio.gz` | `/init`, `/bin/prog`, root fixture, and ext4 image. |
 | `target/site/examples.json` | Built lesson index and content. |
+| `target/site/lessons/` | Each lesson as a plain HTML page, and their contents (`index.html`): what search engines and link previews read; each links to the lesson in kSEE. |
 | `target/vmlinux` | Uncompressed packed kernel, with metadata injected and DWARF removed, used to produce the site copy. |
 | `target/initramfs/` | Intermediate programs, ext4 image, fixture tree, and archive. |
 | `target/chrome/` | The tests' browser, Chrome's headless shell (`make chrome`). |

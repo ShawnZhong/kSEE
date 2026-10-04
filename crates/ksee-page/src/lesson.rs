@@ -255,11 +255,15 @@ pub fn Turn() -> Element {
     let at = (ui.lesson)();
     rsx! {
         nav { class: "turn",
+            // (Each also its page's link, lessons/NAME.html, for what reads the
+            // page without running it; a click opens it here.)
             if let Some(e) = at.checked_sub(1).map(|k| &all[k]) {
-                a { title: "the lesson before", onclick: move |_| ui.open_lesson(at - 1), "◀ {e.title}" }
+                a { title: "the lesson before", href: "lessons/{e.name}.html",
+                    onclick: move |ev: MouseEvent| { ev.prevent_default(); ui.open_lesson(at - 1) }, "◀ {e.title}" }
             }
             if let Some(e) = all.get(at + 1) {
-                a { class: "next", title: "the next lesson", onclick: move |_| ui.open_lesson(at + 1), "{e.title} ▶" }
+                a { class: "next", title: "the next lesson", href: "lessons/{e.name}.html",
+                    onclick: move |ev: MouseEvent| { ev.prevent_default(); ui.open_lesson(at + 1) }, "{e.title} ▶" }
             }
         }
     }

@@ -13,6 +13,7 @@
 mod build;
 mod chrome;
 mod deploy;
+mod lessons;
 mod pack;
 mod serve;
 
