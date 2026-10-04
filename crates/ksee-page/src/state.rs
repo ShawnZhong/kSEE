@@ -38,13 +38,14 @@ impl<T> std::ops::Deref for Shared<T> {
 }
 
 /// A moment: a call (an index in the syscalls), a line it ran (an index
-/// in its lines), and the frame chosen on the stack there, by its call's
-/// first record and function (none: the innermost).
+/// in its lines), and the level chosen on the stack there, from the
+/// outermost (0: the chart's bottom bar; none, or past the stack's top: the
+/// innermost). A level, not a call: moving along, it stays.
 #[derive(Clone, PartialEq, Default)]
 pub struct Moment {
     pub call: usize,
     pub line: usize,
-    pub frame: Option<(usize, String)>,
+    pub frame: Option<usize>,
 }
 
 /// What the state makes, computed once each time what it depends on
@@ -112,7 +113,10 @@ impl Derived {
                 machine().view(|v| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, l.at))
             })))
         });
-        let frame = use_memo(move || shown().and_then(|m| m.frame).and_then(|(first, func)| stack.read().iter().position(|f| f.first == first && f.func == func)).unwrap_or(0));
+        let frame = use_memo(move || {
+            let n = stack.read().len();
+            shown().and_then(|m| m.frame).filter(|&l| l < n).map_or(0, |l| n - 1 - l)
+        });
         let cursor = use_memo(move || {
             (ui.snapshot)();
             let at = (ui.at)()?;
@@ -243,10 +247,11 @@ impl Ui {
         self.win.set(Some((a, a + span)));
     }
 
-    /// The cursor to line `k` of its call, on its innermost frame.
+    /// The cursor to line `k` of its call, at the level chosen.
     pub fn go(self, k: usize) {
         if let Some(call) = self.call() {
-            self.commit(Some(Moment { call, line: k, frame: None }));
+            let frame = self.at.peek().as_ref().and_then(|m| m.frame);
+            self.commit(Some(Moment { call, line: k, frame }));
         }
     }
 
@@ -262,7 +267,7 @@ impl Ui {
 
     /// The moment at record `i` (in the chart: at its `step`), on frame `frame` there:
     /// the call it is in, its line there (the last at or before it).
-    pub fn moment_at(&self, i: usize, step: Option<usize>, frame: Option<(usize, String)>, shown: Option<usize>, shown_lines: &[Line]) -> Option<Moment> {
+    pub fn moment_at(&self, i: usize, step: Option<usize>, frame: Option<usize>, shown: Option<usize>, shown_lines: &[Line]) -> Option<Moment> {
         let (call, own, first) = machine().view(|v| (v.rec.syscall_at(i), v.line_of(i), v.rec.first_step(i)));
         let call = call?;
         // (A step: the line it is, its record's lines being its steps; a
@@ -277,9 +282,10 @@ impl Ui {
         Some(Moment { call, line, frame })
     }
 
-    /// The cursor to record `i`, on frame `frame` (see `moment_at`).
-    pub fn go_record(self, d: Derived, i: usize, frame: Option<(usize, String)>) {
+    /// The cursor to record `i`, at the level chosen.
+    pub fn go_record(self, d: Derived, i: usize) {
         let shown = d.shown.peek().as_ref().map(|m| m.call);
+        let frame = self.at.peek().as_ref().and_then(|m| m.frame);
         if let Some(m) = self.moment_at(i, None, frame, shown, &d.lines.read()) {
             self.commit(Some(m));
         }

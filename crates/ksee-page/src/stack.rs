@@ -52,7 +52,7 @@ pub fn frame(ui: Ui, d: Derived, dir: isize) {
     let Some(at) = ui.at.peek().clone() else { return };
     let frames = d.stack.peek();
     let k = d.frame.peek().saturating_add_signed(dir).min(frames.len().saturating_sub(1));
-    ui.commit(Some(Moment { frame: frames.get(k).map(|f| (f.first, f.func.clone())), ..at }));
+    ui.commit(Some(Moment { frame: Some(frames.len().saturating_sub(1 + k)), ..at }));
 }
 
 /// The page's keys, anywhere on it: one listener on the window; ← → a
@@ -129,10 +129,10 @@ pub fn Stack() -> Element {
                 for (k , f) in frames.iter().cloned().enumerate() {
                     tbody { class: if k == chosen { "on" } else { "" },
                     tr { class: if k == chosen { "frame on" } else { "frame" }, onclick: {
-                        let id = (f.first, f.func.clone());
+                        let level = frames.len() - 1 - k;
                         move |_| {
                             let at = ui.at.peek().clone();
-                            if let Some(at) = at { ui.commit(Some(Moment { frame: Some(id.clone()), ..at })) }
+                            if let Some(at) = at { ui.commit(Some(Moment { frame: Some(level), ..at })) }
                         }
                     },
                         td { colspan: "3",

@@ -285,7 +285,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
                                     span { class: "values", title: "{values.join(\"\n\")}", "{values.join(\"   \")}" }
                                 }
                                 if let Some((short, full, at)) = note {
-                                    a { class: "stored", title: "{full}", onclick: move |_| ui.go_record(d, at, None), "{short}" }
+                                    a { class: "stored", title: "{full}", onclick: move |_| ui.go_record(d, at), "{short}" }
                                 }
                             }
                         }

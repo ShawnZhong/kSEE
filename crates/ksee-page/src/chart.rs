@@ -420,7 +420,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let dd = ((height - y) / ROW).floor();
         let bar = (y < height && dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len())
             .then(|| chart.cols[k].frames[dd as usize] as usize);
-        let frame = bar.map(|b| (chart.bars[b].first, chart.bars[b].name.clone()));
+        // (A bar: its level; elsewhere, the level chosen, kept.)
+        let frame = bar.map(|_| dd as usize).or_else(|| ui.at.peek().as_ref().and_then(|m| m.frame));
         let shown = d.shown.peek().as_ref().map(|m| m.call);
         Some((
             ui.moment_at(
@@ -712,7 +713,7 @@ fn Find() -> Element {
                     calls.iter().find(|&&c| c > here).or(calls.first())
                 };
                 if let Some(&i) = to {
-                    ui.go_record(d, i, None);
+                    ui.go_record(d, i);
 
                 }
             } }

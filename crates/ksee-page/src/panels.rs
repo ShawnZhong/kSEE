@@ -71,7 +71,7 @@ fn Objects() -> Element {
             title,
             cursor,
             definitions: graph.read().1.clone(),
-            on_record: move |record| ui.go_record(derived, record, None),
+            on_record: move |record| ui.go_record(derived, record),
             on_definition: move |definition: ObjectDefinition| ui.seen.set(Some((definition.file, definition.line))),
             on_object: show,
         }
