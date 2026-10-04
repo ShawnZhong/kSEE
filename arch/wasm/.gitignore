@@ -1,0 +1,8 @@
+# kbuild's outputs, which it writes beside their sources (linux/arch/wasm
+# is this directory)
+*.o
+*.a
+*.s
+.*.cmd
+/kernel/vmlinux.lds
+/include/generated/
