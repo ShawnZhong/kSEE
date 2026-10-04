@@ -77,7 +77,6 @@ struct Tip {
 pub fn Timeline() -> Element {
     let mut ui = use_context::<Ui>();
     let tip = use_signal(|| None::<Tip>);
-    let bottomed = use_signal(|| false);
     // (The cursor stepped out of the window: the window moved to it, as wide.)
     let d = use_context::<Derived>();
     use_effect(move || {
@@ -105,7 +104,7 @@ pub fn Timeline() -> Element {
                     for (p , n) in AREAS { span { i { style: "background: {call_color(Some(p), false)}" } "{n}" } }
                 }
             }
-            Bars { tip, bottomed }
+            Bars { tip }
             Transport {}
         }
         if let Some(t) = tip() {
@@ -184,10 +183,6 @@ fn element(id: &str) -> Option<web_sys::HtmlElement> {
         .ok()
 }
 
-fn stack_scroll() -> Option<web_sys::HtmlElement> {
-    element("timeline-scroll")
-}
-
 fn chart_coordinates(client_x: f64, client_y: f64) -> Option<(f64, f64)> {
     let rect = element("timeline-canvas")?.get_bounding_client_rect();
     Some((client_x - rect.left(), client_y - rect.top()))
@@ -207,14 +202,6 @@ fn foreground() -> String {
         .and_then(|style| style.get_property_value("color").ok())
         .filter(|color| !color.is_empty())
         .unwrap_or_else(|| "currentColor".into())
-}
-
-fn drag_moved(dx: f64, dy: f64) -> bool {
-    dx.hypot(dy) >= 4.0
-}
-
-fn drag_scroll(start: i32, dy: f64, max: i32) -> i32 {
-    ((start as f64 - dy).round() as i32).clamp(0, max)
 }
 
 fn chart_height(depth: usize, room: f64) -> f64 {
@@ -383,7 +370,7 @@ fn draw_chart(
 }
 
 #[component]
-fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
+fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     let chart = d.chart.cloned();
@@ -397,7 +384,8 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
     let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
     let sizes = use_context::<Signal<crate::layout::Sizes>>();
     let height = chart_height(depth, sizes().chart);
-    let mut bottomed = bottomed;
+    // (The stack rows scrolled to their bottom, once they first can be.)
+    let mut bottomed = use_signal(|| false);
     // (A drag's pan so far (px), drawn until it ends; and the canvases
     // mounted: either draws again.)
     let mut offset = use_signal(|| 0.0f64);
@@ -421,7 +409,7 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
         mounted();
         let _ = d.chart.read();
         if !bottomed() {
-            if let Some(scroll) = stack_scroll() {
+            if let Some(scroll) = element("timeline-scroll") {
                 let max = scroll.scroll_height() - scroll.client_height();
                 if max > 0 {
                     scroll.set_scroll_top(max);
@@ -479,7 +467,7 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                 ui.set_preview(None);
                 dragged.set(false);
                 let p = e.client_coordinates();
-                let scroll = stack_scroll().map_or(0, |e| e.scroll_top());
+                let scroll = element("timeline-scroll").map_or(0, |e| e.scroll_top());
                 let (a, b) = (d.window)();
                 let pointer_id = e.pointer_id();
                 if let Some(chart) = element("timeline-chart") {
@@ -495,16 +483,17 @@ fn Bars(tip: Signal<Option<Tip>>, bottomed: Signal<bool>) -> Element {
                         if p.pointer_id != e.pointer_id() { return }
                         let at = e.client_coordinates();
                         let (dx, dy) = (at.x - p.x, at.y - p.y);
-                        if drag_moved(dx, dy) || *dragged.peek() {
+                        // (Past 4 px: a drag.)
+                        if dx.hypot(dy) >= 4.0 || *dragged.peek() {
                             if !*dragged.peek() {
                                 dragged.set(true);
                                 ui.set_preview(None);
                                 tip.set(None);
                             }
                             offset.set(clamped_pan((p.a, p.b), dx, width(), steps).2);
-                            if let Some(scroll) = stack_scroll() {
+                            if let Some(scroll) = element("timeline-scroll") {
                                 let max = scroll.scroll_height() - scroll.client_height();
-                                scroll.set_scroll_top(drag_scroll(p.scroll, dy, max));
+                                scroll.set_scroll_top(((p.scroll as f64 - dy).round() as i32).clamp(0, max));
                             }
                             return;
                         }
