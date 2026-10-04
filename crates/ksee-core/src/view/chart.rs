@@ -119,11 +119,16 @@ impl View<'_> {
                 if d + 1 == stack.len() {
                     nest.drain(..(cut as usize).min(nest.len() - 1));
                 }
-                for (k, _) in nest.into_iter().rev() {
+                for (k, at) in nest.into_iter().rev() {
                     let bar = *known.entry((c.first, k)).or_insert_with(|| {
                         let place = self.place(c.func);
                         let name = k.map_or_else(|| place.as_ref().map_or("?".into(), |p| p.name.clone()), |k| self.inline_name(k));
-                        chart.bars.push(Bar { first: c.first, name, file: place.map(|p| p.file), inlined: k.is_some() });
+                        // (Its file: code inlined, its own function's, where its line is.)
+                        let file = match k {
+                            Some(_) => at.map(|l| t.file(l).to_string()),
+                            None => place.map(|p| p.file),
+                        };
+                        chart.bars.push(Bar { first: c.first, name, file, inlined: k.is_some() });
                         chart.bars.len() as u32 - 1
                     });
                     frames.push(bar);

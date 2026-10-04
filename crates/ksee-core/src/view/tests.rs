@@ -418,6 +418,9 @@ fn two_inlined_frames_of_one_call_are_bars_of_their_own() {
     let chart = v.chart(0, 2, 3);
     let bars: Vec<_> = chart.cols[2].frames.iter().map(|&b| (chart.bars[b as usize].first, chart.bars[b as usize].name.clone())).collect();
     assert_eq!(bars, [(0, "f".into()), (0, "h".into()), (0, "g".into())]);
+    // (Each its own file: code inlined, its function's.)
+    let files: Vec<_> = chart.cols[2].frames.iter().map(|&b| chart.bars[b as usize].file.clone().unwrap_or_default()).collect();
+    assert_eq!(files, ["f.c", "h.c", "g.c"]);
     // (Each bar runs alone: no two share an identity.)
     assert_eq!(chart.bar_runs(), alloc::vec![(0, 0, 3, 0), (1, 1, 3, 1), (2, 2, 3, 2)]);
 }
