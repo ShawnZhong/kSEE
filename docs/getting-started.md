@@ -6,9 +6,9 @@ reference, see [development.md](development.md).
 
 ## Supported setup host
 
-`setup.sh` automates setup on Ubuntu 26.04 (with `apt`). Other Linux hosts
-can work with a manually installed toolchain, but the setup script will reject
-them.
+`setup.sh` automates setup on Ubuntu 26.04, everything from `apt` (LLVM 22 is
+the release's own). Other Linux hosts can work with a manually installed
+toolchain.
 
 The build requires:
 
@@ -30,9 +30,9 @@ From the repository root:
 ./setup.sh
 ```
 
-The script installs the supported host dependencies and rustup if it is
-missing; `rust-toolchain.toml` makes rustup add the Rust WebAssembly target on
-first use. It does **not** install Chromium or another browser.
+The script installs the host dependencies and rustup (or updates it);
+`rust-toolchain.toml` makes rustup add the Rust WebAssembly target on first
+use. It does **not** install Chromium or another browser.
 
 ### Use a custom LLVM 22 build
 
