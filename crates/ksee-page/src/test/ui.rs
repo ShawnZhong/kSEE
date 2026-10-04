@@ -119,6 +119,15 @@ pub(super) async fn read() -> Check {
     let b = canvas.get_bounding_client_rect();
     let chart = one(".chart").ok_or("no chart")?;
     let (x, y) = (b.left() + x, b.top() + y);
+    // (The cross: the pointer's moment while it hovers, the cursor's again once it leaves.)
+    let cross = || canvas.get_attribute("data-test-now");
+    let before = cross();
+    pointer(&chart, "pointermove", x, y);
+    sleep(200).await;
+    let during = cross();
+    mouse(&chart, "mouseleave", x, y, false);
+    sleep(200).await;
+    check(during != before && cross() == before, "the cross follows the pointer, and goes back", (&before, &during, cross()))?;
     pointer(&chart, "pointermove", x, y);
     sleep(200).await;
     let hovered = place();

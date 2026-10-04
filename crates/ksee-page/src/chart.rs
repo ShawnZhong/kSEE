@@ -262,9 +262,9 @@ fn draw_chart(
     calls: &[(usize, String)],
     find: &str,
     lit: Option<&(usize, String)>,
-    peeked: Option<f64>,
     now: Option<f64>,
     level: Option<usize>,
+    locked: Option<usize>,
     offset: f64,
 ) {
     let Some((canvas, ctx)) = canvas_context("timeline-canvas", width, height) else {
@@ -338,23 +338,17 @@ fn draw_chart(
             ctx.restore();
         }
     }
-    for (at, alpha) in [(peeked, 0.3), (now, 1.0)] {
-        if let Some(pct) = at {
-            ctx.set_global_alpha(alpha);
-            ctx.set_fill_style_str(&foreground);
-            ctx.fill_rect(pct * width / 100.0 + offset - 1.0, 0.0, 2.0, height);
+    // (The moment shown, a cross: down, its step; across, its frame's
+    // level, the Stack's.)
+    ctx.set_fill_style_str(&foreground);
+    if let Some(pct) = now {
+        ctx.fill_rect(pct * width / 100.0 + offset - 1.0, 0.0, 2.0, height);
+        if let Some(level) = level {
+            ctx.fill_rect(0.0, height - (level as f64 + 0.5) * ROW - 1.0, width, 2.0);
         }
     }
-    // (The level chosen, kept as the cursor moves: across, the cursor's
-    // other line, drawn as it is.)
-    if let Some(level) = level {
-        ctx.set_global_alpha(1.0);
-        ctx.set_fill_style_str(&foreground);
-        ctx.fill_rect(0.0, height - (level as f64 + 0.5) * ROW - 1.0, width, 2.0);
-    }
-    ctx.set_global_alpha(1.0);
     if crate::test::on() {
-        match level {
+        match locked {
             Some(level) => canvas.set_attribute("data-test-level", &level.to_string()),
             None => canvas.remove_attribute("data-test-level"),
         }.ok();
@@ -397,15 +391,16 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let chart = d.chart.cloned();
         let height = chart_height(chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0), sizes().chart);
         let (sa, sb) = (d.window)();
-        // (Where a step is, across the window (%): the cursor's, solid; the
-        // moment under the pointer's, faint; the calls on its stack.)
+        // (Where a step is, across the window (%): the moment shown's (the
+        // pointer's, else the cursor's); the calls on its stack.)
         let x = |s: f64| (s >= sa as f64 && s < (sb + 1) as f64).then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64);
         let stack = d.stack.read();
         let calls: Vec<(usize, String)> = stack.iter().map(|f| (f.first, f.func.clone())).collect();
         // (The bar outlined: the one under the pointer, else the frame shown's call.)
         let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
         draw_chart(&chart, &task_runs(&chart), width(), height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
-                   d.preview.cloned().and_then(x), d.cursor.cloned().and_then(x), ui.at.read().as_ref().and_then(|m| m.frame), offset());
+                   d.preview.cloned().or(d.cursor.cloned()).and_then(x), stack.len().checked_sub(1 + d.frame.cloned()),
+                   ui.at.read().as_ref().and_then(|m| m.frame), offset());
         if let Some(scroll) = element("timeline-scroll") {
             scroll.set_scroll_top((scroll.scroll_height() - scroll.client_height() - *from_bottom.peek()).max(0));
         }
