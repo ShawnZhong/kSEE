@@ -201,13 +201,15 @@ fn site() {
 }
 
 /// Run native tests, build the site but its module (`built`: an earlier
-/// CI step did), then the test page, and run `names` in headless Chromium.
+/// CI step did), then the test page, and run `names` in the headless shell (target/chrome/).
 pub fn test(names: &[String], built: bool) {
     run(Command::new("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
     if !built {
         assets();
     }
     test_site();
+    // (The browser, the Makefile's version: fetched the first time.)
+    run(Command::new("make").args(["--no-print-directory", "chrome"]));
     for name in names {
         if !crate::chrome::test(name) {
             crate::fail(&format!("the {name} test failed"));

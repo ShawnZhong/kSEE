@@ -11,6 +11,8 @@
 #                                /init and /bin/prog (user/: plain C, no C library), a note
 #                                (user/note.txt), and an ext4 disk image of user/disk/:
 #                                user/initramfs.list
+#   target/chrome/               the tests' browser: Chrome for Testing's headless shell,
+#                                CHROME_VERSION, fetched once (`make chrome`: `ksee test` runs it)
 #
 # `make patch` writes linux.patch from linux/ (never the build). The port's own
 # files are edited in arch/wasm/, not linux/.
@@ -20,6 +22,9 @@
 LINUX_TREE := https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 LINUX_TAG := v7.2.7
 LINUX_COMMIT := f42acb3678424d1e08f6ed27c0d8ba8a125e14d6
+# The tests' browser: one version for every machine (Playwright's mirror
+# of Chrome for Testing has it for arm64 Linux too).
+CHROME_VERSION := 156.0.8078.4
 
 # (setup.sh's LLVM 22 first.)
 export PATH := /usr/lib/llvm-22/bin:$(PATH)
@@ -33,7 +38,7 @@ KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=1 \
 	KCFLAGS="-g -finline-hint-functions -fpass-plugin=$(CURDIR)/$(PLUGIN) -DKSEE_ID=$(shell cksum < plugin/ksee-trace.cpp | cut -d' ' -f1)"
 
 all: linux/vmlinux $(OUT)/initramfs.cpio
-.PHONY: all linux/vmlinux port patch llvm
+.PHONY: all linux/vmlinux port patch llvm chrome
 
 llvm:
 	@v=$$(llvm-config --version); test "$${v%%.*}" = 22 || { echo "LLVM 22 is required, found $$v" >&2; exit 1; }
@@ -93,3 +98,14 @@ patch:
 	@test -f linux/Makefile || { echo "no linux/: run ./ksee.sh build first" >&2; exit 1; }
 	git -C linux reset -q
 	git -C linux diff --no-color $(LINUX_TAG) > linux.patch
+
+# target/chrome/: the headless shell for this machine, CHROME_VERSION's
+# (another version: fetched again, in place of the one there).
+chrome: target/chrome/$(CHROME_VERSION)
+target/chrome/$(CHROME_VERSION):
+	rm -rf target/chrome target/chrome.zip
+	a=$$(uname -m | sed 's/x86_64/linux64/; s/aarch64/linux-arm64/'); \
+	curl -fsSL --proto '=https' -o target/chrome.zip https://cdn.playwright.dev/builds/cft/$(CHROME_VERSION)/$$a/chrome-headless-shell-$$a.zip && \
+	unzip -q -d target target/chrome.zip && mv target/chrome-headless-shell-$$a target/chrome
+	rm target/chrome.zip
+	touch $@

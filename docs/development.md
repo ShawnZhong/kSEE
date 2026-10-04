@@ -86,7 +86,7 @@ and passes all arguments through.
 | `./ksee.sh` | Build changed outputs, then serve `target/site/` on port 8000. |
 | `./ksee.sh build` | Build the plugin, kernel, browser module, programs, metadata, lessons, and site. |
 | `./ksee.sh serve [--port=N]` | Serve the existing `target/site/` without rebuilding it. |
-| `./ksee.sh test [--ui \| NAME ...]` | Run native tests, build, then run the selected browser suites through `$CHROME`; the default is `kernel`. |
+| `./ksee.sh test [--ui \| NAME ...]` | Run native tests, build, then run the selected browser suites in headless Chrome; the default is `kernel`. |
 | `./ksee.sh deploy` | Build, then publish the generated site to the remote `gh-pages` branch. |
 | `./ksee.sh patch` | Write `linux.patch` from Linux's own files' difference between `linux/` and `v7.2.7` (`make patch`). |
 
@@ -171,11 +171,8 @@ CI separates launcher compilation, the kernel/site build, and tests. Its test
 step uses `ksee test --built`, which skips rebuilding production but still runs
 native tests, builds the self-test page, and runs the selected browser suites.
 
-Set `CHROME` to the browser executable:
-
-```sh
-CHROME=/absolute/path/to/chromium ./ksee.sh test --ui
-```
+The browser is Chrome's headless shell at the Makefile's `CHROME_VERSION`,
+fetched into `target/chrome/` by `make chrome`, which `ksee test` runs.
 
 The CLI serves the test site on a temporary local port. Each browser suite
 posts `ok` or `fail` and its log back to that server, within five minutes.

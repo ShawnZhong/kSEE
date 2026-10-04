@@ -1,15 +1,14 @@
-//! `ksee test` in an auto-detected headless Chromium (`$CHROME` overrides),
+//! `ksee test` in Chrome's headless shell (target/chrome/, the Makefile's version),
 //! without its debugging protocol: the page under `#test=NAME` runs its test
-//! and POSTs `ok` or
-//! `fail` and its log to the server's /result.
+//! and POSTs `ok` or `fail` and its log to the server's /result.
 
 use std::net::TcpListener;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
-use crate::{fail, or_fail};
+use crate::or_fail;
 
 /// The tests (crates/ksee-page's test module), each with the page it opens
 /// (its URL's hash: the lesson, and `test`, which runs the test, POSTing
@@ -26,23 +25,8 @@ pub const TESTS: &[(&str, &str, (u32, u32))] = &[
 ];
 const SCREEN: (u32, u32) = (1500, 900);
 
-/// The requested Chromium, or one on PATH.
-fn browser() -> PathBuf {
-    if let Some(bin) = std::env::var_os("CHROME").filter(|p| !p.is_empty()) {
-        return bin.into();
-    }
-    if let Some(path) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&path) {
-            for name in ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chromium-headless-shell"] {
-                let bin = dir.join(name);
-                if bin.is_file() {
-                    return bin;
-                }
-            }
-        }
-    }
-    fail("no Chrome or Chromium found; set CHROME to its executable")
-}
+/// The browser: `make chrome`'s.
+const BROWSER: &str = "target/chrome/chrome-headless-shell";
 
 /// How long a test may take (the kernel's take minutes).
 const TIMEOUT: Duration = Duration::from_secs(300);
@@ -55,12 +39,11 @@ pub fn test(name: &str) -> bool {
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let (tx, rx) = channel();
     std::thread::spawn(move || crate::serve::serve_on(listener, Path::new("target/test/site"), tx));
-    let bin = browser();
     let profile = std::env::temp_dir().join(format!("ksee-chrome-{}", std::process::id()));
-    let mut child = or_fail(Command::new(&bin)
+    let mut child = or_fail(Command::new(BROWSER)
         .args(["--headless=new", "--no-sandbox", "--no-first-run", &format!("--user-data-dir={}", profile.display()),
                &format!("--window-size={width},{height}"), &format!("http://127.0.0.1:{port}/{hash}")])
-        .stdout(Stdio::null()).stderr(Stdio::null()).spawn(), bin.display());
+        .stdout(Stdio::null()).stderr(Stdio::null()).spawn(), BROWSER);
     let (passed, log) = rx.recv_timeout(TIMEOUT).unwrap_or_default();
     let _ = child.kill();
     let _ = child.wait();

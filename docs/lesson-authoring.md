@@ -188,7 +188,7 @@ Build and serve the site while editing:
 Run the kernel/browser lesson checks before committing a new lesson:
 
 ```sh
-CHROME=/path/to/chromium ./ksee.sh test
+./ksee.sh test
 ```
 
 Add `--ui` when the change depends on page interactions. The complete command

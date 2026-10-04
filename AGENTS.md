@@ -35,6 +35,6 @@ layout, generated files, and the Linux patch workflow.
   commit that.
 - **Commit promptly.** Once a coherent change passes its focused checks,
   commit it instead of leaving finished work mixed with later exploration.
-- **Before you finish:** `./ksee.sh test` (`--ui` with `$CHROME` runs the
+- **Before you finish:** `./ksee.sh test` (`--ui` runs the
   page too; the tests check what the page shows). Commit small. The docs and
   README describe the current state: change them with the code.

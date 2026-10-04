@@ -32,7 +32,8 @@ From the repository root:
 
 The script installs the host dependencies and rustup (or updates it);
 `rust-toolchain.toml` makes rustup add the Rust WebAssembly target on first
-use. It does **not** install Chromium or another browser.
+use. It also installs the libraries the tests' browser needs; the browser
+itself, Chrome's headless shell, is fetched by `./ksee.sh test`.
 
 ### Use a custom LLVM 22 build
 
@@ -89,17 +90,13 @@ runtime use one thread and one non-shared WebAssembly memory.
 
 ## Run tests
 
-Browser tests find Chrome, Chromium or `chromium-headless-shell` on `PATH`. Set
-`CHROME` to override the detected executable:
-
 ```sh
 ./ksee.sh test
-CHROME=/absolute/path/to/chromium ./ksee.sh test --ui
+./ksee.sh test --ui
 ```
 
-The override may name Chromium, Chrome, or another compatible binary that
-accepts Chromium's headless flags. `setup.sh` intentionally leaves browser
-installation to you.
+Browser tests run in Chrome's headless shell: the Makefile's `CHROME_VERSION`,
+fetched once into `target/chrome/` (`make chrome`) for x86-64 or arm64 Linux.
 
 The default test command runs native `ksee-core` and `ksee-cli` tests first,
 then performs a full build and runs the kernel/browser self-test. `--ui` adds
@@ -118,10 +115,8 @@ Install LLVM 22 with `./setup.sh`, or put another LLVM 22 first on `PATH` (see
 the version seen through `llvm-config`. The directory must also contain
 compatible `clang` and `wasm-ld` binaries.
 
-### Browser tests ask for `CHROME`
+### The browser does not start
 
-Set `CHROME` to the browser executable itself, not its containing directory:
-
-```sh
-CHROME=/usr/bin/chromium ./ksee.sh test
-```
+Run `target/chrome/chrome-headless-shell --version`: a missing library is
+named there (`./setup.sh` installs them). To fetch the shell again, remove
+`target/chrome/`.
