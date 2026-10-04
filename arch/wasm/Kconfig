@@ -11,7 +11,6 @@ config WASM
 	select GENERIC_ATOMIC64
 	select GENERIC_ENTRY
 	select HAVE_PAGE_SIZE_4KB
-	# Required by GENERIC_ENTRY; tracing itself stays off (TRACEPOINTS=n).
 	select HAVE_SYSCALL_TRACEPOINTS
 	select THREAD_INFO_IN_TASK
 	select UACCESS_MEMCPY

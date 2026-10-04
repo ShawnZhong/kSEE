@@ -1,4 +1,3 @@
 /target/
 /plugin/*.so
-# (A repository of its own: git shows it, and add -A would take it.)
 /linux/
