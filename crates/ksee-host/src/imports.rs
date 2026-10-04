@@ -73,22 +73,13 @@ pub extern "C" fn disk_submit(sector: u64, buf: u32, len: u32, write: u32) {
     k_mut(|k| k.transfers.push((sector, buf, len, write != 0)));
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn disk_queue(rq: u32) {
-    k_mut(|k| k.requests.push(rq));
-}
-
-/// The next request done, or 0.
-#[unsafe(no_mangle)]
-pub extern "C" fn disk_done() -> u32 {
-    k_mut(|k| k.done.pop_front().unwrap_or(0))
-}
-
 /// The disk at work, as the CPU idles: the transfers handed to it made (a
-/// read written into kernel memory as the host's writes are, logged), its
-/// requests done; whether there were any (then WASM_IRQ_DISK is due).
+/// read written into kernel memory as the host's writes are, logged);
+/// whether there were any (then WASM_IRQ_DISK is due: the driver ends the
+/// requests it handed over).
 pub fn disk_work() -> bool {
-    let (transfers, requests) = k_mut(|k| (std::mem::take(&mut k.transfers), std::mem::take(&mut k.requests)));
+    let transfers = k_mut(|k| std::mem::take(&mut k.transfers));
+    let any = !transfers.is_empty();
     for (sector, buf, len, write) in transfers {
         let at = sector as usize * 512;
         k_mut(|k| {
@@ -101,8 +92,6 @@ pub fn disk_work() -> bool {
             }
         });
     }
-    let any = !requests.is_empty();
-    k_mut(|k| k.done.extend(requests));
     any
 }
 
@@ -143,7 +132,7 @@ pub fn kernel() -> Object {
 
     let kernel = Object::new();
     for name in ["console_write", "doorbell", "get_cmdline", "memory_end", "time_ns", "spawn_task",
-                 "disk_sectors", "disk_submit", "disk_queue", "disk_done"] {
+                 "disk_sectors", "disk_submit"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "switch_task", sched::suspending(Closure::<dyn FnMut(u32, u32, u32) -> Promise>::new(sched::switch_task).into_js_value()));
