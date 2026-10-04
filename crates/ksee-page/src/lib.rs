@@ -8,7 +8,7 @@
 //! call selected, the cursor in it (a line it ran), and the frame chosen on
 //! the Stack.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use dioxus::dioxus_core::Task;
@@ -39,7 +39,8 @@ thread_local! {
     /// boot (a promise: `mount`'s).
     static BOOT: RefCell<Option<Promise>> = const { RefCell::new(None) };
     static MACHINE: RefCell<Option<Rc<Machine>>> = const { RefCell::new(None) };
-    static EXAMPLES: RefCell<Vec<Example>> = const { RefCell::new(Vec::new()) };
+    /// The lessons (`mount`'s, the page's life long).
+    static EXAMPLES: Cell<&'static [Example]> = const { Cell::new(&[]) };
 }
 
 /// The Machine, once booted; or why it could not be.
@@ -60,8 +61,8 @@ pub(crate) fn machine() -> Rc<Machine> {
     MACHINE.with_borrow(|m| m.clone()).expect("booted")
 }
 
-pub(crate) fn examples() -> Vec<Example> {
-    EXAMPLES.with_borrow(|e| e.clone())
+pub(crate) fn examples() -> &'static [Example] {
+    EXAMPLES.get()
 }
 
 /// Mount the page into the element `root`, with the lessons, `examples`
@@ -75,7 +76,7 @@ pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsVa
     }));
     let examples: Vec<Example> = serde_wasm_bindgen::from_value(examples)?;
     BOOT.with_borrow_mut(|b| *b = Some(machine));
-    EXAMPLES.with_borrow_mut(|e| *e = examples);
+    EXAMPLES.set(Box::leak(examples.into_boxed_slice()));
     // (The tests, for the native Chromium driver; the kernel test takes the Machine directly.)
     #[cfg(feature = "browser-tests")]
     if let Some(name) = test::start() {

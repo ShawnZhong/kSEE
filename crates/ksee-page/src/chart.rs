@@ -75,7 +75,7 @@ struct Tip {
 
 #[component]
 pub fn Timeline() -> Element {
-    let ui = use_context::<Ui>();
+    let mut ui = use_context::<Ui>();
     let tip = use_signal(|| None::<Tip>);
     let bottomed = use_signal(|| false);
     // (The cursor stepped out of the window: the window moved to it, as wide.)
@@ -98,7 +98,7 @@ pub fn Timeline() -> Element {
             div { class: "flamehead",
                 span { class: "dim", "{title}"
                     if let Some(k) = ui.call() { " · " a { title: "the window at the call selected", onclick: move |_| ui.zoom(k), "zoom" } }
-                    if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.set_window(None), "whole" } }
+                    if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.win.set(None), "whole" } }
                 }
                 Find {}
                 span { class: "legend",
@@ -692,7 +692,7 @@ fn Transport() -> Element {
 /// before), round to the start.
 #[component]
 fn Find() -> Element {
-    let ui = use_context::<Ui>();
+    let mut ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     (ui.snapshot)();
     let w = (ui.find)().to_lowercase();
@@ -716,9 +716,9 @@ fn Find() -> Element {
     rsx! {
         input { class: "find mono", placeholder: "find a function…", value: "{ui.find}", spellcheck: false,
             title: "any part of a function's name (its bars colored as you type): Enter, its next call after the cursor; Shift+Enter, the one before; Esc clears",
-            oninput: move |e| ui.set_function_filter(e.value()),
+            oninput: move |e| ui.find.set(e.value()),
             onkeydown: move |e| {
-                if e.key() == Key::Escape { ui.set_function_filter(String::new()); return }
+                if e.key() == Key::Escape { ui.find.set(String::new()); return }
                 if e.key() != Key::Enter || calls.is_empty() { return }
                 let here = d.line.cloned().map_or(0, |l| l.i);
                 let to = if e.modifiers().shift() {

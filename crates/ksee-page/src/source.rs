@@ -69,7 +69,7 @@ async fn file(file: String) -> Option<Rc<File>> {
 #[component]
 pub fn Source() -> Element {
     let d = use_context::<Derived>();
-    let ui = use_context::<Ui>();
+    let mut ui = use_context::<Ui>();
     // (A definition shown until the cursor moves: Ui::commit.)
     let seen = ui.seen;
     let Some(f) = crate::stack::shown() else { return rsx! { div { class: "source" } } };
@@ -89,7 +89,7 @@ pub fn Source() -> Element {
                 span { "{path}" }
                 if !def_of { span { " · {f.func}" } }
                 if sealed { span { title: "it loops, writes nothing and calls nothing: only its call and its return are recorded, not each turn", " · sealed: a box, its turns not recorded" } }
-                if def_of { a { onclick: move |_| ui.show_definition(None), "back to the cursor" } }
+                if def_of { a { onclick: move |_| ui.seen.set(None), "back to the cursor" } }
             }
             Code { path: path.clone(), from, to, line, here: !def_of, frame: f, at, seen }
         }

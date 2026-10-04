@@ -110,7 +110,7 @@ pub fn listen(ui: Ui) {
 /// Under them, the task running.
 #[component]
 pub fn Stack() -> Element {
-    let ui = use_context::<Ui>();
+    let mut ui = use_context::<Ui>();
     (ui.snapshot)();
     let frames = frames();
     let d = use_context::<Derived>();
@@ -161,7 +161,7 @@ pub fn Stack() -> Element {
             if let Some(t) = task {
                 div { class: "current dim", "current task: "
                     a { class: "mono", title: "its task_struct, in Tasks (the task running: open there)",
-                        onclick: move |_| { ui.set_tab(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
+                        onclick: move |_| { ui.tab.set(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
                         "{t.named()}" }
                 }
             }

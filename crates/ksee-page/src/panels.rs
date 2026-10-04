@@ -14,12 +14,12 @@ use crate::state::{Derived, Tab, Ui};
 
 #[component]
 pub fn Tabs() -> Element {
-    let ui = use_context::<Ui>();
+    let mut ui = use_context::<Ui>();
     use_context_provider(|| Signal::new(BTreeSet::<String>::new()));
     let tab = (ui.tab)();
     let head = |t: Tab, label: &'static str, title: &'static str| {
         rsx! {
-            a { class: if tab == t { "tab on" } else { "tab" }, title, onclick: move |_| ui.set_tab(t), "{label}" }
+            a { class: if tab == t { "tab on" } else { "tab" }, title, onclick: move |_| ui.tab.set(t), "{label}" }
         }
     };
     rsx! {
@@ -44,7 +44,7 @@ pub fn Tabs() -> Element {
 /// the browser-backed page state.
 #[component]
 fn Objects() -> Element {
-    let ui = use_context::<Ui>();
+    let mut ui = use_context::<Ui>();
     let derived = use_context::<Derived>();
     let graph = use_memo(move || {
         (ui.snapshot)();
@@ -72,7 +72,7 @@ fn Objects() -> Element {
             cursor,
             definitions: graph.read().1.clone(),
             on_record: move |record| ui.go_record(derived, record, None),
-            on_definition: move |definition: ObjectDefinition| ui.show_definition(Some((definition.file, definition.line))),
+            on_definition: move |definition: ObjectDefinition| ui.seen.set(Some((definition.file, definition.line))),
             on_object: show,
         }
     }

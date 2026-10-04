@@ -160,12 +160,11 @@ fn call_of(ui: Ui, n: usize) -> Option<usize> {
 /// `N:func` (the cursor at func's first line in it), and a tab to show
 /// (`:stack`, `:objects`, `:tasks`, `:console`); `try:N`, its program made
 /// instead.
-fn follow(ui: Ui, target: LessonTarget) {
+fn follow(mut ui: Ui, target: LessonTarget) {
     let LessonTarget::Recording { call, function, any_task, tab } = target else {
         let LessonTarget::Try { index } = target else { unreachable!() };
-        let tries = examples()[(ui.lesson)()].tries.clone();
-        if let Some(t) = tries.get(index - 1) {
-            ui.replace_program(t.clone());
+        if let Some(t) = examples()[(ui.lesson)()].tries.get(index - 1) {
+            ui.program.set(t.clone());
         }
         return;
     };
@@ -181,7 +180,7 @@ fn follow(ui: Ui, target: LessonTarget) {
         }
     }
     if let Some(tab) = tab {
-        ui.set_tab(tab);
+        ui.tab.set(tab);
     }
 }
 
@@ -218,7 +217,7 @@ pub fn from_url(ui: Ui) {
     let all = examples();
     if let Some(k) = ex.and_then(|n| all.iter().position(|e| e.name == n)) {
         let program = p.as_deref().and_then(program_from_json).unwrap_or_else(|| all[k].steps.clone());
-        ui.restore_lesson(k, program);
+        ui.open(k, program);
     }
 }
 
@@ -259,11 +258,6 @@ fn Theme() -> Element {
     }
 }
 
-/// Lesson `k` opened: its own program made, on a fresh kernel.
-fn open(ui: Ui, k: usize) {
-    ui.open_lesson(k);
-}
-
 #[component]
 pub fn Header() -> Element {
     let ui = use_context::<Ui>();
@@ -277,8 +271,8 @@ pub fn Header() -> Element {
         header { class: "topbar",
             b { title: "watch the Linux kernel run", "kSEE" }
             button { class: if menu() { "contents on" } else { "contents" }, title: "every lesson, by chapter", onclick: move |_| menu.toggle(), "☰ Lessons" }
-            button { disabled: at == 0, title: "the lesson before", onclick: move |_| open(ui, at - 1), "◀" }
-            button { disabled: at + 1 >= all.len(), title: "the next lesson", onclick: move |_| open(ui, at + 1), "▶" }
+            button { disabled: at == 0, title: "the lesson before", onclick: move |_| ui.open(at - 1, all[at - 1].steps.clone()), "◀" }
+            button { disabled: at + 1 >= all.len(), title: "the next lesson", onclick: move |_| ui.open(at + 1, all[at + 1].steps.clone()), "▶" }
             span { class: "crumb", "{all[at].group} · {place} of {group.len()}" }
             span { class: "keys dim", title: "← → a line (Shift: over the calls)\n↑ ↓ the frame, the callee or the caller\nhover the timeline: that moment; click: go there\ndrag: move the timeline; wheel: move left/right, zoom up/down\nCtrl+click a name: its definition", "keys" }
             Theme {}
@@ -308,7 +302,7 @@ fn Contents(close: EventHandler<()>) -> Element {
                 div { class: "chapter", "{g}" }
                 for k in ks {
                     a { class: if k == (ui.lesson)() { "item on" } else { "item" },
-                        onclick: move |_| { open(ui, k); close.call(()); },
+                        onclick: move |_| { ui.open(k, all[k].steps.clone()); close.call(()); },
                         "{all[k].title}" }
                 }
             }
@@ -318,10 +312,10 @@ fn Contents(close: EventHandler<()>) -> Element {
 
 #[component]
 pub fn Lesson() -> Element {
-    let ui = use_context::<Ui>();
+    let mut ui = use_context::<Ui>();
     let all = examples();
     let at = (ui.lesson)();
-    let ex = all[at].clone();
+    let ex = &all[at];
     let program = (ui.program)();
     // (Each step's call number, from 1: the text's links name calls so.)
     let mut n = 0;
@@ -358,7 +352,7 @@ pub fn Lesson() -> Element {
         } }
         if !mine { p { class: "explain dim", "A try, not the lesson's own program." } }
         div { class: "ptitle dim", "Program"
-            if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| open(ui, (ui.lesson)()), "↺ reset" } }
+            if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| ui.open(at, all[at].steps.clone()), "↺ reset" } }
         }
         div { class: "program",
             if many {
@@ -386,8 +380,8 @@ pub fn Lesson() -> Element {
                             rsx! {
                                 div { class: "cell", style: if many { format!("grid-column: {}", c + 1) } else { String::new() },
                                     crate::editor::Editor { key: "{program.len()}:{c}", text: String::new(), task: task.clone(), line: program.len(),
-                                        placeholder: by, common: common(),
-                                        done: move |text: String| if !text.is_empty() { ui.edit_program(|program| program.push(Step::on(task.as_deref(), text))); },
+                                        placeholder: by,
+                                        done: move |text: String| if !text.is_empty() { ui.program.write().push(Step::on(task.as_deref(), text)); },
                                         focus: move |_| {} }
                                 }
                             }
@@ -424,7 +418,7 @@ fn task_name(ui: Ui, task: Option<&str>, program: &[Step]) -> (String, i32) {
 /// column, and its task's hue.
 #[component]
 fn Cell(j: usize, step: Step, outcome: Option<Outcome>, call: Option<usize>, column: Option<(usize, i32)>) -> Element {
-    let ui = use_context::<Ui>();
+    let mut ui = use_context::<Ui>();
     let selected = call.is_some() && call.and_then(|n| call_of(ui, n)) == ui.call();
     let style = column.as_ref().map_or(String::new(), |(c, h)| format!("grid-column: {}; --hue: {h}", c + 1));
     let blocked = matches!(outcome, Some(Outcome::Call { ret: None, .. }));
@@ -432,10 +426,11 @@ fn Cell(j: usize, step: Step, outcome: Option<Outcome>, call: Option<usize>, col
     rsx! {
         div { class, style: "{style}",
             div { class: "line",
-                crate::editor::Editor { text: step.text().to_string(), task: step.task().map(String::from), line: j, placeholder: "", common: common(),
-                    done: move |text: String| ui.edit_program(|program| {
+                crate::editor::Editor { text: step.text().to_string(), task: step.task().map(String::from), line: j, placeholder: "",
+                    done: move |text: String| {
+                        let mut program = ui.program.write();
                         if text.is_empty() { program.remove(j); } else { program[j] = step.with_text(text); }
-                    }),
+                    },
                     focus: move |_| if let Some(k) = call.and_then(|n| call_of(ui, n)) { ui.select(k) } }
                 span { class: "ret mono", {said(outcome.as_ref())} }
             }
@@ -446,15 +441,22 @@ fn Cell(j: usize, step: Step, outcome: Option<Outcome>, call: Option<usize>, col
     }
 }
 
-/// The syscalls the lessons make: listed first.
-fn common() -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for step in examples().iter().flat_map(|e| e.steps.iter()) {
-        if let Ok(Line::Call { call, .. }) = statement(step.text()) && !out.contains(&call) {
-            out.push(call);
+thread_local! {
+    /// The syscalls the lessons make: listed first (found once, as the
+    /// first editor asks).
+    static COMMON: &'static [String] = {
+        let mut out: Vec<String> = Vec::new();
+        for step in examples().iter().flat_map(|e| e.steps.iter()) {
+            if let Ok(Line::Call { call, .. }) = statement(step.text()) && !out.contains(&call) {
+                out.push(call);
+            }
         }
-    }
-    out
+        Box::leak(out.into_boxed_slice())
+    };
+}
+
+pub fn common() -> &'static [String] {
+    COMMON.with(|c| *c)
 }
 
 /// An outcome as its line says it.

@@ -186,27 +186,11 @@ impl Ui {
         self.seen.set(None);
     }
 
-    pub fn open_lesson(mut self, lesson: usize) {
-        let examples = crate::examples();
-        let Some(example) = examples.get(lesson) else { return };
-        self.lesson.set(lesson);
-        self.program.set(example.steps.clone());
-    }
-
-    pub fn restore_lesson(mut self, lesson: usize, program: Vec<crate::lesson::Step>) {
-        if lesson >= crate::examples().len() {
-            return;
-        }
-        self.lesson.set(lesson);
+    /// Lesson `k` open, with `program` (its own, or a try): made on a
+    /// fresh kernel.
+    pub fn open(mut self, k: usize, program: Vec<crate::lesson::Step>) {
+        self.lesson.set(k);
         self.program.set(program);
-    }
-
-    pub fn replace_program(mut self, program: Vec<crate::lesson::Step>) {
-        self.program.set(program);
-    }
-
-    pub fn edit_program(mut self, edit: impl FnOnce(&mut Vec<crate::lesson::Step>)) {
-        edit(&mut self.program.write());
     }
 
     pub fn commit(mut self, moment: Option<Moment>) {
@@ -219,22 +203,6 @@ impl Ui {
         if *self.peek.peek() != moment {
             self.peek.set(moment);
         }
-    }
-
-    pub fn set_window(mut self, window: Option<(usize, usize)>) {
-        self.win.set(window);
-    }
-
-    pub fn set_tab(mut self, tab: Tab) {
-        self.tab.set(tab);
-    }
-
-    pub fn show_definition(mut self, definition: Option<(String, u32)>) {
-        self.seen.set(definition);
-    }
-
-    pub fn set_function_filter(mut self, filter: String) {
-        self.find.set(filter);
     }
 
     /// The call selected (the cursor's).
@@ -272,11 +240,11 @@ impl Ui {
 
     /// The chart's window: `span` steps from `start`, kept in the recording
     /// (as wide, at its ends).
-    pub fn view(self, start: f64, span: usize) {
+    pub fn view(mut self, start: f64, span: usize) {
         let total = machine().view(|v| v.rec.steps.len()).max(1);
         let span = span.max(MIN_SPAN).min(total - 1);
         let a = (start.max(0.0) as usize).min(total - 1 - span);
-        self.set_window(Some((a, a + span)));
+        self.win.set(Some((a, a + span)));
     }
 
     /// The cursor to line `k` of its call, on its innermost frame.

@@ -31,7 +31,7 @@ fn below_focus() -> Option<String> {
 /// line removed), unless the Machine says it cannot be made; `focus`, as
 /// it gets the focus.
 #[component]
-pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: String, common: Vec<String>, done: EventHandler<String>, focus: EventHandler<()>) -> Element {
+pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: String, done: EventHandler<String>, focus: EventHandler<()>) -> Element {
     let mut draft = use_signal(|| text.clone());
     let mut at = use_signal(|| text.len());
     let mut sel = use_signal(|| 0usize);
@@ -40,7 +40,7 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
     let mut place = use_signal(String::new);
     // (The Machine's, once the kernel is up.)
     let up = matches!((use_context::<crate::state::Ui>().kernel)(), Some(Ok(())));
-    let items: Vec<Completion> = if open() && up { machine().complete(&draft(), at(), line, &common) } else { Vec::new() };
+    let items: Vec<Completion> = if open() && up { machine().complete(&draft(), at(), line, crate::lesson::common()) } else { Vec::new() };
     // (Nothing to choose, or only what is written already: no list.)
     let c = context(&draft(), at());
     let written = if c.param.is_none() { &c.call } else { &c.word };
