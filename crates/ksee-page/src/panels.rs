@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 use ksee_core::view::{RegionKind, TaskState};
 
 use crate::machine;
-use crate::objects_view::{ObjectDefinition, ObjectsView};
+use crate::objects::{ObjectDefinition, ObjectsView};
 use crate::state::{Derived, Tab, Ui};
 
 #[component]

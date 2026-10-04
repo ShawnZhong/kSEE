@@ -23,7 +23,8 @@ mod chart;
 mod editor;
 mod layout;
 mod lesson;
-mod objects_view;
+mod nav;
+mod objects;
 mod panels;
 mod source;
 mod stack;
@@ -95,7 +96,7 @@ pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsVa
 fn App() -> Element {
     let ui = use_context_provider(|| {
         let ui = Ui::new();
-        lesson::from_url(ui);
+        nav::from_url(ui);
         ui
     });
     // (The kernel booting: ready, or why not.)
@@ -112,7 +113,7 @@ fn App() -> Element {
         })
     });
     // (The URL, as the lesson and its program are.)
-    use_effect(move || lesson::to_url((ui.lesson)(), &(ui.program)()));
+    use_effect(move || nav::to_url((ui.lesson)(), &(ui.program)()));
     // (The program made again, on a fresh kernel, as it or the kernel
     // changes: the run before cancelled.)
     let mut running = use_signal(|| None::<Task>);
@@ -134,11 +135,11 @@ fn App() -> Element {
     // (The arrow keys, anywhere on the page: one listener on the window.)
     stack::listen(ui);
     rsx! {
-        lesson::Header {}
+        nav::Header {}
         main { class: "page", style: "{sizes().style()}",
             aside { class: "side",
                 article { class: "lesson", lesson::Lesson {} }
-                lesson::Turn {}
+                nav::Turn {}
             }
             layout::Handle { split: layout::Split::Left }
             section { class: "work",

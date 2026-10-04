@@ -93,7 +93,7 @@ pub fn Timeline() -> Element {
                 }
             }
             Bars { tip }
-            Transport {}
+            crate::stack::Transport {}
         }
         if let Some(t) = tip() {
             div { class: "tip", style: "left: {t.x + 14.0}px; top: {t.y + 16.0}px",
@@ -609,48 +609,6 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
     })
 }
 
-/// Under the strip: steps through the call's lines (◀ ▶; Shift: over the
-/// calls, as ← → are), the frame up or down the Stack (▲ ▼, as ↑ ↓), and
-/// where the cursor is (its task: the overview's, the Stack's).
-#[component]
-fn Transport() -> Element {
-    let ui = use_context::<Ui>();
-    let d = use_context::<Derived>();
-    let here = d.line.cloned();
-    let place = here
-        .as_ref()
-        .map(|l| {
-            format!(
-                "{} {}:{}",
-                l.inlined.as_deref().unwrap_or(&l.func),
-                l.file,
-                l.line
-            )
-        })
-        .unwrap_or_default();
-    // (A line that runs more than once in this call: which turn the cursor is on.)
-    let turn = here
-        .as_ref()
-        .filter(|l| l.run > 1)
-        .map(|l| format!(" · turn {}", l.run))
-        .unwrap_or_default();
-    // (A step that lands after a call: what it returned.)
-    let returned = here
-        .as_ref()
-        .and_then(|l| l.called.as_ref())
-        .filter(|c| c.at <= here.as_ref().map_or(0, |l| l.at))
-        .map(|c| format!(" · {} returned {}", c.func, machine().tables().types.result(c.value)))
-        .unwrap_or_default();
-    rsx! {
-        div { class: "transport",
-            button { title: "the line before (←); Shift: back over the calls", onclick: move |e| crate::stack::walk(ui, -1, e.modifiers().shift()), "◀ Line" }
-            button { title: "the next line (→); Shift: over the calls", onclick: move |e| crate::stack::walk(ui, 1, e.modifiers().shift()), "Line ▶" }
-            button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| crate::stack::frame(ui, d, -1), "▲ Callee" }
-            button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| crate::stack::frame(ui, d, 1), "▼ Caller" }
-            span { class: "where mono dim", "{place}{turn}{returned}" }
-        }
-    }
-}
 
 /// Find a function by any part of its name: its bars lit, its calls in the
 /// recording counted; Enter, the cursor at its next call (Shift: the one

@@ -120,11 +120,12 @@ runtime's WebAssembly module and calls `Machine` directly.
 | Module | Responsibility |
 |---|---|
 | `lib.rs` | Mounting, boot handoff, the booted `Machine` and the lessons (thread-locals), context providers, URL synchronization, the single active lesson run, and top-level layout. |
-| `lesson.rs` | Lesson schema, navigation, running a program (the Machine keeps each line's outcome), links, tries, and rendering. |
+| `lesson.rs` | Lesson schema, running a program (the Machine keeps each line's outcome), links, tries, and rendering. |
+| `nav.rs` | The header (lessons menu, chapter, source link, theme), the lessons before and after, and the URL (`NAME.html#p=…`). |
 | `editor.rs` | In-place program editing, completions, signatures, and validation. |
-| `chart.rs` | Whole-recording overview, stack chart, task strip, transport, zoom/pan input, and function search. |
+| `chart.rs` | Whole-recording overview, stack chart, task strip, zoom/pan input, and function search. |
 | `source.rs` | Virtualized kernel source, executed lines, values, stores, run-to-line, and definition navigation. |
-| `stack.rs` | Line/frame stepping, keyboard controls, stack frames, values, and origins. |
+| `stack.rs` | The transport (line and frame stepping, its buttons and keys), stack frames, values, and origins. |
 | `panels.rs` | Stack, Tasks, Objects, and Console tabs. |
 | `layout.rs` | Resizable panes and persisted dimensions. |
 | `state.rs` | Semantic state transitions, the snapshot identity, navigation, lesson program, and derived views. |
