@@ -164,10 +164,11 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .code .num { color: var(--num); } .code .pp { color: var(--pp); }
 .code .fn { color: var(--fn); } .code .fld { color: var(--fld); } .code .mac { color: var(--mac); } .code .bl { color: var(--bl); } .code .esc { color: var(--esc); }
 .code .val { text-decoration: underline dotted var(--dim); text-underline-offset: 3px; cursor: help; }
-.code a.stored, .code .values { font-style: italic; margin-left: 3ch; display: inline-block; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
-.code a.stored { color: var(--dim); max-width: 45%; }
+/* (After a line: what it wrote, "name = a → b"; at the cursor, its names' values, "name = v".) */
+.code a.stored, .code .values { font-style: italic; margin-left: 3ch; }
+.code a.stored { color: var(--dim); }
 .code a.stored:hover { color: var(--accent); }
-.code .values { color: var(--accent); max-width: 60%; }
+.code .values { color: var(--accent); }
 
 /* The tabs: the Stack, the Objects, the Tasks, the Console */
 .panels { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel); border-left: 1px solid var(--line); }

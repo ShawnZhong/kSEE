@@ -35,7 +35,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
                 d.is_some_and(|d| d.before == "0" && d.after == "26" && d.runs.len() == 1 && d.runs[0].at.as_ref().is_some_and(|l| l.func == "ksys_read")));
         let notes = m.view(|v| v.notes(read.first, rlast, "fs/read_write.c", rlast));
         t.check("the read's notes in fs/read_write.c: the kiocb's ki_pos, named as the code names it",
-                notes.iter().any(|n| n.short.starts_with("ki_pos: ") && (n.full.contains("kiocb->ki_pos in ") || n.full.contains("kiocb.ki_pos in "))));
+                notes.iter().any(|n| n.short.starts_with("ki_pos = ") && (n.full.contains("kiocb->ki_pos in ") || n.full.contains("kiocb.ki_pos in "))));
         t.check("what the read changed: its file, not its kiocb (on the stack)",
                 nodes.iter().any(|n| n.ty == "struct file") && !nodes.iter().any(|n| n.ty == "struct kiocb"));
     }

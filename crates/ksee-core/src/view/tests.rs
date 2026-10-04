@@ -133,8 +133,8 @@ fn one_store_copying_a_struct_changes_each_member() {
     let got: Vec<_> = nodes[0].changes.iter().map(|d| (d.member.clone(), d.after.clone())).collect();
     assert_eq!(got, [("mnt".into(), "0x5".into()), ("dentry".into(), "0x6".into())]);
     let notes = v.notes(0, 1, "f.c", 1);
-    assert_eq!((notes[0].line, notes[0].short.as_str()), (3, "mnt: NULL → 0x5   dentry: NULL → 0x6"));
-    assert_eq!(notes[0].full.as_str(), "p->mnt in f: NULL → 0x5; p->dentry in f: NULL → 0x6");
+    assert_eq!((notes[0].line, notes[0].short.as_str()), (3, "mnt = NULL → 0x5   dentry = NULL → 0x6"));
+    assert_eq!(notes[0].full.as_str(), "p->mnt in f = NULL → 0x5; p->dentry in f = NULL → 0x6");
 }
 
 #[test]
@@ -155,8 +155,8 @@ fn a_lines_note_says_a_name_once() {
     (m[8], m[20]) = (2, 4);
     let v = View { tables: &t, rec: &rec, now: &m };
     let notes = v.notes(0, 6, "f.c", 6);
-    assert_eq!((notes[0].line, notes[0].short.as_str()), (3, "b: 1 → 2, 3 → 4"));
-    assert_eq!(notes[0].full.as_str(), "p->b in g: 1 → 2; p->b in g: 3 → 4");
+    assert_eq!((notes[0].line, notes[0].short.as_str()), (3, "b = 1 → 2, 3 → 4"));
+    assert_eq!(notes[0].full.as_str(), "p->b in g = 1 → 2; p->b in g = 3 → 4");
 }
 
 #[test]

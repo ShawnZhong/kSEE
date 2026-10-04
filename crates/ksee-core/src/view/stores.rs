@@ -233,28 +233,29 @@ impl View<'_> {
         by.into_iter().map(|(line, (mut things, i))| {
             things.sort_by_key(|(t, _, _)| t.writes.iter().find(|w| w.at.is_some_and(|a| a.loc.line == line)).map(|w| w.i));
             // (Short, a name once (two inlined copies' `sb` are one `sb` in
-            // the text), each change it had once, the times added: "sb: NULL
-            // → 0x1c49000, (uninitialized) → 0x1c49000 ×2".)
+            // the text: their times not added), each change it had once:
+            // "sb = NULL → 0x1c49000 ×2"; a first value, the value alone:
+            // "sb = 0x1c49000", as the cursor's line says a value.)
             let (mut short, mut full): (Vec<(String, Vec<(String, usize)>)>, Vec<String>) = (Vec::new(), Vec::new());
             for (t, k, n) in things {
                 let r = &named.regions[t.region as usize];
                 let (before, after) = self.change(&named, t, k);
+                let change = if before == Missing::Uninitialized.text() { after.clone() } else { format!("{before} → {after}") };
                 let join = if r.kind == RegionKind::Object { "->" } else { "." };
                 // (The member after the name, the function it is in last: "filp->f_pos in vfs_read".)
                 let (expr, within) = (r.what.as_str(), r.within.as_ref().map_or(String::new(), |f| format!(" in {f}")));
                 let times = if n > 1 { format!(" ×{n}") } else { String::new() };
-                full.push(format!("{expr}{}{within}: {before} → {after}{times}", if t.member.is_empty() { String::new() } else { format!("{join}{}", t.member) }));
+                full.push(format!("{expr}{}{within} = {change}{times}", if t.member.is_empty() { String::new() } else { format!("{join}{}", t.member) }));
                 let name = if t.member.is_empty() { expr.rsplit(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or(expr) } else { &t.member };
-                let change = format!("{before} → {after}");
                 let k = short.iter().position(|(s, _)| s == name).unwrap_or_else(|| (short.push((name.to_string(), Vec::new())), short.len() - 1).1);
                 match short[k].1.iter_mut().find(|(c, _)| *c == change) {
-                    Some((_, k)) => *k += n,
+                    Some((_, k)) => *k = (*k).max(n),
                     None => short[k].1.push((change, n)),
                 }
             }
             let short = short.into_iter().map(|(name, changes)| {
                 let changes: Vec<String> = changes.into_iter().map(|(c, n)| if n > 1 { format!("{c} ×{n}") } else { c }).collect();
-                format!("{name}: {}", changes.join(", "))
+                format!("{name} = {}", changes.join(", "))
             }).collect::<Vec<_>>().join("   ");
             Note { line, i, short, full: full.join("; ") }
         }).collect()
