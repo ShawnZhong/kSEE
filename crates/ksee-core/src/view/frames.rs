@@ -13,12 +13,13 @@ pub struct Called {
     pub at: usize,
 }
 
-/// A source line the kernel ran (see stack::lines), at record `i`, the
+/// A source line the kernel ran (see stack::Calls::lines), at record `i`, the
 /// `nth` of the lines it runs there (see call_stack).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Line {
     pub i: usize,
-    /// The record the line is at: its first store's, else `i` (LineStep::at).
+    /// The record just before it runs (LineStep::at): its values as they
+    /// are then.
     pub at: usize,
     pub nth: u32,
     /// A line calling code inlined, not yet in it (LineStep::cut).
@@ -95,7 +96,7 @@ impl View<'_> {
         let (records, tasks) = (&self.rec.records, &self.rec.tasks);
         let task = tasks.get(s.record).copied();
         let tests = (s.record + 1..records.len()).filter(|&j| Some(tasks[j]) == task)
-            .map(|j| records[j]).take_while(|r| matches!(r, Record::Store { .. } | Record::Compare { .. } | Record::Var { .. }))
+            .map(|j| records[j]).take_while(|r| r.line().is_some())
             .filter(|r| matches!(r, Record::Compare { line, .. } if *line == s.index))
             .filter_map(|r| compared(&r)).collect();
         Line { tests, ..self.line_only(s) }

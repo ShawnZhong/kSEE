@@ -84,9 +84,10 @@ impl View<'_> {
     /// (then the first written first), each node followed by those under it.
     pub fn objects(&self, first: usize, last: usize) -> Vec<Node> {
         let named = self.stores(first, last);
-        let mut nodes = self.object_nodes(&named, first, last);
+        // (Memory as the span ends: the members' values, the pointers' targets.)
+        let mem = self.rec.memory_at(self.now, last.min(self.rec.last()));
+        let mut nodes = self.object_nodes(&named, first, &mem);
         Self::order_nodes(&mut nodes);
-        let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
         Self::link_nodes(&self.tables.types, &mem, nodes)
     }
 
@@ -95,9 +96,8 @@ impl View<'_> {
     /// type: each member from what it was to what it is as the span ends
     /// (one only ever written as it was, not; an object with none, not),
     /// with a pointer's target as it ends.
-    fn object_nodes(&self, named: &Named, first: usize, last: usize) -> Vec<(Node, Vec<Option<u32>>)> {
+    fn object_nodes(&self, named: &Named, first: usize, mem: &dyn Memory) -> Vec<(Node, Vec<Option<u32>>)> {
         let types = &self.tables.types;
-        let mem = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
         let own = self.rec.tasks.get(first).copied();
         let mut nodes: Vec<(Node, Vec<Option<u32>>)> = Vec::new();
         for t in &named.things {
@@ -114,7 +114,7 @@ impl View<'_> {
             let mut k = 0;
             for run in t.writes.chunk_by(|a, b| func(a) == func(b)) {
                 let (before, after) = (self.change(named, t, k).0, self.change(named, t, k + run.len() - 1).1);
-                runs.push(Run { before, after, writes: run.len(), first: run[0].i, last: run[run.len() - 1].i, at: run[run.len() - 1].at.map(|s| self.line_only(&s)) });
+                runs.push(Run { before, after, writes: run.len(), first: run[0].i, last: run.last().map_or(0, |w| w.i), at: run.last().and_then(|w| w.at).map(|s| self.line_only(&s)) });
                 k += run.len();
             }
             let (a, z) = (runs[0].before.clone(), runs.last().expect("a run").after.clone());

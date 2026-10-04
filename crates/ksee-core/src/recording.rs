@@ -60,7 +60,7 @@ pub struct Recording {
     pub calls: stack::Calls,
     /// Who each task was (by its task_struct's address, and the last write
     /// to its pid or comm by then), read once per snapshot (View::task).
-    pub names: core::cell::RefCell<alloc::collections::BTreeMap<(u32, Option<usize>), crate::types::TaskId>>,
+    pub(crate) names: core::cell::RefCell<alloc::collections::BTreeMap<(u32, Option<usize>), crate::types::TaskId>>,
     /// The last span's stores, named (View::stores: what Objects and the
     /// source's notes ask again at each moment), by its first and last.
     pub(crate) named: core::cell::RefCell<Option<((usize, usize), alloc::rc::Rc<crate::view::Named>)>>,
@@ -139,11 +139,16 @@ impl Recording {
 
     /// The record step `k` is at, the last record if past the end.
     pub fn record_of(&self, k: usize) -> usize {
-        self.steps.get(k).map_or(self.records.len().saturating_sub(1), |&(r, _, _)| r)
+        self.steps.get(k).map_or(self.last(), |&(r, _, _)| r)
     }
 
     pub fn len(&self) -> usize {
         self.records.len()
+    }
+
+    /// The last record's index (0: none).
+    pub fn last(&self) -> usize {
+        self.records.len().saturating_sub(1)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -228,7 +233,7 @@ impl Recording {
 
     /// The stores in records `from..=to`, oldest first.
     pub(crate) fn stores_between(&self, from: usize, to: usize) -> &[usize] {
-        self.stores().between(from, to.min(self.len().saturating_sub(1)))
+        self.stores().between(from, to.min(self.last()))
     }
 }
 

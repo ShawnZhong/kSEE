@@ -240,7 +240,7 @@ impl View<'_> {
     /// by now, as it was).
     pub fn task(&self, addr: u32, at: usize) -> Task {
         let t = self.tables;
-        let at = at.min(last_record(self.rec));
+        let at = at.min(self.rec.last());
         // (Read once per snapshot and per last write to its pid or comm by
         // then: every store names its task.)
         let h = self.rec.stores();
@@ -342,7 +342,7 @@ impl View<'_> {
             name: self.tables.types.syscall_name(s.nr),
             ret: s.ret,
             first: s.first,
-            last: s.last.unwrap_or(last_record(self.rec)),
+            last: s.last.unwrap_or(self.rec.last()),
         })
     }
 
@@ -426,7 +426,7 @@ impl View<'_> {
     pub fn coverage(&self, file: &str, n: Option<usize>) -> BTreeMap<u32, u64> {
         let t = self.tables;
         let counts = self.rec.block_counts(n);
-        let files: Vec<u32> = (0..t.files.len() as u32).filter(|&k| t.files[k as usize] == file).collect();
+        let files = t.file_ids(file);
         let mut lines: BTreeMap<u32, u64> = BTreeMap::new();
         for (&(f, b), &c) in counts.iter().filter(|(_, c)| **c > 0) {
             for loc in t.runs(f, b).filter(|l| files.contains(&l.file)) {
@@ -446,7 +446,3 @@ fn compared(r: &Record) -> Option<String> {
     Some(format!("{} {op} {} {}", v(lhs), v(rhs), if held { "✓" } else { "✗" }))
 }
 
-/// The last record's index (0 if none).
-fn last_record(rec: &Recording) -> usize {
-    rec.records.len().saturating_sub(1)
-}

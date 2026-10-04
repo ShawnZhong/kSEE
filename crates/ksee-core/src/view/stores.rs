@@ -201,7 +201,7 @@ impl View<'_> {
     /// rest) and in full; at the line's last write.
     pub fn notes(&self, first: usize, last: usize, file: &str, cur: usize) -> Vec<Note> {
         let named = self.stores(first, last);
-        let files: Vec<u32> = (0..self.tables.files.len() as u32).filter(|&k| self.tables.files[k as usize] == file).collect();
+        let files = self.tables.file_ids(file);
         // (Each line's things, in the order first written there: the thing,
         // its last write there by `cur`, how many; and the line's last write.)
         let mut by: BTreeMap<u32, (Vec<(&Thing, usize, usize)>, usize)> = BTreeMap::new();
@@ -246,7 +246,8 @@ impl View<'_> {
         }).collect()
     }
 
-    /// (The work of stores: see it.)
+    /// The span's stores and variable sets, each named (see stores: this
+    /// is the naming; that, its cache).
     fn name_stores(&self, first: usize, last: usize) -> Named {
         let types = &self.tables.types;
         // (The objects: what (as the code names it: "file in vfs_read"),
@@ -301,7 +302,7 @@ impl View<'_> {
         // (And what its pointer members point to, as the span ends:
         // current->files, ->fs, ->mm: "files->next_fd" through a local
         // the optimizer kept in a register is reached this way.)
-        let end = self.rec.memory_at(self.now, last.min(last_record(self.rec)));
+        let end = self.rec.memory_at(self.now, last.min(self.rec.last()));
         if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
             for mb in members.iter().filter(|mb| mb.bit_size == 0) {
                 if let Some(to) = types.struct_target(mb.ty) {
@@ -318,7 +319,7 @@ impl View<'_> {
                     add: &mut impl FnMut((String, Option<String>), RegionKind, u32, u32, Option<u32>, Option<usize>, Option<usize>)) {
         let (t, types) = (self.tables, &self.tables.types);
         let (records, calls, args) = (&self.rec.records, &self.rec.calls, &self.rec.args);
-        let last = last.min(last_record(self.rec));
+        let last = last.min(self.rec.last());
         for i in first..=last {
             let Record::Block { func, n: 0 } = records[i] else { continue };
             let Some((f, (words, frame))) = t.functions.get(&func).zip(args.get(i)) else { continue };

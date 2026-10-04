@@ -602,10 +602,7 @@ mod tests {
         m[12..16].copy_from_slice(&0x40u32.to_le_bytes());
         m[16] = 0b0101; // flags: 3 bits = 5
         let mem = m;
-        let at = |addr, ty, off, size| {
-            let out = t.print(&mem, addr, ty, off, size);
-            out
-        };
+        let at = |addr, ty, off, size| t.print(&mem, addr, ty, off, size);
         assert_eq!((at(0, 1, 0, 0), at(4, 3, 0, 0), at(12, 5, 0, 0), at(16, 7, 0, 3), at(0, 6, 0, 0)),
                    ("-3".into(), "\"init\"".into(), "0x40".into(), "5".into(), "{...}".into()));
     }

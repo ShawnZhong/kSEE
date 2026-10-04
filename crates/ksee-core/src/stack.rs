@@ -206,7 +206,7 @@ impl Calls {
     /// The line the store (or comparison, or variable set) at record `i` is on (its record's
     /// line: which of its block's lines), in the call running it.
     pub(crate) fn line_at(&self, t: &Tables, i: usize, records: &[Record]) -> Option<LineStep> {
-        let (&Record::Store { line, .. } | &Record::Compare { line, .. } | &Record::Var { line, .. }) = records.get(i)? else { return None };
+        let line = records.get(i)?.line()?;
         let p = self.place_at(i)?;
         let c = &self.calls[p.call as usize];
         let b = t.block(c.func, p.n)?;
@@ -261,13 +261,11 @@ impl Calls {
                 if tasks[j] != tk {
                     continue;
                 }
-                match *r {
-                    // (A line is at its first store, or comparison: the
-                    // instruction that does what it says, its assignment or
-                    // its test, as the debug info's key instructions have it.)
-                    Record::Store { line, .. } | Record::Compare { line, .. } | Record::Var { line, .. } => { first_at.entry(line).or_insert(j); }
-                    _ => break,
-                }
+                // (A line is at its first store, or comparison: the
+                // instruction that does what it says, its assignment or its
+                // test, as the debug info's key instructions have it.)
+                let Some(line) = r.line() else { break };
+                first_at.entry(line).or_insert(j);
                 last = j;
             }
             for (nth, s) in steps.iter().enumerate() {
@@ -332,7 +330,8 @@ pub struct LineStep {
     pub record: usize,
     pub at: usize,
     pub nth: u32,
-    /// Which of its block's lines it is (a Store's or a Compare's line).
+    /// Which of its block's lines it is (a Store's, a Compare's or a Var's
+    /// line: Record::line).
     pub index: u32,
     pub func: u32,
     pub depth: u32,

@@ -40,6 +40,15 @@ pub(crate) const PREDICATES: [(&str, bool); 10] =
     [("==", false), ("!=", false), (">", false), (">=", false), ("<", false), ("<=", false), (">", true), (">=", true), ("<", true), ("<=", true)];
 
 impl Record {
+    /// Which of its block's lines it is on: a store's, a comparison's, a
+    /// variable set's (see tables::Block::steps).
+    pub(crate) fn line(&self) -> Option<u32> {
+        match *self {
+            Record::Store { line, .. } | Record::Compare { line, .. } | Record::Var { line, .. } => Some(line),
+            _ => None,
+        }
+    }
+
     /// A Compare's normalized operands, operator, signedness, and result.
     pub(crate) fn comparison(&self) -> Option<(i128, &'static str, i128, bool, bool)> {
         let Record::Compare { lhs, rhs, wide, pred, .. } = *self else { return None };
