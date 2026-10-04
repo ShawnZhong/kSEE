@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::Closure;
 
 use crate::machine;
 use crate::host::Host;
-use crate::state::{Derived, Moment, Shared, Ui};
+use crate::state::{Derived, Moment, Shared, Tab, Ui};
 
 /// The stack at the moment shown (the pointer's over the chart, else the
 /// cursor's).
@@ -107,6 +107,7 @@ pub fn listen(ui: Ui) {
 /// The calls at the moment shown, at the bottom of the pane as the chart
 /// stacks them (the outermost lowest); under the frame chosen, its
 /// arguments and locals as memory was then. A click on another: it chosen.
+/// Under them, the task running.
 #[component]
 pub fn Stack() -> Element {
     let ui = use_context::<Ui>();
@@ -115,10 +116,26 @@ pub fn Stack() -> Element {
     let d = use_context::<Derived>();
     let chosen = d.frame.cloned();
     let at = d.line.cloned().map_or(0, |l| l.at);
+    let task = machine().view(|v| v.rec.tasks.get(at).map(|&t| v.task(t, at)));
+    let mut open = use_context::<Signal<BTreeSet<String>>>();
+    // (The chosen frame, its row and values, scrolled into view: as little
+    // as it takes, its row first.)
+    use_effect(move || {
+        let _ = (d.frame.read(), d.stack.read());
+        let doc = web_sys::window().and_then(|w| w.document());
+        let pick = |s: &str| doc.as_ref().and_then(|d| d.query_selector(s).ok().flatten());
+        let (Some(pane), Some(on)) = (pick(".stack"), pick(".stack tbody.on")) else { return };
+        let (p, r) = (pane.get_bounding_client_rect(), on.get_bounding_client_rect());
+        // (Above the task's line, kept at the bottom.)
+        let bottom = p.bottom() - pick(".stack .current").map_or(0.0, |c| c.get_bounding_client_rect().height());
+        let by = if r.top() < p.top() { r.top() - p.top() } else { (r.bottom() - bottom).max(0.0).min(r.top() - p.top()) };
+        pane.set_scroll_top(pane.scroll_top() + by as i32);
+    });
     rsx! {
         div { class: "stack",
             table { class: "objs",
                 for (k , f) in frames.iter().cloned().enumerate() {
+                    tbody { class: if k == chosen { "on" } else { "" },
                     tr { class: if k == chosen { "frame on" } else { "frame" }, onclick: {
                         let id = (f.first, f.func.clone());
                         move |_| {
@@ -138,6 +155,14 @@ pub fn Stack() -> Element {
                             Value { o: o.clone(), path: format!("{k}.{}", o.name), depth: 1, at }
                         }
                     }
+                    }
+                }
+            }
+            if let Some(t) = task {
+                div { class: "current dim", "current task: "
+                    a { class: "mono", title: "its task_struct, in Tasks (the task running: open there)",
+                        onclick: move |_| { ui.set_tab(Tab::Tasks); open.write().remove(&format!("task/{}", t.addr)); },
+                        "{t.named()}" }
                 }
             }
         }

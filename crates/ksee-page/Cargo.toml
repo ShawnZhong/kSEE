@@ -17,7 +17,7 @@ serde-wasm-bindgen = "0.6.5"
 wasm-bindgen = "=0.2.128"
 wasm-bindgen-futures = "0.4.78"
 js-sys = "0.3.105"
-web-sys = { version = "0.3.105", features = ["Window", "Response", "Document", "Element", "Event", "EventTarget", "HtmlCanvasElement", "CanvasRenderingContext2d", "CssStyleDeclaration", "HtmlElement", "HtmlTextAreaElement", "KeyboardEvent", "Location", "History", "console", "Storage"] }
+web-sys = { version = "0.3.105", features = ["Window", "Response", "Document", "Element", "Event", "EventTarget", "HtmlCanvasElement", "CanvasRenderingContext2d", "CssStyleDeclaration", "DomRect", "HtmlElement", "HtmlTextAreaElement", "KeyboardEvent", "Location", "History", "console", "Storage"] }
 
 [features]
 # (The tests run in the page: the kernel integration and DOM suites in src/test/.)
