@@ -72,7 +72,9 @@ pub fn Source() -> Element {
     let mut ui = use_context::<Ui>();
     // (A definition shown until the cursor moves: Ui::commit.)
     let seen = ui.seen;
-    let Some(f) = crate::stack::shown() else { return rsx! { div { class: "source" } } };
+    // (The frame shown: the one chosen (or under the pointer), else the innermost.)
+    let frames = d.stack.cloned();
+    let Some(f) = frames.get(d.frame.cloned()).or(frames.first()).cloned() else { return rsx! { div { class: "source" } } };
     let (Some(path), Some(line)) = (f.file.clone(), f.line) else { return rsx! { div { class: "source" } } };
     let (path, line, def_of) = match seen() {
         Some((file, line)) => (file, line, true),

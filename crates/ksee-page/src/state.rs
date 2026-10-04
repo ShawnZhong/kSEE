@@ -119,12 +119,8 @@ impl Derived {
             if shown().is_some_and(|s| s.call == at.call) { moment_step(&at, &lines.read()) }
             else { moment_step(&at, &Ui::lines_of(at.call)) }
         });
-        let preview = use_memo(move || {
-            (ui.snapshot)();
-            let at = (ui.peek)()?;
-            if shown().is_some_and(|s| s.call == at.call) { moment_step(&at, &lines.read()) }
-            else { moment_step(&at, &Ui::lines_of(at.call)) }
-        });
+        // (The pointer's: the moment shown, its lines `lines`.)
+        let preview = use_memo(move || moment_step(&(ui.peek)()?, &lines.read()));
         Derived { shown, syscall, lines, window, chart, line, stack, frame, cursor, preview }
     }
 }

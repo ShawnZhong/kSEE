@@ -19,14 +19,6 @@ pub fn frames() -> Shared<Vec<Frame>> {
     use_context::<Derived>().stack.cloned()
 }
 
-/// The frame shown: the one chosen (or under the pointer), else the innermost.
-pub fn shown() -> Option<Frame> {
-    let d = use_context::<Derived>();
-    let k = d.frame.cloned();
-    let frames = d.stack.read();
-    frames.get(k).or(frames.first()).cloned()
-}
-
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
 /// lines, into its task's syscall after it (or before).
 pub fn walk(ui: Ui, dir: isize, over: bool) {
