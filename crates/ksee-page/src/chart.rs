@@ -338,13 +338,13 @@ fn draw_chart(
             ctx.restore();
         }
     }
-    // (The moment shown, a cross: down, its step; across, its frame's
-    // level, the Stack's.)
+    // (The moment shown, a cross: down, its step; across, under its frame's
+    // level, the Stack's (under: its bars' names stay readable).)
     ctx.set_fill_style_str(&foreground);
     if let Some(pct) = now {
         ctx.fill_rect(pct * width / 100.0 + offset - 1.0, 0.0, 2.0, height);
         if let Some(level) = level {
-            ctx.fill_rect(0.0, height - (level as f64 + 0.5) * ROW - 1.0, width, 2.0);
+            ctx.fill_rect(0.0, height - level as f64 * ROW - 1.0, width, 2.0);
         }
     }
     if crate::test::on() {

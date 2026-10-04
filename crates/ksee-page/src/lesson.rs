@@ -244,20 +244,20 @@ pub fn Header() -> Element {
     }
 }
 
-/// The lessons before and after this one, by their titles (the lesson's
-/// end: the menu, at the top, has them all).
+/// The lessons before and after this one, by their titles, a line each
+/// (at the side's foot: the menu, at the top, has them all).
 #[component]
-fn Turn() -> Element {
+pub fn Turn() -> Element {
     let ui = use_context::<Ui>();
     let all = examples();
     let at = (ui.lesson)();
     rsx! {
         nav { class: "turn",
             if let Some(e) = at.checked_sub(1).map(|k| &all[k]) {
-                a { onclick: move |_| ui.open_lesson(at - 1), span { class: "dim", "◀ Previous" } "{e.title}" }
+                a { title: "the lesson before", onclick: move |_| ui.open_lesson(at - 1), "◀ {e.title}" }
             }
             if let Some(e) = all.get(at + 1) {
-                a { class: "next", onclick: move |_| ui.open_lesson(at + 1), span { class: "dim", "Next ▶" } "{e.title}" }
+                a { class: "next", title: "the next lesson", onclick: move |_| ui.open_lesson(at + 1), "{e.title} ▶" }
             }
         }
     }
@@ -369,7 +369,6 @@ pub fn Lesson() -> Element {
                 }
             }
         }
-        Turn {}
     }
 }
 

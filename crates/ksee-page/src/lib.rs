@@ -133,6 +133,7 @@ fn App() -> Element {
         main { class: "page", style: "{sizes().style()}",
             aside { class: "side",
                 article { class: "lesson", lesson::Lesson {} }
+                lesson::Turn {}
             }
             layout::Handle { split: layout::Split::Left }
             section { class: "work",
