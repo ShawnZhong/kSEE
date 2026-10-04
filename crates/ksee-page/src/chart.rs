@@ -383,8 +383,10 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
     let sizes = use_context::<Signal<crate::layout::Sizes>>();
     let height = chart_height(depth, sizes().chart);
-    // (The stack rows scrolled to their bottom, once they first can be.)
-    let mut bottomed = use_signal(|| false);
+    // (How far the stack rows are scrolled up from their bottom: kept as the
+    // window moves and the chart grows or shrinks, so the bars stay where
+    // they are, the outermost at the bottom; at first, none.)
+    let mut from_bottom = use_signal(|| 0);
     // (A drag's pan so far (px), drawn until it ends; and the canvases
     // mounted: either draws again.)
     let mut offset = use_signal(|| 0.0f64);
@@ -403,18 +405,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
         draw_chart(&chart, &task_runs(&chart), width(), height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
                    d.preview.cloned().and_then(x), d.cursor.cloned().and_then(x), offset());
-    });
-    use_effect(move || {
-        mounted();
-        let _ = d.chart.read();
-        if !bottomed() {
-            if let Some(scroll) = element("timeline-scroll") {
-                let max = scroll.scroll_height() - scroll.client_height();
-                if max > 0 {
-                    scroll.set_scroll_top(max);
-                    bottomed.set(true);
-                }
-            }
+        if let Some(scroll) = element("timeline-scroll") {
+            scroll.set_scroll_top((scroll.scroll_height() - scroll.client_height() - *from_bottom.peek()).max(0));
         }
     });
     // (One rule for hover and click:
@@ -551,6 +543,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 }
             },
             div { id: "timeline-scroll", class: "flamescroll",
+                onscroll: move |_| if let Some(s) = element("timeline-scroll") { from_bottom.set(s.scroll_height() - s.client_height() - s.scroll_top()) },
                 canvas { id: "timeline-canvas", class: "timeline-canvas", role: "img", aria_label: "Call stack timeline" }
             }
             canvas { id: "timeline-task-canvas", class: "timeline-canvas task-canvas", role: "img", aria_label: "Task runs in the call stack timeline",

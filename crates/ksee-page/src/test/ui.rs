@@ -157,6 +157,14 @@ pub(super) async fn lesson() -> Check {
     pointer(&chart, "pointerup", mid - 80.0, y);
     sleep(300).await;
     check((x0 - 80.0 - during).abs() < 1.0 && win() != w0, "a drag pans", (x0, during, w0, win()))?;
+    // (Zoomed out, the chart deeper or not: the bars stay where they were on
+    // the screen, kept at the bottom.)
+    let screen_y = || bar(&canvas, "ksys_read").map(|(_, y)| canvas.get_bounding_client_rect().top() + y);
+    let y0 = screen_y();
+    wheel(&chart, mid, y, 1600.0);
+    sleep(300).await;
+    let y1 = screen_y();
+    check(y0.zip(y1).is_some_and(|(a, b)| (a - b).abs() < 1.0), "zoomed out, the bars stay", (y0, y1))?;
     // (Typing a call: what fits, offered; Escape, nothing changed.)
     let add = all(".program textarea").into_iter().find(|t| t.get_attribute("placeholder").is_some_and(|p| p.starts_with("add a call")))
         .ok_or("no line to add")?;
