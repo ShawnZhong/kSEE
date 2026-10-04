@@ -93,8 +93,7 @@ pub(crate) async fn run(mut ui: Ui, lines: Vec<Step>) {
         Some(to) => follow(ui, to),
         None => if let Some(k) = call_of(ui, calls) { ui.select(k) },
     }
-    // (The timeline: the whole run, the program's calls each in place; the
-    // cursor in its subject.)
+    // (A new run: the timeline the whole of it.)
     ui.win.set(None);
 }
 

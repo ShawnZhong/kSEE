@@ -161,7 +161,11 @@ pub(super) async fn read() -> Check {
           "the level chosen stays put as the cursor steps", &seen)?;
     mouse(&chart, "click", x, y, false);
     sleep(300).await;
-    // (Then, from the bar clicked, a drag: the bars follow the pointer.)
+    // (Then, zoomed in (the wheel, up) and from the bar clicked, a drag:
+    // the bars follow the pointer.)
+    wheel(&chart, x, y, -600.0);
+    sleep(300).await;
+    let (x, y) = bar(&canvas, "vfs_read").map(|(bx, by)| (b.left() + bx, b.top() + by)).ok_or("no vfs_read bar, zoomed in")?;
     let before = bar(&canvas, "vfs_read").map(|p| p.0);
     let win0 = one(".overview .win").and_then(|w| w.get_attribute("style"));
     pointer(&chart, "pointerdown", x, y);

@@ -225,22 +225,11 @@ impl Ui {
 
     /// Select call `k` (an index in the syscalls), the cursor at its own
     /// code's first line (past the syscall entry's), on its innermost
-    /// frame; the chart's window the call.
+    /// frame. (The window is the reader's: it moves only to keep the cursor
+    /// in it, see Timeline.)
     pub fn select(self, k: usize) {
-        self.zoom(k);
         let own = Ui::lines_of(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
         self.commit(Some(Moment { call: k, line: own.unwrap_or(0), frame: None }));
-    }
-
-    /// The chart's window: call `k`, with a little room either side (its
-    /// lines a step or so apart, not many to a column).
-    pub fn zoom(self, k: usize) {
-        let Some((a, b)) = machine().view(|v| {
-            let s = v.syscall(k)?;
-            Some((v.rec.step_of(s.first), v.rec.step_of(s.last)))
-        }) else { return };
-        let room = ((b - a) / 50).max(4);
-        self.view(a as f64 - room as f64, b - a + 2 * room);
     }
 
     /// The chart's window: `span` steps from `start`, kept in the recording
