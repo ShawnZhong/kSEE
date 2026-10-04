@@ -2,10 +2,11 @@
 /*
  * The disk, /dev/wda: a block device the host keeps (its blocks, the
  * build's ext4 image), driven as a disk controller is. The driver hands it
- * each request's segments (disk_submit), keeps the request, and returns:
- * the task that wants the blocks waits for them. The host moves them when
- * the CPU next idles, all it was handed, and raises WASM_IRQ_DISK; the
- * interrupt ends the requests kept, which wakes their waiters.
+ * each request's segments, with the request's tag (disk_submit), and
+ * returns: the task that wants the blocks waits for them. The host moves
+ * them when the CPU next idles, posts the tags of the requests done, and
+ * raises WASM_IRQ_DISK; the interrupt ends each (disk_done: the next tag),
+ * which wakes their waiters.
  */
 #include <linux/blk-mq.h>
 #include <linux/blkdev.h>
@@ -13,13 +14,6 @@
 #include <asm/wasm.h>
 
 static struct blk_mq_tag_set wasm_disk_set;
-/*
- * The requests handed to the disk (each its list entry, its pdu). No lock:
- * one CPU, and its interrupt comes only where interrupts are enabled again
- * (irq.c), never inside the list's changes here.
- */
-static LIST_HEAD(wasm_disk_busy);
-
 static blk_status_t wasm_disk_queue_rq(struct blk_mq_hw_ctx *hctx,
 				       const struct blk_mq_queue_data *bd)
 {
@@ -36,22 +30,19 @@ static blk_status_t wasm_disk_queue_rq(struct blk_mq_hw_ctx *hctx,
 		return BLK_STS_OK;
 	}
 	rq_for_each_segment(bv, rq, it) {
-		wasm_disk_submit(sector, bvec_virt(&bv), bv.bv_len, write);
+		wasm_disk_submit(rq->tag, sector, bvec_virt(&bv), bv.bv_len, write);
 		sector += bv.bv_len >> SECTOR_SHIFT;
 	}
-	list_add_tail(blk_mq_rq_to_pdu(rq), &wasm_disk_busy);
 	return BLK_STS_OK;
 }
 
-/* WASM_IRQ_DISK: the disk has done all it was handed (irq.c). */
+/* WASM_IRQ_DISK: the requests the disk has done, by their tags, ended (irq.c). */
 void wasm_disk_interrupt(void)
 {
-	struct list_head *e, *n;
-	LIST_HEAD(done);
+	int tag;
 
-	list_splice_init(&wasm_disk_busy, &done);
-	list_for_each_safe(e, n, &done)
-		blk_mq_end_request(blk_mq_rq_from_pdu(e), BLK_STS_OK);
+	while ((tag = wasm_disk_done()) >= 0)
+		blk_mq_end_request(blk_mq_tag_to_rq(wasm_disk_set.tags[0], tag), BLK_STS_OK);
 }
 
 static const struct blk_mq_ops wasm_disk_ops = {
@@ -73,7 +64,6 @@ static int __init wasm_disk_init(void)
 	wasm_disk_set.nr_hw_queues = 1;
 	wasm_disk_set.queue_depth = 16;
 	wasm_disk_set.numa_node = NUMA_NO_NODE;
-	wasm_disk_set.cmd_size = sizeof(struct list_head);
 	err = blk_mq_alloc_tag_set(&wasm_disk_set);
 	if (err)
 		return err;

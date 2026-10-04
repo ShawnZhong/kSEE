@@ -153,12 +153,13 @@ wakes it.
 The disk, `/dev/wda`, is the host's: its blocks are an ext4 image
 (`disk.img`, made by `mkfs.ext4` at build time; each boot starts from it),
 and kernel/disk.c drives it as a disk controller is driven. Its blk-mq
-`queue_rq` hands the host a request's segments, keeps the request, and
-returns: the task that wants the blocks sleeps (another runs, or the CPU
-idles). The host, which knows only transfers, makes all it was handed when
+`queue_rq` hands the host a request's segments with the request's tag (as a
+controller is handed commands), and returns: the task that wants the blocks
+sleeps (another runs, or the CPU idles). The host makes the transfers when
 the CPU next idles (a read: written into kernel memory, logged, as the
-host's writes are), and raises `WASM_IRQ_DISK`; the interrupt ends the
-requests kept, which wakes their waiters. /init mounts it on `/mnt`. So
+host's writes are), posts the tags of the requests done, and raises
+`WASM_IRQ_DISK`; the interrupt maps each tag to its request
+(`blk_mq_tag_to_rq`) and ends it, which wakes its waiter. /init mounts it on `/mnt`. So
 ext4, jbd2, the block layer and the request queue are all the real
 kernel's. The image
 comes with files for the examples to start from (`mkfs.ext4 -d user/disk`):

@@ -69,18 +69,24 @@ pub extern "C" fn disk_sectors() -> u64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn disk_submit(sector: u64, buf: u32, len: u32, write: u32) {
-    k_mut(|k| k.transfers.push((sector, buf, len, write != 0)));
+pub extern "C" fn disk_submit(tag: u32, sector: u64, buf: u32, len: u32, write: u32) {
+    k_mut(|k| k.transfers.push((tag, sector, buf, len, write != 0)));
+}
+
+/// The next request done, its tag; or -1.
+#[unsafe(no_mangle)]
+pub extern "C" fn disk_done() -> i32 {
+    k_mut(|k| k.done.pop_front().map_or(-1, |t| t as i32))
 }
 
 /// The disk at work, as the CPU idles: the transfers handed to it made (a
-/// read written into kernel memory as the host's writes are, logged);
-/// whether there were any (then WASM_IRQ_DISK is due: the driver ends the
-/// requests it handed over).
+/// read written into kernel memory as the host's writes are, logged), and
+/// their requests' tags posted, done; whether there were any (then
+/// WASM_IRQ_DISK is due).
 pub fn disk_work() -> bool {
     let transfers = k_mut(|k| std::mem::take(&mut k.transfers));
     let any = !transfers.is_empty();
-    for (sector, buf, len, write) in transfers {
+    for (tag, sector, buf, len, write) in transfers {
         let at = sector as usize * 512;
         k_mut(|k| {
             let Some(blocks) = k.disk.get_mut(at..at + len as usize) else { return };
@@ -89,6 +95,10 @@ pub fn disk_work() -> bool {
             } else {
                 logged(buf, len);
                 unsafe { core::ptr::copy_nonoverlapping(blocks.as_ptr(), buf as *mut u8, len as usize) };
+            }
+            // (A request's segments come together: its tag once.)
+            if k.done.back() != Some(&tag) {
+                k.done.push_back(tag);
             }
         });
     }
@@ -132,7 +142,7 @@ pub fn kernel() -> Object {
 
     let kernel = Object::new();
     for name in ["console_write", "doorbell", "get_cmdline", "memory_end", "time_ns", "spawn_task",
-                 "disk_sectors", "disk_submit"] {
+                 "disk_sectors", "disk_submit", "disk_done"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "switch_task", sched::suspending(Closure::<dyn FnMut(u32, u32, u32) -> Promise>::new(sched::switch_task).into_js_value()));
