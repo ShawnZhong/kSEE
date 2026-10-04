@@ -7,7 +7,7 @@
 set -e
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
-	make flex bison bc git \
+	make flex bison bc git rsync \
 	clang-22 lld-22 llvm-22-dev \
 	e2fsprogs gzip \
 	curl ca-certificates unzip \

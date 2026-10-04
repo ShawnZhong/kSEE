@@ -60,15 +60,13 @@ $(PLUGIN): plugin/ksee-trace.cpp | llvm
 # copies (kbuild then rebuilds what they make; a checkout's new times alone,
 # nothing).
 port: linux/Makefile
-	@cd arch && find . -type f | while read -r f; do \
-		cmp -s "$$f" "../linux/arch/$$f" || { mkdir -p "../linux/arch/$${f%/*}" && cp "$$f" "../linux/arch/$$f" && echo "port: $$f"; }; \
-	done
+	rsync -rc arch/ linux/arch/
 
-# (Every Kconfig the port has, as copied: a changed one runs defconfig
-# again; touched, as kbuild leaves a .config the same as it was.)
-linux/.config: port
-	@if [ ! -f $@ ] || [ -n "$$(find linux/arch/wasm/configs/defconfig linux/arch/wasm/Kconfig* -newer $@)" ]; then \
-		$(KMAKE) defconfig && touch $@; fi
+# (Every Kconfig the port has: a new one runs defconfig again; touched,
+# as kbuild leaves a .config the same as it was.)
+linux/.config: arch/wasm/configs/defconfig $(wildcard arch/wasm/Kconfig*) | port
+	$(KMAKE) defconfig
+	touch $@
 
 # (kbuild knows the kernel's own dependencies: it is always asked; it
 # builds gen_init_cpio too, the kernel's own initramfs writer.)
