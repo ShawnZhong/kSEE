@@ -1,8 +1,9 @@
 # Lesson authoring
 
 Lessons live as JSON files in `user/examples/`. The file stem is the lesson
-name used in URLs and commands. The build reads every JSON file, adds its name
-and chapter, and writes the ordered collection to `target/site/examples.json`.
+name used in URLs and commands. The build reads each file the course lists,
+adds its name and chapter, and writes the ordered collection to
+`target/site/examples.json`.
 
 ## Lesson fields
 
@@ -159,8 +160,8 @@ The generated course order is defined by `EXAMPLES` in
 5. Waiting and waking
 6. Your own
 
-Names listed in `EXAMPLES` appear in that order. Other JSON files follow after
-the ordered course.
+Names listed in `EXAMPLES` appear in that order; a listed file that is missing
+fails the build, and a JSON file not listed is left out.
 
 ## Filesystem fixtures
 

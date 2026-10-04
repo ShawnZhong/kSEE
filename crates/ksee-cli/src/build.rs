@@ -405,23 +405,16 @@ const EXAMPLES: &[(&str, &[&str])] = &[
     ("Your own", &["yours"]),
 ];
 
-/// examples.json: the examples (user/examples/*.json: each a list
+/// examples.json: the examples (user/examples/NAME.json: each a list
 /// of syscalls for /init to make, one at a time), in the course's order,
-/// with their names and chapters (`group`); any other after them.
+/// with their names and chapters (`group`). (A file not in the course is
+/// left out.)
 fn examples() {
     eprintln!("+ (examples) user/examples/*.json -> {SITE}/examples.json");
-    let course: Vec<(&str, &str)> = EXAMPLES.iter().flat_map(|&(group, names)| names.iter().map(move |&n| (n, group))).collect();
-    let mut index: Vec<(usize, String)> = std::fs::read_dir("user/examples").into_iter().flatten().flatten()
-        .map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).map(|p| {
-            let name = p.file_stem().unwrap().to_string_lossy().into_owned();
-            let text = String::from_utf8_lossy(&crate::read(&p)).into_owned();
-            let k = course.iter().position(|&(n, _)| n == name).unwrap_or(course.len());
-            let group = course.get(k).map_or("", |&(_, g)| g);
-            let entry = format!("  {{ \"name\": \"{name}\", \"group\": \"{group}\", {}", text.trim().strip_prefix('{').unwrap_or("}").trim_start());
-            (k, entry)
-        }).collect();
-    index.sort();
-    let index: Vec<String> = index.into_iter().map(|(_, e)| e).collect();
+    let index: Vec<String> = EXAMPLES.iter().flat_map(|&(group, names)| names.iter().map(move |&name| {
+        let text = String::from_utf8_lossy(&crate::read(Path::new(&format!("user/examples/{name}.json")))).into_owned();
+        format!("  {{ \"name\": \"{name}\", \"group\": \"{group}\", {}", text.trim().strip_prefix('{').unwrap_or("}").trim_start())
+    })).collect();
     let out = format!("{SITE}/examples.json");
     std::fs::write(&out, format!("[\n{}\n]\n", index.join(",\n")))
         .unwrap_or_else(|e| crate::fail(&format!("{out}: {e}")));
