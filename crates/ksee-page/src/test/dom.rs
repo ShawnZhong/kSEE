@@ -67,6 +67,16 @@ pub(super) fn pointer(e: &Element, kind: &str, x: f64, y: f64) {
     let _ = e.dispatch_event(&PointerEvent::new_with_event_init_dict(kind, &init).unwrap());
 }
 
+pub(super) fn wheel(e: &Element, x: f64, y: f64, dy: f64) {
+    let init = web_sys::WheelEventInit::new();
+    init.set_bubbles(true);
+    init.set_cancelable(true);
+    init.set_client_x(x as i32);
+    init.set_client_y(y as i32);
+    init.set_delta_y(dy);
+    let _ = e.dispatch_event(&web_sys::WheelEvent::new_with_event_init_dict("wheel", &init).unwrap());
+}
+
 pub(super) fn key(e: &Element, k: &str) {
     let init = KeyboardEventInit::new();
     init.set_bubbles(true);

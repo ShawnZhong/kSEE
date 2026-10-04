@@ -28,5 +28,5 @@ dioxus-html = { version = "0.7.10", default-features = false, features = ["seria
 [features]
 # (The tests run in the page: the kernel integration and DOM suites in src/test/.)
 browser-tests = ["web-sys/HtmlElement", "web-sys/HtmlInputElement", "web-sys/EventInit", "web-sys/KeyboardEvent",
-            "web-sys/KeyboardEventInit", "web-sys/MouseEvent", "web-sys/MouseEventInit", "web-sys/PointerEvent", "web-sys/PointerEventInit",
+            "web-sys/KeyboardEventInit", "web-sys/MouseEvent", "web-sys/MouseEventInit", "web-sys/PointerEvent", "web-sys/PointerEventInit", "web-sys/WheelEvent", "web-sys/WheelEventInit",
             "web-sys/DomRect", "web-sys/NodeList", "web-sys/Request", "web-sys/RequestInit"]

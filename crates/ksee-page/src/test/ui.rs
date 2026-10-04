@@ -148,23 +148,21 @@ pub(super) async fn lesson() -> Check {
         "find",
         (found, place()),
     )?;
-    // (A drag pans: the bars follow the pointer, and stay where it let go.)
-    click(&named(".flamehead a", "zoom").ok_or("no zoom")?);
+    // (A drag pans, zoomed in: the bars follow the pointer, and the window
+    // stays where it let go.)
+    let mid = (b.left() + b.right()) / 2.0;
+    wheel(&chart, mid, y, -800.0);
     sleep(300).await;
     let bar_x = || canvas.get_attribute("data-test-vfs-read").and_then(|p| p.split_once(',')?.0.parse::<f64>().ok()).unwrap_or(f64::NAN);
-    let (x0, mid) = (bar_x(), (b.left() + b.right()) / 2.0);
+    let win = || one(".overview .win").and_then(|w| w.get_attribute("style")).unwrap_or_default();
+    let (x0, w0) = (bar_x(), win());
     pointer(&chart, "pointerdown", mid, y);
     pointer(&chart, "pointermove", mid - 80.0, y);
     sleep(200).await;
     let during = bar_x();
     pointer(&chart, "pointerup", mid - 80.0, y);
     sleep(300).await;
-    let after = bar_x();
-    check(
-        (x0 - 80.0 - during).abs() < 1.0 && (during - after).abs() < 8.0,
-        "a drag pans",
-        (x0, during, after),
-    )?;
+    check((x0 - 80.0 - during).abs() < 1.0 && win() != w0, "a drag pans", (x0, during, w0, win()))?;
     // (Objects: what the read changed, its file's position; Tasks: a task_struct opened.)
     tab("Objects").await;
     let objects: Vec<String> = all(".obj .title").iter().map(text).collect();

@@ -176,17 +176,27 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, frame: Frame, a
     let mut top = use_signal(|| 0.0f64);
     let mut view = use_signal(|| 600.0f64);
     let mut handle = use_signal(|| None::<std::rc::Rc<MountedData>>);
-    // (The marked line in view, as it changes, or the file, once it is loaded:
-    // the view still while it is.)
+    // (The marked line in view, as it changes: the view still while it is.
+    // Another file, once loaded: its line placed afresh, not by where the
+    // last file was scrolled.)
     let loaded = text.read().clone().flatten().map(|f| Rc::as_ptr(&f) as usize);
+    let mut placed = use_signal(|| None::<usize>);
     use_effect(use_reactive!(|(line, loaded)| {
-        let _ = loaded;
+        let fresh = loaded.is_some() && *placed.peek() != loaded;
+        if fresh {
+            placed.set(loaded);
+        }
         // (Read, not followed: a scroll is no reason to move it again.)
-        if let (Some(h), Some(y)) = (handle.peek().clone(), place(line, *top.peek(), *view.peek())) {
+        let top = if fresh { f64::NEG_INFINITY } else { *top.peek() };
+        if let (Some(h), Some(y)) = (handle.peek().clone(), place(line, top, *view.peek())) {
             spawn(async move { let _ = h.scroll(PixelsVector2D::new(0.0, y), ScrollBehavior::Instant).await; });
         }
     }));
-    let Some(src) = text.read().clone().flatten() else { return rsx! { div { class: "scroll", p { class: "dim pad", "…" } } } };
+    let src = match text.read().clone() {
+        None => return rsx! { div { class: "scroll", p { class: "dim pad", "loading {path}…" } } },
+        Some(None) => return rsx! { div { class: "scroll", p { class: "dim pad", "{path}: not among the site's sources" } } },
+        Some(Some(src)) => src,
+    };
     let d = use_context::<Derived>();
     let (counts, notes) = ran(ui, d.syscall.cloned(), &path, at);
     let total = src.text.len();

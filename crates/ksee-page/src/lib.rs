@@ -41,6 +41,7 @@ mod lesson;
 mod lesson_view;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod native_tests;
+#[cfg(any(target_arch = "wasm32", test))]
 mod objects_view;
 #[cfg(target_arch = "wasm32")]
 mod panels;
