@@ -15,7 +15,6 @@ use crate::state::{Derived, Tab, Ui};
 #[component]
 pub fn Tabs() -> Element {
     let mut ui = use_context::<Ui>();
-    use_context_provider(|| Signal::new(BTreeSet::<String>::new()));
     let tab = (ui.tab)();
     let head = |t: Tab, label: &'static str, title: &'static str| {
         rsx! {

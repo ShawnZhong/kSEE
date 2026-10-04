@@ -132,6 +132,8 @@ fn App() -> Element {
     use_context_provider(|| derived);
     let sizes = use_context_provider(|| Signal::new(layout::Sizes::kept()));
     use_context_provider(|| Signal::new(None::<layout::Drag>));
+    // (The values opened: the Stack's, the Tasks', a source name's tip's.)
+    use_context_provider(|| Signal::new(std::collections::BTreeSet::<String>::new()));
     // (The arrow keys, anywhere on the page: one listener on the window.)
     stack::listen(ui);
     rsx! {

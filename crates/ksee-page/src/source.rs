@@ -124,28 +124,21 @@ fn value_of(e: &str, f: &Frame, at: usize) -> Option<Object> {
         for field in &path[1..] {
             o = kids(&o)?.into_iter().find(|c| c.name == *field)?;
         }
-        // (Its members, or what it points to: the tip shows them.)
+        // (Its members, or what it points to: the tip shows them; named as
+        // the code says it.)
         o.children = kids(&o);
+        o.name = e.to_string();
         Some(o)
     })
 }
 
-/// The tip over a name: its value, then its members' (or what it points to).
+/// The tip over a name: its value as the Stack shows one (its members, or
+/// what it points to, open: each opens further), at the record `at`.
 #[derive(Clone, PartialEq)]
 struct Tip {
     x: f64,
     y: f64,
-    lines: Vec<String>,
-}
-
-/// What the tip over expression `e` says: its value, then its members'
-/// (the first 16).
-fn said(e: &str, o: &Object) -> Vec<String> {
-    let kids = o.children.as_deref().unwrap_or_default();
-    std::iter::once(format!("{e} = {}", o.shown()))
-        .chain(kids.iter().take(16).map(|c| format!("{} = {}", c.name, c.shown())))
-        .chain((kids.len() > 16).then(|| format!("… {} more", kids.len() - 16)))
-        .collect()
+    o: Object,
 }
 
 /// A line's height (px), and how many lines are made past the view.
@@ -173,6 +166,8 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
     let p = path.clone();
     let text = use_resource(use_reactive!(|(p,)| file(p)));
     let mut tip = use_signal(|| None::<Tip>);
+    // (Which values are open: the Stack's, shared; the tip's under "tip.".)
+    let mut open = use_context::<Signal<std::collections::BTreeSet<String>>>();
     let mut top = use_signal(|| 0.0f64);
     let mut view = use_signal(|| 600.0f64);
     let mut handle = use_signal(|| None::<std::rc::Rc<MountedData>>);
@@ -225,6 +220,8 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
     let last = ((((top() + view()) / LINE) as usize) + MARGIN).min(total);
     let (above, below) = (first as f64 * LINE, (total - last) as f64 * LINE);
     rsx! {
+        // (The code and the tip over a name: leaving both, the tip goes.)
+        div { class: "srcview", onmouseleave: move |_| tip.set(None),
         div { class: "scroll",
             onmounted: move |e| async move {
                 let h = e.data();
@@ -235,7 +232,6 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
                 handle.set(Some(h));
             },
             onscroll: move |e| { top.set(e.scroll_top()); view.set(e.client_height() as f64); },
-            onmouseleave: move |_| tip.set(None),
             div { class: "code mono",
                 div { style: "height: {above}px" }
                 for n in (first as u32 + 1)..=(last as u32) {
@@ -265,7 +261,10 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
                                                 span { class: if has { format!("{} val", kind_class(p.kind)) } else { kind_class(p.kind).to_string() },
                                                     onmouseenter: move |ev| {
                                                         let pt = ev.client_coordinates();
-                                                        tip.set(value_of(&e, &frame, at).map(|o| Tip { x: pt.x, y: pt.y, lines: said(&e, &o) }));
+                                                        if let Some(o) = value_of(&e, &frame, at) {
+                                                            open.write().insert(format!("tip.{}", o.name));
+                                                            tip.set(Some(Tip { x: pt.x, y: pt.y, o }));
+                                                        }
                                                     },
                                                     onclick: move |ev| if ev.modifiers().ctrl() || ev.modifiers().meta() {
                                                         // (Its definition: a function, a type, a global; a member, of the one struct with it.)
@@ -294,9 +293,14 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
             }
         }
         if let Some(t) = tip() {
-            div { class: "tip", style: "left: {t.x + 12.0}px; top: {t.y + 14.0}px",
-                for (k , l) in t.lines.into_iter().enumerate() { div { class: if k > 0 { "f" } else { "" }, "{l}" } }
+            // (Just under the pointer: it moves into the tip at once, and
+            // the tip, open, stays.)
+            div { class: "tip open", style: "left: {t.x - 8.0}px; top: {t.y + 6.0}px",
+                table { class: "objs",
+                    crate::stack::Value { o: t.o.clone(), path: format!("tip.{}", t.o.name), depth: 0, at }
+                }
             }
+        }
         }
     }
 }

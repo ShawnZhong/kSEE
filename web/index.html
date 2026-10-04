@@ -146,6 +146,9 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .tip { position: fixed; z-index: 60; max-width: 420px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--line);
   border-radius: 6px; box-shadow: 0 4px 16px rgb(0 0 0 / .15); font: 12px/1.5 var(--mono); pointer-events: none; white-space: pre-wrap; }
 .tip .f { padding-left: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* (A name's, in the source: the Stack's rows, opening; it stays while the pointer is in it.) */
+.tip.open { pointer-events: auto; white-space: normal; max-width: 640px; max-height: 50vh; overflow: auto; padding: 4px 2px; }
+.srcview { display: contents; }
 .tip .dim { font-family: system-ui, sans-serif; font-size: 11px; margin-top: 2px; }
 
 /* The source: the lines that ran, the function, the cursor's line and its values */

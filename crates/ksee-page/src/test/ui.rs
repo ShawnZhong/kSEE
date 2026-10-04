@@ -193,6 +193,20 @@ pub(super) async fn read() -> Check {
     }
     let step = (now() - t0) / 20.0;
     r.push(format!("hover {hover:.1} ms, step {step:.1} ms"));
+    // (A name in the source, hovered: its value as the Stack has one, open,
+    // and a member opens further.)
+    let name = all(".code .val").into_iter().find(|e| text(e) == "file").ok_or("no `file` in the source")?;
+    let at = name.get_bounding_client_rect();
+    mouse(&name, "mouseover", at.left() + 2.0, at.top() + 2.0, false);
+    mouse(&name, "mouseenter", at.left() + 2.0, at.top() + 2.0, false);
+    sleep(200).await;
+    let rows = || all(".tip.open tr").len();
+    let before = rows();
+    // (A member that opens: past the first row, the name itself.)
+    let opens = all(".tip.open tr.opens").into_iter().nth(1).ok_or(format!("no member that opens in the tip ({before} rows)"))?;
+    click(&opens);
+    sleep(200).await;
+    check(before > 1 && rows() > before, "a name's tip: its members, one opening", (before, rows()))?;
     // (Find: its bars lit; Enter, the cursor in it.)
     let find = one(".find").ok_or("no find box")?;
     find.dyn_ref::<HtmlInputElement>()
