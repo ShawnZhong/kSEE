@@ -3,13 +3,6 @@
 What is decided but not done yet. Done items leave this file (git log has
 them).
 
-## Page
-
-- **The page while a program runs** says nothing on the right ("Pick a
-  call on the left") though its calls are being made: say which line runs
-  ("Running line 3: fsync(fd)…"), and show the first call's recording as
-  soon as it is there.
-
 ## A Disk tab (designed, not built)
 
 The host is the disk (kernel/disk.c), so it sees every transfer; the page

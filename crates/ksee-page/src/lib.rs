@@ -158,7 +158,17 @@ fn App() -> Element {
                         match (ui.kernel)() {
                             None => "Starting the kernel…".to_string(),
                             Some(Err(e)) => format!("The kernel could not start: {e}"),
-                            Some(Ok(())) => "Pick a call on the left: its recording shows here.".to_string(),
+                            // (A run under way: the line it is at, the first not done.)
+                            Some(Ok(())) => {
+                                let (program, outcomes) = ((ui.program)(), ui.outcomes.read().clone());
+                                let at = outcomes.iter().position(|o| matches!(o, ksee_host::Outcome::Call { done: false, .. })).unwrap_or(outcomes.len());
+                                match program.get(at) {
+                                    // (Not after a line that failed: the run stopped there.)
+                                    Some(step) if outcomes.len() < program.len() && !outcomes.iter().any(|o| matches!(o, ksee_host::Outcome::Failed(_))) =>
+                                        format!("Running line {}: {}…", at + 1, step.text()),
+                                    _ => "Pick a call on the left: its recording shows here.".to_string(),
+                                }
+                            }
                         }
                     }
                 }
