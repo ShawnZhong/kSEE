@@ -70,7 +70,7 @@ pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
                 }
                 dw::DW_TAG_variable => {
                     if let (Some(addr), Some(AttributeValue::UnitRef(ty))) =
-                        (address(&dwarf, &unit, e)?, e.attr_value(dw::DW_AT_type))
+                        (address(&cu, e)?, e.attr_value(dw::DW_AT_type))
                     {
                         let at = (decl_file(&mut cu, e)?, attr_u64(e, dw::DW_AT_decl_line).unwrap_or(0));
                         vars.push((attr_string(&cu, e, dw::DW_AT_name)?, addr, ty, at));
@@ -87,7 +87,7 @@ pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
                 continue;
             }
             let mut sig = Vec::new();
-            for (pname, ty) in params(&unit, off, &cu)? {
+            for (pname, ty) in params(&cu, off)? {
                 let t = match ty {
                     Some(t) => b.canon(&mut cu, t)?,
                     None => 0,
@@ -96,7 +96,7 @@ pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
             }
             b.extra.push(format!("P\t{fid}\t{name}\t{}", sig.join(",")));
             let mut vars = Vec::new();
-            for (vname, ty, at) in locals(&dwarf, &unit, off, &cu)? {
+            for (vname, ty, at) in locals(&cu, off)? {
                 // (One not in memory: no offset. Its values are in the
                 // recording: see the plugin's V lines.)
                 if let Some(t) = ty {
@@ -122,14 +122,13 @@ pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
 /// frame): (name, type, its offset from the frame base if it is in memory:
 /// a location `DW_OP_WASM_location 0 <the frame base's local>,
 /// DW_OP_plus_uconst off`, in any range of its list).
-fn locals(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, off: UnitOffset, cu: &Cu)
-          -> Result<Vec<(String, Option<UnitOffset>, Option<u32>)>, gimli::Error> {
+fn locals(cu: &Cu, off: UnitOffset) -> Result<Vec<(String, Option<UnitOffset>, Option<u32>)>, gimli::Error> {
     type Out = Vec<(String, Option<UnitOffset>, Option<u32>)>;
     // (The frame base: DW_AT_frame_base is DW_OP_WASM_location 0 <local>.)
-    let mut tree = unit.entries_tree(Some(off))?;
+    let mut tree = cu.unit.entries_tree(Some(off))?;
     let root = tree.root()?;
     let fb = match root.entry().attr_value(dw::DW_AT_frame_base) {
-        Some(AttributeValue::Exprloc(e)) => match e.operations(unit.encoding()).next()? {
+        Some(AttributeValue::Exprloc(e)) => match e.operations(cu.unit.encoding()).next()? {
             Some(gimli::Operation::WasmLocal { index }) => Some(index),
             _ => None,
         },
@@ -141,7 +140,7 @@ fn locals(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, off: UnitOffset, cu: &
     // same for all of them.)
     let frame_offset = |ops: gimli::Expression<R>| -> Result<Option<u32>, gimli::Error> {
         use gimli::Operation as Op;
-        let mut ops = ops.operations(unit.encoding());
+        let mut ops = ops.operations(cu.unit.encoding());
         let (mut pos, mut cur, mut base): (u32, Option<u32>, Option<u32>) = (0, None, None);
         loop {
             match ops.next()? {
@@ -165,19 +164,19 @@ fn locals(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, off: UnitOffset, cu: &
             }
         }
     };
-    fn walk(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, node: gimli::EntriesTreeNode<R>, cu: &Cu, out: &mut Out, inlined: bool,
+    fn walk(cu: &Cu, node: gimli::EntriesTreeNode<R>, out: &mut Out, inlined: bool,
             frame_offset: &dyn Fn(gimli::Expression<R>) -> Result<Option<u32>, gimli::Error>) -> Result<(), gimli::Error> {
         let mut children = node.children();
         while let Some(child) = children.next()? {
             let c = child.entry();
             match c.tag() {
                 dw::DW_TAG_variable => {
-                    let (name, ty) = name_type(unit, cu, c)?;
+                    let (name, ty) = name_type(cu, c)?;
                     let mut at = None;
                     match c.attr_value(dw::DW_AT_location) {
                         Some(AttributeValue::Exprloc(e)) => at = frame_offset(e)?,
                         Some(v) => {
-                            if let Some(mut list) = dwarf.attr_locations(unit, v)? {
+                            if let Some(mut list) = cu.dwarf.attr_locations(cu.unit, v)? {
                                 while let Some(entry) = list.next()? {
                                     if let Some(o) = frame_offset(entry.data)? {
                                         at = Some(o);
@@ -193,15 +192,15 @@ fn locals(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, off: UnitOffset, cu: &
                     }
                 }
                 // (An inlined call's locals in memory are in this frame too.)
-                dw::DW_TAG_lexical_block => walk(dwarf, unit, child, cu, out, inlined, frame_offset)?,
-                dw::DW_TAG_inlined_subroutine => walk(dwarf, unit, child, cu, out, true, frame_offset)?,
+                dw::DW_TAG_lexical_block => walk(cu, child, out, inlined, frame_offset)?,
+                dw::DW_TAG_inlined_subroutine => walk(cu, child, out, true, frame_offset)?,
                 _ => {}
             }
         }
         Ok(())
     }
     let mut out = Vec::new();
-    walk(dwarf, unit, root, cu, &mut out, false, &frame_offset)?;
+    walk(cu, root, &mut out, false, &frame_offset)?;
     out.retain(|(n, _, _)| !n.is_empty());
     out.dedup();
     Ok(out)
@@ -209,10 +208,9 @@ fn locals(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, off: UnitOffset, cu: &
 
 /// A variable's or parameter's name and type: its own, or, in an
 /// out-of-line copy of a function inlined elsewhere, its abstract origin's.
-fn name_type(unit: &gimli::Unit<R>, cu: &Cu, e: &gimli::DebuggingInformationEntry<R>)
-             -> Result<(String, Option<UnitOffset>), gimli::Error> {
+fn name_type(cu: &Cu, e: &gimli::DebuggingInformationEntry<R>) -> Result<(String, Option<UnitOffset>), gimli::Error> {
     let origin = match e.attr_value(dw::DW_AT_abstract_origin) {
-        Some(AttributeValue::UnitRef(o)) => Some(unit.entry(o)?),
+        Some(AttributeValue::UnitRef(o)) => Some(cu.unit.entry(o)?),
         _ => None,
     };
     let name = match attr_string(cu, e, dw::DW_AT_name)? {
@@ -227,14 +225,14 @@ fn name_type(unit: &gimli::Unit<R>, cu: &Cu, e: &gimli::DebuggingInformationEntr
 }
 
 /// The formal parameters of the subprogram at `off`: (name, type).
-fn params(unit: &gimli::Unit<R>, off: UnitOffset, cu: &Cu) -> Result<Vec<(String, Option<UnitOffset>)>, gimli::Error> {
+fn params(cu: &Cu, off: UnitOffset) -> Result<Vec<(String, Option<UnitOffset>)>, gimli::Error> {
     let mut params = Vec::new();
-    let mut tree = unit.entries_tree(Some(off))?;
+    let mut tree = cu.unit.entries_tree(Some(off))?;
     let mut children = tree.root()?.children();
     while let Some(child) = children.next()? {
         let c = child.entry();
         if c.tag() == dw::DW_TAG_formal_parameter {
-            params.push(name_type(unit, cu, c)?);
+            params.push(name_type(cu, c)?);
         }
     }
     Ok(params)
@@ -262,7 +260,8 @@ struct Row {
 struct Builder {
     /// Rows of the type table, by id (0 is void).
     rows: Vec<Row>,
-    extra: Vec<String>, // M, V, W (where a type or global is declared) lines
+    /// P, Q, G, M, V and W lines (see types and members), in order.
+    extra: Vec<String>,
     ids: HashMap<String, u32>,
     /// (tag, name) -> the id of the first complete definition, or a
     /// placeholder for it reserved by a declaration.
@@ -429,53 +428,40 @@ impl Builder {
     }
 
     fn members(&mut self, cu: &mut Cu, off: UnitOffset, id: u32, tag: DwTag) -> Result<(), gimli::Error> {
-        let mut rows = Vec::new();
-        {
-            let mut tree = cu.unit.entries_tree(Some(off))?;
-            let mut children = tree.root()?.children();
-            while let Some(child) = children.next()? {
-                let c = child.entry();
-                let name = attr_string(cu, c, dw::DW_AT_name)?;
-                match c.tag() {
-                    dw::DW_TAG_member => {
-                        let bit_offset = attr_u64(c, dw::DW_AT_data_bit_offset)
-                            .or_else(|| attr_u64(c, dw::DW_AT_data_member_location).map(|b| b * 8))
-                            .unwrap_or(0);
-                        let bit_size = attr_u64(c, dw::DW_AT_bit_size).unwrap_or(0);
-                        let ty = match c.attr_value(dw::DW_AT_type) {
-                            Some(AttributeValue::UnitRef(t)) => Some(t),
-                            _ => None,
-                        };
-                        let at = (decl_file(cu, c)?, attr_u64(c, dw::DW_AT_decl_line).unwrap_or(0));
-                        rows.push((false, name, bit_offset, bit_size, ty, 0, at));
-                    }
-                    dw::DW_TAG_enumerator if tag == dw::DW_TAG_enumeration_type => {
-                        let v = match c.attr_value(dw::DW_AT_const_value) {
-                            Some(AttributeValue::Sdata(v)) => v,
-                            Some(AttributeValue::Udata(v)) => v as i64,
-                            Some(v) => v.sdata_value().unwrap_or(0),
-                            None => 0,
-                        };
-                        rows.push((true, name, 0, 0, None, v, (String::new(), 0)));
-                    }
-                    _ => {}
-                }
-            }
-        }
         // (The aggregate's name, for its members' declarations: "file.f_pos".)
         let owner = self.rows[id as usize].name.clone();
-        for (is_enum, name, bit_offset, bit_size, ty, value, (file, line)) in rows {
-            if is_enum {
-                self.extra.push(format!("V\t{id}\t{name}\t{value}"));
-            } else {
-                let t = match ty {
-                    Some(t) => self.canon(cu, t)?,
-                    None => 0,
-                };
-                self.extra.push(format!("M\t{id}\t{name}\t{bit_offset}\t{bit_size}\t{t}"));
-                if !owner.is_empty() && !name.is_empty() {
-                    self.locate(&format!("{owner}.{name}"), &file, line);
+        let unit = cu.unit;
+        let mut tree = unit.entries_tree(Some(off))?;
+        let mut children = tree.root()?.children();
+        while let Some(child) = children.next()? {
+            let c = child.entry();
+            let name = attr_string(cu, c, dw::DW_AT_name)?;
+            match c.tag() {
+                dw::DW_TAG_member => {
+                    let bit_offset = attr_u64(c, dw::DW_AT_data_bit_offset)
+                        .or_else(|| attr_u64(c, dw::DW_AT_data_member_location).map(|b| b * 8))
+                        .unwrap_or(0);
+                    let bit_size = attr_u64(c, dw::DW_AT_bit_size).unwrap_or(0);
+                    let (file, line) = (decl_file(cu, c)?, attr_u64(c, dw::DW_AT_decl_line).unwrap_or(0));
+                    let t = match c.attr_value(dw::DW_AT_type) {
+                        Some(AttributeValue::UnitRef(t)) => self.canon(cu, t)?,
+                        _ => 0,
+                    };
+                    self.extra.push(format!("M\t{id}\t{name}\t{bit_offset}\t{bit_size}\t{t}"));
+                    if !owner.is_empty() && !name.is_empty() {
+                        self.locate(&format!("{owner}.{name}"), &file, line);
+                    }
                 }
+                dw::DW_TAG_enumerator if tag == dw::DW_TAG_enumeration_type => {
+                    let v = match c.attr_value(dw::DW_AT_const_value) {
+                        Some(AttributeValue::Sdata(v)) => v,
+                        Some(AttributeValue::Udata(v)) => v as i64,
+                        Some(v) => v.sdata_value().unwrap_or(0),
+                        None => 0,
+                    };
+                    self.extra.push(format!("V\t{id}\t{name}\t{v}"));
+                }
+                _ => {}
             }
         }
         Ok(())
@@ -487,13 +473,12 @@ impl Builder {
     }
 }
 /// A variable's fixed address (DW_OP_addr or DW_OP_addrx), if it has one.
-fn address(dwarf: &gimli::Dwarf<R>, unit: &gimli::Unit<R>, e: &gimli::DebuggingInformationEntry<R>)
-           -> Result<Option<u64>, gimli::Error> {
+fn address(cu: &Cu, e: &gimli::DebuggingInformationEntry<R>) -> Result<Option<u64>, gimli::Error> {
     let Some(AttributeValue::Exprloc(expr)) = e.attr_value(dw::DW_AT_location) else { return Ok(None) };
-    let mut ops = expr.operations(unit.encoding());
+    let mut ops = expr.operations(cu.unit.encoding());
     Ok(match ops.next()? {
         Some(gimli::Operation::Address { address }) => Some(address),
-        Some(gimli::Operation::AddressIndex { index }) => Some(dwarf.address(unit, index)?),
+        Some(gimli::Operation::AddressIndex { index }) => Some(cu.dwarf.address(cu.unit, index)?),
         _ => None,
     })
 }
