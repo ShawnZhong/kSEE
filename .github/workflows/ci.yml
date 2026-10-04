@@ -3,9 +3,11 @@ on: [push, pull_request]
 
 # The kernel is its own job, cached by what builds it (the port, the
 # plugin, the Makefile's Linux lines), so a change elsewhere reuses it; saved
-# even when the tests fail. The cache: linux/, arch/wasm/ (its objects, which
-# kbuild writes through the link, and its sources), the plugin. Restored
-# over the checkout, the sources are as old as the objects: nothing rebuilt.
+# even when the tests fail. The cache: linux/, and arch/wasm/ (its objects,
+# which kbuild writes through linux/'s link to it, and its sources: restored
+# over the checkout, as old as the objects, so nothing is rebuilt). The
+# plugin is not: kbuild does not watch it (KSEE_ID, the hash of its source,
+# does), and it builds in seconds.
 jobs:
   kernel:
     runs-on: ubuntu-26.04
@@ -29,8 +31,6 @@ jobs:
             linux
             !linux/.git
             arch/wasm
-            plugin/ksee-trace.cpp
-            plugin/ksee-trace.so
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - name: Build the kernel
@@ -44,8 +44,6 @@ jobs:
             linux
             !linux/.git
             arch/wasm
-            plugin/ksee-trace.cpp
-            plugin/ksee-trace.so
           key: ${{ steps.key.outputs.key }}
 
   test:
@@ -61,8 +59,6 @@ jobs:
             linux
             !linux/.git
             arch/wasm
-            plugin/ksee-trace.cpp
-            plugin/ksee-trace.so
           key: ${{ needs.kernel.outputs.key }}
           fail-on-cache-miss: true
       - name: Restore Rust cache
