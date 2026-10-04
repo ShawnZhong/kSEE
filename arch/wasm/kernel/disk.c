@@ -13,9 +13,12 @@
 #include <asm/wasm.h>
 
 static struct blk_mq_tag_set wasm_disk_set;
-/* The requests handed to the disk (each its list entry, its pdu). */
+/*
+ * The requests handed to the disk (each its list entry, its pdu). No lock:
+ * one CPU, and its interrupt comes only where interrupts are enabled again
+ * (irq.c), never inside the list's changes here.
+ */
 static LIST_HEAD(wasm_disk_busy);
-static DEFINE_SPINLOCK(wasm_disk_lock);
 
 static blk_status_t wasm_disk_queue_rq(struct blk_mq_hw_ctx *hctx,
 				       const struct blk_mq_queue_data *bd)
@@ -25,7 +28,6 @@ static blk_status_t wasm_disk_queue_rq(struct blk_mq_hw_ctx *hctx,
 	bool write = op_is_write(req_op(rq));
 	struct req_iterator it;
 	struct bio_vec bv;
-	unsigned long flags;
 
 	blk_mq_start_request(rq);
 	/* (One with no blocks, a flush: nothing to wait for.) */
@@ -37,9 +39,7 @@ static blk_status_t wasm_disk_queue_rq(struct blk_mq_hw_ctx *hctx,
 		wasm_disk_submit(sector, bvec_virt(&bv), bv.bv_len, write);
 		sector += bv.bv_len >> SECTOR_SHIFT;
 	}
-	spin_lock_irqsave(&wasm_disk_lock, flags);
 	list_add_tail(blk_mq_rq_to_pdu(rq), &wasm_disk_busy);
-	spin_unlock_irqrestore(&wasm_disk_lock, flags);
 	return BLK_STS_OK;
 }
 
@@ -49,9 +49,7 @@ void wasm_disk_interrupt(void)
 	struct list_head *e, *n;
 	LIST_HEAD(done);
 
-	spin_lock(&wasm_disk_lock);
 	list_splice_init(&wasm_disk_busy, &done);
-	spin_unlock(&wasm_disk_lock);
 	list_for_each_safe(e, n, &done)
 		blk_mq_end_request(blk_mq_rq_from_pdu(e), BLK_STS_OK);
 }
