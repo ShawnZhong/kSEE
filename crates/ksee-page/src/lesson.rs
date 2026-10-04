@@ -56,7 +56,7 @@ pub struct Example {
 
 /// Make `lines` on a fresh kernel, one after another (a call: then the
 /// kernel run until it is quiet), each line's outcome (the Machine's) shown
-/// as it goes; then a
+/// as it goes; then, the timeline the whole run, a
 /// call selected: the first the lesson's text links to (its subject), else
 /// the last.
 /// (A run begun again cancels this one: it stops at its next await.)
@@ -93,6 +93,9 @@ pub(crate) async fn run(mut ui: Ui, lines: Vec<Step>) {
         Some(to) => follow(ui, to),
         None => if let Some(k) = call_of(ui, calls) { ui.select(k) },
     }
+    // (The timeline: the whole run, the program's calls each in place; the
+    // cursor in its subject.)
+    ui.win.set(None);
 }
 
 /// The syscall (an index in the syscalls) the program's call `n` (from 1)
