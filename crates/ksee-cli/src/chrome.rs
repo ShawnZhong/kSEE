@@ -19,10 +19,10 @@ use crate::or_fail;
 pub const TESTS: &[(&str, &str, (u32, u32))] = &[
     ("kernel", "#test=kernel", SCREEN),
     ("lessons", "#test=lessons", SCREEN),
-    ("read", "#ex=read&test=read", SCREEN),
-    ("history", r#"#ex=write&p=["int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)","write(fd, \"changed;\\n\", 9)"]&test=history"#, SCREEN),
-    ("tasks", "#ex=pipe&test=tasks", SCREEN),
-    ("responsive", "#ex=read&test=responsive", (390, 844)),
+    ("read", "read.html#test=read", SCREEN),
+    ("history", r#"write.html#p=["int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)","write(fd, \"changed;\\n\", 9)"]&test=history"#, SCREEN),
+    ("tasks", "pipe.html#test=tasks", SCREEN),
+    ("responsive", "read.html#test=responsive", (390, 844)),
 ];
 const SCREEN: (u32, u32) = (1500, 900);
 

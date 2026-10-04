@@ -168,7 +168,8 @@ fn site() {
             let _ = std::fs::remove_file(e.path());
         }
     }
-    for e in std::fs::read_dir("web").into_iter().flatten().flatten() {
+    // (Not index.html: the lessons' pages are made from it, see lessons.rs.)
+    for e in std::fs::read_dir("web").into_iter().flatten().flatten().filter(|e| e.file_name() != "index.html") {
         let link = Path::new(SITE).join(e.file_name());
         if !link.is_symlink() {
             crate::or_fail(std::os::unix::fs::symlink(Path::new("../../web").join(e.file_name()), &link), link.display());

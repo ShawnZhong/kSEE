@@ -135,21 +135,14 @@ fn follow(mut ui: Ui, target: LessonTarget) {
     }
 }
 
-/// The URL's state: #ex=NAME (the lesson), &p=JSON (its program, if
-/// changed).
-fn hash() -> (Option<String>, Option<String>) {
-    let h = web_sys::window().and_then(|w| w.location().hash().ok()).unwrap_or_default();
-    let mut ex = None;
-    let mut p = None;
-    for kv in h.trim_start_matches('#').split('&') {
-        let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
-        let v = js_sys::decode_uri_component(v).ok().and_then(|v| v.as_string()).unwrap_or_default();
-        match k {
-            "ex" => ex = Some(v),
-            "p" => p = Some(v),
-            _ => {}
-        }
-    }
+/// The URL's state: the lesson, its page's name (NAME.html); and #p=JSON,
+/// its program, if changed.
+fn url() -> (Option<String>, Option<String>) {
+    let Some(loc) = web_sys::window().map(|w| w.location()) else { return (None, None) };
+    let path = loc.pathname().unwrap_or_default();
+    let ex = path.rsplit('/').next().and_then(|f| f.strip_suffix(".html")).map(String::from);
+    let p = loc.hash().unwrap_or_default().trim_start_matches('#').split('&').find_map(|kv| kv.strip_prefix("p=").map(String::from))
+        .and_then(|v| js_sys::decode_uri_component(&v).ok()?.as_string());
     (ex, p)
 }
 
@@ -165,7 +158,7 @@ fn program_from_json(text: &str) -> Option<Vec<Step>> {
 
 /// The lesson and program the URL says, at first.
 pub fn from_url(ui: Ui) {
-    let (ex, p) = hash();
+    let (ex, p) = url();
     let all = examples();
     if let Some(k) = ex.and_then(|n| all.iter().position(|e| e.name == n)) {
         let program = p.as_deref().and_then(program_from_json).unwrap_or_else(|| all[k].steps.clone());
@@ -178,10 +171,10 @@ pub(crate) fn to_url(lesson: usize, program: &[Step]) {
     let all = examples();
     let Some(ex) = all.get(lesson) else { return };
     let p = if program == ex.steps { String::new() } else {
-        program_json(program).map_or_else(String::new, |p| format!("&p={}", js_sys::encode_uri_component(&p)))
+        program_json(program).map_or_else(String::new, |p| format!("#p={}", js_sys::encode_uri_component(&p)))
     };
     if let Some(h) = web_sys::window().and_then(|w| w.history().ok()) {
-        let _ = h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&format!("#ex={}{p}", ex.name)));
+        let _ = h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&format!("{}.html{p}", ex.name)));
     }
 }
 
@@ -255,14 +248,14 @@ pub fn Turn() -> Element {
     let at = (ui.lesson)();
     rsx! {
         nav { class: "turn",
-            // (Each also its page's link, lessons/NAME.html, for what reads the
-            // page without running it; a click opens it here.)
+            // (Each also its page's link, NAME.html, for what reads the page
+            // without running it; a click opens it here.)
             if let Some(e) = at.checked_sub(1).map(|k| &all[k]) {
-                a { title: "the lesson before", href: "lessons/{e.name}.html",
+                a { title: "the lesson before", href: "{e.name}.html",
                     onclick: move |ev: MouseEvent| { ev.prevent_default(); ui.open_lesson(at - 1) }, "◀ {e.title}" }
             }
             if let Some(e) = all.get(at + 1) {
-                a { class: "next", title: "the next lesson", href: "lessons/{e.name}.html",
+                a { class: "next", title: "the next lesson", href: "{e.name}.html",
                     onclick: move |ev: MouseEvent| { ev.prevent_default(); ui.open_lesson(at + 1) }, "{e.title} ▶" }
             }
         }

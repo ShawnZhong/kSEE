@@ -146,9 +146,11 @@ function search field.
 
 ## URL state and saved layout
 
-The URL fragment records the lesson as `#ex=read`. If the program differs from
-the lesson, `p` contains its JSON representation as well. Sharing that URL
-opens the same lesson and changed program; it does not contain a trace snapshot.
+Each lesson has a page of its own, `read.html`; if the program differs from
+the lesson's, the fragment holds it as JSON, `read.html#p=[...]`. Sharing that
+URL opens the same lesson and changed program; it does not contain a trace
+snapshot. (A lesson's page also carries its text as plain HTML, for search
+engines and link previews; the page replaces it once it runs.)
 The program runs again on a fresh deterministic machine.
 
 Dragged pane sizes and the chosen color theme are kept in browser storage.

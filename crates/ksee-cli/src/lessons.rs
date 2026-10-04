@@ -1,10 +1,13 @@
 //! The lessons (user/examples/NAME.json), for the site: examples.json, the
-//! page's; and each lesson as a page of its own (lessons/NAME.html, and
-//! their contents, lessons/index.html), plain HTML that a search engine
-//! or a link preview reads without running the page.
+//! page's; and the page for each, NAME.html (and index.html, the first's
+//! place): web/index.html with the lesson's title and description, and its
+//! text as plain HTML (#static), which a search engine or a link preview
+//! reads without running the page, and which the page, once it runs,
+//! replaces.
 
 use std::path::Path;
 
+use ksee_core::text::{pieces, Piece};
 use serde_json::{json, Value};
 
 use crate::build::SITE;
@@ -20,10 +23,10 @@ const EXAMPLES: &[(&str, &[&str])] = &[
     ("Your own", &["yours"]),
 ];
 
-/// examples.json and the lessons' pages, from user/examples/*.json (a file
-/// not in the course is left out).
+/// examples.json and the pages, from user/examples/*.json (a file not in
+/// the course is left out) and web/index.html.
 pub fn write() {
-    eprintln!("+ (lessons) user/examples/*.json -> {SITE}/examples.json, {SITE}/lessons/");
+    eprintln!("+ (lessons) user/examples/*.json, web/index.html -> {SITE}/examples.json, {SITE}/NAME.html");
     let mut all: Vec<Value> = Vec::new();
     for &(group, names) in EXAMPLES {
         for &name in names {
@@ -34,17 +37,23 @@ pub fn write() {
             all.push(ex);
         }
     }
-    let out = format!("{SITE}/examples.json");
-    crate::or_fail(std::fs::write(&out, serde_json::to_string(&all).unwrap_or_default()), &out);
-    let dir = format!("{SITE}/lessons");
-    crate::or_fail(std::fs::create_dir_all(&dir), &dir);
-    for (k, ex) in all.iter().enumerate() {
-        let out = format!("{dir}/{}.html", s(ex, "name"));
-        crate::or_fail(std::fs::write(&out, page(ex, k.checked_sub(1).and_then(|j| all.get(j)), all.get(k + 1))), &out);
+    let page = String::from_utf8_lossy(&crate::read(Path::new("web/index.html"))).into_owned();
+    let out = |name: &str, text: String| {
+        let out = format!("{SITE}/{name}");
+        // (Not through a link: the site's files are web/'s, linked.)
+        let _ = std::fs::remove_file(&out);
+        crate::or_fail(std::fs::write(&out, text), &out);
+    };
+    out("examples.json", serde_json::to_string(&all).unwrap_or_default());
+    for ex in &all {
+        out(&format!("{}.html", s(ex, "name")), fill(&page, &format!("{} — kSEE", s(ex, "title")), s(ex, "question"), &lesson(ex)));
     }
-    let out = format!("{dir}/index.html");
-    crate::or_fail(std::fs::write(&out, contents(&all)), &out);
+    out("index.html", fill(&page, TITLE, DESCRIPTION, &contents(&all)));
 }
+
+const TITLE: &str = "kSEE, the kernel Syscall Execution Explorer: step through a real Linux kernel in your browser";
+const DESCRIPTION: &str = "kSEE runs a real Linux kernel in your browser and records everything a system call does: \
+                           step through its source line by line, with the call stack, its arguments and locals, and every write to memory.";
 
 /// A lesson's string field.
 fn s<'a>(ex: &'a Value, key: &str) -> &'a str {
@@ -55,45 +64,40 @@ fn escape(t: &str) -> String {
     t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-/// A lesson's paragraph as HTML: `code`, and a [link](target) its label
-/// (what it points to is in the recording: the page has it).
-fn paragraph(t: &str) -> String {
-    let mut out = String::new();
-    let mut rest = t;
-    while let Some(k) = rest.find(['`', '[']) {
-        out += &escape(&rest[..k]);
-        let tail = &rest[k..];
-        let (html, used) = if let Some(code) = tail.strip_prefix('`').and_then(|c| c.split_once('`')) {
-            (format!("<code>{}</code>", escape(code.0)), code.0.len() + 2)
-        } else if let Some((label, after)) = tail[1..].split_once("](").and_then(|(l, a)| Some((l, a.split_once(')')?.1))) {
-            (format!("<em>{}</em>", paragraph(label)), tail.len() - after.len())
+/// The page, its title and description `title` and `description` (the
+/// page's own, and a link preview's), and `body` its static text.
+fn fill(page: &str, title: &str, description: &str, body: &str) -> String {
+    let (title, description) = (escape(title), escape(description));
+    page.lines().map(|l| {
+        let t = l.trim_start();
+        if t.starts_with("<title>") {
+            format!("<title>{title}</title>")
+        } else if t.starts_with("<meta name=\"description\"") || t.starts_with("<meta property=\"og:description\"") {
+            l.split("content=").next().map(|a| format!("{a}content=\"{description}\">")).unwrap_or_default()
+        } else if t.starts_with("<meta property=\"og:title\"") {
+            format!("<meta property=\"og:title\" content=\"{title}\">")
+        } else if t == "<div id=\"root\"></div>" {
+            format!("{l}\n<article id=\"static\">\n{body}</article>")
         } else {
-            (escape(&tail[..1]), 1)
-        };
-        out += &html;
-        rest = &tail[used..];
-    }
-    out + &escape(rest)
+            l.to_string()
+        }
+    }).collect::<Vec<_>>().join("\n") + "\n"
 }
 
-const STYLE: &str = "body{font:16px/1.55 system-ui,sans-serif;max-width:44rem;margin:2rem auto;padding:0 1rem;color:#1f2328;background:#fbfbfa}\
-a{color:#0969da}code{font:14px ui-monospace,Menlo,monospace}.dim{color:#6b7280}ol code{white-space:pre-wrap}\
-@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}a{color:#58a6ff}.dim{color:#8b949e}}";
-
-fn head(title: &str, description: &str) -> String {
-    format!("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
-             <title>{t}</title>\n<meta name=\"description\" content=\"{d}\">\n<meta property=\"og:title\" content=\"{t}\">\n\
-             <meta property=\"og:description\" content=\"{d}\">\n<style>{STYLE}</style>\n</head>\n<body>\n",
-            t = escape(title), d = escape(description))
+/// A lesson's paragraph as HTML (ksee_core::text's pieces): `code`, and a
+/// link's label (what it points to is in the recording: the page has it).
+fn paragraph(t: &str) -> String {
+    pieces(t).into_iter().map(|p| match p {
+        Piece::Text(t) => escape(&t),
+        Piece::Code(c) => format!("<code>{}</code>", escape(&c)),
+        Piece::Link { label, .. } => format!("<em>{}</em>", paragraph(&label)),
+    }).collect()
 }
 
-/// Lesson `ex`'s page: its chapter, title, question and text, its program,
-/// a link to run it in kSEE, and the lessons before and after.
-fn page(ex: &Value, before: Option<&Value>, after: Option<&Value>) -> String {
-    let (name, title) = (s(ex, "name"), s(ex, "title"));
-    let mut h = head(&format!("{title} — kSEE"), s(ex, "question"));
-    h += &format!("<p class=\"dim\"><a href=\"./\">kSEE lessons</a> · {}</p>\n<h1>{}</h1>\n<p class=\"dim\">{}</p>\n",
-                  escape(s(ex, "group")), escape(title), escape(s(ex, "question")));
+/// Lesson `ex`, as text: its chapter, title, question and text, its program.
+fn lesson(ex: &Value) -> String {
+    let mut h = format!("<p><a href=\"./\">kSEE</a> · {}</p>\n<h1>{}</h1>\n<p>{}</p>\n",
+                        escape(s(ex, "group")), escape(s(ex, "title")), escape(s(ex, "question")));
     for p in ex["text"].as_array().into_iter().flatten().filter_map(Value::as_str) {
         h += &format!("<p>{}</p>\n", paragraph(p));
     }
@@ -104,33 +108,24 @@ fn page(ex: &Value, before: Option<&Value>, after: Option<&Value>) -> String {
             Some(t) => (None, t),
             None => (step["task"].as_str(), s(step, "text")),
         };
-        let by = task.map_or(String::new(), |t| format!(" <span class=\"dim\">(by {})</span>", escape(t)));
+        let by = task.map_or(String::new(), |t| format!(" (by {})", escape(t)));
         h += &format!("<li><code>{}</code>{by}</li>\n", escape(text));
     }
-    h += &format!("</ol>\n<p><a href=\"../#ex={name}\"><b>Run it in kSEE ▶</b></a> <span class=\"dim\">(a real Linux kernel, in your browser)</span></p>\n<p>");
-    if let Some(b) = before {
-        h += &format!("<a href=\"{}.html\">◀ {}</a> ", s(b, "name"), escape(s(b, "title")));
-    }
-    if let Some(a) = after {
-        h += &format!("<a href=\"{}.html\" style=\"float:right\">{} ▶</a>", s(a, "name"), escape(s(a, "title")));
-    }
-    h + "</p>\n</body>\n</html>\n"
+    h + "</ol>\n"
 }
 
-/// The lessons' contents, by chapter.
+/// The lessons, by chapter: the site's own page's text.
 fn contents(all: &[Value]) -> String {
-    let mut h = head("kSEE lessons: step through a real Linux kernel",
-                     "Lessons on what Linux system calls do, each run on a real Linux kernel in your browser and stepped through line by line.");
-    h += "<h1>kSEE lessons</h1>\n<p class=\"dim\">kSEE, the kernel Syscall Execution Explorer: step through a real Linux kernel, in your browser. <a href=\"../\">Open kSEE ▶</a></p>\n";
+    let mut h = format!("<h1>kSEE</h1>\n<p>{}</p>\n", escape(DESCRIPTION));
     let mut group = "";
     for ex in all {
         if s(ex, "group") != group {
             group = s(ex, "group");
             h += &format!("<h2>{}</h2>\n", escape(group));
         }
-        h += &format!("<p><a href=\"{}.html\">{}</a><br><span class=\"dim\">{}</span></p>\n", s(ex, "name"), escape(s(ex, "title")), escape(s(ex, "question")));
+        h += &format!("<p><a href=\"{}.html\">{}</a>: {}</p>\n", s(ex, "name"), escape(s(ex, "title")), escape(s(ex, "question")));
     }
-    h + "</body>\n</html>\n"
+    h
 }
 
 #[cfg(test)]
@@ -139,16 +134,18 @@ mod tests {
 
     #[test]
     fn a_paragraph_s_code_and_links() {
-        assert_eq!(paragraph("a `x < y` and [`ksys_read`](1:ksys_read), [twice](try:1) & more [no"),
-                   "a <code>x &lt; y</code> and <em><code>ksys_read</code></em>, <em>twice</em> &amp; more [no");
+        assert_eq!(paragraph("a `x < y` and [`ksys_read`](1:ksys_read), [twice](try:1) & more"),
+                   "a <code>x &lt; y</code> and <em><code>ksys_read</code></em>, <em>twice</em> &amp; more");
     }
 
     #[test]
     fn a_lesson_s_page() {
+        let page = "<head>\n<title>x</title>\n<meta name=\"description\" content=\"x\">\n<meta property=\"og:title\" content=\"x\">\n</head>\n<body>\n<div id=\"root\"></div>\n</body>\n";
         let ex = json!({ "name": "r", "group": "G", "title": "T", "question": "Q?", "text": ["P `c`."],
                          "steps": ["read(fd)", { "task": "child", "text": "exit(0)" }] });
-        let h = page(&ex, None, None);
-        for want in ["<title>T — kSEE</title>", "<h1>T</h1>", "<p>P <code>c</code>.</p>", "<code>read(fd)</code>", "(by child)", "../#ex=r"] {
+        let h = fill(page, "T — kSEE", "Q?", &lesson(&ex));
+        for want in ["<title>T — kSEE</title>", "content=\"Q?\">", "og:title\" content=\"T — kSEE\"", "<div id=\"root\"></div>\n<article id=\"static\">",
+                     "<h1>T</h1>", "<p>P <code>c</code>.</p>", "<code>read(fd)</code>", "(by child)"] {
             assert!(h.contains(want), "{want} in {h}");
         }
     }

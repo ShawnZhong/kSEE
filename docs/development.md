@@ -27,11 +27,12 @@ ksee-core <- ksee-host <- ksee-page
     ^                        |
     +------------------------+    (the page also uses core's views directly)
 
-ksee-cli                          (no ksee crate: it writes the formats)
+ksee-core <- ksee-cli              (only its lesson text, for the lessons' pages)
 ```
 
 `ksee-page` depends on both `ksee-host` and `ksee-core`; the host depends on
-core. The CLI shares no code with them: it writes the formats core reads
+core. The CLI uses core only for a lesson's text (text.rs's pieces, the
+lessons' pages); else it writes the formats core reads
 (`ksee.types`, see `types.rs`; the probes' function ids, FNV-1a of the name,
 see `tables.rs` and the plugin), so the two meet only in those texts, which the
 kernel suite checks end to end.
@@ -106,7 +107,7 @@ Do not edit generated output as source:
 | `target/site/src/` | Kernel source files referenced by probe metadata. |
 | `target/site/initramfs.cpio.gz` | `/init`, `/bin/prog`, root fixture, and ext4 image. |
 | `target/site/examples.json` | Built lesson index and content. |
-| `target/site/lessons/` | Each lesson as a plain HTML page, and their contents (`index.html`): what search engines and link previews read; each links to the lesson in kSEE. |
+| `target/site/NAME.html`, `index.html` | The page, once per lesson (and the first's, `index.html`), from `web/index.html`: the lesson's title and description, and its text as plain HTML for search engines and link previews (`index.html`: every lesson's title and question), which the page replaces once it runs. |
 | `target/vmlinux` | Uncompressed packed kernel, with metadata injected and DWARF removed, used to produce the site copy. |
 | `target/initramfs/` | Intermediate programs, ext4 image, fixture tree, and archive. |
 | `target/chrome/` | The tests' browser, Chrome's headless shell (`make chrome`). |

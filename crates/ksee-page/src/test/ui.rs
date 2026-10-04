@@ -319,12 +319,9 @@ pub(super) async fn read() -> Check {
         || format!("{:?}", cells()),
     )
     .await?;
-    let hash = web_sys::window()
-        .unwrap()
-        .location()
-        .hash()
-        .unwrap_or_default();
-    check(hash.contains("&p="), "the URL: the program changed", &hash)?;
+    let loc = web_sys::window().unwrap().location();
+    let url = format!("{}{}", loc.pathname().unwrap_or_default(), loc.hash().unwrap_or_default());
+    check(url.contains("read.html#p="), "the URL: the lesson's page, the program changed", &url)?;
     // (Back to the lesson's program; a try: its program; and back.)
     click(&one(".ptitle a").ok_or("no reset")?);
     wait(
@@ -362,6 +359,9 @@ pub(super) async fn read() -> Check {
         || title.clone(),
     )
     .await?;
+    // (Its page's URL.)
+    let path = web_sys::window().unwrap().location().pathname().unwrap_or_default();
+    check(path.ends_with(".html") && !path.ends_with("read.html"), "the next lesson's URL", &path)?;
     // (And back: the link says the lesson's title.)
     let back = all(".turn a").into_iter().next().ok_or("no lesson end")?;
     if !text(&back).ends_with(&title) {

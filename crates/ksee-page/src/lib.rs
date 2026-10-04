@@ -76,6 +76,11 @@ pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsVa
     let examples: Vec<Example> = serde_wasm_bindgen::from_value(examples)?;
     BOOT.with_borrow_mut(|b| *b = Some(machine));
     EXAMPLES.set(Box::leak(examples.into_boxed_slice()));
+    // (The lesson's text as the page came with it, for what reads it without
+    // running it: this page draws it now.)
+    if let Some(e) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id("static")) {
+        e.remove();
+    }
     // (A test, if the URL names one: those of the Machine only, no page.)
     if test::start().is_some_and(|name| test::MACHINE_ONLY.contains(&name.as_str())) {
         return Ok(());

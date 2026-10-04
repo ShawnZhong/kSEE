@@ -1632,6 +1632,7 @@ name = "ksee-cli"
 version = "0.1.0"
 dependencies = [
  "gimli 0.34.0",
+ "ksee-core",
  "serde_json",
  "wasm-bindgen-cli-support",
 ]
