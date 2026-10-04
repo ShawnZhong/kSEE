@@ -14,6 +14,12 @@ use crate::machine;
 use crate::host::Host;
 use crate::state::{Derived, Moment, Shared, Tab, Ui};
 
+/// The stack at the moment shown (the pointer's over the chart, else the
+/// cursor's).
+pub fn frames() -> Shared<Vec<Frame>> {
+    use_context::<Derived>().stack.cloned()
+}
+
 /// The frame shown: the one chosen (or under the pointer), else the innermost.
 pub fn shown() -> Option<Frame> {
     let d = use_context::<Derived>();
@@ -98,31 +104,24 @@ pub fn listen(ui: Ui) {
     });
 }
 
-/// The calls at the cursor (not the pointer's moment over the chart: its
-/// tip says the call), at the bottom of the pane as the chart stacks them
-/// (the outermost lowest); under the frame chosen, its arguments and locals
-/// as memory was then. A click on another: it chosen. Under them, the task
-/// running.
+/// The calls at the moment shown, at the bottom of the pane as the chart
+/// stacks them (the outermost lowest); under the frame chosen, its
+/// arguments and locals as memory was then. A click on another: it chosen.
+/// Under them, the task running.
 #[component]
 pub fn Stack() -> Element {
     let ui = use_context::<Ui>();
     (ui.snapshot)();
+    let frames = frames();
     let d = use_context::<Derived>();
-    // (The moment shown's, kept while the pointer previews another.)
-    let mut kept = use_signal(|| None::<(Shared<Vec<Frame>>, usize, usize)>);
-    use_effect(move || {
-        let now = (d.stack.cloned(), d.frame.cloned(), d.line.cloned().map_or(0, |l| l.at));
-        if (ui.peek)().is_none() {
-            kept.set(Some(now));
-        }
-    });
-    let (frames, chosen, at) = kept().unwrap_or_else(|| (Shared(Default::default()), 0, 0));
+    let chosen = d.frame.cloned();
+    let at = d.line.cloned().map_or(0, |l| l.at);
     let task = machine().view(|v| v.rec.tasks.get(at).map(|&t| v.task(t, at)));
     let mut open = use_context::<Signal<BTreeSet<String>>>();
     // (The chosen frame, its row and values, scrolled into view: as little
     // as it takes, its row first.)
     use_effect(move || {
-        let _ = kept.read();
+        let _ = (d.frame.read(), d.stack.read());
         let doc = web_sys::window().and_then(|w| w.document());
         let pick = |s: &str| doc.as_ref().and_then(|d| d.query_selector(s).ok().flatten());
         let (Some(pane), Some(on)) = (pick(".stack"), pick(".stack tbody.on")) else { return };
