@@ -105,7 +105,7 @@ ol.steps.columns > li.row > .wait { grid-row: 1; border-left: 3px dotted hsl(var
 .editor textarea:hover { border-color: var(--line); }
 .editor textarea:focus { border-color: var(--accent); background: var(--panel); }
 li.add .editor textarea { border-color: var(--line); background: var(--panel); padding: 2px 6px; }
-.complete { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 2px 0; list-style: none; background: var(--panel); border: 1px solid var(--line);
+.complete { position: fixed; z-index: 20; margin: 0; padding: 2px 0; list-style: none; background: var(--panel); border: 1px solid var(--line);
   border-radius: 3px; max-height: 240px; overflow-y: auto; box-shadow: 0 4px 12px rgb(0 0 0 / .15); font-size: 12px; }
 .complete li { padding: 1px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .complete li.on { background: var(--sel); }

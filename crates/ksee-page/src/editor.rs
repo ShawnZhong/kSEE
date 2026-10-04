@@ -14,6 +14,18 @@ fn cursor() -> Option<usize> {
     e.selection_start().ok().flatten().map(|n| n as usize)
 }
 
+/// Where the list of what fits goes, as fixed-position CSS: under the input
+/// that has the focus, or above it if the window ends first. (Fixed: the
+/// program's box scrolls, and would clip it.)
+fn below_focus() -> Option<String> {
+    const ROOM: f64 = 244.0;
+    let w = web_sys::window()?;
+    let r = w.document()?.active_element()?.get_bounding_client_rect();
+    let height = w.inner_height().ok()?.as_f64()?;
+    let edge = if r.bottom() + ROOM <= height { format!("top: {}px", r.bottom() + 2.0) } else { format!("bottom: {}px", height - r.top() + 2.0) };
+    Some(format!("left: {}px; width: {}px; {edge}", r.left(), r.width()))
+}
+
 /// Line `line` of the program (the names it sees are the lines' before
 /// it), starting as `text`; `done(text)` as Enter makes it (empty: the
 /// line removed), unless the Machine says it cannot be made; `focus`, as
@@ -25,6 +37,7 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
     let mut sel = use_signal(|| 0usize);
     let mut open = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
+    let mut place = use_signal(String::new);
     // (The Machine's, once the kernel is up.)
     let up = matches!((use_context::<crate::state::Ui>().kernel)(), Some(Ok(())));
     let items: Vec<Completion> = if open() && up { machine().complete(&draft(), at(), line, &common) } else { Vec::new() };
@@ -52,9 +65,9 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
     rsx! {
         div { class: "editor",
             textarea { class: "mono", rows: 1, value: "{draft}", placeholder: "{placeholder}", spellcheck: false, autocomplete: "off",
-                oninput: move |e| { draft.set(e.value()); at.set(cursor().unwrap_or(e.value().len())); open.set(true); error.set(None); },
+                oninput: move |e| { draft.set(e.value()); at.set(cursor().unwrap_or(e.value().len())); place.set(below_focus().unwrap_or_default()); open.set(true); error.set(None); },
                 onclick: move |_| at.set(cursor().unwrap_or(0)),
-                onfocus: move |_| { open.set(true); focus.call(()); },
+                onfocus: move |_| { place.set(below_focus().unwrap_or_default()); open.set(true); focus.call(()); },
                 onblur: move |_| open.set(false),
                 onkeydown: move |e| {
                     let key = e.key();
@@ -80,7 +93,7 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
                 },
             }
             if shown {
-                ul { class: "complete",
+                ul { class: "complete", style: "{place}",
                     for (k , it) in items.into_iter().enumerate() {
                         li { class: if k == sel_now { "on" } else { "" },
                             onmousedown: move |e| { e.prevent_default(); take(it.clone()); },

@@ -178,10 +178,15 @@ pub(super) async fn lesson() -> Check {
     }
     sleep(200).await;
     let names: Vec<String> = all("ul.complete li .mono").iter().map(text).collect();
-    let shown = one("ul.complete").map(|u| { let r = u.get_bounding_client_rect(); (r.width(), r.height()) });
+    // (Seen: what is at the list's middle is the list, not what clips or covers it.)
+    let shown = one("ul.complete").map(|u| {
+        let r = u.get_bounding_client_rect();
+        let top = web_sys::window().and_then(|w| w.document()).and_then(|d| d.element_from_point(((r.left() + r.right()) / 2.0) as f32, ((r.top() + r.bottom()) / 2.0) as f32));
+        (r.width(), r.height(), top.and_then(|e| e.closest("ul.complete").ok().flatten()).is_some())
+    });
     key(&add, "Escape");
     sleep(100).await;
-    check(offered.iter().any(|o| o == "openat") && names.iter().any(|o| o == "fd") && shown.is_some_and(|(w, h)| w > 0.0 && h > 0.0),
+    check(offered.iter().any(|o| o == "openat") && names.iter().any(|o| o == "fd") && shown.is_some_and(|(w, h, seen)| w > 0.0 && h > 0.0 && seen),
           "completions", (&offered, &names, shown))?;
     // (Objects: what the read changed, its file's position; Tasks: a task_struct opened.)
     tab("Objects").await;
