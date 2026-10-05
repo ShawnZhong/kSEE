@@ -120,8 +120,9 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         t.line("write(dfd, \"more\\n\", 5)").await;
         let f = t.line("fsync(dfd)").await.syscall.unwrap();
         let writes = m.disk(f.first, f.last);
-        t.check(format!("an fsync writes the disk, changing bytes ({} transfers)", writes.len()),
-                writes.iter().any(|x| x.t.write && x.t.before != x.t.after));
+        let named: Vec<&str> = writes.iter().map(|x| x.what.as_str()).collect();
+        t.check(format!("an fsync writes the disk, changing bytes, the journal among them ({named:?})"),
+                writes.iter().any(|x| x.t.write && x.t.before != x.t.after) && named.iter().any(|w| w.contains("the journal")));
         t.line("close(dfd)").await;
     }
 }

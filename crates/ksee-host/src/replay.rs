@@ -8,13 +8,15 @@ use ksee_core::Memory;
 use crate::machine::Machine;
 use crate::state::{k, tables, Direct, Transfer};
 
-/// A transfer the disk made (Transfer), and the records it was handed
-/// over and made at.
+/// A transfer the disk made (Transfer), the records it was handed over
+/// and made at, and what its blocks hold (ksee_core::ext4: "the journal",
+/// "inode 12's data").
 #[derive(Clone, Debug)]
 pub struct DiskTransfer {
     pub t: Transfer,
     pub asked: usize,
     pub done: usize,
+    pub what: String,
 }
 
 impl Machine {
@@ -59,10 +61,20 @@ impl Machine {
         let rec = self.rec.borrow();
         // (A word of the trace, the record written at or after it.)
         let record = |word: u32| rec.ids.partition_point(|&id| id < word);
-        k(|k| k.disk_log.iter().filter_map(|t| {
-            let (asked, done) = (record(t.asked), record(t.done));
-            (asked <= last && done >= first).then(|| DiskTransfer { t: t.clone(), asked, done })
-        }).collect())
+        k(|k| {
+            // (Its blocks named by the disk as it is: its layout, read once.)
+            let layout = ksee_core::ext4::Layout::read(&tables().types, &k.disk);
+            let what = |t: &Transfer| layout.as_ref().map_or_else(String::new, |l| {
+                let (from, to) = ((t.sector * 512) as u32 / l.block_size, ((t.sector * 512) as u32 + t.len.max(1) - 1) / l.block_size);
+                let mut names: Vec<String> = (from..=to).map(|b| l.name(b)).collect();
+                names.dedup();
+                names.join(", ")
+            });
+            k.disk_log.iter().filter_map(|t| {
+                let (asked, done) = (record(t.asked), record(t.done));
+                (asked <= last && done >= first).then(|| DiskTransfer { t: t.clone(), asked, done, what: what(t) })
+            }).collect()
+        })
     }
 
     /// The kernel's tables: its types (a call's result as the page says it,

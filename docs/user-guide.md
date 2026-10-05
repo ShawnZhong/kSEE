@@ -135,7 +135,9 @@ ordinary stack locals; those belong in Stack.
 ### Console
 
 The Disk tab lists what the selected syscall asked of the disk (`/dev/wda`,
-the host's): each transfer, read or write, its size, sector and request tag,
+the host's): each transfer, read or write, its size, what its blocks hold (read from the
+disk's own ext4 structures: "the journal", "the inode table (inodes 9-16)",
+"inode 12's data"), its sector and request tag,
 where the driver handed it over and where the disk made it (click either), the
 one under way at the cursor marked; a write shows the bytes it changed, a read
 the bytes it read.

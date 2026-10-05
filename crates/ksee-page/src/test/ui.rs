@@ -584,7 +584,8 @@ pub(super) async fn disk() -> Check {
     click(&named(".tabs .tab", "Disk").ok_or("no Disk tab")?);
     wait(|| !all(".disk .xfer").is_empty(), 50, "the fsync's transfers", || one(".pane").map(|p| text(&p)).unwrap_or_default()).await?;
     let rows: Vec<String> = all(".disk .xfer").iter().map(text).collect();
-    check(rows.iter().any(|r| r.starts_with("write") && r.contains("changed")), "the fsync's writes, bytes changed", &rows)?;
+    check(rows.iter().any(|r| r.starts_with("write") && r.contains("changed")) && rows.iter().any(|r| r.contains("of the journal")),
+          "the fsync's writes, bytes changed, the journal among them", &rows)?;
     Ok(format!("{} transfers; {}", rows.len(), rows.first().cloned().unwrap_or_default()))
 }
 

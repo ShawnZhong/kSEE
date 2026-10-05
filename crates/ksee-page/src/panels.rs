@@ -196,7 +196,7 @@ fn Disk() -> Element {
                 {
                     let t = &x.t;
                     let on = x.asked <= cursor && cursor < x.done;
-                    let what = format!("{} {} at sector {} · tag {}", if t.write { "write" } else { "read" }, size(t.len), t.sector, t.tag);
+                    let what = format!("{} {} of {} · sector {} · tag {}", if t.write { "write" } else { "read" }, size(t.len), x.what, t.sector, t.tag);
                     let (asked, done) = (x.asked, x.done);
                     let bytes = if t.write { changed(&t.before, &t.after) } else { format!("read: {}", hex(&t.after[..t.after.len().min(16)])) };
                     rsx! {
