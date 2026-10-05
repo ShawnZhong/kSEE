@@ -77,6 +77,9 @@ pub struct State {
 /// a read's: what it read), and a write's `before`.
 #[derive(Clone, Debug, Default)]
 pub struct Transfer {
+    /// The task it was handed over by (its task_struct: the kernel's
+    /// current then), whether recorded or not.
+    pub task: u32,
     pub tag: u32,
     pub sector: u64,
     pub buf: u32,

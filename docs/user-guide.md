@@ -135,11 +135,15 @@ ordinary stack locals; those belong in Stack.
 ### Console
 
 The Disk tab is the disk's history (`/dev/wda`, the host's): every transfer
-it made, in order, for whichever task (the program's, a worker's writeback,
-jbd2's journal). A row says read or write, its size, its bytes on the disk,
-and for whom (a device's view: what the bytes are is the file system's); its
-tooltip, the sector and the request's tag (how the disk says which request it
-did). At the
+it made, in the order the driver handed them over (the disk makes them first
+in, first out, at the CPU's next idle; no scheduler reorders them), for
+whichever task (the program's, a worker's writeback,
+jbd2's journal). A row says read or write, its size and where on the disk, in KB
+(1024 bytes), and by which task (the one running as the driver handed it over:
+the program for its reads, a worker for writeback, jbd2 for the journal); a
+device's view, what the bytes are is the file system's. Its tooltip has the
+exact bytes, the sector and the request's tag (how the disk says which request
+it did). At the
 cursor's moment, transfers made before it are plain, the one under way is
 marked and kept in view, and those not handed over yet are gray. Click a row
 to go where it was handed to the disk, "done" where the disk made it; a write

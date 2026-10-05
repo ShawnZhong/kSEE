@@ -589,7 +589,7 @@ pub(super) async fn disk() -> Check {
     line(2);
     settle().await;
     let rows: Vec<String> = all(".disk .xfer").iter().map(text).collect();
-    check(rows.iter().any(|r| r.starts_with("write") && r.contains("changed")) && rows.iter().any(|r| r.contains("for jbd2")),
+    check(rows.iter().any(|r| r.starts_with("write") && r.contains("changed")) && rows.iter().any(|r| r.contains("by jbd2")),
           "the fsync's writes, bytes changed, jbd2's among them", &rows)?;
     Ok(format!("{} transfers, {later} after the first call; {}", rows.len(), rows.first().cloned().unwrap_or_default()))
 }

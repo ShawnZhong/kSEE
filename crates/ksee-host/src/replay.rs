@@ -9,13 +9,15 @@ use crate::machine::Machine;
 use crate::state::{k, tables, Direct, Transfer};
 
 /// A transfer the disk made (Transfer): the records it was handed over and
-/// made at, and the task it was handed over for.
+/// made at, if the recording has those moments in the task that handed it
+/// over (not: before the recording, or while only stores were recorded),
+/// and that task, named.
 #[derive(Clone, Debug)]
 pub struct DiskTransfer {
     pub t: Transfer,
-    pub asked: usize,
-    pub done: usize,
-    pub by: Option<String>,
+    pub asked: Option<usize>,
+    pub done: Option<usize>,
+    pub by: String,
 }
 
 impl Machine {
@@ -58,11 +60,16 @@ impl Machine {
     /// (DiskTransfer).
     pub fn disk(&self) -> Vec<DiskTransfer> {
         self.view(|v| {
-            // (A word of the trace, the record written at or after it.)
-            let record = |word: u32| v.rec.ids.partition_point(|&id| id < word);
+            let (ids, tasks) = (&v.rec.ids, &v.rec.tasks);
+            // (A word of the trace, the record written at or after it, if
+            // the recording has it: past its first record, and before its
+            // end.)
+            let record = |word: u32| Some(ids.partition_point(|&id| id < word)).filter(|&i| i < ids.len() && ids.first().is_some_and(|&f| word > f));
             k(|k| k.disk_log.iter().map(|t| {
-                let (asked, done) = (record(t.asked), record(t.done));
-                let by = v.rec.tasks.get(asked).map(|&task| v.task(task, asked).named());
+                // (Handed over in its task, as recorded: then a moment to go to.)
+                let asked = record(t.asked).filter(|&i| tasks[i] == t.task);
+                let done = asked.and(record(t.done));
+                let by = v.task(t.task, asked.unwrap_or(v.rec.last())).named();
                 DiskTransfer { t: t.clone(), asked, done, by }
             }).collect())
         })

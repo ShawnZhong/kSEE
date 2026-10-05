@@ -176,7 +176,8 @@ fn Tasks() -> Element {
 /// task (a device is shared: a process's fsync, jbd2's journal, a worker's
 /// writeback); at the cursor's moment, those made before it plain, the one
 /// under way marked (kept in view), those not handed over yet gray. A row:
-/// what it did, to which bytes, for whom (a device's view: what the bytes
+/// what it did, its size and where on the disk, by which task (the one
+/// running as the driver handed it over: a device's view, what the bytes
 /// are, the file system's, it does not say; a click: the
 /// cursor where it was handed over; "done": where the disk made it); a
 /// write's changed bytes, a read's.
@@ -213,18 +214,27 @@ fn Disk() -> Element {
             for x in all.iter().cloned() {
                 {
                     let t = &x.t;
-                    let class = if x.asked > cursor { "xfer later" } else if cursor < x.done { "xfer on" } else { "xfer made" };
+                    // (Not in the recording, in its task: made before the cursor, if
+                    // before the recording; else said, not gone to.)
+                    let (a, z) = (x.asked.unwrap_or(0), x.done.unwrap_or(0));
+                    let class = if x.asked.is_some() && a > cursor { "xfer later" } else if x.asked.is_some() && cursor < z { "xfer on" } else { "xfer made" };
                     let start = t.sector * 512;
-                    let by = x.by.clone().map_or(String::new(), |b| format!(" · for {b}"));
-                    let what = format!("{} {} · bytes {}–{}{by}", if t.write { "write" } else { "read" }, size(t.len), start, start + t.len as u64 - 1);
-                    let title = format!("sector {}, the request's tag {} (blk-mq's: how the disk says which request it did)", t.sector, t.tag);
+                    let by = format!(" · by {}", x.by);
+                    let what = format!("{} {} at {}{by}", if t.write { "write" } else { "read" }, size(t.len as u64), size(start));
+                    let title = format!("bytes {start}–{} (sector {}); the request's tag {} (blk-mq's: how the disk says which request it did); by: the task running as it was handed over", start + t.len as u64 - 1, t.sector, t.tag);
                     let (asked, done) = (x.asked, x.done);
+                    let away = "not in the recording, in its task: before it, or while only stores were recorded";
                     let bytes = if t.write { changed(&t.before, &t.after) } else { format!("read: {}", hex(&t.after[..t.after.len().min(16)])) };
                     rsx! {
                         div { class,
-                            a { class: "mono", title: "{title}; a click: where it was handed to the disk (queue_rq)", onclick: move |_| ui.go_record(d, asked), "{what}" }
-                            " · "
-                            a { class: "dim", title: "where the disk made it (then its interrupt)", onclick: move |_| ui.go_record(d, done), "done" }
+                            if let (Some(asked), Some(done)) = (asked, done) {
+                                a { class: "mono", title: "{title}; a click: where it was handed to the disk (queue_rq)", onclick: move |_| ui.go_record(d, asked), "{what}" }
+                                " · "
+                                a { class: "dim", title: "where the disk made it (then its interrupt)", onclick: move |_| ui.go_record(d, done), "done" }
+                            } else {
+                                span { class: "mono", title: "{title}; {away}", "{what}" }
+                                span { class: "dim", " · {away}" }
+                            }
                             div { class: "mono dim bytes", "{bytes}" }
                         }
                     }
@@ -234,9 +244,9 @@ fn Disk() -> Element {
     }
 }
 
-/// `n` bytes, said: "512 B", "4 KiB".
-fn size(n: u32) -> String {
-    if n >= 1024 && n % 1024 == 0 { format!("{} KiB", n / 1024) } else { format!("{n} B") }
+/// `n` bytes, said in KB (1024 bytes) when whole ones: "4 KB", "512 B".
+fn size(n: u64) -> String {
+    if n % 1024 == 0 { format!("{} KB", n / 1024) } else { format!("{n} B") }
 }
 
 /// Bytes in hex, a space each.

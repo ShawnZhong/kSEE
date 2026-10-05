@@ -71,8 +71,8 @@ pub extern "C" fn disk_sectors() -> u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn disk_submit(tag: u32, sector: u64, buf: u32, len: u32, write: u32) {
     k_mut(|k| {
-        let asked = Direct.read_u32(k.trace);
-        k.transfers.push(Transfer { tag, sector, buf, len, write: write != 0, asked, ..Default::default() });
+        let (asked, task) = (Direct.read_u32(k.trace), Direct.read_u32(k.current));
+        k.transfers.push(Transfer { task, tag, sector, buf, len, write: write != 0, asked, ..Default::default() });
     });
 }
 
