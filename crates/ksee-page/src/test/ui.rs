@@ -14,7 +14,7 @@ pub(super) async fn read() -> Check {
     let mut r = Vec::new();
     // (The timeline's colors.)
     let colors = [(Some("fs/x.c"), false, "hsl(210 55% 74%)"), (Some("fs/x.c"), true, "hsl(210 65% 50%)"),
-                  (Some("arch/x.c"), false, "hsl(215 18% 74%)"), (Some("include/x.h"), false, "hsl(210 5% 74%)"), (None, false, "hsl(0 0% 79%)")];
+                  (Some("arch/x.c"), false, "hsl(180 16% 74%)"), (Some("include/x.h"), false, "hsl(210 5% 74%)"), (None, false, "hsl(0 0% 79%)")];
     if let Some((file, on, _)) = colors.iter().find(|(f, on, c)| crate::chart::call_color(*f, *on) != *c) {
         return Err(format!("the timeline's color for {file:?} (on: {on}) is {}", crate::chart::call_color(*file, *on)));
     }
