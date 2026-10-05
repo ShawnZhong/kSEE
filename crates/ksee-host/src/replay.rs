@@ -44,7 +44,7 @@ impl Machine {
     pub fn syscall_of(&self, id: u32) -> Option<usize> {
         let (task, nr, from) = k(|k| k.p.calls.get(&id).map(|c| (c.task, c.nr, c.from)))?;
         let rec = self.rec.borrow();
-        rec.syscalls.iter().position(|s| s.nr == Some(nr) && s.task == task && rec.ids[s.first] >= from)
+        rec.runs.iter().position(|s| s.nr == Some(nr) && s.task == task && rec.ids[s.first] >= from)
     }
 
     /// The first call of function `name` in records `first..=last` (of the
@@ -57,15 +57,15 @@ impl Machine {
     /// task's), each with its records and the task it was handed over for
     /// (DiskTransfer).
     pub fn disk(&self) -> Vec<DiskTransfer> {
-        let rec = self.rec.borrow();
-        let v = View { tables: tables(), rec: &rec, now: &Direct };
-        // (A word of the trace, the record written at or after it.)
-        let record = |word: u32| rec.ids.partition_point(|&id| id < word);
-        k(|k| k.disk_log.iter().map(|t| {
-            let (asked, done) = (record(t.asked), record(t.done));
-            let by = rec.tasks.get(asked).map(|&task| v.task(task, asked).named());
-            DiskTransfer { t: t.clone(), asked, done, by }
-        }).collect())
+        self.view(|v| {
+            // (A word of the trace, the record written at or after it.)
+            let record = |word: u32| v.rec.ids.partition_point(|&id| id < word);
+            k(|k| k.disk_log.iter().map(|t| {
+                let (asked, done) = (record(t.asked), record(t.done));
+                let by = v.rec.tasks.get(asked).map(|&task| v.task(task, asked).named());
+                DiskTransfer { t: t.clone(), asked, done, by }
+            }).collect())
+        })
     }
 
     /// The kernel's tables: its types (a call's result as the page says it,

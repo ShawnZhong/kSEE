@@ -26,7 +26,7 @@ mod tests;
 
 pub use chart::{clamped_pan, wheel_window, Bar, Chart, Column};
 pub use frames::{run_to, step, Called, Frame, Line};
-pub use objects::{Diff, Group, Node, Run};
+pub use objects::{Diff, Group, Node, Streak};
 pub use stores::{Note, RegionKind, Write};
 pub(crate) use stores::{Named, Wrote};
 pub use value::{Missing, Object, Target};
@@ -39,6 +39,13 @@ pub struct Task {
     pub comm: Option<String>,
 }
 
+impl RunSummary {
+    /// As the page heads it: "read by prog(19)", "running by swapper/0(0)".
+    pub fn title(&self) -> String {
+        format!("{} by {}", self.name, self.task.named())
+    }
+}
+
 impl Task {
     /// As the page names it: comm(pid).
     pub fn named(&self) -> String {
@@ -47,10 +54,12 @@ impl Task {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SyscallSummary {
+pub struct RunSummary {
     pub task: Task,
-    /// Its name (its number, if this kernel's table has none: see
-    /// Types::syscall_name).
+    /// A syscall's number (none: a run between them).
+    pub nr: Option<u32>,
+    /// Its name (a syscall's, its number if this kernel's table has none:
+    /// see Types::syscall_name; a run's, "running").
     pub name: String,
     /// The result (None: still running at the end of the recording).
     pub ret: Option<i32>,
@@ -210,17 +219,17 @@ impl View<'_> {
                 up: up(leader).or_else(|| up(parent)),
                 state, last,
                 doing: last.and_then(|j| {
-                    let syscall = self.rec.syscall_at(j).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr?).cloned());
+                    let syscall = self.rec.run_at(j).and_then(|s| t.types.syscalls.get(&self.rec.runs[s].nr?).cloned());
                     syscall.or_else(|| self.rec.calls.stack_at(t, j, None).into_iter().next().and_then(|c| t.functions.get(&c.func)).map(|f| f.name.clone()))
                 }),
             }
         }).collect()
     }
 
-    /// Syscall `k` (Recording::syscalls).
-    pub fn syscall(&self, k: usize) -> Option<SyscallSummary> {
-        let s = self.rec.syscalls.get(k)?;
-        Some(SyscallSummary {
+    /// Run `k` (Recording::runs).
+    pub fn run(&self, k: usize) -> Option<RunSummary> {
+        let s = self.rec.runs.get(k)?;
+        Some(RunSummary {
             task: self.task(s.task, s.first),
             // (A run between syscalls: its task running, whatever it does
             // then; a stack known only from where the recording began says
@@ -229,11 +238,12 @@ impl View<'_> {
             ret: s.ret,
             first: s.first,
             last: s.last.unwrap_or(self.rec.last()),
+            nr: s.nr,
         })
     }
 
-    pub fn syscalls(&self) -> Vec<SyscallSummary> {
-        (0..self.rec.syscalls.len()).filter_map(|k| self.syscall(k)).collect()
+    pub fn runs(&self) -> Vec<RunSummary> {
+        (0..self.rec.runs.len()).filter_map(|k| self.run(k)).collect()
     }
 
     /// Where `name` is defined: an instrumented function (its source), else
@@ -266,7 +276,7 @@ impl View<'_> {
         Some(Place { name: f.name.clone(), file: t.file(f.loc).to_string(), line: f.loc.line, last: Some(last), sealed: f.sealed })
     }
 
-    /// The lines of `file` that code ran, in syscall `n` (or the whole
+    /// The lines of `file` that code ran, in run `n` (or the whole
     /// recording), with how often (the most of the blocks running it): the
     /// lines each block runs (Tables::runs: inlined code's, and where it is
     /// inlined, too).

@@ -51,7 +51,7 @@ fn Objects() -> Element {
     let graph = use_memo(move || {
         (ui.snapshot)();
         let machine = machine();
-        let nodes = derived.syscall.cloned().map_or_else(Vec::new, |syscall| {
+        let nodes = derived.run.cloned().map_or_else(Vec::new, |syscall| {
             machine.view(|view| view.objects(syscall.first, syscall.last))
         });
         let definitions: Vec<Option<ObjectDefinition>> = nodes.iter().map(|node| {
@@ -62,10 +62,10 @@ fn Objects() -> Element {
         }).collect();
         (Rc::new(nodes), Rc::new(definitions))
     });
-    let Some(syscall) = derived.syscall.cloned() else {
+    let Some(syscall) = derived.run.cloned() else {
         return rsx! { p { class: "pad dim", "Select a call: what it did to the kernel's data." } };
     };
-    let title = format!("{} by {}", syscall.name, syscall.task.named());
+    let title = syscall.title();
     let cursor = derived.line.cloned().map(|line| line.at);
     rsx! {
         ObjectsView {
@@ -184,7 +184,6 @@ fn Tasks() -> Element {
 fn Disk() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
-    (ui.snapshot)();
     // (Kept in view: the row under way, else the last made.)
     use_effect(move || {
         let _ = d.line.read();
@@ -197,7 +196,12 @@ fn Disk() -> Element {
             e.scroll_into_view_with_scroll_into_view_options(&o);
         }
     });
-    let all = machine().disk();
+    // (The history, once a snapshot; the cursor only says where it is in it.)
+    let history = use_memo(move || {
+        (ui.snapshot)();
+        crate::state::Shared(std::rc::Rc::new(machine().disk()))
+    });
+    let all = history.read().0.clone();
     if all.is_empty() {
         return rsx! { p { class: "pad dim", "Nothing has gone to the disk yet." } };
     }
@@ -206,7 +210,7 @@ fn Disk() -> Element {
     rsx! {
         div { class: "objects disk",
             div { class: "ohead dim", "{head}" }
-            for x in all {
+            for x in all.iter().cloned() {
                 {
                     let t = &x.t;
                     let class = if x.asked > cursor { "xfer later" } else if cursor < x.done { "xfer on" } else { "xfer made" };

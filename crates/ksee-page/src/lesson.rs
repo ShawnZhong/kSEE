@@ -124,7 +124,7 @@ fn follow(mut ui: Ui, target: LessonTarget) {
     if let Some(func) = function {
         // (The call's lines and syscall now: the memos have them as they were.)
         let m = machine();
-        let (lines, s) = (Ui::lines_of(k), m.view(|v| v.syscall(k)));
+        let (lines, s) = (Ui::lines_of(k), m.view(|v| v.run(k)));
         let at = s.and_then(|s| m.first_call(&func, s.first, s.last, (!any_task).then_some(s.task.addr)));
         if let Some(at) = at && let Some(j) = lines.iter().position(|l| l.i >= at) {
             ui.go(j);
@@ -227,7 +227,7 @@ fn task_name(ui: Ui, task: Option<&str>, program: &[Step]) -> (String, i32) {
     // (A call made: the kernel is up.)
     let recorded = id.and_then(|id| {
         let m = machine();
-        m.syscall_of(id).and_then(|k| m.view(|v| v.syscall(k))).map(|s| s.task)
+        m.syscall_of(id).and_then(|k| m.view(|v| v.run(k))).map(|s| s.task)
     });
     match recorded {
         Some(t) => (t.named(), t.pid.unwrap_or(0)),

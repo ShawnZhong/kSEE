@@ -14,7 +14,8 @@ use crate::machine;
 use crate::state::{Derived, Moment, Tab, Ui};
 
 /// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
-/// lines, into its task's syscall after it (or before).
+/// lines, into its task's run after it (or before): its next syscall, or
+/// what it did between.
 pub fn walk(ui: Ui, dir: isize, over: bool) {
     let Some(at) = ui.at.peek().clone() else { return };
     let k = at.call;
@@ -24,7 +25,7 @@ pub fn walk(ui: Ui, dir: isize, over: bool) {
         return;
     }
     let next = machine().view(|v| {
-        let all = &v.rec.syscalls;
+        let all = &v.rec.runs;
         let task = all.get(k)?.task;
         let mine: Vec<usize> = (0..all.len()).filter(|&j| all[j].task == task).collect();
         let at = mine.iter().position(|&j| j == k)?;

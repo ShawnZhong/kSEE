@@ -93,7 +93,14 @@ pub fn disk_work() -> bool {
         let at = t.sector as usize * 512;
         k_mut(|k| {
             t.done = Direct.read_u32(k.trace);
-            let Some(blocks) = k.disk.get_mut(at..at + t.len as usize) else { return };
+            // (Past the disk's end: the request ends all the same, its bytes not moved.)
+            if k.disk.len() < at + t.len as usize {
+                if k.done.back() != Some(&t.tag) {
+                    k.done.push_back(t.tag);
+                }
+                return;
+            }
+            let blocks = &mut k.disk[at..at + t.len as usize];
             if t.write {
                 t.before = blocks.to_vec();
                 Direct.read(t.buf, blocks);

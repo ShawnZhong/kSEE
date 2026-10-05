@@ -582,7 +582,7 @@ pub(super) async fn disk() -> Check {
     let line = |k: usize| all("ol.steps .cell textarea").get(k).and_then(|t| t.dyn_ref::<HtmlElement>().map(|t| t.focus()));
     line(0);
     settle().await;
-    click(&named(".tabs .tab", "Disk").ok_or("no Disk tab")?);
+    tab("Disk").await;
     wait(|| !all(".disk .xfer").is_empty(), 50, "the disk's transfers", || one(".pane").map(|p| text(&p)).unwrap_or_default()).await?;
     let later = all(".disk .xfer.later").len();
     check(later > 0, "the cursor in the first call: the transfers after it gray", later)?;

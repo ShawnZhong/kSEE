@@ -84,9 +84,9 @@ pub fn Timeline() -> Element {
         }
     });
     let title = d
-        .syscall
+        .run
         .cloned()
-        .map(|s| format!("{} by {}", s.name, s.task.named()))
+        .map(|s| s.title())
         .unwrap_or_default();
     rsx! {
         section { class: "history",
@@ -136,7 +136,7 @@ fn Overview() -> Element {
             .collect();
         let starts: Vec<usize> = v
             .rec
-            .syscalls
+            .runs
             .iter()
             .filter(|s| s.nr.is_some())
             .map(|s| v.rec.step_of(s.first))
@@ -593,8 +593,8 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
             .unwrap_or_default();
         // (A syscall's entry: the syscall, its arguments and result; not a
         // run between syscalls that starts there.)
-        let syscall = v.rec.syscalls.binary_search_by_key(&first, |s| s.first).ok().filter(|&k| v.rec.syscalls[k].nr.is_some());
-        match syscall.and_then(|k| v.syscall(k)) {
+        let syscall = v.rec.runs.binary_search_by_key(&first, |s| s.first).ok().and_then(|k| v.run(k)).filter(|s| s.nr.is_some());
+        match syscall {
             Some(s) => {
                 let ret = s.ret.map_or_else(|| "…".into(), |r| v.tables.types.result(r as i64));
                 let shown: Vec<String> = args.iter().map(|(_, x)| x.clone()).collect();

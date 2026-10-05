@@ -1,5 +1,6 @@
 //! A recording: the records of the trace ring, and what the host rebuilds
-//! from them alone: the task running at each record, the syscalls, and the
+//! from them alone: the task running at each record, the runs (each
+//! task's syscalls, and what it did between them), and the
 //! stores (memory as it was).
 
 use alloc::collections::BTreeMap;
@@ -17,27 +18,28 @@ use crate::{arch, mem, Memory};
 /// between them (no number: the idle task's idling, a worker's work), from
 /// its first record there to its last. What the cursor can be in.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Syscall {
+pub struct Run {
     pub task: u32,
     pub nr: Option<u32>,
     /// The result (None: still running at the end of the trace, or it
     /// never returned).
     pub ret: Option<i32>,
-    /// Its first and last records (its return's).
+    /// Its first and last records (a syscall's: its return's; none, still
+    /// running as the records end).
     pub first: usize,
     pub last: Option<usize>,
 }
 
 /// The syscalls among `calls` (`entry`: the syscall entry's function id;
 /// `tasks[i]`: the task running at record `i`), in the order they began.
-fn split(entry: u32, records: &[Record], tasks: &[u32], args: &Args, calls: &stack::Calls) -> Vec<Syscall> {
+fn split(entry: u32, records: &[Record], tasks: &[u32], args: &Args, calls: &stack::Calls) -> Vec<Run> {
     calls.calls.iter().filter(|c| c.func == entry && matches!(records[c.first], Record::Block { n: 0, .. })).map(|c| {
         let nr = args.get(c.first).and_then(|(w, _)| w.first().copied()).unwrap_or(0);
         let ret = c.last.and_then(|l| match records[l] {
             Record::Return { func, value: Some(value) } if func == entry => Some(value as i32),
             _ => None,
         });
-        Syscall { task: tasks[c.first], nr: Some(nr), ret, first: c.first, last: ret.and(c.last) }
+        Run { task: tasks[c.first], nr: Some(nr), ret, first: c.first, last: ret.and(c.last) }
     }).collect()
 }
 
@@ -51,8 +53,8 @@ pub struct Recording {
     pub args: Args,
     /// The task_struct address running at each record.
     pub tasks: Vec<u32>,
-    /// In the order they began.
-    pub syscalls: Vec<Syscall>,
+    /// The runs, in the order they began.
+    pub runs: Vec<Run>,
     /// The steps, in order: the recording's unit of time (the timeline's
     /// axis), a source line run, as stepping visits them (View::lines): its
     /// record, which of the lines the record's stretch runs it is, and the
@@ -119,7 +121,7 @@ impl Recording {
             let mut gap = |from: usize, to: usize| {
                 let (a, b) = (at.partition_point(|&i| i < from), at.partition_point(|&i| i < to));
                 if a < b {
-                    runs.push(Syscall { task, nr: None, ret: None, first: at[a], last: Some(at[b - 1]) });
+                    runs.push(Run { task, nr: None, ret: None, first: at[a], last: Some(at[b - 1]) });
                 }
             };
             let mut from = 0;
@@ -139,7 +141,7 @@ impl Recording {
             steps.extend(calls.lines(t, &records, &tasks, s.first, end - 1, s.task).iter().map(|l| (l.record, l.nth, l.cut)));
         }
         steps.sort_by_key(|s| s.0);
-        Recording { records, ids, args, tasks, syscalls, steps, calls, stores: OnceCell::new(), names: Default::default(), named: Default::default() }
+        Recording { records, ids, args, tasks, runs: syscalls, steps, calls, stores: OnceCell::new(), names: Default::default(), named: Default::default() }
     }
 
     /// Record `i`'s step: its last line's, so a record between two lines
@@ -182,10 +184,11 @@ impl Recording {
         mem::PastMemory { base: end, history: self.stores(), at }
     }
 
-    /// The syscall in progress on the task running at record `i` (its index).
-    pub fn syscall_at(&self, i: usize) -> Option<usize> {
+    /// The run of the task running at record `i` (its index): its syscall
+    /// then, or what it did between.
+    pub fn run_at(&self, i: usize) -> Option<usize> {
         let task = *self.tasks.get(i)?;
-        self.syscalls.iter().position(|s| s.task == task && s.first <= i && s.last.is_none_or(|l| i <= l))
+        self.runs.iter().position(|s| s.task == task && s.first <= i && s.last.is_none_or(|l| i <= l))
     }
 
     /// The first call of function `name` in records `first..=last` (of the
@@ -220,10 +223,10 @@ impl Recording {
         })
     }
 
-    /// How often each block ran in syscall `n` (its task's records), or the
+    /// How often each block ran in run `n` (its task's records), or the
     /// whole recording (None).
     pub(crate) fn block_counts(&self, n: Option<usize>) -> BTreeMap<(u32, u32), u64> {
-        let (first, last, task) = match n.map(|n| self.syscalls.get(n)) {
+        let (first, last, task) = match n.map(|n| self.runs.get(n)) {
             Some(None) => return BTreeMap::new(),
             Some(Some(s)) => (s.first, s.last.unwrap_or(usize::MAX), Some(s.task)),
             None => (0, usize::MAX, None),

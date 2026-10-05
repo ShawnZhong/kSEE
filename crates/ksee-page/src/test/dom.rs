@@ -164,7 +164,7 @@ pub(super) async fn tab(name: &str) {
     if let Some(t) = named(".tabs .tab", name) {
         click(&t);
     }
-    sleep(300).await;
+    settle().await;
 }
 
 /// Wait for `f`, at most `n` checks; then check it.

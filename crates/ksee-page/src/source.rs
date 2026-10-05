@@ -13,7 +13,7 @@ use std::rc::Rc;
 
 use dioxus::html::geometry::PixelsVector2D;
 use dioxus::prelude::*;
-use ksee_core::view::{Frame, Object, SyscallSummary};
+use ksee_core::view::{Frame, Object, RunSummary};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
@@ -103,7 +103,7 @@ pub fn Source() -> Element {
 
 /// What the call selected did on each line of `file`: the lines that ran,
 /// how often; what each stored, its note and the write's record.
-fn ran(ui: Ui, syscall: Option<SyscallSummary>, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
+fn ran(ui: Ui, syscall: Option<RunSummary>, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
     let m = machine();
     let k = ui.call();
     let counts = m.view(|v| v.coverage(file, k));
@@ -193,7 +193,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
         Some(Some(src)) => src,
     };
     let d = use_context::<Derived>();
-    let (counts, notes) = ran(ui, d.syscall.cloned(), &path, at);
+    let (counts, notes) = ran(ui, d.run.cloned(), &path, at);
     let total = src.text.len();
     // (The cursor's line, at its end: the frame's values its names have, as
     // they are before it runs; what it compared, which way its branch went;

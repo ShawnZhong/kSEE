@@ -32,7 +32,7 @@ pub(super) async fn boot(t: &mut KernelHarness) -> String {
 pub(super) fn views(t: &mut KernelHarness) -> String {
     let m = t.machine.clone();
     let snapshot = ms(3, || m.snapshot());
-    let (records, steps, calls) = m.view(|v| (v.rec.len(), v.rec.steps.len(), v.rec.syscalls.len()));
+    let (records, steps, calls) = m.view(|v| (v.rec.len(), v.rec.steps.len(), v.rec.runs.len()));
     let mix = m.view(|v| {
         use ksee_core::trace::Record as R;
         let mut c = [0usize; 7];
@@ -42,12 +42,12 @@ pub(super) fn views(t: &mut KernelHarness) -> String {
         format!("calls {} blocks {} returns {} stores {} compares {} vars {} tasks {}", c[0], c[1], c[2], c[3], c[4], c[5], c[6])
     });
 
-    // (The syscall with the most records: the page's heaviest view.)
-    let Some((k, s)) = m.view(|v| (0..calls).filter_map(|k| v.syscall(k).map(|s| (k, s))).max_by_key(|(_, s)| s.last - s.first)) else { return String::new() };
+    // (The syscall with the most records: the page's heaviest view of one.)
+    let Some((k, s)) = m.view(|v| (0..calls).filter_map(|k| v.run(k).map(|s| (k, s))).filter(|(_, s)| s.nr.is_some()).max_by_key(|(_, s)| s.last - s.first)) else { return String::new() };
     let mid = (s.first + s.last) / 2;
     let file = m.view(|v| v.call_stack(mid, None, 0, mid).first().and_then(|f| f.file.clone())).unwrap_or_default();
     let chart = ms(3, || { m.view(|v| v.chart(0, steps.saturating_sub(1), 1200)); });
-    let syscalls = ms(3, || { m.view(|v| v.syscalls()); });
+    let syscalls = ms(3, || { m.view(|v| v.runs()); });
     let lines = ms(3, || { m.view(|v| v.lines(s.first, s.last, s.task.addr)); });
     let stack = ms(3, || { m.view(|v| v.call_stack(mid, None, 0, mid)); });
     let objects = ms(3, || { m.view(|v| v.objects(s.first, s.last)); });
@@ -63,7 +63,7 @@ pub(super) fn views(t: &mut KernelHarness) -> String {
         let n = m.view(|v| v.call_stack(i, None, 0, i).len());
         (n, ms(3, || { m.view(|v| v.call_stack(i, None, 0, i)); }))
     });
-    format!("{mix}; {records} records, {steps} steps, {calls} syscalls; the largest, {} records: snapshot {snapshot:.1} ms, \
+    format!("{mix}; {records} records, {steps} steps, {calls} runs; the largest, {} records: snapshot {snapshot:.1} ms, \
              chart {chart:.1}, syscalls {syscalls:.1}, its lines {lines:.1}, a stack {stack:.1}, its objects {objects:.1}, \
              its stores named {named:.1}, a file's notes {notes:.1} and coverage {coverage:.1} ({file}); at vma_iter_prealloc, a stack {deep:?}", s.last - s.first + 1)
 }

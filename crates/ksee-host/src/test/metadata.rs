@@ -27,7 +27,7 @@ pub(super) async fn run(t: &mut KernelHarness) {
     }
     t.check("a syscall's parameters, as C declares them", m.tables().types.params_of("openat") == Some(vec!["int dfd".into(), "char *filename".into(), "int flags".into(), "umode_t mode".into()]));
     {
-        let op = m.view(|v| v.syscalls().into_iter().find(|s| s.name == "openat")).unwrap();
+        let op = m.view(|v| v.runs().into_iter().find(|s| s.name == "openat")).unwrap();
         let oplast = op.last;
         let at = m.first_call("do_sys_openat2", op.first, oplast, None).unwrap_or(0);
         let stack = t.stack(at, None, at);

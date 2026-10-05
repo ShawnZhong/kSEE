@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use ksee_core::view::{Frame, Object, SyscallSummary};
+use ksee_core::view::{Frame, Object, RunSummary};
 use crate::machine::Machine;
 
 use crate::Outcome;
@@ -17,7 +17,7 @@ pub struct Made {
     pub id: Option<u32>,
     pub done: bool,
     pub ret: Option<i64>,
-    pub syscall: Option<SyscallSummary>,
+    pub syscall: Option<RunSummary>,
     pub var: Option<(u32, u32, Option<u32>)>,
 }
 
@@ -59,9 +59,9 @@ impl KernelHarness {
         })
     }
 
-    pub fn syscall(&self, id: u32) -> Option<SyscallSummary> {
+    pub fn syscall(&self, id: u32) -> Option<RunSummary> {
         let k = self.machine.syscall_of(id)?;
-        self.machine.view(|v| v.syscall(k))
+        self.machine.view(|v| v.run(k))
     }
 
     /// Line `text` of the program, made on `task`; a call: the kernel run until quiet.
@@ -87,7 +87,7 @@ impl KernelHarness {
     }
 
     /// Whether syscall `s` ran function `func` (on its task).
-    pub fn ran(&self, s: &Option<SyscallSummary>, func: &str) -> bool {
+    pub fn ran(&self, s: &Option<RunSummary>, func: &str) -> bool {
         s.as_ref().is_some_and(|s| s.ret.is_some() && self.machine.first_call(func, s.first, s.last, Some(s.task.addr)).is_some())
     }
 

@@ -69,10 +69,12 @@ static __always_inline void done(u32 p)
 	__atomic_store_n(&ksee_trace.pos, p, __ATOMIC_RELEASE);
 }
 
-/* The probes' records: the n values the probe put in __ksee_values (up
- * to 15: a call's seven arguments, wide ones two words, and its frame
- * base) just before, and [a, tag]; everything only (on: 1). */
-u32 __ksee_values[15];
+/* The probes' records: the n values the probe put in __ksee_values just
+ * before, and [a, tag]; everything only (on: 1). At most VALUES: a call's
+ * seven arguments, wide ones two words, and its frame base (the plugin's
+ * Values, the same). */
+#define VALUES (2 * 7 + 1)
+u32 __ksee_values[VALUES];
 
 void __ksee_put(u32 a, u32 tag, u32 n)
 {

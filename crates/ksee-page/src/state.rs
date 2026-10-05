@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use ksee_core::view::{run_to, Chart, Frame, Line, SyscallSummary};
+use ksee_core::view::{run_to, Chart, Frame, Line, RunSummary};
 
 use crate::machine;
 
@@ -37,7 +37,7 @@ impl<T> std::ops::Deref for Shared<T> {
     }
 }
 
-/// A moment: a call (an index in the syscalls), a line it ran (an index
+/// A moment: a run (an index in the runs: a syscall, or a task between them), a line it ran (an index
 /// in its lines), and the level chosen on the stack there, from the
 /// outermost (0: the chart's bottom bar; none, or past the stack's top: the
 /// innermost). A level, not a call: moving along, it stays.
@@ -56,7 +56,7 @@ pub struct Moment {
 #[derive(Clone, Copy)]
 pub struct Derived {
     pub shown: Memo<Option<Moment>>,
-    pub syscall: Memo<Option<SyscallSummary>>,
+    pub run: Memo<Option<RunSummary>>,
     pub lines: Memo<Shared<Vec<Line>>>,
     pub window: Memo<(usize, usize)>,
     pub chart: Memo<Shared<Chart>>,
@@ -75,7 +75,7 @@ fn moment_step(at: &Moment, lines: &[Line]) -> Option<f64> {
 }
 
 /// Syscall `s`'s lines (its task's).
-fn lines_of(s: &ksee_core::view::SyscallSummary) -> Vec<Line> {
+fn lines_of(s: &ksee_core::view::RunSummary) -> Vec<Line> {
     machine().view(|v| v.lines(s.first, s.last, s.task.addr))
 }
 
@@ -83,17 +83,17 @@ impl Derived {
     /// The memos (a component's hooks: the App's).
     pub fn new(ui: Ui) -> Derived {
         let shown = use_memo(move || (ui.peek)().or((ui.at)()));
-        let syscall = use_memo(move || {
+        let run = use_memo(move || {
             (ui.snapshot)();
             if !ui.up() {
                 return None;
             }
             let k = shown()?.call;
-            machine().view(|v| v.syscall(k))
+            machine().view(|v| v.run(k))
         });
         let lines = use_memo(move || {
             (ui.snapshot)();
-            Shared(Rc::new(syscall.cloned().map_or_else(Vec::new, |s| lines_of(&s))))
+            Shared(Rc::new(run.cloned().map_or_else(Vec::new, |s| lines_of(&s))))
         });
         // (The chart's: none before the kernel is up.)
         let up = move || ui.up();
@@ -128,7 +128,7 @@ impl Derived {
         });
         // (The pointer's: the moment shown, its lines `lines`.)
         let preview = use_memo(move || moment_step(&(ui.peek)()?, &lines.read()));
-        Derived { shown, syscall, lines, window, chart, line, stack, frame, cursor, preview }
+        Derived { shown, run, lines, window, chart, line, stack, frame, cursor, preview }
     }
 }
 
@@ -225,11 +225,11 @@ impl Ui {
 
     /// Syscall `k`'s lines (its task's), as the snapshot has them.
     pub fn lines_of(k: usize) -> Vec<Line> {
-        machine().view(|v| v.syscall(k)).map_or_else(Vec::new, |s| lines_of(&s))
+        machine().view(|v| v.run(k)).map_or_else(Vec::new, |s| lines_of(&s))
     }
 
-    /// Select call `k` (an index in the syscalls), the cursor at its own
-    /// code's first line (past the syscall entry's), on its innermost
+    /// Select run `k` (an index in the runs), the cursor at its own code's
+    /// first line (a syscall's: past the syscall entry's), on its innermost
     /// frame. (The window is the reader's: it moves only to keep the cursor
     /// in it, see Timeline.)
     pub fn select(self, k: usize) {
@@ -267,7 +267,7 @@ impl Ui {
     /// The moment at record `i` (in the chart: at its `step`), on frame `frame` there:
     /// the call it is in, its line there (the last at or before it).
     pub fn moment_at(d: Derived, i: usize, step: Option<usize>, frame: Option<usize>) -> Option<Moment> {
-        let (call, own, first) = machine().view(|v| (v.rec.syscall_at(i), v.line_of(i), v.rec.first_step(i)));
+        let (call, own, first) = machine().view(|v| (v.rec.run_at(i), v.line_of(i), v.rec.first_step(i)));
         let call = call?;
         // (A step: the line it is, its record's lines being its steps; a
         // write, a comparison: its own line; a block: its first line; else

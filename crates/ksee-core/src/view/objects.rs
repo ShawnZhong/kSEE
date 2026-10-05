@@ -56,14 +56,14 @@ pub struct Diff {
     pub before: String,
     pub after: String,
     pub to: Option<usize>,
-    pub runs: Vec<Run>,
+    pub runs: Vec<Streak>,
 }
 
 /// Writes of one function in a row to a member: from `before` to `after`,
 /// `writes` of them, the first at record `first`, the last at `last`, by
 /// the code at `at`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Run {
+pub struct Streak {
     pub before: String,
     pub after: String,
     pub writes: usize,
@@ -110,11 +110,11 @@ impl View<'_> {
             }
             // (A run: one function's writes in a row; one that left it as it was, not.)
             let func = |w: &Wrote| w.at.and_then(|s| self.tables.functions.get(&s.func)).map(|f| f.name.as_str());
-            let mut runs: Vec<Run> = Vec::new();
+            let mut runs: Vec<Streak> = Vec::new();
             let mut k = 0;
             for run in t.writes.chunk_by(|a, b| func(a) == func(b)) {
                 let (before, after) = (self.change(named, t, k).0, self.change(named, t, k + run.len() - 1).1);
-                runs.push(Run { before, after, writes: run.len(), first: run[0].i, last: run.last().map_or(0, |w| w.i), at: run.last().and_then(|w| w.at).map(|s| self.line_only(&s)) });
+                runs.push(Streak { before, after, writes: run.len(), first: run[0].i, last: run.last().map_or(0, |w| w.i), at: run.last().and_then(|w| w.at).map(|s| self.line_only(&s)) });
                 k += run.len();
             }
             let (a, z) = (runs[0].before.clone(), runs.last().expect("a run").after.clone());
