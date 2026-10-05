@@ -67,7 +67,7 @@ pub struct State {
     pub done: VecDeque<u32>,
     pub disk_log: Vec<Transfer>,
     /// The page's program: its runners, calls and lines.
-    pub p: Session,
+    pub session: Session,
 }
 
 /// A transfer the disk made: its request's tag, `len` bytes at `sector`
@@ -96,12 +96,12 @@ thread_local! {
 }
 
 /// Read the machine's state.
-pub fn k<T>(f: impl FnOnce(&State) -> T) -> T {
+pub fn state<T>(f: impl FnOnce(&State) -> T) -> T {
     K.with_borrow(f)
 }
 
 /// Change the machine's state.
-pub fn k_mut<T>(f: impl FnOnce(&mut State) -> T) -> T {
+pub fn state_mut<T>(f: impl FnOnce(&mut State) -> T) -> T {
     K.with_borrow_mut(f)
 }
 
@@ -131,12 +131,12 @@ impl Memory for Direct {
 
 /// The task running now (the kernel's __current_task).
 pub fn current() -> u32 {
-    Direct.read_u32(k(|k| k.current))
+    Direct.read_u32(state(|s| s.current))
 }
 
 /// The kernel's timer deadline (ns of its clock), u64::MAX if none.
 pub fn deadline() -> u64 {
-    let d = k(|k| k.deadline);
+    let d = state(|s| s.deadline);
     if d == 0 {
         return u64::MAX;
     }

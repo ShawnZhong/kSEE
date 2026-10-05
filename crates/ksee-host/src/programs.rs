@@ -62,9 +62,9 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
         }
     });
     if dead {
-        let gone = k_mut(|k| {
-            let tid = k.p.runner_of(prev);
-            tid.inspect(|&t| k.p.forget(t))
+        let gone = state_mut(|s| {
+            let tid = s.session.runner_of(prev);
+            tid.inspect(|&t| s.session.forget(t))
         });
         if let Some(tid) = gone {
             finish(tid, None);
@@ -152,7 +152,7 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
         // runs. A runner again only if it says so: ksee.ready.)
         let tid = tid();
         finish(tid, None);
-        k_mut(|k| k.p.forget(tid));
+        state_mut(|s| s.session.forget(tid));
         Ok(start)
     };
     start().unwrap_or_else(|e| {
@@ -166,10 +166,10 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
 /// Finish runner `tid`'s call, if it has one (for Machine::quiet); the
 /// page waits no more once none is left.
 pub(crate) fn finish(tid: u32, ret: Option<i64>) {
-    let done = k_mut(|k| {
-        let done = k.p.finish(tid, ret);
-        if done && k.p.all_done() {
-            k.waiting = None;
+    let done = state_mut(|s| {
+        let done = s.session.finish(tid, ret);
+        if done && s.session.all_done() {
+            s.waiting = None;
         }
         done
     });
@@ -183,7 +183,7 @@ pub(crate) fn finish(tid: u32, ret: Option<i64>) {
 /// meanwhile with it), else 2 (stores only: memory stays exact between
 /// recordings; the runner's way back to its wait, idle, are not shown).
 pub(crate) fn on_off() {
-    let on = k(|k| k.p.recording());
+    let on = state(|s| s.session.recording());
     crate::imports::record(if on { 1 } else { 2 });
 }
 
@@ -198,11 +198,11 @@ fn runner_imports() -> Object {
     let ksee = Object::new();
     js::set(&ksee, "ready", Closure::<dyn FnMut(u32, u32, u32, u32)>::new(|req: u32, heap: u32, size: u32, main: u32| {
         let (tid, task) = (tid(), current());
-        k_mut(|k| {
-            if k.p.ready(tid, task, req, heap, size, main != 0) {
+        state_mut(|s| {
+            if s.session.ready(tid, task, req, heap, size, main != 0) {
                 // (The boot's over: let what it left for later run now, while
                 // nothing is recorded.)
-                k.waiting = Some(k.clock);
+                s.waiting = Some(s.clock);
             }
         });
     }).into_js_value());
@@ -210,14 +210,14 @@ fn runner_imports() -> Object {
         let tid = tid();
         // (Its recording starts here: the records' id, which counts the
         // words ever written: see trace::ring.)
-        let begun = k_mut(|k| k.p.begin(tid, Direct.read_u32(k.trace)));
+        let begun = state_mut(|s| s.session.begin(tid, Direct.read_u32(s.trace)));
         if begun {
             on_off();
         }
     }).into_js_value());
     js::set(&ksee, "end", Closure::<dyn FnMut(i64)>::new(|ret: i64| {
         let tid = tid();
-        if k(|k| k.p.begun(tid)) {
+        if state(|s| s.session.begun(tid)) {
             finish(tid, Some(ret));
         }
     }).into_js_value());

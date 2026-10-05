@@ -59,7 +59,7 @@ async fn run_test(name: String) -> Result<String, JsValue> {
             "kernel" => ksee_host::test::kernel(crate::boot().await?).await,
             "lessons" => lessons::run(crate::boot().await?).await,
             "read" => ui::read().await,
-            "history" => ui::history().await,
+            "url" => ui::url().await,
             "tasks" => ui::tasks().await,
             "disk" => ui::disk().await,
             "responsive" => ui::responsive().await,

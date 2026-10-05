@@ -13,7 +13,7 @@ pub use crate::js::sleep;
 
 /// A call a line made, as the kernel left it once quiet: its id, whether it
 /// finished (not: it blocked) and its result, its syscall summary.
-pub struct Made {
+pub struct LineResult {
     pub id: Option<u32>,
     pub done: bool,
     pub ret: Option<i64>,
@@ -65,24 +65,24 @@ impl KernelHarness {
     }
 
     /// Line `text` of the program, made on `task`; a call: the kernel run until quiet.
-    pub async fn line_on(&mut self, task: Option<&str>, text: &str) -> Made {
+    pub async fn line_on(&mut self, task: Option<&str>, text: &str) -> LineResult {
         let made = match self.machine.make(task, text) {
             Ok(m) => m,
             Err(e) => {
                 self.check(format!("{text}: {e}"), false);
-                return Made { id: None, done: false, ret: None, syscall: None, var: None };
+                return LineResult { id: None, done: false, ret: None, syscall: None, var: None };
             }
         };
         let id = match made {
             crate::machine::Made::Call(id) => id,
-            crate::machine::Made::Decl(v) => return Made { id: None, done: false, ret: None, syscall: None, var: Some((v.ty, v.addr, v.count)) },
+            crate::machine::Made::Decl(v) => return LineResult { id: None, done: false, ret: None, syscall: None, var: Some((v.ty, v.addr, v.count)) },
         };
         self.quiet().await;
         let f = self.finished(id);
-        Made { id: Some(id), done: f.is_some(), ret: f.flatten(), syscall: self.syscall(id), var: None }
+        LineResult { id: Some(id), done: f.is_some(), ret: f.flatten(), syscall: self.syscall(id), var: None }
     }
 
-    pub async fn line(&mut self, text: &str) -> Made {
+    pub async fn line(&mut self, text: &str) -> LineResult {
         self.line_on(None, text).await
     }
 

@@ -17,7 +17,7 @@ use crate::state::{Derived, Moment, Tab, Ui};
 /// lines, into its task's run after it (or before): its next syscall, or
 /// what it did between.
 pub fn walk(ui: Ui, dir: isize, over: bool) {
-    let Some(at) = ui.at.peek().clone() else { return };
+    let Some(at) = ui.cursor.peek().clone() else { return };
     let k = at.run;
     let lines = Ui::run_lines(k);
     if let Some(j) = step(&lines, at.line, dir, over) {
@@ -42,7 +42,7 @@ pub fn walk(ui: Ui, dir: isize, over: bool) {
 /// The frame chosen on the cursor's stack (`d.stack`), `dir` up it (-1:
 /// the callee) or down (1: the caller).
 pub fn frame(ui: Ui, d: Derived, dir: isize) {
-    let Some(at) = ui.at.peek().clone() else { return };
+    let Some(at) = ui.cursor.peek().clone() else { return };
     let frames = d.stack.peek();
     let k = d.frame.peek().saturating_add_signed(dir).min(frames.len().saturating_sub(1));
     ui.commit(Some(Moment { level: Some(frames.len().saturating_sub(1 + k)), ..at }));
@@ -111,7 +111,7 @@ pub fn listen(ui: Ui) {
                     return;
                 }
             }
-            ui.set_preview(None);
+            ui.set_hover(None);
             let over = e.shift_key();
             // (← →: once the kernel is up.)
             let up = matches!(*ui.kernel.peek(), Some(Ok(())));
@@ -169,13 +169,13 @@ pub fn Stack() -> Element {
                         "{t.named()}" }
                 }
             }
-            table { class: "objs",
+            table { class: "fields",
                 for (k , f) in frames.iter().cloned().enumerate() {
                     tbody { class: if k == chosen { "on" } else { "" },
                     tr { class: if k == chosen { "frame on" } else { "frame" }, onclick: {
                         let level = frames.len() - 1 - k;
                         move |_| {
-                            let at = ui.at.peek().clone();
+                            let at = ui.cursor.peek().clone();
                             if let Some(at) = at { ui.commit(Some(Moment { level: Some(level), ..at })) }
                         }
                     },

@@ -60,7 +60,7 @@ pub struct Lesson {
 /// call selected: the first the lesson's text links to (its subject), else
 /// the last.
 /// (A run begun again cancels this one: it stops at its next await.)
-pub(crate) async fn run(mut ui: Ui, lines: Vec<Step>) {
+pub(crate) async fn make_program(mut ui: Ui, lines: Vec<Step>) {
     let m = machine();
     if m.restart().await.is_err() {
         return;

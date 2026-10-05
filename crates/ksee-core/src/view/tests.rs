@@ -319,11 +319,11 @@ fn a_members_changes_are_a_run_a_function() {
     let v = View { tables: &t, rec: &rec, now: &m };
     let nodes = v.objects(0, 4);
     let d = &nodes[0].changes[0];
-    let runs: Vec<_> = d.runs.iter().map(|r| (r.at.as_ref().map(|l| l.func.clone()), r.before.clone(), r.after.clone(), r.last)).collect();
+    let streaks: Vec<_> = d.streaks.iter().map(|r| (r.at.as_ref().map(|l| l.func.clone()), r.before.clone(), r.after.clone(), r.last)).collect();
     assert_eq!((named(&nodes[0].what, &nodes[0].within).as_str(), d.member.as_str(), d.before.as_str(), d.after.as_str()), ("p in f", "b", "1", "1"));
     // (Left as it was, in the end: an object of the "same" group.)
     assert_eq!(nodes[0].group, Group::Same);
-    assert_eq!(runs, [(Some("f".into()), "1".into(), "2".into(), 1), (Some("g".into()), "2".into(), "1".into(), 3)]);
+    assert_eq!(streaks, [(Some("f".into()), "1".into(), "2".into(), 1), (Some("g".into()), "2".into(), "1".into(), 3)]);
 }
 
 #[test]
@@ -422,7 +422,7 @@ fn two_inlined_frames_of_one_call_are_bars_of_their_own() {
     let files: Vec<_> = chart.cols[2].frames.iter().map(|&b| chart.bars[b as usize].file.clone().unwrap_or_default()).collect();
     assert_eq!(files, ["f.c", "h.c", "g.c"]);
     // (Each bar runs alone: no two share an identity.)
-    assert_eq!(chart.bar_runs(), alloc::vec![(0, 0, 3, 0), (1, 1, 3, 1), (2, 2, 3, 2)]);
+    assert_eq!(chart.bar_spans(), alloc::vec![(0, 0, 3, 0), (1, 1, 3, 1), (2, 2, 3, 2)]);
 }
 
 #[test]
@@ -534,10 +534,10 @@ fn a_chart_folds_into_runs() {
     };
     // (Each row's runs: row 0 has bar 0 over columns 0..2, then bar 1 at
     // column 2; row 1 has bar 1 at column 1 only.)
-    assert_eq!(chart.bar_runs(), alloc::vec![(0, 0, 2, 0), (0, 2, 3, 1), (1, 1, 2, 1)]);
-    assert_eq!(chart.task_runs(), alloc::vec![(0, 2, 7), (2, 3, 8)]);
+    assert_eq!(chart.bar_spans(), alloc::vec![(0, 0, 2, 0), (0, 2, 3, 1), (1, 1, 2, 1)]);
+    assert_eq!(chart.task_spans(), alloc::vec![(0, 2, 7), (2, 3, 8)]);
     // (No columns, no runs.)
-    assert!(Chart::default().bar_runs().is_empty() && Chart::default().task_runs().is_empty());
+    assert!(Chart::default().bar_spans().is_empty() && Chart::default().task_spans().is_empty());
 }
 
 #[test]

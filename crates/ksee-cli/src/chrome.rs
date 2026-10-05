@@ -12,13 +12,13 @@ use crate::or_fail;
 
 /// The tests, each the page it opens and the screen it has: the URL's
 /// lesson page and hash (`test=NAME` runs it, and it POSTs `ok` or `fail`
-/// and its log to /result; history's program, changed, raw: its JSON has no
+/// and its log to /result; url's program, changed, raw: its JSON has no
 /// & or %). The kernel's suite is ksee-host's; the rest, ksee-page's.
 pub const TESTS: &[(&str, &str, (u32, u32))] = &[
     ("kernel", "#test=kernel", SCREEN),
     ("lessons", "#test=lessons", SCREEN),
     ("read", "read.html#test=read", SCREEN),
-    ("history", r#"write.html#p=["int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)","write(fd, \"changed;\\n\", 9)"]&test=history"#, SCREEN),
+    ("url", r#"write.html#p=["int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)","write(fd, \"changed;\\n\", 9)"]&test=url"#, SCREEN),
     ("tasks", "pipe.html#test=tasks", SCREEN),
     ("disk", "durable.html#test=disk", SCREEN),
     ("responsive", "read.html#test=responsive", (390, 844)),

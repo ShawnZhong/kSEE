@@ -32,7 +32,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         let obj = nodes.iter().find(|n| n.addr == open.addr && n.id == open.ty);
         let d = obj.and_then(|o| o.changes.iter().find(|x| x.member == "f_pos"));
         t.check(format!("the read wrote its file: f_pos {:?} → {:?}", d.map(|d| &d.before), d.map(|d| &d.after)),
-                d.is_some_and(|d| d.before == "0" && d.after == "26" && d.runs.len() == 1 && d.runs[0].at.as_ref().is_some_and(|l| l.func == "ksys_read")));
+                d.is_some_and(|d| d.before == "0" && d.after == "26" && d.streaks.len() == 1 && d.streaks[0].at.as_ref().is_some_and(|l| l.func == "ksys_read")));
         let notes = m.view(|v| v.notes(read.first, rlast, "fs/read_write.c", rlast));
         t.check("the read's notes in fs/read_write.c: the kiocb's ki_pos, named as the code names it",
                 notes.iter().any(|n| n.short.starts_with("ki_pos = ") && (n.full.contains("kiocb->ki_pos in ") || n.full.contains("kiocb.ki_pos in "))));
@@ -117,7 +117,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         let span = |s: &ksee_core::view::RunSummary| m.disk().into_iter().filter(|x| x.asked.is_some_and(|a| a >= s.first && a <= s.last)).collect::<Vec<_>>();
         let reads = span(&r);
         t.check(format!("a first read on ext4 reads the disk ({} transfers)", reads.len()),
-                !reads.is_empty() && reads.iter().all(|x| !x.t.write && x.asked <= x.done));
+                !reads.is_empty() && reads.iter().all(|x| !x.transfer.write && x.asked <= x.done));
         // (Each by the task that handed it over: the program's reads, the program's.)
         t.check(format!("a read's transfers, by the program ({:?})", reads.iter().map(|x| &x.by).collect::<Vec<_>>()),
                 reads.iter().all(|x| x.by.starts_with("prog(")));
@@ -126,7 +126,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         let writes = span(&f);
         let by: Vec<&str> = writes.iter().map(|x| x.by.as_str()).collect();
         t.check(format!("an fsync writes the disk, changing bytes, jbd2's journal among them ({by:?})"),
-                writes.iter().any(|x| x.t.write && x.t.before != x.t.after) && by.iter().any(|b| b.starts_with("jbd2")));
+                writes.iter().any(|x| x.transfer.write && x.transfer.before != x.transfer.after) && by.iter().any(|b| b.starts_with("jbd2")));
         t.line("close(dfd)").await;
     }
 }

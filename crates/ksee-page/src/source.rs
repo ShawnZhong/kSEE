@@ -296,7 +296,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
             // (Just under the pointer: it moves into the tip at once, and
             // the tip, open, stays.)
             div { class: "tip open", style: "left: {t.x - 8.0}px; top: {t.y + 6.0}px",
-                table { class: "objs",
+                table { class: "fields",
                     crate::stack::Value { o: t.o.clone(), path: format!("tip.{}", t.o.name), depth: 0, at }
                 }
             }

@@ -138,7 +138,7 @@ fn Tasks() -> Element {
     }
     visit(&list, &up, None, 0, &mut order);
     rsx! {
-        table { class: "objs",
+        table { class: "fields",
             for (k , depth) in order {
                 {
                     let t = &list[k];
@@ -209,11 +209,11 @@ fn Disk() -> Element {
     let cursor = d.line.cloned().map_or(0, |l| l.at);
     let head = format!("{} transfers, the disk's whole history; at the cursor, gray: not handed over yet", all.len());
     rsx! {
-        div { class: "objects disk",
-            div { class: "ohead dim", "{head}" }
+        div { class: "listing disk",
+            div { class: "listhead dim", "{head}" }
             for x in all.iter().cloned() {
                 {
-                    let t = &x.t;
+                    let t = &x.transfer;
                     // (Not in the recording, in its task: made before the cursor, if
                     // before the recording; else said, not gone to.)
                     let (a, z) = (x.asked.unwrap_or(0), x.done.unwrap_or(0));

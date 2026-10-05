@@ -120,12 +120,12 @@ fn App() -> Element {
     use_effect(move || {
         let program = (ui.program)();
         let kernel = (ui.kernel)();
-        ui.begin_run();
+        ui.begin_program();
         if let Some(task) = running.write().take() {
             task.cancel();
         }
         if matches!(kernel, Some(Ok(()))) {
-            running.set(Some(spawn(lesson::run(ui, program))));
+            running.set(Some(spawn(lesson::make_program(ui, program))));
         }
     });
     let derived = state::Derived::new(ui);
@@ -145,7 +145,7 @@ fn App() -> Element {
             }
             layout::Handle { split: layout::Split::Left }
             section { class: "work",
-                if ui.at.read().is_some() {
+                if ui.cursor.read().is_some() {
                     chart::Timeline {}
                     layout::Handle { split: layout::Split::Chart }
                     div { class: "below",

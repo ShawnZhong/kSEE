@@ -108,16 +108,16 @@ pub(crate) fn ObjectsView(
     let mut sections: Vec<(Option<(&str, &str, String)>, Vec<usize>)> = vec![(None, own)];
     for (task, list) in others {
         let said = format!("By {task}, while it ran: {}: {}", count(list.len()), names(&list));
-        sections.push((Some(("ohead", "a task that ran while it did (one it woke, or waited for), and first wrote these", said)), list));
+        sections.push((Some(("listhead", "a task that ran while it did (one it woke, or waited for), and first wrote these", said)), list));
     }
     if !same.is_empty() {
         let said = format!("Left as it was, changed and changed back: {}", names(&same));
-        sections.push((Some(("ohead dim", "changed, then changed back by the end (a lock taken and released, a count taken and dropped)", said)), same));
+        sections.push((Some(("listhead dim", "changed, then changed back by the end (a lock taken and released, a count taken and dropped)", said)), same));
     }
 
     rsx! {
-        div { class: "objects",
-            div { class: "ohead", "{head}" }
+        div { class: "listing",
+            div { class: "listhead", "{head}" }
             for (h , list) in sections {
                 if let Some((class, title, said)) = h {
                     div { class, title, "{said}" }
@@ -159,7 +159,7 @@ fn ObjectBox(
     };
     let mut rows = Vec::new();
     for change in &node.changes {
-        for (q, run) in change.runs.iter().enumerate() {
+        for (q, run) in change.streaks.iter().enumerate() {
             let class = if cursor.is_some_and(|i| run.first > i) {
                 "later"
             } else if cursor.is_some_and(|i| run.first <= i && i <= run.last) {
@@ -169,7 +169,7 @@ fn ObjectBox(
             } else {
                 ""
             };
-            let to = (q + 1 == change.runs.len()).then_some(change.to).flatten();
+            let to = (q + 1 == change.streaks.len()).then_some(change.to).flatten();
             let title = format!(
                 "{}{}: click to go there",
                 if run.writes == 1 {
@@ -215,7 +215,7 @@ fn ObjectBox(
                         "  {definition.file}:{definition.line}" }
                 }
             }
-            table { class: "objs",
+            table { class: "fields",
                 for (class, title, member, before, after, to, function, last) in rows {
                     tr { class, title, onclick: move |_| on_record.call(last),
                         td { class: "fname", "{member}" }

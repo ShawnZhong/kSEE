@@ -6,7 +6,7 @@ use ksee_core::view::View;
 use ksee_core::Memory;
 
 use crate::machine::Machine;
-use crate::state::{k, tables, Direct, Transfer};
+use crate::state::{state, tables, Direct, Transfer};
 
 /// A transfer the disk made (Transfer): the records it was handed over and
 /// made at, if the recording has those moments in the task that handed it
@@ -14,7 +14,7 @@ use crate::state::{k, tables, Direct, Transfer};
 /// and that task, named.
 #[derive(Clone, Debug)]
 pub struct DiskTransfer {
-    pub t: Transfer,
+    pub transfer: Transfer,
     pub asked: Option<usize>,
     pub done: Option<usize>,
     pub by: String,
@@ -43,7 +43,7 @@ impl Machine {
     /// Call `id`'s run (see Machine::make), an index in the view's runs:
     /// the first syscall of its number its runner made since it was asked, if the snapshot has it.
     pub fn run_of_call_id(&self, id: u32) -> Option<usize> {
-        let (task, nr, from) = k(|k| k.p.calls.get(&id).map(|c| (c.task, c.nr, c.from)))?;
+        let (task, nr, from) = state(|s| s.session.calls.get(&id).map(|c| (c.task, c.nr, c.from)))?;
         let rec = self.rec.borrow();
         rec.runs.iter().position(|s| s.nr == Some(nr) && s.task == task && rec.ids[s.first] >= from)
     }
@@ -64,12 +64,12 @@ impl Machine {
             // the recording has it: past its first record, and before its
             // end.)
             let record = |word: u32| Some(ids.partition_point(|&id| id < word)).filter(|&i| i < ids.len() && ids.first().is_some_and(|&f| word > f));
-            k(|k| k.disk_log.iter().map(|t| {
+            state(|s| s.disk_log.iter().map(|t| {
                 // (Handed over in its task, as recorded: then a moment to go to.)
                 let asked = record(t.asked).filter(|&i| tasks[i] == t.task);
                 let done = asked.and(record(t.done));
                 let by = v.task(t.task, asked.unwrap_or(v.rec.last())).named();
-                DiskTransfer { t: t.clone(), asked, done, by }
+                DiskTransfer { transfer: t.clone(), asked, done, by }
             }).collect())
         })
     }

@@ -145,10 +145,10 @@ pipe read or futex wait can be blocked pending a later lesson step.
 
 `Machine::snapshot` decodes the current trace ring into a new `Recording`. The
 snapshot owns decoded records, stable record IDs, call arguments, inferred task
-identity, calls, syscalls, line-step indexes, and lazy store history. The live
+identity, calls, runs, line-step indexes, and lazy store history. The live
 kernel and trace ring can continue after that snapshot is taken.
 
-`Machine::syscall_of` reconnects a runtime request ID to its syscall in the
+`Machine::run_of_call_id` reconnects a runtime request ID to its syscall in the
 latest snapshot. Stable trace record IDs make that lookup resilient when ring
 indexes move as older data is overwritten.
 

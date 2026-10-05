@@ -283,7 +283,7 @@ impl Tables {
     /// no code of its own line's: the helper's lines run in its place; the
     /// debug info's inline sites say where). What coverage counts, and what
     /// "run to a line" looks for.
-    pub fn runs(&self, func: u32, n: u32) -> impl Iterator<Item = Loc> + '_ {
+    pub fn block_lines(&self, func: u32, n: u32) -> impl Iterator<Item = Loc> + '_ {
         self.block(func, n).into_iter().flat_map(|b| &b.steps)
             .flat_map(move |s| core::iter::once(s.loc).chain(self.chain(s.inlined).iter().map(|&(_, site)| site)))
     }

@@ -39,12 +39,12 @@ pub struct Chart {
 }
 
 impl Chart {
-    /// Each row's runs: a bar over the columns it is on, in a row, as the
+    /// Each row's spans: a bar over the columns it is on, in a row, as the
     /// page draws it: (depth, first column, one past the last, bar).
-    pub fn bar_runs(&self) -> Vec<(u32, usize, usize, u32)> {
+    pub fn bar_spans(&self) -> Vec<(u32, usize, usize, u32)> {
         let n = self.cols.len();
         let depth = self.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
-        let mut runs = Vec::new();
+        let mut spans = Vec::new();
         for dd in 0..depth {
             let mut k = 0;
             while k < n {
@@ -53,24 +53,24 @@ impl Chart {
                 while self.cols.get(e).and_then(|c| c.frames.get(dd)) == Some(&bar) {
                     e += 1;
                 }
-                runs.push((dd as u32, k, e, bar));
+                spans.push((dd as u32, k, e, bar));
                 k = e;
             }
         }
-        runs
+        spans
     }
 
-    /// Which task ran when: a run of columns each, as the page draws it
+    /// Which task ran when: a span of columns each, as the page draws it
     /// under the chart: (first column, one past the last, task).
-    pub fn task_runs(&self) -> Vec<(usize, usize, u32)> {
-        let mut runs: Vec<(usize, usize, u32)> = Vec::new();
+    pub fn task_spans(&self) -> Vec<(usize, usize, u32)> {
+        let mut spans: Vec<(usize, usize, u32)> = Vec::new();
         for (k, c) in self.cols.iter().enumerate() {
-            match runs.last_mut() {
+            match spans.last_mut() {
                 Some(r) if r.2 == c.task => r.1 = k + 1,
-                _ => runs.push((k, k + 1, c.task)),
+                _ => spans.push((k, k + 1, c.task)),
             }
         }
-        runs
+        spans
     }
 }
 

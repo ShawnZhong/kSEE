@@ -49,14 +49,14 @@ pub enum Group {
 /// A member a span of records changed: from `before` (as the span began)
 /// to `after` (as it ends; the same: left as it was, a count taken and
 /// dropped), a pointer into another node as it ends: `to`, its index; and
-/// how, in `runs`: a run a function writing it in turn, in order.
+/// how, in `streaks`: a function writing it in turn, in order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diff {
     pub member: String,
     pub before: String,
     pub after: String,
     pub to: Option<usize>,
-    pub runs: Vec<Streak>,
+    pub streaks: Vec<Streak>,
 }
 
 /// Writes of one function in a row to a member: from `before` to `after`,
@@ -108,18 +108,18 @@ impl View<'_> {
             if !matches!(r.kind, RegionKind::Object | RegionKind::Task | RegionKind::Global) || r.size == 0 || r.life.is_some() {
                 continue;
             }
-            // (A run: one function's writes in a row; one that left it as it was, not.)
+            // (A streak: one function's writes in a row; one that left it as it was, not.)
             let func = |w: &Wrote| w.at.and_then(|s| self.tables.functions.get(&s.func)).map(|f| f.name.as_str());
-            let mut runs: Vec<Streak> = Vec::new();
+            let mut streaks: Vec<Streak> = Vec::new();
             let mut k = 0;
             for run in t.writes.chunk_by(|a, b| func(a) == func(b)) {
                 let (before, after) = (self.change(named, t, k).0, self.change(named, t, k + run.len() - 1).1);
-                runs.push(Streak { before, after, writes: run.len(), first: run[0].i, last: run.last().map_or(0, |w| w.i), at: run.last().and_then(|w| w.at).map(|s| self.line_only(&s)) });
+                streaks.push(Streak { before, after, writes: run.len(), first: run[0].i, last: run.last().map_or(0, |w| w.i), at: run.last().and_then(|w| w.at).map(|s| self.line_only(&s)) });
                 k += run.len();
             }
-            let (a, z) = (runs[0].before.clone(), runs.last().expect("a run").after.clone());
-            runs.retain(|r| r.before != r.after);
-            if runs.is_empty() {
+            let (a, z) = (streaks[0].before.clone(), streaks.last().expect("a streak").after.clone());
+            streaks.retain(|r| r.before != r.after);
+            if streaks.is_empty() {
                 continue;
             }
             let k = match nodes.iter().position(|(n, _)| n.addr == r.addr && n.id == r.ty) {
@@ -138,7 +138,7 @@ impl View<'_> {
             };
             let (n, points) = &mut nodes[k];
             points.push(matches!(types.get(types.resolve(ty)).kind, Kind::Pointer(_)).then(|| mem.read_u32(n.addr.wrapping_add(off))));
-            n.changes.push(Diff { member: t.member.clone(), before: a, after: z, to: None, runs });
+            n.changes.push(Diff { member: t.member.clone(), before: a, after: z, to: None, streaks });
         }
         for (n, points) in &mut nodes {
             // (Lasting, but every member as it was: its changes undone.)

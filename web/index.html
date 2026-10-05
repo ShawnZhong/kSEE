@@ -123,7 +123,7 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .error { color: var(--miss); font-size: 12px; margin-top: 2px; }
 
 /* The timeline: the overview, the stack chart, the task strip, the transport */
-.history { border-bottom: 1px solid var(--line); background: var(--panel); padding: 4px 12px; flex: none; }
+.timeline { border-bottom: 1px solid var(--line); background: var(--panel); padding: 4px 12px; flex: none; }
 .overview { position: relative; height: 18px; cursor: pointer; }
 /* (A click is the overview's: where on it, not on what it shows.) */
 .overview > * { pointer-events: none; }
@@ -131,12 +131,12 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .overview .start { position: absolute; bottom: 0; height: 4px; width: 1px; background: var(--accent); }
 .overview .win { position: absolute; top: 1px; bottom: 1px; border: 1.5px solid var(--accent); }
 .overview .at { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--fg); }
-.flamehead { display: flex; gap: 12px; align-items: center; font-size: 11.5px; padding: 4px 0 2px; white-space: nowrap; }
+.charthead { display: flex; gap: 12px; align-items: center; font-size: 11.5px; padding: 4px 0 2px; white-space: nowrap; }
 .find { font-size: 11px; width: 12em; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--fg); }
 .find:focus { outline: none; border-color: var(--accent); }
 .legend { margin-left: auto; display: flex; gap: 8px; color: var(--dim); overflow: hidden; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
-.flamescroll { position: relative; height: var(--chart); overflow: hidden auto; overscroll-behavior: contain; }
+.chartscroll { position: relative; height: var(--chart); overflow: hidden auto; overscroll-behavior: contain; }
 .chart { position: relative; cursor: crosshair; user-select: none; touch-action: none; }
 .timeline-canvas { display: block; pointer-events: none; }
 .transport { display: flex; gap: 4px; align-items: center; padding-top: 4px; font-size: 11.5px; }
@@ -182,15 +182,15 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 .pane { overflow: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* (The console kept at its end as it grows, unless scrolled back.) */
 .pane:has(> .console) { flex-direction: column-reverse; }
-table.objs { border-collapse: collapse; width: max-content; min-width: 100%; font-family: var(--mono); font-size: 12px; }
-table.objs td { padding: 1px 8px; white-space: nowrap; }
-table.objs tr:hover { background: var(--sel); }
-table.objs td.fval { color: var(--accent); }
-table.objs td.ftype { color: var(--dim); }
-table.objs tr.none td { color: var(--dim); }
-table.objs tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); cursor: pointer; }
-table.objs tr.frame.on td { background: var(--sel); }
-table.objs tr.frame a { font-weight: 600; }
+table.fields { border-collapse: collapse; width: max-content; min-width: 100%; font-family: var(--mono); font-size: 12px; }
+table.fields td { padding: 1px 8px; white-space: nowrap; }
+table.fields tr:hover { background: var(--sel); }
+table.fields td.fval { color: var(--accent); }
+table.fields td.ftype { color: var(--dim); }
+table.fields tr.none td { color: var(--dim); }
+table.fields tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); cursor: pointer; }
+table.fields tr.frame.on td { background: var(--sel); }
+table.fields tr.frame a { font-weight: 600; }
 /* (From the bottom, as the chart stacks calls, the task under them: reversed,
    its scroll kept from the bottom, so a frame added above, a callee as the
    cursor moves, moves nothing below it.) */
@@ -198,10 +198,10 @@ table.objs tr.frame a { font-weight: 600; }
 .current { position: sticky; bottom: 0; padding: 6px 8px; border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; }
 .tw { color: var(--dim); display: inline-block; width: 1.2em; }
 tr.opens { cursor: pointer; }
-table.objs tr.later { opacity: .45; }
+table.fields tr.later { opacity: .45; }
 /* The Objects: a box per object, a row a run of writes (the moment's marked, those after it gray) */
-.objects { padding: 0 10px 12px; }
-.ohead { padding: 6px 2px 2px; font-size: 11.5px; }
+.listing { padding: 0 10px 12px; }
+.listhead { padding: 6px 2px 2px; font-size: 11.5px; }
 .disk .xfer { padding: 4px 6px; border-left: 3px solid transparent; font-size: 12px; }
 .disk .xfer.on { border-left-color: var(--accent); background: var(--sel); }
 .disk .xfer.later { opacity: .45; }

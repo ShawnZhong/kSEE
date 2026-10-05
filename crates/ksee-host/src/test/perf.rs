@@ -47,7 +47,7 @@ pub(super) fn views(t: &mut KernelHarness) -> String {
     let mid = (s.first + s.last) / 2;
     let file = m.view(|v| v.call_stack(mid, None, 0, mid).first().and_then(|f| f.file.clone())).unwrap_or_default();
     let chart = ms(3, || { m.view(|v| v.chart(0, steps.saturating_sub(1), 1200)); });
-    let syscalls = ms(3, || { m.view(|v| v.runs()); });
+    let runs = ms(3, || { m.view(|v| v.runs()); });
     let lines = ms(3, || { m.view(|v| v.lines(s.first, s.last, s.task.addr)); });
     let stack = ms(3, || { m.view(|v| v.call_stack(mid, None, 0, mid)); });
     let objects = ms(3, || { m.view(|v| v.objects(s.first, s.last)); });
@@ -64,6 +64,6 @@ pub(super) fn views(t: &mut KernelHarness) -> String {
         (n, ms(3, || { m.view(|v| v.call_stack(i, None, 0, i)); }))
     });
     format!("{mix}; {records} records, {steps} steps, {calls} runs; the largest, {} records: snapshot {snapshot:.1} ms, \
-             chart {chart:.1}, syscalls {syscalls:.1}, its lines {lines:.1}, a stack {stack:.1}, its objects {objects:.1}, \
+             chart {chart:.1}, runs {runs:.1}, its lines {lines:.1}, a stack {stack:.1}, its objects {objects:.1}, \
              its stores named {named:.1}, a file's notes {notes:.1} and coverage {coverage:.1} ({file}); at vma_iter_prealloc, a stack {deep:?}", s.last - s.first + 1)
 }

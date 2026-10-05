@@ -167,7 +167,7 @@ workspace's default members (a bare `cargo test`) are the native crates.
    origins, tasks, and timings; then the lessons suite, every lesson and try.
 4. With `--ui`, it also runs the page's suites through the DOM: read (the
    main one, in named phases: made, links and steps, timeline, tip, window,
-   editor, panels, program), history (a changed program from the URL), tasks
+   editor, panels, program), url (a changed program from the URL), tasks
    (the pipe lesson's task columns, the idle task clicked into), disk (the
    durable lesson's fsync in the Disk tab) and responsive (a phone). Test
    names can also be given directly for focused runs, such as

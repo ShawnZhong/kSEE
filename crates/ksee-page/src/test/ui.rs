@@ -452,7 +452,7 @@ async fn program() -> Result<(), String> {
 
 /// The page opened with a program changed (the URL's p=): its lines made,
 /// said to be a try, and the lesson's own program a click away.
-pub(super) async fn history() -> Check {
+pub(super) async fn url() -> Check {
     wait(
         || done(2),
         300,
@@ -522,7 +522,7 @@ pub(super) async fn tasks() -> Check {
     let b = canvas.get_bounding_client_rect();
     mouse(&one(".chart").ok_or("no chart")?, "click", b.left() + x, b.top() + y, false);
     settle().await;
-    let title = one(".flamehead .dim").map(|t| text(&t)).unwrap_or_default();
+    let title = one(".charthead .dim").map(|t| text(&t)).unwrap_or_default();
     check(title.contains("swapper"), "a click on the idle task's bar: the cursor in its run", (&title, place()))?;
     Ok(format!("{changed:?} {strip:?}; {title}"))
 }
