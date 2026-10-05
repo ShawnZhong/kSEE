@@ -1,4 +1,5 @@
-//! Target-neutral rendering for the objects changed by a recorded call.
+//! The Objects tab: the objects the run selected changed (View::objects),
+//! each a table of its fields, under the task that changed it.
 
 use std::collections::HashMap;
 use std::rc::Rc;
