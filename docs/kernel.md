@@ -152,7 +152,7 @@ wakes it.
 
 The disk, `/dev/wda`, is the host's: its blocks are an ext4 image
 (`disk.img`, made by `mkfs.ext4` at build time; each boot starts from it),
-and kernel/disk.c drives it as a disk controller is driven. Its blk-mq
+and drivers/disk.c drives it as a disk controller is driven. Its blk-mq
 `queue_rq` hands the host a request's segments with the request's tag (as a
 controller is handed commands), and returns: the task that wants the blocks
 sleeps (another runs, or the CPU idles). The host makes the transfers when
@@ -167,7 +167,7 @@ comes with files for the examples to start from (`mkfs.ext4 -d user/disk`):
 
 ## Console
 
-kernel/console.c: one console, printk's from `setup_arch` on: output only,
+drivers/console.c: one console, printk's from `setup_arch` on: output only,
 to the host, synchronously (`console_write`). `/dev/console`, the
 programs' stdin, stdout and stderr, is a plain character device on it: a
 write goes straight to the host, a read is at its end. There is no tty

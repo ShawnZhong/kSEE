@@ -59,7 +59,7 @@ pub struct State {
     pub console_out: Vec<u8>,
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
     pub doorbell: VecDeque<u32>,
-    /// The disk (the kernel's disk.c): its blocks; the transfers handed to
+    /// The disk (arch/wasm/drivers/disk.c): its blocks; the transfers handed to
     /// it and not yet made, the tags of the
     /// requests done; and every transfer made (the Disk tab's).
     pub disk: Vec<u8>,

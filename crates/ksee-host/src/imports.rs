@@ -61,7 +61,7 @@ pub extern "C" fn time_ns() -> u64 {
     })
 }
 
-// ---- The disk (the kernel's disk.c) ------------------------------------------
+// ---- The disk (arch/wasm/drivers/disk.c) ------------------------------------------
 
 #[unsafe(no_mangle)]
 pub extern "C" fn disk_sectors() -> u64 {

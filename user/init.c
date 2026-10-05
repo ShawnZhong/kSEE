@@ -1,5 +1,5 @@
 // /init: the first process. It mounts the ext4 disk (/dev/wda, the host's
-// blocks: the kernel's disk.c) on /mnt, then runs the page's
+// blocks: arch/wasm/drivers/disk.c) on /mnt, then runs the page's
 // program, /bin/prog, as a child (a vfork: no MMU, no fork), and again
 // when it exits. Plain C, with no C library: its syscalls as syscall.h
 // makes them.

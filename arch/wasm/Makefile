@@ -23,7 +23,7 @@ LDFLAGS_vmlinux += --global-base=$(shell printf %d $(CONFIG_WASM_HOST_MEMORY)) \
 		   --export=wasm_timer_deadline --export=__current_task --export=ksee_trace \
 		   --export=__global_base
 
-core-y += arch/wasm/kernel/ arch/wasm/mm/
+core-y += arch/wasm/kernel/ arch/wasm/mm/ arch/wasm/drivers/
 libs-y += arch/wasm/lib/
 
 # modpost cannot read wasm objects, so it does not write the vmlinux export

@@ -207,8 +207,11 @@ cargo test --locked -p ksee-cli
 
 The port is `arch/wasm/` (the architecture: its own files) and `linux.patch`
 (its few edits to Linux's own files). The first build creates `linux/` from
-the pinned stable tag and applies the patch once; every build copies
-`arch/wasm/`'s changed files into `linux/arch/wasm/`. To change the port:
+the pinned stable tag, applies the patch once, and links `linux/arch/wasm` to
+`arch/wasm/`. The port is laid out as an architecture is: `kernel/` (entry,
+interrupts, the switch, time, signals, the trace ring), `mm/`, `lib/`,
+`include/asm/`, `configs/`; and, as UML's `arch/um/drivers/`, `drivers/`: its
+devices, the console and the disk, the host's. To change the port:
 
 1. Edit `arch/wasm/` in the repository (`linux/arch/wasm` is a link to it); change
    Linux's own files, in `linux/`, only where the port requires it.

@@ -20,7 +20,7 @@ unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)]
 
 struct task_struct *__current_task = &init_task;
 
-extern struct console wasm_console; /* console.c */
+extern struct console wasm_console; /* drivers/console.c */
 
 /* Stack pointer the host installs before calling boot(). */
 __wasm_export(boot_stack) void *wasm_boot_stack(void)
