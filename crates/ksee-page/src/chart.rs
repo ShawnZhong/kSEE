@@ -40,16 +40,14 @@ fn task_color(pid: i32) -> String {
 }
 
 /// A call's color, by the first kernel area its source file belongs to
-/// (unmatched: gray).
+/// (AREAS: a hue and how strong, each): include/'s small inlined helpers
+/// gray, arch/'s plumbing soft; unmatched, gray.
 pub(crate) fn call_color(file: Option<&str>, on: bool) -> String {
-    const HUES: [i32; 7] = [210, 135, 28, 48, 280, 175, 330];
+    const COLORS: [Option<(i32, i32)>; 8] =
+        [Some((210, 55)), Some((135, 55)), Some((28, 55)), Some((48, 55)), Some((280, 55)), Some((175, 55)), None, Some((330, 22))];
     let l = if on { 50 } else { 74 };
-    match AREAS
-        .iter()
-        .position(|(p, _)| file.unwrap_or("").starts_with(p))
-        .and_then(|k| HUES.get(k))
-    {
-        Some(h) => format!("hsl({h} {}% {l}%)", if on { 65 } else { 55 }),
+    match AREAS.iter().position(|(p, _)| file.unwrap_or("").starts_with(p)).and_then(|k| COLORS.get(k).copied().flatten()) {
+        Some((h, s)) => format!("hsl({h} {}% {l}%)", if on { s + 10 } else { s }),
         None => format!("hsl(0 0% {}%)", l + 5),
     }
 }
