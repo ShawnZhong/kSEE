@@ -44,7 +44,7 @@ fn task_color(pid: i32) -> String {
 /// gray, arch/'s plumbing soft; unmatched, gray.
 pub(crate) fn call_color(file: Option<&str>, on: bool) -> String {
     const COLORS: [Option<(i32, i32)>; 8] =
-        [Some((210, 55)), Some((135, 55)), Some((28, 55)), Some((48, 55)), Some((280, 55)), Some((175, 55)), None, Some((330, 22))];
+        [Some((210, 55)), Some((135, 55)), Some((28, 55)), Some((48, 55)), Some((280, 55)), Some((175, 55)), None, Some((330, 12))];
     let l = if on { 50 } else { 74 };
     match AREAS.iter().position(|(p, _)| file.unwrap_or("").starts_with(p)).and_then(|k| COLORS.get(k).copied().flatten()) {
         Some((h, s)) => format!("hsl({h} {}% {l}%)", if on { s + 10 } else { s }),
