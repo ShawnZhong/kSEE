@@ -165,9 +165,22 @@ workspace's default members (a bare `cargo test`) are the native crates.
 3. Headless Chrome runs the kernel suite (`ksee-host`): it boots Linux,
    exercises recorded syscalls, and checks stacks, lines, memory history,
    origins, tasks, and timings; then the lessons suite, every lesson and try.
-4. With `--ui`, it also runs the read, changed-program/history, pipe, disk
-   and phone-layout suites through the DOM. Test names can also be given directly
-   for focused runs, such as `./ksee.sh test read`.
+4. With `--ui`, it also runs the page's suites through the DOM: read (the
+   main one, in named phases: made, links and steps, timeline, tip, window,
+   editor, panels, program), history (a changed program from the URL), tasks
+   (the pipe lesson's task columns, the idle task clicked into), disk (the
+   durable lesson's fsync in the Disk tab) and responsive (a phone). Test
+   names can also be given directly for focused runs, such as
+   `./ksee.sh test read`.
+
+Where a test goes: what needs no browser, a native test in the crate that
+has the code (ksee-core's, on made-up records and memory); what the kernel
+does, the kernel suite (`ksee-host/src/test/`, through the Machine, no page);
+what the page shows, a page suite (`ksee-page/src/test/ui.rs`), each check a
+named step that says what it saw when it fails. The page suites wait for the
+page to be drawn (`settle`: two animation frames) or for a condition
+(`wait`), never a fixed time; the whole run, native and browser, takes
+under a minute.
 
 CI builds the kernel in a job of its own, cached by what builds it (the port,
 the plugin, the Makefile's lines for Linux) and saved even if the tests fail;
