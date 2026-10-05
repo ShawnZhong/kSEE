@@ -33,6 +33,17 @@ pub(super) async fn sleep(ms: i32) {
     let _ = JsFuture::from(p).await;
 }
 
+/// The page drawn again after an event: two animation frames (Dioxus
+/// applies its changes by the next one).
+pub(super) async fn settle() {
+    for _ in 0..2 {
+        let p = Promise::new(&mut |done, _| {
+            let _ = web_sys::window().unwrap().request_animation_frame(&done);
+        });
+        let _ = JsFuture::from(p).await;
+    }
+}
+
 /// Wait until `f` holds, checking every 100 ms, `n` times at most.
 pub(super) async fn until(f: impl Fn() -> bool, n: usize) -> bool {
     for _ in 0..n {

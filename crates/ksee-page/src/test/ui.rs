@@ -79,7 +79,7 @@ pub(super) async fn read() -> Check {
     }
     // (The global key listener: reset to a known cursor, then move it.)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
-    sleep(300).await;
+    settle().await;
     let cursor = || {
         one("#timeline-canvas")
             .and_then(|e| e.get_attribute("data-test-now"))
@@ -96,16 +96,16 @@ pub(super) async fn read() -> Check {
     .await?;
     // (Stepping: on a line, back, and over vfs_read's calls (no deeper).)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
-    sleep(300).await;
+    settle().await;
     let at = place();
     press("Line ▶", false);
-    sleep(200).await;
+    settle().await;
     let into = place();
     press("◀ Line", false);
-    sleep(200).await;
+    settle().await;
     for _ in 0..3 {
         press("Line ▶", true);
-        sleep(150).await;
+        settle().await;
     }
     let over = place();
     check(
@@ -123,16 +123,16 @@ pub(super) async fn read() -> Check {
     let cross = || canvas.get_attribute("data-test-now");
     let before = cross();
     pointer(&chart, "pointermove", x, y);
-    sleep(200).await;
+    settle().await;
     let during = cross();
     mouse(&chart, "mouseleave", x, y, false);
-    sleep(200).await;
+    settle().await;
     check(during != before && cross() == before, "the cross follows the pointer, and goes back", (&before, &during, cross()))?;
     pointer(&chart, "pointermove", x, y);
-    sleep(200).await;
+    settle().await;
     let hovered = place();
     mouse(&chart, "click", x, y, false);
-    sleep(300).await;
+    settle().await;
     let chosen = one("tr.frame.on a").map(|a| text(&a)).unwrap_or_default();
     let level = || canvas.get_attribute("data-test-level");
     check(
@@ -142,39 +142,39 @@ pub(super) async fn read() -> Check {
     )?;
     // (A click above the bars: no level chosen, the innermost frame shown.)
     mouse(&chart, "click", x, b.top() + 2.0, false);
-    sleep(300).await;
+    settle().await;
     let innermost = one(".stack tbody").is_some_and(|t| t.class_name() == "on");
     check(level().is_none() && innermost, "a click off the bars: no level chosen", (level(), innermost))?;
     mouse(&chart, "click", x, y, false);
-    sleep(300).await;
+    settle().await;
     // (Its level chosen, stepping on: callees come and go above it, and it,
     // the same call, stays where it is.)
     let chosen = || one(".stack tr.frame.on").map(|r| (text(&r), r.get_bounding_client_rect().top().round()));
     let mut seen = vec![chosen()];
     for _ in 0..6 {
         press("Line ▶", false);
-        sleep(150).await;
+        settle().await;
         seen.push(chosen());
     }
     let first = seen[0].clone();
     check(seen.iter().all(|c| c.as_ref().map(|c| &c.0) != first.as_ref().map(|c| &c.0) || *c == first),
           "the level chosen stays put as the cursor steps", &seen)?;
     mouse(&chart, "click", x, y, false);
-    sleep(300).await;
+    settle().await;
     // (Then, zoomed in (the wheel, up) and from the bar clicked, a drag:
     // the bars follow the pointer.)
     wheel(&chart, x, y, -600.0);
-    sleep(300).await;
+    settle().await;
     let (x, y) = bar(&canvas, "vfs_read").map(|(bx, by)| (b.left() + bx, b.top() + by)).ok_or("no vfs_read bar, zoomed in")?;
     let before = bar(&canvas, "vfs_read").map(|p| p.0);
     let win0 = one(".overview .win").and_then(|w| w.get_attribute("style"));
     pointer(&chart, "pointerdown", x, y);
     pointer(&chart, "pointermove", x + 60.0, y);
-    sleep(200).await;
+    settle().await;
     let during = bar(&canvas, "vfs_read").map(|p| p.0);
     pointer(&chart, "pointerup", x + 60.0, y);
     mouse(&chart, "click", x + 60.0, y, false);
-    sleep(300).await;
+    settle().await;
     let win1 = one(".overview .win").and_then(|w| w.get_attribute("style"));
     check(before.zip(during).is_some_and(|(a, b)| (b - a - 60.0).abs() < 1.0 || win0 != win1),
           "a drag after a click", (before, during, win0, win1))?;
@@ -199,13 +199,13 @@ pub(super) async fn read() -> Check {
     let at = name.get_bounding_client_rect();
     mouse(&name, "mouseover", at.left() + 2.0, at.top() + 2.0, false);
     mouse(&name, "mouseenter", at.left() + 2.0, at.top() + 2.0, false);
-    sleep(200).await;
+    settle().await;
     let rows = || all(".tip.open tr").len();
     let before = rows();
     // (A member that opens: past the first row, the name itself.)
     let opens = all(".tip.open tr.opens").into_iter().nth(1).ok_or(format!("no member that opens in the tip ({before} rows)"))?;
     click(&opens);
-    sleep(200).await;
+    settle().await;
     check(before > 1 && rows() > before, "a name's tip: its members, one opening", (before, rows()))?;
     // (Find: its bars lit; Enter, the cursor in it.)
     let find = one(".find").ok_or("no find box")?;
@@ -213,13 +213,13 @@ pub(super) async fn read() -> Check {
         .ok_or("find, not an input")?
         .set_value("copy_page_to_iter");
     input(&find);
-    sleep(200).await;
+    settle().await;
     let found = canvas
         .get_attribute("data-test-found")
         .and_then(|n| n.parse().ok())
         .unwrap_or(0);
     key(&find, "Enter");
-    sleep(300).await;
+    settle().await;
     check(
         found > 0 && named("tr.frame a", "copy_page_to_iter").is_some(),
         "find",
@@ -229,23 +229,23 @@ pub(super) async fn read() -> Check {
     // stays where it let go.)
     let mid = (b.left() + b.right()) / 2.0;
     wheel(&chart, mid, y, -800.0);
-    sleep(300).await;
+    settle().await;
     let bar_x = || bar(&canvas, "vfs_read").map_or(f64::NAN, |p| p.0);
     let win = || one(".overview .win").and_then(|w| w.get_attribute("style")).unwrap_or_default();
     let (x0, w0) = (bar_x(), win());
     pointer(&chart, "pointerdown", mid, y);
     pointer(&chart, "pointermove", mid - 80.0, y);
-    sleep(200).await;
+    settle().await;
     let during = bar_x();
     pointer(&chart, "pointerup", mid - 80.0, y);
-    sleep(300).await;
+    settle().await;
     check((x0 - 80.0 - during).abs() < 1.0 && win() != w0, "a drag pans", (x0, during, w0, win()))?;
     // (Zoomed out, the chart deeper or not: the bars stay where they were on
     // the screen, kept at the bottom.)
     let screen_y = || bar(&canvas, "ksys_read").map(|(_, y)| canvas.get_bounding_client_rect().top() + y);
     let y0 = screen_y();
     wheel(&chart, mid, y, 1600.0);
-    sleep(300).await;
+    settle().await;
     let y1 = screen_y();
     check(y0.zip(y1).is_some_and(|(a, b)| (a - b).abs() < 1.0), "zoomed out, the bars stay", (y0, y1))?;
     // (Dragged up or down: the rows scroll, if there are more than fit.)
@@ -254,21 +254,21 @@ pub(super) async fn read() -> Check {
     let top0 = rows.scroll_top();
     pointer(&chart, "pointerdown", mid, y);
     pointer(&chart, "pointermove", mid, y + 40.0);
-    sleep(200).await;
+    settle().await;
     pointer(&chart, "pointerup", mid, y + 40.0);
-    sleep(300).await;
+    settle().await;
     check(max <= 0 || rows.scroll_top() != top0, "a drag scrolls the rows", (max, top0, rows.scroll_top()))?;
     // (A click on the overview, wherever it lands: the window's middle there,
     // zoomed in so that it can move.)
     wheel(&chart, mid, y, -1600.0);
-    sleep(300).await;
+    settle().await;
     let over = one(".overview").ok_or("no overview")?;
     let o = over.get_bounding_client_rect();
     let (cx, cy) = (o.left() + o.width() * 0.75, o.top() + o.height() / 2.0);
     // (On what a click there would land on.)
     let hit = web_sys::window().and_then(|w| w.document()).and_then(|d| d.element_from_point(cx as f32, cy as f32)).unwrap_or(over.clone());
     mouse(&hit, "click", cx, cy, false);
-    sleep(300).await;
+    settle().await;
     let middle = one(".overview .win").map(|w| { let r = w.get_bounding_client_rect(); (r.left() + r.width() / 2.0 - o.left()) / o.width() });
     check(middle.is_some_and(|m| (m - 0.75).abs() < 0.05 || m > 0.75), "a click on the overview moves the window there", middle)?;
     // (Typing a call: what fits, offered; Escape, nothing changed.)
@@ -281,7 +281,7 @@ pub(super) async fn read() -> Check {
         let _ = a.set_selection_range(4, 4);
         input(&add);
     }
-    sleep(200).await;
+    settle().await;
     let offered: Vec<String> = all("ul.complete li .mono").iter().map(text).collect();
     // (And a variable of the lines before, as an argument.)
     {
@@ -290,7 +290,7 @@ pub(super) async fn read() -> Check {
         let _ = a.set_selection_range(6, 6);
         input(&add);
     }
-    sleep(200).await;
+    settle().await;
     let names: Vec<String> = all("ul.complete li .mono").iter().map(text).collect();
     // (Seen: what is at the list's middle is the list, not what clips or covers it.)
     let shown = one("ul.complete").map(|u| {
@@ -299,7 +299,7 @@ pub(super) async fn read() -> Check {
         (r.width(), r.height(), top.and_then(|e| e.closest("ul.complete").ok().flatten()).is_some())
     });
     key(&add, "Escape");
-    sleep(100).await;
+    settle().await;
     check(offered.iter().any(|o| o == "openat") && names.iter().any(|o| o == "fd") && shown.is_some_and(|(w, h, seen)| w > 0.0 && h > 0.0 && seen),
           "completions", (&offered, &names, shown))?;
     // (Objects: what the read changed, its file's position; Tasks: a task_struct opened.)
@@ -310,7 +310,7 @@ pub(super) async fn read() -> Check {
     tab("Tasks").await;
     let rows = all(".pane tr").len();
     click(&one(".pane tr.frame a").ok_or("no task")?);
-    sleep(300).await;
+    settle().await;
     let opened = all(".pane tr").len();
     check(
         opened > rows + 5 && named(".pane td", "comm").is_some(),
@@ -433,7 +433,7 @@ pub(super) async fn tasks() -> Check {
         .ok_or("no sixth line")?
         .dyn_ref::<HtmlElement>()
         .map(|t| t.focus());
-    sleep(500).await;
+    settle().await;
     let mut strip: Vec<String> = one("#timeline-canvas")
         .and_then(|c| c.get_attribute("data-test-tasks"))
         .unwrap_or_default()
@@ -489,7 +489,7 @@ pub(super) async fn responsive() -> Check {
     check(order && wide <= screen, "the phone", (order, wide, screen))?;
     let at = place();
     press("Line ▶", false);
-    sleep(300).await;
+    settle().await;
     Ok(format!("{at} → {}", place()))
 }
 
