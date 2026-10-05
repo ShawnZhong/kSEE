@@ -138,6 +138,7 @@ fn Overview() -> Element {
             .rec
             .syscalls
             .iter()
+            .filter(|s| s.nr.is_some())
             .map(|s| v.rec.step_of(s.first))
             .collect();
         (n, tasks, starts, (d.window)(), cursor)
@@ -590,7 +591,10 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
         let ret = ret
             .map(|r| format!(" = {}", v.tables.types.result(r)))
             .unwrap_or_default();
-        match v.rec.syscalls.binary_search_by_key(&first, |s| s.first).ok().and_then(|k| v.syscall(k)) {
+        // (A syscall's entry: the syscall, its arguments and result; not a
+        // run between syscalls that starts there.)
+        let syscall = v.rec.syscalls.binary_search_by_key(&first, |s| s.first).ok().filter(|&k| v.rec.syscalls[k].nr.is_some());
+        match syscall.and_then(|k| v.syscall(k)) {
             Some(s) => {
                 let ret = s.ret.map_or_else(|| "…".into(), |r| v.tables.types.result(r as i64));
                 let shown: Vec<String> = args.iter().map(|(_, x)| x.clone()).collect();

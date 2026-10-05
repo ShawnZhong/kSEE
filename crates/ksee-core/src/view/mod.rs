@@ -210,7 +210,7 @@ impl View<'_> {
                 up: up(leader).or_else(|| up(parent)),
                 state, last,
                 doing: last.and_then(|j| {
-                    let syscall = self.rec.syscall_at(j).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr).cloned());
+                    let syscall = self.rec.syscall_at(j).and_then(|s| t.types.syscalls.get(&self.rec.syscalls[s].nr?).cloned());
                     syscall.or_else(|| self.rec.calls.stack_at(t, j, None).into_iter().next().and_then(|c| t.functions.get(&c.func)).map(|f| f.name.clone()))
                 }),
             }
@@ -222,7 +222,10 @@ impl View<'_> {
         let s = self.rec.syscalls.get(k)?;
         Some(SyscallSummary {
             task: self.task(s.task, s.first),
-            name: self.tables.types.syscall_name(s.nr),
+            // (A run between syscalls: its task running, whatever it does
+            // then; a stack known only from where the recording began says
+            // no more.)
+            name: s.nr.map_or_else(|| "running".into(), |nr| self.tables.types.syscall_name(nr)),
             ret: s.ret,
             first: s.first,
             last: s.last.unwrap_or(self.rec.last()),

@@ -11,13 +11,15 @@ use crate::tables::Tables;
 use crate::trace::{Args, Record};
 use crate::{arch, mem, Memory};
 
-/// A syscall in the trace: a call of the syscall entry (arch::SYSCALL: its
-/// call record's arguments are the number and the syscall's arguments; its
-/// return's value is the result).
+/// A run of a task: a syscall it made, a call of the syscall entry
+/// (arch::SYSCALL: its call record's arguments are the number and the
+/// syscall's arguments; its return's value is the result); or what it did
+/// between them (no number: the idle task's idling, a worker's work), from
+/// its first record there to its last. What the cursor can be in.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Syscall {
     pub task: u32,
-    pub nr: u32,
+    pub nr: Option<u32>,
     /// The result (None: still running at the end of the trace, or it
     /// never returned).
     pub ret: Option<i32>,
@@ -35,7 +37,7 @@ fn split(entry: u32, records: &[Record], tasks: &[u32], args: &Args, calls: &sta
             Record::Return { func, value: Some(value) } if func == entry => Some(value as i32),
             _ => None,
         });
-        Syscall { task: tasks[c.first], nr, ret, first: c.first, last: ret.and(c.last) }
+        Syscall { task: tasks[c.first], nr: Some(nr), ret, first: c.first, last: ret.and(c.last) }
     }).collect()
 }
 
@@ -105,22 +107,36 @@ impl Recording {
             }
         }
         let calls = stack::Calls::new(t, &records, &tasks);
-        let syscalls = split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args, &calls);
-        // (The lines each syscall ran, as stepping walks them, and between
-        // them its task's: a call's width in the chart is the steps it takes.)
-        let mut steps: Vec<(usize, u32, u32)> = Vec::new();
-        let mut add = |from: usize, to: usize, task: u32| if from < to {
-            steps.extend(calls.lines(t, &records, &tasks, from, to - 1, task).iter().map(|l| (l.record, l.nth, l.cut)));
-        };
-        for task in tasks.iter().copied().collect::<alloc::collections::BTreeSet<u32>>() {
+        let mut syscalls = split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args, &calls);
+        // (Each task's runs between its syscalls: its records there, first
+        // to last.)
+        let mut mine: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        for (i, &task) in tasks.iter().enumerate() {
+            mine.entry(task).or_default().push(i);
+        }
+        let mut runs = Vec::new();
+        for (&task, at) in &mine {
+            let mut gap = |from: usize, to: usize| {
+                let (a, b) = (at.partition_point(|&i| i < from), at.partition_point(|&i| i < to));
+                if a < b {
+                    runs.push(Syscall { task, nr: None, ret: None, first: at[a], last: Some(at[b - 1]) });
+                }
+            };
             let mut from = 0;
             for s in syscalls.iter().filter(|s| s.task == task) {
-                let end = s.last.map_or(records.len(), |l| l + 1);
-                add(from, s.first, task);
-                add(s.first, end, task);
-                from = end;
+                gap(from, s.first);
+                from = s.last.map_or(records.len(), |l| l + 1);
             }
-            add(from, records.len(), task);
+            gap(from, records.len());
+        }
+        syscalls.extend(runs);
+        syscalls.sort_by_key(|s| s.first);
+        // (The lines each run ran, as stepping walks them: a call's width in
+        // the chart is the steps it takes.)
+        let mut steps: Vec<(usize, u32, u32)> = Vec::new();
+        for s in &syscalls {
+            let end = s.last.map_or(records.len(), |l| l + 1);
+            steps.extend(calls.lines(t, &records, &tasks, s.first, end - 1, s.task).iter().map(|l| (l.record, l.nth, l.cut)));
         }
         steps.sort_by_key(|s| s.0);
         Recording { records, ids, args, tasks, syscalls, steps, calls, stores: OnceCell::new(), names: Default::default(), named: Default::default() }
@@ -256,7 +272,7 @@ mod tests {
         let calls = stack::Calls::new(&crate::tables::Tables::default(), &r, &tasks);
         let s = split(1, &r, &tasks, &args, &calls);
         assert_eq!(s.len(), 1);
-        assert_eq!((s[0].task, s[0].nr, s[0].ret, s[0].first, s[0].last), (7, 64, Some(3), 0, Some(3)));
+        assert_eq!((s[0].task, s[0].nr, s[0].ret, s[0].first, s[0].last), (7, Some(64), Some(3), 0, Some(3)));
     }
 
     #[test]

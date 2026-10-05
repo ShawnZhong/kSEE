@@ -451,7 +451,16 @@ pub(super) async fn tasks() -> Check {
         "the pipe",
         (&c, &changed, &strip),
     )?;
-    Ok(format!("{changed:?} {strip:?}"))
+    // (The idle task, between the calls: a click on its bar, the cursor in
+    // its run, as in any task's.)
+    let canvas = one("#timeline-canvas").ok_or("no timeline canvas")?;
+    let (x, y) = bar(&canvas, "do_idle").ok_or("no do_idle bar")?;
+    let b = canvas.get_bounding_client_rect();
+    mouse(&one(".chart").ok_or("no chart")?, "click", b.left() + x, b.top() + y, false);
+    settle().await;
+    let title = one(".flamehead .dim").map(|t| text(&t)).unwrap_or_default();
+    check(title.contains("swapper"), "a click on the idle task's bar: the cursor in its run", (&title, place()))?;
+    Ok(format!("{changed:?} {strip:?}; {title}"))
 }
 
 /// The read example on a phone's screen (390x844): the lesson, then the

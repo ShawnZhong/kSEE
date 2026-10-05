@@ -28,7 +28,11 @@ return from a try to the lesson's own program.
 
 ## 2. Select a syscall and a moment
 
-Selecting a syscall row chooses its recording. kSEE maintains three related
+Selecting a syscall row chooses its recording. The cursor is always in a
+**run** of one task: a syscall it made, or what it did between its syscalls
+("running": the idle task idling, a kernel worker writing back, jbd2
+committing). A click on any task's bar in the timeline puts the cursor in that
+task's run, to step through as any syscall. kSEE maintains three related
 units:
 
 - A **trace record** is a raw event such as a basic block, return, store, task,

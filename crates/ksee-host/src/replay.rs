@@ -43,7 +43,7 @@ impl Machine {
     pub fn syscall_of(&self, id: u32) -> Option<usize> {
         let (task, nr, from) = k(|k| k.p.calls.get(&id).map(|c| (c.task, c.nr, c.from)))?;
         let rec = self.rec.borrow();
-        rec.syscalls.iter().position(|s| s.nr == nr && s.task == task && rec.ids[s.first] >= from)
+        rec.syscalls.iter().position(|s| s.nr == Some(nr) && s.task == task && rec.ids[s.first] >= from)
     }
 
     /// The first call of function `name` in records `first..=last` (of the
