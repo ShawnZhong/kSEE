@@ -61,6 +61,7 @@ async fn run_test(name: String) -> Result<String, JsValue> {
             "read" => ui::read().await,
             "history" => ui::history().await,
             "tasks" => ui::tasks().await,
+            "disk" => ui::disk().await,
             "responsive" => ui::responsive().await,
             _ => Err(format!("no test {name}")),
         }

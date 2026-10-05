@@ -108,4 +108,20 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         t.check(format!("a char * with its string: filename->name = {name:?}"), name.is_some_and(|n| n.ends_with("\"/mnt/named\"")));
         t.line("unlinkat(AT_FDCWD, \"/mnt/named\", AT_REMOVEDIR)").await;
     }
+    // The disk: a first read of a file on ext4 reads its blocks from it;
+    // an fsync writes, changing bytes there.
+    {
+        t.line("char dbuf[16]").await;
+        t.line("int dfd = openat(AT_FDCWD, \"/mnt/note.txt\", O_RDWR | O_APPEND)").await;
+        let r = t.line("read(dfd, dbuf, 16)").await.syscall.unwrap();
+        let reads = m.disk(r.first, r.last);
+        t.check(format!("a first read on ext4 reads the disk ({} transfers)", reads.len()),
+                !reads.is_empty() && reads.iter().all(|x| !x.t.write && x.asked <= x.done));
+        t.line("write(dfd, \"more\\n\", 5)").await;
+        let f = t.line("fsync(dfd)").await.syscall.unwrap();
+        let writes = m.disk(f.first, f.last);
+        t.check(format!("an fsync writes the disk, changing bytes ({} transfers)", writes.len()),
+                writes.iter().any(|x| x.t.write && x.t.before != x.t.after));
+        t.line("close(dfd)").await;
+    }
 }

@@ -1,6 +1,6 @@
 //! Beside the source, a tab each: the Stack (stack.rs); the tasks at the
 //! moment shown; what the call selected did to the kernel's data (Objects);
-//! the kernel's console.
+//! what it asked of the disk (Disk); the kernel's console.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -27,12 +27,14 @@ pub fn Tabs() -> Element {
                 {head(Tab::Stack, "Stack", "the calls at the cursor, their values as they were then")}
                 {head(Tab::Tasks, "Tasks", "every task at the cursor: what each is doing, its task_struct")}
                 {head(Tab::Objects, "Objects", "the objects the call selected changed, and how they point to each other")}
+                {head(Tab::Disk, "Disk", "what the call selected asked of the disk: each transfer, and what it wrote")}
                 {head(Tab::Console, "Console", "the kernel's log and the programs' output")}
             }
             match tab {
                 Tab::Stack => rsx! { div { class: "pane", crate::stack::Stack {} } },
                 Tab::Objects => rsx! { div { class: "pane", Objects {} } },
                 Tab::Tasks => rsx! { div { class: "pane", Tasks {} } },
+                Tab::Disk => rsx! { div { class: "pane", Disk {} } },
                 Tab::Console => rsx! { div { class: "pane", pre { class: "console", "{ui.console}" } } },
             }
         }
@@ -167,4 +169,66 @@ fn Tasks() -> Element {
             }
         }
     }
+}
+
+/// What the call selected asked of the disk: each transfer, in order (a
+/// click: the cursor where it was handed over; "done": where the disk made
+/// it), the one under way at the cursor marked; a write, the bytes it
+/// changed, a read, the bytes it read.
+#[component]
+fn Disk() -> Element {
+    let ui = use_context::<Ui>();
+    let d = use_context::<Derived>();
+    (ui.snapshot)();
+    let Some(s) = d.syscall.cloned() else {
+        return rsx! { p { class: "pad dim", "Select a call: what it asked of the disk." } };
+    };
+    let all = machine().disk(s.first, s.last);
+    if all.is_empty() {
+        return rsx! { p { class: "pad dim", "{s.name} by {s.task.named()}: nothing went to the disk." } };
+    }
+    let cursor = d.line.cloned().map_or(0, |l| l.at);
+    let head = format!("{} transfer{} while {} by {} ran (the tag: its request)", all.len(), if all.len() == 1 { "" } else { "s" }, s.name, s.task.named());
+    rsx! {
+        div { class: "objects disk",
+            div { class: "ohead", "{head}" }
+            for x in all {
+                {
+                    let t = &x.t;
+                    let on = x.asked <= cursor && cursor < x.done;
+                    let what = format!("{} {} at sector {} · tag {}", if t.write { "write" } else { "read" }, size(t.len), t.sector, t.tag);
+                    let (asked, done) = (x.asked, x.done);
+                    let bytes = if t.write { changed(&t.before, &t.after) } else { format!("read: {}", hex(&t.after[..t.after.len().min(16)])) };
+                    rsx! {
+                        div { class: if on { "xfer on" } else { "xfer" },
+                            a { class: "mono", title: "where it was handed to the disk (queue_rq)", onclick: move |_| ui.go_record(d, asked), "{what}" }
+                            " · "
+                            a { class: "dim", title: "where the disk made it (then its interrupt)", onclick: move |_| ui.go_record(d, done), "done" }
+                            div { class: "mono dim bytes", "{bytes}" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `n` bytes, said: "512 B", "4 KiB".
+fn size(n: u32) -> String {
+    if n >= 1024 && n % 1024 == 0 { format!("{} KiB", n / 1024) } else { format!("{n} B") }
+}
+
+/// Bytes in hex, a space each.
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect::<Vec<_>>().join(" ")
+}
+
+/// What a write changed: how many bytes, and the first run of them, from
+/// what to what (16 at most).
+fn changed(before: &[u8], after: &[u8]) -> String {
+    let diff: Vec<usize> = (0..before.len().min(after.len())).filter(|&k| before[k] != after[k]).collect();
+    let Some(&first) = diff.first() else { return "wrote what was there".into() };
+    let end = (first..before.len().min(after.len())).take_while(|&k| before[k] != after[k]).last().unwrap_or(first) + 1;
+    let end = end.min(first + 16);
+    format!("{} byte{} changed; at {first}: {} → {}", diff.len(), if diff.len() == 1 { "" } else { "s" }, hex(&before[first..end]), hex(&after[first..end]))
 }

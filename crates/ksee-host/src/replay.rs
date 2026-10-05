@@ -6,7 +6,16 @@ use ksee_core::view::View;
 use ksee_core::Memory;
 
 use crate::machine::Machine;
-use crate::state::{k, tables, Direct};
+use crate::state::{k, tables, Direct, Transfer};
+
+/// A transfer the disk made (Transfer), and the records it was handed
+/// over and made at.
+#[derive(Clone, Debug)]
+pub struct DiskTransfer {
+    pub t: Transfer,
+    pub asked: usize,
+    pub done: usize,
+}
 
 impl Machine {
     /// Run `f` on a view of the last snapshot (ksee_core::view).
@@ -41,6 +50,19 @@ impl Machine {
     /// task at address `task`, or any): its record.
     pub fn first_call(&self, name: &str, first: usize, last: usize, task: Option<u32>) -> Option<usize> {
         self.rec.borrow().first_call(tables(), name, first, last, task)
+    }
+
+    /// The transfers the disk made while records `first..=last` were
+    /// written (handed over, or made, then), in order; each its records
+    /// (DiskTransfer).
+    pub fn disk(&self, first: usize, last: usize) -> Vec<DiskTransfer> {
+        let rec = self.rec.borrow();
+        // (A word of the trace, the record written at or after it.)
+        let record = |word: u32| rec.ids.partition_point(|&id| id < word);
+        k(|k| k.disk_log.iter().filter_map(|t| {
+            let (asked, done) = (record(t.asked), record(t.done));
+            (asked <= last && done >= first).then(|| DiskTransfer { t: t.clone(), asked, done })
+        }).collect())
     }
 
     /// The kernel's tables: its types (a call's result as the page says it,

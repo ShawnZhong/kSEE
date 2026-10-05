@@ -11,6 +11,7 @@ pub enum LessonTab {
     Objects,
     Tasks,
     Console,
+    Disk,
 }
 
 impl LessonTab {
@@ -20,6 +21,7 @@ impl LessonTab {
             "objects" => Some(Self::Objects),
             "tasks" => Some(Self::Tasks),
             "console" => Some(Self::Console),
+            "disk" => Some(Self::Disk),
             _ => None,
         }
     }

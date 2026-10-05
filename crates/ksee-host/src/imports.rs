@@ -70,7 +70,10 @@ pub extern "C" fn disk_sectors() -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn disk_submit(tag: u32, sector: u64, buf: u32, len: u32, write: u32) {
-    k_mut(|k| k.transfers.push((tag, sector, buf, len, write != 0)));
+    k_mut(|k| {
+        let asked = Direct.read_u32(k.trace);
+        k.transfers.push(Transfer { tag, sector, buf, len, write: write != 0, asked, ..Default::default() });
+    });
 }
 
 /// The next request done, its tag; or -1.
@@ -86,20 +89,24 @@ pub extern "C" fn disk_done() -> i32 {
 pub fn disk_work() -> bool {
     let transfers = k_mut(|k| std::mem::take(&mut k.transfers));
     let any = !transfers.is_empty();
-    for (tag, sector, buf, len, write) in transfers {
-        let at = sector as usize * 512;
+    for mut t in transfers {
+        let at = t.sector as usize * 512;
         k_mut(|k| {
-            let Some(blocks) = k.disk.get_mut(at..at + len as usize) else { return };
-            if write {
-                Direct.read(buf, blocks);
+            t.done = Direct.read_u32(k.trace);
+            let Some(blocks) = k.disk.get_mut(at..at + t.len as usize) else { return };
+            if t.write {
+                t.before = blocks.to_vec();
+                Direct.read(t.buf, blocks);
             } else {
-                logged(buf, len);
-                unsafe { core::ptr::copy_nonoverlapping(blocks.as_ptr(), buf as *mut u8, len as usize) };
+                logged(t.buf, t.len);
+                unsafe { core::ptr::copy_nonoverlapping(blocks.as_ptr(), t.buf as *mut u8, t.len as usize) };
             }
+            t.after = blocks.to_vec();
             // (A request's segments come together: its tag once.)
-            if k.done.back() != Some(&tag) {
-                k.done.push_back(tag);
+            if k.done.back() != Some(&t.tag) {
+                k.done.push_back(t.tag);
             }
+            k.disk_log.push(t);
         });
     }
     any

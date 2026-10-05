@@ -165,8 +165,8 @@ workspace's default members (a bare `cargo test`) are the native crates.
 3. Headless Chrome runs the kernel suite (`ksee-host`): it boots Linux,
    exercises recorded syscalls, and checks stacks, lines, memory history,
    origins, tasks, and timings; then the lessons suite, every lesson and try.
-4. With `--ui`, it also runs the read, changed-program/history, pipe, and
-   phone-layout suites through the DOM. Test names can also be given directly
+4. With `--ui`, it also runs the read, changed-program/history, pipe, disk
+   and phone-layout suites through the DOM. Test names can also be given directly
    for focused runs, such as `./ksee.sh test read`.
 
 CI builds the kernel in a job of its own, cached by what builds it (the port,

@@ -500,3 +500,18 @@ fn bar(canvas: &web_sys::Element, name: &str) -> Option<(f64, f64)> {
         Some((x.parse().ok()?, y.parse().ok()?))
     })
 }
+
+/// The durable lesson (durable.html): its fsync selected, the Disk tab
+/// lists what it asked of the disk: writes, each changing bytes.
+pub(super) async fn disk() -> Check {
+    wait(|| done(3), 600, "the calls made", || format!("{:?}", cells())).await?;
+    // (The third line, the fsync, selected.)
+    let _ = all("ol.steps .cell textarea").get(2).ok_or("no third line")?.dyn_ref::<HtmlElement>().map(|t| t.focus());
+    settle().await;
+    click(&named(".tabs .tab", "Disk").ok_or("no Disk tab")?);
+    wait(|| !all(".disk .xfer").is_empty(), 50, "the fsync's transfers", || one(".pane").map(|p| text(&p)).unwrap_or_default()).await?;
+    let rows: Vec<String> = all(".disk .xfer").iter().map(text).collect();
+    check(rows.iter().any(|r| r.starts_with("write") && r.contains("changed")), "the fsync's writes, bytes changed", &rows)?;
+    Ok(format!("{} transfers; {}", rows.len(), rows.first().cloned().unwrap_or_default()))
+}
+
