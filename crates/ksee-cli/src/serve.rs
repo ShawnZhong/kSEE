@@ -113,9 +113,9 @@ mod tests {
         let root = Scratch::new("serve");
         std::fs::create_dir_all(root.0.join("sub")).unwrap();
         std::fs::write(root.0.join("index.html"), "hi").unwrap();
-        std::fs::write(root.0.join("sub").join("examples.json"), "{}").unwrap();
+        std::fs::write(root.0.join("sub").join("lessons.json"), "{}").unwrap();
         assert_eq!(resolve(&root.0, "/"), Some(root.0.join("index.html")));
-        assert_eq!(resolve(&root.0, "/sub/examples.json"), Some(root.0.join("sub").join("examples.json")));
+        assert_eq!(resolve(&root.0, "/sub/lessons.json"), Some(root.0.join("sub").join("lessons.json")));
         assert_eq!(resolve(&root.0, "/../secret"), None);
         assert_eq!(resolve(&root.0, "/missing"), None);
         assert_eq!(resolve(&root.0, "/%2e%2e/secret"), None);

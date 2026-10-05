@@ -31,7 +31,7 @@ mod stack;
 mod state;
 mod test;
 
-use lesson::Example;
+use lesson::Lesson;
 use state::Ui;
 
 thread_local! {
@@ -40,7 +40,7 @@ thread_local! {
     static BOOT: RefCell<Option<Promise>> = const { RefCell::new(None) };
     static MACHINE: RefCell<Option<Rc<Machine>>> = const { RefCell::new(None) };
     /// The lessons (`mount`'s, the page's life long).
-    static EXAMPLES: Cell<&'static [Example]> = const { Cell::new(&[]) };
+    static LESSONS: Cell<&'static [Lesson]> = const { Cell::new(&[]) };
 }
 
 /// The Machine, once booted; or why it could not be.
@@ -61,22 +61,22 @@ pub(crate) fn machine() -> Rc<Machine> {
     MACHINE.with_borrow(|m| m.clone()).expect("booted")
 }
 
-pub(crate) fn examples() -> &'static [Example] {
-    EXAMPLES.get()
+pub(crate) fn lessons() -> &'static [Lesson] {
+    LESSONS.get()
 }
 
-/// Mount the page into the element `root`, with the lessons, `examples`
-/// (examples.json), and `machine`, the kernel booting (a promise of the
+/// Mount the page into the element `root`, with the lessons, `lessons`
+/// (lessons.json), and `machine`, the kernel booting (a promise of the
 /// Machine: the page owns it once booted; the lesson shows meanwhile).
 #[wasm_bindgen]
-pub fn mount(root: &str, examples: JsValue, machine: Promise) -> Result<(), JsValue> {
+pub fn mount(root: &str, lessons: JsValue, machine: Promise) -> Result<(), JsValue> {
     // (A panic said on the console, not only "unreachable".)
     std::panic::set_hook(Box::new(|p| {
         web_sys::console::error_1(&p.to_string().into())
     }));
-    let examples: Vec<Example> = serde_wasm_bindgen::from_value(examples)?;
+    let lessons: Vec<Lesson> = serde_wasm_bindgen::from_value(lessons)?;
     BOOT.with_borrow_mut(|b| *b = Some(machine));
-    EXAMPLES.set(Box::leak(examples.into_boxed_slice()));
+    LESSONS.set(Box::leak(lessons.into_boxed_slice()));
     // (The lesson's text as the page came with it, for what reads it without
     // running it: this page draws it now.)
     if let Some(e) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id("static")) {
@@ -140,7 +140,7 @@ fn App() -> Element {
         nav::Header {}
         main { class: "page", style: "{sizes().style()}",
             aside { class: "side",
-                article { class: "lesson", lesson::Lesson {} }
+                article { class: "lesson", lesson::LessonPane {} }
                 nav::Turn {}
             }
             layout::Handle { split: layout::Split::Left }

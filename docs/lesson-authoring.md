@@ -1,9 +1,9 @@
 # Lesson authoring
 
-Lessons live as JSON files in `user/examples/`. The file stem is the lesson
+Lessons live as JSON files in `user/lessons/`. The file stem is the lesson
 name used in URLs and commands. The build reads each file the course lists,
 adds its name and chapter, and writes the ordered collection to
-`target/site/examples.json`.
+`target/site/lessons.json`.
 
 ## Lesson fields
 
@@ -17,7 +17,7 @@ A source lesson contains:
 | `steps` | The lesson's program, in chronological order. |
 | `tries` | Optional alternative programs linked from the explanation. |
 
-`name` and `group` are generated during the build; do not repeat them in the
+`name` and `chapter` are generated during the build; do not repeat them in the
 source file.
 
 A minimal lesson looks like this:

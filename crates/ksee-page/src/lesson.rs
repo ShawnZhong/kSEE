@@ -11,7 +11,7 @@ use ksee_host::Outcome;
 use serde::{Deserialize, Serialize};
 
 use crate::state::Ui;
-use crate::{examples, machine};
+use crate::{lessons, machine};
 
 /// One chronological program step: a statement for the program's own task,
 /// or a statement assigned to the task named by an earlier clone result.
@@ -40,12 +40,12 @@ impl Step {
     }
 }
 
-/// A lesson (examples.json): its chapter, title, question, explanation,
+/// A lesson (lessons.json): its chapter, title, question, explanation,
 /// tries, and its program's steps.
 #[derive(Deserialize, Clone, PartialEq)]
-pub struct Example {
+pub struct Lesson {
     pub name: String,
-    pub group: String,
+    pub chapter: String,
     pub title: String,
     pub question: String,
     pub text: Vec<String>,
@@ -82,7 +82,7 @@ pub(crate) async fn run(mut ui: Ui, lines: Vec<Step>) {
         ui.snapshot += 1;
     }
     let outcomes = m.outcomes();
-    let ex = &examples()[(ui.lesson)()];
+    let ex = &lessons()[(ui.lesson)()];
     let calls = outcomes.iter().filter(|o| matches!(o, Outcome::Call { .. })).count();
     // (The lesson's own program: where its text's first link into the recording goes.)
     let linked = (lines == ex.steps).then(|| ex.text.iter().flat_map(|p| text::pieces(p)).find_map(|x| match x {
@@ -113,7 +113,7 @@ fn run_of_call(ui: Ui, n: usize) -> Option<usize> {
 fn follow(mut ui: Ui, target: LessonTarget) {
     let LessonTarget::Recording { call, function, any_task, tab } = target else {
         let LessonTarget::Try { index } = target else { unreachable!() };
-        if let Some(t) = examples()[(ui.lesson)()].tries.get(index - 1) {
+        if let Some(t) = lessons()[(ui.lesson)()].tries.get(index - 1) {
             ui.program.set(t.clone());
         }
         return;
@@ -135,9 +135,9 @@ fn follow(mut ui: Ui, target: LessonTarget) {
 }
 
 #[component]
-pub fn Lesson() -> Element {
+pub fn LessonPane() -> Element {
     let mut ui = use_context::<Ui>();
-    let all = examples();
+    let all = lessons();
     let at = (ui.lesson)();
     let ex = &all[at];
     let program = (ui.program)();
@@ -269,7 +269,7 @@ thread_local! {
     /// first editor asks).
     static COMMON: &'static [String] = {
         let mut out: Vec<String> = Vec::new();
-        for step in examples().iter().flat_map(|e| e.steps.iter()) {
+        for step in lessons().iter().flat_map(|e| e.steps.iter()) {
             if let Ok(Line::Call { call, .. }) = statement(step.text()) && !out.contains(&call) {
                 out.push(call);
             }

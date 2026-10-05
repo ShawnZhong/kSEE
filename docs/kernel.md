@@ -162,7 +162,7 @@ host's writes are), posts the tags of the requests done, and raises
 (`blk_mq_tag_to_rq`) and ends it, which wakes its waiter. /init mounts it on `/mnt`. So
 ext4, jbd2, the block layer and the request queue are all the real
 kernel's. The image
-comes with files for the examples to start from (`mkfs.ext4 -d user/disk`):
+comes with files for the lessons to start from (`mkfs.ext4 -d user/disk`):
 `/mnt/note.txt`, `/mnt/dir/a.txt`.
 
 ## Console

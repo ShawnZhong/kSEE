@@ -5,7 +5,7 @@
 
 use dioxus::prelude::*;
 
-use crate::examples;
+use crate::lessons;
 use crate::lesson::Step;
 use crate::state::Ui;
 
@@ -33,7 +33,7 @@ fn program_from_json(text: &str) -> Option<Vec<Step>> {
 /// The lesson and program the URL says, at first.
 pub fn from_url(ui: Ui) {
     let (ex, p) = url();
-    let all = examples();
+    let all = lessons();
     if let Some(k) = ex.and_then(|n| all.iter().position(|e| e.name == n)) {
         let program = p.as_deref().and_then(program_from_json).unwrap_or_else(|| all[k].steps.clone());
         ui.open(k, program);
@@ -42,7 +42,7 @@ pub fn from_url(ui: Ui) {
 
 /// The URL, as the lesson and its program are.
 pub(crate) fn to_url(lesson: usize, program: &[Step]) {
-    let all = examples();
+    let all = lessons();
     let Some(ex) = all.get(lesson) else { return };
     let p = if program == ex.steps { String::new() } else {
         program_json(program).map_or_else(String::new, |p| format!("#p={}", js_sys::encode_uri_component(&p)))
@@ -86,16 +86,16 @@ const SOURCE: Option<&str> = option_env!("KSEE_SOURCE");
 pub fn Header() -> Element {
     let ui = use_context::<Ui>();
     let mut menu = use_signal(|| false);
-    let all = examples();
+    let all = lessons();
     let at = (ui.lesson)();
     // (Where the lesson is: its chapter, and which of its lessons.)
-    let group: Vec<usize> = (0..all.len()).filter(|&k| all[k].group == all[at].group).collect();
-    let place = group.iter().position(|&k| k == at).unwrap_or(0) + 1;
+    let chapter: Vec<usize> = (0..all.len()).filter(|&k| all[k].chapter == all[at].chapter).collect();
+    let place = chapter.iter().position(|&k| k == at).unwrap_or(0) + 1;
     rsx! {
         header { class: "topbar",
             div { class: "left",
                 button { class: if menu() { "contents on" } else { "contents" }, title: "every lesson, by chapter", onclick: move |_| menu.toggle(), "☰ Lessons" }
-                span { class: "crumb", "{all[at].group} · {place} of {group.len()}" }
+                span { class: "crumb", "{all[at].chapter} · {place} of {chapter.len()}" }
             }
             b { "kSEE" span { class: "dim", " · step through a real Linux kernel" } }
             div { class: "right",
@@ -118,7 +118,7 @@ pub fn Header() -> Element {
 #[component]
 pub fn Turn() -> Element {
     let ui = use_context::<Ui>();
-    let all = examples();
+    let all = lessons();
     let at = (ui.lesson)();
     rsx! {
         nav { class: "turn",
@@ -140,17 +140,17 @@ pub fn Turn() -> Element {
 #[component]
 fn Contents(close: EventHandler<()>) -> Element {
     let ui = use_context::<Ui>();
-    let all = examples();
-    let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+    let all = lessons();
+    let mut chapters: Vec<(String, Vec<usize>)> = Vec::new();
     for (k, e) in all.iter().enumerate() {
-        match groups.last_mut() {
-            Some((g, ks)) if *g == e.group => ks.push(k),
-            _ => groups.push((e.group.clone(), vec![k])),
+        match chapters.last_mut() {
+            Some((g, ks)) if *g == e.chapter => ks.push(k),
+            _ => chapters.push((e.chapter.clone(), vec![k])),
         }
     }
     rsx! {
         nav { class: "menu",
-            for (g , ks) in groups {
+            for (g , ks) in chapters {
                 div { class: "chapter", "{g}" }
                 for k in ks {
                     a { class: if k == (ui.lesson)() { "item on" } else { "item" },

@@ -18,8 +18,8 @@ fn lines(steps: &[Step]) -> impl Iterator<Item = (Option<&str>, &str)> {
 pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
     let mut t = KernelHarness::new(machine);
     let m = t.machine.clone();
-    let examples = crate::examples();
-    for ex in examples {
+    let lessons = crate::lessons();
+    for ex in lessons {
         let ids = t.program(lines(&ex.steps)).await;
         let is_call = |step: &Step| matches!(statement(step.text()), Ok(Stmt::Call { .. }));
         let blocked: Vec<String> = ex.steps.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.finished(id).is_some()))
@@ -46,10 +46,10 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
         }
         for (k, try_) in ex.tries.iter().enumerate() {
             let ran = t.program(lines(try_)).await;
-            t.check(format!("example {}, try {}: {} lines made", ex.name, k + 1, try_.len()), ran.len() == try_.len() && !try_.is_empty());
+            t.check(format!("lesson {}, try {}: {} lines made", ex.name, k + 1, try_.len()), ran.len() == try_.len() && !try_.is_empty());
         }
-        t.check(format!("example {}: {} lines, all finished, the explanation's links found (missing {missing:?}, blocked {blocked:?})", ex.name, ex.steps.len()),
+        t.check(format!("lesson {}: {} lines, all finished, the explanation's links found (missing {missing:?}, blocked {blocked:?})", ex.name, ex.steps.len()),
                 missing.is_empty() && blocked.is_empty());
     }
-    t.done(format!("{} lessons", examples.len()))
+    t.done(format!("{} lessons", lessons.len()))
 }

@@ -157,7 +157,7 @@ pub struct Ui {
     pub seen: Signal<Option<(String, u32)>>,
     /// The text looked for in the functions' names (the chart's bars).
     pub find: Signal<String>,
-    /// The lesson open (an index in the examples), the program made for
+    /// The lesson open (an index in the lessons), the program made for
     /// it (its own, or a try), and how each of its lines went.
     pub lesson: Signal<usize>,
     pub program: Signal<Vec<crate::lesson::Step>>,
@@ -177,7 +177,7 @@ impl Ui {
             seen: Signal::new(None),
             find: Signal::new(String::new()),
             lesson: Signal::new(0),
-            program: Signal::new(crate::examples().first().map(|e| e.steps.clone()).unwrap_or_default()),
+            program: Signal::new(crate::lessons().first().map(|e| e.steps.clone()).unwrap_or_default()),
             outcomes: Signal::new(Vec::new()),
         }
     }
@@ -200,7 +200,7 @@ impl Ui {
 
     /// Lesson `k`, with its own program.
     pub fn open_lesson(self, k: usize) {
-        self.open(k, crate::examples()[k].steps.clone());
+        self.open(k, crate::lessons()[k].steps.clone());
     }
 
     pub fn commit(mut self, moment: Option<Moment>) {

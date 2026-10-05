@@ -54,8 +54,8 @@ dependency set, then runs it. `ksee build` performs these stages:
    DWARF-derived types, symbols, syscalls, constants, and declaration
    locations; copy referenced kernel sources; strip DWARF; and write
    `vmlinux.gz`, then `initramfs.cpio.gz` and `disk.img.gz`.
-3. Write the lessons (`lessons.rs`): `user/examples/*.json` in course order
-   into `examples.json`, a page per lesson from `web/index.html`, and
+3. Write the lessons (`lessons.rs`): `user/lessons/*.json` in course order
+   into `lessons.json`, a page per lesson from `web/index.html`, and
    `sitemap.xml`.
 4. Build `ksee-page` for `wasm32-unknown-unknown` with `--locked --release`.
    Cargo links `ksee-host` and `ksee-core` into the same outer module, then
@@ -102,7 +102,7 @@ Do not edit generated output as source:
 | `target/site/vmlinux.gz` | Instrumented, packed kernel without DWARF. |
 | `target/site/src/` | Kernel source files referenced by probe metadata. |
 | `target/site/initramfs.cpio.gz` | `/init`, `/bin/prog`, root fixture, and ext4 image. |
-| `target/site/examples.json` | Built lesson index and content. |
+| `target/site/lessons.json` | Built lesson index and content. |
 | `target/site/NAME.html`, `index.html` | The page, once per lesson (and the first's, `index.html`), from `web/index.html`: the lesson's title and description, and its text as plain HTML for search engines and link previews (`index.html`: every lesson's title and question), which the page replaces once it runs. |
 | `target/site/sitemap.xml` | Every page, at the address `ksee deploy` publishes the site at (the origin's GitHub Pages), for search engines (submit it in Google's Search Console). |
 | `target/vmlinux` | Uncompressed packed kernel, with metadata injected and DWARF removed, used to produce the site copy. |

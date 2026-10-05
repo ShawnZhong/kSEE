@@ -264,8 +264,8 @@ async function bytes(url) {
   return new Uint8Array(await new Response(body).arrayBuffer());
 }
 // (The page at once; the kernel boots meanwhile, the page's once up.)
-const [, examples] = await Promise.all([init({ module_or_path: "pkg/ksee_page_bg.wasm" }), fetch("examples.json").then((r) => r.json())]);
-mount("root", examples, Promise.all(["vmlinux.gz", "initramfs.cpio.gz", "disk.img.gz"].map(bytes)).then(([kernel, initrd, disk]) => Machine.start(kernel, initrd, disk)));
+const [, lessons] = await Promise.all([init({ module_or_path: "pkg/ksee_page_bg.wasm" }), fetch("lessons.json").then((r) => r.json())]);
+mount("root", lessons, Promise.all(["vmlinux.gz", "initramfs.cpio.gz", "disk.img.gz"].map(bytes)).then(([kernel, initrd, disk]) => Machine.start(kernel, initrd, disk)));
 </script>
 </body>
 </html>

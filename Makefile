@@ -79,7 +79,7 @@ $(OUT)/%.wasm: user/%.c user/syscall.h | linux/vmlinux
 		-Wl,--import-memory -Wl,--no-entry -nostdinc -isystem linux/usr/include -o $@ $<
 
 # The disk /init mounts (/dev/wda: its blocks the host's), ext4: user/disk/,
-# the files the examples start from; blocks of 4 KiB, a page each (the
+# the files the lessons start from; blocks of 4 KiB, a page each (the
 # page cache's unit: one block to one page, as most systems have it), 8 MiB
 # (the journal's room); initialized in full: no background work after the
 # mount (ext4lazyinit's).
