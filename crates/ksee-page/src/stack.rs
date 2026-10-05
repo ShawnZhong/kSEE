@@ -18,8 +18,8 @@ use crate::state::{Derived, Moment, Tab, Ui};
 /// what it did between.
 pub fn walk(ui: Ui, dir: isize, over: bool) {
     let Some(at) = ui.at.peek().clone() else { return };
-    let k = at.call;
-    let lines = Ui::lines_of(k);
+    let k = at.run;
+    let lines = Ui::run_lines(k);
     if let Some(j) = step(&lines, at.line, dir, over) {
         ui.go(j);
         return;
@@ -34,7 +34,7 @@ pub fn walk(ui: Ui, dir: isize, over: bool) {
     if let Some(next) = next {
         ui.select(next);
         if dir < 0 {
-            ui.go(Ui::lines_of(next).len().saturating_sub(1));
+            ui.go(Ui::run_lines(next).len().saturating_sub(1));
         }
     }
 }
@@ -45,7 +45,7 @@ pub fn frame(ui: Ui, d: Derived, dir: isize) {
     let Some(at) = ui.at.peek().clone() else { return };
     let frames = d.stack.peek();
     let k = d.frame.peek().saturating_add_signed(dir).min(frames.len().saturating_sub(1));
-    ui.commit(Some(Moment { frame: Some(frames.len().saturating_sub(1 + k)), ..at }));
+    ui.commit(Some(Moment { level: Some(frames.len().saturating_sub(1 + k)), ..at }));
 }
 
 /// Under the strip: steps through the call's lines (◀ ▶; Shift: over the
@@ -176,7 +176,7 @@ pub fn Stack() -> Element {
                         let level = frames.len() - 1 - k;
                         move |_| {
                             let at = ui.at.peek().clone();
-                            if let Some(at) = at { ui.commit(Some(Moment { frame: Some(level), ..at })) }
+                            if let Some(at) = at { ui.commit(Some(Moment { level: Some(level), ..at })) }
                         }
                     },
                         td { colspan: "3",

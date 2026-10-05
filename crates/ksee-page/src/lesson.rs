@@ -91,20 +91,19 @@ pub(crate) async fn run(mut ui: Ui, lines: Vec<Step>) {
     })).flatten();
     match linked {
         Some(to) => follow(ui, to),
-        None => if let Some(k) = call_of(ui, calls) { ui.select(k) },
+        None => if let Some(k) = run_of_call(ui, calls) { ui.select(k) },
     }
     // (A new run: the timeline the whole of it.)
     ui.win.set(None);
 }
 
-/// The syscall (an index in the syscalls) the program's call `n` (from 1)
-/// made, if the recording has it.
-fn call_of(ui: Ui, n: usize) -> Option<usize> {
+/// The run (an index in the runs) of the program's call `n` (from 1), if the recording has it.
+fn run_of_call(ui: Ui, n: usize) -> Option<usize> {
     let id = ui.outcomes.read().iter().filter_map(|o| match o {
         Outcome::Call { id, .. } => Some(*id),
         _ => None,
     }).nth(n.checked_sub(1)?)?;
-    machine().syscall_of(id)
+    machine().run_of_call_id(id)
 }
 
 /// Follow link `target` of the lesson's text: `N` (its call N selected),
@@ -119,12 +118,12 @@ fn follow(mut ui: Ui, target: LessonTarget) {
         }
         return;
     };
-    let Some(k) = call_of(ui, call) else { return };
+    let Some(k) = run_of_call(ui, call) else { return };
     ui.select(k);
     if let Some(func) = function {
         // (The call's lines and syscall now: the memos have them as they were.)
         let m = machine();
-        let (lines, s) = (Ui::lines_of(k), m.view(|v| v.run(k)));
+        let (lines, s) = (Ui::run_lines(k), m.view(|v| v.run(k)));
         let at = s.and_then(|s| m.first_call(&func, s.first, s.last, (!any_task).then_some(s.task.addr)));
         if let Some(at) = at && let Some(j) = lines.iter().position(|l| l.i >= at) {
             ui.go(j);
@@ -227,7 +226,7 @@ fn task_name(ui: Ui, task: Option<&str>, program: &[Step]) -> (String, i32) {
     // (A call made: the kernel is up.)
     let recorded = id.and_then(|id| {
         let m = machine();
-        m.syscall_of(id).and_then(|k| m.view(|v| v.run(k))).map(|s| s.task)
+        m.run_of_call_id(id).and_then(|k| m.view(|v| v.run(k))).map(|s| s.task)
     });
     match recorded {
         Some(t) => (t.named(), t.pid.unwrap_or(0)),
@@ -243,7 +242,7 @@ fn task_name(ui: Ui, task: Option<&str>, program: &[Step]) -> (String, i32) {
 #[component]
 fn Cell(j: usize, step: Step, outcome: Option<Outcome>, call: Option<usize>, column: Option<(usize, i32)>) -> Element {
     let mut ui = use_context::<Ui>();
-    let selected = call.is_some() && call.and_then(|n| call_of(ui, n)) == ui.call();
+    let selected = call.is_some() && call.and_then(|n| run_of_call(ui, n)) == ui.run();
     let style = column.as_ref().map_or(String::new(), |(c, h)| format!("grid-column: {}; --hue: {h}", c + 1));
     let blocked = matches!(outcome, Some(Outcome::Call { done: false, .. }));
     let class = format!("cell{}{}", if selected { " on" } else { "" }, if blocked { " blocked" } else { "" });
@@ -255,7 +254,7 @@ fn Cell(j: usize, step: Step, outcome: Option<Outcome>, call: Option<usize>, col
                         let mut program = ui.program.write();
                         if text.is_empty() { program.remove(j); } else { program[j] = step.with_text(text); }
                     },
-                    focus: move |_| if let Some(k) = call.and_then(|n| call_of(ui, n)) { ui.select(k) } }
+                    focus: move |_| if let Some(k) = call.and_then(|n| run_of_call(ui, n)) { ui.select(k) } }
                 span { class: "ret mono", {said(outcome.as_ref())} }
             }
             if let Some(Outcome::Call { changed, .. }) = &outcome && !changed.is_empty() {

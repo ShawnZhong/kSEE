@@ -2,7 +2,7 @@
 //! the site's src/), colored (highlight.rs): the whole file, scrolling (only
 //! the lines in view made: a line's height is fixed), the function's lines
 //! edged and the one it runs marked, with its values at its end as they are before it runs;
-//! the lines that ran in the call selected (hover a line's number: how
+//! the lines that ran in the run selected (hover a line's number: how
 //! often), each with what it stored so far (a click: that write); a name's
 //! value at the moment shown, hovered (Ctrl+click: its definition). A
 //! click on a line's number runs to its next run (Shift: its last).
@@ -101,13 +101,13 @@ pub fn Source() -> Element {
     }
 }
 
-/// What the call selected did on each line of `file`: the lines that ran,
+/// What the run selected did on each line of `file`: the lines that ran,
 /// how often; what each stored, its note and the write's record.
-fn ran(ui: Ui, syscall: Option<RunSummary>, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
+fn ran(ui: Ui, run: Option<RunSummary>, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
     let m = machine();
-    let k = ui.call();
+    let k = ui.run();
     let counts = m.view(|v| v.coverage(file, k));
-    let notes = syscall.map(|s| m.view(|v| v.notes(s.first, s.last, file, at)))
+    let notes = run.map(|s| m.view(|v| v.notes(s.first, s.last, file, at)))
         .unwrap_or_default().into_iter().map(|n| (n.line, (n.short, n.full, n.i))).collect();
     (counts, notes)
 }
@@ -240,7 +240,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
                         let is_here = here && n == line;
                         let infn = n >= from && n <= to;
                         let class = format!("ln{}{}{}", if is_here { " now" } else if counts.contains_key(&n) { " ran" } else { "" }, if infn { " infn" } else { "" }, if n == line && !here { " seen" } else { "" });
-                        let count = counts.get(&n).map_or("did not run in the call selected".to_string(), |c| format!("ran {c}×; click: run to its next run (Shift: its last)"));
+                        let count = counts.get(&n).map_or("did not run in the run selected".to_string(), |c| format!("ran {c}×; click: run to its next run (Shift: its last)"));
                         let note = notes.get(&n).cloned();
                         let frame = frame.clone();
                         let names = names.clone();

@@ -40,10 +40,9 @@ impl Machine {
         self.rec.borrow().len()
     }
 
-    /// Call `id`'s syscall (see Machine::make), an index in the view's
-    /// syscalls: the first of its number its runner made since it was
-    /// asked, if the snapshot has it.
-    pub fn syscall_of(&self, id: u32) -> Option<usize> {
+    /// Call `id`'s run (see Machine::make), an index in the view's runs:
+    /// the first syscall of its number its runner made since it was asked, if the snapshot has it.
+    pub fn run_of_call_id(&self, id: u32) -> Option<usize> {
         let (task, nr, from) = k(|k| k.p.calls.get(&id).map(|c| (c.task, c.nr, c.from)))?;
         let rec = self.rec.borrow();
         rec.runs.iter().position(|s| s.nr == Some(nr) && s.task == task && rec.ids[s.first] >= from)

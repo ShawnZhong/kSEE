@@ -407,7 +407,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
         draw_chart(&chart, &runs.read().0, width(), height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
                    d.preview.cloned().or(d.cursor.cloned()).and_then(x), stack.len().checked_sub(1 + d.frame.cloned()),
-                   ui.at.read().as_ref().and_then(|m| m.frame), offset());
+                   ui.at.read().as_ref().and_then(|m| m.level), offset());
         if let Some(scroll) = element("timeline-scroll") {
             scroll.set_scroll_top((scroll.scroll_height() - scroll.client_height() - *from_bottom.peek()).max(0));
         }
@@ -493,7 +493,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     let p = e.client_coordinates();
                     let Some((x, y)) = chart_coordinates(p.x, p.y) else { return };
                     // (Off the bars, the level chosen, kept.)
-                    let Some((peek, bar)) = hit(&chart, x, y, ui.at.peek().as_ref().and_then(|m| m.frame)) else { return };
+                    let Some((peek, bar)) = hit(&chart, x, y, ui.at.peek().as_ref().and_then(|m| m.level)) else { return };
                     ui.set_preview(peek);
                     match bar.map(|b| &chart.bars[b]) {
                         None => if tip().is_some() { tip.set(None) },

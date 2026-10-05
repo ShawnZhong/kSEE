@@ -109,39 +109,39 @@ impl Recording {
             }
         }
         let calls = stack::Calls::new(t, &records, &tasks);
-        let mut syscalls = split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args, &calls);
+        let mut runs = split(t.find(arch::SYSCALL).unwrap_or(0), &records, &tasks, &args, &calls);
         // (Each task's runs between its syscalls: its records there, first
         // to last.)
         let mut mine: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
         for (i, &task) in tasks.iter().enumerate() {
             mine.entry(task).or_default().push(i);
         }
-        let mut runs = Vec::new();
+        let mut gaps = Vec::new();
         for (&task, at) in &mine {
             let mut gap = |from: usize, to: usize| {
                 let (a, b) = (at.partition_point(|&i| i < from), at.partition_point(|&i| i < to));
                 if a < b {
-                    runs.push(Run { task, nr: None, ret: None, first: at[a], last: Some(at[b - 1]) });
+                    gaps.push(Run { task, nr: None, ret: None, first: at[a], last: Some(at[b - 1]) });
                 }
             };
             let mut from = 0;
-            for s in syscalls.iter().filter(|s| s.task == task) {
+            for s in runs.iter().filter(|s| s.task == task) {
                 gap(from, s.first);
                 from = s.last.map_or(records.len(), |l| l + 1);
             }
             gap(from, records.len());
         }
-        syscalls.extend(runs);
-        syscalls.sort_by_key(|s| s.first);
+        runs.extend(gaps);
+        runs.sort_by_key(|s| s.first);
         // (The lines each run ran, as stepping walks them: a call's width in
         // the chart is the steps it takes.)
         let mut steps: Vec<(usize, u32, u32)> = Vec::new();
-        for s in &syscalls {
+        for s in &runs {
             let end = s.last.map_or(records.len(), |l| l + 1);
             steps.extend(calls.lines(t, &records, &tasks, s.first, end - 1, s.task).iter().map(|l| (l.record, l.nth, l.cut)));
         }
         steps.sort_by_key(|s| s.0);
-        Recording { records, ids, args, tasks, runs: syscalls, steps, calls, stores: OnceCell::new(), names: Default::default(), named: Default::default() }
+        Recording { records, ids, args, tasks, runs, steps, calls, stores: OnceCell::new(), names: Default::default(), named: Default::default() }
     }
 
     /// Record `i`'s step: its last line's, so a record between two lines

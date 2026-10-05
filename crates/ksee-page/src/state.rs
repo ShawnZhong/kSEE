@@ -1,7 +1,7 @@
 //! The page's state: the snapshot (a new one after each call), and two
 //! moments: the cursor (where a click or a step left it) and the one under
 //! the pointer, over the chart. The page shows the pointer's, else the
-//! cursor's; derived from it: its call's lines, its stack, its frame.
+//! cursor's; derived from it: its run's lines, its stack, its frame.
 
 use std::rc::Rc;
 
@@ -37,19 +37,21 @@ impl<T> std::ops::Deref for Shared<T> {
     }
 }
 
-/// A moment: a run (an index in the runs: a syscall, or a task between them), a line it ran (an index
-/// in its lines), and the level chosen on the stack there, from the
-/// outermost (0: the chart's bottom bar; none, or past the stack's top: the
-/// innermost). A level, not a call: moving along, it stays.
+/// A moment: a run (an index in the runs: a syscall, or a task between
+/// them), a line it ran (an index in its lines), and the level chosen on
+/// the stack there, from the outermost (0: the chart's bottom bar; none,
+/// or past the stack's top: the innermost). A level, not a call: moving
+/// along, it stays. (Derived::frame is its frame: an index in the stack,
+/// innermost first.)
 #[derive(Clone, PartialEq, Default)]
 pub struct Moment {
-    pub call: usize,
+    pub run: usize,
     pub line: usize,
-    pub frame: Option<usize>,
+    pub level: Option<usize>,
 }
 
 /// What the state makes, computed once each time what it depends on
-/// changes: the moment shown (the pointer's, else the cursor's), its call
+/// changes: the moment shown (the pointer's, else the cursor's), its run
 /// (as the snapshot has it) and lines; the chart's window and the chart;
 /// its line, stack, and the frame shown on it; and where the cursor is, in
 /// steps (its line's: the chart's line).
@@ -74,8 +76,8 @@ fn moment_step(at: &Moment, lines: &[Line]) -> Option<f64> {
     Some((machine().view(|v| v.rec.first_step(i)) + k) as f64)
 }
 
-/// Syscall `s`'s lines (its task's).
-fn lines_of(s: &ksee_core::view::RunSummary) -> Vec<Line> {
+/// Run `s`'s lines (its task's).
+fn run_lines(s: &ksee_core::view::RunSummary) -> Vec<Line> {
     machine().view(|v| v.lines(s.first, s.last, s.task.addr))
 }
 
@@ -88,12 +90,12 @@ impl Derived {
             if !ui.up() {
                 return None;
             }
-            let k = shown()?.call;
+            let k = shown()?.run;
             machine().view(|v| v.run(k))
         });
         let lines = use_memo(move || {
             (ui.snapshot)();
-            Shared(Rc::new(run.cloned().map_or_else(Vec::new, |s| lines_of(&s))))
+            Shared(Rc::new(run.cloned().map_or_else(Vec::new, |s| run_lines(&s))))
         });
         // (The chart's: none before the kernel is up.)
         let up = move || ui.up();
@@ -118,13 +120,13 @@ impl Derived {
         });
         let frame = use_memo(move || {
             let n = stack.read().len();
-            shown().and_then(|m| m.frame).filter(|&l| l < n).map_or(0, |l| n - 1 - l)
+            shown().and_then(|m| m.level).filter(|&l| l < n).map_or(0, |l| n - 1 - l)
         });
         let cursor = use_memo(move || {
             (ui.snapshot)();
             let at = (ui.at)()?;
-            if shown().is_some_and(|s| s.call == at.call) { moment_step(&at, &lines.read()) }
-            else { moment_step(&at, &Ui::lines_of(at.call)) }
+            if shown().is_some_and(|s| s.run == at.run) { moment_step(&at, &lines.read()) }
+            else { moment_step(&at, &Ui::run_lines(at.run)) }
         });
         // (The pointer's: the moment shown, its lines `lines`.)
         let preview = use_memo(move || moment_step(&(ui.peek)()?, &lines.read()));
@@ -140,7 +142,7 @@ pub struct Ui {
     /// The published recording snapshot: what reads the recording subscribes
     /// to this identity and reads it again when it changes.
     pub snapshot: Signal<u64>,
-    /// The cursor (none: no call selected), and the moment under the
+    /// The cursor (none: no run selected), and the moment under the
     /// pointer, if it is over the chart.
     pub at: Signal<Option<Moment>>,
     pub peek: Signal<Option<Moment>>,
@@ -218,14 +220,14 @@ impl Ui {
         matches!((self.kernel)(), Some(Ok(())))
     }
 
-    /// The call selected (the cursor's).
-    pub fn call(&self) -> Option<usize> {
-        self.at.read().as_ref().map(|m| m.call)
+    /// The run selected (the cursor's).
+    pub fn run(&self) -> Option<usize> {
+        self.at.read().as_ref().map(|m| m.run)
     }
 
-    /// Syscall `k`'s lines (its task's), as the snapshot has them.
-    pub fn lines_of(k: usize) -> Vec<Line> {
-        machine().view(|v| v.run(k)).map_or_else(Vec::new, |s| lines_of(&s))
+    /// Run `k`'s lines (its task's), as the snapshot has them.
+    pub fn run_lines(k: usize) -> Vec<Line> {
+        machine().view(|v| v.run(k)).map_or_else(Vec::new, |s| run_lines(&s))
     }
 
     /// Select run `k` (an index in the runs), the cursor at its own code's
@@ -233,8 +235,8 @@ impl Ui {
     /// frame. (The window is the reader's: it moves only to keep the cursor
     /// in it, see Timeline.)
     pub fn select(self, k: usize) {
-        let own = Ui::lines_of(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
-        self.commit(Some(Moment { call: k, line: own.unwrap_or(0), frame: None }));
+        let own = Ui::run_lines(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
+        self.commit(Some(Moment { run: k, line: own.unwrap_or(0), level: None }));
     }
 
     /// The chart's window: `span` steps from `start`, kept in the recording
@@ -246,29 +248,29 @@ impl Ui {
         self.win.set(Some((a, a + span)));
     }
 
-    /// The cursor to line `k` of its call, at the level chosen.
+    /// The cursor to line `k` of its run, at the level chosen.
     pub fn go(self, k: usize) {
-        if let Some(call) = self.call() {
-            let frame = self.at.peek().as_ref().and_then(|m| m.frame);
-            self.commit(Some(Moment { call, line: k, frame }));
+        if let Some(run) = self.run() {
+            let level = self.at.peek().as_ref().and_then(|m| m.level);
+            self.commit(Some(Moment { run, line: k, level }));
         }
     }
 
     /// The cursor at the next (`dir` 1) or previous (`dir` -1) run of
-    /// `file`'s `line`, within its call.
+    /// `file`'s `line`, within its run.
     pub fn run_to(self, file: &str, line: u32, dir: isize) {
         let Some(at) = self.at.peek().clone() else { return };
-        let lines = Ui::lines_of(at.call);
+        let lines = Ui::run_lines(at.run);
         if let Some(k) = run_to(&lines, at.line, file, line, dir) {
             self.go(k);
         }
     }
 
-    /// The moment at record `i` (in the chart: at its `step`), on frame `frame` there:
-    /// the call it is in, its line there (the last at or before it).
-    pub fn moment_at(d: Derived, i: usize, step: Option<usize>, frame: Option<usize>) -> Option<Moment> {
-        let (call, own, first) = machine().view(|v| (v.rec.run_at(i), v.line_of(i), v.rec.first_step(i)));
-        let call = call?;
+    /// The moment at record `i` (in the chart: at its `step`), at level `level` there:
+    /// the run it is in, its line there (the last at or before it).
+    pub fn moment_at(d: Derived, i: usize, step: Option<usize>, level: Option<usize>) -> Option<Moment> {
+        let (run, own, first) = machine().view(|v| (v.rec.run_at(i), v.line_of(i), v.rec.first_step(i)));
+        let run = run?;
         // (A step: the line it is, its record's lines being its steps; a
         // write, a comparison: its own line; a block: its first line; else
         // the last before.)
@@ -277,15 +279,15 @@ impl Ui {
             (None, Some((r, nth))) => lines.iter().rposition(|l| l.i == r && l.nth <= nth),
             (None, None) => lines.iter().position(|l| l.i == i),
         }.or_else(|| lines.iter().rposition(|l| l.i <= i)).unwrap_or(0);
-        // (The call shown's lines, as the memo has them; another's, read.)
-        let line = if d.shown.peek().as_ref().map(|m| m.call) == Some(call) { line(&d.lines.peek()) } else { line(&Ui::lines_of(call)) };
-        Some(Moment { call, line, frame })
+        // (The run shown's lines, as the memo has them; another's, read.)
+        let line = if d.shown.peek().as_ref().map(|m| m.run) == Some(run) { line(&d.lines.peek()) } else { line(&Ui::run_lines(run)) };
+        Some(Moment { run, line, level })
     }
 
     /// The cursor to record `i`, at the level chosen.
     pub fn go_record(self, d: Derived, i: usize) {
-        let frame = self.at.peek().as_ref().and_then(|m| m.frame);
-        if let Some(m) = Ui::moment_at(d, i, None, frame) {
+        let level = self.at.peek().as_ref().and_then(|m| m.level);
+        if let Some(m) = Ui::moment_at(d, i, None, level) {
             self.commit(Some(m));
         }
     }

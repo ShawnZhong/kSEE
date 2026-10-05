@@ -1,5 +1,5 @@
 //! Beside the source, a tab each: the Stack (stack.rs); the tasks at the
-//! moment shown; what the call selected did to the kernel's data (Objects);
+//! moment shown; what the run selected did to the kernel's data (Objects);
 //! what it asked of the disk (Disk); the kernel's console.
 
 use std::collections::BTreeSet;
@@ -27,7 +27,7 @@ pub fn Tabs() -> Element {
             nav { class: "tabs",
                 {head(Tab::Stack, "Stack", "the calls at the cursor, their values as they were then")}
                 {head(Tab::Tasks, "Tasks", "every task at the cursor: what each is doing, its task_struct")}
-                {head(Tab::Objects, "Objects", "the objects the call selected changed, and how they point to each other")}
+                {head(Tab::Objects, "Objects", "the objects the run selected changed, and how they point to each other")}
                 {head(Tab::Disk, "Disk", "the disk's history: each transfer, for which task, and what it wrote; at the cursor's moment")}
                 {head(Tab::Console, "Console", "the kernel's log and the programs' output")}
             }
@@ -42,7 +42,7 @@ pub fn Tabs() -> Element {
     }
 }
 
-/// Query the selected call's object graph and adapt its semantic actions to
+/// Query the selected run's object graph and adapt its semantic actions to
 /// the browser-backed page state.
 #[component]
 fn Objects() -> Element {
@@ -51,8 +51,8 @@ fn Objects() -> Element {
     let graph = use_memo(move || {
         (ui.snapshot)();
         let machine = machine();
-        let nodes = derived.run.cloned().map_or_else(Vec::new, |syscall| {
-            machine.view(|view| view.objects(syscall.first, syscall.last))
+        let nodes = derived.run.cloned().map_or_else(Vec::new, |run| {
+            machine.view(|view| view.objects(run.first, run.last))
         });
         let definitions: Vec<Option<ObjectDefinition>> = nodes.iter().map(|node| {
             (node.kind == RegionKind::Global)
@@ -62,10 +62,10 @@ fn Objects() -> Element {
         }).collect();
         (Rc::new(nodes), Rc::new(definitions))
     });
-    let Some(syscall) = derived.run.cloned() else {
-        return rsx! { p { class: "pad dim", "Select a call: what it did to the kernel's data." } };
+    let Some(run) = derived.run.cloned() else {
+        return rsx! { p { class: "pad dim", "Select a run: what it did to the kernel's data." } };
     };
-    let title = syscall.title();
+    let title = run.title();
     let cursor = derived.line.cloned().map(|line| line.at);
     rsx! {
         ObjectsView {

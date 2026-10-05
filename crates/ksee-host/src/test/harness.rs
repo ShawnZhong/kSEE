@@ -60,7 +60,7 @@ impl KernelHarness {
     }
 
     pub fn syscall(&self, id: u32) -> Option<RunSummary> {
-        let k = self.machine.syscall_of(id)?;
+        let k = self.machine.run_of_call_id(id)?;
         self.machine.view(|v| v.run(k))
     }
 
