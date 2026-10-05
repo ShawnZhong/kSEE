@@ -6,18 +6,40 @@ use web_sys::{HtmlElement, HtmlInputElement, HtmlTextAreaElement};
 use super::Check;
 use super::dom::*;
 
-/// The read example (read.html): its calls made, its subject (the read)
-/// selected; its links followed; stepping into, over, out, and by key; the
-/// chart (a click, find); Objects and Tasks; a line changed, a
-/// try and back; the next lesson.
+/// The read example (read.html), a phase each, in order (each goes on
+/// from where the one before left the page): the timeline's colors; its
+/// calls made; its links and stepping; the timeline (hover, click, the
+/// cross, a level kept); a name's tip in the source; the timeline's window
+/// (find, pan, zoom, the overview); the editor's completions; the Objects
+/// and Tasks tabs; the program changed, a try, the lessons before and after.
 pub(super) async fn read() -> Check {
     let mut r = Vec::new();
-    // (The timeline's colors.)
+    // (A failure says its phase.)
+    let at = |phase: &'static str| move |e: String| format!("{phase}: {e}");
+    colors().map_err(at("colors"))?;
+    made(&mut r).await.map_err(at("made"))?;
+    links_and_steps(&mut r).await.map_err(at("links and steps"))?;
+    timeline(&mut r).await.map_err(at("timeline"))?;
+    tip().await.map_err(at("tip"))?;
+    window().await.map_err(at("window"))?;
+    editor().await.map_err(at("editor"))?;
+    panels(&mut r).await.map_err(at("panels"))?;
+    program().await.map_err(at("program"))?;
+    Ok(r.join("; "))
+}
+
+/// The timeline's colors, by area.
+fn colors() -> Result<(), String> {
     let colors = [(Some("fs/x.c"), false, "hsl(135 40% 74%)"), (Some("fs/x.c"), true, "hsl(135 50% 50%)"),
                   (Some("arch/x.c"), false, "hsl(215 18% 74%)"), (Some("include/x.h"), false, "hsl(210 5% 74%)"), (None, false, "hsl(0 0% 79%)")];
     if let Some((file, on, _)) = colors.iter().find(|(f, on, c)| crate::chart::call_color(*f, *on) != *c) {
         return Err(format!("the timeline's color for {file:?} (on: {on}) is {}", crate::chart::call_color(*file, *on)));
     }
+    Ok(())
+}
+
+/// Its calls made, its subject (the read) selected, everything drawn.
+async fn made(r: &mut Vec<String>) -> Result<(), String> {
     wait(
         || {
             done(3)
@@ -66,6 +88,11 @@ pub(super) async fn read() -> Check {
     .await?;
     let drawn = drawn();
     r.push(format!("drawn {drawn:?}"));
+    Ok(())
+}
+
+/// The lesson's links, the global keys, stepping (on, back, over).
+async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     // (The links: each in its function, the source at its line.)
     for name in ["ksys_read", "vfs_read", "filemap_read"] {
         click(&named(".explain a", name).ok_or(fail("no link", name))?);
@@ -113,6 +140,12 @@ pub(super) async fn read() -> Check {
         "stepping",
         (&at, &into, &over),
     )?;
+    Ok(())
+}
+
+/// The timeline: hover and click on a bar, the cross, a level chosen and
+/// kept, a drag after a click; how long a hover and a step take.
+async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     // (Hover and click resolve the same canvas bar and moment.)
     let canvas = one("#timeline-canvas").ok_or("no timeline canvas")?;
     let (x, y) = bar(&canvas, "vfs_read").ok_or("no vfs_read canvas bar")?;
@@ -193,6 +226,11 @@ pub(super) async fn read() -> Check {
     }
     let step = (now() - t0) / 20.0;
     r.push(format!("hover {hover:.1} ms, step {step:.1} ms"));
+    Ok(())
+}
+
+/// A name in the source, hovered: its value, opening.
+async fn tip() -> Result<(), String> {
     // (A name in the source, hovered: its value as the Stack has one, open,
     // and a member opens further.)
     let name = all(".code .val").into_iter().find(|e| text(e) == "file").ok_or("no `file` in the source")?;
@@ -207,6 +245,16 @@ pub(super) async fn read() -> Check {
     click(&opens);
     settle().await;
     check(before > 1 && rows() > before, "a name's tip: its members, one opening", (before, rows()))?;
+    Ok(())
+}
+
+/// The timeline's window: find, pan, zoom out, the rows scrolled, the
+/// overview clicked.
+async fn window() -> Result<(), String> {
+    let canvas = one("#timeline-canvas").ok_or("no timeline canvas")?;
+    let chart = one(".chart").ok_or("no chart")?;
+    let b = canvas.get_bounding_client_rect();
+    let y = bar(&canvas, "vfs_read").map_or(b.bottom() - 20.0, |(_, by)| b.top() + by);
     // (Find: its bars lit; Enter, the cursor in it.)
     let find = one(".find").ok_or("no find box")?;
     find.dyn_ref::<HtmlInputElement>()
@@ -271,6 +319,11 @@ pub(super) async fn read() -> Check {
     settle().await;
     let middle = one(".overview .win").map(|w| { let r = w.get_bounding_client_rect(); (r.left() + r.width() / 2.0 - o.left()) / o.width() });
     check(middle.is_some_and(|m| (m - 0.75).abs() < 0.05 || m > 0.75), "a click on the overview moves the window there", middle)?;
+    Ok(())
+}
+
+/// The editor: a call's completions, a variable's.
+async fn editor() -> Result<(), String> {
     // (Typing a call: what fits, offered; Escape, nothing changed.)
     let add = all(".program textarea").into_iter().find(|t| t.get_attribute("placeholder").is_some_and(|p| p.starts_with("add a call")))
         .ok_or("no line to add")?;
@@ -302,6 +355,11 @@ pub(super) async fn read() -> Check {
     settle().await;
     check(offered.iter().any(|o| o == "openat") && names.iter().any(|o| o == "fd") && shown.is_some_and(|(w, h, seen)| w > 0.0 && h > 0.0 && seen),
           "completions", (&offered, &names, shown))?;
+    Ok(())
+}
+
+/// Objects (what the read changed) and Tasks (a task_struct opened).
+async fn panels(r: &mut Vec<String>) -> Result<(), String> {
     // (Objects: what the read changed, its file's position; Tasks: a task_struct opened.)
     tab("Objects").await;
     let objects: Vec<String> = all(".obj .title").iter().map(text).collect();
@@ -318,6 +376,12 @@ pub(super) async fn read() -> Check {
         (rows, opened),
     )?;
     tab("Stack").await;
+    Ok(())
+}
+
+/// The program changed (the URL says so), back, a try and back, the next
+/// lesson and back.
+async fn program() -> Result<(), String> {
     // (A line changed: the program made again; 4 bytes read.)
     write(
         all("ol.steps .cell textarea")
@@ -383,7 +447,7 @@ pub(super) async fn read() -> Check {
     }
     click(&back);
     wait(|| one("h1").map(|h| text(&h)) == Some(title.clone()), 100, "the lesson before", || title.clone()).await?;
-    Ok(r.join("; "))
+    Ok(())
 }
 
 /// The page opened with a program changed (the URL's p=): its lines made,
