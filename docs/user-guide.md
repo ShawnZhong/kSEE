@@ -50,8 +50,9 @@ The main chart stacks calls over time, with the outermost call at the bottom.
 A bar is an instrumented call or inlined code, colored by the part of the kernel
 its source is in (the legend), a concept a color family: files and storage blue
 (`fs/`, `block/` deeper), memory green, tasks warm (`kernel/` amber, the
-scheduler coral: where a task sleeps and another runs), devices purple, and
-the helpers (`lib/`, `include/`, the port's `arch/`) near gray. Hover to
+scheduler coral: where a task sleeps and another runs), the machine purple
+(`drivers/`, the port's `arch/` paler), and the helpers gray (`lib/`,
+`include/`). Hover to
 preview that moment and see what the call was; click to move the cursor
 there. The task strip below the chart shows which task ran in each region
 (the idle task gray). The cursor is a cross: down, its moment; across, its
