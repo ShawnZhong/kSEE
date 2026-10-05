@@ -90,9 +90,11 @@ pub(crate) const OCTAL_TYPES: &[&str] = &["umode_t"];
 pub(crate) const MADE_UP: &str = "__UNIQUE_ID_";
 
 /// The kernel's areas, by where their sources are: the timeline colors a
-/// call by the first its file is in (its legend, in this order).
+/// call by the first its file is in (its legend, in this order: by concept,
+/// files and storage, memory, tasks, devices, then the helpers).
 pub const AREAS: &[(&str, &str)] = &[
     ("fs/", "fs"),
+    ("block/", "block"),
     ("mm/", "mm"),
     ("kernel/sched/", "sched"),
     ("kernel/", "kernel"),
