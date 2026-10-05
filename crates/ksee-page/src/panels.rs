@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
+use wasm_bindgen::JsCast;
 use ksee_core::view::{RegionKind, TaskState};
 
 use crate::machine;
@@ -27,7 +28,7 @@ pub fn Tabs() -> Element {
                 {head(Tab::Stack, "Stack", "the calls at the cursor, their values as they were then")}
                 {head(Tab::Tasks, "Tasks", "every task at the cursor: what each is doing, its task_struct")}
                 {head(Tab::Objects, "Objects", "the objects the call selected changed, and how they point to each other")}
-                {head(Tab::Disk, "Disk", "what the call selected asked of the disk: each transfer, and what it wrote")}
+                {head(Tab::Disk, "Disk", "the disk's history: each transfer, for which task, and what it wrote; at the cursor's moment")}
                 {head(Tab::Console, "Console", "the kernel's log and the programs' output")}
             }
             match tab {
@@ -171,37 +172,53 @@ fn Tasks() -> Element {
     }
 }
 
-/// What the call selected asked of the disk: each transfer, in order (a
-/// click: the cursor where it was handed over; "done": where the disk made
-/// it), the one under way at the cursor marked; a write, the bytes it
-/// changed, a read, the bytes it read.
+/// The disk's history: every transfer it made, in order, for whichever
+/// task (a device is shared: a process's fsync, jbd2's journal, a worker's
+/// writeback); at the cursor's moment, those made before it plain, the one
+/// under way marked (kept in view), those not handed over yet gray. A row:
+/// what it did, to which bytes, for whom (a device's view: what the bytes
+/// are, the file system's, it does not say; a click: the
+/// cursor where it was handed over; "done": where the disk made it); a
+/// write's changed bytes, a read's.
 #[component]
 fn Disk() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     (ui.snapshot)();
-    let Some(s) = d.syscall.cloned() else {
-        return rsx! { p { class: "pad dim", "Select a call: what it asked of the disk." } };
-    };
-    let all = machine().disk(s.first, s.last);
+    // (Kept in view: the row under way, else the last made.)
+    use_effect(move || {
+        let _ = d.line.read();
+        let doc = web_sys::window().and_then(|w| w.document());
+        let last_made = || doc.as_ref()?.query_selector_all(".disk .xfer.made").ok().and_then(|l| l.item(l.length().checked_sub(1)?));
+        let row = doc.as_ref().and_then(|d| d.query_selector(".disk .xfer.on").ok().flatten()).or_else(|| last_made().and_then(|n| n.dyn_into().ok()));
+        if let Some(e) = row {
+            let o = web_sys::ScrollIntoViewOptions::new();
+            o.set_block(web_sys::ScrollLogicalPosition::Nearest);
+            e.scroll_into_view_with_scroll_into_view_options(&o);
+        }
+    });
+    let all = machine().disk();
     if all.is_empty() {
-        return rsx! { p { class: "pad dim", "{s.name} by {s.task.named()}: nothing went to the disk." } };
+        return rsx! { p { class: "pad dim", "Nothing has gone to the disk yet." } };
     }
     let cursor = d.line.cloned().map_or(0, |l| l.at);
-    let head = format!("{} transfer{} while {} by {} ran (the tag: its request)", all.len(), if all.len() == 1 { "" } else { "s" }, s.name, s.task.named());
+    let head = format!("{} transfers, the disk's whole history; at the cursor, gray: not handed over yet", all.len());
     rsx! {
         div { class: "objects disk",
-            div { class: "ohead", "{head}" }
+            div { class: "ohead dim", "{head}" }
             for x in all {
                 {
                     let t = &x.t;
-                    let on = x.asked <= cursor && cursor < x.done;
-                    let what = format!("{} {} of {} · sector {} · tag {}", if t.write { "write" } else { "read" }, size(t.len), x.what, t.sector, t.tag);
+                    let class = if x.asked > cursor { "xfer later" } else if cursor < x.done { "xfer on" } else { "xfer made" };
+                    let start = t.sector * 512;
+                    let by = x.by.clone().map_or(String::new(), |b| format!(" · for {b}"));
+                    let what = format!("{} {} · bytes {}–{}{by}", if t.write { "write" } else { "read" }, size(t.len), start, start + t.len as u64 - 1);
+                    let title = format!("sector {}, the request's tag {} (blk-mq's: how the disk says which request it did)", t.sector, t.tag);
                     let (asked, done) = (x.asked, x.done);
                     let bytes = if t.write { changed(&t.before, &t.after) } else { format!("read: {}", hex(&t.after[..t.after.len().min(16)])) };
                     rsx! {
-                        div { class: if on { "xfer on" } else { "xfer" },
-                            a { class: "mono", title: "where it was handed to the disk (queue_rq)", onclick: move |_| ui.go_record(d, asked), "{what}" }
+                        div { class,
+                            a { class: "mono", title: "{title}; a click: where it was handed to the disk (queue_rq)", onclick: move |_| ui.go_record(d, asked), "{what}" }
                             " · "
                             a { class: "dim", title: "where the disk made it (then its interrupt)", onclick: move |_| ui.go_record(d, done), "done" }
                             div { class: "mono dim bytes", "{bytes}" }

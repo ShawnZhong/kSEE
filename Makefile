@@ -79,12 +79,14 @@ $(OUT)/%.wasm: user/%.c user/syscall.h | linux/vmlinux
 		-Wl,--import-memory -Wl,--no-entry -nostdinc -isystem linux/usr/include -o $@ $<
 
 # The disk /init mounts (/dev/wda: its blocks the host's), ext4: user/disk/,
-# the files the examples start from; initialized in full: no background
-# work after the mount (ext4lazyinit's).
-$(OUT)/disk.img: $(shell find user/disk)
+# the files the examples start from; blocks of 4 KiB, a page each (the
+# page cache's unit: one block to one page, as most systems have it), 8 MiB
+# (the journal's room); initialized in full: no background work after the
+# mount (ext4lazyinit's).
+$(OUT)/disk.img: $(shell find user/disk) Makefile
 	@mkdir -p $(OUT)
 	rm -f $@
-	mkfs.ext4 -q -F -b 1024 -L ksee -N 32 -d user/disk -E lazy_itable_init=0,lazy_journal_init=0 $@ 2M
+	mkfs.ext4 -q -F -b 4096 -L ksee -N 32 -d user/disk -E lazy_itable_init=0,lazy_journal_init=0 $@ 8M
 
 # The archive (all times 0): the console (the kernel opens it before init),
 # the programs, the note.

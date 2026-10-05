@@ -3,7 +3,7 @@
 //! * [`tables`], [`types`]: what the kernel says about itself (the plugin's
 //!   probe tables; types from DWARF, see crates/ksee-cli's pack); [`wasm`]:
 //!   where they are, a module's custom sections; [`arch`]: the kernel's own
-//!   names, and its timers; [`ext4`]: what a disk's block holds.
+//!   names, and its timers.
 //! * [`trace`]: decoding the trace ring into records.
 //! * [`recording`]: what the host rebuilds from the records: tasks,
 //!   syscalls, and the calls and lines ([`stack`]), memory as it was
@@ -23,7 +23,6 @@ extern crate alloc;
 extern crate std;
 
 pub mod arch;
-pub mod ext4;
 pub mod highlight;
 pub mod program;
 pub mod mem;

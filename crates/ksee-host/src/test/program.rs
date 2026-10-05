@@ -114,15 +114,16 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         t.line("char dbuf[16]").await;
         t.line("int dfd = openat(AT_FDCWD, \"/mnt/note.txt\", O_RDWR | O_APPEND)").await;
         let r = t.line("read(dfd, dbuf, 16)").await.syscall.unwrap();
-        let reads = m.disk(r.first, r.last);
+        let span = |s: &ksee_core::view::SyscallSummary| m.disk().into_iter().filter(|x| x.asked >= s.first && x.asked <= s.last).collect::<Vec<_>>();
+        let reads = span(&r);
         t.check(format!("a first read on ext4 reads the disk ({} transfers)", reads.len()),
                 !reads.is_empty() && reads.iter().all(|x| !x.t.write && x.asked <= x.done));
         t.line("write(dfd, \"more\\n\", 5)").await;
         let f = t.line("fsync(dfd)").await.syscall.unwrap();
-        let writes = m.disk(f.first, f.last);
-        let named: Vec<&str> = writes.iter().map(|x| x.what.as_str()).collect();
-        t.check(format!("an fsync writes the disk, changing bytes, the journal among them ({named:?})"),
-                writes.iter().any(|x| x.t.write && x.t.before != x.t.after) && named.iter().any(|w| w.contains("the journal")));
+        let writes = span(&f);
+        let by: Vec<&str> = writes.iter().filter_map(|x| x.by.as_deref()).collect();
+        t.check(format!("an fsync writes the disk, changing bytes, jbd2's journal among them ({by:?})"),
+                writes.iter().any(|x| x.t.write && x.t.before != x.t.after) && by.iter().any(|b| b.starts_with("jbd2")));
         t.line("close(dfd)").await;
     }
 }

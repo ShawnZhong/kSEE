@@ -574,18 +574,22 @@ fn bar(canvas: &web_sys::Element, name: &str) -> Option<(f64, f64)> {
     })
 }
 
-/// The durable lesson (durable.html): its fsync selected, the Disk tab
-/// lists what it asked of the disk: writes, each changing bytes.
+/// The durable lesson (durable.html): the Disk tab, the disk's history;
+/// the cursor in the first call, what comes after it gray; in the fsync,
+/// its writes, jbd2's (the journal's) among them, bytes changed.
 pub(super) async fn disk() -> Check {
     wait(|| done(3), 600, "the calls made", || format!("{:?}", cells())).await?;
-    // (The third line, the fsync, selected.)
-    let _ = all("ol.steps .cell textarea").get(2).ok_or("no third line")?.dyn_ref::<HtmlElement>().map(|t| t.focus());
+    let line = |k: usize| all("ol.steps .cell textarea").get(k).and_then(|t| t.dyn_ref::<HtmlElement>().map(|t| t.focus()));
+    line(0);
     settle().await;
     click(&named(".tabs .tab", "Disk").ok_or("no Disk tab")?);
-    wait(|| !all(".disk .xfer").is_empty(), 50, "the fsync's transfers", || one(".pane").map(|p| text(&p)).unwrap_or_default()).await?;
+    wait(|| !all(".disk .xfer").is_empty(), 50, "the disk's transfers", || one(".pane").map(|p| text(&p)).unwrap_or_default()).await?;
+    let later = all(".disk .xfer.later").len();
+    check(later > 0, "the cursor in the first call: the transfers after it gray", later)?;
+    line(2);
+    settle().await;
     let rows: Vec<String> = all(".disk .xfer").iter().map(text).collect();
-    check(rows.iter().any(|r| r.starts_with("write") && r.contains("changed")) && rows.iter().any(|r| r.contains("of the journal")),
-          "the fsync's writes, bytes changed, the journal among them", &rows)?;
-    Ok(format!("{} transfers; {}", rows.len(), rows.first().cloned().unwrap_or_default()))
+    check(rows.iter().any(|r| r.starts_with("write") && r.contains("changed")) && rows.iter().any(|r| r.contains("for jbd2")),
+          "the fsync's writes, bytes changed, jbd2's among them", &rows)?;
+    Ok(format!("{} transfers, {later} after the first call; {}", rows.len(), rows.first().cloned().unwrap_or_default()))
 }
-
