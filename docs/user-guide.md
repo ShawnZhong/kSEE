@@ -47,11 +47,17 @@ The narrow overview covers the whole snapshot. It shows which task ran, where
 syscalls begin, the visible window, and the cursor. Click it to move the window.
 
 The main chart stacks calls over time, with the outermost call at the bottom.
-A bar is an instrumented call or inlined code. Hover to preview that moment and
-see what the call was; click to move the cursor there. The task strip below the
-chart shows which task ran in each region.
+A bar is an instrumented call or inlined code, colored by the part of the kernel
+its source is in (the legend), a concept a color family: files and storage blue
+(`fs/`, `block/` deeper), memory green, tasks warm (`kernel/` amber, the
+scheduler coral: where a task sleeps and another runs), devices purple, and
+the helpers (`lib/`, `include/`, the port's `arch/`) near gray. Hover to
+preview that moment and see what the call was; click to move the cursor
+there. The task strip below the chart shows which task ran in each region
+(the idle task gray). The cursor is a cross: down, its moment; across, its
+frame's level.
 
-Selecting a syscall frames it; **all** restores the full
+A lesson's run shows whole; after zooming in, **all** restores the full
 recording.
 
 ### Zoom and pan
