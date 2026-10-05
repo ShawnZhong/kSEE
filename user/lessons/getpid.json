@@ -23,7 +23,7 @@
       }
     ]
   ],
-  "steps": [
+  "program": [
     "pid_t pid = getpid()"
   ]
 }

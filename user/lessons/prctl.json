@@ -21,7 +21,7 @@
       "prctl(PR_GET_NAME, got, 0, 0, 0)"
     ]
   ],
-  "steps": [
+  "program": [
     "prctl(PR_SET_NAME, \"worker\", 0, 0, 0)"
   ]
 }

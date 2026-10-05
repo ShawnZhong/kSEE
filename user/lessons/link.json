@@ -16,7 +16,7 @@
       "read(fd, buf, 32)"
     ]
   ],
-  "steps": [
+  "program": [
     "linkat(AT_FDCWD, \"/mnt/note.txt\", AT_FDCWD, \"/mnt/also.txt\", 0)",
     "unlinkat(AT_FDCWD, \"/mnt/note.txt\", 0)"
   ]

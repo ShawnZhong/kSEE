@@ -8,10 +8,10 @@ use ksee_core::text::{self, LessonTarget, Piece};
 use ksee_host::machine::Machine;
 use ksee_host::test::KernelHarness;
 
-use crate::lesson::Step;
+use crate::lesson::Statement;
 
 /// Each step as the harness makes it: its task and its text.
-fn lines(steps: &[Step]) -> impl Iterator<Item = (Option<&str>, &str)> {
+fn lines(steps: &[Statement]) -> impl Iterator<Item = (Option<&str>, &str)> {
     steps.iter().map(|s| (s.task(), s.text()))
 }
 
@@ -20,11 +20,11 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
     let m = t.machine.clone();
     let lessons = crate::lessons();
     for ex in lessons {
-        let ids = t.program(lines(&ex.steps)).await;
-        let is_call = |step: &Step| matches!(statement(step.text()), Ok(Stmt::Call { .. }));
-        let blocked: Vec<String> = ex.steps.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.finished(id).is_some()))
+        let ids = t.program(lines(&ex.program)).await;
+        let is_call = |step: &Statement| matches!(statement(step.text()), Ok(Stmt::Call { .. }));
+        let blocked: Vec<String> = ex.program.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.finished(id).is_some()))
             .map(|(step, _)| step.text().into()).collect();
-        let calls: Vec<Option<u32>> = ex.steps.iter().zip(&ids).filter(|(step, _)| is_call(step)).map(|(_, id)| *id).collect();
+        let calls: Vec<Option<u32>> = ex.program.iter().zip(&ids).filter(|(step, _)| is_call(step)).map(|(_, id)| *id).collect();
         let mut missing = Vec::new();
         for p in &ex.text {
             for x in text::pieces(p) {
@@ -48,7 +48,7 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
             let ran = t.program(lines(try_)).await;
             t.check(format!("lesson {}, try {}: {} lines made", ex.name, k + 1, try_.len()), ran.len() == try_.len() && !try_.is_empty());
         }
-        t.check(format!("lesson {}: {} lines, all finished, the explanation's links found (missing {missing:?}, blocked {blocked:?})", ex.name, ex.steps.len()),
+        t.check(format!("lesson {}: {} lines, all finished, the explanation's links found (missing {missing:?}, blocked {blocked:?})", ex.name, ex.program.len()),
                 missing.is_empty() && blocked.is_empty());
     }
     t.done(format!("{} lessons", lessons.len()))

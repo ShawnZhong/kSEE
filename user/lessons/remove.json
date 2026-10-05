@@ -20,7 +20,7 @@
       "renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/b.txt\", 0)"
     ]
   ],
-  "steps": [
+  "program": [
     "renameat2(AT_FDCWD, \"/mnt/dir/a.txt\", AT_FDCWD, \"/mnt/dir/b.txt\", 0)",
     "unlinkat(AT_FDCWD, \"/mnt/dir\", AT_REMOVEDIR)",
     "unlinkat(AT_FDCWD, \"/mnt/dir/b.txt\", 0)",

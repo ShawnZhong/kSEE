@@ -13,7 +13,7 @@
       "openat(AT_FDCWD, \"/dev\", O_WRONLY)"
     ]
   ],
-  "steps": [
+  "program": [
     "openat(AT_FDCWD, \"/missing\", O_RDONLY)",
     "openat(AT_FDCWD, \"/dev\", O_WRONLY)"
   ]

@@ -20,7 +20,7 @@
       "openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_EXCL | O_WRONLY, 0644)"
     ]
   ],
-  "steps": [
+  "program": [
     "int fd = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644)"
   ]
 }

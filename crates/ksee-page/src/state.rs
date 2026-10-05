@@ -160,7 +160,7 @@ pub struct Ui {
     /// The lesson open (an index in the lessons), the program made for
     /// it (its own, or a try), and how each of its lines went.
     pub lesson: Signal<usize>,
-    pub program: Signal<Vec<crate::lesson::Step>>,
+    pub program: Signal<Vec<crate::lesson::Statement>>,
     pub outcomes: Signal<Vec<ksee_host::Outcome>>,
 }
 
@@ -177,7 +177,7 @@ impl Ui {
             seen: Signal::new(None),
             find: Signal::new(String::new()),
             lesson: Signal::new(0),
-            program: Signal::new(crate::lessons().first().map(|e| e.steps.clone()).unwrap_or_default()),
+            program: Signal::new(crate::lessons().first().map(|e| e.program.clone()).unwrap_or_default()),
             outcomes: Signal::new(Vec::new()),
         }
     }
@@ -193,14 +193,14 @@ impl Ui {
 
     /// Lesson `k` open, with `program` (its own, or a try): made on a
     /// fresh kernel.
-    pub fn open(mut self, k: usize, program: Vec<crate::lesson::Step>) {
+    pub fn open(mut self, k: usize, program: Vec<crate::lesson::Statement>) {
         self.lesson.set(k);
         self.program.set(program);
     }
 
     /// Lesson `k`, with its own program.
     pub fn open_lesson(self, k: usize) {
-        self.open(k, crate::lessons()[k].steps.clone());
+        self.open(k, crate::lessons()[k].program.clone());
     }
 
     pub fn commit(mut self, moment: Option<Moment>) {

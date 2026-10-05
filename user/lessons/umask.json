@@ -17,7 +17,7 @@
       "umask(0)"
     ]
   ],
-  "steps": [
+  "program": [
     "umask(077)"
   ]
 }

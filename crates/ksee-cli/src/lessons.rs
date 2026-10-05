@@ -110,7 +110,7 @@ fn lesson(ex: &Value) -> String {
         h += &format!("<p>{}</p>\n", paragraph(p));
     }
     h += "<h2>The program</h2>\n<ol>\n";
-    for step in ex["steps"].as_array().into_iter().flatten() {
+    for step in ex["program"].as_array().into_iter().flatten() {
         // (A step: its line, or a task's: {task, text}.)
         let (task, text) = match step.as_str() {
             Some(t) => (None, t),
@@ -150,7 +150,7 @@ mod tests {
     fn a_lesson_s_page() {
         let page = "<head>\n<title>x</title>\n<meta name=\"description\" content=\"x\">\n<meta property=\"og:title\" content=\"x\">\n</head>\n<body>\n<div id=\"root\"></div>\n</body>\n";
         let ex = json!({ "name": "r", "chapter": "G", "title": "T", "question": "Q?", "text": ["P `c`."],
-                         "steps": ["read(fd)", { "task": "child", "text": "exit(0)" }] });
+                         "program": ["read(fd)", { "task": "child", "text": "exit(0)" }] });
         let h = fill(page, "T — kSEE", "Q?", &lesson(&ex));
         for want in ["<title>T — kSEE</title>", "content=\"Q?\">", "og:title\" content=\"T — kSEE\"", "<div id=\"root\"></div>\n<article id=\"static\">",
                      "<h1>T</h1>", "<p>P <code>c</code>.</p>", "<code>read(fd)</code>", "(by child)"] {

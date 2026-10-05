@@ -19,7 +19,7 @@
       "write(5, \"hello\", 5)"
     ]
   ],
-  "steps": [
+  "program": [
     "write(1, \"hello\", 5)"
   ]
 }

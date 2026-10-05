@@ -14,7 +14,7 @@ A source lesson contains:
 | `title` | The lesson heading. |
 | `question` | The short question below the heading. |
 | `text` | Explanatory paragraphs with inline code and links into the recording. |
-| `steps` | The lesson's program, in chronological order. |
+| `program` | The lesson's program, in chronological order. |
 | `tries` | Optional alternative programs linked from the explanation. |
 
 `name` and `chapter` are generated during the build; do not repeat them in the
@@ -38,7 +38,7 @@ A minimal lesson looks like this:
       "read(fd, buf, 64)"
     ]
   ],
-  "steps": [
+  "program": [
     "char buf[64]",
     "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)",
     "read(fd, buf, 64)"
@@ -63,7 +63,7 @@ Lesson paragraphs use Markdown-like inline code and links parsed by
 
 Call and try numbers are one-based and must be positive. The reserved tab
 suffixes are `stack`, `objects`, `tasks`, and `console`; `any` is valid only
-after a function name. Call numbers count syscall steps only, so declarations
+after a function name. Call numbers count syscall lines only, so declarations
 do not increment them. Malformed targets fail lesson self-test validation.
 A try keeps the lesson prose visible, but recording links are disabled because
 the alternative program may have different calls.
@@ -71,15 +71,15 @@ the alternative program may have different calls.
 Use backticks for inline kernel names, paths, values, and code. Keep each
 paragraph focused on what the linked point demonstrates.
 
-## Program steps and task columns
+## Program lines and task columns
 
-A step for the main program is a JSON string:
+A line for the main program is a JSON string:
 
 ```json
 "write(fd, \"hello\\n\", 6)"
 ```
 
-A step for a secondary task is an object:
+A line for a secondary task is an object:
 
 ```json
 {
@@ -95,13 +95,13 @@ active task, such as:
 pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)
 ```
 
-The UI places secondary steps in task columns. A blocked call remains pending
-until a later step wakes it. Task selection is structured JSON metadata, not
+The UI places secondary tasks' lines in task columns. A blocked call remains pending
+until a later line wakes it. Task selection is structured JSON metadata, not
 part of the statement text.
 
 ## Program language
 
-Each step either declares program memory or makes a syscall, optionally giving
+Each line either declares program memory or makes a syscall, optionally giving
 its result a typed name:
 
 ```text
@@ -174,7 +174,7 @@ Each fresh kernel gets two fixture areas:
 The build (the Makefile) creates the ext4 image of `user/disk/` with
 `mkfs.ext4` and places it in the initramfs as `/disk.img`; add a file there to
 give the lessons another. Lessons should use these shared fixtures or create
-what they need in earlier steps. Opening another lesson starts from the
+what they need in earlier lines. Opening another lesson starts from the
 original fixtures again.
 
 ## Preview and validate

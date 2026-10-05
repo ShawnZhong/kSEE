@@ -7,7 +7,7 @@
     "2. [begin_new_exec](1:begin_new_exec) is the point of no return: [exec_mmap](1:exec_mmap) gives the task new memory (a new `mm_struct`; the old one goes), its signal handlers are reset ([flush_signal_handlers](1:flush_signal_handlers)), and [__set_task_comm](1:__set_task_comm) names it after the program. [What it changed](1:exec_mmap:objects).",
     "3. The call does not return: the new program runs, from its start. Here it is /bin/prog again, the page's program, so it takes the next call, getpid: the same pid as before ([__task_pid_nr_ns](2:__task_pid_nr_ns))."
   ],
-  "steps": [
+  "program": [
     "execve(\"/bin/prog\", {\"/bin/prog\", NULL}, {NULL})",
     "getpid()"
   ]

@@ -16,7 +16,7 @@
       "close(fd)"
     ]
   ],
-  "steps": [
+  "program": [
     "char buf[256]",
     "mkdirat(AT_FDCWD, \"/mnt/sub\", 0755)",
     "int fd = openat(AT_FDCWD, \"/mnt\", O_RDONLY | O_DIRECTORY)",

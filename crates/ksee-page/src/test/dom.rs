@@ -115,7 +115,7 @@ pub(super) fn input(e: &Element) {
 
 /// The program's lines (not the one that adds a line): their text and what each did.
 pub(super) fn cells() -> Vec<(String, String)> {
-    all("ol.steps > li:not(.add) .cell").iter().map(|c| {
+    all("ol.lines > li:not(.add) .cell").iter().map(|c| {
         let t = c.query_selector("textarea").ok().flatten().and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok()).map(|t| t.value());
         let r = c.query_selector(".ret").ok().flatten().map(|r| text(&r));
         (t.unwrap_or_default(), r.unwrap_or_default())

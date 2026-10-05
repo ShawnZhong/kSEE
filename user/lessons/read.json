@@ -25,7 +25,7 @@
       "close(fd)"
     ]
   ],
-  "steps": [
+  "program": [
     "char buf[64]",
     "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)",
     "read(fd, buf, 64)"

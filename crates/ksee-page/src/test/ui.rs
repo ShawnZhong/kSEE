@@ -384,7 +384,7 @@ async fn panels(r: &mut Vec<String>) -> Result<(), String> {
 async fn program() -> Result<(), String> {
     // (A line changed: the program made again; 4 bytes read.)
     write(
-        all("ol.steps .cell textarea")
+        all("ol.lines .cell textarea")
             .get(2)
             .ok_or("no third line")?,
         "read(fd, buf, 4)",
@@ -492,7 +492,7 @@ pub(super) async fn tasks() -> Check {
     let c = cells();
     let changed: Vec<String> = all(".cell .more").iter().map(text).collect();
     // (The child's line selected: its task in the strip as the program's other.)
-    let _ = all("ol.steps .cell textarea")
+    let _ = all("ol.lines .cell textarea")
         .get(5)
         .ok_or("no sixth line")?
         .dyn_ref::<HtmlElement>()
@@ -579,7 +579,7 @@ fn bar(canvas: &web_sys::Element, name: &str) -> Option<(f64, f64)> {
 /// its writes, jbd2's (the journal's) among them, bytes changed.
 pub(super) async fn disk() -> Check {
     wait(|| done(3), 600, "the calls made", || format!("{:?}", cells())).await?;
-    let line = |k: usize| all("ol.steps .cell textarea").get(k).and_then(|t| t.dyn_ref::<HtmlElement>().map(|t| t.focus()));
+    let line = |k: usize| all("ol.lines .cell textarea").get(k).and_then(|t| t.dyn_ref::<HtmlElement>().map(|t| t.focus()));
     line(0);
     settle().await;
     tab("Disk").await;

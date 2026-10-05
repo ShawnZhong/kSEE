@@ -6,7 +6,7 @@
 use dioxus::prelude::*;
 
 use crate::lessons;
-use crate::lesson::Step;
+use crate::lesson::Statement;
 use crate::state::Ui;
 
 /// The URL's state: the lesson, its page's name (NAME.html); and #p=JSON,
@@ -21,12 +21,12 @@ fn url() -> (Option<String>, Option<String>) {
 }
 
 /// A program as the URL has it: JSON.
-fn program_json(program: &[Step]) -> Option<String> {
+fn program_json(program: &[Statement]) -> Option<String> {
     let value = serde_wasm_bindgen::to_value(program).ok()?;
     js_sys::JSON::stringify(&value).ok()?.as_string()
 }
 
-fn program_from_json(text: &str) -> Option<Vec<Step>> {
+fn program_from_json(text: &str) -> Option<Vec<Statement>> {
     serde_wasm_bindgen::from_value(js_sys::JSON::parse(text).ok()?).ok()
 }
 
@@ -35,16 +35,16 @@ pub fn from_url(ui: Ui) {
     let (ex, p) = url();
     let all = lessons();
     if let Some(k) = ex.and_then(|n| all.iter().position(|e| e.name == n)) {
-        let program = p.as_deref().and_then(program_from_json).unwrap_or_else(|| all[k].steps.clone());
+        let program = p.as_deref().and_then(program_from_json).unwrap_or_else(|| all[k].program.clone());
         ui.open(k, program);
     }
 }
 
 /// The URL, as the lesson and its program are.
-pub(crate) fn to_url(lesson: usize, program: &[Step]) {
+pub(crate) fn to_url(lesson: usize, program: &[Statement]) {
     let all = lessons();
     let Some(ex) = all.get(lesson) else { return };
-    let p = if program == ex.steps { String::new() } else {
+    let p = if program == ex.program { String::new() } else {
         program_json(program).map_or_else(String::new, |p| format!("#p={}", js_sys::encode_uri_component(&p)))
     };
     if let Some(h) = web_sys::window().and_then(|w| w.history().ok()) {

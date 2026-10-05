@@ -21,7 +21,7 @@
       "close(fd)"
     ]
   ],
-  "steps": [
+  "program": [
     "int fd = openat(AT_FDCWD, \"/note.txt\", O_WRONLY | O_APPEND)",
     "write(fd, \"more\\n\", 5)"
   ]

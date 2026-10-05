@@ -51,7 +51,7 @@
       "waitid(P_PID, child, &info, WEXITED, NULL)"
     ]
   ],
-  "steps": [
+  "program": [
     "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
     "int fds[2]",
     "pipe2(fds, 0)",

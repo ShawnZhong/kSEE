@@ -18,7 +18,7 @@
       "kill(child, 0)"
     ]
   ],
-  "steps": [
+  "program": [
     "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
     "pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)",
     {

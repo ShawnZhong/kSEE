@@ -16,7 +16,7 @@
       "clock_nanosleep(CLOCK_REALTIME, 0, {0, 30000000}, NULL)"
     ]
   ],
-  "steps": [
+  "program": [
     "clock_nanosleep(CLOCK_MONOTONIC, 0, {0, 30000000}, NULL)"
   ]
 }

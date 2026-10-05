@@ -23,7 +23,7 @@
       "close(fd)"
     ]
   ],
-  "steps": [
+  "program": [
     "int fd = openat(AT_FDCWD, \"/note.txt\", O_RDONLY)",
     "close(fd)"
   ]
