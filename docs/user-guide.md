@@ -48,10 +48,10 @@ syscalls begin, the visible window, and the cursor. Click it to move the window.
 
 The main chart stacks calls over time, with the outermost call at the bottom.
 A bar is an instrumented call or inlined code, colored by the part of the kernel
-its source is in (the legend), a concept a color family: files and storage blue
-(`fs/`, `block/` deeper), memory green, tasks warm (`kernel/` amber, the
-scheduler coral: where a task sleeps and another runs), the machine teal
-(`drivers/`, the port's `arch/` fainter), and the helpers a cool gray (`lib/`,
+its source is in (the legend), a concept a color family: storage green (`fs/`,
+`block/`), the core kernel warm (`mm/` gold, `kernel/` orange, the scheduler
+coral: where a task sleeps and another runs), the machine blue (`drivers/`,
+the port's `arch/` fainter), and the helpers a cool gray (`lib/`,
 `include/`); a file in none of them, gray. Hover to
 preview that moment and see what the call was; click to move the cursor
 there. The task strip below the chart shows which task ran in each region

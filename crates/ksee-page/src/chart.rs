@@ -41,16 +41,16 @@ fn task_color(pid: i32) -> String {
 
 /// A call's color, by the first kernel area its source file belongs to
 /// (AREAS: a hue and its saturation, each). A concept, a family, its
-/// members neighbors: files and storage blue (fs, block), memory green,
-/// tasks warm (sched coral, kernel amber), the machine teal (drivers, the
-/// port's arch fainter), the helpers cool gray (lib, include fainter), so
-/// the work stands out. A file in none of them: gray.
+/// members neighbors: the core kernel warm (sched coral, kernel orange, mm
+/// gold), storage green (fs, block), the machine blue (drivers, the port's
+/// arch fainter), the helpers cool gray (lib, include fainter), so the
+/// work stands out. A file in none of them: gray.
 pub(crate) fn call_color(file: Option<&str>, on: bool) -> String {
     const COLORS: [(i32, i32); 9] = [
-        (210, 55), (228, 45), // fs, block
-        (135, 45),            // mm
-        (18, 60), (38, 60),   // sched, kernel
-        (180, 40), (180, 16), // drivers, arch
+        (135, 40), (160, 40), // fs, block
+        (50, 60),             // mm
+        (10, 60), (32, 65),   // sched, kernel
+        (215, 45), (215, 18), // drivers, arch
         (210, 12), (210, 5),  // lib, include
     ];
     let l = if on { 50 } else { 74 };

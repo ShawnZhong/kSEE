@@ -91,8 +91,8 @@ pub(crate) const MADE_UP: &str = "__UNIQUE_ID_";
 
 /// The kernel's areas, by where their sources are: the timeline colors a
 /// call by the first its file is in (its legend, in this order: by concept,
-/// files and storage, memory, tasks, the machine (its devices, the port),
-/// then the helpers).
+/// storage, the core kernel (memory, tasks), the machine (its devices, the
+/// port), then the helpers).
 pub const AREAS: &[(&str, &str)] = &[
     ("fs/", "fs"),
     ("block/", "block"),
