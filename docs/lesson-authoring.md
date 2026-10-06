@@ -150,7 +150,7 @@ expressions are rejected before the kernel runs.
 
 ## Course order
 
-The generated course order is defined by `EXAMPLES` in
+The generated course order is defined by `COURSE` in
 `crates/ksee-cli/src/lessons.rs`:
 
 1. Start here
@@ -160,7 +160,7 @@ The generated course order is defined by `EXAMPLES` in
 5. Waiting and waking
 6. Your own
 
-Names listed in `EXAMPLES` appear in that order; a listed file that is missing
+Names listed in `COURSE` appear in that order; a listed file that is missing
 fails the build, and a JSON file not listed is left out.
 
 ## Filesystem fixtures
