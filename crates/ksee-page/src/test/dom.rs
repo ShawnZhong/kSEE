@@ -72,11 +72,16 @@ pub(super) fn wheel(e: &Element, x: f64, y: f64, dy: f64) {
     let _ = e.dispatch_event(&web_sys::WheelEvent::new_with_event_init_dict("wheel", &init).unwrap());
 }
 
-pub(super) fn key(e: &Element, k: &str) {
+/// Key `k` pressed (a keydown, bubbling).
+fn keydown(k: &str) -> KeyboardEvent {
     let init = KeyboardEventInit::new();
     init.set_bubbles(true);
     init.set_key(k);
-    let _ = e.dispatch_event(&KeyboardEvent::new_with_keyboard_event_init_dict("keydown", &init).unwrap());
+    KeyboardEvent::new_with_keyboard_event_init_dict("keydown", &init).unwrap()
+}
+
+pub(super) fn key(e: &Element, k: &str) {
+    let _ = e.dispatch_event(&keydown(k));
 }
 
 /// A key handled by the page's global window listener, independent of which
@@ -85,10 +90,7 @@ pub(super) fn global_key(k: &str) {
     if let Some(active) = doc().active_element().and_then(|e| e.dyn_into::<HtmlElement>().ok()) {
         let _ = active.blur();
     }
-    let init = KeyboardEventInit::new();
-    init.set_bubbles(true);
-    init.set_key(k);
-    let _ = web_sys::window().unwrap().dispatch_event(&KeyboardEvent::new_with_keyboard_event_init_dict("keydown", &init).unwrap());
+    let _ = web_sys::window().unwrap().dispatch_event(&keydown(k));
 }
 
 pub(super) fn input(e: &Element) {

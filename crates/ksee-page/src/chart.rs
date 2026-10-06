@@ -83,11 +83,7 @@ pub fn Timeline() -> Element {
             ui.view(at - ((b - a) / 2) as f64, b - a);
         }
     });
-    let title = d
-        .run
-        .cloned()
-        .map(|s| s.title())
-        .unwrap_or_default();
+    let title = d.run.cloned().map(|s| s.title()).unwrap_or_default();
     rsx! {
         section { class: "timeline",
             Overview {}
@@ -124,23 +120,11 @@ fn Overview() -> Element {
     let cursor = d.cursor_step.cloned();
     let (n, tasks, starts, (wa, wb), at) = m.view(|v| {
         let n = v.rec.steps.len().max(1);
-        let tasks: Vec<i32> = (0..BUCKETS)
-            .map(|k| {
-                let i = v.rec.record_of(k * n / BUCKETS);
-                v.rec
-                    .tasks
-                    .get(i)
-                    .and_then(|&t| v.task(t, i).pid)
-                    .unwrap_or(0)
-            })
-            .collect();
-        let starts: Vec<usize> = v
-            .rec
-            .runs
-            .iter()
-            .filter(|s| s.nr.is_some())
-            .map(|s| v.rec.step_of(s.first))
-            .collect();
+        let tasks: Vec<i32> = (0..BUCKETS).map(|k| {
+            let i = v.rec.record_of(k * n / BUCKETS);
+            v.rec.tasks.get(i).and_then(|&t| v.task(t, i).pid).unwrap_or(0)
+        }).collect();
+        let starts: Vec<usize> = v.rec.runs.iter().filter(|s| s.nr.is_some()).map(|s| v.rec.step_of(s.first)).collect();
         (n, tasks, starts, (d.window)(), cursor)
     });
     let pct = |s: usize| s as f64 * 100.0 / n as f64;
@@ -189,32 +173,24 @@ pub(crate) fn element(id: &str) -> Option<web_sys::HtmlElement> {
     crate::document()?.get_element_by_id(id)?.dyn_into().ok()
 }
 
+/// A point on the page (client coordinates), on the chart's canvas.
 fn chart_coordinates(client_x: f64, client_y: f64) -> Option<(f64, f64)> {
     let rect = element("timeline-canvas")?.get_bounding_client_rect();
     Some((client_x - rect.left(), client_y - rect.top()))
 }
 
+/// The chart's text color (the theme's): the outline's and the cross's.
 fn foreground() -> String {
-    let Some(window) = web_sys::window() else {
-        return "currentColor".into();
-    };
-    let Some(chart) = element("timeline-chart") else {
-        return "currentColor".into();
-    };
-    window
-        .get_computed_style(&chart)
-        .ok()
-        .flatten()
-        .and_then(|style| style.get_property_value("color").ok())
-        .filter(|color| !color.is_empty())
-        .unwrap_or_else(|| "currentColor".into())
+    element("timeline-chart").and_then(|chart| web_sys::window()?.get_computed_style(&chart).ok()??.get_property_value("color").ok())
+        .filter(|color| !color.is_empty()).unwrap_or_else(|| "currentColor".into())
 }
 
+/// The stack rows' height: `depth` rows, at least the `room` there is.
 fn chart_height(depth: usize, room: f64) -> f64 {
     (depth as f64 * ROW).max(room)
 }
 
-#[derive(Clone)]
+/// The task strip's spans of columns: each its task's name and color.
 struct TaskSpan {
     start: usize,
     end: usize,
@@ -224,50 +200,30 @@ struct TaskSpan {
 
 fn task_spans(chart: &Chart) -> Vec<TaskSpan> {
     let m = machine();
-    chart
-        .task_spans()
-        .into_iter()
-        .map(|(start, end, task)| {
-            let t = m.view(|v| v.task(task, chart.cols[end - 1].i));
-            TaskSpan {
-                start,
-                end,
-                name: t.named(),
-                color: task_color(t.pid.unwrap_or(0)),
-            }
-        })
-        .collect()
+    chart.task_spans().into_iter().map(|(start, end, task)| {
+        let t = m.view(|v| v.task(task, chart.cols[end - 1].i));
+        TaskSpan { start, end, name: t.named(), color: task_color(t.pid.unwrap_or(0)) }
+    }).collect()
 }
 
-fn canvas_context(
-    id: &str,
-    width: f64,
-    height: f64,
-) -> Option<(
-    web_sys::HtmlCanvasElement,
-    web_sys::CanvasRenderingContext2d,
-)> {
+/// Canvas `id`, `width` by `height` px (sharp at the screen's pixel
+/// ratio), cleared: it and its 2D context.
+fn canvas_context(id: &str, width: f64, height: f64) -> Option<(web_sys::HtmlCanvasElement, web_sys::CanvasRenderingContext2d)> {
     let canvas: web_sys::HtmlCanvasElement = element(id)?.dyn_into().ok()?;
-    let ctx = canvas
-        .get_context("2d")
-        .ok()
-        .flatten()?
-        .dyn_into::<web_sys::CanvasRenderingContext2d>()
-        .ok()?;
-    let dpr = web_sys::window()
-        .map_or(1.0, |w| w.device_pixel_ratio())
-        .max(1.0);
+    let ctx: web_sys::CanvasRenderingContext2d = canvas.get_context("2d").ok()??.dyn_into().ok()?;
+    let dpr = web_sys::window().map_or(1.0, |w| w.device_pixel_ratio()).max(1.0);
     canvas.set_width((width * dpr).round() as u32);
     canvas.set_height((height * dpr).round() as u32);
     let _ = canvas.style().set_property("width", &format!("{width}px"));
-    let _ = canvas
-        .style()
-        .set_property("height", &format!("{height}px"));
+    let _ = canvas.style().set_property("height", &format!("{height}px"));
     let _ = ctx.set_transform(dpr, 0.0, 0.0, dpr, 0.0, 0.0);
     ctx.clear_rect(0.0, 0.0, width, height);
     Some((canvas, ctx))
 }
 
+/// The stack chart and the task strip drawn: the bars (`calls`, the
+/// stack's, darker; `find`'s, lit; `lit`, outlined), the cross at `now`
+/// (% across) and `level`, the window panned `offset` px.
 fn draw_chart(
     chart: &Chart,
     tasks: &[TaskSpan],
@@ -281,13 +237,8 @@ fn draw_chart(
     locked: Option<usize>,
     offset: f64,
 ) {
-    let Some((canvas, ctx)) = canvas_context("timeline-canvas", width, height) else {
-        return;
-    };
-    let Some((_, task_ctx)) = canvas_context("timeline-task-canvas", width, TASK_LANE)
-    else {
-        return;
-    };
+    let (Some((canvas, ctx)), Some((_, task_ctx))) = (canvas_context("timeline-canvas", width, height), canvas_context("timeline-task-canvas", width, TASK_LANE))
+        else { return };
     let n = chart.cols.len().max(1) as f64;
     let foreground = foreground();
     task_ctx.set_font("10px ui-monospace, SFMono-Regular, Menlo, monospace");
@@ -312,11 +263,7 @@ fn draw_chart(
         let id = (bar.first, bar.name.clone());
         let on = calls.contains(&id);
         let found = !find.is_empty() && bar.name.to_lowercase().contains(find);
-        let color = if found {
-            "#ffd866".to_string()
-        } else {
-            call_color(bar.file.as_deref(), on)
-        };
+        let color = if found { "#ffd866".to_string() } else { call_color(bar.file.as_deref(), on) };
         let x = a as f64 * width / n + offset;
         let w = (e - a) as f64 * width / n;
         let y = height - (dd as f64 + 1.0) * ROW;
@@ -409,21 +356,12 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     });
     // (One rule for hover and click: the bar under the pointer, and the
     // moment that column samples; off the bars, at level `off`.)
-    let hit = move |chart: &Chart,
-                    x: f64,
-                    y: f64,
-                    off: Option<usize>|
-          -> Option<(Option<crate::state::Moment>, Option<usize>)> {
-        let k = ((x / width() * chart.cols.len() as f64).max(0.0) as usize)
-            .min(chart.cols.len().checked_sub(1)?);
+    let hit = move |chart: &Chart, x: f64, y: f64, off: Option<usize>| -> Option<(Option<crate::state::Moment>, Option<usize>)> {
+        let k = ((x / width() * chart.cols.len() as f64).max(0.0) as usize).min(chart.cols.len().checked_sub(1)?);
         let dd = ((height - y) / ROW).floor();
-        let bar = (y < height && dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len())
-            .then(|| chart.cols[k].frames[dd as usize] as usize);
-        let frame = bar.map(|_| dd as usize).or(off);
-        Some((
-            Ui::moment_at(d, chart.cols[k].i, Some(chart.cols[k].step), frame),
-            bar,
-        ))
+        let bar = (y < height && dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len()).then(|| chart.cols[k].frames[dd as usize] as usize);
+        let level = bar.map(|_| dd as usize).or(off);
+        Some((Ui::moment_at(d, chart.cols[k].i, Some(chart.cols[k].step), level), bar))
     };
     // (The wheel: up and down zoom around the pointer's step, in
     // proportion to how far it turned; left and right (or Shift) pan.)
@@ -564,28 +502,12 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
     }
     let m = machine();
     m.view(|v| {
-        let frame = v
-            .call_stack(first, None, 0, first)
-            .into_iter()
-            .find(|f| !f.inlined);
-        let args: Vec<(String, String)> = frame
-            .as_ref()
-            .map(|f| f.args.clone())
-            .unwrap_or_default()
-            .into_iter()
-            .map(|a| (a.name.clone(), a.shown()))
-            .collect();
-        let ret = v
-            .rec
-            .calls
-            .call_end(first)
-            .and_then(|end| match v.rec.records.get(end) {
-                Some(&Record::Return { value, .. }) => value,
-                _ => None,
-            });
-        let ret = ret
-            .map(|r| format!(" = {}", v.tables.types.result(r)))
-            .unwrap_or_default();
+        let frame = v.call_stack(first, None, 0, first).into_iter().find(|f| !f.inlined);
+        let args: Vec<(String, String)> = frame.map_or_else(Vec::new, |f| f.args.iter().map(|a| (a.name.clone(), a.shown())).collect());
+        let ret = v.rec.calls.call_end(first).and_then(|end| match v.rec.records.get(end) {
+            Some(&Record::Return { value, .. }) => value,
+            _ => None,
+        }).map(|r| format!(" = {}", v.tables.types.result(r))).unwrap_or_default();
         // (A syscall's entry: the syscall, its arguments and result; not a
         // run between syscalls that starts there.)
         let syscall = v.rec.runs.binary_search_by_key(&first, |s| s.first).ok().and_then(|k| v.run(k)).filter(|s| s.nr.is_some());
@@ -593,18 +515,12 @@ fn said(first: usize, name: &str, inlined: bool) -> Vec<(String, &'static str)> 
             Some(s) => {
                 let ret = s.ret.map_or_else(|| "…".into(), |r| v.tables.types.result(r as i64));
                 let shown: Vec<String> = args.iter().map(|(_, x)| x.clone()).collect();
-                vec![
-                    (format!("{}({}) = {ret}", s.name, shown.join(", ")), ""),
-                    (format!("a syscall by {}", s.task.named()), "dim"),
-                ]
+                vec![(format!("{}({}) = {ret}", s.name, shown.join(", ")), ""), (format!("a syscall by {}", s.task.named()), "dim")]
             }
-            None => std::iter::once((format!("{name}{ret}"), ""))
-                .chain(args.into_iter().map(|(n, x)| (format!("{n} = {x}"), "f")))
-                .collect(),
+            None => std::iter::once((format!("{name}{ret}"), "")).chain(args.into_iter().map(|(n, x)| (format!("{n} = {x}"), "f"))).collect(),
         }
     })
 }
-
 
 /// Find a function by any part of its name: its bars lit, its calls in the
 /// recording counted; Enter, the cursor at its next call (Shift: the one
@@ -616,20 +532,8 @@ fn Find() -> Element {
     (ui.snapshot)();
     let w = (ui.find)().to_lowercase();
     let m = machine();
-    let calls: Vec<usize> = if w.is_empty() {
-        Vec::new()
-    } else {
-        m.view(|v| {
-            v.rec
-                .find_calls(
-                    v.tables,
-                    |n| n.to_lowercase().contains(&w),
-                    0,
-                    usize::MAX,
-                    None,
-                )
-                .collect()
-        })
+    let calls: Vec<usize> = if w.is_empty() { Vec::new() } else {
+        m.view(|v| v.rec.find_calls(v.tables, |n| n.to_lowercase().contains(&w), 0, usize::MAX, None).collect())
     };
     let count = calls.len();
     rsx! {
@@ -647,7 +551,6 @@ fn Find() -> Element {
                 };
                 if let Some(&i) = to {
                     ui.go_record(d, i);
-
                 }
             } }
         if !w.is_empty() { span { class: "dim", if count == 0 { "none in the recording" } else { "{count} calls" } } }
