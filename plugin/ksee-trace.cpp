@@ -26,78 +26,10 @@
 // __ksee_put and __ksee_bulk (arch/wasm/kernel/ksee.c: the ring, its
 // header, and when it records).
 //
-// A record is its values (32-bit words), then its head, two words [a,
-// tag]: the tag's top nibble says what the record is, the next how many
-// values come before the head (the writer's), the rest its fields (24
-// bits); so a reader walks back from the ring's end, record by record:
-//   [fn, 1 << 28 | n]     block n of fn; block 0 (a call) has its
-//                         arguments: the source's parameters, up to seven, a
-//                         word each, two (low, high) for one wider than 32
-//                         bits (see F lines; 0 for any the optimizer took
-//                         away), then its frame base (the
-//                         stack pointer after its prologue: its locals in
-//                         memory are at their DWARF offsets from it)
-//   [fn, 4 << 28]         a return from fn, its values the value (low,
-//                         then for one wider than 32 bits high; none, a
-//                         function that returns nothing)
-//   [addr, 7 << 28 | line << 4 | k]
-//                         a store of 1 << k bytes at addr (k < 4), its
-//                         values the old value (low, then for 8 bytes
-//                         high), then, if it copies (a value loaded and
-//                         stored as it is, a memcpy), where its bytes come
-//                         from. line: which of its block's lines (the L
-//                         line's items, "|" apart, counted from 0) the
-//                         store is on (20 bits)
-//   [lhs, 6 << 28 | line << 4 | p]
-//                         a comparison deciding a branch (or a select),
-//                         of lhs with its value (for one wider than 32
-//                         bits, then lhs's high word, rhs's); p: its
-//                         predicate (LLVM's icmp's, from eq: eq ne ugt uge
-//                         ult ule sgt sge slt sle); line as a store's
-//   [value, 9 << 28 | line << 12 | k]
-//                         variable k (12 bits) of the function (its V
-//                         line) takes `value` here (the low word; the high
-//                         one its value, for a wide one): a named variable
-//                         the code keeps in a wasm local, not memory, as
-//                         the debug info says it changes (a #dbg_value);
-//                         line as a store's (12 bits)
-// (The host's writes into kernel memory are logged too, through the
-// kernel's ksee_bulk export; and ksee_record(1)'s Task record starts a
-// recording: arch/wasm/kernel/ksee.c.) fn is a hash of the function's name (for a
-// function local to its file, of "file:name").
-//
-// The linked module describes its code in a wasm custom section, which
-// wasm-ld concatenates across objects (lines may repeat). Each object's
-// part starts with U and its files, which the lines after it name by
-// number (FILE below):
-//   ksee.code  U
-//                P \t k \t path       file k
-//                I \t k \t function \t FILE:line
-//                                     inline site k: function, inlined at FILE:line
-//                F \t fn \t name \t FILE:line \t known \t sealed \t wide
-//                  (known: a bit mask of the source's parameters that call
-//                  records carry; the others were optimized away. sealed:
-//                  1 if only its call and returns are recorded: see below.
-//                  wide: a bit mask of those that take two words)
-//                V \t fn \t k \t of \t function \t name \t param \t arg
-//                                     variable k of fn (its records'): a
-//                                     variable of `function` (fn, or one
-//                                     inlined into it; `of` its id, as
-//                                     fn's), `name`, its parameter number
-//                                     (0: a local); arg: if nonzero, it is
-//                                     fn's parameter arg (a word of the
-//                                     call record) throughout, with no
-//                                     records (an inlined call's parameter
-//                                     passed one of fn's)
-//                L \t fn \t n \t lines: block n, the source lines it runs, in
-//                  order (each once per stretch between calls), separated
-//                  by ';': FILE:line (:line in the same file as the one
-//                  before), then, if it is inlined, @k per function it is
-//                  inlined from, innermost first (k: an I line's: the
-//                  function, and where it is inlined, in the next one
-//                  out); "|" where the block calls a function (which runs
-//                  in between). Block 0's first line is the function's
-//                  signature, where a call begins.
+// The records they write, and the ksee.code section that describes the
+// code they are in (one part per object, wasm-ld concatenating them):
+// docs/recording.md. fn, in both, is a hash of the function's name (for a
+// function local to its file, of "file:name": fnId).
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugProgramInstruction.h"
