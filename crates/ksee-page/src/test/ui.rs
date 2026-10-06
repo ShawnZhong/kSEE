@@ -416,7 +416,8 @@ fn bar(canvas: &web_sys::Element, name: &str) -> Option<(f64, f64)> {
 
 /// The durable lesson (durable.html): the Disk tab, the disk's history;
 /// the cursor in the first call, what comes after it gray; in the fsync,
-/// its writes, jbd2's (the journal's) among them, bytes changed.
+/// its writes, jbd2's (the journal's) among them, bytes changed; a row's
+/// moments, handed over and done.
 pub(super) async fn disk() -> Check {
     wait(|| done(3), 600, "the calls made", || format!("{:?}", cells())).await?;
     let line = |k: usize| all("ol.lines .cell textarea").get(k).and_then(|t| t.dyn_ref::<HtmlElement>().map(|t| t.focus()));
@@ -431,5 +432,16 @@ pub(super) async fn disk() -> Check {
     let rows: Vec<String> = all(".disk .xfer").iter().map(text).collect();
     check(rows.iter().any(|r| r.starts_with("write") && r.contains("changed")) && rows.iter().any(|r| r.contains("by jbd2")),
           "the fsync's writes, bytes changed, jbd2's among them", &rows)?;
-    Ok(format!("{} transfers, {later} after the first call; {}", rows.len(), rows.first().cloned().unwrap_or_default()))
+    // (A recorded row, clicked anywhere: the cursor where the driver handed
+    // it over; its "done": where the disk's interrupt took it as done.)
+    let row = all(".disk .xfer").into_iter().find(|r| r.query_selector("a.dim").ok().flatten().is_some()).ok_or("no recorded transfer")?;
+    click(&row.query_selector(".bytes").ok().flatten().ok_or("no bytes")?);
+    settle().await;
+    let handed = place();
+    tab("Disk").await;
+    click(&one(".disk .xfer a.dim").ok_or("no done")?);
+    settle().await;
+    let done = place();
+    check(handed.starts_with("wasm_disk_queue_rq") && done.starts_with("wasm_disk_interrupt"), "a transfer's moments: handed over, done", (&handed, &done))?;
+    Ok(format!("{} transfers, {later} after the first call; {}; {handed}, {done}", rows.len(), rows.first().cloned().unwrap_or_default()))
 }

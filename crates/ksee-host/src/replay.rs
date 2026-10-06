@@ -18,6 +18,9 @@ pub struct DiskTransfer {
     pub asked: Option<usize>,
     pub done: Option<usize>,
     pub by: String,
+    /// (Not in the recording: handed over before it began; else between
+    /// the calls, while only stores were recorded.)
+    pub early: bool,
 }
 
 impl Machine {
@@ -60,11 +63,12 @@ impl Machine {
             // end.)
             let record = |word: u32| Some(ids.partition_point(|&id| id < word)).filter(|&i| i < ids.len() && ids.first().is_some_and(|&f| word > f));
             state(|s| s.disk_log.iter().map(|t| {
-                // (Handed over in its task, as recorded: then a moment to go to.)
+                // (Handed over in its task, as recorded: then a moment to go
+                // to, just after the driver's call handing it over.)
                 let asked = record(t.asked).filter(|&i| tasks[i] == t.task);
                 let done = asked.and(record(t.done));
                 let by = v.task(t.task, asked.unwrap_or(v.rec.last())).named();
-                DiskTransfer { transfer: t.clone(), asked, done, by }
+                DiskTransfer { transfer: t.clone(), asked, done, by, early: ids.first().is_none_or(|&f| t.asked <= f) }
             }).collect())
         })
     }

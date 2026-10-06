@@ -79,7 +79,15 @@ pub extern "C" fn disk_submit(tag: u32, sector: u64, buf: u32, len: u32, write: 
 /// The next request done, its tag; or -1.
 #[unsafe(no_mangle)]
 pub extern "C" fn disk_done() -> i32 {
-    state_mut(|s| s.done.pop_front().map_or(-1, |t| t as i32))
+    state_mut(|s| {
+        let Some(tag) = s.done.pop_front() else { return -1 };
+        // (Its transfers done now, as the kernel sees them: the trace's word.)
+        let at = Direct.read_u32(s.trace);
+        for t in s.disk_log.iter_mut().filter(|t| t.tag == tag && t.done == 0) {
+            t.done = at;
+        }
+        tag as i32
+    })
 }
 
 /// The disk at work, as the CPU idles: the transfers handed to it made (a
@@ -92,7 +100,6 @@ pub fn disk_work() -> bool {
     for mut t in transfers {
         let at = t.sector as usize * 512;
         state_mut(|s| {
-            t.done = Direct.read_u32(s.trace);
             // (A request's segments come together: its tag once.)
             if s.done.back() != Some(&t.tag) {
                 s.done.push_back(t.tag);

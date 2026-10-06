@@ -146,8 +146,14 @@ exact bytes, the sector and the request's tag (how the disk says which request
 it did). At the
 cursor's moment, transfers made before it are plain, the one under way is
 marked and kept in view, and those not handed over yet are gray. Click a row
-to go where it was handed to the disk, "done" where the disk made it; a write
-shows the bytes it changed, a read the bytes it read.
+(anywhere on it) to go just after the driver handed it to the disk, in the
+task that did, the block layer's calls below on its stack; "done" to go
+where the kernel took it as done, in the disk's interrupt (a read's bytes in
+memory then). The host notes each moment as it happens: the trace's position
+when the driver calls its `disk_submit`, and when the interrupt takes the
+request's tag (`disk_done`). A row the recording has no moment for says why:
+before the recording (the boot's), or between calls, while only stores were
+recorded. A write shows the bytes it changed, a read the bytes it read.
 
 The Console tab contains kernel log messages and program output accumulated
 for the current lesson run. The console is output-only.

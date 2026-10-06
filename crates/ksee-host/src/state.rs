@@ -72,8 +72,8 @@ pub struct State {
 
 /// A transfer the disk made: its request's tag, `len` bytes at `sector`
 /// to (a read) or from (`write`) kernel memory at `buf`; the trace's words
-/// written when it was handed over (`asked`) and made (`done`: then the
-/// interrupt); and its bytes, `after` (a write's: what the disk holds then;
+/// written when it was handed over (`asked`) and when the kernel took it
+/// as done (`done`: in the disk's interrupt, its tag taken); and its bytes, `after` (a write's: what the disk holds then;
 /// a read's: what it read), and a write's `before`.
 #[derive(Clone, Debug, Default)]
 pub struct Transfer {

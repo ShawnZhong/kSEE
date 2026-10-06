@@ -136,7 +136,8 @@ fn Tasks() -> Element {
 /// what it did, its size and where on the disk, by which task (the one
 /// running as the driver handed it over: a device's view, what the bytes
 /// are, the file system's, it does not say; a click: the
-/// cursor where it was handed over; "done": where the disk made it); a
+/// cursor just after it was handed over; "done": where the kernel took it
+/// as done, in the disk's interrupt); a
 /// write's changed bytes, a read's.
 #[component]
 fn Disk() -> Element {
@@ -180,14 +181,16 @@ fn Disk() -> Element {
                     let what = format!("{} {} at {}{by}", if t.write { "write" } else { "read" }, size(t.len as u64), size(start));
                     let title = format!("bytes {start}–{} (sector {}); the request's tag {} (blk-mq's: how the disk says which request it did); by: the task running as it was handed over", start + t.len as u64 - 1, t.sector, t.tag);
                     let (asked, done) = (x.asked, x.done);
-                    let away = "not in the recording, in its task: before it, or while only stores were recorded";
+                    let away = if x.early { "before the recording" } else { "between calls: only stores recorded" };
                     let bytes = if t.write { changed(&t.before, &t.after) } else { format!("read: {}", hex(&t.after[..t.after.len().min(16)])) };
                     rsx! {
-                        div { class,
-                            if let (Some(asked), Some(done)) = (asked, done) {
-                                a { class: "mono", title: "{title}; a click: where it was handed to the disk (queue_rq)", onclick: move |_| ui.go_record(d, asked), "{what}" }
+                        div { class, title: if asked.is_some() { "a click: where it was handed to the disk (queue_rq)" } else { "" },
+                            onclick: move |_| if let Some(asked) = asked { ui.go_record(d, asked) },
+                            if let (Some(_), Some(done)) = (asked, done) {
+                                a { class: "mono", title: "{title}", "{what}" }
                                 " · "
-                                a { class: "dim", title: "where the disk made it (then its interrupt)", onclick: move |_| ui.go_record(d, done), "done" }
+                                a { class: "dim", title: "where the kernel took it as done (the disk's interrupt)",
+                                    onclick: move |e| { e.stop_propagation(); ui.go_record(d, done) }, "done" }
                             } else {
                                 span { class: "mono", title: "{title}; {away}", "{what}" }
                                 span { class: "dim", " · {away}" }
