@@ -1,4 +1,5 @@
-//! The probe and type tables the trace plugin embeds in the kernel module.
+//! The code and type tables (the ksee.code and ksee.types sections) the
+//! trace plugin and the pack put in the kernel module.
 
 use alloc::collections::BTreeMap;
 
@@ -156,15 +157,15 @@ impl Unit {
 }
 
 impl Tables {
-    /// Parse the `ksee.probes` and `ksee.types` sections. Lines are
+    /// Parse the `ksee.code` and `ksee.types` sections. Lines are
     /// tab-separated and may repeat (one copy per compilation unit).
-    pub fn parse(probes: &str, types: &str) -> Tables {
+    pub fn parse(code: &str, types: &str) -> Tables {
         let mut t = Tables::default();
         let mut files = Files::default();
         let mut unit = Unit::default();
         let mut names: BTreeMap<String, u32> = BTreeMap::new();
         let mut chains: BTreeMap<Vec<(u32, Loc)>, u32> = BTreeMap::new();
-        for line in probes.lines() {
+        for line in code.lines() {
             let cols: Vec<&str> = line.split('\t').collect();
             match cols.as_slice() {
                 ["U"] => unit = Unit::default(),
@@ -335,9 +336,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_probes_and_types() {
-        let probes = "U\nP\t0\t/s/p.c\nP\t1\t/s/q.h\nF\t7\tpick\t0:2\t3\t0\nL\t7\t0\t1:2\nU\nP\t0\t/s/p.c\nF\t7\tpick\t0:2\t3\t0\nF\t8\tcrc\t0:9\t1\t1\n";
-        let t = Tables::parse(probes, "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ttask_struct\t740\nM\t2\tpid\t5888\t0\t1\n");
+    fn parses_code_and_types() {
+        let code = "U\nP\t0\t/s/p.c\nP\t1\t/s/q.h\nF\t7\tpick\t0:2\t3\t0\nL\t7\t0\t1:2\nU\nP\t0\t/s/p.c\nF\t7\tpick\t0:2\t3\t0\nF\t8\tcrc\t0:9\t1\t1\n";
+        let t = Tables::parse(code, "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ttask_struct\t740\nM\t2\tpid\t5888\t0\t1\n");
         let f = &t.functions[&7];
         assert_eq!((f.known, f.sealed, t.functions[&8].sealed), (3, false, true));
         assert_eq!((t.file(f.loc), f.loc.line), ("/s/p.c", 2));
@@ -351,10 +352,10 @@ mod tests {
         // f's block 0 runs line 3 of get_current (arch/wasm's, inlined into
         // spin_lock at its line 9, inlined into f at line 2), then line 4 of
         // f: the get_current step is spin_lock's line 9.
-        let probes = "U\nP\t0\tf.c\nP\t1\tinclude/linux/spinlock.h\nP\t2\tarch/wasm/include/asm/current.h\n\
+        let code = "U\nP\t0\tf.c\nP\t1\tinclude/linux/spinlock.h\nP\t2\tarch/wasm/include/asm/current.h\n\
                       I\t0\tget_current\t1:9\nI\t1\tspin_lock\t0:2\n\
                       F\t1\tf\t0:1\t0\nL\t1\t0\t2:3@0@1;0:4\n";
-        let t = Tables::parse(probes, "W\tget_current\tarch/wasm/include/asm/current.h\t12\nW\tspin_lock\tinclude/linux/spinlock.h\t7\n");
+        let t = Tables::parse(code, "W\tget_current\tarch/wasm/include/asm/current.h\t12\nW\tspin_lock\tinclude/linux/spinlock.h\t7\n");
         let steps = &t.blocks[&(1, 0)].steps;
         let chain = |s: &Step| s.inlined.map(|k| t.inlines[k as usize].iter().map(|&(n, _)| t.names[n as usize].clone()).collect::<Vec<_>>());
         assert_eq!((t.file(steps[0].loc), steps[0].loc.line, chain(&steps[0])), ("include/linux/spinlock.h", 9, Some(alloc::vec!["spin_lock".into()])));

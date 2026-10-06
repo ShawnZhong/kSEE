@@ -82,10 +82,10 @@ pub(crate) async fn make_program(mut ui: Ui, lines: Vec<Statement>) {
         ui.snapshot += 1;
     }
     let outcomes = m.outcomes();
-    let ex = &lessons()[(ui.lesson)()];
+    let lesson = &lessons()[(ui.lesson)()];
     let calls = outcomes.iter().filter(|o| matches!(o, Outcome::Call { .. })).count();
     // (The lesson's own program: where its text's first link into the recording goes.)
-    let linked = (lines == ex.program).then(|| ex.text.iter().flat_map(|p| text::pieces(p)).find_map(|x| match x {
+    let linked = (lines == lesson.program).then(|| lesson.text.iter().flat_map(|p| text::pieces(p)).find_map(|x| match x {
         Piece::Link { to: Some(to @ LessonTarget::Recording { .. }), .. } => Some(to),
         _ => None,
     })).flatten();
@@ -139,12 +139,12 @@ pub fn LessonPane() -> Element {
     let mut ui = use_context::<Ui>();
     let all = lessons();
     let at = (ui.lesson)();
-    let ex = &all[at];
+    let lesson = &all[at];
     let program = (ui.program)();
     // (Each step's call number, from 1: the text's links name calls so.)
     let mut n = 0;
     let calls: Vec<Option<usize>> = program.iter().map(|step| matches!(statement(step.text()), Ok(Line::Call { .. })).then(|| { n += 1; n })).collect();
-    let mine = program == ex.program;
+    let mine = program == lesson.program;
     let outcomes = ui.outcomes.read().clone();
     // (Task columns: the program's first, then those used or made.)
     let active = if ui.up() { machine().task_columns(program.len()) } else { Vec::new() };
@@ -168,10 +168,10 @@ pub fn LessonPane() -> Element {
     };
     let grid = format!("--columns: {}", columns.len());
     rsx! {
-        h1 { "{ex.title}" }
-        p { class: "question", "{ex.question}" }
+        h1 { "{lesson.title}" }
+        p { class: "question", "{lesson.question}" }
         // (A try: the lesson's text still shown, its call links no longer apply.)
-        div { class: "explain", for p in ex.text.iter() {
+        div { class: "explain", for p in lesson.text.iter() {
             ParagraphView { pieces: text::pieces(p), stale: !mine, follow: move |target| follow(ui, target) }
         } }
         if !mine { p { class: "explain dim", "A try, not the lesson's own program." } }

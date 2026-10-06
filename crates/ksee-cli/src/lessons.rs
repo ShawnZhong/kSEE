@@ -31,10 +31,10 @@ pub fn write() {
     for &(chapter, names) in COURSE {
         for &name in names {
             let path = format!("user/lessons/{name}.json");
-            let mut ex: Value = crate::or_fail(serde_json::from_slice(&crate::read(Path::new(&path))), &path);
-            ex["name"] = json!(name);
-            ex["chapter"] = json!(chapter);
-            all.push(ex);
+            let mut lesson: Value = crate::or_fail(serde_json::from_slice(&crate::read(Path::new(&path))), &path);
+            lesson["name"] = json!(name);
+            lesson["chapter"] = json!(chapter);
+            all.push(lesson);
         }
     }
     let page = String::from_utf8_lossy(&crate::read(Path::new("web/index.html"))).into_owned();
@@ -45,15 +45,15 @@ pub fn write() {
         crate::or_fail(std::fs::write(&out, text), &out);
     };
     out("lessons.json", serde_json::to_string(&all).unwrap_or_default());
-    for ex in &all {
-        out(&format!("{}.html", s(ex, "name")), fill(&page, &format!("{} — kSEE", s(ex, "title")), s(ex, "question"), &lesson(ex)));
+    for lesson in &all {
+        out(&format!("{}.html", s(lesson, "name")), fill(&page, &format!("{} — kSEE", s(lesson, "title")), s(lesson, "question"), &as_text(lesson)));
     }
     out("index.html", fill(&page, TITLE, DESCRIPTION, &contents(&all)));
     // (For search engines: every page, at the address the site is published
     // at, if it is known. Given to them by hand (Google's Search Console):
     // a robots.txt naming it would have to be at the host's root.)
     if let Some(base) = crate::build::published() {
-        let urls: String = std::iter::once(String::new()).chain(all.iter().map(|ex| format!("{}.html", s(ex, "name"))))
+        let urls: String = std::iter::once(String::new()).chain(all.iter().map(|lesson| format!("{}.html", s(lesson, "name"))))
             .map(|page| format!("  <url><loc>{base}{page}</loc></url>\n")).collect();
         out("sitemap.xml", format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n{urls}</urlset>\n"));
     }
@@ -64,8 +64,8 @@ const DESCRIPTION: &str = "kSEE runs a real Linux kernel in your browser and rec
                            step through its source line by line, with the call stack, its arguments and locals, and every write to memory.";
 
 /// A lesson's string field.
-fn s<'a>(ex: &'a Value, key: &str) -> &'a str {
-    ex[key].as_str().unwrap_or_default()
+fn s<'a>(lesson: &'a Value, key: &str) -> &'a str {
+    lesson[key].as_str().unwrap_or_default()
 }
 
 fn escape(t: &str) -> String {
@@ -102,15 +102,15 @@ fn paragraph(t: &str) -> String {
     }).collect()
 }
 
-/// Lesson `ex`, as text: its chapter, title, question and text, its program.
-fn lesson(ex: &Value) -> String {
+/// Lesson `lesson`, as text: its chapter, title, question and text, its program.
+fn as_text(lesson: &Value) -> String {
     let mut h = format!("<p><a href=\"./\">kSEE</a> · {}</p>\n<h1>{}</h1>\n<p>{}</p>\n",
-                        escape(s(ex, "chapter")), escape(s(ex, "title")), escape(s(ex, "question")));
-    for p in ex["text"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                        escape(s(lesson, "chapter")), escape(s(lesson, "title")), escape(s(lesson, "question")));
+    for p in lesson["text"].as_array().into_iter().flatten().filter_map(Value::as_str) {
         h += &format!("<p>{}</p>\n", paragraph(p));
     }
     h += "<h2>The program</h2>\n<ol>\n";
-    for step in ex["program"].as_array().into_iter().flatten() {
+    for step in lesson["program"].as_array().into_iter().flatten() {
         // (A step: its line, or a task's: {task, text}.)
         let (task, text) = match step.as_str() {
             Some(t) => (None, t),
@@ -126,12 +126,12 @@ fn lesson(ex: &Value) -> String {
 fn contents(all: &[Value]) -> String {
     let mut h = format!("<h1>kSEE</h1>\n<p>{}</p>\n", escape(DESCRIPTION));
     let mut chapter = "";
-    for ex in all {
-        if s(ex, "chapter") != chapter {
-            chapter = s(ex, "chapter");
+    for lesson in all {
+        if s(lesson, "chapter") != chapter {
+            chapter = s(lesson, "chapter");
             h += &format!("<h2>{}</h2>\n", escape(chapter));
         }
-        h += &format!("<p><a href=\"{}.html\">{}</a>: {}</p>\n", s(ex, "name"), escape(s(ex, "title")), escape(s(ex, "question")));
+        h += &format!("<p><a href=\"{}.html\">{}</a>: {}</p>\n", s(lesson, "name"), escape(s(lesson, "title")), escape(s(lesson, "question")));
     }
     h
 }
@@ -149,9 +149,9 @@ mod tests {
     #[test]
     fn a_lesson_s_page() {
         let page = "<head>\n<title>x</title>\n<meta name=\"description\" content=\"x\">\n<meta property=\"og:title\" content=\"x\">\n</head>\n<body>\n<div id=\"root\"></div>\n</body>\n";
-        let ex = json!({ "name": "r", "chapter": "G", "title": "T", "question": "Q?", "text": ["P `c`."],
+        let lesson = json!({ "name": "r", "chapter": "G", "title": "T", "question": "Q?", "text": ["P `c`."],
                          "program": ["read(fd)", { "task": "child", "text": "exit(0)" }] });
-        let h = fill(page, "T — kSEE", "Q?", &lesson(&ex));
+        let h = fill(page, "T — kSEE", "Q?", &as_text(&lesson));
         for want in ["<title>T — kSEE</title>", "content=\"Q?\">", "og:title\" content=\"T — kSEE\"", "<div id=\"root\"></div>\n<article id=\"static\">",
                      "<h1>T</h1>", "<p>P <code>c</code>.</p>", "<code>read(fd)</code>", "(by child)"] {
             assert!(h.contains(want), "{want} in {h}");

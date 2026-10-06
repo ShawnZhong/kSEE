@@ -19,18 +19,18 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
     let mut t = KernelHarness::new(machine);
     let m = t.machine.clone();
     let lessons = crate::lessons();
-    for ex in lessons {
-        let ids = t.program(lines(&ex.program)).await;
+    for lesson in lessons {
+        let ids = t.program(lines(&lesson.program)).await;
         let is_call = |step: &Statement| matches!(statement(step.text()), Ok(Stmt::Call { .. }));
-        let blocked: Vec<String> = ex.program.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.finished(id).is_some()))
+        let blocked: Vec<String> = lesson.program.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.finished(id).is_some()))
             .map(|(step, _)| step.text().into()).collect();
-        let calls: Vec<Option<u32>> = ex.program.iter().zip(&ids).filter(|(step, _)| is_call(step)).map(|(_, id)| *id).collect();
+        let calls: Vec<Option<u32>> = lesson.program.iter().zip(&ids).filter(|(step, _)| is_call(step)).map(|(_, id)| *id).collect();
         let mut missing = Vec::new();
-        for p in &ex.text {
+        for p in &lesson.text {
             for x in text::pieces(p) {
                 let Piece::Link { target, to, .. } = x else { continue };
                 let found = match to {
-                    Some(LessonTarget::Try { index }) => ex.tries.get(index - 1).is_some(),
+                    Some(LessonTarget::Try { index }) => lesson.tries.get(index - 1).is_some(),
                     Some(LessonTarget::Recording { call, function, any_task, .. }) => {
                         let s = calls.get(call - 1).copied().flatten().and_then(|id| t.syscall(id));
                         s.as_ref().is_some_and(|s| function.as_ref().is_none_or(|f|
@@ -44,11 +44,11 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
                 }
             }
         }
-        for (k, try_) in ex.tries.iter().enumerate() {
+        for (k, try_) in lesson.tries.iter().enumerate() {
             let ran = t.program(lines(try_)).await;
-            t.check(format!("lesson {}, try {}: {} lines made", ex.name, k + 1, try_.len()), ran.len() == try_.len() && !try_.is_empty());
+            t.check(format!("lesson {}, try {}: {} lines made", lesson.name, k + 1, try_.len()), ran.len() == try_.len() && !try_.is_empty());
         }
-        t.check(format!("lesson {}: {} lines, all finished, the explanation's links found (missing {missing:?}, blocked {blocked:?})", ex.name, ex.program.len()),
+        t.check(format!("lesson {}: {} lines, all finished, the explanation's links found (missing {missing:?}, blocked {blocked:?})", lesson.name, lesson.program.len()),
                 missing.is_empty() && blocked.is_empty());
     }
     t.done(format!("{} lessons", lessons.len()))

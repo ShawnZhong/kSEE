@@ -22,7 +22,7 @@ pub fn id(name: &str) -> u32 {
 }
 
 /// The columns after the first of each of `text`'s lines of kind `kind`
-/// (tab-separated: ksee.probes', ksee.types').
+/// (tab-separated: ksee.code', ksee.types').
 fn rows<'a>(text: &'a str, kind: &'a str) -> impl Iterator<Item = Vec<&'a str>> {
     text.lines().filter_map(move |l| l.strip_prefix(kind)?.strip_prefix('\t').map(|r| r.split('\t').collect()))
 }
@@ -36,7 +36,7 @@ fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'
 pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
     let mut types = crate::or_fail(dwarf::types(&image), "DWARF");
-    let probes = String::from_utf8_lossy(&module::custom_section(&image, "ksee.probes")).into_owned();
+    let code = String::from_utf8_lossy(&module::custom_section(&image, "ksee.code")).into_owned();
     for (name, value) in constants(&kernel.join("usr/include")) {
         types += &format!("C\t{name}\t{value}\n");
     }
@@ -53,9 +53,9 @@ pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     // The sources, for the page's source view.
     // (The functions the trace has whose parameters DWARF gave, by id: the
     // two agree on what a function is.)
-    let functions: BTreeSet<&str> = column(&probes, "F", 1).collect();
+    let functions: BTreeSet<&str> = column(&code, "F", 1).collect();
     let known = column(&types, "P", 1).collect::<BTreeSet<_>>().intersection(&functions).count();
-    let sources: Vec<String> = column(&probes, "P", 2).map(String::from).collect();
+    let sources: Vec<String> = column(&code, "P", 2).map(String::from).collect();
     let (files, bytes) = publish_sources(kernel, &sources, sources_out);
     eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} -> {} KiB; {files} sources, {} KiB",
               image_out.display(), column(&types, "T", 1).count(), calls.len(), functions.len(),
@@ -366,7 +366,7 @@ mod image_tests {
 
     #[test]
     fn ids_are_the_plugins() {
-        // (From a kernel's ksee.probes section.)
+        // (From a kernel's ksee.code section.)
         assert_eq!(id("try_to_wake_up"), 2218239081);
     }
 

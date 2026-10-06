@@ -97,8 +97,8 @@ probe costs a load and a branch.
 
 ## What the kernel says about itself
 
-The instrumented kernel describes its probes in a custom section,
-`ksee.probes` (lines of text, one part per compilation unit,
+The instrumented kernel describes its code in a custom section,
+`ksee.code` (lines of text, one part per compilation unit,
 concatenated by wasm-ld):
 
 - `U`: a unit's start; `P k path`: file k; `I k …`: an inline site (the

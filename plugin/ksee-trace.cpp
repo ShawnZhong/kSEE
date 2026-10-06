@@ -66,11 +66,11 @@
 // recording: arch/wasm/kernel/ksee.c.) fn is a hash of the function's name (for a
 // function local to its file, of "file:name").
 //
-// The linked module describes its probes in a wasm custom section, which
+// The linked module describes its code in a wasm custom section, which
 // wasm-ld concatenates across objects (lines may repeat). Each object's
 // part starts with U and its files, which the lines after it name by
 // number (FILE below):
-//   ksee.probes  U
+//   ksee.code  U
 //                P \t k \t path       file k
 //                I \t k \t function \t FILE:line
 //                                     inline site k: function, inlined at FILE:line
@@ -185,7 +185,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   GlobalVariable *values = nullptr;
   // Each write's line: the index of its line among its block's (see blockLines).
   DenseMap<const Instruction *, unsigned> lineOf;
-  std::string probes;
+  std::string code;
   std::map<std::string, unsigned> files; // this object's, numbered
   std::map<std::string, unsigned> sites; // its inline sites ("function\tFILE:line"), numbered
 
@@ -439,7 +439,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       if (it->second >= 1u << 12)
         continue;
       if (fresh)
-        probes += ("V\t" + Twine(id) + "\t" + Twine(it->second) + "\t" + Twine(t.of) + "\t" + t.function + "\t" + V->getName() + "\t" +
+        code += ("V\t" + Twine(id) + "\t" + Twine(it->second) + "\t" + Twine(t.of) + "\t" + t.function + "\t" + V->getName() + "\t" +
                    Twine(V->getArg()) + "\t" + Twine(arg + 1) + "\n").str();
       if (arg >= 0)
         continue;
@@ -524,7 +524,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       record(B, B.getInt32(id), tag(Kind::Block, n), args);
       // (The entry block starts at the function's signature: entering a
       // call stops there, with its arguments, before its first statement.)
-      probes += ("L\t" + Twine(id) + "\t" + Twine(n) + "\t" + blockLines(BB, n == 0 ? SP : nullptr) + "\n").str();
+      code += ("L\t" + Twine(id) + "\t" + Twine(n) + "\t" + blockLines(BB, n == 0 ? SP : nullptr) + "\n").str();
       n++;
     }
 
@@ -580,7 +580,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       if (p && p->getType()->isIntegerTy() && p->getType()->getIntegerBitWidth() > 32)
         wide |= 1 << k;
     std::string where = SP ? fileRef(sourcePath(SP)) + ":" + std::to_string(SP->getLine()) : "?";
-    probes += ("F\t" + Twine(id) + "\t" + F.getName() + "\t" + where + "\t" + Twine(known) + "\t" + Twine(seal) + "\t" +
+    code += ("F\t" + Twine(id) + "\t" + F.getName() + "\t" + where + "\t" + Twine(known) + "\t" + Twine(seal) + "\t" +
                Twine(wide) + "\n").str();
   }
 
@@ -607,7 +607,7 @@ public:
       head += "P\t" + std::to_string(k) + "\t" + path + "\n";
     for (auto &[site, k] : sites)
       head += "I\t" + std::to_string(k) + "\t" + site + "\n";
-    emitCustomSection(Mod, "ksee.probes", head + probes);
+    emitCustomSection(Mod, "ksee.code", head + code);
     return PreservedAnalyses::none();
   }
 };

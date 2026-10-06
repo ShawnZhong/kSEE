@@ -14,10 +14,10 @@ use crate::state::Ui;
 fn url() -> (Option<String>, Option<String>) {
     let Some(loc) = web_sys::window().map(|w| w.location()) else { return (None, None) };
     let path = loc.pathname().unwrap_or_default();
-    let ex = path.rsplit('/').next().and_then(|f| f.strip_suffix(".html")).map(String::from);
+    let name = path.rsplit('/').next().and_then(|f| f.strip_suffix(".html")).map(String::from);
     let p = loc.hash().unwrap_or_default().trim_start_matches('#').split('&').find_map(|kv| kv.strip_prefix("p=").map(String::from))
         .and_then(|v| js_sys::decode_uri_component(&v).ok()?.as_string());
-    (ex, p)
+    (name, p)
 }
 
 /// A program as the URL has it: JSON.
@@ -32,23 +32,22 @@ fn program_from_json(text: &str) -> Option<Vec<Statement>> {
 
 /// The lesson and program the URL says, at first.
 pub fn from_url(ui: Ui) {
-    let (ex, p) = url();
+    let (name, p) = url();
     let all = lessons();
-    if let Some(k) = ex.and_then(|n| all.iter().position(|e| e.name == n)) {
+    if let Some(k) = name.and_then(|n| all.iter().position(|e| e.name == n)) {
         let program = p.as_deref().and_then(program_from_json).unwrap_or_else(|| all[k].program.clone());
         ui.open(k, program);
     }
 }
 
 /// The URL, as the lesson and its program are.
-pub(crate) fn to_url(lesson: usize, program: &[Statement]) {
-    let all = lessons();
-    let Some(ex) = all.get(lesson) else { return };
-    let p = if program == ex.program { String::new() } else {
+pub(crate) fn to_url(k: usize, program: &[Statement]) {
+    let Some(lesson) = lessons().get(k) else { return };
+    let p = if program == lesson.program { String::new() } else {
         program_json(program).map_or_else(String::new, |p| format!("#p={}", js_sys::encode_uri_component(&p)))
     };
     if let Some(h) = web_sys::window().and_then(|w| w.history().ok()) {
-        let _ = h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&format!("{}.html{p}", ex.name)));
+        let _ = h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&format!("{}.html{p}", lesson.name)));
     }
 }
 

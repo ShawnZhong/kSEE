@@ -71,7 +71,7 @@ impl Machine {
 
         let module: WebAssembly::Module =
             JsFuture::from(WebAssembly::compile(&kernel)).await?.unchecked_into();
-        let tables = Tables::parse(&section(&kernel, "ksee.probes"), &section(&kernel, "ksee.types"));
+        let tables = Tables::parse(&section(&kernel, "ksee.code"), &section(&kernel, "ksee.types"));
         TABLES.set(tables).map_err(|_| "one machine per page")?;
 
         // The initramfs goes at the top of RAM; the kernel reserves it.
