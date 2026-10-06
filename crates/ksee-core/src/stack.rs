@@ -192,11 +192,7 @@ impl Calls {
         let Some(p) = self.place_at(i) else { return Vec::new() };
         // (At the record that starts a stretch, its task is at the
         // stretch's first line, or the `nth`; after, at its last.)
-        let mut step = match (nth, self.stretch(t, i)) {
-            (Some(k), Some((_, steps))) if k < steps.len() => Some(steps[k]),
-            (None, Some((_, steps))) if !steps.is_empty() => Some(steps[0]),
-            _ => self.line(t, p),
-        };
+        let mut step = self.stretch(t, i).and_then(|(_, s)| s.get(nth.unwrap_or(0)).copied()).or_else(|| self.line(t, p));
         let mut out = Vec::new();
         let mut k = Some(p.call);
         while let Some(c) = k.map(|k| &self.calls[k as usize]) {
@@ -238,8 +234,7 @@ impl Calls {
         // runs again only in a loop, so its lines' turn.)
         let mut runs: BTreeMap<(u32, u32), u32> = BTreeMap::new();
         for i in from..=to.min(records.len().saturating_sub(1)) {
-            let tk = tasks[i];
-            if tk != task {
+            if tasks[i] != task {
                 continue;
             }
             let Some((p, steps)) = self.stretch(t, i) else { continue };
@@ -263,7 +258,7 @@ impl Calls {
             let mut first_at: BTreeMap<u32, usize> = BTreeMap::new();
             let mut last = i;
             for (j, r) in records[i + 1..].iter().enumerate().map(|(k, r)| (i + 1 + k, r)) {
-                if tasks[j] != tk {
+                if tasks[j] != task {
                     continue;
                 }
                 // (A line is at its first store, or comparison: the
@@ -300,7 +295,7 @@ impl Calls {
                         out.push(LineStep { loc, cut: level as u32 + 1, ..step });
                     }
                 }
-                if out.last().is_some_and(|l| l.loc.file == s.loc.file && l.loc.line == s.loc.line && (l.inlined, l.cut) == (s.inlined, 0)) {
+                if out.last().is_some_and(|l| l.loc == s.loc && (l.inlined, l.cut) == (s.inlined, 0)) {
                     continue;
                 }
                 out.push(step);

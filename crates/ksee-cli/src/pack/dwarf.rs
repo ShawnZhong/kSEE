@@ -44,9 +44,9 @@ pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
                 | dw::DW_TAG_typedef => offsets.push(e.offset()),
                 dw::DW_TAG_subprogram => {
                     let name = attr_string(&cu, e, dw::DW_AT_name)?;
-                    if !name.is_empty() && e.attr(dw::DW_AT_declaration).is_none() {
+                    if !name.is_empty() && !is_declaration(e) {
                         // (Where it is: for the inline ones too, which have no probe.)
-                        let (file, line) = (decl_file(&mut cu, e)?, attr_u64(e, dw::DW_AT_decl_line).unwrap_or(0));
+                        let (file, line) = decl(&mut cu, e)?;
                         b.locate(&name, &file, line);
                         // (A function inlined somewhere is abstract here, with
                         // no locations: its out-of-line copy, if any, has
@@ -71,7 +71,7 @@ pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
                     if let (Some(addr), Some(AttributeValue::UnitRef(ty))) =
                         (address(&cu, e)?, e.attr_value(dw::DW_AT_type))
                     {
-                        let at = (decl_file(&mut cu, e)?, attr_u64(e, dw::DW_AT_decl_line).unwrap_or(0));
+                        let at = decl(&mut cu, e)?;
                         vars.push((attr_string(&cu, e, dw::DW_AT_name)?, addr, ty, at));
                     }
                 }
@@ -284,12 +284,12 @@ impl Builder {
         self.rows.len() as u32 - 1
     }
 
-    fn intern(&mut self, key: String, row: impl FnOnce(u32) -> Row) -> u32 {
+    fn intern(&mut self, key: String, row: impl FnOnce() -> Row) -> u32 {
         if let Some(&id) = self.ids.get(&key) {
             return id;
         }
         let id = self.new_id();
-        self.rows[id as usize] = row(id);
+        self.rows[id as usize] = row();
         self.ids.insert(key, id);
         id
     }
@@ -340,23 +340,23 @@ impl Builder {
                     Some(dw::DW_ATE_signed_char | dw::DW_ATE_unsigned_char) => "c",
                     _ => "u",
                 };
-                self.intern(format!("base {name} {size} {enc}"), |_| Row { kind: "base", name: name.clone(), size, rest: format!("\t{enc}") })
+                self.intern(format!("base {name} {size} {enc}"), || Row { kind: "base", name: name.clone(), size, rest: format!("\t{enc}") })
             }
             dw::DW_TAG_const_type | dw::DW_TAG_volatile_type | dw::DW_TAG_restrict_type
             | dw::DW_TAG_atomic_type => target(self, cu)?,
             dw::DW_TAG_pointer_type => {
                 // Memoize before recursing: pointers close cycles.
                 let t = target(self, cu)?;
-                self.intern(format!("ptr {t}"), |_| Row { kind: "ptr", name: String::new(), size: 4, rest: format!("\t{t}") })
+                self.intern(format!("ptr {t}"), || Row { kind: "ptr", name: String::new(), size: 4, rest: format!("\t{t}") })
             }
             dw::DW_TAG_typedef => {
                 let t = target(self, cu)?;
                 let size = self.size(t);
-                let (file, line) = (decl_file(cu, &e)?, attr_u64(&e, dw::DW_AT_decl_line).unwrap_or(0));
+                let (file, line) = decl(cu, &e)?;
                 self.locate(&name, &file, line);
-                self.intern(format!("typedef {name} {t}"), |_| Row { kind: "typedef", name: name.clone(), size, rest: format!("\t{t}") })
+                self.intern(format!("typedef {name} {t}"), || Row { kind: "typedef", name: name.clone(), size, rest: format!("\t{t}") })
             }
-            dw::DW_TAG_subroutine_type => self.intern("func".into(), |_| Row { kind: "func", ..Row::default() }),
+            dw::DW_TAG_subroutine_type => self.intern("func".into(), || Row { kind: "func", ..Row::default() }),
             dw::DW_TAG_array_type => {
                 let elem = target(self, cu)?;
                 let mut dims = Vec::new();
@@ -375,7 +375,7 @@ impl Builder {
                 for &n in dims.iter().rev() {
                     let esize = self.size(id);
                     let size = n * esize;
-                    id = self.intern(format!("array {id} {n}"), |_| Row { kind: "array", name: String::new(), size, rest: format!("\t{id}\t{n}") });
+                    id = self.intern(format!("array {id} {n}"), || Row { kind: "array", name: String::new(), size, rest: format!("\t{id}\t{n}") });
                 }
                 id
             }
@@ -385,9 +385,8 @@ impl Builder {
                     dw::DW_TAG_union_type => "union",
                     _ => "enum",
                 };
-                let decl = matches!(e.attr_value(dw::DW_AT_declaration), Some(AttributeValue::Flag(true)));
                 let named = (tag, name.clone());
-                if decl {
+                if is_declaration(&e) {
                     // Stands for the definition, wherever it is.
                     if let Some(&(id, _)) = self.by_name.get(&named) {
                         id
@@ -398,8 +397,7 @@ impl Builder {
                         id
                     }
                 } else {
-                    let file = decl_file(cu, &e)?;
-                    let line = attr_u64(&e, dw::DW_AT_decl_line).unwrap_or(0);
+                    let (file, line) = decl(cu, &e)?;
                     let key = format!("{kind} {name} {size} {file}:{line}");
                     if let Some(&id) = self.ids.get(&key) {
                         cu.memo.insert(off, id);
@@ -441,7 +439,7 @@ impl Builder {
                         .or_else(|| attr_u64(c, dw::DW_AT_data_member_location).map(|b| b * 8))
                         .unwrap_or(0);
                     let bit_size = attr_u64(c, dw::DW_AT_bit_size).unwrap_or(0);
-                    let (file, line) = (decl_file(cu, c)?, attr_u64(c, dw::DW_AT_decl_line).unwrap_or(0));
+                    let (file, line) = decl(cu, c)?;
                     let t = match c.attr_value(dw::DW_AT_type) {
                         Some(AttributeValue::UnitRef(t)) => self.canon(cu, t)?,
                         _ => 0,
@@ -471,6 +469,11 @@ impl Builder {
         self.rows.get(id as usize).map_or(0, |r| r.size)
     }
 }
+/// Whether `e` only declares (its definition elsewhere).
+fn is_declaration(e: &gimli::DebuggingInformationEntry<R>) -> bool {
+    matches!(e.attr_value(dw::DW_AT_declaration), Some(AttributeValue::Flag(true)))
+}
+
 /// A variable's fixed address (DW_OP_addr or DW_OP_addrx), if it has one.
 fn address(cu: &Cu, e: &gimli::DebuggingInformationEntry<R>) -> Result<Option<u64>, gimli::Error> {
     let Some(AttributeValue::Exprloc(expr)) = e.attr_value(dw::DW_AT_location) else { return Ok(None) };
@@ -491,6 +494,11 @@ fn attr_string(cu: &Cu, e: &gimli::DebuggingInformationEntry<R>, at: DwAt) -> Re
         Some(v) => cu.dwarf.attr_string(cu.unit, v)?.to_string_lossy().into_owned(),
         None => String::new(),
     })
+}
+
+/// Where `e` is declared: its file and line (none: "", 0).
+fn decl(cu: &mut Cu, e: &gimli::DebuggingInformationEntry<R>) -> Result<(String, u64), gimli::Error> {
+    Ok((decl_file(cu, e)?, attr_u64(e, dw::DW_AT_decl_line).unwrap_or(0)))
 }
 
 fn decl_file(cu: &mut Cu, e: &gimli::DebuggingInformationEntry<R>) -> Result<String, gimli::Error> {

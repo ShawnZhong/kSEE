@@ -76,9 +76,7 @@ impl Block {
 
     /// Stretch `seg` (none past the last).
     pub fn stretch(&self, seg: u32) -> &[Step] {
-        let Some(&a) = self.cuts.get(seg as usize) else { return &[] };
-        let b = self.cuts.get(seg as usize + 1).map_or(self.steps.len(), |&b| b as usize);
-        &self.steps[a as usize..b]
+        &self.steps[self.start(seg)..self.start(seg + 1)]
     }
 
     /// The last line it has run by stretch `seg` (seg's, or an earlier
