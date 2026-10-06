@@ -1,7 +1,10 @@
 //! `ksee test` in Chrome's headless shell (target/chrome/, the Makefile's version),
 //! without its debugging protocol: the page under `#test=NAME` runs its test
-//! and POSTs `ok` or `fail` and its log to the server's /result.
+//! and POSTs `ok` or `fail` and its log to the server's /result; an error
+//! nothing caught (the console's, on the shell's stderr) fails it at once,
+//! the page's own code run or not.
 
+use std::io::BufRead;
 use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -37,12 +40,24 @@ pub fn test(name: &str) -> bool {
     let listener = or_fail(TcpListener::bind("127.0.0.1:0"), "serve");
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let (tx, rx) = channel();
+    let uncaught = tx.clone();
     std::thread::spawn(move || crate::serve::serve_on(listener, Path::new(crate::build::SITE), tx));
     let profile = std::env::temp_dir().join(format!("ksee-chrome-{}", std::process::id()));
     let mut child = or_fail(Command::new(BROWSER)
-        .args(["--headless=new", "--no-sandbox", "--no-first-run", &format!("--user-data-dir={}", profile.display()),
+        .args(["--headless=new", "--no-sandbox", "--no-first-run", "--enable-logging=stderr", "--v=0", &format!("--user-data-dir={}", profile.display()),
                &format!("--window-size={width},{height}"), &format!("http://127.0.0.1:{port}/{hash}")])
-        .stdout(Stdio::null()).stderr(Stdio::null()).spawn(), BROWSER);
+        .stdout(Stdio::null()).stderr(Stdio::piped()).spawn(), BROWSER);
+    // (The console's lines: "Uncaught …", a failure.)
+    if let Some(err) = child.stderr.take() {
+        std::thread::spawn(move || {
+            for line in std::io::BufReader::new(err).lines().map_while(Result::ok) {
+                if let Some((_, said)) = line.split_once("\"Uncaught ") {
+                    let (what, from) = said.split_once("\", source: ").unwrap_or((said, ""));
+                    let _ = uncaught.send((false, format!("uncaught {what} ({})", from.trim_end())));
+                }
+            }
+        });
+    }
     let (passed, log) = rx.recv_timeout(TIMEOUT).unwrap_or_default();
     let _ = child.kill();
     let _ = child.wait();
