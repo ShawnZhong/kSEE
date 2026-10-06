@@ -38,6 +38,10 @@ pub fn write() {
         }
     }
     let page = String::from_utf8_lossy(&crate::read(Path::new("web/index.html"))).into_owned();
+    // (What the page was built from, as its head says: the commit, and where
+    // the source is; neither without git.)
+    let built = crate::build::commit().zip(crate::build::source()).map_or(String::new(), |(c, s)| format!("{c} {s}"));
+    let page = page.replace("<meta name=\"ksee-built\" content=\"\">", &format!("<meta name=\"ksee-built\" content=\"{}\">", escape(&built)));
     let out = |name: &str, text: String| {
         let out = format!("{SITE}/{name}");
         // (Not through a link an older build left: to web/'s file.)

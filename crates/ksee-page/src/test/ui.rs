@@ -354,6 +354,9 @@ pub(super) async fn url() -> Check {
     let note = one(".explain.dim").map(|n| text(&n)).unwrap_or_default();
     let c = cells();
     check(c.len() == 2 && c[1].1 == "= 9" && note.contains("not the lesson's own program") && one(".ptitle a").is_some(), "not back", (&c, &note))?;
+    // (The header's link to the source it was built from: the page's head says which.)
+    let source = one("a.build").and_then(|a| a.get_attribute("href")).unwrap_or_default();
+    check(source.contains("/tree/"), "the source link", &source)?;
     Ok(format!("{c:?}"))
 }
 

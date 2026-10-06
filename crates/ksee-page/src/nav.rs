@@ -76,9 +76,12 @@ fn Theme() -> Element {
 }
 
 /// The commit the page was built from (+: with changes not committed), and
-/// where its source is: `ksee build`'s.
-const COMMIT: Option<&str> = option_env!("KSEE_COMMIT");
-const SOURCE: Option<&str> = option_env!("KSEE_SOURCE");
+/// where its source is (GitHub's page of the origin remote): its head's
+/// ksee-built, `ksee build`'s.
+fn built() -> Option<(String, String)> {
+    let said = crate::document()?.query_selector("meta[name=ksee-built]").ok()??.get_attribute("content")?;
+    said.split_once(' ').map(|(c, s)| (c.to_string(), s.to_string()))
+}
 
 #[component]
 pub fn Header() -> Element {
@@ -97,7 +100,7 @@ pub fn Header() -> Element {
             }
             b { "kSEE" span { class: "dim", " · step through a real Linux kernel" } }
             div { class: "right",
-                if let (Some(commit), Some(source)) = (COMMIT, SOURCE) {
+                if let Some((commit, source)) = built() {
                     a { class: "build", href: "{source}/tree/{commit.trim_end_matches('+')}", target: "_blank",
                         title: "the source this page was built from: {commit} (+: with changes not committed)", "source" }
                 }

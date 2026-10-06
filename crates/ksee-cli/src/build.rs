@@ -61,16 +61,6 @@ fn assets() {
     crate::lessons::write();
 }
 
-/// `cargo` building the page, told what it is built from (the page says it):
-/// the commit (+: with changes not committed) and where the source is,
-/// GitHub's page of the origin remote; neither without git.
-fn built(cargo: &mut Command) -> &mut Command {
-    if let (Some(commit), Some(source)) = (commit(), source()) {
-        cargo.env("KSEE_COMMIT", commit).env("KSEE_SOURCE", source);
-    }
-    cargo
-}
-
 /// The commit checked out, and + if it has changes not committed.
 pub(crate) fn commit() -> Option<String> {
     let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
@@ -99,8 +89,8 @@ pub(crate) fn published() -> Option<String> {
 
 /// pkg/: the runtime and the page, one module (the page calls the Machine).
 fn page() {
-    run(built(Command::new("cargo").args(["build", "--locked", "--release", "-p", "ksee-page",
-        "--target", "wasm32-unknown-unknown"])));
+    run(Command::new("cargo").args(["build", "--locked", "--release", "-p", "ksee-page",
+        "--target", "wasm32-unknown-unknown"]));
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
 }
 
