@@ -141,9 +141,6 @@ pub fn LessonPane() -> Element {
     let at = (ui.lesson)();
     let lesson = &all[at];
     let program = (ui.program)();
-    // (Each step's call number, from 1: the text's links name calls so.)
-    let mut n = 0;
-    let calls: Vec<Option<usize>> = program.iter().map(|step| matches!(statement(step.text()), Ok(Line::Call { .. })).then(|| { n += 1; n })).collect();
     let mine = program == lesson.program;
     let outcomes = ui.outcomes.read().clone();
     // (Task columns: the program's first, then those used or made.)
@@ -192,7 +189,7 @@ pub fn LessonPane() -> Element {
                                 div { class: "wait", style: "grid-column: {w + 1}; --hue: {crate::chart::hue(names[w].1)}", title: "a call in this task column, waiting (blocked)" }
                             }
                         }
-                        Cell { j, step: step.clone(), outcome: outcomes.get(j).cloned(), call: calls[j],
+                        Cell { j, step: step.clone(), outcome: outcomes.get(j).cloned(),
                             column: if many { Some((col(step), crate::chart::hue(names[col(step)].1))) } else { None } }
                     }
                 }
@@ -240,9 +237,12 @@ fn task_name(ui: Ui, task: Option<&str>, program: &[Statement]) -> (String, i32)
 /// call, its recording selected as it gets the focus. In a task column: its
 /// column, and its task's hue.
 #[component]
-fn Cell(j: usize, step: Statement, outcome: Option<Outcome>, call: Option<usize>, column: Option<(usize, i32)>) -> Element {
+fn Cell(j: usize, step: Statement, outcome: Option<Outcome>, column: Option<(usize, i32)>) -> Element {
     let mut ui = use_context::<Ui>();
-    let selected = call.is_some() && call.and_then(|n| run_of_call(ui, n)) == ui.run();
+    // (A call's run, once the recording has it: drawn again as it changes.)
+    (ui.snapshot)();
+    let run = match outcome { Some(Outcome::Call { id, .. }) => machine().run_of_call_id(id), _ => None };
+    let selected = run.is_some() && run == ui.run();
     let style = column.as_ref().map_or(String::new(), |(c, h)| format!("grid-column: {}; --hue: {h}", c + 1));
     let blocked = matches!(outcome, Some(Outcome::Call { done: false, .. }));
     let class = format!("cell{}{}", if selected { " on" } else { "" }, if blocked { " blocked" } else { "" });
@@ -254,7 +254,7 @@ fn Cell(j: usize, step: Statement, outcome: Option<Outcome>, call: Option<usize>
                         let mut program = ui.program.write();
                         if text.is_empty() { program.remove(j); } else { program[j] = step.with_text(text); }
                     },
-                    focus: move |_| if let Some(k) = call.and_then(|n| run_of_call(ui, n)) { ui.select(k) } }
+                    focus: move |_| if let Some(k) = run { ui.select(k) } }
                 span { class: "ret mono", {said(outcome.as_ref())} }
             }
             if let Some(Outcome::Call { changed, .. }) = &outcome && !changed.is_empty() {
