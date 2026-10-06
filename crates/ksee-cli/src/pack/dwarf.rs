@@ -351,10 +351,10 @@ impl Builder {
             }
             dw::DW_TAG_typedef => {
                 let t = target(self, cu)?;
-                let size = self.size(t);
                 let (file, line) = decl(cu, &e)?;
                 self.locate(&name, &file, line);
-                self.intern(format!("typedef {name} {t}"), || Row { kind: "typedef", name: name.clone(), size, rest: format!("\t{t}") })
+                // (Its size, as an array's, is its target's: the reader's, see Types::size_of.)
+                self.intern(format!("typedef {name} {t}"), || Row { kind: "typedef", name: name.clone(), rest: format!("\t{t}"), ..Row::default() })
             }
             dw::DW_TAG_subroutine_type => self.intern("func".into(), || Row { kind: "func", ..Row::default() }),
             dw::DW_TAG_array_type => {
@@ -373,9 +373,7 @@ impl Builder {
                 }
                 let mut id = elem;
                 for &n in dims.iter().rev() {
-                    let esize = self.size(id);
-                    let size = n * esize;
-                    id = self.intern(format!("array {id} {n}"), || Row { kind: "array", name: String::new(), size, rest: format!("\t{id}\t{n}") });
+                    id = self.intern(format!("array {id} {n}"), || Row { kind: "array", rest: format!("\t{id}\t{n}"), ..Row::default() });
                 }
                 id
             }
@@ -462,11 +460,6 @@ impl Builder {
             }
         }
         Ok(())
-    }
-
-    /// The size of type `id`.
-    fn size(&self, id: u32) -> u32 {
-        self.rows.get(id as usize).map_or(0, |r| r.size)
     }
 }
 /// Whether `e` only declares (its definition elsewhere).

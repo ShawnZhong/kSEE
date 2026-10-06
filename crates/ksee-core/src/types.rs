@@ -5,7 +5,8 @@
 //! ```text
 //! T id kind name size [extra]   kind: base (extra s|u|f|b|c), ptr (target),
 //!                               array (elem count), struct, union, enum,
-//!                               typedef (target), func
+//!                               typedef (target), func; an array's and a
+//!                               typedef's size 0 (see Types::size_of)
 //! M id name bit_offset bit_size type     a member of struct/union id
 //! V id name value                        an enumerator of enum id
 //! G name address type                    a variable with a fixed address
@@ -14,7 +15,7 @@
 //!                                        (its parameters: its body's P line)
 //! C name value                           a constant of the UAPI headers
 //! P fn name param:type,…                 a function's parameters (fn: its
-//!                                        id, as the probes have it)
+//!                                        id, as the plugin's)
 //! Q fn var:type:offset,…                 its locals (the offset, from the
 //!                                        frame base, if in memory)
 //! ```
@@ -297,7 +298,7 @@ impl Types {
     /// an anonymous struct's or union's in it: see members).
     pub fn field(&self, s: &str, field: &str) -> Option<(u32, u32)> {
         let m = self.members(&self.get(self.resolve(self.find(s)?)).kind).into_iter().find(|m| m.name == field)?;
-        Some((m.bit_offset / 8, self.get(m.ty).size.max(self.get(self.resolve(m.ty)).size)))
+        Some((m.bit_offset / 8, self.size_of(m.ty)))
     }
 
     /// A struct's or union's members, as C names them: an anonymous
@@ -351,7 +352,7 @@ impl Types {
         let t = self.get(id);
         match &t.kind {
             Kind::Base(b) => {
-                let size = self.get(ty).size.max(t.size).min(8);
+                let size = self.size_of(ty).min(8);
                 let v = self.read_int(mem, addr, size, bit_off, bit_size);
                 let bits = if bit_size > 0 { bit_size } else { size * 8 };
                 let _ = match b {
@@ -464,8 +465,7 @@ impl Types {
     pub fn size_of(&self, ty: u32) -> u32 {
         let t = self.get(self.resolve(ty));
         match t.kind {
-            Kind::Array { elem, count } if t.size == 0 => count * self.size_of(elem),
-            Kind::Pointer(_) => 4,
+            Kind::Array { elem, count } => count * self.size_of(elem),
             _ => t.size,
         }
     }

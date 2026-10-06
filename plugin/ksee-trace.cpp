@@ -121,7 +121,8 @@ namespace {
 
 constexpr unsigned CallArgs = 7; // the syscall entry's: the number and six
 constexpr unsigned Values = 2 * CallArgs + 1; // a record's at most: a call's arguments (wide ones two words) and its frame base
-enum class Kind : uint32_t { Block = 1, Return = 4, Compare = 6, Store = 7, Var = 9 };
+// (The kinds the plugin writes; Store records are ksee.c's.)
+enum class Kind : uint32_t { Block = 1, Return = 4, Compare = 6, Var = 9 };
 
 // (The tag's bits 24-27 are the writer's: how many values the record has.)
 constexpr uint32_t Fields = 24;
@@ -141,12 +142,17 @@ uint32_t fnId(StringRef name, bool local, const Module &M) {
   return local ? fnv(name, fnv(":", fnv(M.getSourceFileName()))) : fnv(name);
 }
 
-// A scope's file, as the debug info names it (relative to the kernel
-// tree, for its own), without a leading "./".
-std::string sourcePath(const DIScope *S) {
-  StringRef file = S->getFilename();
-  file.consume_front("./");
-  return file.str();
+// Whether `V` is an integer wider than 32 bits (two words).
+bool isWide(const Value *V) {
+  return V->getType()->isIntegerTy() && V->getType()->getIntegerBitWidth() > 32;
+}
+
+// Where a probe for `I` goes, before it: before a return, before the
+// musttail call right before it, if any (that must stay right before it).
+Instruction *beforeReturn(Instruction *I) {
+  if (auto *C = dyn_cast_or_null<CallInst>(I->getPrevNode()); isa<ReturnInst>(I) && C && C->isMustTailCall())
+    return C;
+  return I;
 }
 
 // Wasm module asm can emit a custom section (a data global cannot).
@@ -189,8 +195,22 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   std::map<std::string, unsigned> files; // this object's, numbered
   std::map<std::string, unsigned> sites; // its inline sites ("function\tFILE:line"), numbered
 
-  std::string fileRef(const std::string &path) {
-    return std::to_string(files.try_emplace(path, files.size()).first->second);
+  // A scope's file, by its number: its path as the debug info names it
+  // (relative to the kernel tree, for its own), without a leading "./".
+  std::string fileRef(const DIScope *S) {
+    StringRef path = S->getFilename();
+    path.consume_front("./");
+    return std::to_string(files.try_emplace(path.str(), files.size()).first->second);
+  }
+
+  // FILE:line, `line` of a scope's file.
+  std::string at(const DIScope *S, unsigned line) {
+    return fileRef(S) + ":" + std::to_string(line);
+  }
+
+  // Instruction `I`'s line (see blockLines), in a field of `bits` bits.
+  unsigned lineField(const Instruction *I, unsigned bits) {
+    return std::min(lineOf.lookup(I), (1u << bits) - 1);
   }
 
   // Record `vs` and [a, tag]: the values in __ksee_values, then the call
@@ -223,8 +243,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     std::string file;                     // the last item's
     unsigned lines = 0, cur = 0;
     if (sig) {
-      file = fileRef(sourcePath(sig));
-      items.push_back(file + ":" + std::to_string(sig->getLine()));
+      file = fileRef(sig);
+      items.push_back(at(sig, sig->getLine()));
       seen[items.back()] = 0;
       lines = 1;
     }
@@ -232,14 +252,13 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       // (A call's own line is the stretch's last: the line calling.)
       DILocation *L = I.getDebugLoc().get();
       if (L && L->getLine()) {
-        std::string path = fileRef(sourcePath(L->getScope()));
+        std::string path = fileRef(L->getScope());
         std::string item = path + ":" + std::to_string(L->getLine());
         // The functions it is inlined from, innermost first, each with where
         // it is inlined (a line of the next one out).
         for (DILocation *At = L; DILocation *Site = At->getInlinedAt(); At = Site) {
           DISubprogram *SP = At->getScope()->getSubprogram();
-          std::string site = (SP ? SP->getName().str() : std::string("?")) + "\t" +
-                             fileRef(sourcePath(Site->getScope())) + ":" + std::to_string(Site->getLine());
+          std::string site = (SP ? SP->getName().str() : std::string("?")) + "\t" + at(Site->getScope(), Site->getLine());
           item += "@" + std::to_string(sites.try_emplace(site, sites.size()).first->second);
         }
         auto [it, fresh] = seen.try_emplace(item, lines);
@@ -270,7 +289,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   // The words of argument `V`: one, or two (low, high) if it is wider than
   // 32 bits.
   void words(IRBuilder<> &B, Value *V, SmallVectorImpl<Value *> &out) {
-    if (V->getType()->isIntegerTy() && V->getType()->getIntegerBitWidth() > 32) {
+    if (isWide(V)) {
       Value *v = B.CreateZExtOrTrunc(V, B.getInt64Ty());
       out.push_back(B.CreateTrunc(v, i32));
       out.push_back(B.CreateTrunc(B.CreateLShr(v, 32), i32));
@@ -307,23 +326,21 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       ptr = A->getPointerOperand(), size = DL.getTypeStoreSize(A->getValOperand()->getType());
     else if (auto *X = dyn_cast<AtomicCmpXchgInst>(I))
       ptr = X->getPointerOperand(), size = DL.getTypeStoreSize(X->getNewValOperand()->getType());
-    else if (auto *MI = dyn_cast<MemIntrinsic>(I))
+    else if (auto *MI = cast<MemIntrinsic>(I))
       ptr = MI->getRawDest(), len = MI->getLength();
-    if (!ptr)
-      return;
     IRBuilder<> B(I);
     Value *addr = B.CreatePtrToInt(ptr, i32);
-    Value *line = B.getInt32(std::min(lineOf.lookup(I), (1u << (Fields - 4)) - 1));
+    Value *line = B.getInt32(lineField(I, Fields - 4));
     // (A copy, a value loaded and stored as it is, or a memcpy: where from.
-    // Not a value stored back where it was loaded from: that says nothing
-    // of where it came from.)
+    // Not a copy to where it is from: that says nothing of where it came
+    // from.)
     Value *from = nullptr;
     if (auto *S = dyn_cast<StoreInst>(I); S && isa<LoadInst>(S->getValueOperand()))
       from = cast<LoadInst>(S->getValueOperand())->getPointerOperand();
-    if (from == ptr)
-      from = nullptr;
     else if (auto *MT = dyn_cast<MemTransferInst>(I))
       from = MT->getRawSource();
+    if (from == ptr)
+      from = nullptr;
     // (One of 1, 2, 4 or 8 bytes is one Store record of that size.)
     B.CreateCall(bulk, {addr, len ? B.CreateZExtOrTrunc(len, i32) : B.getInt32(size), line,
                         from ? B.CreatePtrToInt(from, i32) : B.getInt32(0)});
@@ -443,11 +460,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
                    Twine(V->getArg()) + "\t" + Twine(arg + 1) + "\n").str();
       if (arg >= 0)
         continue;
-      // (Before a musttail call, which must stay right before its return.)
-      Instruction *at = t.I;
-      if (auto *C = dyn_cast_or_null<CallInst>(at->getPrevNode()); isa<ReturnInst>(at) && C && C->isMustTailCall())
-        at = C;
-      IRBuilder<> B(at);
+      IRBuilder<> B(beforeReturn(t.I));
       SmallVector<Value *, 2> w;
       words(B, v, w);
       Value *low = w[0];
@@ -455,8 +468,8 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       // (Its line: the one computing the value, if in this block; the
       // record goes before the next instruction, a later line's.)
       auto *D = dyn_cast<Instruction>(v);
-      unsigned line = lineOf.lookup(D && D->getParent() == t.I->getParent() ? D : t.I);
-      record(B, low, tag(Kind::Var, std::min(line, (1u << 12) - 1) << 12 | it->second), w);
+      unsigned line = lineField(D && D->getParent() == t.I->getParent() ? D : t.I, 12);
+      record(B, low, tag(Kind::Var, line << 12 | it->second), w);
     }
 
   }
@@ -469,7 +482,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     // a constant the optimizer put in its place), from the debug records
     // (after optimization, arguments may no longer be the source's).
     SmallVector<Value *, CallArgs> params;
-    unsigned known = 0;
     // The function's own writes to memory, and the comparisons that decide
     // its branches (before any probe is added).
     SmallVector<Instruction *> writes;
@@ -493,12 +505,11 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         if (!SP || !k || k > CallArgs || V->getScope()->getSubprogram() != SP || R.getNumVariableLocationOps() != 1)
           continue;
         Value *v = R.getVariableLocationOp(0);
-        if (!isa_and_nonnull<Argument, ConstantInt>(v) || (known >> (k - 1) & 1))
+        if (!isa_and_nonnull<Argument, ConstantInt>(v) || (params.size() >= k && params[k - 1]))
           continue;
         if (params.size() < k)
           params.resize(k, nullptr);
         params[k - 1] = v;
-        known |= 1 << (k - 1);
       }
     }
 
@@ -512,12 +523,12 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       if (seal && n > 0)
         break;
       IRBuilder<> B(&*BB.getFirstInsertionPt());
-      // (The entry block's is the call: its arguments follow.)
+      // (The entry block's is the call: its arguments follow, then the
+      // frame base, where its locals are: see ksee.types's Q lines, the pack's.)
       SmallVector<Value *, Values> args;
-      for (Value *p : n == 0 ? params : SmallVector<Value *, CallArgs>{})
-        p ? words(B, p, args) : args.push_back(B.getInt32(0));
-      // (Then the frame base, where its locals are: see ksee.types's Q lines, the pack's.)
       if (n == 0) {
+        for (Value *p : params)
+          p ? words(B, p, args) : args.push_back(B.getInt32(0));
         Function *fa = Intrinsic::getOrInsertDeclaration(M, Intrinsic::frameaddress, {PointerType::getUnqual(M->getContext())});
         args.push_back(B.CreatePtrToInt(B.CreateCall(fa, {B.getInt32(0)}), i32));
       }
@@ -535,11 +546,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
 
     for (BasicBlock &BB : F)
       if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator())) {
-        // (A musttail call must stay right before its return.)
-        Instruction *at = R;
-        if (auto *C = dyn_cast_or_null<CallInst>(R->getPrevNode()); C && C->isMustTailCall())
-          at = C;
-        IRBuilder<> B(at);
+        IRBuilder<> B(beforeReturn(R));
         Value *ret = R->getReturnValue();
         // (Its value, if it returns one.)
         SmallVector<Value *, 2> w;
@@ -557,7 +564,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
     if (!seal) {
       for (ICmpInst *C : compares) {
         IRBuilder<> B(C->getNextNode());
-        unsigned line = std::min(lineOf.lookup(C), (1u << (Fields - 4)) - 1), pred = C->getPredicate() - CmpInst::FIRST_ICMP_PREDICATE;
+        unsigned line = lineField(C, Fields - 4), pred = C->getPredicate() - CmpInst::FIRST_ICMP_PREDICATE;
         // (Its operands, 32 bits each; wider, their high words after.)
         // (A signed one's narrow operands sign-extended: -1 as -1, not 255.)
         auto operand = [&](unsigned k) {
@@ -575,11 +582,12 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       }
     }
 
-    unsigned wide = 0;
+    // (The parameters the call record has, and the wide ones among them.)
+    unsigned known = 0, wide = 0;
     for (auto [k, p] : enumerate(params))
-      if (p && p->getType()->isIntegerTy() && p->getType()->getIntegerBitWidth() > 32)
-        wide |= 1 << k;
-    std::string where = SP ? fileRef(sourcePath(SP)) + ":" + std::to_string(SP->getLine()) : "?";
+      if (p)
+        known |= 1 << k, wide |= isWide(p) << k;
+    std::string where = SP ? at(SP, SP->getLine()) : "?";
     code += ("F\t" + Twine(id) + "\t" + F.getName() + "\t" + where + "\t" + Twine(known) + "\t" + Twine(seal) + "\t" +
                Twine(wide) + "\n").str();
   }

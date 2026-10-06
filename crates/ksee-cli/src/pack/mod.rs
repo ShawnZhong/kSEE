@@ -186,7 +186,8 @@ fn evaluate(text: &str, known: &[(String, i64)]) -> Option<i64> {
 fn syscalls(image: &[u8], types: &str) -> Vec<(u32, String)> {
     let Some((addr, ty)) = rows(types, "G").find(|c| c.first() == Some(&SYSCALL_TABLE))
         .and_then(|c| Some((c.get(1)?.parse::<u32>().ok()?, *c.get(2)?))) else { return Vec::new() };
-    let size = rows(types, "T").find(|c| c.first() == Some(&ty)).and_then(|c| c.get(3)?.parse().ok()).unwrap_or(0);
+    // (Its size as the page reads it: an array's, count * its element's.)
+    let size = ty.parse().map_or(0, |ty| ksee_core::types::Types::parse(types).size_of(ty));
     let entries = module::memory(image, addr, size);
     let (table, names) = (module::table(image), module::function_names(image));
     entries.chunks(4).enumerate().filter_map(|(nr, e)| {
