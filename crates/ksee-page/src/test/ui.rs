@@ -40,52 +40,14 @@ fn colors() -> Result<(), String> {
 
 /// Its calls made, its subject (the read) selected, everything drawn.
 async fn made(r: &mut Vec<String>) -> Result<(), String> {
-    wait(
-        || {
-            done(3)
-                && one("#timeline-canvas")
-                    .and_then(|c| c.get_attribute("width"))
-                    .and_then(|w| w.parse::<u32>().ok())
-                    .is_some_and(|w| w > 0)
-        },
-        900,
-        "the calls made",
-        || {
-            let status = one(".pad.dim").map(|e| text(&e)).unwrap_or_default();
-            format!("{:?}; {status}", cells())
-        },
-    )
-    .await?;
-    let selected = one(".cell.on textarea")
-        .and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok())
-        .map(|t| t.value())
-        .unwrap_or_default();
-    check(
-        selected.starts_with("read("),
-        "the subject call selected",
-        &selected,
-    )?;
+    let width = || drew("width").and_then(|w| w.parse::<usize>().ok()).unwrap_or(0);
+    wait(|| done(3) && width() > 0, 900, "the calls made",
+         || format!("{:?}; {}", cells(), one(".pad.dim").map(|e| text(&e)).unwrap_or_default())).await?;
+    let selected = one(".cell.on textarea").and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok()).map(|t| t.value()).unwrap_or_default();
+    check(selected.starts_with("read("), "the subject call selected", &selected)?;
     // (The source's file is fetched: drawn a moment later.)
-    let drawn = || {
-        [
-            one("#timeline-canvas")
-                .and_then(|c| c.get_attribute("width"))
-                .and_then(|w| w.parse::<usize>().ok())
-                .unwrap_or(0),
-            one("#timeline-canvas")
-                .and_then(|c| c.get_attribute("data-test-tasks"))
-                .is_some() as usize,
-            all(".source .ln").len(),
-            all("tr.frame").len(),
-        ]
-    };
-    wait(
-        || drawn().iter().all(|&n| n > 0),
-        100,
-        "drawn (bars, tasks, source, frames)",
-        || format!("{:?}", drawn()),
-    )
-    .await?;
+    let drawn = || [width(), drew("data-test-tasks").is_some() as usize, all(".source .ln").len(), all("tr.frame").len()];
+    wait(|| drawn().iter().all(|&n| n > 0), 100, "drawn (bars, tasks, source, frames)", || format!("{:?}", drawn())).await?;
     let drawn = drawn();
     r.push(format!("drawn {drawn:?}"));
     Ok(())
@@ -96,32 +58,17 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     // (The links: each in its function, the source at its line.)
     for name in ["ksys_read", "vfs_read", "filemap_read"] {
         click(&named(".explain a", name).ok_or(fail("no link", name))?);
-        let ok = until(
-            || place().starts_with(name) && one(".source .ln.now").is_some(),
-            100,
-            50,
-        )
-        .await;
+        let ok = until(|| place().starts_with(name) && one(".source .ln.now").is_some(), 100, 50).await;
         check(ok, &format!("the link to {name}"), place())?;
         r.push(place());
     }
     // (The global key listener: reset to a known cursor, then move it.)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
-    let cursor = || {
-        one("#timeline-canvas")
-            .and_then(|e| e.get_attribute("data-test-now"))
-            .unwrap_or_default()
-    };
+    let cursor = || drew("data-test-now").unwrap_or_default();
     let before = cursor();
     global_key("ArrowRight");
-    wait(
-        || cursor() != before,
-        20,
-        "the global → key",
-        || format!("{} at {}", cursor(), place()),
-    )
-    .await?;
+    wait(|| cursor() != before, 20, "the global → key", || format!("{} at {}", cursor(), place())).await?;
     // (Stepping: on a line, back, and over vfs_read's calls (no deeper).)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
@@ -136,11 +83,7 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
         settle().await;
     }
     let over = place();
-    check(
-        into != at && over.starts_with("vfs_read"),
-        "stepping",
-        (&at, &into, &over),
-    )?;
+    check(into != at && over.starts_with("vfs_read"), "stepping", (&at, &into, &over))?;
     Ok(())
 }
 
@@ -258,22 +201,13 @@ async fn window() -> Result<(), String> {
     let y = bar(&canvas, "vfs_read").map_or(b.bottom() - 20.0, |(_, by)| b.top() + by);
     // (Find: its bars lit; Enter, the cursor in it.)
     let find = one(".find").ok_or("no find box")?;
-    find.dyn_ref::<HtmlInputElement>()
-        .ok_or("find, not an input")?
-        .set_value("copy_page_to_iter");
+    find.dyn_ref::<HtmlInputElement>().ok_or("find, not an input")?.set_value("copy_page_to_iter");
     input(&find);
     settle().await;
-    let found = canvas
-        .get_attribute("data-test-found")
-        .and_then(|n| n.parse().ok())
-        .unwrap_or(0);
+    let found = drew("data-test-found").and_then(|n| n.parse().ok()).unwrap_or(0);
     key(&find, "Enter");
     settle().await;
-    check(
-        found > 0 && named("tr.frame a", "copy_page_to_iter").is_some(),
-        "find",
-        (found, place()),
-    )?;
+    check(found > 0 && named("tr.frame a", "copy_page_to_iter").is_some(), "find", (found, place()))?;
     // (A drag pans, zoomed in: the bars follow the pointer, and the window
     // stays where it let go.)
     let mid = (b.left() + b.right()) / 2.0;
@@ -315,7 +249,7 @@ async fn window() -> Result<(), String> {
     let o = over.get_bounding_client_rect();
     let (cx, cy) = (o.left() + o.width() * 0.75, o.top() + o.height() / 2.0);
     // (On what a click there would land on.)
-    let hit = web_sys::window().and_then(|w| w.document()).and_then(|d| d.element_from_point(cx as f32, cy as f32)).unwrap_or(over.clone());
+    let hit = doc().element_from_point(cx as f32, cy as f32).unwrap_or(over.clone());
     mouse(&hit, "click", cx, cy, false);
     settle().await;
     let middle = one(".overview .win").map(|w| { let r = w.get_bounding_client_rect(); (r.left() + r.width() / 2.0 - o.left()) / o.width() });
@@ -329,7 +263,7 @@ async fn editor() -> Result<(), String> {
     let add = all(".program textarea").into_iter().find(|t| t.get_attribute("placeholder").is_some_and(|p| p.starts_with("add a call")))
         .ok_or("no line to add")?;
     {
-        let a = add.dyn_ref::<web_sys::HtmlTextAreaElement>().ok_or("not a textarea")?;
+        let a = add.dyn_ref::<HtmlTextAreaElement>().ok_or("not a textarea")?;
         let _ = a.focus();
         a.set_value("open");
         let _ = a.set_selection_range(4, 4);
@@ -339,7 +273,7 @@ async fn editor() -> Result<(), String> {
     let offered: Vec<String> = all("ul.complete li .mono").iter().map(text).collect();
     // (And a variable of the lines before, as an argument.)
     {
-        let a = add.dyn_ref::<web_sys::HtmlTextAreaElement>().ok_or("not a textarea")?;
+        let a = add.dyn_ref::<HtmlTextAreaElement>().ok_or("not a textarea")?;
         a.set_value("read(f");
         let _ = a.set_selection_range(6, 6);
         input(&add);
@@ -349,7 +283,7 @@ async fn editor() -> Result<(), String> {
     // (Seen: what is at the list's middle is the list, not what clips or covers it.)
     let shown = one("ul.complete").map(|u| {
         let r = u.get_bounding_client_rect();
-        let top = web_sys::window().and_then(|w| w.document()).and_then(|d| d.element_from_point(((r.left() + r.right()) / 2.0) as f32, ((r.top() + r.bottom()) / 2.0) as f32));
+        let top = doc().element_from_point(((r.left() + r.right()) / 2.0) as f32, ((r.top() + r.bottom()) / 2.0) as f32);
         (r.width(), r.height(), top.and_then(|e| e.closest("ul.complete").ok().flatten()).is_some())
     });
     key(&add, "Escape");
@@ -371,11 +305,7 @@ async fn panels(r: &mut Vec<String>) -> Result<(), String> {
     click(&one(".pane tr.frame a").ok_or("no task")?);
     settle().await;
     let opened = all(".pane tr").len();
-    check(
-        opened > rows + 5 && named(".pane td", "comm").is_some(),
-        "a task_struct opened",
-        (rows, opened),
-    )?;
+    check(opened > rows + 5 && named(".pane td", "comm").is_some(), "a task_struct opened", (rows, opened))?;
     tab("Stack").await;
     Ok(())
 }
@@ -384,60 +314,26 @@ async fn panels(r: &mut Vec<String>) -> Result<(), String> {
 /// lesson and back.
 async fn program() -> Result<(), String> {
     // (A line changed: the program made again; 4 bytes read.)
-    write(
-        all("ol.lines .cell textarea")
-            .get(2)
-            .ok_or("no third line")?,
-        "read(fd, buf, 4)",
-    );
+    write(all("ol.lines .cell textarea").get(2).ok_or("no third line")?, "read(fd, buf, 4)");
     let c = || cells().get(2).cloned().unwrap_or_default();
-    wait(
-        || c() == ("read(fd, buf, 4)".into(), "= 4".into()),
-        300,
-        "a line changed",
-        || format!("{:?}", cells()),
-    )
-    .await?;
+    let made = || format!("{:?}", cells());
+    wait(|| c() == ("read(fd, buf, 4)".into(), "= 4".into()), 300, "a line changed", made).await?;
     let loc = web_sys::window().unwrap().location();
     let url = format!("{}{}", loc.pathname().unwrap_or_default(), loc.hash().unwrap_or_default());
     check(url.contains("read.html#p="), "the URL: the lesson's page, the program changed", &url)?;
     // (Back to the lesson's program; a try: its program; and back.)
     click(&one(".ptitle a").ok_or("no reset")?);
-    wait(
-        || c().1 == "= 18",
-        300,
-        "back to the lesson's program",
-        || format!("{:?}", cells()),
-    )
-    .await?;
+    wait(|| c().1 == "= 18", 300, "back to the lesson's program", made).await?;
     click(&named(".explain a", "read twice").ok_or("no try")?);
-    wait(
-        || cells().len() == 5 && done(5),
-        300,
-        "the try",
-        || format!("{:?}", cells()),
-    )
-    .await?;
+    wait(|| cells().len() == 5 && done(5), 300, "the try", made).await?;
     let tried: Vec<String> = cells().into_iter().map(|c| c.1).collect();
     check(tried[3] == "= 0", "the try: its second read", &tried)?;
     click(&one(".ptitle a").ok_or("no reset")?);
-    wait(
-        || cells().len() == 3 && done(3),
-        300,
-        "back to the lesson's program",
-        || format!("{:?}", cells()),
-    )
-    .await?;
+    wait(|| cells().len() == 3 && done(3), 300, "back to the lesson's program", made).await?;
     // (The next lesson.)
     let title = one("h1").map(|h| text(&h)).unwrap_or_default();
     click(&one(".turn .next").ok_or("no next lesson")?);
-    wait(
-        || one("h1").map(|h| text(&h)) != Some(title.clone()),
-        100,
-        "the next lesson",
-        || title.clone(),
-    )
-    .await?;
+    wait(|| one("h1").map(|h| text(&h)) != Some(title.clone()), 100, "the next lesson", || title.clone()).await?;
     // (Its page's URL.)
     let path = web_sys::window().unwrap().location().pathname().unwrap_or_default();
     check(path.ends_with(".html") && !path.ends_with("read.html"), "the next lesson's URL", &path)?;
@@ -454,23 +350,10 @@ async fn program() -> Result<(), String> {
 /// The page opened with a program changed (the URL's p=): its lines made,
 /// said to be a try, and the lesson's own program a click away.
 pub(super) async fn url() -> Check {
-    wait(
-        || done(2),
-        300,
-        "the program made",
-        || format!("{:?}", cells()),
-    )
-    .await?;
+    wait(|| done(2), 300, "the program made", || format!("{:?}", cells())).await?;
     let note = one(".explain.dim").map(|n| text(&n)).unwrap_or_default();
     let c = cells();
-    check(
-        c.len() == 2
-            && c[1].1 == "= 9"
-            && note.contains("not the lesson's own program")
-            && one(".ptitle a").is_some(),
-        "not back",
-        (&c, &note),
-    )?;
+    check(c.len() == 2 && c[1].1 == "= 9" && note.contains("not the lesson's own program") && one(".ptitle a").is_some(), "not back", (&c, &note))?;
     Ok(format!("{c:?}"))
 }
 
@@ -478,44 +361,17 @@ pub(super) async fn url() -> Check {
 /// memory, with fds of its own): the child's read blocked, finished as the
 /// program's write woke it; what each call changed; both tasks in the strip.
 pub(super) async fn tasks() -> Check {
-    wait(
-        || {
-            done(7)
-                && one("#timeline-canvas")
-                    .and_then(|c| c.get_attribute("data-test-tasks"))
-                    .is_some()
-        },
-        300,
-        "the calls made",
-        || format!("{:?}", cells()),
-    )
-    .await?;
+    wait(|| done(7) && drew("data-test-tasks").is_some(), 300, "the calls made", || format!("{:?}", cells())).await?;
     let c = cells();
     let changed: Vec<String> = all(".cell .more").iter().map(text).collect();
     // (The child's line selected: its task in the strip as the program's other.)
-    let _ = all("ol.lines .cell textarea")
-        .get(5)
-        .ok_or("no sixth line")?
-        .dyn_ref::<HtmlElement>()
-        .map(|t| t.focus());
+    let _ = all("ol.lines .cell textarea").get(5).ok_or("no sixth line")?.dyn_ref::<HtmlElement>().map(|t| t.focus());
     settle().await;
-    let mut strip: Vec<String> = one("#timeline-canvas")
-        .and_then(|c| c.get_attribute("data-test-tasks"))
-        .unwrap_or_default()
-        .lines()
-        .filter(|n| n.starts_with("prog("))
-        .map(String::from)
-        .collect();
+    let mut strip: Vec<String> = drew("data-test-tasks").unwrap_or_default().lines().filter(|n| n.starts_with("prog(")).map(String::from).collect();
     strip.sort();
     strip.dedup();
-    check(
-        c[5].1 == "= 6 (during line 7)"
-            && c[6].1 == "= 6"
-            && changed.iter().any(|x| x == "fds = {3, 4}")
-            && strip.len() >= 2,
-        "the pipe",
-        (&c, &changed, &strip),
-    )?;
+    check(c[5].1 == "= 6 (during line 7)" && c[6].1 == "= 6" && changed.iter().any(|x| x == "fds = {3, 4}") && strip.len() >= 2,
+          "the pipe", (&c, &changed, &strip))?;
     // (The idle task, between the calls: a click on its bar, the cursor in
     // its run, as in any task's.)
     let canvas = one("#timeline-canvas").ok_or("no timeline canvas")?;
@@ -532,39 +388,22 @@ pub(super) async fn tasks() -> Check {
 /// chart, the source, the panels, one under another, the page never wider
 /// than the screen; ▶ steps.
 pub(super) async fn responsive() -> Check {
-    wait(
-        || {
-            done(3)
-                && one("#timeline-canvas").and_then(|c| bar(&c, "vfs_read")).is_some()
-        },
-        300,
-        "the calls made",
-        || format!("{:?}", cells()),
-    )
-    .await?;
-    let top = |s: &str| {
-        one(s)
-            .map(|e| e.get_bounding_client_rect().top())
-            .unwrap_or(f64::NAN)
-    };
-    let order = top(".lesson") < top(".chart")
-        && top(".chart") < top(".source")
-        && top(".source") < top(".panels");
-    let wide = doc()
-        .document_element()
-        .map(|e| e.scroll_width())
-        .unwrap_or(0);
-    let screen = web_sys::window()
-        .unwrap()
-        .inner_width()
-        .ok()
-        .and_then(|w| w.as_f64())
-        .unwrap_or(0.0) as i32;
+    wait(|| done(3) && one("#timeline-canvas").and_then(|c| bar(&c, "vfs_read")).is_some(), 300, "the calls made", || format!("{:?}", cells())).await?;
+    let top = |s: &str| one(s).map_or(f64::NAN, |e| e.get_bounding_client_rect().top());
+    let order = top(".lesson") < top(".chart") && top(".chart") < top(".source") && top(".source") < top(".panels");
+    let wide = doc().document_element().map_or(0, |e| e.scroll_width());
+    let screen = web_sys::window().unwrap().inner_width().ok().and_then(|w| w.as_f64()).unwrap_or(0.0) as i32;
     check(order && wide <= screen, "the phone", (order, wide, screen))?;
     let at = place();
     press("Line ▶", false);
     settle().await;
     Ok(format!("{at} → {}", place()))
+}
+
+/// Attribute `attr` of the chart's canvas: its width, or what it drew
+/// (data-test-NAME: see chart.rs's draw_chart).
+fn drew(attr: &str) -> Option<String> {
+    one("#timeline-canvas")?.get_attribute(attr)
 }
 
 /// Where the chart drew function `name`'s first bar (its middle, on the canvas).
