@@ -221,31 +221,29 @@ fn canvas_context(id: &str, width: f64, height: f64) -> Option<(web_sys::HtmlCan
     Some((canvas, ctx))
 }
 
-/// The stack chart and the task strip drawn: the bars (`calls`, the
-/// stack's, darker; `find`'s, lit; `lit`, outlined), the cross at `now`
-/// (% across) and `level`, the window panned `offset` px.
+/// The stack chart and the task strip drawn, `width` px wide: its column k
+/// at `x0 + k * col` px; the bars (`calls`, the stack's, darker; `find`'s,
+/// lit; `lit`, outlined), the cross at `now` px across and `level`.
 fn draw_chart(
     chart: &Chart,
     tasks: &[TaskSpan],
-    width: f64,
-    height: f64,
+    (width, height): (f64, f64),
+    (x0, col): (f64, f64),
     calls: &[(usize, String)],
     find: &str,
     lit: Option<&(usize, String)>,
     now: Option<f64>,
     level: Option<usize>,
     locked: Option<usize>,
-    offset: f64,
 ) {
     let (Some((canvas, ctx)), Some((_, task_ctx))) = (canvas_context("timeline-canvas", width, height), canvas_context("timeline-task-canvas", width, TASK_LANE))
         else { return };
-    let n = chart.cols.len().max(1) as f64;
     let foreground = foreground();
     task_ctx.set_font("10px ui-monospace, SFMono-Regular, Menlo, monospace");
     task_ctx.set_text_baseline("middle");
     for task in tasks {
-        let x = task.start as f64 * width / n + offset;
-        let w = (task.end - task.start) as f64 * width / n;
+        let x = x0 + task.start as f64 * col;
+        let w = (task.end - task.start) as f64 * col;
         if x + w <= 0.0 || x >= width {
             continue;
         }
@@ -255,27 +253,31 @@ fn draw_chart(
     }
     ctx.set_font("11px ui-monospace, SFMono-Regular, Menlo, monospace");
     ctx.set_text_baseline("middle");
-    // (For the tests: each function's first bar, its middle; the bars found.)
+    // (For the tests: each call's bar, its middle and width, once; the bars found.)
     let mut points: Vec<String> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
     let mut found_count = 0;
+    // (And how far the bars drawn reach, px: the canvas covered, or not.)
+    let mut reach = (width, 0.0f64);
     for (dd, a, e, b) in chart.bar_spans() {
         let bar = &chart.bars[b as usize];
         let id = (bar.first, bar.name.clone());
         let on = calls.contains(&id);
         let found = !find.is_empty() && bar.name.to_lowercase().contains(find);
         let color = if found { "#ffd866".to_string() } else { call_color(bar.file.as_deref(), on) };
-        let x = a as f64 * width / n + offset;
-        let w = (e - a) as f64 * width / n;
+        let x = x0 + a as f64 * col;
+        let w = (e - a) as f64 * col;
         let y = height - (dd as f64 + 1.0) * ROW;
         if found {
             found_count += 1;
         }
-        if crate::test::on() && !points.iter().any(|p| p.split(' ').next() == Some(&bar.name)) {
-            points.push(format!("{} {},{}", bar.name, x + w / 2.0, y + ROW / 2.0));
+        if crate::test::on() && seen.insert(id.clone()) {
+            points.push(format!("{} {} {},{} {w}", bar.name, bar.first, x + w / 2.0, y + ROW / 2.0));
         }
         if x + w <= 0.0 || x >= width {
             continue;
         }
+        reach = (reach.0.min(x.max(0.0)), reach.1.max((x + w).min(width)));
         ctx.set_fill_style_str(&color);
         ctx.fill_rect(x, y, (w - 1.0).max(1.0), ROW - 1.0);
         if lit.is_some_and(|l| l.0 == id.0 && l.1 == id.1) {
@@ -290,8 +292,8 @@ fn draw_chart(
     // (The moment shown, a cross: down, its step; across, under its frame's
     // level, the Stack's (under: its bars' names stay readable).)
     ctx.set_fill_style_str(&foreground);
-    if let Some(pct) = now {
-        ctx.fill_rect(pct * width / 100.0 + offset - 1.0, 0.0, 2.0, height);
+    if let Some(now) = now {
+        ctx.fill_rect(now - 1.0, 0.0, 2.0, height);
         if let Some(level) = level {
             ctx.fill_rect(0.0, height - level as f64 * ROW - 1.0, width, 2.0);
         }
@@ -306,6 +308,7 @@ fn draw_chart(
         attr("bars", Some(points.join("\n")));
         attr("found", Some(found_count.to_string()));
         attr("now", now.map(|n| n.to_string()));
+        attr("reach", Some(format!("{},{}", reach.0, reach.1)));
         attr("tasks", Some(tasks.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join("\n")));
     }
 }
@@ -335,21 +338,39 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     // mounted: either draws again.)
     let mut offset = use_signal(|| 0.0f64);
     let mut mounted = use_signal(|| false);
+    // (A drag under way: the chart a window wider on each side, once, drawn
+    // shifted as the pointer moves: what the drag brings in is there.)
+    let wide = use_memo(move || {
+        let p = pan().filter(|_| dragged())?;
+        let (span, n) = (p.b - p.a + 1, d.chart.peek().cols.len().max(1));
+        let (wa, wb) = (p.a.saturating_sub(span), (p.b + span).min(steps - 1));
+        let chart = machine().view(|v| v.chart(wa, wb, n * (wb - wa + 1) / span));
+        let tasks = task_spans(&chart);
+        Some(crate::state::Shared(std::rc::Rc::new((wa, chart, tasks))))
+    });
     use_effect(move || {
         mounted();
         let chart = d.chart.cloned();
         let height = chart_height(chart.depth(), sizes().chart);
         let (sa, sb) = (d.window)();
-        // (Where a step is, across the window (%): the moment shown's (the
-        // pointer's, else the cursor's); the calls on its stack.)
-        let x = |s: f64| (s >= sa as f64 && s < (sb + 1) as f64).then(|| (s - sa as f64) * 100.0 / (sb - sa + 1) as f64);
+        // (A step's place, px across the window; the drag's pan added.)
+        let col = width() / chart.cols.len().max(1) as f64;
+        let step_px = width() / (sb - sa + 1) as f64;
+        let x = |s: f64| (s >= sa as f64 && s < (sb + 1) as f64).then(|| (s - sa as f64) * step_px + offset());
+        // (The moment shown's (the pointer's, else the cursor's); the calls on its stack.)
         let stack = d.stack.read();
         let calls: Vec<(usize, String)> = stack.iter().map(|f| (f.first, f.func.clone())).collect();
         // (The bar outlined: the one under the pointer, else the frame shown's call.)
         let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
-        draw_chart(&chart, &spans.read().0, width(), height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
+        let wide = wide.cloned();
+        let spans = spans.read();
+        let (chart, tasks, x0): (&Chart, &[TaskSpan], f64) = match wide.as_deref() {
+            Some((wa, c, t)) => (c, t, (*wa as f64 - sa as f64) * step_px + offset()),
+            None => (&chart, &spans, offset()),
+        };
+        draw_chart(chart, tasks, (width(), height), (x0, col), &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
                    d.hover_step.cloned().or(d.cursor_step.cloned()).and_then(x), stack.len().checked_sub(1 + d.frame.cloned()),
-                   ui.cursor.read().as_ref().and_then(|m| m.level), offset());
+                   ui.cursor.read().as_ref().and_then(|m| m.level));
         if let Some(scroll) = element("timeline-scroll") {
             scroll.set_scroll_top((scroll.scroll_height() - scroll.client_height() - *from_bottom.peek()).max(0));
         }

@@ -215,16 +215,22 @@ async fn window() -> Result<(), String> {
     let at = bar(&canvas, "vfs_read").map_or(mid, |(x, _)| b.left() + x);
     wheel(&chart, at, y, -800.0);
     settle().await;
-    let bar_x = || bar(&canvas, "vfs_read").map_or(f64::NAN, |p| p.0);
+    // (A call whose bar is whole in the window, its left edge throughout.)
+    let width = b.width();
+    let call = bars(&canvas).into_iter().find(|c| c.2 - c.4 / 2.0 > 1.0 && c.2 + c.4 / 2.0 < width - 1.0).map(|c| c.1).unwrap_or_default();
+    let bar_x = || bars(&canvas).into_iter().find(|c| c.1 == call).map_or(f64::NAN, |c| c.2 - c.4 / 2.0);
     let win = || one(".overview .win").and_then(|w| w.get_attribute("style")).unwrap_or_default();
     let (x0, w0) = (bar_x(), win());
     pointer(&chart, "pointerdown", at, y);
     pointer(&chart, "pointermove", at - 80.0, y);
     settle().await;
     let during = bar_x();
+    // (What the drag brings in, drawn as it goes: the bars reach the right edge.)
+    let reach = drew("data-test-reach").unwrap_or_default();
+    let covered = reach.split_once(',').and_then(|(_, hi)| hi.parse::<f64>().ok()).is_some_and(|hi| hi >= b.width() - 2.0);
     pointer(&chart, "pointerup", at - 80.0, y);
     settle().await;
-    check((x0 - 80.0 - during).abs() < 1.0 && win() != w0, "a drag pans", (x0, during, w0, win()))?;
+    check((x0 - 80.0 - during).abs() < 1.0 && win() != w0 && covered, "a drag pans, what it brings in drawn", (x0, during, w0, win(), reach))?;
     // (Zoomed out, the chart deeper or not: the bars stay where they were on
     // the screen, kept at the bottom.)
     let screen_y = || bar(&canvas, "ksys_read").map(|(_, y)| canvas.get_bounding_client_rect().top() + y);
@@ -411,12 +417,21 @@ fn drew(attr: &str) -> Option<String> {
     one("#timeline-canvas")?.get_attribute(attr)
 }
 
-/// Where the chart drew function `name`'s first bar (its middle, on the canvas).
+/// Where the chart drew a bar of function `name` (its middle, on the
+/// canvas): the first it lists.
 fn bar(canvas: &web_sys::Element, name: &str) -> Option<(f64, f64)> {
-    canvas.get_attribute("data-test-bars")?.lines().find_map(|l| {
-        let (x, y) = l.strip_prefix(name)?.strip_prefix(' ')?.split_once(',')?;
-        Some((x.parse().ok()?, y.parse().ok()?))
-    })
+    bars(canvas).into_iter().find(|b| b.0 == name).map(|b| (b.2, b.3))
+}
+
+/// The bars the chart drew: each call's function, its first record, its
+/// middle (x, y) and width.
+fn bars(canvas: &web_sys::Element) -> Vec<(String, String, f64, f64, f64)> {
+    canvas.get_attribute("data-test-bars").unwrap_or_default().lines().filter_map(|l| {
+        let mut f = l.split(' ');
+        let (name, call, at, w) = (f.next()?, f.next()?, f.next()?, f.next()?);
+        let (x, y) = at.split_once(',')?;
+        Some((name.into(), call.into(), x.parse().ok()?, y.parse().ok()?, w.parse().ok()?))
+    }).collect()
 }
 
 /// The durable lesson (durable.html): the Disk tab, the disk's history;
