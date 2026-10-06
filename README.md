@@ -21,7 +21,8 @@ A lesson runs a small program made of real syscalls. Its recording connects:
 - the kernel source at the selected moment;
 - arguments, locals, and pointed-to values as memory was then;
 - every task's state and `task_struct`;
-- the kernel objects changed by the selected syscall; and
+- the kernel objects changed by the selected syscall;
+- every transfer the disk made, and the task it was for; and
 - kernel and program console output.
 
 You can edit the lesson program, run it again on a fresh kernel, and compare

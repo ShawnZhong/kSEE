@@ -96,7 +96,7 @@ impl Session {
     }
 
     /// The call runner `tid` is making (asked, not done), if any: its id.
-    pub fn in_flight(&self, tid: u32) -> Option<u32> {
+    fn in_flight(&self, tid: u32) -> Option<u32> {
         self.calls.values().find(|c| c.tid == tid && !c.done).map(|c| c.id)
     }
 
