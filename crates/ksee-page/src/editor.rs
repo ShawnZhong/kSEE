@@ -10,7 +10,7 @@ use crate::machine;
 
 /// The cursor in the input that has the focus (UTF-16 units).
 fn cursor() -> Option<usize> {
-    let e = web_sys::window()?.document()?.active_element()?.dyn_into::<web_sys::HtmlTextAreaElement>().ok()?;
+    let e = crate::document()?.active_element()?.dyn_into::<web_sys::HtmlTextAreaElement>().ok()?;
     e.selection_start().ok().flatten().map(|n| n as usize)
 }
 

@@ -151,7 +151,7 @@ pub fn Stack() -> Element {
     // as it takes, its row first.)
     use_effect(move || {
         let _ = (d.frame.read(), d.stack.read());
-        let doc = web_sys::window().and_then(|w| w.document());
+        let doc = crate::document();
         let pick = |s: &str| doc.as_ref().and_then(|d| d.query_selector(s).ok().flatten());
         let (Some(pane), Some(on)) = (pick(".stack"), pick(".stack tbody.on")) else { return };
         let (p, r) = (pane.get_bounding_client_rect(), on.get_bounding_client_rect());

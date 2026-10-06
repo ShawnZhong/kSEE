@@ -145,7 +145,7 @@ fn Disk() -> Element {
     // (Kept in view: the row under way, else the last made.)
     use_effect(move || {
         let _ = d.line.read();
-        let doc = web_sys::window().and_then(|w| w.document());
+        let doc = crate::document();
         let last_made = || doc.as_ref()?.query_selector_all(".disk .xfer.made").ok().and_then(|l| l.item(l.length().checked_sub(1)?));
         let row = doc.as_ref().and_then(|d| d.query_selector(".disk .xfer.on").ok().flatten()).or_else(|| last_made().and_then(|n| n.dyn_into().ok()));
         if let Some(e) = row {

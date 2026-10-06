@@ -64,7 +64,7 @@ fn Theme() -> Element {
     rsx! {
         button { class: "theme", title: "the colors: the system's, light or dark (a click: the next)",
             onclick: move |_| {
-                let root = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element());
+                let root = crate::document().and_then(|d| d.document_element());
                 if let (Some(root), Some(s)) = (root, crate::layout::storage()) {
                     let _ = if next.is_empty() { root.remove_attribute("data-theme").and(s.remove_item(THEME)) }
                             else { root.set_attribute("data-theme", next).and(s.set_item(THEME, next)) };

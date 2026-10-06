@@ -56,6 +56,11 @@ pub(crate) async fn boot() -> Result<Rc<Machine>, String> {
     ))
 }
 
+/// The page's document.
+pub(crate) fn document() -> Option<web_sys::Document> {
+    web_sys::window()?.document()
+}
+
 /// The booted Machine (called only once the kernel is up).
 pub(crate) fn machine() -> Rc<Machine> {
     MACHINE.with_borrow(|m| m.clone()).expect("booted")
@@ -79,7 +84,7 @@ pub fn mount(root: &str, lessons: JsValue, machine: Promise) -> Result<(), JsVal
     LESSONS.set(Box::leak(lessons.into_boxed_slice()));
     // (The lesson's text as the page came with it, for what reads it without
     // running it: this page draws it now.)
-    if let Some(e) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id("static")) {
+    if let Some(e) = crate::document().and_then(|d| d.get_element_by_id("static")) {
         e.remove();
     }
     // (A test, if the URL names one: those of the Machine only, no page.)

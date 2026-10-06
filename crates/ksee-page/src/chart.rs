@@ -172,12 +172,21 @@ struct Pan {
     pointer_id: i32,
 }
 
+/// `text` in `color`, in the box at (`x`, `y`) `w` by `h`: clipped to it,
+/// in the middle of its height.
+fn label(ctx: &web_sys::CanvasRenderingContext2d, text: &str, color: &str, x: f64, y: f64, w: f64, h: f64) {
+    ctx.save();
+    ctx.begin_path();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.set_fill_style_str(color);
+    let _ = ctx.fill_text(text, x + 3.0, y + h / 2.0);
+    ctx.restore();
+}
+
+/// The page's element with id `id`.
 pub(crate) fn element(id: &str) -> Option<web_sys::HtmlElement> {
-    web_sys::window()?
-        .document()?
-        .get_element_by_id(id)?
-        .dyn_into()
-        .ok()
+    crate::document()?.get_element_by_id(id)?.dyn_into().ok()
 }
 
 fn chart_coordinates(client_x: f64, client_y: f64) -> Option<(f64, f64)> {
@@ -291,13 +300,7 @@ fn draw_chart(
         }
         task_ctx.set_fill_style_str(&task.color);
         task_ctx.fill_rect(x, 0.0, (w - 1.0).max(1.0), TASK_LANE);
-        task_ctx.save();
-        task_ctx.begin_path();
-        task_ctx.rect(x, 0.0, (w - 2.0).max(1.0), TASK_LANE);
-        task_ctx.clip();
-        task_ctx.set_fill_style_str("#1f2328");
-        let _ = task_ctx.fill_text(&task.name, x + 3.0, TASK_LANE / 2.0);
-        task_ctx.restore();
+        label(&task_ctx, &task.name, "#1f2328", x, 0.0, (w - 2.0).max(1.0), TASK_LANE);
     }
     ctx.set_font("11px ui-monospace, SFMono-Regular, Menlo, monospace");
     ctx.set_text_baseline("middle");
@@ -334,13 +337,7 @@ fn draw_chart(
             ctx.stroke_rect(x + 0.75, y + 0.75, (w - 2.5).max(1.0), ROW - 2.5);
         }
         if w >= 24.0 {
-            ctx.save();
-            ctx.begin_path();
-            ctx.rect(x, y, w - 2.0, ROW);
-            ctx.clip();
-            ctx.set_fill_style_str(if on { "#fff" } else { "#1f2328" });
-            let _ = ctx.fill_text(&bar.name, x + 3.0, y + ROW / 2.0);
-            ctx.restore();
+            label(&ctx, &bar.name, if on { "#fff" } else { "#1f2328" }, x, y, w - 2.0, ROW);
         }
     }
     // (The moment shown, a cross: down, its step; across, under its frame's
@@ -353,18 +350,16 @@ fn draw_chart(
         }
     }
     if crate::test::on() {
-        match locked {
-            Some(level) => canvas.set_attribute("data-test-level", &level.to_string()),
-            None => canvas.remove_attribute("data-test-level"),
-        }.ok();
-        let _ = canvas.set_attribute("data-test-bars", &points.join("\n"));
-        let _ = canvas.set_attribute("data-test-found", &found_count.to_string());
-        match now {
-            Some(now) => canvas.set_attribute("data-test-now", &now.to_string()),
-            None => canvas.remove_attribute("data-test-now"),
-        }.ok();
-        let task_names: Vec<&str> = tasks.iter().map(|t| t.name.as_str()).collect();
-        let _ = canvas.set_attribute("data-test-tasks", &task_names.join("\n"));
+        // (data-test-NAME: what the chart drew, for the tests; none, gone.)
+        let attr = |name: &str, value: Option<String>| {
+            let name = format!("data-test-{name}");
+            let _ = match value { Some(v) => canvas.set_attribute(&name, &v), None => canvas.remove_attribute(&name) };
+        };
+        attr("level", locked.map(|l| l.to_string()));
+        attr("bars", Some(points.join("\n")));
+        attr("found", Some(found_count.to_string()));
+        attr("now", now.map(|n| n.to_string()));
+        attr("tasks", Some(tasks.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join("\n")));
     }
 }
 
