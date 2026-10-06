@@ -1,60 +1,62 @@
 //! The Objects tab: the objects the run selected changed (View::objects),
 //! each a table of its fields, under the task that changed it.
 
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
 use ksee_core::view::{Group, Node, RegionKind};
 
-#[derive(Clone, PartialEq)]
-pub(crate) struct ObjectDefinition {
-    pub file: String,
-    pub line: u32,
-}
+use crate::machine;
+use crate::state::{Derived, Shared, Ui};
+
+/// The run's objects, and where each global among them is declared.
+type Graph = Shared<(Vec<Node>, Vec<Option<(String, u32)>>)>;
 
 /// "3 objects", "1 object".
 fn count(n: usize) -> String {
     format!("{n} object{}", if n == 1 { "" } else { "s" })
 }
 
-/// Their labels, once each: "file, inode, folio ×23".
-fn labels(nodes: &[&Node]) -> String {
-    let mut indexes: HashMap<String, usize> = HashMap::new();
-    let mut out: Vec<(String, usize)> = Vec::new();
-    for node in nodes {
-        match indexes.get(&node.label).copied() {
-            Some(index) => out[index].1 += 1,
-            None => {
-                indexes.insert(node.label.clone(), out.len());
-                out.push((node.label.clone(), 1));
-            }
+/// `items` by their keys, in the order each key first comes.
+fn grouped<T>(items: impl IntoIterator<Item = (String, T)>) -> Vec<(String, Vec<T>)> {
+    let mut out: Vec<(String, Vec<T>)> = Vec::new();
+    for (key, item) in items {
+        match out.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, list)) => list.push(item),
+            None => out.push((key, vec![item])),
         }
     }
-    out.into_iter()
-        .map(|(label, count)| {
-            if count > 1 {
-                format!("{label} ×{count}")
-            } else {
-                label
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
+    out
 }
 
-/// The objects changed by a call, grouped by the task that changed them and
-/// by whether their changes survived to the end of the call.
+/// Their labels, once each: "file, inode, folio ×23".
+fn labels<'a>(nodes: impl IntoIterator<Item = &'a Node>) -> String {
+    grouped(nodes.into_iter().map(|n| (n.label.clone(), ()))).into_iter()
+        .map(|(label, n)| if n.len() > 1 { format!("{label} ×{}", n.len()) } else { label })
+        .collect::<Vec<_>>().join(", ")
+}
+
+/// The objects the run selected changed, by the task that changed them and
+/// by whether their changes survived to the run's end.
 #[component]
-pub(crate) fn ObjectsView(
-    nodes: Rc<Vec<Node>>,
-    title: String,
-    cursor: Option<usize>,
-    definitions: Rc<Vec<Option<ObjectDefinition>>>,
-    on_record: EventHandler<usize>,
-    on_definition: EventHandler<ObjectDefinition>,
-    on_object: EventHandler<usize>,
-) -> Element {
+pub(crate) fn Objects() -> Element {
+    let ui = use_context::<Ui>();
+    let d = use_context::<Derived>();
+    let graph = use_memo(move || {
+        (ui.snapshot)();
+        let m = machine();
+        let nodes = d.run.cloned().map_or_else(Vec::new, |run| m.view(|v| v.objects(run.first, run.last)));
+        let declared = nodes.iter().map(|n| {
+            (n.kind == RegionKind::Global).then(|| m.view(|v| v.definition(&n.what))).flatten().map(|p| (p.file, p.line))
+        }).collect();
+        Shared(Rc::new((nodes, declared)))
+    });
+    let Some(run) = d.run.cloned() else {
+        return rsx! { p { class: "pad dim", "Select a run: what it did to the kernel's data." } };
+    };
+    let title = run.title();
+    let graph = graph.cloned();
+    let nodes = &(*graph).0;
     if nodes.is_empty() {
         return rsx! { p { class: "pad dim", "{title} changed nothing of the kernel's data" } };
     }
@@ -63,47 +65,22 @@ pub(crate) fn ObjectsView(
     for k in 0..nodes.len() {
         depth[k] = nodes[k].under.map_or(0, |parent| depth[parent] + 1);
     }
-    let own: Vec<usize> = (0..nodes.len())
-        .filter(|&k| nodes[k].group == Group::Changed && nodes[k].by.is_none())
-        .collect();
-    let same: Vec<usize> = (0..nodes.len())
-        .filter(|&k| nodes[k].group == Group::Same)
-        .collect();
-    let mut other_indexes: HashMap<String, usize> = HashMap::new();
-    let mut others: Vec<(String, Vec<usize>)> = Vec::new();
-    for k in (0..nodes.len()).filter(|&k| nodes[k].group == Group::Changed) {
-        let Some(task) = &nodes[k].by else { continue };
-        let task = task.named();
-        match other_indexes.get(&task).copied() {
-            Some(index) => others[index].1.push(k),
-            None => {
-                other_indexes.insert(task.clone(), others.len());
-                others.push((task, vec![k]));
-            }
-        }
+    let own: Vec<usize> = (0..nodes.len()).filter(|&k| nodes[k].group == Group::Changed && nodes[k].by.is_none()).collect();
+    let same: Vec<usize> = (0..nodes.len()).filter(|&k| nodes[k].group == Group::Same).collect();
+    let others = grouped((0..nodes.len()).filter(|&k| nodes[k].group == Group::Changed)
+        .filter_map(|k| Some((nodes[k].by.as_ref()?.named(), k))));
+    let names = |list: &[usize]| labels(list.iter().map(|&k| &nodes[k]));
+    let mut head = if own.is_empty() {
+        format!("{title} itself changed nothing of the kernel's data")
+    } else {
+        format!("{title} changed {}: {}", count(own.len()), names(&own))
+    };
+    if !others.is_empty() {
+        head += &format!("; while it ran, other tasks changed {} more", count(others.iter().map(|(_, list)| list.len()).sum()));
     }
-    let names = |indexes: &[usize]| labels(&indexes.iter().map(|&k| &nodes[k]).collect::<Vec<_>>());
-    let head = format!(
-        "{}{}{}",
-        if own.is_empty() {
-            format!("{title} itself changed nothing of the kernel's data")
-        } else {
-            format!("{title} changed {}: {}", count(own.len()), names(&own))
-        },
-        if others.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "; while it ran, other tasks changed {} more",
-                count(others.iter().map(|(_, list)| list.len()).sum())
-            )
-        },
-        if same.is_empty() || own.is_empty() {
-            String::new()
-        } else {
-            format!("; left {} as it was", count(same.len()))
-        },
-    );
+    if !same.is_empty() && !own.is_empty() {
+        head += &format!("; left {} as it was", count(same.len()));
+    }
     // (Its own; then each other task's, under a head; then those left as
     // they were, under one.)
     let mut sections: Vec<(Option<(&str, &str, String)>, Vec<usize>)> = vec![(None, own)];
@@ -124,85 +101,49 @@ pub(crate) fn ObjectsView(
                     div { class, title, "{said}" }
                 }
                 for k in list {
-                    ObjectBox { nodes: nodes.clone(), definitions: definitions.clone(), k, depth: depth[k], cursor, on_record, on_definition, on_object }
+                    ObjectBox { graph: graph.clone(), k, depth: depth[k] }
                 }
             }
         }
     }
 }
 
+/// Object `k`: its fields' changes, a row each (a click: the cursor to its
+/// last write); a pointer's target, a link to its box.
 #[component]
-fn ObjectBox(
-    nodes: Rc<Vec<Node>>,
-    definitions: Rc<Vec<Option<ObjectDefinition>>>,
-    k: usize,
-    depth: usize,
-    cursor: Option<usize>,
-    on_record: EventHandler<usize>,
-    on_definition: EventHandler<ObjectDefinition>,
-    on_object: EventHandler<usize>,
-) -> Element {
+fn ObjectBox(graph: Graph, k: usize, depth: usize) -> Element {
+    let mut ui = use_context::<Ui>();
+    let d = use_context::<Derived>();
+    let cursor = d.line.cloned().map(|l| l.at);
+    let (nodes, declared) = &*graph;
     let node = &nodes[k];
     let what = match (node.kind, &node.within) {
         (RegionKind::Object, Some(function)) => format!("{} in {function}", node.what),
         (RegionKind::Object, None) => node.what.clone(),
         _ => node.ty.clone(),
     };
-    let via = node
-        .via
-        .as_ref()
-        .map_or(String::new(), |via| format!("  ← {via}"));
-    let definition = definitions.get(k).cloned().flatten();
-    let style = if depth > 0 {
-        format!("margin-left: {}px", depth.min(6) * 18)
-    } else {
-        String::new()
-    };
+    let via = node.via.as_ref().map_or(String::new(), |via| format!("  ← {via}"));
+    let declared = declared[k].clone();
+    let style = if depth > 0 { format!("margin-left: {}px", depth.min(6) * 18) } else { String::new() };
     let mut rows = Vec::new();
     for change in &node.changes {
         for (q, run) in change.streaks.iter().enumerate() {
-            let class = if cursor.is_some_and(|i| run.first > i) {
-                "later"
-            } else if cursor.is_some_and(|i| run.first <= i && i <= run.last) {
-                "on"
-            } else if change.before == change.after {
-                "same"
-            } else {
-                ""
+            let class = match cursor {
+                Some(i) if run.first > i => "later",
+                Some(i) if i <= run.last => "on",
+                _ if change.before == change.after => "same",
+                _ => "",
             };
-            let to = (q + 1 == change.streaks.len()).then_some(change.to).flatten();
-            let title = format!(
-                "{}{}: click to go there",
-                if run.writes == 1 {
-                    "written once".to_string()
-                } else {
-                    format!("written {} times", run.writes)
-                },
-                run.at.as_ref().map_or(String::new(), |line| format!(
-                    " in {} ({}:{})",
-                    line.func, line.file, line.line
-                )),
-            );
-            rows.push((
-                class,
-                title,
-                if q == 0 {
-                    if change.member.is_empty() {
-                        "(itself)".to_string()
-                    } else {
-                        change.member.clone()
-                    }
-                } else {
-                    String::new()
-                },
-                run.before.clone(),
-                run.after.clone(),
-                to.map(|target| (target, nodes[target].label.clone())),
-                run.at
-                    .as_ref()
-                    .map_or(String::new(), |line| line.func.clone()),
-                run.last,
-            ));
+            let times = if run.writes == 1 { "written once".to_string() } else { format!("written {} times", run.writes) };
+            let place = run.at.as_ref().map_or(String::new(), |l| format!(" in {} ({}:{})", l.func, l.file, l.line));
+            let member = match q {
+                0 if change.member.is_empty() => "(itself)".to_string(),
+                0 => change.member.clone(),
+                _ => String::new(),
+            };
+            let to = (q + 1 == change.streaks.len()).then_some(change.to).flatten().map(|t| (t, nodes[t].label.clone()));
+            let function = run.at.as_ref().map_or(String::new(), |l| l.func.clone());
+            rows.push((class, format!("{times}{place}: click to go there"), member, run.before.clone(), run.after.clone(), to, function, run.last));
         }
     }
 
@@ -211,20 +152,23 @@ fn ObjectBox(
             div { class: "title",
                 b { "{node.label}" }
                 span { class: "dim", "  {what}  at {node.addr:#x}{via}" }
-                if let Some(definition) = definition {
-                    a { title: "where it is declared", onclick: move |_| on_definition.call(definition.clone()),
-                        "  {definition.file}:{definition.line}" }
+                if let Some((file, line)) = declared {
+                    a { title: "where it is declared", onclick: move |_| ui.seen.set(Some((file.clone(), line))),
+                        "  {file}:{line}" }
                 }
             }
             table { class: "fields",
                 for (class, title, member, before, after, to, function, last) in rows {
-                    tr { class, title, onclick: move |_| on_record.call(last),
+                    tr { class, title, onclick: move |_| ui.go_record(d, last),
                         td { class: "fname", "{member}" }
                         td { class: "fval",
                             span { class: "dim", "{before} → " }
                             match to {
                                 Some((target, label)) => rsx! {
-                                    a { onclick: move |event| { event.stop_propagation(); on_object.call(target); }, "{label}" }
+                                    a { onclick: move |event| {
+                                            event.stop_propagation();
+                                            if let Some(e) = crate::chart::element(&format!("obj{target}")) { e.scroll_into_view(); }
+                                        }, "{label}" }
                                 },
                                 None => rsx! { "{after}" },
                             }

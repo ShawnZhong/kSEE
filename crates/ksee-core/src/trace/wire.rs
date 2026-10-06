@@ -43,33 +43,3 @@ pub(super) const fn fields(tag: u32) -> u32 {
 pub(super) const fn count(tag: u32) -> u32 {
     tag >> COUNT_SHIFT & 0xf
 }
-
-/// A Store record's width.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[repr(u32)]
-pub enum StoreSize {
-    B1 = 0,
-    B2 = 1,
-    B4 = 2,
-    B8 = 3,
-}
-
-impl StoreSize {
-    pub const fn bytes(self) -> u32 {
-        1 << self as u32
-    }
-
-    pub(super) const fn old_words(self) -> usize {
-        if matches!(self, StoreSize::B8) { 2 } else { 1 }
-    }
-
-    pub(super) fn of(class: u32) -> Option<StoreSize> {
-        Some(match class {
-            0 => StoreSize::B1,
-            1 => StoreSize::B2,
-            2 => StoreSize::B4,
-            3 => StoreSize::B8,
-            _ => return None,
-        })
-    }
-}

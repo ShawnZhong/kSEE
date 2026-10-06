@@ -220,6 +220,11 @@ impl Ui {
         matches!((self.kernel)(), Some(Ok(())))
     }
 
+    /// The level chosen (the cursor's; see Moment).
+    pub fn level(&self) -> Option<usize> {
+        self.cursor.peek().as_ref().and_then(|m| m.level)
+    }
+
     /// The run selected (the cursor's).
     pub fn run(&self) -> Option<usize> {
         self.cursor.read().as_ref().map(|m| m.run)
@@ -251,8 +256,7 @@ impl Ui {
     /// The cursor to line `k` of its run, at the level chosen.
     pub fn go(self, k: usize) {
         if let Some(run) = self.run() {
-            let level = self.cursor.peek().as_ref().and_then(|m| m.level);
-            self.commit(Some(Moment { run, line: k, level }));
+            self.commit(Some(Moment { run, line: k, level: self.level() }));
         }
     }
 
@@ -286,8 +290,7 @@ impl Ui {
 
     /// The cursor to record `i`, at the level chosen.
     pub fn go_record(self, d: Derived, i: usize) {
-        let level = self.cursor.peek().as_ref().and_then(|m| m.level);
-        if let Some(m) = Ui::moment_at(d, i, None, level) {
+        if let Some(m) = Ui::moment_at(d, i, None, self.level()) {
             self.commit(Some(m));
         }
     }

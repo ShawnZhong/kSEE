@@ -201,13 +201,13 @@ impl View<'_> {
     /// rest) and in full; at the line's last write.
     pub fn notes(&self, first: usize, last: usize, file: &str, cur: usize) -> Vec<Note> {
         let named = self.stores(first, last);
-        let files = self.tables.file_ids(file);
+        let file = self.tables.file_id(file);
         // (Each line's things, in the order first written there: the thing,
         // its last write there by `cur`, how many; and the line's last write.)
         let mut by: BTreeMap<u32, (Vec<(&Thing, usize, usize)>, usize)> = BTreeMap::new();
         for t in &named.things {
             for (k, w) in t.writes.iter().enumerate().take_while(|(_, w)| w.i <= cur) {
-                let Some(at) = w.at.filter(|at| files.contains(&at.loc.file)) else { continue };
+                let Some(at) = w.at.filter(|at| Some(at.loc.file) == file) else { continue };
                 let (things, last) = by.entry(at.loc.line).or_default();
                 *last = (*last).max(w.i);
                 match things.iter_mut().find(|(x, _, _)| core::ptr::eq(*x, t)) {

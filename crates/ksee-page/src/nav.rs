@@ -58,15 +58,14 @@ const THEME: &str = "ksee.theme";
 /// The theme: the system's, light or dark, kept.
 #[component]
 fn Theme() -> Element {
-    let storage = || web_sys::window().and_then(|w| w.local_storage().ok().flatten());
-    let mut theme = use_signal(move || storage().and_then(|s| s.get_item(THEME).ok().flatten()).unwrap_or_default());
+    let mut theme = use_signal(move || crate::layout::storage().and_then(|s| s.get_item(THEME).ok().flatten()).unwrap_or_default());
     // (One button, round the three: the system's, light, dark.)
     let (label, next) = match theme().as_str() { "light" => ("☀ Light", "dark"), "dark" => ("☾ Dark", ""), _ => ("◐ Auto", "light") };
     rsx! {
         button { class: "theme", title: "the colors: the system's, light or dark (a click: the next)",
             onclick: move |_| {
                 let root = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element());
-                if let (Some(root), Some(s)) = (root, storage()) {
+                if let (Some(root), Some(s)) = (root, crate::layout::storage()) {
                     let _ = if next.is_empty() { root.remove_attribute("data-theme").and(s.remove_item(THEME)) }
                             else { root.set_attribute("data-theme", next).and(s.set_item(THEME, next)) };
                 }

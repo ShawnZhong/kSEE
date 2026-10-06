@@ -16,10 +16,14 @@
 	__attribute__((import_module("kernel"), import_name(#name)))
 #define __wasm_export(name) __attribute__((export_name(#name))) __used
 
+struct console;
 struct task_struct;
 
 __wasm_import(console_write)
 void wasm_console_write(const char *buf, unsigned int len);
+
+/* The console the kernel prints on (drivers/console.c). */
+extern struct console wasm_console;
 
 /*
  * The next task the host rings (WASM_IRQ_DOORBELL: it has something for
@@ -123,7 +127,7 @@ void wasm_disk_interrupt(void);
 void *wasm_boot_stack(void);
 void wasm_boot(void);
 void wasm_task_entry(struct task_struct *p);
-void wasm_user_entry(void);
+void __noreturn wasm_user_entry(void);
 long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
 
 /* The timer's interrupt (time.c, irq.c). */

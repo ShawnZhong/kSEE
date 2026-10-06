@@ -320,9 +320,9 @@ impl Tables {
         self.files.get(loc.file as usize).map_or("?", String::as_str)
     }
 
-    /// The ids of file `path` (Loc::file).
-    pub(crate) fn file_ids(&self, path: &str) -> Vec<u32> {
-        (0..self.files.len() as u32).filter(|&k| self.files[k as usize] == path).collect()
+    /// The id of file `path` (Loc::file; the paths are each once).
+    pub(crate) fn file_id(&self, path: &str) -> Option<u32> {
+        self.files.iter().position(|f| f == path).map(|k| k as u32)
     }
 
     /// The id of the (first) instrumented function called `name`.

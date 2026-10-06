@@ -103,13 +103,7 @@ fn App() -> Element {
     use_hook(move || {
         spawn(async move {
             let mut kernel = ui.kernel;
-            kernel.set(Some(match boot().await {
-                Ok(machine) => {
-                    MACHINE.with_borrow_mut(|m| *m = Some(machine));
-                    Ok(())
-                }
-                Err(error) => Err(error),
-            }));
+            kernel.set(Some(boot().await.map(|machine| MACHINE.with_borrow_mut(|m| *m = Some(machine)))));
         })
     });
     // (The URL, as the lesson and its program are.)
@@ -119,12 +113,12 @@ fn App() -> Element {
     let mut running = use_signal(|| None::<Task>);
     use_effect(move || {
         let program = (ui.program)();
-        let kernel = (ui.kernel)();
+        let up = ui.up();
         ui.begin_program();
         if let Some(task) = running.write().take() {
             task.cancel();
         }
-        if matches!(kernel, Some(Ok(()))) {
+        if up {
             running.set(Some(spawn(lesson::make_program(ui, program))));
         }
     });

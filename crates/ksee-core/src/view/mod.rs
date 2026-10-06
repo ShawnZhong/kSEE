@@ -279,10 +279,10 @@ impl View<'_> {
     pub fn coverage(&self, file: &str, n: Option<usize>) -> BTreeMap<u32, u64> {
         let t = self.tables;
         let counts = self.rec.block_counts(n);
-        let files = t.file_ids(file);
+        let file = t.file_id(file);
         let mut lines: BTreeMap<u32, u64> = BTreeMap::new();
         for (&(f, b), &c) in counts.iter().filter(|(_, c)| **c > 0) {
-            for loc in t.block_lines(f, b).filter(|l| files.contains(&l.file)) {
+            for loc in t.block_lines(f, b).filter(|l| Some(l.file) == file) {
                 let e = lines.entry(loc.line).or_default();
                 *e = (*e).max(c);
             }

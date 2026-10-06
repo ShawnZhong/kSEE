@@ -4,7 +4,6 @@
  * is no cycle counter).
  */
 #include <linux/delay.h>
-#include <linux/math64.h>
 #include <asm/wasm.h>
 
 void __ndelay(unsigned long nsecs)

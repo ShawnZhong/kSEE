@@ -13,8 +13,6 @@
 #include <linux/init.h>
 #include <linux/irqflags.h>
 #include <linux/sched.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/task_stack.h>
 #include <asm/irq_regs.h>
 #include <asm/wasm.h>
 

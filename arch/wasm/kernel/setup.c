@@ -12,15 +12,12 @@
 #include <linux/start_kernel.h>
 #include <asm/sections.h>
 #include <asm/setup.h>
-#include <asm/uaccess.h>
 #include <asm/wasm.h>
 
 unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)]
 	__aligned(THREAD_SIZE);
 
 struct task_struct *__current_task = &init_task;
-
-extern struct console wasm_console; /* drivers/console.c */
 
 /* Stack pointer the host installs before calling boot(). */
 __wasm_export(boot_stack) void *wasm_boot_stack(void)

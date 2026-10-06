@@ -241,11 +241,6 @@ table.fields tr.later { opacity: .45; }
 <div id="root"></div>
 <noscript><p>kSEE, the kernel Syscall Execution Explorer, runs a real Linux kernel in your browser and lets you step through what a system call does, line by line. It needs JavaScript and WebAssembly (with JSPI: Chrome 137, Firefox 153, Safari 27 or later).</p></noscript>
 <script>
-// (The theme kept, before the page is drawn: nav.rs's Theme.)
-const theme = localStorage.getItem("ksee.theme");
-if (theme) document.documentElement.dataset.theme = theme;
-</script>
-<script>
 // (A test (#test=NAME): an error before the page's own code runs, said to
 // ksee test at once, as the page's are: it waits for one.)
 if (location.hash.includes("test=")) {
@@ -253,6 +248,9 @@ if (location.hash.includes("test=")) {
   addEventListener("error", fail);
   addEventListener("unhandledrejection", fail);
 }
+// (The theme kept, before the page is drawn: nav.rs's Theme.)
+const theme = localStorage.getItem("ksee.theme");
+if (theme) document.documentElement.dataset.theme = theme;
 </script>
 <script type="module">
 import init, { mount, Machine } from "./pkg/ksee_page.js";

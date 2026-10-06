@@ -30,9 +30,10 @@ struct task_struct *__switch_to(struct task_struct *prev,
 /*
  * Return to user mode, at the start of the task's program (a direct call:
  * nothing of the host's may be on a stack the host suspends). Returning
- * from it is an exit.
+ * from it is an exit. The host calls it too, on a fresh stack for the
+ * current task (see syscall.c).
  */
-static void __noreturn wasm_enter_user(void)
+__wasm_export(user_entry) void __noreturn wasm_user_entry(void)
 {
 	syscall_exit_to_user_mode(current_pt_regs());
 	current->thread.entry();
@@ -48,13 +49,7 @@ __wasm_export(task_entry) void wasm_task_entry(struct task_struct *p)
 	/* A kernel thread returns only after a successful kernel_execve(). */
 	if (p->thread.fn)
 		p->thread.fn(p->thread.fn_arg);
-	wasm_enter_user();
-}
-
-/* Called by the host, on a fresh stack for the current task (see syscall.c). */
-__wasm_export(user_entry) void wasm_user_entry(void)
-{
-	wasm_enter_user();
+	wasm_user_entry();
 }
 
 

@@ -382,7 +382,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     // already none — so a drag never ends in a click.)
     let mut dragged = use_signal(|| false);
     let mut width = use_signal(|| 1000.0f64);
-    let depth = chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
+    let depth = chart.depth();
     let sizes = use_context::<Signal<crate::layout::Sizes>>();
     let height = chart_height(depth, sizes().chart);
     // (How far the stack rows are scrolled up from their bottom: kept as the
@@ -396,7 +396,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     use_effect(move || {
         mounted();
         let chart = d.chart.cloned();
-        let height = chart_height(chart.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0), sizes().chart);
+        let height = chart_height(chart.depth(), sizes().chart);
         let (sa, sb) = (d.window)();
         // (Where a step is, across the window (%): the moment shown's (the
         // pointer's, else the cursor's); the calls on its stack.)
@@ -493,7 +493,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     let p = e.client_coordinates();
                     let Some((x, y)) = chart_coordinates(p.x, p.y) else { return };
                     // (Off the bars, the level chosen, kept.)
-                    let Some((hover, bar)) = hit(&chart, x, y, ui.cursor.peek().as_ref().and_then(|m| m.level)) else { return };
+                    let Some((hover, bar)) = hit(&chart, x, y, ui.level()) else { return };
                     ui.set_hover(hover);
                     match bar.map(|b| &chart.bars[b]) {
                         None => if tip().is_some() { tip.set(None) },

@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use core::num::NonZeroU32;
 
 use crate::Memory;
-use wire::{Kind, StoreSize};
+use wire::Kind;
 
 pub use wire::RING;
 
@@ -155,16 +155,17 @@ fn record(a: u32, tag: u32, v: &[u32]) -> Option<Record> {
             let hi = |k: usize| if wide { word(k) << 32 } else { 0 };
             Record::Compare { lhs: a as u64 | hi(1), rhs: word(0) | hi(2), wide, pred: (fields & 0xf) as u8, line: fields >> 4 }
         }
-        // (The old value; then, a copy's, where from.)
-        Kind::Store => {
-            let size = StoreSize::of(fields & 0xf)?;
-            let words = size.old_words();
+        // (Its width, 1 << the class (0..=3, 1 to 8 bytes); the old value (an
+        // 8-byte one's in two words); then, a copy's, where from.)
+        Kind::Store if fields & 0xf <= 3 => {
+            let wide = fields & 0xf == 3;
+            let words = 1 + wide as usize;
             if got != words && got != words + 1 {
                 return None;
             }
             let from = v.get(words).copied().and_then(NonZeroU32::new);
-            let old = word(0) | if size == StoreSize::B8 { word(1) << 32 } else { 0 };
-            Record::Store { addr: a, size: size.bytes(), old, line: fields >> 4, from }
+            let old = word(0) | if wide { word(1) << 32 } else { 0 };
+            Record::Store { addr: a, size: 1 << (fields & 0xf), old, line: fields >> 4, from }
         }
         // (A wide one's high word before it.)
         Kind::Var if got <= 1 => Record::Var { var: fields & 0xfff, line: fields >> 12, value: a as u64 | word(0) << 32 },
@@ -278,7 +279,7 @@ pub(crate) mod tests {
     #[test]
     fn malformed_cardinalities_are_skipped_whole() {
         let bad = [(TASK, 0, 1), (BLOCK, 1, 1), (BLOCK, 0, 0), (RETURN, 0, 3), (COMPARE, 0, 0), (COMPARE, 0, 2),
-                   (STORE, StoreSize::B4 as u32, 0), (STORE, StoreSize::B4 as u32, 3), (VAR, 0, 2)];
+                   (STORE, 2, 0), (STORE, 2, 3), (VAR, 0, 2)];
         let mut words = Vec::new();
         for (kind, fields, n) in bad {
             words.extend(rec(0, kind, fields, &(0..n).collect::<Vec<u32>>()));

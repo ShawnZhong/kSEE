@@ -5,7 +5,7 @@
  * host compiles the module; the kernel maps it pages for its data and its
  * stack; the host instantiates it there, and gives its _start as an entry
  * in the kernel's function table; the task calls it when it returns to
- * user mode (see process.c's wasm_enter_user).
+ * user mode (see process.c's wasm_user_entry).
  */
 #include <linux/binfmts.h>
 #include <linux/fs.h>

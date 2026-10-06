@@ -7,10 +7,10 @@ use std::rc::Rc;
 
 use dioxus::prelude::*;
 use wasm_bindgen::JsCast;
-use ksee_core::view::{RegionKind, TaskState};
+use ksee_core::view::TaskState;
 
 use crate::machine;
-use crate::objects::{ObjectDefinition, ObjectsView};
+use crate::objects::Objects;
 use crate::state::{Derived, Tab, Ui};
 
 #[component]
@@ -31,59 +31,16 @@ pub fn Tabs() -> Element {
                 {head(Tab::Disk, "Disk", "the disk's history: each transfer, for which task, and what it wrote; at the cursor's moment")}
                 {head(Tab::Console, "Console", "the kernel's log and the programs' output")}
             }
-            match tab {
-                Tab::Stack => rsx! { div { class: "pane", crate::stack::Stack {} } },
-                Tab::Objects => rsx! { div { class: "pane", Objects {} } },
-                Tab::Tasks => rsx! { div { class: "pane", Tasks {} } },
-                Tab::Disk => rsx! { div { class: "pane", Disk {} } },
-                Tab::Console => rsx! { div { class: "pane", pre { class: "console", "{ui.console}" } } },
+            div { class: "pane",
+                match tab {
+                    Tab::Stack => rsx! { crate::stack::Stack {} },
+                    Tab::Objects => rsx! { Objects {} },
+                    Tab::Tasks => rsx! { Tasks {} },
+                    Tab::Disk => rsx! { Disk {} },
+                    Tab::Console => rsx! { pre { class: "console", "{ui.console}" } },
+                }
             }
         }
-    }
-}
-
-/// Query the selected run's object graph and adapt its semantic actions to
-/// the browser-backed page state.
-#[component]
-fn Objects() -> Element {
-    let mut ui = use_context::<Ui>();
-    let derived = use_context::<Derived>();
-    let graph = use_memo(move || {
-        (ui.snapshot)();
-        let machine = machine();
-        let nodes = derived.run.cloned().map_or_else(Vec::new, |run| {
-            machine.view(|view| view.objects(run.first, run.last))
-        });
-        let definitions: Vec<Option<ObjectDefinition>> = nodes.iter().map(|node| {
-            (node.kind == RegionKind::Global)
-                .then(|| machine.view(|view| view.definition(&node.what)))
-                .flatten()
-                .map(|place| ObjectDefinition { file: place.file, line: place.line })
-        }).collect();
-        (Rc::new(nodes), Rc::new(definitions))
-    });
-    let Some(run) = derived.run.cloned() else {
-        return rsx! { p { class: "pad dim", "Select a run: what it did to the kernel's data." } };
-    };
-    let title = run.title();
-    let cursor = derived.line.cloned().map(|line| line.at);
-    rsx! {
-        ObjectsView {
-            nodes: graph.read().0.clone(),
-            title,
-            cursor,
-            definitions: graph.read().1.clone(),
-            on_record: move |record| ui.go_record(derived, record),
-            on_definition: move |definition: ObjectDefinition| ui.seen.set(Some((definition.file, definition.line))),
-            on_object: show,
-        }
-    }
-}
-
-/// Box `k` in view.
-fn show(k: usize) {
-    if let Some(e) = crate::chart::element(&format!("obj{k}")) {
-        e.scroll_into_view();
     }
 }
 
@@ -200,7 +157,7 @@ fn Disk() -> Element {
     // (The history, once a snapshot; the cursor only says where it is in it.)
     let history = use_memo(move || {
         (ui.snapshot)();
-        crate::state::Shared(std::rc::Rc::new(machine().disk()))
+        crate::state::Shared(Rc::new(machine().disk()))
     });
     let all = history.read().0.clone();
     if all.is_empty() {

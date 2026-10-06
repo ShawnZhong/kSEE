@@ -34,7 +34,8 @@ pub enum Split {
     Right,
 }
 
-fn storage() -> Option<web_sys::Storage> {
+/// The browser's storage, for what the page keeps (the splits, the theme).
+pub(crate) fn storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok().flatten()
 }
 

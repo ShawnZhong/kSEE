@@ -39,11 +39,16 @@ pub struct Chart {
 }
 
 impl Chart {
+    /// How many bars its deepest column stacks.
+    pub fn depth(&self) -> usize {
+        self.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0)
+    }
+
     /// Each row's spans: a bar over the columns it is on, in a row, as the
     /// page draws it: (depth, first column, one past the last, bar).
     pub fn bar_spans(&self) -> Vec<(u32, usize, usize, u32)> {
         let n = self.cols.len();
-        let depth = self.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0);
+        let depth = self.depth();
         let mut spans = Vec::new();
         for dd in 0..depth {
             let mut k = 0;
