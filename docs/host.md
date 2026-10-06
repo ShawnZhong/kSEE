@@ -119,17 +119,15 @@ selection is not part of the program expression language. See
 ## Recording boundaries
 
 The runner brackets its syscall with `ksee.begin` and `ksee.end(ret)`.
-At `begin`, the runtime tells the kernel to record everything (its
-`ksee_record(1)` export), which starts with a `Task` record naming the
-currently running `task_struct`, because no context switch inside the new
-recording necessarily identifies it. Between requested calls it asks for
-stores only (`ksee_record(2)`).
-
-While at least one begun call is unfinished, trace level `1` records blocks,
-calls, returns, variables, comparisons, and stores. Outside requested calls,
-level `2` keeps stores only. Host writes to kernel memory are logged by the
-kernel's `ksee_bulk` export before they are made, as its own bulk writes are,
-so historical memory stays coherent across request setup and program
+At the program's first line (a declaration's write, or a call's `begin`),
+the runtime turns the kernel's recording on (its `ksee_record` export), for
+good: it starts with a `Task` record naming the currently running
+`task_struct`, because no context switch inside the recording necessarily
+identifies it, and from then on records blocks, calls, returns, variables,
+comparisons, and stores, between the calls too. The boot, before, is not
+recorded. Host writes to kernel memory are logged by the kernel's
+`ksee_bulk` export before they are made, as its own bulk writes are, so
+historical memory stays coherent across request setup and program
 variables.
 
 A requested syscall can remain blocked when the kernel becomes quiet. A later

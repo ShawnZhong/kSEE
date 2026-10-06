@@ -20,7 +20,7 @@
 /* (Called by the plugin's probes and the host only: no header has them.) */
 void __ksee_put(u32 a, u32 tag, u32 n);
 void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from);
-void __ksee_record(u32 level);
+void __ksee_record(void);
 
 #define RING_WORDS (1u << 21)
 #define COUNT 24
@@ -30,7 +30,7 @@ void __ksee_record(u32 level);
 /*
  * pos counts the words ever written (the ring keeps the most recent),
  * stored with release order after each record, so a reader that loads it
- * sees whole records, from their end; words, the ring's size; on: what is recorded (see
+ * sees whole records, from their end; words, the ring's size; on: whether it records (see
  * ksee_record). One writer at a time: the kernel is uniprocessor.
  */
 struct ksee_ring {
@@ -70,7 +70,7 @@ static __always_inline void done(u32 p)
 }
 
 /* The probes' records: the n values the probe put in __ksee_values just
- * before, and [a, tag]; everything only (on: 1). At most VALUES: a call's
+ * before, and [a, tag], once on (see ksee_record). At most VALUES: a call's
  * seven arguments, wide ones two words, and its frame base (the plugin's
  * Values, the same). */
 #define VALUES (2 * 7 + 1)
@@ -80,7 +80,7 @@ void __ksee_put(u32 a, u32 tag, u32 n)
 {
 	u32 p, i;
 
-	if (ksee_trace.on != 1)
+	if (!ksee_trace.on)
 		return;
 	p = ksee_trace.pos;
 	for (i = 0; i < n; i++)
@@ -132,15 +132,13 @@ __wasm_export(ksee_bulk) void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from)
 	}
 }
 
-/* What the probes record (the host says: 1 within a syscall the page asked
- * for, 2 between): 1, everything; 2, stores only, so that memory stays
- * exact throughout; 0, nothing (the boot, until then). Everything begins
- * with a Task record: who runs (no switch in the recording says so). */
-__wasm_export(ksee_record) void __ksee_record(u32 level)
+/* Everything recorded from now on (the host says when: the program's
+ * first line; the boot, before, is not), from a Task record: who runs (no
+ * switch in the recording says so). */
+__wasm_export(ksee_record) void __ksee_record(void)
 {
-	bool begins = level == 1 && ksee_trace.on != 1;
-
-	ksee_trace.on = level;
-	if (begins)
-		done(head(ksee_trace.pos, (u32)(unsigned long)current, TASK, 0));
+	if (ksee_trace.on)
+		return;
+	ksee_trace.on = 1;
+	done(head(ksee_trace.pos, (u32)(unsigned long)current, TASK, 0));
 }

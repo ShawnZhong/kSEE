@@ -9,18 +9,14 @@ use crate::machine::Machine;
 use crate::state::{state, tables, Direct, Transfer};
 
 /// A transfer the disk made (Transfer): the records it was handed over and
-/// made at, if the recording has those moments in the task that handed it
-/// over (not: before the recording, or while only stores were recorded),
-/// and that task, named.
+/// taken as done at, if the recording has them (not: before it, the
+/// boot's), and the task that handed it over, named.
 #[derive(Clone, Debug)]
 pub struct DiskTransfer {
     pub transfer: Transfer,
     pub asked: Option<usize>,
     pub done: Option<usize>,
     pub by: String,
-    /// (Not in the recording: handed over before it began; else between
-    /// the calls, while only stores were recorded.)
-    pub early: bool,
 }
 
 impl Machine {
@@ -57,18 +53,18 @@ impl Machine {
     /// (DiskTransfer).
     pub fn disk(&self) -> Vec<DiskTransfer> {
         self.view(|v| {
-            let (ids, tasks) = (&v.rec.ids, &v.rec.tasks);
+            let ids = &v.rec.ids;
             // (A word of the trace, the record written at or after it, if
             // the recording has it: past its first record, and before its
             // end.)
             let record = |word: u32| Some(ids.partition_point(|&id| id < word)).filter(|&i| i < ids.len() && ids.first().is_some_and(|&f| word > f));
             state(|s| s.disk_log.iter().map(|t| {
-                // (Handed over in its task, as recorded: then a moment to go
-                // to, just after the driver's call handing it over.)
-                let asked = record(t.asked).filter(|&i| tasks[i] == t.task);
+                // (Handed over in the recording: a moment to go to, just
+                // after the driver's call handing it over.)
+                let asked = record(t.asked);
                 let done = asked.and(record(t.done));
                 let by = v.task(t.task, asked.unwrap_or(v.rec.last())).named();
-                DiskTransfer { transfer: t.clone(), asked, done, by, early: ids.first().is_none_or(|&f| t.asked <= f) }
+                DiskTransfer { transfer: t.clone(), asked, done, by }
             }).collect())
         })
     }

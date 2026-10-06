@@ -92,9 +92,9 @@ locations, inline chains, frame offsets, syscalls, and constants.
 
 ### Record, then reconstruct
 
-The kernel is not stopped for inspection. During a requested syscall, probes
-append full events to a ring. Between calls, only stores are kept so historical
-memory remains exact. The runtime snapshots the ring when the machine is quiet.
+The kernel is not stopped for inspection. From the program's first line,
+probes append full events to a ring: the calls, and whatever the kernel does
+between and meanwhile (the boot, before, is not recorded). The runtime snapshots the ring when the machine is quiet.
 
 `ksee-core` then combines three inputs:
 

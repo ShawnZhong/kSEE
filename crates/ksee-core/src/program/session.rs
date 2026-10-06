@@ -105,11 +105,6 @@ impl Session {
         self.calls.values().all(|c| c.done)
     }
 
-    /// Whether a call is under way, begun and not done: what is recorded.
-    pub fn recording(&self) -> bool {
-        self.calls.values().any(|c| c.begun && !c.done)
-    }
-
     /// The tasks of the calls not done.
     pub fn waiting_tasks(&self) -> Vec<u32> {
         self.calls.values().filter(|c| !c.done).map(|c| c.task).collect()
@@ -322,7 +317,7 @@ mod tests {
         let mut s = ready();
         let a = ask(&mut s, 10, 0, None);
         assert!(s.next_call(10).is_err(), "one call at a time");
-        assert!(s.begin(10, 7) && !s.begin(10, 8) && s.recording());
+        assert!(s.begin(10, 7) && !s.begin(10, 8));
         // (Another runner's call, the next line's, wakes it.)
         s.ready(20, 0x300, 0x400, 0x2000, 0x100, false);
         ask(&mut s, 20, 1, None);

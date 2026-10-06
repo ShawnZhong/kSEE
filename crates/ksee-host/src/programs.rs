@@ -166,25 +166,11 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
 /// Finish runner `tid`'s call, if it has one (for Machine::quiet); the
 /// page waits no more once none is left.
 pub(crate) fn finish(tid: u32, ret: Option<i64>) {
-    let done = state_mut(|s| {
-        let done = s.session.finish(tid, ret);
-        if done && s.session.all_done() {
+    state_mut(|s| {
+        if s.session.finish(tid, ret) && s.session.all_done() {
             s.waiting = None;
         }
-        done
     });
-    if done {
-        on_off();
-    }
-}
-
-/// The probes' level: 1 (everything) while a runner is between its begin
-/// and its end (a call's syscall, entry to return; what the kernel does
-/// meanwhile with it), else 2 (stores only: memory stays exact between
-/// recordings; the runner's way back to its wait, idle, are not shown).
-pub(crate) fn on_off() {
-    let on = state(|s| s.session.recording());
-    crate::imports::record(if on { 1 } else { 2 });
 }
 
 /// The imports of a runner (user/prog.c), module ksee. ready(req, heap,
@@ -212,7 +198,7 @@ fn runner_imports() -> Object {
         // words ever written: see trace::ring.)
         let begun = state_mut(|s| s.session.begin(tid, Direct.read_u32(s.trace)));
         if begun {
-            on_off();
+            crate::imports::record();
         }
     }).into_js_value());
     js::set(&ksee, "end", Closure::<dyn FnMut(i64)>::new(|ret: i64| {

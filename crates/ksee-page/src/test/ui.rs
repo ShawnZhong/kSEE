@@ -210,17 +210,19 @@ async fn window() -> Result<(), String> {
     check(found > 0 && named("tr.frame a", "copy_page_to_iter").is_some(), "find", (found, place()))?;
     // (A drag pans, zoomed in: the bars follow the pointer, and the window
     // stays where it let go.)
+    // (Zoomed in around vfs_read's bar, so that it stays in the window.)
     let mid = (b.left() + b.right()) / 2.0;
-    wheel(&chart, mid, y, -800.0);
+    let at = bar(&canvas, "vfs_read").map_or(mid, |(x, _)| b.left() + x);
+    wheel(&chart, at, y, -800.0);
     settle().await;
     let bar_x = || bar(&canvas, "vfs_read").map_or(f64::NAN, |p| p.0);
     let win = || one(".overview .win").and_then(|w| w.get_attribute("style")).unwrap_or_default();
     let (x0, w0) = (bar_x(), win());
-    pointer(&chart, "pointerdown", mid, y);
-    pointer(&chart, "pointermove", mid - 80.0, y);
+    pointer(&chart, "pointerdown", at, y);
+    pointer(&chart, "pointermove", at - 80.0, y);
     settle().await;
     let during = bar_x();
-    pointer(&chart, "pointerup", mid - 80.0, y);
+    pointer(&chart, "pointerup", at - 80.0, y);
     settle().await;
     check((x0 - 80.0 - during).abs() < 1.0 && win() != w0, "a drag pans", (x0, during, w0, win()))?;
     // (Zoomed out, the chart deeper or not: the bars stay where they were on

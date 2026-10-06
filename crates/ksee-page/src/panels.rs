@@ -181,7 +181,7 @@ fn Disk() -> Element {
                     let what = format!("{} {} at {}{by}", if t.write { "write" } else { "read" }, size(t.len as u64), size(start));
                     let title = format!("bytes {start}–{} (sector {}); the request's tag {} (blk-mq's: how the disk says which request it did); by: the task running as it was handed over", start + t.len as u64 - 1, t.sector, t.tag);
                     let (asked, done) = (x.asked, x.done);
-                    let away = if x.early { "before the recording" } else { "between calls: only stores recorded" };
+                    let away = "before the recording";
                     let bytes = if t.write { changed(&t.before, &t.after) } else { format!("read: {}", hex(&t.after[..t.after.len().min(16)])) };
                     rsx! {
                         div { class, title: if asked.is_some() { "a click: where it was handed to the disk (queue_rq)" } else { "" },
