@@ -36,7 +36,7 @@ fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'
 pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
     let mut types = crate::or_fail(dwarf::types(&image), "DWARF");
-    let code = String::from_utf8_lossy(&module::custom_section(&image, "ksee.code")).into_owned();
+    let code = String::from_utf8_lossy(&ksee_core::wasm::section(&image, 0, image.len() as u32, "ksee.code")).into_owned();
     for (name, value) in constants(&kernel.join("usr/include")) {
         types += &format!("C\t{name}\t{value}\n");
     }
@@ -329,9 +329,10 @@ mod image_tests {
     fn rewrite_drops_dwarf_and_adds_types() {
         let out = rewrite(&image(), "T\t1\tbase\tint\t4\ts\n");
         assert_eq!(&out[..8], b"\0asm\x01\0\0\0");
-        assert!(module::custom_section(&out, ".debug_info").is_empty());
-        assert_eq!(module::custom_section(&out, "ksee.types"), b"T\t1\tbase\tint\t4\ts\n");
-        assert_eq!(module::custom_section(&out, "name"), b"kept");
+        let section = |m: &[u8], name| ksee_core::wasm::section(&m, 0, m.len() as u32, name);
+        assert!(section(&out, ".debug_info").is_empty());
+        assert_eq!(section(&out, "ksee.types"), b"T\t1\tbase\tint\t4\ts\n");
+        assert_eq!(section(&out, "name"), b"kept");
         let kept: Vec<_> = module::sections(&out).filter(|s| s.0 == 10).collect();
         assert_eq!(kept.len(), 1);
         assert_eq!(&kept[0].2[2..], &[1, 2, 3]);

@@ -35,11 +35,6 @@ impl Machine {
         f(&View { tables: tables(), rec: &rec, now: &Direct }, &mem)
     }
 
-    /// How many records the last snapshot holds.
-    pub(crate) fn records(&self) -> usize {
-        self.rec.borrow().len()
-    }
-
     /// Call `id`'s run (see Machine::make), an index in the view's runs:
     /// the first syscall of its number its runner made since it was asked, if the snapshot has it.
     pub fn run_of_call_id(&self, id: u32) -> Option<usize> {

@@ -93,14 +93,12 @@ pub fn disk_work() -> bool {
         let at = t.sector as usize * 512;
         state_mut(|s| {
             t.done = Direct.read_u32(s.trace);
-            // (Past the disk's end: the request ends all the same, its bytes not moved.)
-            if s.disk.len() < at + t.len as usize {
-                if s.done.back() != Some(&t.tag) {
-                    s.done.push_back(t.tag);
-                }
-                return;
+            // (A request's segments come together: its tag once.)
+            if s.done.back() != Some(&t.tag) {
+                s.done.push_back(t.tag);
             }
-            let blocks = &mut s.disk[at..at + t.len as usize];
+            // (Past the disk's end: the request ends all the same, its bytes not moved.)
+            let Some(blocks) = s.disk.get_mut(at..at + t.len as usize) else { return };
             if t.write {
                 t.before = blocks.to_vec();
                 Direct.read(t.buf, blocks);
@@ -109,10 +107,6 @@ pub fn disk_work() -> bool {
                 unsafe { core::ptr::copy_nonoverlapping(blocks.as_ptr(), t.buf as *mut u8, t.len as usize) };
             }
             t.after = blocks.to_vec();
-            // (A request's segments come together: its tag once.)
-            if s.done.back() != Some(&t.tag) {
-                s.done.push_back(t.tag);
-            }
             s.disk_log.push(t);
         });
     }

@@ -1,18 +1,12 @@
 use ksee_core::view::RegionKind;
 
-use super::harness::{arg, child, sleep, value, KernelHarness};
+use super::harness::{arg, child, until, value, KernelHarness};
 
 pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let m = t.machine.clone();
     // Calls, traced.
     let w = t.line("write(1, \"hello kSEE\\n\", 11)").await.syscall.unwrap();
-    for _ in 0..100 {
-        t.console();
-        if t.console_output.contains("hello kSEE") {
-            break;
-        }
-        sleep(10).await;
-    }
+    until(|| { t.console(); t.console_output.contains("hello kSEE") }, 10, 100).await;
     t.check(format!("a write, by the program ({}, pid {:?}), shown on the console", w.task.comm.clone().unwrap_or_default(), w.task.pid),
             w.ret == Some(11) && w.task.comm.as_deref() == Some("prog") && w.task.pid == Some(main as i32) && t.console_output.contains("hello kSEE"));
     t.check("write ran vfs_write", t.ran(&Some(w.clone()), "vfs_write"));
@@ -28,11 +22,11 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let sel = t.line("pselect6(0, NULL, NULL, NULL, {1, 0}, NULL)").await;
     t.check("a 1 s select() times out", sel.ret == Some(0));
     m.snapshot();
-    let wi = m.view(|v| v.runs().iter().position(|s| s.first == w.first));
+    let wi = m.view(|v| v.rec.runs.iter().position(|s| s.first == w.first));
     let vfs = m.view(|v| v.definition("vfs_write"));
     t.check("vfs_write: where it is", vfs.as_ref().is_some_and(|d| d.file == "fs/read_write.c" && d.last.is_some_and(|l| l > d.line)));
     {
-        let cs = m.view(|v| v.runs().into_iter().find(|s| s.name == "mkdirat").map(|mk| v.objects(mk.first, mk.last))).unwrap_or_default();
+        let cs = m.view(|v| (0..v.rec.runs.len()).filter_map(|k| v.run(k)).find(|s| s.name == "mkdirat").map(|mk| v.objects(mk.first, mk.last))).unwrap_or_default();
         let globals: Vec<String> = cs.iter().filter(|c| c.kind == RegionKind::Global).map(|c| c.what.clone()).collect();
         t.check(format!("mkdirat's objects name the kernel's globals: {}; not the machine's", globals.join(", ")),
                 globals.iter().any(|g| g == "nr_inodes") && !cs.iter().any(|c| c.what == "wasm_irq_flags"));

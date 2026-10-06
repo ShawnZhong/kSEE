@@ -11,6 +11,18 @@ pub fn log(s: &str) {
 
 pub use crate::js::sleep;
 
+/// Wait until `f` holds, checking every `ms` ms, `n` times at most; then
+/// whether it does.
+pub async fn until(mut f: impl FnMut() -> bool, ms: i32, n: usize) -> bool {
+    for _ in 0..n {
+        if f() {
+            return true;
+        }
+        sleep(ms).await;
+    }
+    f()
+}
+
 /// A call a line made, as the kernel left it once quiet: its id, whether it
 /// finished (not: it blocked) and its result, its syscall summary.
 pub struct LineResult {

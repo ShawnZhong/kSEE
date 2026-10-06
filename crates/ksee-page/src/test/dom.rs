@@ -26,12 +26,7 @@ pub(super) fn named(sel: &str, t: &str) -> Option<Element> {
     all(sel).into_iter().find(|e| text(e) == t)
 }
 
-pub(super) async fn sleep(ms: i32) {
-    let p = Promise::new(&mut |done, _| {
-        let _ = web_sys::window().unwrap().set_timeout_with_callback_and_timeout_and_arguments_0(&done, ms);
-    });
-    let _ = JsFuture::from(p).await;
-}
+pub(super) use ksee_host::test::{sleep, until};
 
 /// The page drawn again after an event: two animation frames (Dioxus
 /// applies its changes by the next one).
@@ -42,17 +37,6 @@ pub(super) async fn settle() {
         });
         let _ = JsFuture::from(p).await;
     }
-}
-
-/// Wait until `f` holds, checking every 100 ms, `n` times at most.
-pub(super) async fn until(f: impl Fn() -> bool, n: usize) -> bool {
-    for _ in 0..n {
-        if f() {
-            return true;
-        }
-        sleep(100).await;
-    }
-    f()
 }
 
 pub(super) fn click(e: &Element) {
@@ -167,8 +151,8 @@ pub(super) async fn tab(name: &str) {
     settle().await;
 }
 
-/// Wait for `f`, at most `n` checks; then check it.
+/// Wait for `f`, at most `n` checks 100 ms apart; then check it.
 pub(super) async fn wait(f: impl Fn() -> bool, n: usize, what: &str, detail: impl Fn() -> String) -> Result<(), String> {
-    let ok = until(f, n).await;
+    let ok = until(f, 100, n).await;
     check(ok, what, detail())
 }

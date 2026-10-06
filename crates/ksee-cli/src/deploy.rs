@@ -8,8 +8,6 @@ use crate::build::{git, run};
 pub fn deploy() {
     crate::build::build();
     let remote = git(&["remote", "get-url", "origin"]).unwrap_or_else(|| crate::fail("no origin remote to deploy to"));
-    let head = git(&["rev-parse", "--short", "HEAD"]).unwrap_or_default();
-    let dirty = if git(&["status", "--porcelain"]).unwrap_or_default().is_empty() { "" } else { " (with changes)" };
 
     let dir = std::env::temp_dir().join(format!("ksee-deploy-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -20,7 +18,7 @@ pub fn deploy() {
     crate::or_fail(std::fs::write(dir.join(".nojekyll"), ""), ".nojekyll");
 
     let d = dir.to_str().unwrap();
-    let msg = format!("kSEE {head}{dirty}");
+    let msg = format!("kSEE {}", crate::build::commit().unwrap_or_default());
     for args in [&["init", "-q", "-b", "gh-pages"][..], &["add", "-A"], &["commit", "-q", "-m", &msg],
                  &["push", "-f", &remote, "gh-pages"]] {
         run(Command::new("git").arg("-C").arg(d).args(args));

@@ -14,18 +14,19 @@ mod trace;
 use std::rc::Rc;
 
 use crate::machine::Machine;
+use crate::state::state;
 
-pub use harness::KernelHarness;
+pub use harness::{sleep, until, KernelHarness};
 
 /// Run the tests on the booted Machine: its timings, or the checks that
 /// failed (each check is logged, "ok: …" or "FAIL: …").
 pub async fn kernel(machine: Rc<Machine>) -> Result<String, String> {
     let mut t = KernelHarness::new(machine);
     let m = t.machine.clone();
-    let main = m.main().unwrap_or(0);
-    t.check(format!("the program ready: a runner ({main}), not /init"), main > 1 && m.runners().contains(&main));
+    let (main, runners) = state(|s| (s.session.main.unwrap_or(0), s.session.runners.keys().copied().collect::<Vec<_>>()));
+    t.check(format!("the program ready: a runner ({main}), not /init"), main > 1 && runners.contains(&main));
     m.snapshot();
-    t.check("nothing recorded at first", m.records() == 0);
+    t.check("nothing recorded at first", m.view(|v| v.rec.len()) == 0);
     trace::run(&mut t, main).await;
     program::run(&mut t, main).await;
     metadata::run(&mut t).await;

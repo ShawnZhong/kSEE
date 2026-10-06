@@ -98,6 +98,7 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
         click(&named(".explain a", name).ok_or(fail("no link", name))?);
         let ok = until(
             || place().starts_with(name) && one(".source .ln.now").is_some(),
+            100,
             50,
         )
         .await;

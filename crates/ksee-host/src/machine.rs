@@ -139,11 +139,6 @@ impl Machine {
         String::from_utf8_lossy(&out).into_owned()
     }
 
-    /// The halt code once the kernel has halted.
-    pub(crate) fn halted(&self) -> Option<i32> {
-        state(|s| s.halted)
-    }
-
     /// Decode the trace ring (again). The views use the last snapshot.
     pub fn snapshot(&self) {
         let t = tables();
@@ -178,8 +173,7 @@ impl Machine {
 
     fn lower_and_make(&self, task: Option<&str>, text: &str) -> Result<Made, String> {
         let line = state(|s| s.session.lines);
-        let tid = state(|s| s.session.task_tid(task, line))?;
-        let plan = lower(text, &tables().types, &Seen(line))?;
+        let (tid, plan) = lowered(task, text, line)?;
         let made = match plan {
             Lowered::Decl(d) => {
                 let addr = state_mut(|s| s.session.alloc(tid, d.bytes.len() as u32)).map_err(|e| format!("{}: {e}", d.name))?;
@@ -209,8 +203,7 @@ impl Machine {
     /// Whether line `text` can be made as line `line` (with the names of
     /// the lines before it): why not, if not; nothing made.
     pub fn can_make(&self, task: Option<&str>, text: &str, line: usize) -> Result<(), String> {
-        state(|s| s.session.task_tid(task, line))?;
-        ksee_core::program::lower(text, &tables().types, &Seen(line)).map(|_| ())
+        lowered(task, text, line).map(|_| ())
     }
 
     /// Active secondary task names visible after the rows before `line`, in
@@ -225,11 +218,6 @@ impl Machine {
     pub fn complete(&self, text: &str, at: usize, line: usize, common: &[String]) -> Vec<ksee_core::program::Completion> {
         let c = ksee_core::program::context(text, at);
         state(|s| ksee_core::program::completions(&tables().types, &c, &s.session.names.before(line), common))
-    }
-
-    /// The names line `line` sees (see make): a variable's, a result's.
-    pub(crate) fn names_before(&self, line: usize) -> Vec<String> {
-        state(|s| s.session.names.before(line).into_iter().map(|(name, _)| name.to_string()).collect())
     }
 
     /// The kernel quiet (now, or once it is): the calls finished meanwhile
@@ -266,17 +254,6 @@ impl Machine {
         let &(_, ty) = types.syscall_params(call)?.get(k)?;
         let Kind::Pointer(to) = types.get(types.resolve(ty)).kind else { return None };
         types.records(&Direct, addr, len, to)
-    }
-
-    /// The program's own runner (user/prog.c's main thread), its tid: the
-    /// one the page's calls are made by unless they say another.
-    pub(crate) fn main(&self) -> Option<u32> {
-        state(|s| s.session.main)
-    }
-
-    /// The runners' thread ids.
-    pub(crate) fn runners(&self) -> Vec<u32> {
-        state(|s| s.session.runners.keys().copied().collect())
     }
 }
 
@@ -352,4 +329,12 @@ pub(crate) fn settle(err: Option<String>) {
             Some(e) => fail.call1(&JsValue::NULL, &e.into()),
         };
     }
+}
+
+/// Line `text`, as line `line` of task `task` (none: the program's own):
+/// its runner's tid, and what it lowers to (with the names of the lines
+/// before it).
+fn lowered(task: Option<&str>, text: &str, line: usize) -> Result<(u32, Lowered), String> {
+    let tid = state(|s| s.session.task_tid(task, line))?;
+    Ok((tid, lower(text, &tables().types, &Seen(line))?))
 }

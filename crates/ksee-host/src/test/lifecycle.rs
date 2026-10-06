@@ -1,4 +1,5 @@
-use super::harness::{sleep, KernelHarness};
+use super::harness::{sleep, until, KernelHarness};
+use crate::state::state;
 
 pub(super) async fn run(t: &mut KernelHarness) {
     let m = t.machine.clone();
@@ -14,9 +15,9 @@ pub(super) async fn run(t: &mut KernelHarness) {
     sleep(0).await;
     let _ = m.restart().await;
     let after = t.line("getpid()").await.ret;
-    t.check(format!("a call after a restart cut one short finishes ({after:?})"), after == m.main().map(|p| p as i64));
+    t.check(format!("a call after a restart cut one short finishes ({after:?})"), after == state(|s| s.session.main).map(|p| p as i64));
     let pid = t.line("getpid()").await.ret;
-    t.check("restarted: the program ready again, its names gone", m.runners().contains(&m.main().unwrap_or(0)) && pid == m.main().map(|p| p as i64) && m.names_before(usize::MAX).is_empty());
+    t.check("restarted: the program ready again, its names gone", state(|s| s.session.main.is_some_and(|p| s.session.runners.contains_key(&p) && pid == Some(p as i64)) && s.session.names.before(usize::MAX).is_empty()));
     let made = t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await.ret;
     t.check("... on a fresh kernel: /tmp is not there", made == Some(0));
     // Deterministic: the same calls on a fresh kernel make the same recording, record for record.
@@ -34,7 +35,7 @@ pub(super) async fn run(t: &mut KernelHarness) {
         for _ in 0..2 {
             let ids = t.program(program.iter().copied()).await;
             let seen: Vec<_> = ids.iter().flatten().map(|&id| t.syscall(id).map(|s| (s.first, s.last, t.finished(id)))).collect();
-            runs.push((m.records(), seen));
+            runs.push((m.view(|v| v.rec.len()), seen));
         }
         t.check(format!("deterministic: the same calls, the same records ({name}: {} records)", runs[0].0), runs[0] == runs[1]);
     }
@@ -48,13 +49,8 @@ pub(super) async fn run(t: &mut KernelHarness) {
     // LINUX_REBOOT_CMD_POWER_OFF (no result: the machine halts).
     let _ = m.restart().await;
     let _ = m.make(None, "reboot(0xfee1dead, 672274793, 0x4321fedc, 0)");
-    for _ in 0..1000 {
-        if m.halted().is_some() {
-            break;
-        }
-        sleep(10).await;
-    }
-    t.check("powered off", m.halted() == Some(0));
+    until(|| state(|s| s.halted).is_some(), 10, 1000).await;
+    t.check("powered off", state(|s| s.halted) == Some(0));
     t.console();
     t.check("no warning from the kernel (an execve has its argv)", !t.console_output.contains("NULL argv"));
 }

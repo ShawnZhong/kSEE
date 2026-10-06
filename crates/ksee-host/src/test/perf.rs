@@ -47,7 +47,7 @@ pub(super) fn views(t: &mut KernelHarness) -> String {
     let mid = (s.first + s.last) / 2;
     let file = m.view(|v| v.call_stack(mid, None, 0, mid).first().and_then(|f| f.file.clone())).unwrap_or_default();
     let chart = ms(3, || { m.view(|v| v.chart(0, steps.saturating_sub(1), 1200)); });
-    let runs = ms(3, || { m.view(|v| v.runs()); });
+    let runs = ms(3, || { m.view(|v| (0..v.rec.runs.len()).filter_map(|k| v.run(k)).count()); });
     let lines = ms(3, || { m.view(|v| v.lines(s.first, s.last, s.task.addr)); });
     let stack = ms(3, || { m.view(|v| v.call_stack(mid, None, 0, mid)); });
     let objects = ms(3, || { m.view(|v| v.objects(s.first, s.last)); });

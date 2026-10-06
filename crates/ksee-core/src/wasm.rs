@@ -1,5 +1,5 @@
 //! What the host reads of a wasm module itself: its custom sections (the
-//! kernel's probe tables; a program's dylink.0), where it is, in memory or
+//! kernel's code and types; a program's dylink.0), where it is, in memory or
 //! not, with no copy of it.
 
 use alloc::string::String;
@@ -21,29 +21,37 @@ fn leb(m: &dyn Memory, at: &mut u32) -> Option<u32> {
     None
 }
 
-/// The custom sections of the module at `base`, `len` bytes: each its name
-/// and where its contents are (their address and length).
-pub fn custom_sections(m: &dyn Memory, base: u32, len: u32) -> Vec<(String, u32, u32)> {
+/// The sections of the module at `base`, `len` bytes: each its id, its
+/// name (a custom section's; else empty), where it starts (its id's byte),
+/// where its contents start (past a custom section's name), and its end.
+pub fn sections(m: &dyn Memory, base: u32, len: u32) -> Vec<(u8, String, u32, u32, u32)> {
     let mut out = Vec::new();
     let end = base.saturating_add(len);
     // (Past the magic and the version.)
     let mut at = base + 8;
     while at < end {
-        let id = m.read_u8(at);
+        let (start, id) = (at, m.read_u8(at));
         at += 1;
         let Some(size) = leb(m, &mut at) else { break };
-        let next = at.saturating_add(size);
+        let next = at.saturating_add(size).min(end);
+        let mut name = String::new();
         if id == 0 {
-            let mut p = at;
-            let Some(n) = leb(m, &mut p) else { break };
-            let mut name = alloc::vec![0; n as usize];
-            m.read(p, &mut name);
-            p += n;
-            out.push((String::from_utf8_lossy(&name).into_owned(), p, next.saturating_sub(p)));
+            let Some(n) = leb(m, &mut at) else { break };
+            let mut bytes = alloc::vec![0; n as usize];
+            m.read(at, &mut bytes);
+            at += n;
+            name = String::from_utf8_lossy(&bytes).into_owned();
         }
+        out.push((id, name, start, at.min(next), next));
         at = next;
     }
     out
+}
+
+/// The custom sections of the module at `base`, `len` bytes: each its name
+/// and where its contents are (their address and length).
+pub fn custom_sections(m: &dyn Memory, base: u32, len: u32) -> Vec<(String, u32, u32)> {
+    sections(m, base, len).into_iter().filter(|s| s.0 == 0).map(|(_, name, _, at, end)| (name, at, end - at)).collect()
 }
 
 /// The contents of the module's custom sections named `name`, one after

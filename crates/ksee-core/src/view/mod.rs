@@ -242,10 +242,6 @@ impl View<'_> {
         })
     }
 
-    pub fn runs(&self) -> Vec<RunSummary> {
-        (0..self.rec.runs.len()).filter_map(|k| self.run(k)).collect()
-    }
-
     /// Where `name` is defined: an instrumented function (its source), else
     /// a function with no probe (inline), a type, a global, or a member as
     /// "struct.member" (".member": of any struct) (where it is declared).

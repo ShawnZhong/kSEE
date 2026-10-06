@@ -62,10 +62,8 @@ fn offset(buf: &[u8], pos: &mut usize) -> Option<u32> {
 
 /// The body of the (first) section with id `id`.
 fn body(module: &[u8], id: u8) -> Option<&[u8]> {
-    let (_, _, raw) = sections(module).find(|s| s.0 == id)?;
-    let mut p = 1;
-    uleb(raw, &mut p)?;
-    Some(&raw[p..])
+    let (_, _, _, at, end) = ksee_core::wasm::sections(&module, 0, module.len() as u32).into_iter().find(|s| s.0 == id)?;
+    Some(&module[at as usize..end as usize])
 }
 
 /// `len` bytes of memory at `addr` as the module's active data segments
@@ -119,7 +117,7 @@ pub fn table(module: &[u8]) -> BTreeMap<u32, u32> {
 /// The functions' names (the name section's): function index -> name.
 pub fn function_names(module: &[u8]) -> BTreeMap<u32, String> {
     let mut out = BTreeMap::new();
-    let b = custom_section(module, "name");
+    let b = ksee_core::wasm::section(&module, 0, module.len() as u32, "name");
     let mut p = 0;
     while p < b.len() {
         let (Some(kind), Some(size)) = (b.get(p).copied(), { p += 1; uleb(&b, &mut p) }) else { break };
@@ -140,32 +138,9 @@ pub fn function_names(module: &[u8]) -> BTreeMap<u32, String> {
 
 /// Every section: (id, custom section name or "", the whole section's bytes
 /// including its header).
-pub fn sections(module: &[u8]) -> impl Iterator<Item = (u8, &str, &[u8])> {
-    let mut pos = 8;
-    core::iter::from_fn(move || {
-        if pos >= module.len() {
-            return None;
-        }
-        let start = pos;
-        let id = module[pos];
-        pos += 1;
-        let size = uleb(module, &mut pos)? as usize;
-        let body = pos;
-        pos = (body + size).min(module.len());
-        let mut name = "";
-        if id == 0 {
-            let mut p = body;
-            let n = uleb(module, &mut p)? as usize;
-            name = core::str::from_utf8(module.get(p..p + n)?).unwrap_or("");
-        }
-        Some((id, name, &module[start..pos]))
-    })
-}
-
-/// The contents of every custom section called `name`, concatenated
-/// (ksee_core::wasm's).
-pub fn custom_section(module: &[u8], name: &str) -> Vec<u8> {
-    ksee_core::wasm::section(&module, 0, module.len() as u32, name)
+pub fn sections(module: &[u8]) -> impl Iterator<Item = (u8, String, &[u8])> {
+    ksee_core::wasm::sections(&module, 0, module.len() as u32).into_iter()
+        .map(move |(id, name, start, _, end)| (id, name, &module[start as usize..end as usize]))
 }
 
 #[cfg(test)]

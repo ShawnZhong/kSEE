@@ -65,11 +65,16 @@ fn assets() {
 /// the commit (+: with changes not committed) and where the source is,
 /// GitHub's page of the origin remote; neither without git.
 fn built(cargo: &mut Command) -> &mut Command {
-    if let (Some(commit), Some(source)) = (git(&["rev-parse", "--short=12", "HEAD"]), source()) {
-        let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
-        cargo.env("KSEE_COMMIT", format!("{commit}{}", if dirty { "+" } else { "" })).env("KSEE_SOURCE", source);
+    if let (Some(commit), Some(source)) = (commit(), source()) {
+        cargo.env("KSEE_COMMIT", commit).env("KSEE_SOURCE", source);
     }
     cargo
+}
+
+/// The commit checked out, and + if it has changes not committed.
+pub(crate) fn commit() -> Option<String> {
+    let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
+    Some(git(&["rev-parse", "--short=12", "HEAD"])? + if dirty { "+" } else { "" })
 }
 
 /// git's output for `args`, if it ran.
