@@ -129,7 +129,7 @@ runtime's WebAssembly module and calls `Machine` directly.
 | `test/lessons.rs` | Every lesson and try on a fresh kernel: its calls finished, its links found. |
 | `test/ui.rs` | Browser-level page interaction suites. |
 | `test/dom.rs` | DOM queries, synthetic input, waiting, and assertions shared by UI suites. |
-| `test/mod.rs` | URL dispatch and result reporting to the CLI's browser driver. |
+| `test/mod.rs` | URL dispatch, and the result on the console for the CLI's browser driver. |
 
 The kernel's own suite is `ksee-host`'s `test/` (harness, trace, program,
 metadata, lifecycle, timings): it checks the Machine, with no page. The tests
@@ -193,8 +193,10 @@ the objects, so nothing of the kernel is rebuilt.
 The browser is Chrome's headless shell at the Makefile's `CHROME_VERSION`,
 fetched into `target/chrome/` by `make chrome`, which `ksee test` runs.
 
-The CLI serves the test site on a temporary local port. Each browser suite
-posts `ok` or `fail` and its log back to that server, within five minutes.
+The CLI serves the test site on a temporary local port and reads the
+shell's console on its stderr: each browser suite says `ksee test: ok` or
+`fail` and its log there, within five minutes, and an error nothing caught
+fails it at once, whether the page's code ran or not.
 
 For a focused native run:
 

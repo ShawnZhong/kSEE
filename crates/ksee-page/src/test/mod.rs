@@ -11,32 +11,31 @@ mod ui;
 pub(super) type Check = Result<String, String>;
 
 /// The test the URL names (`#...test=NAME`, set by chrome.rs), started: its
-/// outcome POSTed to the server's /result, `ok` or `fail` then its log (a
-/// panic's too: the page stops there).
+/// outcome said on the console (see report; a panic's too: the page stops
+/// there).
 pub fn start() -> Option<String> {
     let hash = web_sys::window()?.location().hash().ok()?;
     let name = hash.trim_start_matches('#').split('&').find_map(|kv| kv.strip_prefix("test="))?.to_string();
     ON.set(true);
     std::panic::set_hook(Box::new(|p| {
         web_sys::console::error_1(&p.to_string().into());
-        post(format!("fail\npanicked: {p}"));
+        report(false, &format!("panicked: {p}"));
     }));
     let run = name.clone();
     wasm_bindgen_futures::spawn_local(async move {
-        post(match run_test(run).await {
-            Ok(report) => format!("ok\n{report}"),
-            Err(e) => format!("fail\n{}", e.as_string().unwrap_or_default()),
-        });
+        match run_test(run).await {
+            Ok(log) => report(true, &log),
+            Err(e) => report(false, &e.as_string().unwrap_or_default()),
+        }
     });
     Some(name)
 }
 
-/// The outcome, to the server (sent as it is called: a panic follows it).
-fn post(body: String) {
-    let init = web_sys::RequestInit::new();
-    init.set_method("POST");
-    init.set_body(&body.into());
-    let _ = web_sys::window().unwrap().fetch_with_str_and_init("/result", &init);
+/// The outcome, on the console, one line (chrome.rs reads it on the
+/// shell's stderr): `ksee test: ok` or `fail`, then its log as a JSON string.
+fn report(ok: bool, log: &str) {
+    let log = js_sys::JSON::stringify(&log.into()).ok().and_then(|s| s.as_string()).unwrap_or_default();
+    web_sys::console::log_1(&format!("ksee test: {} {log}", if ok { "ok" } else { "fail" }).into());
 }
 
 thread_local! {

@@ -27,5 +27,5 @@ web-sys = { version = "0.3.105", features = [
     # (The tests', src/test/.)
     "HtmlInputElement", "EventInit", "KeyboardEventInit", "MouseEvent", "MouseEventInit",
     "PointerEvent", "PointerEventInit", "WheelEvent", "WheelEventInit", "NodeList",
-    "RequestInit", "Performance",
+    "Performance",
 ] }

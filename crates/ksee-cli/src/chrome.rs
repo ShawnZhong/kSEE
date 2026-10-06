@@ -1,7 +1,7 @@
 //! `ksee test` in Chrome's headless shell (target/chrome/, the Makefile's version),
 //! without its debugging protocol: the page under `#test=NAME` runs its test
-//! and POSTs `ok` or `fail` and its log to the server's /result; an error
-//! nothing caught (the console's, on the shell's stderr) fails it at once,
+//! and says `ok` or `fail` and its log on the console, which the shell
+//! writes on its stderr; there an error nothing caught fails it at once,
 //! the page's own code run or not.
 
 use std::io::BufRead;
@@ -14,9 +14,8 @@ use std::time::Duration;
 use crate::or_fail;
 
 /// The tests, each the page it opens and the screen it has: the URL's
-/// lesson page and hash (`test=NAME` runs it, and it POSTs `ok` or `fail`
-/// and its log to /result; url's program, changed, raw: its JSON has no
-/// & or %). The kernel's suite is ksee-host's; the rest, ksee-page's.
+/// lesson page and hash (`test=NAME` runs it; url's program, changed,
+/// raw: its JSON has no & or %). The kernel's suite is ksee-host's; the rest, ksee-page's.
 pub const TESTS: &[(&str, &str, (u32, u32))] = &[
     ("kernel", "#test=kernel", SCREEN),
     ("lessons", "#test=lessons", SCREEN),
@@ -40,21 +39,28 @@ pub fn test(name: &str) -> bool {
     let listener = or_fail(TcpListener::bind("127.0.0.1:0"), "serve");
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let (tx, rx) = channel();
-    let uncaught = tx.clone();
-    std::thread::spawn(move || crate::serve::serve_on(listener, Path::new(crate::build::SITE), tx));
+    std::thread::spawn(move || crate::serve::serve_on(listener, Path::new(crate::build::SITE)));
     let profile = std::env::temp_dir().join(format!("ksee-chrome-{}", std::process::id()));
     let mut child = or_fail(Command::new(BROWSER)
         .args(["--headless=new", "--no-sandbox", "--no-first-run", "--enable-logging=stderr", "--v=0", &format!("--user-data-dir={}", profile.display()),
                &format!("--window-size={width},{height}"), &format!("http://127.0.0.1:{port}/{hash}")])
         .stdout(Stdio::null()).stderr(Stdio::piped()).spawn(), BROWSER);
-    // (The console's lines: "Uncaught …", a failure.)
+    // (The console's lines: the test's outcome; "Uncaught …", a failure.)
     if let Some(err) = child.stderr.take() {
         std::thread::spawn(move || {
             for line in std::io::BufReader::new(err).lines().map_while(Result::ok) {
-                if let Some((_, said)) = line.split_once("\"Uncaught ") {
+                let outcome = if let Some((_, said)) = line.split_once("\"ksee test: ") {
+                    // ("ok "LOG"", source: …: the log a JSON string.)
+                    let (verdict, log) = said.split_once(' ').unwrap_or((said, ""));
+                    let log = log.rsplit_once("\", source: ").map_or(log, |l| l.0);
+                    (verdict == "ok", serde_json::from_str::<String>(log).unwrap_or_else(|_| log.to_string()))
+                } else if let Some((_, said)) = line.split_once("\"Uncaught ") {
                     let (what, from) = said.split_once("\", source: ").unwrap_or((said, ""));
-                    let _ = uncaught.send((false, format!("uncaught {what} ({})", from.trim_end())));
-                }
+                    (false, format!("uncaught {what} ({})", from.trim_end()))
+                } else {
+                    continue;
+                };
+                let _ = tx.send(outcome);
             }
         });
     }
