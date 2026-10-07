@@ -55,7 +55,7 @@ tracepoints, no syscall hooks, nothing per subsystem.
 ## The ring
 
 ```c
-struct { u32 pos; u32 words; u32 on; u32 pad; u32 ring[RING_WORDS]; } trace;  /* ksee.c; words: RING_WORDS */
+struct { u32 pos; u32 words; u32 on; u32 ring[RING_WORDS]; } trace;  /* ksee.c; words: RING_WORDS */
 ```
 
 A record is its values (32-bit words), then its head, two words `[a, tag]`.
