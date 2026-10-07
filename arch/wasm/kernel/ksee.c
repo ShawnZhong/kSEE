@@ -34,7 +34,7 @@ void __ksee_record(void);
  * ksee_record). One writer at a time: the kernel is uniprocessor.
  */
 struct ksee_ring {
-	u32 pos, words, on, pad;
+	u32 pos, words, on;
 	u32 ring[RING_WORDS];
 };
 extern struct ksee_ring ksee_trace;

@@ -6,7 +6,7 @@ const COUNT_SHIFT: u32 = 24;
 const FIELDS: u32 = (1 << COUNT_SHIFT) - 1;
 
 /// Offset of the ring's words in the trace header.
-pub const RING: u32 = 16;
+pub const RING: u32 = 12;
 /// Offset of the ring's size in words (arch/wasm/kernel/ksee.c).
 pub const WORDS: u32 = 4;
 
