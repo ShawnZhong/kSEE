@@ -124,12 +124,9 @@ exited, or not yet created, each with what it is doing.
 
 Click a task (the running one, at first) for its `task_struct` under its line,
 as memory was at that moment: its key fields, as paths in it: who it is
-(`pid`, `tgid`, `comm`); its state, and how the scheduler sees it (`__state`;
-`se.vruntime`, its virtual clock; `nvcsw` and `nivcsw`, how often it slept and
-how often the CPU was taken from it); signals sent it, not yet taken
-(`pending.signal`), and its `exit_code`; its directory (`fs->pwd.dentry`), its
-open files by number (`files->fd_array`), and `bio_list`, set while it submits
-disk requests. Check **all fields** for the whole struct instead, as declared.
+(`pid`, `tgid`, `comm`), its state (`__state`) and `exit_code`; its directory
+(`fs->pwd.dentry`), its open files by number (`files->fd_array`), and
+`bio_list`, set while it submits disk requests. Check **all fields** for the whole struct instead, as declared.
 
 Everywhere a value is shown, a pointer to a task, an open file or a dentry
 says what it is: `→ init(1)`, `→ /dev/console`, `→ pipefs:[12]` (a pipe,

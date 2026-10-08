@@ -59,12 +59,9 @@ pub(crate) const INODE_NO: (&str, &str) = ("inode", "i_ino");
 pub(crate) const MOUNT: (&str, &str, &str, &str) = ("mount", "mnt", "mnt_parent", "mnt_mountpoint");
 /// A task's fields shown first (the Tasks'), in this order: paths in it, as
 /// C names them (Types::at_path).
-pub(crate) const TASK_FIELDS: [&str; 12] = [
-    // (Who it is; how the scheduler sees it: its virtual clock, how often it
-    // gave the CPU up (slept) and had it taken; signals sent it, not yet
-    // taken, and what it exited with; where it is, what it holds.)
-    "pid", "tgid", "comm", "__state", "se.vruntime", "nvcsw", "nivcsw", "pending.signal", "exit_code",
-    "fs->pwd.dentry", "files->fd_array", "bio_list",
+pub(crate) const TASK_FIELDS: [&str; 8] = [
+    // (Who it is, its state, what it exited with; where it is, what it holds.)
+    "pid", "tgid", "comm", "__state", "exit_code", "fs->pwd.dentry", "files->fd_array", "bio_list",
 ];
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
 /// are the syscall's.
