@@ -58,6 +58,16 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         let later = reading.id.and_then(|id| t.finished(id)).flatten();
         t.check(format!("a blocked read, woken: wrote {:?}, read {later:?}: buf = {}", wrote.ret, t.show(buf)),
                 !reading.done && wrote.ret == Some(2) && later == Some(2) && t.show(buf) == "\"ok\"");
+        // A blocked read, stopped and continued: it goes on waiting (restarted), not -ERESTARTSYS.
+        t.line("void *stack = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)").await;
+        t.line("pid_t child = clone(CLONE_VM | SIGCHLD, stack + 65536, NULL, NULL, 0)").await;
+        let reading = t.line_on(Some("child"), "read(fds[0], buf, 8)").await;
+        t.line("kill(child, SIGSTOP)").await;
+        t.line("kill(child, SIGCONT)").await;
+        let early = reading.id.and_then(|id| t.finished(id));
+        t.line("write(fds[1], \"go\", 2)").await;
+        let later = reading.id.and_then(|id| t.finished(id)).flatten();
+        t.check(format!("a blocked read, stopped and continued, restarted: {early:?}, then {later:?}"), early.is_none() && later == Some(2));
         let got = t.line("char got16[16]").await.var.unwrap();
         let set = t.line("prctl(PR_SET_NAME, \"ksee\", 0, 0, 0)").await.ret;
         let get = t.line("prctl(PR_GET_NAME, got16, 0, 0, 0)").await.ret;
