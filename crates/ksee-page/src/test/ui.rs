@@ -462,7 +462,7 @@ pub(super) async fn tasks() -> Check {
     let mut strip: Vec<String> = drew("data-test-tasks").unwrap_or_default().lines().filter(|n| n.starts_with("prog(")).map(String::from).collect();
     strip.sort();
     strip.dedup();
-    check(c[5].1 == "= 6 (during line 7)" && c[6].1 == "= 6" && changed.iter().any(|x| x == "fds = {3, 4}") && strip.len() >= 2,
+    check(c[5].1 == "= 6 (during write)" && c[6].1 == "= 6" && changed.iter().any(|x| x == "fds = {3, 4}") && strip.len() >= 2,
           "the pipe", (&c, &changed, &strip))?;
     // (The idle task, between the calls: a click on its bar, the cursor in
     // its run, as in any task's.)

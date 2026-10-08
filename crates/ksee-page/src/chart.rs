@@ -308,13 +308,18 @@ fn draw_chart(
             }
             reach = (reach.0.min(v0), reach.1.max(v1));
             ctx.set_fill_style_str(&color);
+            // (Too narrow for its name, and not a call the moment is in or
+            // one found: fainter, the bars named standing out.)
+            let named = v1 - v0 >= 24.0;
+            ctx.set_global_alpha(if named || on || found { 1.0 } else { 0.5 });
             ctx.fill_rect(x0, y, (x1 - x0 - 1.0).max(1.0), ROW - 1.0);
+            ctx.set_global_alpha(1.0);
             if lit.is_some_and(|l| l.0 == id.0 && l.1 == id.1) {
                 ctx.set_stroke_style_str(&foreground);
                 ctx.set_line_width(1.5);
                 ctx.stroke_rect(v0 + 0.75, y + 0.75, (v1 - v0 - 2.5).max(1.0), ROW - 2.5);
             }
-            if v1 - v0 >= 24.0 {
+            if named {
                 label(&ctx, &bar.name, if on { "#fff" } else { "#1f2328" }, v0, y, v1 - v0 - 2.0, ROW);
             }
         }

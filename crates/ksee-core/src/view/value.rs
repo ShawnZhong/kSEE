@@ -51,6 +51,15 @@ impl Missing {
             Missing::OptimizedOut => "(optimized out)",
         }
     }
+
+    /// Why, for one who wonders.
+    pub fn why(self) -> &'static str {
+        match self {
+            Missing::Uninitialized => "nothing has been stored in it yet",
+            Missing::NotRecorded => "the recording does not have this memory",
+            Missing::OptimizedOut => "the compiler kept no copy of it here: once the code no longer needs a value, it may drop it, or never store it",
+        }
+    }
 }
 
 impl Object {

@@ -250,7 +250,7 @@ pub fn Value(o: Object, path: String, depth: usize, at: usize) -> Element {
                 if can { span { class: "tw", if is_open { "▾ " } else { "▸ " } } }
                 "{o.name}"
             }
-            td { class: "fval", title: "{wrote}",
+            td { class: "fval", title: if let Some(m) = o.missing { m.why().to_string() } else { wrote() },
                 onmouseenter: move |_| if addr != 0 { wrote.set(origin(addr, size, at)) },
                 "{value}" }
             td { class: "ftype", "{o.ty}" }

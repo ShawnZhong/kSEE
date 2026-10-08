@@ -167,14 +167,13 @@ pub fn LessonPane() -> Element {
     };
     let grid = format!("--columns: {}", columns.len());
     rsx! {
-        // (The text, scrolling, the next lesson at its end; the program
-        // under it, always in view.)
+        // (The text; the program after it, kept in view at the bottom
+        // while the text is longer than the side; then the next lesson.)
         article { class: "lesson",
             h1 { "{lesson.title}" }
             div { class: "explain", for p in lesson.text.iter() {
                 ParagraphView { pieces: text::pieces(p), follow: move |target| follow(ui, target) }
             } }
-            crate::nav::Turn {}
         }
         section { class: "programpane",
             div { class: "ptitle dim", "Program"
@@ -216,6 +215,7 @@ pub fn LessonPane() -> Element {
                 }
             }
         }
+        crate::nav::Turn {}
     }
 }
 
@@ -261,7 +261,7 @@ fn Cell(j: usize, step: ProgramLine, outcome: Option<Outcome>, column: Option<(u
                         if text.is_empty() { program.remove(j); } else { program[j] = step.with_text(text); }
                     },
                     focus: move |_| if let Some(k) = run { ui.select(k) } }
-                span { class: "ret mono", {said(outcome.as_ref())} }
+                span { class: "ret mono", title: "{during(outcome.as_ref(), &ui.program.read())}", {said(outcome.as_ref(), &ui.program.read())} }
             }
             if let Some(Outcome::Call { changed, .. }) = &outcome && !changed.is_empty() {
                 div { class: "more mono dim", "{changed.join(\"   \")}" }
@@ -289,7 +289,13 @@ pub fn common() -> &'static [String] {
 }
 
 /// An outcome as its line says it.
-fn said(o: Option<&Outcome>) -> String {
+fn said(o: Option<&Outcome>, program: &[ProgramLine]) -> String {
+    // (A call that finished as a later line ran: " (during NAME)", the
+    // line's call, by name.)
+    let later = |during: Option<usize>| during.and_then(|j| program.get(j)).map_or(String::new(), |step| {
+        let name = match statement(step.text()) { Ok(Statement::Call { call, .. }) => call, _ => step.text().to_string() };
+        format!(" (during {name})")
+    });
     match o {
         None => "…".into(),
         Some(Outcome::Declared(v)) => format!("= {v}"),
@@ -300,9 +306,12 @@ fn said(o: Option<&Outcome>) -> String {
     }
 }
 
-/// " (during line N)", for a call that finished as a later line ran.
-fn later(during: Option<usize>) -> String {
-    during.map_or(String::new(), |j| format!(" (during line {})", j + 1))
+/// The line a call finished during, whole (said names its call).
+fn during(o: Option<&Outcome>, program: &[ProgramLine]) -> String {
+    match o {
+        Some(Outcome::Call { during: Some(j), .. }) => program.get(*j).map_or(String::new(), |s| format!("finished as this line ran: {}", s.text())),
+        _ => String::new(),
+    }
 }
 
 /// A parsed lesson paragraph. A link into the recording is one while the
