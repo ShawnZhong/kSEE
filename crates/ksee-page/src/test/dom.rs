@@ -119,10 +119,10 @@ pub(super) fn place() -> String {
     one(".transport .where").map(|w| text(&w)).and_then(|t| t.split(" · ").next().map(String::from)).unwrap_or_default()
 }
 
-/// A click on a transport button (Shift held: over the calls).
-pub(super) fn press(label: &str, shift: bool) {
+/// A click on a transport button.
+pub(super) fn press(label: &str) {
     if let Some(b) = named(".transport button", label) {
-        mouse(&b, "click", 0.0, 0.0, shift);
+        click(&b);
     }
 }
 

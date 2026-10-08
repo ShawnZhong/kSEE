@@ -531,6 +531,10 @@ fn steps_go_into_or_over() {
     assert_eq!((step(&lines, 0, 1, None), step(&lines, 0, 1, Some(0)), step(&lines, 1, 1, Some(1))), (Some(1), Some(3), Some(2)));
     assert_eq!((step(&lines, 3, -1, Some(0)), step(&lines, 0, -1, None)), (Some(0), None));
     assert_eq!(step(&lines, 3, 1, None), None);
+    // (The same line again at its depth and turn, a stop to the recording, is
+    // no step: past it; another turn of it is.)
+    let lines = [line(0, 1), line(0, 1), line(0, 2), Line { turn: 2, ..line(0, 2) }];
+    assert_eq!((step(&lines, 0, 1, Some(0)), step(&lines, 2, 1, Some(0)), step(&lines, 2, -1, Some(0))), (Some(2), Some(3), Some(1)));
 }
 
 #[test]

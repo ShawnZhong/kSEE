@@ -61,9 +61,15 @@ pub struct Frame {
 /// The line a step goes to from line `k` of `lines`, in direction `dir`
 /// (1: on; -1: back), if any: the next line no deeper than `within` (a
 /// frame's depth, Frame::depth: its own lines, over what it calls, and on
-/// into its caller's once it returns); none, the very next, into the calls.
+/// into its caller's once it returns; none, the very next, into the
+/// calls), somewhere else than line k: not the same line again at its
+/// depth and turn (a line calling code inlined is a stop before each
+/// function it enters: one place to the reader; a loop's next turn is
+/// another).
 pub fn step(lines: &[Line], k: usize, dir: isize, within: Option<u32>) -> Option<usize> {
-    seek(lines, k, dir, |l| within.is_none_or(|w| l.depth <= w))
+    let here = lines.get(k)?;
+    let same = |l: &Line| l.file == here.file && l.line == here.line && l.depth == here.depth && l.turn == here.turn;
+    seek(lines, k, dir, |l| within.is_none_or(|w| l.depth <= w) && !same(l))
 }
 
 /// The next (`dir` 1) or previous (`dir` -1) run of `file`'s `line`, from

@@ -13,20 +13,38 @@ use wasm_bindgen::prelude::Closure;
 use crate::machine;
 use crate::state::{Derived, Moment, Tab, Ui};
 
-/// A step from the cursor (`dir`: on, 1, or back, -1): in the frame you
-/// are reading (the level chosen: its own lines, over what it calls, and
-/// on into its caller's once it returns), or, `into`, to the very next
-/// line, the innermost frame then; past the run's lines, into its task's
-/// run after it (or before): its next syscall, or what it did between.
-pub fn walk(ui: Ui, d: Derived, dir: isize, into: bool) {
+/// A move of the cursor in time. Back and Next: a line of the frame you
+/// read (the level chosen), over what it calls (on in its caller once it
+/// returns). Into: the very next line (into the call on this one). Out: on
+/// until the frame read returns, its caller's next line. (Into and Out: the
+/// innermost frame then.)
+#[derive(Clone, Copy)]
+pub enum Move {
+    Back,
+    Next,
+    Into,
+    Out,
+}
+
+/// The cursor moved by `m`; past the run's lines, into its task's run after
+/// it (or before): its next syscall, or what it did between.
+pub fn walk(ui: Ui, d: Derived, m: Move) {
     let Some(at) = ui.cursor.peek().clone() else { return };
     let k = at.run;
     let lines = Ui::run_lines(k);
-    let within = if into { None } else { d.stack.peek().get(*d.frame.peek()).map(|f| f.depth) };
-    if let Some(j) = step(&lines, at.line, dir, within) {
-        match into {
-            true => ui.commit(Some(Moment { run: k, line: j, level: None })),
-            false => ui.go(j),
+    let depth = d.stack.peek().get(*d.frame.peek()).map_or(0, |f| f.depth);
+    let (dir, within) = match m {
+        Move::Back => (-1, Some(depth)),
+        Move::Next => (1, Some(depth)),
+        Move::Into => (1, None),
+        // (Out of the outermost: past the run.)
+        Move::Out => (1, Some(depth.wrapping_sub(1))),
+    };
+    let to = if matches!(m, Move::Out) && depth == 0 { None } else { step(&lines, at.line, dir, within) };
+    if let Some(j) = to {
+        match m {
+            Move::Into | Move::Out => ui.commit(Some(Moment { run: k, line: j, level: None })),
+            Move::Back | Move::Next => ui.go(j),
         }
         return;
     }
@@ -45,23 +63,9 @@ pub fn walk(ui: Ui, d: Derived, dir: isize, into: bool) {
     }
 }
 
-/// The frame chosen on the cursor's stack (`d.stack`), `dir` up it (-1:
-/// the callee; from the innermost, a step into the next line) or down (1:
-/// the caller).
-pub fn frame(ui: Ui, d: Derived, dir: isize) {
-    let Some(at) = ui.cursor.peek().clone() else { return };
-    if dir < 0 && *d.frame.peek() == 0 {
-        return walk(ui, d, 1, true);
-    }
-    let frames = d.stack.peek();
-    let k = d.frame.peek().saturating_add_signed(dir).min(frames.len().saturating_sub(1));
-    ui.commit(Some(Moment { level: Some(frames.len().saturating_sub(1 + k)), ..at }));
-}
-
-/// Under the strip: steps through the lines of the frame you are reading
-/// (◀ ▶, as ← → are; Shift: into every call), the frame you read (▲ the
-/// callee, from the innermost a step into it; ▼ the caller; as ↑ ↓), and
-/// where it is.
+/// Under the strip: the moves (Move: ◀ Back, Next ▶, ▲ Into, ▼ Out, as
+/// ← → ↑ ↓), and where the cursor is: the frame you read (chosen on the
+/// Stack or the chart; else the innermost).
 #[component]
 pub fn Transport() -> Element {
     let ui = use_context::<Ui>();
@@ -79,19 +83,17 @@ pub fn Transport() -> Element {
         .map_or(String::new(), |c| format!(" · {} returned {}", c.func, machine().tables().types.result(c.value)));
     rsx! {
         div { class: "transport",
-            button { title: "the line before in the frame you read (←); Shift: into every call", onclick: move |e| walk(ui, d, -1, e.modifiers().shift()), "◀ Line" }
-            button { title: "the next line in the frame you read, over its calls (→); Shift: into every call", onclick: move |e| walk(ui, d, 1, e.modifiers().shift()), "Line ▶" }
-            button { title: "read the callee (↑); from the innermost, a step into the call", onclick: move |_| frame(ui, d, -1), "▲ Into" }
-            button { title: "read the caller (↓)", onclick: move |_| frame(ui, d, 1), "▼ Out" }
+            button { title: "the line before, in the function you read (←)", onclick: move |_| walk(ui, d, Move::Back), "◀ Back" }
+            button { title: "the next line, in the function you read, over what it calls (→)", onclick: move |_| walk(ui, d, Move::Next), "Next ▶" }
+            button { title: "into the call on this line: the very next line (↑)", onclick: move |_| walk(ui, d, Move::Into), "▲ Into" }
+            button { title: "on until the function you read returns: its caller's next line (↓)", onclick: move |_| walk(ui, d, Move::Out), "▼ Out" }
             span { class: "where mono dim", "{place}{turn}{returned}" }
         }
     }
 }
 
-/// The page's keys, anywhere on it: one listener on the window; ← → a
-/// line of the frame you read (Shift: into every call); ↑ ↓ the frame
-/// read, the callee (from the innermost, a step into the call) or the
-/// caller. Not in text fields (the lesson's
+/// The page's keys, anywhere on it: one listener on the window; ← → ↑ ↓
+/// the moves (Back, Next, Into, Out: see Move). Not in text fields (the lesson's
 /// lines, find): arrows move the cursor there.
 pub fn listen(ui: Ui) {
     let d = use_context::<Derived>();
@@ -109,14 +111,13 @@ pub fn listen(ui: Ui) {
                     return;
                 }
             }
-            let into = e.shift_key();
             // (← →: once the kernel is up.)
             let up = matches!(*ui.kernel.peek(), Some(Ok(())));
             let arrow = match e.key().as_str() {
-                "ArrowLeft" if up => { walk(ui, d, -1, into); true }
-                "ArrowRight" if up => { walk(ui, d, 1, into); true }
-                "ArrowUp" => { frame(ui, d, -1); true }
-                "ArrowDown" => { frame(ui, d, 1); true }
+                "ArrowLeft" if up => { walk(ui, d, Move::Back); true }
+                "ArrowRight" if up => { walk(ui, d, Move::Next); true }
+                "ArrowUp" if up => { walk(ui, d, Move::Into); true }
+                "ArrowDown" if up => { walk(ui, d, Move::Out); true }
                 _ => false,
             };
             if arrow {

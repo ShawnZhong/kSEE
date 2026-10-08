@@ -71,37 +71,38 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     let before = cursor();
     global_key("ArrowRight");
     wait(|| cursor() != before, 20, "the global → key", || format!("{} at {}", cursor(), place())).await?;
-    // (Stepping: in the frame read, vfs_read, over its calls (no deeper);
-    // back; Shift, into every call; ▼ Out, the caller read; its step,
-    // over vfs_read.)
+    // (Stepping: Next, in the function read, vfs_read, over its calls, each
+    // step somewhere else; Back as far; Into, into a call; Out, its caller's
+    // next line, and Next on there.)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
     let at = place();
-    let mut over = Vec::new();
-    for _ in 0..3 {
-        press("Line ▶", false);
+    let mut over = vec![at.clone()];
+    for _ in 0..8 {
+        press("Next ▶");
         settle().await;
         over.push(place());
     }
-    for _ in 0..3 {
-        press("◀ Line", false);
+    let moved = over.windows(2).all(|w| w[0] != w[1]);
+    for _ in 0..8 {
+        press("◀ Back");
         settle().await;
     }
     let back = place();
     let mut into = Vec::new();
     for _ in 0..6 {
-        press("Line ▶", true);
+        press("▲ Into");
         settle().await;
         into.push(place());
     }
-    check(over.iter().all(|p| p.starts_with("vfs_read")) && over[0] != at && back == at && into.iter().any(|p| !p.starts_with("vfs_read")),
-          "stepping: within the frame read; Shift, into", (&at, &over, &back, &into))?;
+    check(over.iter().all(|p| p.starts_with("vfs_read")) && moved && back == at && into.iter().any(|p| !p.starts_with("vfs_read")),
+          "stepping: Next within the function, each step a move; Back; Into", (&over, &back, &into))?;
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
-    press("▼ Out", false);
+    press("▼ Out");
     settle().await;
     let caller = place();
-    press("Line ▶", false);
+    press("Next ▶");
     settle().await;
     check(caller.starts_with("ksys_read") && place().starts_with("ksys_read"), "reading the caller: its own steps", (&caller, place()))?;
     Ok(())
@@ -150,7 +151,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let chosen = || one(".stack tr.frame.on").map(|r| (text(&r), r.get_bounding_client_rect().top().round()));
     let mut seen = vec![chosen()];
     for _ in 0..6 {
-        press("Line ▶", false);
+        press("Next ▶");
         settle().await;
         seen.push(chosen());
     }
@@ -199,7 +200,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let edge = || drew("data-test-now").and_then(|n| n.parse::<f64>().ok());
     let mut seen = Vec::new();
     for _ in 0..200 {
-        press("Line ▶", false);
+        press("Next ▶");
         settle().await;
         if let Some(n) = edge() { seen.push(n.round()) }
     }
@@ -221,7 +222,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let hover = (now() - t0) / 30.0;
     let t0 = now();
     for _ in 0..20 {
-        press("Line ▶", false);
+        press("Next ▶");
         sleep(0).await;
     }
     let step = (now() - t0) / 20.0;
@@ -466,7 +467,7 @@ pub(super) async fn responsive() -> Check {
     let screen = web_sys::window().unwrap().inner_width().ok().and_then(|w| w.as_f64()).unwrap_or(0.0) as i32;
     check(order && wide <= screen, "the phone", (order, wide, screen))?;
     let at = place();
-    press("Line ▶", false);
+    press("Next ▶");
     settle().await;
     Ok(format!("{at} → {}", place()))
 }

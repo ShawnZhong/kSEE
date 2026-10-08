@@ -159,17 +159,18 @@ for the current lesson run. The console is output-only.
 
 ## 5. Move through the recording
 
-You read one frame at a time: the function the source shows, highlighted in
-the Stack (click another there to read it) and named in the transport below
-the chart. Left and right move through time in that function; up and down
-move between functions.
+You read one function at a time: the frame the source shows, highlighted in
+the Stack and named in the transport below the chart. It is the innermost,
+unless you choose another (a Stack row, or a bar in the chart). Each move
+goes somewhere else: a line the recording stops at more than once in a row
+(before each function inlined into it) counts once.
 
 | Control | Action |
 |---|---|
-| Left / Right, or ◀ ▶ | The previous or next line of the function you read, over what it calls; past its end, on in its caller. |
-| Shift+Left / Shift+Right | The previous or next line anywhere: into every call. |
-| Up, or ▲ Into | Read the callee; already at the innermost, step into the call on this line. |
-| Down, or ▼ Out | Read the caller (then Right finishes the call you were in). |
+| Right, or Next ▶ | The next line of the function you read, over what it calls; past its end, on in its caller. |
+| Left, or ◀ Back | The line before, the same way. |
+| Up, or ▲ Into | Into the call on this line: the very next line, wherever it is. |
+| Down, or ▼ Out | On until the function you read returns: its caller's next line. |
 | Click a source line number | Run to that line's next occurrence. |
 | Shift+click a source line number | Run to that line's previous occurrence. |
 | Hover the chart | See what a bar's call was (outlined, a tip); nothing else moves. |
