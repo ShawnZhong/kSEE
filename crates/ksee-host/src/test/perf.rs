@@ -46,7 +46,7 @@ pub(super) fn views(t: &mut KernelHarness) -> String {
     let Some((k, s)) = m.view(|v| (0..calls).filter_map(|k| v.run(k).map(|s| (k, s))).filter(|(_, s)| s.nr.is_some()).max_by_key(|(_, s)| s.last - s.first)) else { return String::new() };
     let mid = (s.first + s.last) / 2;
     let file = m.view(|v| v.call_stack(mid, None, 0, mid).first().and_then(|f| f.file.clone())).unwrap_or_default();
-    let chart = ms(3, || { m.view(|v| v.chart(0, steps.saturating_sub(1), 1200)); });
+    let chart = ms(3, || { m.view(|v| v.timeline()); });
     let runs = ms(3, || { m.view(|v| (0..v.rec.runs.len()).filter_map(|k| v.run(k)).count()); });
     let lines = ms(3, || { m.view(|v| v.lines(s.first, s.last, s.task.addr)); });
     let stack = ms(3, || { m.view(|v| v.call_stack(mid, None, 0, mid)); });
@@ -66,6 +66,6 @@ pub(super) fn views(t: &mut KernelHarness) -> String {
     // (The module's memory: the kernel's, its ring among it, and the views'; it never shrinks.)
     let mib = core::arch::wasm32::memory_size(0) * 64 / 1024;
     format!("{mix}; {records} records, {steps} steps, {calls} runs, {mib} MiB of memory; the largest, {} records: snapshot {snapshot:.1} ms, \
-             chart {chart:.1}, runs {runs:.1}, its lines {lines:.1}, a stack {stack:.1}, its objects {objects:.1}, \
+             the timeline {chart:.1}, runs {runs:.1}, its lines {lines:.1}, a stack {stack:.1}, its objects {objects:.1}, \
              its stores named {named:.1}, a file's notes {notes:.1} and coverage {coverage:.1} ({file}); at vma_iter_prealloc, a stack {deep:?}", s.last - s.first + 1)
 }

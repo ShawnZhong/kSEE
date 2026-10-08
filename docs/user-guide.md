@@ -32,18 +32,16 @@ Selecting a syscall row chooses its recording. The cursor is always in a
 **run** of one task: a syscall it made, or what it did between its syscalls
 ("running": the idle task idling, a kernel worker writing back, jbd2
 committing). A click on any task's bar in the timeline puts the cursor in that
-task's run, to step through as any syscall. kSEE maintains three related
-units:
+task's run, to step through as any syscall. kSEE keeps two related units:
 
 - A **trace record** is a raw event such as a basic block, return, store, task,
   comparison, or variable update.
 - A **line step** is a reconstructed source-line position. One basic-block
   record can produce several line steps.
-- A **chart column** samples one line step in the current window. A wide window
-  has more steps than columns, so a column stands for several.
 
-The chart's axis is line steps: a bar is as wide as the steps its call takes,
-and stepping (← →) moves the cursor one step across it.
+The chart's axis is line steps, drawn exactly (a bar thinner than a pixel,
+once per pixel), however far you zoom or pan: a bar is as wide as the steps
+its call takes, and stepping (← →) moves the cursor one step across it.
 
 ### Timeline
 

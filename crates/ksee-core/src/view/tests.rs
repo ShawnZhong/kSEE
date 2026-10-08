@@ -415,14 +415,14 @@ fn two_inlined_frames_of_one_call_are_bars_of_their_own() {
     let frames: Vec<_> = v.call_stack(0, None, 0, 0).iter().map(|f| (f.func.clone(), f.inlined)).collect();
     assert_eq!(frames, [("g".into(), true), ("h".into(), true), ("f".into(), false)]);
     // (Three steps, as stepping enters them: the lines calling h and g, then g's.)
-    let chart = v.chart(0, 2, 3);
-    let bars: Vec<_> = chart.cols[2].frames.iter().map(|&b| (chart.bars[b as usize].first, chart.bars[b as usize].name.clone())).collect();
+    let tl = v.timeline();
+    let bars: Vec<_> = tl.at(2).iter().map(|&b| (tl.bars[b as usize].first, tl.bars[b as usize].name.clone())).collect();
     assert_eq!(bars, [(0, "f".into()), (0, "h".into()), (0, "g".into())]);
     // (Each its own file: code inlined, its function's.)
-    let files: Vec<_> = chart.cols[2].frames.iter().map(|&b| chart.bars[b as usize].file.clone().unwrap_or_default()).collect();
+    let files: Vec<_> = tl.at(2).iter().map(|&b| tl.bars[b as usize].file.clone().unwrap_or_default()).collect();
     assert_eq!(files, ["f.c", "h.c", "g.c"]);
-    // (Each bar runs alone: no two share an identity.)
-    assert_eq!(chart.bar_spans(), alloc::vec![(0, 0, 3, 0), (1, 1, 3, 1), (2, 2, 3, 2)]);
+    // (Each bar its own span: no two share an identity.)
+    assert_eq!(tl.rows, [alloc::vec![(0, 3, 0)], alloc::vec![(1, 3, 1)], alloc::vec![(2, 3, 2)]]);
 }
 
 #[test]
@@ -494,50 +494,31 @@ fn a_task_is_named_as_it_was_then() {
 
 #[test]
 fn a_chart_window_follows_one_wheel_axis() {
-    // Horizontal trackpad movement pans without changing the inclusive span,
+    // Horizontal trackpad movement pans without changing the span,
     // even with a little vertical noise; Shift pans by the vertical delta.
-    let horizontal = wheel_window((100, 199), 500.0, 1000.0, 80.0, 4.0, false, 1.5);
-    let shifted = wheel_window((100, 199), 500.0, 1000.0, 80.0, 20.0, true, 1.5);
-    assert!((horizontal.0 - 108.0).abs() < 1e-9 && horizontal.1 == 99);
-    assert!((shifted.0 - 102.0).abs() < 1e-9 && shifted.1 == 99);
+    let horizontal = wheel_window((100.0, 100.0), 500.0, 1000.0, 80.0, 4.0, false, 1.5);
+    let shifted = wheel_window((100.0, 100.0), 500.0, 1000.0, 80.0, 20.0, true, 1.5);
+    assert!((horizontal.0 - 108.0).abs() < 1e-9 && horizontal.1 == 100.0);
+    assert!((shifted.0 - 102.0).abs() < 1e-9 && shifted.1 == 100.0);
 }
 
 #[test]
 fn a_chart_window_zooms_around_the_pointer() {
-    let out = wheel_window((100, 199), 500.0, 1000.0, 4.0, 80.0, false, 1.2);
-    let into = wheel_window((100, 199), 500.0, 1000.0, 4.0, -80.0, false, 0.8);
-    assert!(out.0 < 100.0 && out.1 > 99);
-    assert!(into.0 > 100.0 && into.1 < 99);
+    let out = wheel_window((100.0, 100.0), 500.0, 1000.0, 4.0, 80.0, false, 1.2);
+    let into = wheel_window((100.0, 100.0), 500.0, 1000.0, 4.0, -80.0, false, 0.8);
+    assert!(out.0 < 100.0 && out.1 > 100.0);
+    assert!(into.0 > 100.0 && into.1 < 100.0);
 
     // A pointer outside the chart is anchored to its nearest edge.
-    assert_eq!(wheel_window((100, 199), -100.0, 1000.0, 0.0, 80.0, false, 1.2),
-               wheel_window((100, 199), 0.0, 1000.0, 0.0, 80.0, false, 1.2));
-    assert_eq!(wheel_window((100, 199), 1100.0, 1000.0, 0.0, 80.0, false, 1.2),
-               wheel_window((100, 199), 1000.0, 1000.0, 0.0, 80.0, false, 1.2));
+    assert_eq!(wheel_window((100.0, 100.0), -100.0, 1000.0, 0.0, 80.0, false, 1.2),
+               wheel_window((100.0, 100.0), 0.0, 1000.0, 0.0, 80.0, false, 1.2));
+    assert_eq!(wheel_window((100.0, 100.0), 1100.0, 1000.0, 0.0, 80.0, false, 1.2),
+               wheel_window((100.0, 100.0), 1000.0, 1000.0, 0.0, 80.0, false, 1.2));
 }
 
 #[test]
 fn no_wheel_delta_keeps_a_chart_window() {
-    assert_eq!(wheel_window((100, 199), 500.0, 1000.0, 0.0, 0.0, false, 1.0), (100.0, 99));
-}
-
-#[test]
-fn a_chart_folds_into_runs() {
-    // Three columns: bars [0] / [0, 1] / [1], tasks 7, 7, 8.
-    let chart = Chart {
-        bars: Vec::new(),
-        cols: alloc::vec![
-            Column { step: 0, i: 0, task: 7, frames: alloc::vec![0] },
-            Column { step: 1, i: 1, task: 7, frames: alloc::vec![0, 1] },
-            Column { step: 2, i: 2, task: 8, frames: alloc::vec![1] },
-        ],
-    };
-    // (Each row's runs: row 0 has bar 0 over columns 0..2, then bar 1 at
-    // column 2; row 1 has bar 1 at column 1 only.)
-    assert_eq!(chart.bar_spans(), alloc::vec![(0, 0, 2, 0), (0, 2, 3, 1), (1, 1, 2, 1)]);
-    assert_eq!(chart.task_spans(), alloc::vec![(0, 2, 7), (2, 3, 8)]);
-    // (No columns, no runs.)
-    assert!(Chart::default().bar_spans().is_empty() && Chart::default().task_spans().is_empty());
+    assert_eq!(wheel_window((100.0, 100.0), 500.0, 1000.0, 0.0, 0.0, false, 1.0), (100.0, 100.0));
 }
 
 #[test]
@@ -596,15 +577,12 @@ fn the_steps_are_the_lines_stepping_visits() {
     let v = View { tables: &t, rec: &rec, now: &Vec::new() };
     let lines: Vec<_> = v.lines(0, 0, 0).iter().map(|l| (l.i, l.nth, l.cut)).collect();
     assert_eq!(rec.steps, lines);
-    // (A column a step: each its line's stack.)
-    let depths: Vec<_> = v.chart(0, 4, 5).cols.iter().map(|c| c.frames.len()).collect();
+    // (Each step its line's stack.)
+    let tl = v.timeline();
+    let depths: Vec<_> = (0..5).map(|s| tl.at(s).len()).collect();
     assert_eq!(depths, [1, 1, 2, 3, 1]);
+    // (A window's spans and depth: step 3, the third row's one bar; steps 0
+    // and 1, one row.)
+    assert_eq!((tl.spans(2, 3.0, 4.0), tl.depth(3.0, 4.0), tl.depth(0.0, 2.0)), (&[(3, 4, 2)][..], 3, 1));
 }
 
-#[test]
-fn a_drag_pans_within_the_recording() {
-    // (In the middle, as far as the pointer; at either end, no further.)
-    assert_eq!(clamped_pan((20, 39), 100.0, 1000.0, 100), (18.0, 19, 100.0));
-    assert_eq!(clamped_pan((0, 19), 100.0, 1000.0, 100), (0.0, 19, 0.0));
-    assert_eq!(clamped_pan((80, 99), -100.0, 1000.0, 100), (80.0, 19, 0.0));
-}

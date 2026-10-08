@@ -217,10 +217,11 @@ async fn window() -> Result<(), String> {
     let at = bar(&canvas, "vfs_read").map_or(mid, |(x, _)| b.left() + x);
     wheel(&chart, at, y, -800.0);
     settle().await;
-    // (A call whose bar is whole in the window, its left edge throughout.)
+    // (A call whose bar is whole in the window, and stays so dragged 80 px
+    // left: its left edge, throughout.)
     let width = b.width();
-    let call = bars(&canvas).into_iter().find(|c| c.2 - c.4 / 2.0 > 1.0 && c.2 + c.4 / 2.0 < width - 1.0).map(|c| c.1).unwrap_or_default();
-    let bar_x = || bars(&canvas).into_iter().find(|c| c.1 == call).map_or(f64::NAN, |c| c.2 - c.4 / 2.0);
+    let call = bars(&canvas).into_iter().find(|c| c.4 > 100.0 && c.4 + c.5 < width - 1.0).map(|c| c.1).unwrap_or_default();
+    let bar_x = || bars(&canvas).into_iter().find(|c| c.1 == call).map_or(f64::NAN, |c| c.4);
     let win = || one(".overview .win").and_then(|w| w.get_attribute("style")).unwrap_or_default();
     let (x0, w0) = (bar_x(), win());
     pointer(&chart, "pointerdown", at, y);
@@ -425,14 +426,14 @@ fn bar(canvas: &web_sys::Element, name: &str) -> Option<(f64, f64)> {
     bars(canvas).into_iter().find(|b| b.0 == name).map(|b| (b.2, b.3))
 }
 
-/// The bars the chart drew: each call's function, its first record, its
-/// middle (x, y) and width.
-fn bars(canvas: &web_sys::Element) -> Vec<(String, String, f64, f64, f64)> {
+/// The bars the chart drew: each call's function, its first record, the
+/// middle of what is seen of it (x, y), its left end and its width.
+fn bars(canvas: &web_sys::Element) -> Vec<(String, String, f64, f64, f64, f64)> {
     canvas.get_attribute("data-test-bars").unwrap_or_default().lines().filter_map(|l| {
         let mut f = l.split(' ');
-        let (name, call, at, w) = (f.next()?, f.next()?, f.next()?, f.next()?);
+        let (name, call, at, left, w) = (f.next()?, f.next()?, f.next()?, f.next()?, f.next()?);
         let (x, y) = at.split_once(',')?;
-        Some((name.into(), call.into(), x.parse().ok()?, y.parse().ok()?, w.parse().ok()?))
+        Some((name.into(), call.into(), x.parse().ok()?, y.parse().ok()?, left.parse().ok()?, w.parse().ok()?))
     }).collect()
 }
 

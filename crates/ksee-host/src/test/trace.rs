@@ -15,7 +15,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let s = t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await.syscall;
     t.check("mkdirat ran vfs_mkdir", t.ran(&s, "vfs_mkdir"));
     let nap = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {0, 30000000}, NULL)").await.syscall.unwrap();
-    let idle = m.view(|v| v.chart(v.rec.step_of(nap.first), v.rec.step_of(nap.last), 50).cols.iter().any(|c| v.task(c.task, nap.first).comm.as_deref() == Some("swapper/0")));
+    let idle = m.view(|v| v.timeline().tasks_in(v.rec.step_of(nap.first) as f64, v.rec.step_of(nap.last) as f64).iter().any(|s| v.task(s.2, nap.first).comm.as_deref() == Some("swapper/0")));
     t.check("sleeping switched to the idle task and back", t.ran(&Some(nap.clone()), "__schedule") && idle);
     let long = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {2, 0}, NULL)").await;
     t.check("a 2 s sleep returns (the clock skipped ahead)", long.ret == Some(0));
@@ -33,8 +33,8 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     }
     t.check("fs/read_write.c coverage", m.view(|v| v.coverage("fs/read_write.c", wi)).values().any(|&n| n > 0));
     let wlast = w.last;
-    let chart = m.view(|v| v.chart(v.rec.step_of(w.first), v.rec.step_of(wlast), 200));
-    t.check("a stack chart of write's records", chart.cols.len() == 200 && chart.cols[0].task == w.task.addr && chart.bars.len() > 10);
+    let (tl, ws, we) = m.view(|v| (v.timeline(), v.rec.step_of(w.first), v.rec.step_of(wlast)));
+    t.check("a timeline of write's steps", tl.tasks_in(ws as f64, ws as f64 + 1.0).first().is_some_and(|s| s.2 == w.task.addr) && tl.depth(ws as f64, we as f64) > 3);
     let steps = m.view(|v| v.lines(w.first, wlast, w.task.addr));
     t.check("write, line by line (inlined lines too)", steps.len() > 50 && steps.iter().any(|x| x.inlined.is_some()));
     if let Some(k) = steps.iter().position(|x| x.inlined.is_some()) {
@@ -43,22 +43,23 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         t.check(format!("inlined code is a frame of its own ({} in {})", s.inlined.clone().unwrap_or_default(), s.func),
                 inl.first().is_some_and(|f| f.inlined && Some(&f.func) == s.inlined.as_ref() && f.line == Some(s.line)) && inl.iter().any(|f| f.func == s.func && !f.inlined));
     }
-    t.check("and a bar of its own in the chart", chart.bars.iter().any(|b| b.inlined));
-    t.check(format!("a syscall's entry is the outermost bar: {}", chart.bars[0].name), chart.bars[0].name == "wasm_syscall");
+    t.check("and a bar of its own in the timeline", tl.bars.iter().any(|b| b.inlined));
+    let outer = tl.at(ws).first().map_or(String::new(), |&b| tl.bars[b as usize].name.clone());
+    t.check(format!("a syscall's entry is the outermost bar: {outer}"), outer == "wasm_syscall");
     {
-        // (Each column is a moment, its record's line: the Stack there has every call it draws.)
+        // (Each step is a moment, its record's line: the Stack there has every call the timeline has then.)
         let (mut drawn, mut missing) = (0, Vec::new());
-        for c in &chart.cols {
-            let (_, nth, cut) = m.view(|v| v.rec.steps[c.step]);
-            let frames = m.view(|v| v.call_stack(c.i, Some(nth as usize), cut as usize, c.i));
-            for b in c.frames.iter().map(|&k| &chart.bars[k as usize]) {
+        for step in (ws..=we).step_by(((we - ws) / 200).max(1)) {
+            let (i, nth, cut) = m.view(|v| v.rec.steps[step]);
+            let frames = m.view(|v| v.call_stack(i, Some(nth as usize), cut as usize, i));
+            for b in tl.at(step).iter().map(|&k| &tl.bars[k as usize]) {
                 drawn += 1;
                 if !frames.iter().any(|f| f.first == b.first && f.func == b.name && f.inlined == b.inlined) {
                     missing.push(b.name.clone());
                 }
             }
         }
-        t.check(format!("a chart's column is its record's stack: {drawn} calls drawn, {} not there", missing.len()), drawn > 0 && missing.is_empty());
+        t.check(format!("a step's bars are its record's stack: {drawn} calls drawn, {} not there", missing.len()), drawn > 0 && missing.is_empty());
     }
     let mid = steps.iter().find(|x| x.func == "vfs_write").map_or(0, |x| x.i);
     let stack = t.stack(mid, None, mid);

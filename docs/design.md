@@ -144,8 +144,8 @@ source-line cursor while the timeline, source, stack, tasks, objects, and
 console remain synchronized. Editing a program reruns it on a fresh,
 deterministic kernel.
 
-The UI distinguishes raw trace records, reconstructed line steps, and sampled
-chart columns. The full workflow and controls are in
+The UI distinguishes raw trace records and reconstructed line steps, the
+timeline's axis. The full workflow and controls are in
 [user-guide.md](user-guide.md).
 
 ## Limits

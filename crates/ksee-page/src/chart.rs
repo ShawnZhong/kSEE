@@ -12,7 +12,7 @@
 use dioxus::prelude::*;
 use ksee_core::arch::AREAS;
 use ksee_core::trace::Record;
-use ksee_core::view::{clamped_pan, wheel_window, Chart};
+use ksee_core::view::{wheel_window, Timeline as Chart};
 use wasm_bindgen::JsCast;
 
 use crate::machine;
@@ -78,9 +78,9 @@ pub fn Timeline() -> Element {
     let d = use_context::<Derived>();
     use_effect(move || {
         let Some(at) = d.cursor_step.cloned() else { return };
-        let (a, b) = *d.window.peek();
-        if at < a as f64 || at >= (b + 1) as f64 {
-            ui.view(at - ((b - a) / 2) as f64, b - a);
+        let (a, span) = *d.window.peek();
+        if at < a || at >= a + span {
+            ui.view(at - span / 2.0, span);
         }
     });
     let title = d.run.cloned().map(|s| s.title()).unwrap_or_default();
@@ -118,41 +118,39 @@ fn Overview() -> Element {
     let mut width = use_signal(|| 1000.0f64);
     let m = machine();
     let cursor = d.cursor_step.cloned();
-    let (n, tasks, starts, (wa, wb), at) = m.view(|v| {
+    let (n, tasks, starts) = m.view(|v| {
         let n = v.rec.steps.len().max(1);
         let tasks: Vec<i32> = (0..BUCKETS).map(|k| {
             let i = v.rec.record_of(k * n / BUCKETS);
             v.rec.tasks.get(i).and_then(|&t| v.task(t, i).pid).unwrap_or(0)
         }).collect();
         let starts: Vec<usize> = v.rec.runs.iter().filter(|s| s.nr.is_some()).map(|s| v.rec.step_of(s.first)).collect();
-        (n, tasks, starts, (d.window)(), cursor)
+        (n as f64, tasks, starts)
     });
-    let pct = |s: usize| s as f64 * 100.0 / n as f64;
+    let (wa, span) = (d.window)();
+    let pct = |s: f64| s * 100.0 / n;
     rsx! {
         div { class: "overview", title: "the whole recording: click to move the window there",
             onresize: move |e| if let Ok(s) = e.get_content_box_size() { width.set(s.width.max(1.0)) },
-            onclick: move |e| {
-                let x = e.element_coordinates().x / width();
-                ui.view(x * n as f64 - ((wb - wa) / 2) as f64, wb - wa);
-            },
+            onclick: move |e| ui.view(e.element_coordinates().x / width() * n - span / 2.0, span),
             for (k , pid) in tasks.into_iter().enumerate() {
                 div { class: "b", style: "left: {k as f64 * 100.0 / BUCKETS as f64}%; width: {100.0 / BUCKETS as f64 + 0.1}%; background: {task_color(pid)}" }
             }
-            for s in starts { div { class: "start", style: "left: {pct(s)}%" } }
-            div { class: "win", style: "left: {pct(wa)}%; width: {pct(wb + 1 - wa).max(0.3)}%" }
-            if let Some(s) = at { div { class: "at", style: "left: {s * 100.0 / n as f64}%" } }
+            for s in starts { div { class: "start", style: "left: {pct(s as f64)}%" } }
+            div { class: "win", style: "left: {pct(wa)}%; width: {pct(span).max(0.3)}%" }
+            if let Some(s) = cursor { div { class: "at", style: "left: {pct(s)}%" } }
         }
     }
 }
 
-/// A pan under way: where it began, and the time and stack windows then.
+/// A pan under way: where it began, and the time window and the rows'
+/// scroll then.
 #[derive(Clone, Copy)]
 struct Pan {
     x: f64,
     y: f64,
     scroll: i32,
-    a: usize,
-    b: usize,
+    window: (f64, f64),
     pointer_id: i32,
 }
 
@@ -190,20 +188,13 @@ fn chart_height(depth: usize, room: f64) -> f64 {
     (depth as f64 * ROW).max(room)
 }
 
-/// The task strip's spans of columns: each its task's name and color.
-struct TaskSpan {
-    start: usize,
-    end: usize,
-    name: String,
-    color: String,
-}
-
-fn task_spans(chart: &Chart) -> Vec<TaskSpan> {
+/// The task strip's spans' names and colors (the timeline's tasks', in order).
+fn task_names(chart: &Chart) -> Vec<(String, String)> {
     let m = machine();
-    chart.task_spans().into_iter().map(|(start, end, task)| {
-        let t = m.view(|v| v.task(task, chart.cols[end - 1].i));
-        TaskSpan { start, end, name: t.named(), color: task_color(t.pid.unwrap_or(0)) }
-    }).collect()
+    m.view(|v| chart.tasks.iter().map(|&(_, end, task)| {
+        let t = v.task(task, v.rec.steps[end - 1].0);
+        (t.named(), task_color(t.pid.unwrap_or(0)))
+    }).collect())
 }
 
 /// Canvas `id`, `width` by `height` px (sharp at the screen's pixel
@@ -221,14 +212,33 @@ fn canvas_context(id: &str, width: f64, height: f64) -> Option<(web_sys::HtmlCan
     Some((canvas, ctx))
 }
 
-/// The stack chart and the task strip drawn, `width` px wide: its column k
-/// at `x0 + k * col` px; the bars (`calls`, the stack's, darker; `find`'s,
-/// lit; `lit`, outlined), the cross at `now` px across and `level`.
+/// The window's steps, `width` px wide: step `s` at `(s - a) * width / span`.
+#[derive(Clone, Copy)]
+struct Scale {
+    a: f64,
+    span: f64,
+    width: f64,
+}
+
+impl Scale {
+    fn x(&self, s: f64) -> f64 {
+        (s - self.a) * self.width / self.span
+    }
+
+    fn step(&self, x: f64) -> f64 {
+        self.a + x / self.width * self.span
+    }
+}
+
+/// The stack chart and the task strip drawn, the window `scale`: the bars
+/// (`calls`, the stack's, darker; `find`'s, lit; `lit`, outlined), a bar
+/// thinner than a pixel once per pixel; the cross at step `now` and
+/// `level`.
 fn draw_chart(
     chart: &Chart,
-    tasks: &[TaskSpan],
-    (width, height): (f64, f64),
-    (x0, col): (f64, f64),
+    tasks: &[(String, String)],
+    scale: Scale,
+    height: f64,
     calls: &[(usize, String)],
     find: &str,
     lit: Option<&(usize, String)>,
@@ -236,64 +246,72 @@ fn draw_chart(
     level: Option<usize>,
     locked: Option<usize>,
 ) {
+    let width = scale.width;
     let (Some((canvas, ctx)), Some((_, task_ctx))) = (canvas_context("timeline-canvas", width, height), canvas_context("timeline-task-canvas", width, TASK_LANE))
         else { return };
+    let (a, b) = (scale.a, scale.a + scale.span);
+    // (A span's place on the canvas: its ends, the visible part's.)
+    let place = |s0: usize, s1: usize| (scale.x(s0 as f64), scale.x(s1 as f64));
     let foreground = foreground();
     task_ctx.set_font("10px ui-monospace, SFMono-Regular, Menlo, monospace");
     task_ctx.set_text_baseline("middle");
-    for task in tasks {
-        let x = x0 + task.start as f64 * col;
-        let w = (task.end - task.start) as f64 * col;
-        if x + w <= 0.0 || x >= width {
-            continue;
-        }
-        task_ctx.set_fill_style_str(&task.color);
-        task_ctx.fill_rect(x, 0.0, (w - 1.0).max(1.0), TASK_LANE);
-        label(&task_ctx, &task.name, "#1f2328", x, 0.0, (w - 2.0).max(1.0), TASK_LANE);
+    let k0 = chart.tasks.len() - chart.tasks.iter().rev().take_while(|s| s.1 as f64 > a).count();
+    for (k, &(s0, s1, _)) in chart.tasks_in(a, b).iter().enumerate() {
+        let (x0, x1) = place(s0, s1);
+        let (name, color) = &tasks[k0 + k];
+        task_ctx.set_fill_style_str(color);
+        task_ctx.fill_rect(x0, 0.0, (x1 - x0 - 1.0).max(1.0), TASK_LANE);
+        let (v0, v1) = (x0.max(0.0), x1.min(width));
+        label(&task_ctx, name, "#1f2328", v0, 0.0, (v1 - v0 - 2.0).max(1.0), TASK_LANE);
     }
     ctx.set_font("11px ui-monospace, SFMono-Regular, Menlo, monospace");
     ctx.set_text_baseline("middle");
-    // (For the tests: each call's bar, its middle and width, once; the bars found.)
+    // (For the tests: each call's bar, the middle of what is seen of it,
+    // its left end and its width, once; the bars found; how far the bars
+    // reach.)
     let mut points: Vec<String> = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     let mut found_count = 0;
-    // (And how far the bars drawn reach, px: the canvas covered, or not.)
     let mut reach = (width, 0.0f64);
-    for (dd, a, e, b) in chart.bar_spans() {
-        let bar = &chart.bars[b as usize];
-        let id = (bar.first, bar.name.clone());
-        let on = calls.contains(&id);
-        let found = !find.is_empty() && bar.name.to_lowercase().contains(find);
-        let color = if found { "#ffd866".to_string() } else { call_color(bar.file.as_deref(), on) };
-        let x = x0 + a as f64 * col;
-        let w = (e - a) as f64 * col;
-        let y = height - (dd as f64 + 1.0) * ROW;
-        if found {
-            found_count += 1;
-        }
-        if crate::test::on() && seen.insert(id.clone()) {
-            points.push(format!("{} {} {},{} {w}", bar.name, bar.first, x + w / 2.0, y + ROW / 2.0));
-        }
-        if x + w <= 0.0 || x >= width {
-            continue;
-        }
-        reach = (reach.0.min(x.max(0.0)), reach.1.max((x + w).min(width)));
-        ctx.set_fill_style_str(&color);
-        ctx.fill_rect(x, y, (w - 1.0).max(1.0), ROW - 1.0);
-        if lit.is_some_and(|l| l.0 == id.0 && l.1 == id.1) {
-            ctx.set_stroke_style_str(&foreground);
-            ctx.set_line_width(1.5);
-            ctx.stroke_rect(x + 0.75, y + 0.75, (w - 2.5).max(1.0), ROW - 2.5);
-        }
-        if w >= 24.0 {
-            label(&ctx, &bar.name, if on { "#fff" } else { "#1f2328" }, x, y, w - 2.0, ROW);
+    for d in 0..chart.depth(a, b) {
+        let y = height - (d as f64 + 1.0) * ROW;
+        // (The last pixel drawn on the row: a bar thinner than a pixel on it is not drawn again.)
+        let mut drawn = f64::NEG_INFINITY;
+        for &(s0, s1, bi) in chart.spans(d, a, b) {
+            let (x0, x1) = place(s0, s1);
+            if x1 - x0 < 1.0 && x0.floor() <= drawn {
+                continue;
+            }
+            drawn = x1.floor().max(x0.floor());
+            let bar = &chart.bars[bi as usize];
+            let id = (bar.first, bar.name.clone());
+            let on = calls.contains(&id);
+            let found = !find.is_empty() && bar.name.to_lowercase().contains(find);
+            let color = if found { "#ffd866".to_string() } else { call_color(bar.file.as_deref(), on) };
+            let (v0, v1) = (x0.max(0.0), x1.min(width));
+            found_count += found as usize;
+            if crate::test::on() && seen.insert(id.clone()) {
+                points.push(format!("{} {} {},{} {x0} {}", bar.name, bar.first, (v0 + v1) / 2.0, y + ROW / 2.0, x1 - x0));
+            }
+            reach = (reach.0.min(v0), reach.1.max(v1));
+            ctx.set_fill_style_str(&color);
+            ctx.fill_rect(x0, y, (x1 - x0 - 1.0).max(1.0), ROW - 1.0);
+            if lit.is_some_and(|l| l.0 == id.0 && l.1 == id.1) {
+                ctx.set_stroke_style_str(&foreground);
+                ctx.set_line_width(1.5);
+                ctx.stroke_rect(v0 + 0.75, y + 0.75, (v1 - v0 - 2.5).max(1.0), ROW - 2.5);
+            }
+            if v1 - v0 >= 24.0 {
+                label(&ctx, &bar.name, if on { "#fff" } else { "#1f2328" }, v0, y, v1 - v0 - 2.0, ROW);
+            }
         }
     }
     // (The moment shown, a cross: down, its step; across, under its frame's
     // level, the Stack's (under: its bars' names stay readable).)
     ctx.set_fill_style_str(&foreground);
-    if let Some(now) = now {
-        ctx.fill_rect(now - 1.0, 0.0, 2.0, height);
+    let now = now.filter(|&s| s >= a && s < b).map(|s| scale.x(s));
+    if let Some(x) = now {
+        ctx.fill_rect(x - 1.0, 0.0, 2.0, height);
         if let Some(level) = level {
             ctx.fill_rect(0.0, height - level as f64 * ROW - 1.0, width, 2.0);
         }
@@ -309,7 +327,8 @@ fn draw_chart(
         attr("found", Some(found_count.to_string()));
         attr("now", now.map(|n| n.to_string()));
         attr("reach", Some(format!("{},{}", reach.0, reach.1)));
-        attr("tasks", Some(tasks.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join("\n")));
+        let names: Vec<&str> = chart.tasks_in(a, b).iter().enumerate().map(|(k, _)| tasks[k0 + k].0.as_str()).collect();
+        attr("tasks", Some(names.join("\n")));
     }
 }
 
@@ -317,72 +336,54 @@ fn draw_chart(
 fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
-    let chart = d.chart.cloned();
-    let steps = machine().view(|v| v.rec.steps.len().max(1));
-    // (The task strip's spans: the labels' and the drawing's.)
-    let spans = use_memo(move || crate::state::Shared(std::rc::Rc::new(task_spans(&d.chart.read()))));
-    let tasks = spans.cloned().0;
+    let chart = d.timeline.cloned();
+    // (The task strip's names and colors: a snapshot's, once.)
+    let tasks = use_memo(move || crate::state::Shared(std::rc::Rc::new(task_names(&d.timeline.read()))));
     let mut pan = use_signal(|| None::<Pan>);
     // (Latched through pointer-up: a click fires after it, when pan is
     // already none — so a drag never ends in a click.)
     let mut dragged = use_signal(|| false);
     let mut width = use_signal(|| 1000.0f64);
-    let depth = chart.depth();
     let sizes = use_context::<Signal<crate::layout::Sizes>>();
-    let height = chart_height(depth, sizes().chart);
+    let (a, span) = (d.window)();
+    let height = chart_height(chart.depth(a, a + span), sizes().chart);
+    let scale = move || {
+        let (a, span) = (d.window)();
+        Scale { a, span, width: width() }
+    };
     // (How far the stack rows are scrolled up from their bottom: kept as the
     // window moves and the chart grows or shrinks, so the bars stay where
     // they are, the outermost at the bottom; at first, none.)
     let mut from_bottom = use_signal(|| 0);
-    // (A drag's pan so far (px), drawn until it ends; and the canvases
-    // mounted: either draws again.)
-    let mut offset = use_signal(|| 0.0f64);
+    // (The canvases mounted: then drawn.)
     let mut mounted = use_signal(|| false);
-    // (A drag under way: the chart a window wider on each side, once, drawn
-    // shifted as the pointer moves: what the drag brings in is there.)
-    let wide = use_memo(move || {
-        let p = pan().filter(|_| dragged())?;
-        let (span, n) = (p.b - p.a + 1, d.chart.peek().cols.len().max(1));
-        let (wa, wb) = (p.a.saturating_sub(span), (p.b + span).min(steps - 1));
-        let chart = machine().view(|v| v.chart(wa, wb, n * (wb - wa + 1) / span));
-        let tasks = task_spans(&chart);
-        Some(crate::state::Shared(std::rc::Rc::new((wa, chart, tasks))))
-    });
     use_effect(move || {
         mounted();
-        let chart = d.chart.cloned();
-        let height = chart_height(chart.depth(), sizes().chart);
-        let (sa, sb) = (d.window)();
-        // (A step's place, px across the window; the drag's pan added.)
-        let col = width() / chart.cols.len().max(1) as f64;
-        let step_px = width() / (sb - sa + 1) as f64;
-        let x = |s: f64| (s >= sa as f64 && s < (sb + 1) as f64).then(|| (s - sa as f64) * step_px + offset());
-        // (The moment shown's (the pointer's, else the cursor's); the calls on its stack.)
+        let chart = d.timeline.cloned();
+        let scale = scale();
+        let height = chart_height(chart.depth(scale.a, scale.a + scale.span), sizes().chart);
+        // (The calls on the moment's stack; the bar outlined: the one under
+        // the pointer, else the frame shown's call.)
         let stack = d.stack.read();
         let calls: Vec<(usize, String)> = stack.iter().map(|f| (f.first, f.func.clone())).collect();
-        // (The bar outlined: the one under the pointer, else the frame shown's call.)
         let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
-        let wide = wide.cloned();
-        let spans = spans.read();
-        let (chart, tasks, x0): (&Chart, &[TaskSpan], f64) = match wide.as_deref() {
-            Some((wa, c, t)) => (c, t, (*wa as f64 - sa as f64) * step_px + offset()),
-            None => (&chart, &spans, offset()),
-        };
-        draw_chart(chart, tasks, (width(), height), (x0, col), &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
-                   d.hover_step.cloned().or(d.cursor_step.cloned()).and_then(x), stack.len().checked_sub(1 + d.frame.cloned()),
+        draw_chart(&chart, &tasks.read(), scale, height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
+                   d.hover_step.cloned().or(d.cursor_step.cloned()), stack.len().checked_sub(1 + d.frame.cloned()),
                    ui.cursor.read().as_ref().and_then(|m| m.level));
         if let Some(scroll) = element("timeline-scroll") {
             scroll.set_scroll_top((scroll.scroll_height() - scroll.client_height() - *from_bottom.peek()).max(0));
         }
     });
-    // (One rule for hover and click: the bar under the pointer, and the
-    // moment that column samples; off the bars, at level `off`.)
-    let hit = move |chart: &Chart, x: f64, y: f64, off: Option<usize>| -> Option<(Option<crate::state::Moment>, Option<usize>)> {
-        let k = ((x / width() * chart.cols.len() as f64).max(0.0) as usize).min(chart.cols.len().checked_sub(1)?);
+    // (One rule for hover and click: the step under the pointer, its
+    // stack's bar there, and the moment; off the bars, at level `off`.)
+    let hit = move |x: f64, y: f64, off: Option<usize>| -> Option<(Option<crate::state::Moment>, Option<usize>)> {
+        let s = scale().step(x).floor();
+        let i = machine().view(|v| (s >= 0.0).then(|| v.rec.steps.get(s as usize).map(|x| x.0)).flatten())?;
+        let stack = d.timeline.peek().at(s as usize);
         let dd = ((height - y) / ROW).floor();
-        let bar = (y < height && dd >= 0.0 && (dd as usize) < chart.cols[k].frames.len()).then(|| chart.cols[k].frames[dd as usize] as usize);
+        let bar = (y < height && dd >= 0.0 && (dd as usize) < stack.len()).then(|| stack[dd as usize] as usize);
         let level = bar.map(|_| dd as usize).or(off);
-        Some((Ui::moment_at(d, chart.cols[k].i, Some(chart.cols[k].step), level), bar))
+        Some((Ui::moment_at(d, i, Some(s as usize), level), bar))
     };
     // (The wheel: up and down zoom around the pointer's step, in
     // proportion to how far it turned; left and right (or Shift) pan.)
@@ -390,8 +391,12 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let (start, span) = wheel_window((d.window)(), x, width(), dx, dy, shift, (dy * ZOOM).exp());
         ui.view(start, span);
     };
-    let labels: Vec<String> = chart.bars.iter().map(|bar| bar.name.clone()).collect();
-    let task_labels: Vec<String> = tasks.iter().map(|task| task.name.clone()).collect();
+    // (For a screen reader: the bars and tasks the window has, once each.)
+    let (b, labels, task_labels) = (a + span, std::collections::BTreeSet::new(), tasks.read().clone());
+    let labels: Vec<String> = (0..chart.depth(a, b)).flat_map(|d| chart.spans(d, a, b).iter().map(|s| chart.bars[s.2 as usize].name.clone()))
+        .fold(labels, |mut set, n| { set.insert(n); set }).into_iter().collect();
+    let k0 = chart.tasks.len() - chart.tasks.iter().rev().take_while(|s| s.1 as f64 > a).count();
+    let task_labels: Vec<String> = (0..chart.tasks_in(a, b).len()).map(|k| task_labels[k0 + k].0.clone()).collect();
     rsx! {
         div { id: "timeline-chart", class: "chart",
             onresize: move |e| if let Ok(s) = e.get_content_box_size() { width.set(s.width.max(1.0)) },
@@ -410,63 +415,55 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                 dragged.set(false);
                 let p = e.client_coordinates();
                 let scroll = element("timeline-scroll").map_or(0, |e| e.scroll_top());
-                let (a, b) = (d.window)();
                 let pointer_id = e.pointer_id();
                 if let Some(chart) = element("timeline-chart") {
                     let _ = chart.set_pointer_capture(pointer_id);
                 }
-                pan.set(Some(Pan { x: p.x, y: p.y, scroll, a, b, pointer_id }));
+                pan.set(Some(Pan { x: p.x, y: p.y, scroll, window: (d.window)(), pointer_id }));
             },
-            onpointermove: {
-                let chart = chart.clone();
-                move |e: PointerEvent| {
-                    if let Some(p) = pan() {
-                        if p.pointer_id != e.pointer_id() { return }
-                        let at = e.client_coordinates();
-                        let (dx, dy) = (at.x - p.x, at.y - p.y);
-                        // (Past 4 px: a drag.)
-                        if dx.hypot(dy) >= 4.0 || *dragged.peek() {
-                            if !*dragged.peek() {
-                                dragged.set(true);
-                                ui.set_hover(None);
-                                tip.set(None);
-                            }
-                            // (Up and down: the rows, their distance from the bottom
-                            // kept before the redraw the pan makes restores it.)
-                            if let Some(scroll) = element("timeline-scroll") {
-                                let max = scroll.scroll_height() - scroll.client_height();
-                                let top = ((p.scroll as f64 - dy).round() as i32).clamp(0, max);
-                                from_bottom.set(max - top);
-                                scroll.set_scroll_top(top);
-                            }
-                            offset.set(clamped_pan((p.a, p.b), dx, width(), steps).2);
-                            return;
+            onpointermove: move |e: PointerEvent| {
+                if let Some(p) = pan() {
+                    if p.pointer_id != e.pointer_id() { return }
+                    let at = e.client_coordinates();
+                    let (dx, dy) = (at.x - p.x, at.y - p.y);
+                    // (Past 4 px: a drag, the window and the rows moving with the pointer.)
+                    if dx.hypot(dy) >= 4.0 || *dragged.peek() {
+                        if !*dragged.peek() {
+                            dragged.set(true);
+                            ui.set_hover(None);
+                            tip.set(None);
                         }
+                        // (Up and down: the rows, their distance from the bottom
+                        // kept before the redraw the pan makes restores it.)
+                        if let Some(scroll) = element("timeline-scroll") {
+                            let max = scroll.scroll_height() - scroll.client_height();
+                            let top = ((p.scroll as f64 - dy).round() as i32).clamp(0, max);
+                            from_bottom.set(max - top);
+                            scroll.set_scroll_top(top);
+                        }
+                        let (start, span) = p.window;
+                        ui.view(start - dx / width() * span, span);
+                        return;
                     }
-                    // (Else the moment under the pointer shown everywhere but the line: over a bar, what its call was.)
-                    let p = e.client_coordinates();
-                    let Some((x, y)) = chart_coordinates(p.x, p.y) else { return };
-                    // (Off the bars, the level chosen, kept.)
-                    let Some((hover, bar)) = hit(&chart, x, y, ui.level()) else { return };
-                    ui.set_hover(hover);
-                    match bar.map(|b| &chart.bars[b]) {
-                        None => if tip().is_some() { tip.set(None) },
-                        Some(b) => match tip() {
-                            Some(t) if t.call.0 == b.first && t.call.1 == b.name => tip.set(Some(Tip { x: p.x, y: p.y, ..t })),
-                            _ => tip.set(Some(Tip { x: p.x, y: p.y, call: (b.first, b.name.clone()), lines: said(b.first, &b.name, b.inlined) })),
-                        },
-                    }
+                }
+                // (Else the moment under the pointer shown everywhere but the line: over a bar, what its call was.)
+                let p = e.client_coordinates();
+                let Some((x, y)) = chart_coordinates(p.x, p.y) else { return };
+                // (Off the bars, the level chosen, kept.)
+                let Some((hover, bar)) = hit(x, y, ui.level()) else { return };
+                ui.set_hover(hover);
+                let chart = d.timeline.peek();
+                match bar.map(|b| &chart.bars[b]) {
+                    None => if tip.peek().is_some() { tip.set(None) },
+                    Some(b) => match tip() {
+                        Some(t) if t.call.0 == b.first && t.call.1 == b.name => tip.set(Some(Tip { x: p.x, y: p.y, ..t })),
+                        _ => tip.set(Some(Tip { x: p.x, y: p.y, call: (b.first, b.name.clone()), lines: said(b.first, &b.name, b.inlined) })),
+                    },
                 }
             },
             onpointerup: move |e| {
                 if let Some(p) = pan().filter(|p| p.pointer_id == e.pointer_id()) {
-                    let dx = e.client_coordinates().x - p.x;
                     pan.set(None);
-                    offset.set(0.0);
-                    if *dragged.peek() && dx != 0.0 {
-                        let (start, span, _) = clamped_pan((p.a, p.b), dx, width(), steps);
-                        ui.view(start, span);
-                    }
                     if let Some(chart) = element("timeline-chart") {
                         let _ = chart.release_pointer_capture(p.pointer_id);
                     }
@@ -474,21 +471,17 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             },
             // (A click, not a drag: resolve its coordinates afresh, then
             // commit; off the bars, no level chosen: the innermost.)
-            onclick: {
-                let chart = chart.clone();
-                move |e: MouseEvent| {
-                    if dragged() { dragged.set(false); return }
-                    let p = e.client_coordinates();
-                    if let Some(moment) = chart_coordinates(p.x, p.y).and_then(|(x, y)| hit(&chart, x, y, None)).and_then(|h| h.0) {
-                        ui.commit(Some(moment));
-                    }
+            onclick: move |e: MouseEvent| {
+                if dragged() { dragged.set(false); return }
+                let p = e.client_coordinates();
+                if let Some(moment) = chart_coordinates(p.x, p.y).and_then(|(x, y)| hit(x, y, None)).and_then(|h| h.0) {
+                    ui.commit(Some(moment));
                 }
             },
             onpointercancel: move |e: PointerEvent| {
                 if pan().is_some_and(|p| p.pointer_id == e.pointer_id()) {
                     pan.set(None);
                     dragged.set(false);
-                    offset.set(0.0);
                 }
             },
             onmouseleave: move |_| {

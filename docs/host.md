@@ -167,7 +167,7 @@ The current replay boundary is closure-based:
 - `Machine::at_moment` additionally reconstructs memory after a selected record
   and lends both the view and that historical memory.
 
-The page uses these methods for syscalls, reconstructed lines, chart columns,
+The page uses these methods for syscalls, reconstructed lines, the timeline,
 stacks, tasks, objects, notes, origins, source definitions, and run-to-line
 lookups. Historical memory is available only through `Machine::at_moment`.
 

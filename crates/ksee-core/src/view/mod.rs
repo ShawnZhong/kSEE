@@ -24,7 +24,7 @@ mod value;
 #[cfg(test)]
 mod tests;
 
-pub use chart::{clamped_pan, wheel_window, Bar, Chart, Column};
+pub use chart::{wheel_window, Bar, Timeline};
 pub use frames::{run_to, step, Called, Frame, Line};
 pub use objects::{Diff, Group, Node, Streak};
 pub use stores::{Note, RegionKind, Write};

@@ -56,8 +56,7 @@ function, first record, the record that ends it, the call it was made
 from and where that one was then), and per record where its task is after
 it (its innermost call, the block and the stretch of its lines). So the
 Stack at a record (from the innermost call out, through each call's
-caller), where a call ends, the stack chart (at each column's first
-record, the task running there and its stack) and a store's line are
+caller), where a call ends, the timeline (at each step, the task running there and its stack) and a store's line are
 lookups, not walks from the first record.
 
 ## Lines within blocks
@@ -79,7 +78,7 @@ made a call says what the call returned (`called`), from its return on:
 The run-to-line lookup finds the next or previous reconstructed step for a
 given source line.
 
-## Records, line steps, and chart columns
+## Records and line steps
 
 These are related but not interchangeable units:
 
@@ -88,15 +87,16 @@ These are related but not interchangeable units:
 - A **line step** is reconstructed from a block's ordered source lines and the
   calls between its stretches. One block record can therefore yield several
   steps, while store and comparison records refine positions within them.
-- A **chart column** samples a line step from the requested step window. The
-  chart uses a fixed column count, so it can omit steps from a wide window or
-  repeat positions in a narrow one.
-
 The timeline's axis is the line steps themselves (`Recording::steps`): each
 syscall's lines exactly as stepping walks them (`View::lines`), and between
-syscalls each task's. So a call's bar is as wide as the steps it takes, and
-one step of the cursor moves it one step across the chart. A column carries
-its step, so the page maps a hover or click back to that line.
+syscalls each task's. `View::timeline` finds, once a snapshot, each row's
+bars as the exact steps they span (a call, or code inlined into it, for as
+long as it is on the stack there) and which task ran when; nothing is
+sampled. A window is fractional steps, its start and span: drawing it is a
+transform of those spans (a bar thinner than a pixel, once per pixel), and a
+hover or click maps a pixel back to its step the same way. So a call's bar is
+as wide as the steps it takes, and one step of the cursor moves it one step
+across the chart.
 
 ## Inlined code
 

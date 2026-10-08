@@ -6,13 +6,12 @@
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use ksee_core::view::{run_to, Chart, Frame, Line, RunSummary};
+use ksee_core::view::{run_to, Frame, Line, RunSummary, Timeline};
 
 use crate::machine;
 
-/// The chart's columns: moments across its window; and the fewest steps it shows.
-const COLUMNS: usize = 1200;
-const MIN_SPAN: usize = 20;
+/// The fewest steps the timeline's window shows.
+const MIN_SPAN: f64 = 20.0;
 
 /// A value computed once and shared (a memo's: compared by identity, not
 /// by content).
@@ -52,7 +51,7 @@ pub struct Moment {
 
 /// What the state makes, computed once each time what it depends on
 /// changes: the moment shown (the pointer's, else the cursor's), its run
-/// (as the snapshot has it) and lines; the chart's window and the chart;
+/// (as the snapshot has it) and lines; the timeline and its window;
 /// its line, stack, and the frame shown on it; and where the cursor and
 /// the pointer's moment are, in steps (their lines': the chart's lines).
 #[derive(Clone, Copy)]
@@ -60,8 +59,9 @@ pub struct Derived {
     pub shown: Memo<Option<Moment>>,
     pub run: Memo<Option<RunSummary>>,
     pub lines: Memo<Shared<Vec<Line>>>,
-    pub window: Memo<(usize, usize)>,
-    pub chart: Memo<Shared<Chart>>,
+    /// The timeline's window: its first step and how many (fractional).
+    pub window: Memo<(f64, f64)>,
+    pub timeline: Memo<Shared<Timeline>>,
     pub line: Memo<Option<Line>>,
     pub stack: Memo<Shared<Vec<Frame>>>,
     pub frame: Memo<usize>,
@@ -97,17 +97,16 @@ impl Derived {
             (ui.snapshot)();
             Shared(Rc::new(run.cloned().map_or_else(Vec::new, |s| run_lines(&s))))
         });
-        // (The chart's: none before the kernel is up.)
+        // (The timeline's: none before the kernel is up; a snapshot's, once.)
         let up = move || ui.up();
         let window = use_memo(move || {
             (ui.snapshot)();
-            let end = if up() { machine().view(|v| v.rec.steps.len()).saturating_sub(1) } else { 0 };
-            (ui.win)().unwrap_or((0, end))
+            let all = if up() { machine().view(|v| v.rec.steps.len()) } else { 0 };
+            (ui.win)().unwrap_or((0.0, all as f64))
         });
-        let chart = use_memo(move || {
+        let timeline = use_memo(move || {
             (ui.snapshot)();
-            let (a, b) = window();
-            Shared(Rc::new(if up() { machine().view(|v| v.chart(a, b, COLUMNS)) } else { Chart::default() }))
+            Shared(Rc::new(if up() { machine().view(|v| v.timeline()) } else { Timeline::default() }))
         });
         let line = use_memo(move || lines.read().get(shown()?.line).cloned());
         // (Its values as they are just before the line runs: at its own
@@ -130,7 +129,7 @@ impl Derived {
         });
         // (The pointer's: the moment shown, its lines `lines`.)
         let hover_step = use_memo(move || moment_step(&(ui.hover)()?, &lines.read()));
-        Derived { shown, run, lines, window, chart, line, stack, frame, cursor_step, hover_step }
+        Derived { shown, run, lines, window, timeline, line, stack, frame, cursor_step, hover_step }
     }
 }
 
@@ -146,8 +145,9 @@ pub struct Ui {
     /// pointer, if it is over the chart.
     pub cursor: Signal<Option<Moment>>,
     pub hover: Signal<Option<Moment>>,
-    /// The chart's window (steps, both ends in; none: the whole recording).
-    pub win: Signal<Option<(usize, usize)>>,
+    /// The timeline's window: its first step and how many, fractional
+    /// (none: the whole recording).
+    pub win: Signal<Option<(f64, f64)>>,
     pub tab: Signal<Tab>,
     /// The kernel: booting (none), up, or why it could not start.
     pub kernel: Signal<Option<Result<(), String>>>,
@@ -244,13 +244,12 @@ impl Ui {
         self.commit(Some(Moment { run: k, line: own.unwrap_or(0), level: None }));
     }
 
-    /// The chart's window: `span` steps from `start`, kept in the recording
-    /// (as wide, at its ends).
-    pub fn view(mut self, start: f64, span: usize) {
-        let total = machine().view(|v| v.rec.steps.len()).max(1);
-        let span = span.max(MIN_SPAN).min(total - 1);
-        let a = (start.max(0.0) as usize).min(total - 1 - span);
-        self.win.set(Some((a, a + span)));
+    /// The timeline's window: `span` steps from `start`, kept in the
+    /// recording (as wide, at its ends).
+    pub fn view(mut self, start: f64, span: f64) {
+        let total = machine().view(|v| v.rec.steps.len()) as f64;
+        let span = span.clamp(MIN_SPAN.min(total), total.max(1.0));
+        self.win.set(Some((start.clamp(0.0, (total - span).max(0.0)), span)));
     }
 
     /// The cursor to line `k` of its run, at the level chosen.

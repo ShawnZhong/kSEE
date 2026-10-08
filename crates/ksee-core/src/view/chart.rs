@@ -1,92 +1,34 @@
-//! The timeline (View::chart): the stack chart's columns and bars over a
-//! window of the recording's steps, and the window's moves (a wheel, a
-//! drag).
+//! The timeline (View::timeline): the whole recording as a stack chart,
+//! exactly: each call (and the code inlined into it) a bar over the steps
+//! it is on, row by row, and which task ran when; and a window's moves (a
+//! wheel). A window is fractional steps (its start, its span), so drawing
+//! it is a transform of the steps, not a sampling of them.
 
 use super::*;
 
-/// The chart window made by a wheel gesture. Its ends are inclusive, while
-/// the returned span is the distance between them. A gesture follows its
-/// dominant axis so trackpad cross-axis noise cannot pan and zoom at once.
-/// `width` is positive; `zoom` is the vertical gesture's span multiplier.
-pub fn wheel_window((a, b): (usize, usize), x: f64, width: f64, dx: f64, dy: f64, shift: bool, zoom: f64) -> (f64, usize) {
-    let span = (b - a + 1) as f64;
+/// The window (`start`, `span`, in steps) a wheel gesture makes, the
+/// pointer at `x` of `width` px; kept in the recording by its user. A
+/// gesture follows its dominant axis so trackpad cross-axis noise cannot
+/// pan and zoom at once; `zoom` is the vertical gesture's span multiplier.
+pub fn wheel_window((start, span): (f64, f64), x: f64, width: f64, dx: f64, dy: f64, shift: bool, zoom: f64) -> (f64, f64) {
     if shift || dx.abs() > dy.abs() {
         let delta = if shift { dy } else { dx };
-        return (a as f64 + delta / width * span, b - a);
+        return (start + delta / width * span, span);
     }
-
     let at = (x / width).clamp(0.0, 1.0);
     let new = span * zoom;
-    (a as f64 + at * (span - new), (new as usize).saturating_sub(1))
+    (start + at * (span - new), new)
 }
 
-/// A drag of `dx` px over a chart `width` px wide, its window `window`, kept
-/// in the recording's `steps`: the window's start and span then, and the
-/// offset (px) the drawn chart moves by meanwhile.
-pub fn clamped_pan((a, b): (usize, usize), dx: f64, width: f64, steps: usize) -> (f64, usize, f64) {
-    let span = b.saturating_sub(a);
-    let visible = span.saturating_add(1).min(steps.max(1));
-    let max_start = steps.saturating_sub(visible) as f64;
-    let start = (a as f64 - dx / width.max(1.0) * visible as f64).clamp(0.0, max_start);
-    (start, span, (a as f64 - start) / visible as f64 * width.max(1.0))
-}
-
-/// A stack chart (View::chart): its columns, and the bars they stack.
+/// The timeline: its bars, each row's spans of them, and the tasks' spans.
 #[derive(Debug, Default)]
-pub struct Chart {
+pub struct Timeline {
     pub bars: Vec<Bar>,
-    pub cols: Vec<Column>,
-}
-
-impl Chart {
-    /// How many bars its deepest column stacks.
-    pub fn depth(&self) -> usize {
-        self.cols.iter().map(|c| c.frames.len()).max().unwrap_or(0)
-    }
-
-    /// Each row's spans: a bar over the columns it is on, in a row, as the
-    /// page draws it: (depth, first column, one past the last, bar).
-    pub fn bar_spans(&self) -> Vec<(u32, usize, usize, u32)> {
-        let n = self.cols.len();
-        let depth = self.depth();
-        let mut spans = Vec::new();
-        for dd in 0..depth {
-            let mut k = 0;
-            while k < n {
-                let Some(&bar) = self.cols.get(k).and_then(|c| c.frames.get(dd)) else { k += 1; continue };
-                let mut e = k + 1;
-                while self.cols.get(e).and_then(|c| c.frames.get(dd)) == Some(&bar) {
-                    e += 1;
-                }
-                spans.push((dd as u32, k, e, bar));
-                k = e;
-            }
-        }
-        spans
-    }
-
-    /// Which task ran when: a span of columns each, as the page draws it
-    /// under the chart: (first column, one past the last, task).
-    pub fn task_spans(&self) -> Vec<(usize, usize, u32)> {
-        let mut spans: Vec<(usize, usize, u32)> = Vec::new();
-        for (k, c) in self.cols.iter().enumerate() {
-            match spans.last_mut() {
-                Some(r) if r.2 == c.task => r.1 = k + 1,
-                _ => spans.push((k, k + 1, c.task)),
-            }
-        }
-        spans
-    }
-}
-
-/// A column: its step and record, the task running there, and its stack
-/// then, as bars (indexes in Chart::bars), outermost first.
-#[derive(Debug)]
-pub struct Column {
-    pub step: usize,
-    pub i: usize,
-    pub task: u32,
-    pub frames: Vec<u32>,
+    /// Per row (0: the outermost): its spans, (first step, one past the
+    /// last, bar), in order.
+    pub rows: Vec<Vec<(usize, usize, u32)>>,
+    /// Which task ran when: (first step, one past the last, task), in order.
+    pub tasks: Vec<(usize, usize, u32)>,
 }
 
 /// A bar: a call from record `first`, or code inlined into it; its
@@ -99,48 +41,130 @@ pub struct Bar {
     pub inlined: bool,
 }
 
+impl Timeline {
+    /// Row `d`'s spans that overlap steps `a..b`.
+    pub fn spans(&self, d: usize, a: f64, b: f64) -> &[(usize, usize, u32)] {
+        self.rows.get(d).map_or(&[], |row| within(row, a, b))
+    }
+
+    /// The tasks' spans that overlap steps `a..b`.
+    pub fn tasks_in(&self, a: f64, b: f64) -> &[(usize, usize, u32)] {
+        within(&self.tasks, a, b)
+    }
+
+    /// How many rows steps `a..b` stack.
+    pub fn depth(&self, a: f64, b: f64) -> usize {
+        (0..self.rows.len()).rev().find(|&d| !self.spans(d, a, b).is_empty()).map_or(0, |d| d + 1)
+    }
+
+    /// The stack at step `s`: its bars, outermost first.
+    pub fn at(&self, s: usize) -> Vec<u32> {
+        self.rows.iter().map_while(|row| {
+            let k = row.partition_point(|x| x.1 <= s);
+            row.get(k).filter(|x| x.0 <= s).map(|x| x.2)
+        }).collect()
+    }
+}
+
+/// The spans of `spans` (in order) that overlap steps `a..b`.
+fn within(spans: &[(usize, usize, u32)], a: f64, b: f64) -> &[(usize, usize, u32)] {
+    let i = spans.partition_point(|s| s.1 as f64 <= a);
+    let j = spans.partition_point(|s| (s.0 as f64) < b);
+    &spans[i..j.max(i)]
+}
+
 impl View<'_> {
-    /// A stack chart of steps `first..=last` in `n` columns, each a
-    /// moment spread evenly over the steps (Recording::steps): the task
-    /// there and its call stack then, outermost first, each call and the
-    /// code inlined into it a bar (in `bars`, once each).
-    pub fn chart(&self, first: usize, last: usize, n: usize) -> Chart {
+    /// The timeline: at each step (Recording::steps), the task there and
+    /// its call stack then, outermost first, each call and the code
+    /// inlined into it a bar (in `bars`, once each), a span of a row for as
+    /// long as it stays.
+    pub fn timeline(&self) -> Timeline {
         let (t, rec) = (self.tables, self.rec);
-        let mut chart = Chart::default();
-        let last = last.min(rec.steps.len().saturating_sub(1));
-        if rec.steps.is_empty() || n == 0 || first > last {
-            return chart;
-        }
+        let mut tl = Timeline::default();
         let mut known: BTreeMap<(usize, Option<u32>), u32> = BTreeMap::new();
-        // (The k-th column: step first + k * span / n.)
-        let span = last - first + 1;
-        for step in (0..n).map(|k| first + k * span / n) {
-            let (i, nth, cut) = rec.steps[step];
-            let mut frames = Vec::new();
-            let stack = rec.calls.stack_at(t, i, Some(nth as usize));
-            for (d, c) in stack.iter().enumerate() {
-                // (The innermost call without the code inlined its line has not entered yet, as the Stack has it.)
-                let mut nest = self.nest(c);
-                if d + 1 == stack.len() {
-                    nest.drain(..(cut as usize).min(nest.len() - 1));
-                }
-                for (k, at) in nest.into_iter().rev() {
-                    let bar = *known.entry((c.first, k)).or_insert_with(|| {
-                        let place = self.place(c.func);
-                        let name = k.map_or_else(|| place.as_ref().map_or("?".into(), |p| p.name.clone()), |k| self.inline_name(k));
-                        // (Its file: code inlined, its own function's, where its line is.)
-                        let file = match k {
-                            Some(_) => at.map(|l| t.file(l).to_string()),
-                            None => place.map(|p| p.file),
-                        };
-                        chart.bars.push(Bar { first: c.first, name, file, inlined: k.is_some() });
-                        chart.bars.len() as u32 - 1
-                    });
-                    frames.push(bar);
+        // (A call's bars, the code inlined into it at its line, outermost
+        // first; the innermost without what it has not entered yet, `cut`.)
+        let mut bars = |c: &stack::StackCall, cut: usize, out: &mut Vec<u32>| {
+            let mut nest = self.nest(c);
+            nest.drain(..cut.min(nest.len() - 1));
+            for (k, at) in nest.into_iter().rev() {
+                out.push(*known.entry((c.first, k)).or_insert_with(|| {
+                    let place = self.place(c.func);
+                    let name = k.map_or_else(|| place.as_ref().map_or("?".into(), |p| p.name.clone()), |k| self.inline_name(k));
+                    // (Its file: code inlined, its own function's, where its line is.)
+                    let file = match k {
+                        Some(_) => at.map(|l| t.file(l).to_string()),
+                        None => place.map(|p| p.file),
+                    };
+                    tl.bars.push(Bar { first: c.first, name, file, inlined: k.is_some() });
+                    tl.bars.len() as u32 - 1
+                }));
+            }
+        };
+        // (Each call's callers' bars: its caller's, and its caller's own at
+        // the line calling it; found once a call.)
+        let mut callers: Vec<Option<alloc::rc::Rc<Vec<u32>>>> = alloc::vec![None; rec.calls.calls.len()];
+        let mut callers_of = |k: u32, bars: &mut dyn FnMut(&stack::StackCall, usize, &mut Vec<u32>)| -> alloc::rc::Rc<Vec<u32>> {
+            // (The calls out from k whose callers are not found yet, then each, outermost first.)
+            let mut chain = Vec::new();
+            let mut at = k;
+            while callers[at as usize].is_none() {
+                match rec.calls.caller(t, at) {
+                    Some((parent, call)) => { chain.push((at, call)); at = parent; }
+                    None => { callers[at as usize] = Some(Default::default()); }
                 }
             }
-            chart.cols.push(Column { step, i, task: rec.tasks.get(i).copied().unwrap_or(0), frames });
+            for (k, call) in chain.into_iter().rev() {
+                let parent = rec.calls.calls[k as usize].parent.unwrap_or(k);
+                let mut own = (*callers[parent as usize].clone().unwrap_or_default()).clone();
+                bars(&call, 0, &mut own);
+                callers[k as usize] = Some(alloc::rc::Rc::new(own));
+            }
+            callers[k as usize].clone().unwrap_or_default()
+        };
+        // (And the innermost's, the same while its call, its inlined code and
+        // what it has not entered yet are.)
+        let (mut inside, mut own) = (None, Vec::new());
+        let mut frames = Vec::new();
+        // (Each row's bar now, and since which step: closed, a span, as it changes.)
+        let mut open: Vec<(usize, u32)> = Vec::new();
+        let close = |rows: &mut Vec<Vec<(usize, usize, u32)>>, d: usize, (start, bar): (usize, u32), end: usize| {
+            if rows.len() <= d {
+                rows.resize_with(d + 1, Vec::new);
+            }
+            rows[d].push((start, end, bar));
+        };
+        for (step, &(i, nth, cut)) in rec.steps.iter().enumerate() {
+            frames.clear();
+            if let Some((k, inner)) = rec.calls.innermost(t, i, Some(nth as usize)) {
+                frames.extend_from_slice(&callers_of(k, &mut bars));
+                let key = (inner.first, inner.step.and_then(|s| s.inlined), cut);
+                if inside != Some(key) {
+                    own.clear();
+                    bars(&inner, cut as usize, &mut own);
+                    inside = Some(key);
+                }
+                frames.extend_from_slice(&own);
+            }
+            let same = open.iter().zip(&frames).take_while(|(o, f)| o.1 == **f).count();
+            for (d, o) in open.drain(same..).enumerate().rev() {
+                close(&mut tl.rows, same + d, o, step);
+            }
+            open.extend(frames[same..].iter().map(|&b| (step, b)));
+            extend(&mut tl.tasks, step, rec.tasks.get(i).copied().unwrap_or(0));
         }
-        chart
+        for (d, o) in open.into_iter().enumerate() {
+            close(&mut tl.rows, d, o, rec.steps.len());
+        }
+        tl
+    }
+}
+
+/// `spans` with `what` at `step`: the last span longer, if it is `what`'s
+/// and ends there; else a new one.
+fn extend(spans: &mut Vec<(usize, usize, u32)>, step: usize, what: u32) {
+    match spans.last_mut() {
+        Some(s) if s.1 == step && s.2 == what => s.1 = step + 1,
+        _ => spans.push((step, step + 1, what)),
     }
 }

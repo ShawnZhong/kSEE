@@ -189,19 +189,33 @@ impl Calls {
     /// record `i` runs if it starts them (a block, a return into one), or,
     /// if `nth`, at the nth (a LineStep's).
     pub(crate) fn stack_at(&self, t: &Tables, i: usize, nth: Option<usize>) -> Vec<StackCall> {
-        let Some(p) = self.place_at(i) else { return Vec::new() };
-        // (At the record that starts a stretch, its task is at the
-        // stretch's first line, or the `nth`; after, at its last.)
-        let mut step = self.stretch(t, i).and_then(|(_, s)| s.get(nth.unwrap_or(0)).copied()).or_else(|| self.line(t, p));
-        let mut out = Vec::new();
-        let mut k = Some(p.call);
-        while let Some(c) = k.map(|k| &self.calls[k as usize]) {
-            out.push(StackCall { func: c.func, first: c.first, step });
-            step = self.places.get(c.site as usize).and_then(|p| self.line(t, p));
-            k = c.parent;
+        let Some((mut k, inner)) = self.innermost(t, i, nth) else { return Vec::new() };
+        let mut out = alloc::vec![inner];
+        while let Some((parent, at)) = self.caller(t, k) {
+            out.push(at);
+            k = parent;
         }
         out.reverse();
         out
+    }
+
+    /// The innermost call of the stack at record `i` (see stack_at): its
+    /// index in `calls`, and it at its line.
+    pub(crate) fn innermost(&self, t: &Tables, i: usize, nth: Option<usize>) -> Option<(u32, StackCall)> {
+        let p = self.place_at(i)?;
+        // (At the record that starts a stretch, its task is at the
+        // stretch's first line, or the `nth`; after, at its last.)
+        let step = self.stretch(t, i).and_then(|(_, s)| s.get(nth.unwrap_or(0)).copied()).or_else(|| self.line(t, p));
+        let c = &self.calls[p.call as usize];
+        Some((p.call, StackCall { func: c.func, first: c.first, step }))
+    }
+
+    /// Call `k`'s caller: its index, and it at its line calling `k`.
+    pub(crate) fn caller(&self, t: &Tables, k: u32) -> Option<(u32, StackCall)> {
+        let c = &self.calls[k as usize];
+        let parent = c.parent?;
+        let p = &self.calls[parent as usize];
+        Some((parent, StackCall { func: p.func, first: p.first, step: self.places.get(c.site as usize).and_then(|s| self.line(t, s)) }))
     }
 
     /// The line the store (or comparison, or variable set) at record `i` is on (its record's
