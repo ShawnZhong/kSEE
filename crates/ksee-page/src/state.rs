@@ -159,6 +159,8 @@ pub struct Ui {
     /// The moment under the pointer over the timeline: shown everywhere
     /// while it is there (a click there pins the cursor to it).
     pub hover: Signal<Option<Moment>>,
+    /// The last step on was In, every line: Back goes back the same way.
+    pub every: Signal<bool>,
     /// The timeline's window: its first step and how many, fractional
     /// (none: the whole recording).
     pub win: Signal<Option<(f64, f64)>>,
@@ -184,6 +186,7 @@ impl Ui {
             snapshot: Signal::new(0),
             cursor: Signal::new(None),
             hover: Signal::new(None),
+            every: Signal::new(false),
             win: Signal::new(None),
             tab: Signal::new(Tab::Stack),
             kernel: Signal::new(None),

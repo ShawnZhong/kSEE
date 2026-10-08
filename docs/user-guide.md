@@ -174,8 +174,8 @@ inlined into it) counts once.
 
 | Control | Action |
 |---|---|
-| Right, or → Next | The next line of the function you read, over what it calls; past its end, on in its caller. |
-| Left, or ← Back | The line before, the same way. |
+| Right, or → Next | The line that runs next in the function you read, over what it calls; past its end, on in its caller. |
+| Left, or ← Back | Back in time, not up the file, the way the last step came: after Next, the line that ran before in the function you read (in a loop, its turn before); after In, the very line before, wherever it is. |
 | Up, or ↑ In | The very next line, wherever it is: into the call this line makes (its first line), else on; with a caller's frame chosen, the frame above it. |
 | Down, or ↓ Out | Out to the caller, at its call (Next then goes on there). |
 | Hover the chart | See the moment there everywhere (the source, the Stack, the tabs), the bar's call in a tip; leave, and the page is back at the cursor. |

@@ -15,7 +15,7 @@ use crate::build::SITE;
 /// The course: its chapters, each its lessons (user/lessons/NAME.json)
 /// in order, from the simplest.
 const COURSE: &[(&str, &[&str])] = &[
-    ("Start here", &["start", "timeline", "stepping", "changes", "layers"]),
+    ("Start here", &["welcome", "start", "timeline", "stepping", "changes", "layers"]),
     ("A process", &["getpid", "prctl", "exec", "thread"]),
     ("Files, in memory", &["open-close", "dup", "read", "write", "open-fails", "create", "dir"]),
     ("Files on a disk (ext4)", &["ext4-read", "ext4-create", "ext4-write", "durable", "ext4-dir", "link", "remove"]),

@@ -3,7 +3,7 @@
   "question": "What did the kernel run for dup(1), line by line?",
   "text": [
     "The cursor is a moment of the recording: the source shows the line running then, marked, and the Stack the calls that led there, the innermost on top, each with its arguments and local variables as they were then. Move it with the buttons under the timeline, or the arrow keys:",
-    "→ Next and ← Back go through the function you are reading, a line at a time, over the calls it makes. ↑ In goes into the call the line makes (with none, on to the next line: ↑ alone follows every line the kernel ran). ↓ Out goes back to the caller, at its call.",
+    "→ Next goes through the function you are reading, a line at a time, over the calls it makes. ↑ In goes into the call the line makes (with none, on to the next line: ↑ alone follows every line the kernel ran). ← Back goes back in time the way you came, through the function after →, every line after ↑. ↓ Out goes back to the caller, at its call.",
     "1. Start at [__wasm_sys_dup](1:__wasm_sys_dup): the whole syscall is a few lines. With →: it finds the open file 1 stands for, a `struct file`; asks for a free number; and puts the file there.",
     "2. At the line asking for the number, ↑ goes in; again, until [alloc_fd](1:alloc_fd). It looks for the first number not in use, from `next_fd`, the lowest that may be free, in `open_fds`: a bitmap, a bit for each number, set while it is in use. ↓ comes back out.",
     "3. [fd_install](1:fd_install) puts the file at number 3 of the process's table, `fd_array`. On the Stack, `fd` is 3 and `file` the console's open file: click a pointer to open what it points to."

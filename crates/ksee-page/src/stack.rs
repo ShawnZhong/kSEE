@@ -13,13 +13,15 @@ use wasm_bindgen::prelude::Closure;
 use crate::machine;
 use crate::state::{Derived, Moment, Tab, Ui};
 
-/// A move of the moment read. Back and Next: the line before or after in
-/// the function you read (the frame chosen; else the innermost), over what
-/// it calls, on in its caller once it returns. In: up the stack, the frame
-/// above chosen; at the innermost, the very next line (into the call its
-/// line makes, if it makes one). Out: down it, the caller chosen, at its
-/// call. (A step reads the innermost frame
-/// it lands in: the frame chosen is one the cursor is not in yet.)
+/// A move of the moment read. Next: the line that runs next (in time: in a
+/// loop, its next turn), in the function you read (the frame chosen; else
+/// the innermost), over what it calls, on in its caller once it returns.
+/// In: up the stack, the frame above chosen; at the innermost, the very
+/// next line (into the call its line makes, if it makes one). Back: the
+/// way the last step on came (Ui::every), back: Next's, or In's, the very
+/// line before, deeper maybe. Out: down the stack, the caller chosen, at
+/// its call. (A step reads the innermost frame it lands in: the frame
+/// chosen is one the cursor is not in yet.)
 #[derive(Clone, Copy)]
 pub enum Move {
     Back,
@@ -43,8 +45,12 @@ pub fn walk(ui: Ui, d: Derived, m: Move) {
         Move::In if f > 0 => return ui.commit(read(f - 1)),
         Move::Out => return,
         Move::Back | Move::Next | Move::In => {
-            let dir = if matches!(m, Move::Back) { -1 } else { 1 };
-            if let Some(j) = step(&lines, at.line, dir, (!matches!(m, Move::In)).then_some(depth)) {
+            let mut every = ui.every;
+            let dir = match m {
+                Move::Back => -1,
+                _ => (every.set(matches!(m, Move::In)), 1).1,
+            };
+            if let Some(j) = step(&lines, at.line, dir, (!*every.peek()).then_some(depth)) {
                 return ui.commit(Some(Moment { run: k, line: j, level: None }));
             }
             dir
@@ -65,9 +71,10 @@ pub fn walk(ui: Ui, d: Derived, m: Move) {
     }
 }
 
-/// Under the strip: the moves (Move), with their keys as their icons: ←
-/// Back and → Next in the function read, ↑ In and ↓ Out on the stack; and where the cursor is: the frame you read (chosen on the Stack
-/// or the chart; else the innermost).
+/// Under the strip: the moves (Move), with their keys as their icons: →
+/// Next in the function read and ← Back the way it came, ↑ In and ↓ Out
+/// on the stack; and where the cursor is: the frame you read (chosen on
+/// the Stack or the chart; else the innermost).
 #[component]
 pub fn Transport() -> Element {
     let ui = use_context::<Ui>();
@@ -85,8 +92,8 @@ pub fn Transport() -> Element {
         .map_or(String::new(), |c| format!(" · {} returned {}", c.func, machine().tables().types.result(c.value)));
     rsx! {
         div { class: "transport",
-            button { title: "The line before in the function you read (←)", onclick: move |_| walk(ui, d, Move::Back), "← Back" }
-            button { title: "The next line in the function you read, over what it calls (→)", onclick: move |_| walk(ui, d, Move::Next), "→ Next" }
+            button { title: "Back in time, the way the last step came: after Next, the line before in the function you read; after In, the very line before (←)", onclick: move |_| walk(ui, d, Move::Back), "← Back" }
+            button { title: "On in time: the line that runs next, in the function you read, over its calls (→)", onclick: move |_| walk(ui, d, Move::Next), "→ Next" }
             button { title: "The very next line, into the call this line makes, if any (↑; with a caller's frame chosen: the frame above)",
                 onclick: move |_| walk(ui, d, Move::In), "↑ In" }
             button { title: "Out to the caller, at its call (↓)", onclick: move |_| walk(ui, d, Move::Out), "↓ Out" }
