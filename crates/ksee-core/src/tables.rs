@@ -5,6 +5,7 @@ use alloc::collections::BTreeMap;
 
 use crate::arch;
 use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 /// A source location; `file` indexes [`Tables::files`].
@@ -39,8 +40,9 @@ pub struct Function {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Var {
     pub of: u32,
-    pub function: String,
-    pub name: String,
+    /// (Shared: the same names, many times over.)
+    pub function: Arc<str>,
+    pub name: Arc<str>,
     pub param: u32,
     pub arg: u32,
 }
@@ -163,6 +165,13 @@ impl Tables {
         let mut unit = Unit::default();
         let mut names: BTreeMap<String, u32> = BTreeMap::new();
         let mut chains: BTreeMap<Vec<(u32, Loc)>, u32> = BTreeMap::new();
+        // (Each name once: variables repeat their functions' and their own.)
+        let mut pool: alloc::collections::BTreeSet<Arc<str>> = Default::default();
+        let mut intern = |s: &str| pool.get(s).cloned().unwrap_or_else(|| {
+            let r: Arc<str> = s.into();
+            pool.insert(r.clone());
+            r
+        });
         for line in code.lines() {
             let cols: Vec<&str> = line.split('\t').collect();
             match cols.as_slice() {
@@ -184,7 +193,7 @@ impl Tables {
                 ["V", id, k, of, function, name, param, arg] => {
                     if let (Ok(id), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) && !name.starts_with(crate::arch::MADE_UP) {
                         let (param, arg) = (param.parse().unwrap_or(0), arg.parse().unwrap_or(0));
-                        t.vars.insert((id, k), Var { of, function: function.to_string(), name: name.to_string(), param, arg });
+                        t.vars.insert((id, k), Var { of, function: intern(function), name: intern(name), param, arg });
                     }
                 }
                 ["F", id, name, location, known, rest @ ..] => {
@@ -224,6 +233,9 @@ impl Tables {
                             }));
                             steps.push(Step { loc: unit.loc(at), inlined });
                         }
+                        // (Exactly as long as they are: there are a hundred thousand.)
+                        steps.shrink_to_fit();
+                        cuts.shrink_to_fit();
                         t.blocks.insert((id, n), Block { steps, cuts });
                     }
                 }

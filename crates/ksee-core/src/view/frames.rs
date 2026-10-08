@@ -195,13 +195,13 @@ impl View<'_> {
         let args = self.rec.args.get(c.first).map(|(w, _)| self.tables.values(c.func, w)).unwrap_or_default();
         for (_, v) in self.tables.vars.range((c.func, 0)..=(c.func, u32::MAX)).filter(|(_, v)| v.arg > 0) {
             if let Some(&value) = args.get(v.arg as usize - 1) {
-                out.insert((v.function.as_str(), v.param, v.name.as_str()), (v, value));
+                out.insert((&*v.function, v.param, &*v.name), (v, value));
             }
         }
         for j in self.rec.calls.vars_of(c.first, at) {
             if let Record::Var { var, value, .. } = self.rec.records[j]
                 && let Some(v) = self.tables.vars.get(&(c.func, var)) {
-                out.insert((v.function.as_str(), v.param, v.name.as_str()), (v, value));
+                out.insert((&*v.function, v.param, &*v.name), (v, value));
             }
         }
         out
@@ -211,7 +211,7 @@ impl View<'_> {
     /// number, a local after them, in the order it declares them.
     fn declared(&self, v: &Var) -> (bool, usize) {
         match v.param {
-            0 => (true, self.tables.types.locals.get(&v.of).and_then(|l| l.iter().position(|l| l.0 == v.name)).unwrap_or(0)),
+            0 => (true, self.tables.types.locals.get(&v.of).and_then(|l| l.iter().position(|l| *l.0 == *v.name)).unwrap_or(0)),
             k => (false, k as usize),
         }
     }
@@ -226,7 +226,7 @@ impl View<'_> {
     pub(super) fn var_ty(&self, v: &Var) -> Option<u32> {
         let types = &self.tables.types;
         Some(match v.param {
-            0 => types.locals.get(&v.of)?.iter().find(|l| l.0 == v.name)?.1,
+            0 => types.locals.get(&v.of)?.iter().find(|l| *l.0 == *v.name)?.1,
             k => types.params.get(&v.of)?.get(k as usize - 1)?.1,
         })
     }

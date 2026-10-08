@@ -25,6 +25,8 @@ pub(super) async fn read() -> Check {
     editor().await.map_err(at("editor"))?;
     panels(&mut r).await.map_err(at("panels"))?;
     program().await.map_err(at("program"))?;
+    // (The memory the page took, kernel and all: it never shrinks.)
+    r.push(format!("{} MiB of memory", core::arch::wasm32::memory_size(0) * 64 / 1024));
     Ok(r.join("; "))
 }
 

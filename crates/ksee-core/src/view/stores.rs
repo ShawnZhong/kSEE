@@ -485,7 +485,7 @@ impl View<'_> {
             let Some(c) = calls.call_at(i) else { continue };
             let region = *vars.entry((c.first, var)).or_insert_with(|| {
                 let v = t.vars.get(&(c.func, var));
-                let r = v.and_then(|v| Some(Region { what: v.name.clone(), within: Some(v.function.clone()), kind: RegionKind::Var, ty: self.var_ty(v)?, addr: 0, size: 0, life: None, depth: c.depth }));
+                let r = v.and_then(|v| Some(Region { what: v.name.to_string(), within: Some(v.function.to_string()), kind: RegionKind::Var, ty: self.var_ty(v)?, addr: 0, size: 0, life: None, depth: c.depth }));
                 r.map(|r| (regions.push(r), regions.len() as u32 - 1).1)
             });
             let Some(region) = region else { continue };
