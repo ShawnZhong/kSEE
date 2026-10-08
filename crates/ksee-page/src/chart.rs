@@ -95,6 +95,7 @@ pub fn Timeline() -> Element {
             Overview {}
             div { class: "charthead",
                 span { class: "dim", "{title}"
+                    if let Some(k) = ui.run() { " · " a { title: "the window on this run, whole", onclick: move |_| ui.fit(k), "fit" } }
                     if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.win.set(None), "all" } }
                 }
                 Find {}

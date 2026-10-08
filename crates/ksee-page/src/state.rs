@@ -257,12 +257,15 @@ impl Ui {
 
     /// Select run `k` (an index in the runs), the cursor at its own code's
     /// first line (a syscall's: past the syscall entry's), on its innermost
-    /// frame; the timeline's window on the run, a twentieth more each side.
-    /// (Else the window is the reader's: it moves only to keep the cursor in
-    /// it, see Timeline.)
+    /// frame. (The window is the reader's: it moves only to keep the cursor
+    /// in it, see Timeline; or to fit a run.)
     pub fn select(self, k: usize) {
         let own = Ui::run_lines(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
         self.commit(Some(Moment { run: k, line: own.unwrap_or(0), level: None }));
+    }
+
+    /// The timeline's window on run `k`, a twentieth more each side.
+    pub fn fit(self, k: usize) {
         let span = machine().view(|v| v.rec.runs.get(k).map(|r| {
             let a = v.rec.first_step(r.first);
             (a as f64, (v.rec.step_of(r.last.unwrap_or(v.rec.last())) + 1).saturating_sub(a).max(1) as f64)

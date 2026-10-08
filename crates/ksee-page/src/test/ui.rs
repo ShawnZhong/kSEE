@@ -267,6 +267,9 @@ async fn tip() -> Result<(), String> {
 /// The timeline's window: find, pan, zoom out, the rows scrolled, the
 /// overview clicked.
 async fn window() -> Result<(), String> {
+    // (From the call whole: fit, the window on it.)
+    click(&named(".charthead a", "fit").ok_or("no fit")?);
+    settle().await;
     let canvas = one("#timeline-canvas").ok_or("no timeline canvas")?;
     let chart = one(".chart").ok_or("no chart")?;
     let b = canvas.get_bounding_client_rect();
@@ -450,6 +453,8 @@ pub(super) async fn tasks() -> Check {
     let changed: Vec<String> = all(".cell .more").iter().map(text).collect();
     // (The child's line selected: its task in the strip as the program's other.)
     let _ = all("ol.lines .cell textarea").get(5).ok_or("no sixth line")?.dyn_ref::<HtmlElement>().map(|t| t.focus());
+    settle().await;
+    click(&named(".charthead a", "fit").ok_or("no fit")?);
     settle().await;
     let mut strip: Vec<String> = drew("data-test-tasks").unwrap_or_default().lines().filter(|n| n.starts_with("prog(")).map(String::from).collect();
     strip.sort();
