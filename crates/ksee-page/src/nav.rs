@@ -99,7 +99,7 @@ pub fn Header() -> Element {
                 span { class: "crumb", "{all[at].chapter} · {place} of {chapter.len()}" }
                 button { title: "the next lesson", disabled: at + 1 == all.len(), onclick: move |_| ui.open_lesson(at + 1), "▶" }
             }
-            b { "kSEE" span { class: "dim", " · see what the Linux kernel does for your program" } }
+            b { "kSEE" span { class: "dim", " · step inside the Linux kernel" } }
             div { class: "right",
                 if let Some((commit, source)) = built() {
                     a { class: "build", href: "{source}/tree/{commit.trim_end_matches('+')}", target: "_blank",

@@ -69,7 +69,7 @@ pub fn write() {
     }
 }
 
-const TITLE: &str = "kSEE, the kernel Syscall Execution Explorer: see what the Linux kernel does for your program";
+const TITLE: &str = "kSEE, the kernel Syscall Execution Explorer: step inside the Linux kernel";
 const DESCRIPTION: &str = "kSEE runs a real Linux kernel in your browser and records everything a system call does: \
                            step through its source line by line, with the call stack, its arguments and locals, and every write to memory.";
 
