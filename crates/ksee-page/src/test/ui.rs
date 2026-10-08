@@ -466,6 +466,11 @@ pub(super) async fn responsive() -> Check {
     let wide = doc().document_element().map_or(0, |e| e.scroll_width());
     let screen = web_sys::window().unwrap().inner_width().ok().and_then(|w| w.as_f64()).unwrap_or(0.0) as i32;
     check(order && wide <= screen, "the phone", (order, wide, screen))?;
+    // (The source, wider than the screen: scrolled sideways, its lines whole.)
+    wait(|| one(".source .code .ln").is_some(), 100, "the source drawn", || String::new()).await?;
+    let src = one(".source .scroll").ok_or("no source")?;
+    let (sw, cw) = (src.scroll_width(), src.client_width());
+    check(sw > cw, "the source scrolls sideways", (sw, cw))?;
     let at = place();
     press("Next ▶");
     settle().await;

@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use ksee_core::view::{run_to, Frame, Line, RunSummary, Timeline};
+use ksee_core::view::{Frame, Line, RunSummary, Timeline};
 
 use crate::machine;
 
@@ -243,16 +243,6 @@ impl Ui {
     pub fn go(self, k: usize) {
         if let Some(run) = self.run() {
             self.commit(Some(Moment { run, line: k, level: self.level() }));
-        }
-    }
-
-    /// The cursor at the next (`dir` 1) or previous (`dir` -1) run of
-    /// `file`'s `line`, within its run.
-    pub fn run_to(self, file: &str, line: u32, dir: isize) {
-        let Some(at) = self.cursor.peek().clone() else { return };
-        let lines = Ui::run_lines(at.run);
-        if let Some(k) = run_to(&lines, at.line, file, line, dir) {
-            self.go(k);
         }
     }
 

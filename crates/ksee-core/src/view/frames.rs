@@ -72,12 +72,6 @@ pub fn step(lines: &[Line], k: usize, dir: isize, within: Option<u32>) -> Option
     seek(lines, k, dir, |l| within.is_none_or(|w| l.depth <= w) && !same(l))
 }
 
-/// The next (`dir` 1) or previous (`dir` -1) run of `file`'s `line`, from
-/// line `k` of the recording's ordered `lines`.
-pub fn run_to(lines: &[Line], k: usize, file: &str, line: u32, dir: isize) -> Option<usize> {
-    seek(lines, k, dir, |l| l.file == file && l.line == line)
-}
-
 /// The first of `lines` from line `k` in direction `dir` (none: 0) that `is` says yes to.
 fn seek(lines: &[Line], k: usize, dir: isize, is: impl Fn(&Line) -> bool) -> Option<usize> {
     if dir == 0 {

@@ -1,5 +1,3 @@
-use ksee_core::trace::Record;
-use ksee_core::view::run_to;
 
 use super::harness::{arg, child, local, value, KernelHarness};
 
@@ -83,11 +81,6 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     t.check("line steps sit at their first store: some line is at a record past its block's, none before it, and a store is on its line",
             read_steps.iter().any(|s| s.at > s.i) && read_steps.iter().all(|s| s.at >= s.i)
             && read_steps.iter().any(|s| s.at > s.i && m.view(|v| v.line_of(s.at + 1)) == Some((s.i, s.nth))));
-    let exact = read_steps.iter().enumerate().skip(1).find(|(k, s)| {
-        s.i == read_steps[k - 1].i || m.view(|v| matches!(v.rec.records.get(s.i), Some(Record::Return { .. })))
-    });
-    let exact_run = exact.is_some_and(|(k, s)| run_to(&read_steps, k - 1, &s.file, s.line, 1) == Some(k));
-    t.check("run to a line sharing a record or resumed at a return: its exact step", exact_run);
     let ksys_last = read_steps.iter().rev().find(|x| x.func == "ksys_read").map_or(0, |x| x.i);
     let pos = |i: usize| t.stack(i, None, i).iter().find(|c| c.func == "ksys_read").map(|f| value(local(f, "pos")));
     let (before, after) = (pos(in_read), pos(ksys_last));

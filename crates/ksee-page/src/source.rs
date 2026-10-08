@@ -25,6 +25,9 @@ use crate::state::{Derived, Ui};
 pub struct File {
     pub text: Vec<String>,
     pub pieces: Vec<Vec<Piece>>,
+    /// Its widest line, in columns (a tab to the next eighth): the code as
+    /// wide, scrolled sideways, though only the lines in view are drawn.
+    pub width: usize,
 }
 
 /// The page's CSS class for a semantic source piece.
@@ -61,7 +64,8 @@ async fn file(file: String) -> Option<Rc<File>> {
         return None;
     }
     let text: Vec<String> = JsFuture::from(r.text().ok()?).await.ok()?.as_string()?.lines().map(String::from).collect();
-    let f = Rc::new(File { pieces: highlight::file(&text), text });
+    let width = text.iter().map(|l| l.chars().fold(0, |c, ch| if ch == '\t' { c / 8 * 8 + 8 } else { c + 1 })).max().unwrap_or(0);
+    let f = Rc::new(File { pieces: highlight::file(&text), text, width });
     FILES.with_borrow_mut(|fs| fs.insert(file, f.clone()));
     Some(f)
 }
@@ -232,7 +236,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
                 handle.set(Some(h));
             },
             onscroll: move |e| { top.set(e.scroll_top()); view.set(e.client_height() as f64); },
-            div { class: "code mono",
+            div { class: "code mono", style: "min-width: calc({src.width}ch + 7em)",
                 div { style: "height: {above}px" }
                 for n in (first as u32 + 1)..=(last as u32) {
                     {
@@ -240,16 +244,13 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
                         let is_here = here && n == line;
                         let infn = n >= from && n <= to;
                         let class = format!("ln{}{}{}", if is_here { " now" } else if counts.contains_key(&n) { " ran" } else { "" }, if infn { " infn" } else { "" }, if n == line && !here { " seen" } else { "" });
-                        let count = counts.get(&n).map_or("did not run in the run selected".to_string(), |c| format!("ran {c}×; click: run to its next run (Shift: its last)"));
+                        let count = counts.get(&n).map_or("did not run in the run selected".to_string(), |c| format!("ran {c}× in the run selected"));
                         let note = notes.get(&n).cloned();
                         let frame = frame.clone();
                         let names = names.clone();
-                        let file = path.clone();
                         rsx! {
                             div { key: "{n}", class,
-                                span { class: "no", title: "{count}",
-                                    onclick: move |e| ui.run_to(&file, n, if e.modifiers().shift() { -1 } else { 1 }),
-                                    "{n}" }
+                                span { class: "no", title: "{count}", "{n}" }
                                 for (k , p) in pieces.iter().enumerate() {
                                     if p.kind.is_ident() {
                                         {

@@ -86,9 +86,9 @@ Press Escape to clear the query.
 ### Source
 
 The source pane follows the selected frame. It shows the complete file and
-keeps the current line in view. The current function is edged, and lines that
-ran in the selected syscall are marked. Hover a line number to see how often it
-ran; click for its next run or Shift+click for its last run.
+keeps the current line in view; a long line scrolls sideways, the line numbers
+staying. The current function is edged, and lines that ran in the selected
+syscall are marked. Hover a line number to see how often it ran.
 
 The current line can show arguments, locals, branch comparisons, and a returned
 call result. A storage note at the end of a source line links to that write.
@@ -171,8 +171,6 @@ goes somewhere else: a line the recording stops at more than once in a row
 | Left, or ◀ Back | The line before, the same way. |
 | Up, or ▲ Into | Into the call on this line: the very next line, wherever it is. |
 | Down, or ▼ Out | On until the function you read returns: its caller's next line. |
-| Click a source line number | Run to that line's next occurrence. |
-| Shift+click a source line number | Run to that line's previous occurrence. |
 | Hover the chart | See what a bar's call was (outlined, a tip); nothing else moves. |
 | Click the chart | Commit the previewed moment. |
 
