@@ -36,6 +36,5 @@ you need the WebAssembly execution model or Linux-specific details.
 These pages preserve earlier exploration. They are not current roadmaps or
 authoritative descriptions of kSEE:
 
-- [Ideas archive](archive/ideas.md): historical open and obsolete ideas.
 - [Research archive](archive/research.md): preliminary survey notes and project
   proposals from September 2026.
