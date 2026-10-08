@@ -259,16 +259,19 @@ const theme = localStorage.getItem("ksee.theme");
 if (theme) document.documentElement.dataset.theme = theme;
 </script>
 <script type="module">
-import init, { mount, Machine } from "./pkg/ksee_page.js";
+// (Each file asked for as this build's, by its commit: one deploy's files
+// never meet another's in a cache.)
+const v = `?v=${document.querySelector("meta[name=ksee-built]").content.split(" ")[0]}`;
+const { default: init, mount, Machine } = await import(`./pkg/ksee_page.js${v}`);
 // (A build's file, its bytes: the .gz ones unpacked.)
-async function bytes(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${url}: ${response.status}`);
-  const body = url.endsWith(".gz") ? response.body.pipeThrough(new DecompressionStream("gzip")) : response.body;
+async function bytes(name) {
+  const response = await fetch(name + v);
+  if (!response.ok) throw new Error(`${name}: ${response.status}`);
+  const body = name.endsWith(".gz") ? response.body.pipeThrough(new DecompressionStream("gzip")) : response.body;
   return new Uint8Array(await new Response(body).arrayBuffer());
 }
 // (The page at once; the kernel boots meanwhile, the page's once up.)
-const [, lessons] = await Promise.all([init({ module_or_path: "pkg/ksee_page_bg.wasm" }), fetch("lessons.json").then((r) => r.json())]);
+const [, lessons] = await Promise.all([init({ module_or_path: `pkg/ksee_page_bg.wasm${v}` }), fetch(`lessons.json${v}`).then((r) => r.json())]);
 mount("root", lessons, Promise.all(["vmlinux.gz", "initramfs.cpio.gz", "disk.img.gz"].map(bytes)).then(([kernel, initrd, disk]) => Machine.start(kernel, initrd, disk)));
 </script>
 </body>
