@@ -74,13 +74,18 @@ struct Tip {
 pub fn Timeline() -> Element {
     let mut ui = use_context::<Ui>();
     let tip = use_signal(|| None::<Tip>);
-    // (The cursor stepped out of the window: the window moved to it, as wide.)
+    // (The cursor out of the window: the window to it, as wide; slid just
+    // enough to have it a tenth inside, from nearby (a step, a line); its
+    // middle there, from afar (a link, another call).)
     let d = use_context::<Derived>();
     use_effect(move || {
         let Some(at) = d.cursor_step.cloned() else { return };
         let (a, span) = *d.window.peek();
-        if at < a || at >= a + span {
-            ui.view(at - span / 2.0, span);
+        let margin = span / 10.0;
+        if at < a {
+            ui.view(if a - at < span { at - margin } else { at - span / 2.0 }, span);
+        } else if at >= a + span {
+            ui.view(if at - (a + span) < span { at + margin + 1.0 - span } else { at - span / 2.0 }, span);
         }
     });
     let title = d.run.cloned().map(|s| s.title()).unwrap_or_default();

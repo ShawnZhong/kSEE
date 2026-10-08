@@ -157,6 +157,37 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let win1 = one(".overview .win").and_then(|w| w.get_attribute("style"));
     check(before.zip(during).is_some_and(|(a, b)| (b - a - 60.0).abs() < 1.0 || win0 != win1),
           "a drag after a click", (before, during, win0, win1))?;
+    // (A click anywhere: the cursor there, the window still; on the bottom
+    // row, then higher.)
+    let win = || one(".overview .win").and_then(|w| w.get_attribute("style")).unwrap_or_default();
+    let mut jumps = Vec::new();
+    for row in [1.0, 3.0] {
+        for k in 0..40 {
+            let cx = b.left() + b.width() * (k as f64 + 0.5) / 40.0;
+            let w0 = win();
+            mouse(&chart, "click", cx, b.bottom() - row * 15.0 + 7.0, false);
+            settle().await;
+            let now = drew("data-test-now").and_then(|n| n.parse::<f64>().ok());
+            if win() != w0 || now.is_none_or(|n| (n - (cx - b.left())).abs() > 2.0 * b.width() / 40.0) {
+                jumps.push((row, k, now.map(|n| n.round()), (cx - b.left()).round(), w0 == win()));
+            }
+        }
+    }
+    check(jumps.is_empty(), "a click puts the cursor where it is, the window still", &jumps)?;
+    mouse(&chart, "click", x, y, false);
+    settle().await;
+    // (Stepping past the window's edge: it slides along, the cursor just inside it, not a jump.)
+    let edge = || drew("data-test-now").and_then(|n| n.parse::<f64>().ok());
+    let mut seen = Vec::new();
+    for _ in 0..200 {
+        press("Line ▶", false);
+        settle().await;
+        if let Some(n) = edge() { seen.push(n.round()) }
+    }
+    let leaps: Vec<_> = seen.windows(2).filter(|w| w[0] - w[1] > b.width() / 4.0).collect();
+    check(leaps.is_empty(), "stepping slides the window along", (&leaps, seen.len()))?;
+    mouse(&chart, "click", x, y, false);
+    settle().await;
     // (How long a hover takes, the page drawn again: 30 moves across the chart.)
     let now = || web_sys::window().and_then(|w| w.performance()).map_or(0.0, |p| p.now());
     let t0 = now();
