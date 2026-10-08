@@ -2,9 +2,9 @@
   "title": "How does a thread sleep until another says so?",
   "text": [
     "A sleep waits for time; a thread can also wait for another. The program makes a thread (as in \"How is a thread made?\"), and they share a word of memory: one waits for it to change and the other wakes it, a futex, the primitive under every mutex and condition variable. How does the kernel make sure no wake-up is lost?",
-    "1. The thread waits, saying it expects the word to hold 1. [futex_wait_setup](3:futex_wait_setup) checks the word with the waiter queue's lock held: it holds 0, so the call returns at once with EAGAIN. That check under the lock is the whole trick: a wake-up cannot slip in between the check and the sleep.",
-    "2. Now it waits expecting 0, which is right: [futex_do_wait](4:futex_do_wait) queues the thread on the futex's hash bucket and [schedule](4:schedule) gives the CPU away. The call blocks: it returns only when someone wakes it.",
-    "3. The program wakes one waiter: [futex_wake](5:futex_wake) finds the waiters queued on this word (its key: this process's memory, this address), and [wake_up_q](5:wake_up_q) wakes the thread. Its wait returns 0.",
+    "1. The thread waits, saying it expects the word to hold 1. [futex_wait_setup](futex_wait_setup) checks the word with the waiter queue's lock held: it holds 0, so the call returns at once with EAGAIN. That check under the lock is the whole trick: a wake-up cannot slip in between the check and the sleep.",
+    "2. Now it waits expecting 0, which is right: [futex_do_wait](futex_do_wait) queues the thread on the futex's hash bucket and [schedule](schedule) gives the CPU away. The call blocks: it returns only when someone wakes it.",
+    "3. The program wakes one waiter: [futex_wake](futex_wake) finds the waiters queued on this word (its key: this process's memory, this address), and [wake_up_q](wake_up_q) wakes the thread. Its wait returns 0.",
     "Try: [wake with 0 waiters allowed](try:1): the thread stays blocked until a real wake. Or [wait on another word](try:2), `mem + 4`, and wake `mem`: a different key, so nobody wakes, until `mem + 4` is woken."
   ],
   "tries": [

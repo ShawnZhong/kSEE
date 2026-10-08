@@ -80,9 +80,7 @@ pub(crate) async fn make_program(mut ui: Ui, lines: Vec<ProgramLine>) {
     // (The recording decoded once, the lines made: what the views read.)
     m.snapshot();
     ui.snapshot += 1;
-    let outcomes = m.outcomes();
     let lesson = &lessons()[(ui.lesson)()];
-    let calls = outcomes.iter().filter(|o| matches!(o, Outcome::Call { .. })).count();
     // (The lesson's own program: where its text's first link into the recording goes.)
     let linked = (lines == lesson.program).then(|| lesson.text.iter().flat_map(|p| text::pieces(p)).find_map(|x| match x {
         Piece::Link { to: Some(to @ LessonTarget::Recording { .. }), .. } => Some(to),
@@ -90,26 +88,25 @@ pub(crate) async fn make_program(mut ui: Ui, lines: Vec<ProgramLine>) {
     })).flatten();
     match linked {
         Some(to) => follow(ui, to),
-        None => if let Some(k) = run_of_call(ui, calls) { ui.select(k) },
+        None => if let Some(k) = calls(&ui.program.peek(), &ui.outcomes.peek()).last().and_then(|c| m.run_of_call_id(c.1)) { ui.select(k) },
     }
 }
 
-/// The run (an index in the runs) of the program's call `n` (from 1), if the recording has it.
-fn run_of_call(ui: Ui, n: usize) -> Option<usize> {
-    let id = ui.outcomes.read().iter().filter_map(|o| match o {
-        Outcome::Call { id, .. } => Some(*id),
+/// The program's calls, in order: each its syscall's name and its id
+/// (Machine::find), as `outcomes` has them.
+pub(crate) fn calls(program: &[ProgramLine], outcomes: &[Outcome]) -> Vec<(String, u32)> {
+    program.iter().zip(outcomes).filter_map(|(step, o)| match (statement(step.text()), o) {
+        (Ok(Statement::Call { call, .. }), Outcome::Call { id, .. }) => Some((call, *id)),
         _ => None,
-    }).nth(n.checked_sub(1)?)?;
-    machine().run_of_call_id(id)
+    }).collect()
 }
 
-/// Follow link `target` of the lesson's text: `N` (its call N selected),
-/// `N:func` (the cursor at func's first line in it), and a tab to show
-/// (`:stack`, `:memory`, `:tasks`, `:console`, `:disk`); a tab alone;
-/// `try:N`, its program made instead.
+/// Follow link `target` of the lesson's text: a function's first call
+/// (the cursor at its first line), in the call named if it says, and a tab
+/// to show; a tab alone; `try:N`, its program made instead.
 fn follow(mut ui: Ui, target: LessonTarget) {
-    let (call, function, any_task, tab) = match target {
-        LessonTarget::Recording { call, function, any_task, tab } => (call, function, any_task, tab),
+    let (call, function, tab) = match target {
+        LessonTarget::Recording { call, function, tab } => (call, function, tab),
         LessonTarget::Tab(tab) => return ui.tab.set(tab),
         LessonTarget::Try { index } => {
             if let Some(t) = lessons()[(ui.lesson)()].tries.get(index - 1) {
@@ -118,25 +115,21 @@ fn follow(mut ui: Ui, target: LessonTarget) {
             return;
         }
     };
-    let Some((k, line)) = resolve(ui, call, function.as_deref(), any_task) else { return };
+    let Some((k, j)) = resolve(ui, &call, &function) else { return };
     ui.select(k);
-    if let Some(j) = line {
-        ui.go(j);
-    }
+    ui.go(j);
     if let Some(tab) = tab {
         ui.tab.set(tab);
     }
 }
 
-/// Where a link into the recording goes, if the recording has it: call
-/// `call`'s run, and in it `func`'s first line (on any task's, `any_task`).
-fn resolve(ui: Ui, call: usize, func: Option<&str>, any_task: bool) -> Option<(usize, Option<usize>)> {
-    let k = run_of_call(ui, call)?;
-    let Some(func) = func else { return Some((k, None)) };
+/// Where a link into the recording goes, if the recording has it: its
+/// run, and there `func`'s first line (Machine::find).
+fn resolve(ui: Ui, call: &Option<(String, usize)>, func: &str) -> Option<(usize, usize)> {
     let m = machine();
-    let s = m.view(|v| v.run(k))?;
-    let at = m.first_call(func, s.first, s.last, (!any_task).then_some(s.task.addr))?;
-    Some((k, Some(Ui::run_lines(k).iter().position(|l| l.i >= at)?)))
+    let calls = calls(&ui.program.read(), &ui.outcomes.read());
+    let (k, at) = m.find(&calls, call.as_ref().map(|(c, n)| (c.as_str(), *n)), func)?;
+    Some((k, Ui::run_lines(k).iter().position(|l| l.i >= at)?))
 }
 
 #[component]
@@ -332,7 +325,7 @@ pub(crate) fn ParagraphView(
     // (Read again as the recording grows.)
     (ui.snapshot)();
     let live = |to: &LessonTarget| match to {
-        LessonTarget::Recording { call, function, any_task, .. } => ui.up() && resolve(ui, *call, function.as_deref(), *any_task).is_some(),
+        LessonTarget::Recording { call, function, .. } => ui.up() && resolve(ui, call, function).is_some(),
         LessonTarget::Try { .. } | LessonTarget::Tab(_) => true,
     };
     rsx! {
@@ -345,7 +338,7 @@ pub(crate) fn ParagraphView(
                         Some(to) if live(&to) => {
                             let class = match &to {
                                 LessonTarget::Try { .. } => "try",
-                                LessonTarget::Recording { function: Some(_), .. } => "place mono",
+                                LessonTarget::Recording { .. } => "place mono",
                                 _ => "",
                             };
                             rsx! { a { class, onclick: move |_| follow.call(to.clone()), "{label}" } }

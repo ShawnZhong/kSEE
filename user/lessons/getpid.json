@@ -2,9 +2,9 @@
   "title": "Which process am I? getpid()",
   "text": [
     "The same way in as dup, a different question. `getpid()` has no arguments and one number back, but the number is not simply stored in the task: a process's id is a `struct pid`, with a number for each pid namespace it is seen from.",
-    "1. getpid returns the id of the task's thread group, not of the task itself: [task_tgid_vnr](1:task_tgid_vnr:any) asks for `current`'s, the task running, as its caller sees it.",
-    "2. [__task_pid_nr_ns](1:__task_pid_nr_ns) takes two things: the `struct pid` of the thread group (`task_pid_ptr`: in `current->signal`, shared by the process's threads), and the pid namespace the caller is in (`task_active_pid_ns`).",
-    "3. [pid_nr_ns](1:pid_nr_ns) reads the number: a `struct pid` has one per namespace level, and here there is one level, so it is `numbers[0].nr`: the program's pid (/init, the first process, is 1; the kernel's own threads, and then the program, come after it).",
+    "1. getpid returns the id of the task's thread group, not of the task itself: [task_tgid_vnr](task_tgid_vnr) asks for `current`'s, the task running, as its caller sees it.",
+    "2. [__task_pid_nr_ns](__task_pid_nr_ns) takes two things: the `struct pid` of the thread group (`task_pid_ptr`: in `current->signal`, shared by the process's threads), and the pid namespace the caller is in (`task_active_pid_ns`).",
+    "3. [pid_nr_ns](pid_nr_ns) reads the number: a `struct pid` has one per namespace level, and here there is one level, so it is `numbers[0].nr`: the program's pid (/init, the first process, is 1; the kernel's own threads, and then the program, come after it).",
     "Try: [from a thread](try:1): a thread of the program gets the same getpid (its thread group's), but its own gettid."
   ],
   "tries": [

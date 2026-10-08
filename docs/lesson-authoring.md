@@ -25,7 +25,7 @@ A minimal lesson looks like this:
 {
   "title": "What happens in read()?",
   "text": [
-    "Open the file, then follow [vfs_read](2:vfs_read).",
+    "Open the file, then follow [vfs_read](vfs_read).",
     "Try [reading twice](try:1)."
   ],
   "tries": [
@@ -51,22 +51,22 @@ Lesson paragraphs use Markdown-like inline code and links parsed by
 
 | Target | Result |
 |---|---|
-| `[the call](2)` | Select the second syscall row. |
-| `[vfs_read](2:vfs_read)` | Select call 2 and move to the first `vfs_read` on that call's task. |
-| `[wake it](2:try_to_wake_up:any)` | Find the function on any task that ran during call 2. |
-| `[changed data](2:memory)` | Select call 2 and open Memory. |
-| `[the stack](2:vfs_read:stack)` | Move into the function and open Stack. |
-| `[wake stack](2:try_to_wake_up:any:stack)` | Find the function on any task and open Stack. |
+| `[vfs_read](vfs_read)` | The first call of `vfs_read` in the program's calls, the first that ran it. |
+| `[the second](read#2/ksys_read)` | The first `ksys_read` in the program's second `read` (`read/…`: its first). |
+| `[changed data](fd_install/memory)` | Go there and open Memory. |
 | `[the console](console)` | Open Console, whatever the recording has. |
 | `[try it](try:1)` | Run `tries[0]` instead of the lesson program. |
 
-Call and try numbers are one-based and must be positive. The reserved tab
-suffixes are `stack`, `memory`, `tasks`, `disk`, and `console`; `any` is valid only
-after a function name. Call numbers count syscall lines only, so declarations
-do not increment them. Malformed targets fail lesson self-test validation.
-A try keeps the lesson prose visible. A link into the recording stays a link
-while the recording has where it goes (its call, and its function in that call),
-whatever program made it; otherwise it is shown dimmed.
+A target is `[call[#n]/]function[/tab]`, a tab, or `try:N`. A call is named by
+its syscall (`read`, `openat`), its `n`th in the program if more than one; with
+no call named, the first call that ran the function. A function is looked for
+in the call's own task first, then in any task that ran during it (one it
+woke, a kernel thread). The tabs are `stack`, `memory`, `tasks`, `disk` and
+`console`; try numbers count from 1. Name only as much as finding the place
+needs: a function alone, most often. Malformed targets fail lesson self-test
+validation. A try keeps the lesson prose visible. A link into the recording
+stays a link while the recording has where it goes, whatever program made it
+(a try, the program changed); otherwise it is shown dimmed.
 
 Use backticks for inline kernel names, paths, values, and code. Keep each
 paragraph focused on what the linked point demonstrates.

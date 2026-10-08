@@ -2,8 +2,8 @@
   "title": "A file with two names",
   "text": [
     "A name is not the file. The file is its inode; a directory entry is a name that points to it, and an inode can have several.",
-    "1. [vfs_link](1:vfs_link), then ext4's [__ext4_link](1:__ext4_link): [inc_nlink](1:inc_nlink) counts the inode's names, from 1 to 2, and [__ext4_add_entry](1:__ext4_add_entry) writes \"also.txt\" into /mnt's directory block, with the same inode number; [d_instantiate](1:d_instantiate) points the new name's dentry at the same inode.",
-    "2. Removing the first name: [ext4_delete_entry](2:ext4_delete_entry) takes \"note.txt\" out of the directory, and [drop_nlink](2:drop_nlink) counts the names down, from 2 to 1: [what it changed](2:drop_nlink:memory). The inode stays: it still has a name. A file goes only when its last name does, as the next lesson shows.",
+    "1. [vfs_link](vfs_link), then ext4's [__ext4_link](__ext4_link): [inc_nlink](inc_nlink) counts the inode's names, from 1 to 2, and [__ext4_add_entry](__ext4_add_entry) writes \"also.txt\" into /mnt's directory block, with the same inode number; [d_instantiate](d_instantiate) points the new name's dentry at the same inode.",
+    "2. Removing the first name: [ext4_delete_entry](ext4_delete_entry) takes \"note.txt\" out of the directory, and [drop_nlink](drop_nlink) counts the names down, from 2 to 1: [what it changed](drop_nlink/memory). The inode stays: it still has a name. A file goes only when its last name does, as the next lesson shows.",
     "Try: [read it by its new name](try:1): the same bytes, \"hello from the disk\"."
   ],
   "tries": [

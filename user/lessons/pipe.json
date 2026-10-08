@@ -2,10 +2,10 @@
   "title": "How do two processes talk through a pipe?",
   "text": [
     "Threads share memory; processes talk through the kernel. The program makes a pipe and starts a child that reads from it, as the `cat` in a shell's `echo hello | cat` would.",
-    "1. [create_pipe_files](2:create_pipe_files): a pipe is a buffer in the kernel and two files for it. The program's line shows the fds: 3 reads, 4 writes.",
-    "2. [copy_process](3:copy_process) makes the child, a process of its own (not CLONE_THREAD): with no MMU it shares the program's memory (CLONE_VM, on the stack `mem` gives it), but [dup_fd](3:dup_fd) gives it a copy of the program's fds, the pipe's too.",
-    "3. The child reads: [anon_pipe_read](4:anon_pipe_read) finds the pipe empty, so it sleeps. The read blocks: its line says it returned only during the program's write, the next line.",
-    "4. The program writes hello: [anon_pipe_write](5:anon_pipe_write) puts the bytes into the pipe's buffer, and [try_to_wake_up](5:try_to_wake_up:any) wakes the reader. The child's read returns the 6 bytes: see `buf`.",
+    "1. [create_pipe_files](create_pipe_files): a pipe is a buffer in the kernel and two files for it. The program's line shows the fds: 3 reads, 4 writes.",
+    "2. [copy_process](copy_process) makes the child, a process of its own (not CLONE_THREAD): with no MMU it shares the program's memory (CLONE_VM, on the stack `mem` gives it), but [dup_fd](dup_fd) gives it a copy of the program's fds, the pipe's too.",
+    "3. The child reads: [anon_pipe_read](anon_pipe_read) finds the pipe empty, so it sleeps. The read blocks: its line says it returned only during the program's write, the next line.",
+    "4. The program writes hello: [anon_pipe_write](anon_pipe_write) puts the bytes into the pipe's buffer, and [try_to_wake_up](try_to_wake_up) wakes the reader. The child's read returns the 6 bytes: see `buf`.",
     "Try: [the end of input](try:1): once every writing end is closed, the child's own too, a read returns 0 (`pipe_release` wakes the readers); or [the child's end](try:2): it exits, and the parent, told by SIGCHLD, reaps it with waitid (`wait_task_zombie`, `release_task`)."
   ],
   "tries": [

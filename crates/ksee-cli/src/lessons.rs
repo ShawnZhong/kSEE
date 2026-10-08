@@ -166,14 +166,14 @@ mod tests {
 
     #[test]
     fn a_paragraph_s_code_and_links() {
-        assert_eq!(paragraph("a `x < y` and [`ksys_read`](1:ksys_read), [twice](try:1) & more"),
+        assert_eq!(paragraph("a `x < y` and [`ksys_read`](ksys_read), [twice](try:1) & more"),
                    "a <code>x &lt; y</code> and <em><code>ksys_read</code></em>, <em>twice</em> &amp; more");
     }
 
     #[test]
     fn a_lesson_s_page() {
         let page = "<head>\n<title>x</title>\n<meta name=\"description\" content=\"x\">\n<meta property=\"og:title\" content=\"x\">\n</head>\n<body>\n<div id=\"root\"></div>\n</body>\n";
-        let lesson = json!({ "name": "r", "chapter": "G", "title": "T", "text": ["P `c`, [here](1:f)."],
+        let lesson = json!({ "name": "r", "chapter": "G", "title": "T", "text": ["P `c`, [here](f)."],
                          "program": ["read(fd)", { "task": "child", "text": "exit(0)" }] });
         let h = fill(page, "T — kSEE", &summary(&lesson), &as_text(&lesson));
         for want in ["<title>T — kSEE</title>", "content=\"P c, here.\">", "og:title\" content=\"T — kSEE\"", "<div id=\"root\"></div>\n<article id=\"static\">",

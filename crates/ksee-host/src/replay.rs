@@ -41,6 +41,20 @@ impl Machine {
         rec.runs.iter().position(|s| s.nr == Some(nr) && s.task == task && rec.ids[s.first] >= from)
     }
 
+    /// Where a lesson's link goes: function `func`'s first call in one of
+    /// `calls` (the program's, in order: each its syscall's name and its
+    /// id), the `n`th named `name` if `call` says (else the first call that
+    /// ran it); on the call's own task, else on any (one it woke, a kernel
+    /// thread). Its run and record.
+    pub fn find(&self, calls: &[(String, u32)], call: Option<(&str, usize)>, func: &str) -> Option<(usize, usize)> {
+        let runs: Vec<usize> = match call {
+            Some((name, n)) => calls.iter().filter(|c| c.0 == name).nth(n.checked_sub(1)?).and_then(|c| self.run_of_call_id(c.1)).into_iter().collect(),
+            None => calls.iter().filter_map(|c| self.run_of_call_id(c.1)).collect(),
+        };
+        let at = |k: usize, own: bool| self.view(|v| v.run(k)).and_then(|s| self.first_call(func, s.first, s.last, own.then_some(s.task.addr)));
+        [true, false].into_iter().find_map(|own| runs.iter().find_map(|&k| at(k, own).map(|i| (k, i))))
+    }
+
     /// The first call of function `name` in records `first..=last` (of the
     /// task at address `task`, or any): its record.
     pub fn first_call(&self, name: &str, first: usize, last: usize, task: Option<u32>) -> Option<usize> {

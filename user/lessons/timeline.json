@@ -2,10 +2,10 @@
   "title": "Reading the timeline",
   "text": [
     "The program now makes two calls: `dup(1)`, then `close(fd)`, which gives the number back. Click a line of the program to select its call.",
-    "Above the source is the timeline of the call selected, time going left to right. Each bar is a function the kernel ran, as wide as the lines it ran; a function sits on the one that called it. So the bottom row is the way in for every syscall, [wasm_syscall](1:wasm_syscall); above it is the syscall's own function, [__wasm_sys_dup](1:__wasm_sys_dup); above that, what it called, as [alloc_fd](1:alloc_fd), finding the free number.",
+    "Above the source is the timeline of the call selected, time going left to right. Each bar is a function the kernel ran, as wide as the lines it ran; a function sits on the one that called it. So the bottom row is the way in for every syscall, [wasm_syscall](wasm_syscall); above it is the syscall's own function, [__wasm_sys_dup](__wasm_sys_dup); above that, what it called, as [alloc_fd](alloc_fd), finding the free number.",
     "The colors say which part of the kernel a function is from: files green (`fs/`), the core kernel warm (`kernel/`, and `mm/`, memory), the machine blue (`arch/`, `drivers/`), helpers gray (`lib/`, `include/`).",
     "Move the pointer over the timeline: the whole page shows that moment, the source at the line running then, the Stack on the right with the calls that led there. Click to keep it there; then the arrow keys move it, as the next lesson shows. The wheel zooms (up and down) and pans (sideways); a drag pans too.",
-    "The thin strip on top is the whole recording: where each call begins, and between them, the other tasks the kernel ran (the strip under the timeline names the task running: `prog`, the program, or one of the kernel's own, as `swapper`, the idle task). [The second call](2:__wasm_sys_close) undoes the first: 3 is free again."
+    "The thin strip on top is the whole recording: where each call begins, and between them, the other tasks the kernel ran (the strip under the timeline names the task running: `prog`, the program, or one of the kernel's own, as `swapper`, the idle task). [The second call](__wasm_sys_close) undoes the first: 3 is free again."
   ],
   "program": [
     "int fd = dup(1)",

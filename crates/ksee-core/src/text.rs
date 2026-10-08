@@ -30,49 +30,37 @@ impl LessonTab {
 /// What a lesson link names.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum LessonTarget {
+    /// The lesson's try `index` (from 1), made instead of its program.
     Try { index: usize },
     /// A tab, whatever the recording has.
     Tab(LessonTab),
-    Recording {
-        call: usize,
-        function: Option<String>,
-        any_task: bool,
-        tab: Option<LessonTab>,
-    },
+    /// Where `function` is first called: in the program's `n`th call named
+    /// `call` (a syscall's name), if it says, else in its first call that
+    /// ran it; then a tab, maybe.
+    Recording { call: Option<(String, usize)>, function: String, tab: Option<LessonTab> },
 }
 
 impl LessonTarget {
-    /// Parse `N`, `N:function[:any][:tab]`, `N:tab`, `tab`, or `try:N`.
+    /// Parse `try:N`, `tab`, or `[call[#n]/]function[/tab]`.
     pub fn parse(target: &str) -> Option<Self> {
-        if let Some(tab) = LessonTab::parse(target) {
-            return Some(Self::Tab(tab));
+        if let Some(n) = target.strip_prefix("try:") {
+            return Some(Self::Try { index: positive(n)? });
         }
-        let mut parts = target.split(':');
-        let first = parts.next()?;
-        if first == "try" {
-            let index = positive(parts.next()?)?;
-            return parts.next().is_none().then_some(Self::Try { index });
-        }
-        let call = positive(first)?;
-        let Some(second) = parts.next() else {
-            return Some(Self::Recording { call, function: None, any_task: false, tab: None });
-        };
-        if let Some(tab) = LessonTab::parse(second) {
-            return parts.next().is_none().then_some(Self::Recording { call, function: None, any_task: false, tab: Some(tab) });
-        }
-        if second.is_empty() || second == "any" {
-            return None;
-        }
-        let mut next = parts.next();
-        let any_task = next == Some("any");
-        if any_task {
-            next = parts.next();
-        }
-        let tab = match next {
-            Some(t) => Some(LessonTab::parse(t)?),
+        let mut parts: Vec<&str> = target.split('/').collect();
+        let tab = match parts.last().and_then(|t| LessonTab::parse(t)) {
+            Some(t) => (parts.pop(), Some(t)).1,
             None => None,
         };
-        parts.next().is_none().then_some(Self::Recording { call, function: Some(second.into()), any_task, tab })
+        let name = |s: &str| (!s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')).then(|| s.into());
+        match parts[..] {
+            [] => Some(Self::Tab(tab?)),
+            [function] => Some(Self::Recording { call: None, function: name(function)?, tab }),
+            [call, function] => {
+                let (call, n) = call.split_once('#').map_or(Some((call, 1)), |(c, n)| Some((c, positive(n)?)))?;
+                Some(Self::Recording { call: Some((name(call)?, n)), function: name(function)?, tab })
+            }
+            _ => None,
+        }
     }
 }
 
@@ -122,16 +110,14 @@ mod tests {
     fn lesson_targets() {
         use LessonTab::*;
         use LessonTarget::*;
+        let at = |call: Option<(&str, usize)>, f: &str, tab| Recording { call: call.map(|(c, n)| (c.into(), n)), function: f.into(), tab };
         for (text, target) in [
-            ("1", Recording { call: 1, function: None, any_task: false, tab: None }),
-            ("2:vfs_read", Recording { call: 2, function: Some("vfs_read".into()), any_task: false, tab: None }),
-            ("2:vfs_read:any", Recording { call: 2, function: Some("vfs_read".into()), any_task: true, tab: None }),
-            ("2:memory", Recording { call: 2, function: None, any_task: false, tab: Some(Memory) }),
-            ("2:vfs_read:stack", Recording { call: 2, function: Some("vfs_read".into()), any_task: false, tab: Some(Stack) }),
-            ("2:vfs_read:any:tasks", Recording { call: 2, function: Some("vfs_read".into()), any_task: true, tab: Some(Tasks) }),
-            ("2:console", Recording { call: 2, function: None, any_task: false, tab: Some(Console) }),
-            ("try:3", Try { index: 3 }),
+            ("vfs_read", at(None, "vfs_read", None)),
+            ("vfs_read/memory", at(None, "vfs_read", Some(Memory))),
+            ("read/vfs_read", at(Some(("read", 1)), "vfs_read", None)),
+            ("read#2/ksys_read/stack", at(Some(("read", 2)), "ksys_read", Some(Stack))),
             ("console", Tab(Console)),
+            ("try:3", Try { index: 3 }),
         ] {
             assert_eq!(LessonTarget::parse(text), Some(target), "{text}");
         }
@@ -139,20 +125,18 @@ mod tests {
 
     #[test]
     fn invalid_lesson_targets() {
-        for text in ["", "abc", "0", ":vfs_read", "2:", "try", "try:", "try:0", "try:abc",
-                     "try:1:stack", "2:any", "2:vfs_read:unknown", "2:vfs_read:stack:memory",
-                     "2:vfs_read:any:any", "2:vfs_read:any:stack:extra"] {
+        for text in ["", "/", "a//b", "try:", "try:0", "try:abc", "read#0/f", "read#/f", "a/b/c", "a/b/c/memory", "vfs read"] {
             assert!(LessonTarget::parse(text).is_none(), "{text}");
         }
     }
 
     #[test]
     fn a_paragraphs_pieces() {
-        let p = pieces("1. [vfs_read](2:vfs_read) reads `buf`; [try](try:1).");
+        let p = pieces("1. [vfs_read](vfs_read) reads `buf`; [try](try:1).");
         assert_eq!(p, [
             Piece::Text("1. ".into()),
             Piece::Link { label: "vfs_read".into(),
-                          to: Some(LessonTarget::Recording { call: 2, function: Some("vfs_read".into()), any_task: false, tab: None }) },
+                          to: Some(LessonTarget::Recording { call: None, function: "vfs_read".into(), tab: None }) },
             Piece::Text(" reads ".into()),
             Piece::Code("buf".into()),
             Piece::Text("; ".into()),

@@ -2,10 +2,10 @@
   "title": "Making a file on a disk",
   "text": [
     "The same create as in memory, but on ext4. A disk file system has to keep track of what it used, so that it is still right after a crash.",
-    "1. [ext4_create](1:ext4_create) makes the file, all inside one journal transaction, so that a crash leaves all of it or none of it.",
-    "2. [__ext4_new_inode](1:__ext4_new_inode) finds a free inode in a block group's inode bitmap and marks it used.",
-    "3. [add_dirent_to_buf](1:add_dirent_to_buf) writes the name \"new.txt\" into free space in a block of the directory, next to the other names.",
-    "Try: [a file in a directory that does not exist](try:1): the lookup fails before ext4_create ever runs. Compare [ext4_create](1:ext4_create) with the in-memory create's `ramfs_mknod`: how much more a disk file system does."
+    "1. [ext4_create](ext4_create) makes the file, all inside one journal transaction, so that a crash leaves all of it or none of it.",
+    "2. [__ext4_new_inode](__ext4_new_inode) finds a free inode in a block group's inode bitmap and marks it used.",
+    "3. [add_dirent_to_buf](add_dirent_to_buf) writes the name \"new.txt\" into free space in a block of the directory, next to the other names.",
+    "Try: [a file in a directory that does not exist](try:1): the lookup fails before ext4_create ever runs. Compare [ext4_create](ext4_create) with the in-memory create's `ramfs_mknod`: how much more a disk file system does."
   ],
   "tries": [
     [

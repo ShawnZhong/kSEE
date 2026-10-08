@@ -24,7 +24,11 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
         let is_call = |step: &ProgramLine| matches!(statement(step.text()), Ok(Statement::Call { .. }));
         let blocked: Vec<String> = lesson.program.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.finished(id).is_some()))
             .map(|(step, _)| step.text().into()).collect();
-        let calls: Vec<Option<u32>> = lesson.program.iter().zip(&ids).filter(|(step, _)| is_call(step)).map(|(_, id)| *id).collect();
+        // (Its calls, by name: where its links go, as the page finds them.)
+        let calls: Vec<(String, u32)> = lesson.program.iter().zip(&ids).filter_map(|(step, id)| match statement(step.text()) {
+            Ok(Statement::Call { call, .. }) => Some((call, (*id)?)),
+            _ => None,
+        }).collect();
         let mut missing = Vec::new();
         for p in &lesson.text {
             for x in text::pieces(p) {
@@ -32,12 +36,7 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
                 let found = match to {
                     Some(LessonTarget::Try { index }) => lesson.tries.get(index - 1).is_some(),
                     Some(LessonTarget::Tab(_)) => true,
-                    Some(LessonTarget::Recording { call, function, any_task, .. }) => {
-                        let s = calls.get(call - 1).copied().flatten().and_then(|id| t.syscall(id));
-                        s.as_ref().is_some_and(|s| function.as_ref().is_none_or(|f|
-                            m.first_call(f, s.first, s.last, (!any_task).then_some(s.task.addr)).is_some()
-                        ))
-                    }
+                    Some(LessonTarget::Recording { call, function, .. }) => m.find(&calls, call.as_ref().map(|(c, n)| (c.as_str(), *n)), &function).is_some(),
                     None => false,
                 };
                 if !found {

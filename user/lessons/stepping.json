@@ -3,9 +3,9 @@
   "text": [
     "The cursor is a moment of the recording: the source shows the line running then, marked, and the Stack the calls that led there, the innermost on top, each with its arguments and local variables as they were then. Move it with the buttons under the timeline, or the arrow keys:",
     "→ Next goes through the function you are reading, a line at a time, over the calls it makes. ↑ In goes into the call the line makes (with none, on to the next line: ↑ alone follows every line the kernel ran). ← Back goes back in time the way you came, through the function after →, every line after ↑. ↓ Out goes back to the caller, at its call.",
-    "1. Start at [vfs_write](2:vfs_write), the layer every file's write goes through, and step with →. Before it writes anything, it checks: is the file open for writing (its `f_mode` has `FMODE_WRITE`), can it be written at all, and is the buffer the program's to read (`access_ok`)? Each check is a line that ran; one that failed would return its error there.",
-    "2. [rw_verify_area](2:rw_verify_area) checks the position and the size: → steps over it, its answer 0, nothing wrong; ↑ on its line goes in instead, and ↓ comes back out.",
-    "3. Then the write itself, `file->f_op->write`: the file's own write, the console's. ↑ on that line goes into [console_dev_write](2:console_dev_write), which hands the 6 bytes to the page; ↓ back out, and →: `vfs_write` returns 6, the bytes written, as the program's line says.",
+    "1. Start at [vfs_write](vfs_write), the layer every file's write goes through, and step with →. Before it writes anything, it checks: is the file open for writing (its `f_mode` has `FMODE_WRITE`), can it be written at all, and is the buffer the program's to read (`access_ok`)? Each check is a line that ran; one that failed would return its error there.",
+    "2. [rw_verify_area](rw_verify_area) checks the position and the size: → steps over it, its answer 0, nothing wrong; ↑ on its line goes in instead, and ↓ comes back out.",
+    "3. Then the write itself, `file->f_op->write`: the file's own write, the console's. ↑ on that line goes into [console_dev_write](console_dev_write), which hands the 6 bytes to the page; ↓ back out, and →: `vfs_write` returns 6, the bytes written, as the program's line says.",
     "On the Stack, `file`, `buf` and `count` are vfs_write's arguments, as they were then: click `file` to open its `struct file`, with `f_mode` and `f_op`."
   ],
   "program": [

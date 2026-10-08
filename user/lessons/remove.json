@@ -2,10 +2,10 @@
   "title": "Renaming and removing",
   "text": [
     "Names made, names taken away. Four calls on ext4: a name moves, a directory will not go while it has names in it, and a file goes when its last name does.",
-    "1. Renaming within one directory: [ext4_rename](1:ext4_rename) changes the entry's name from \"a.txt\" to \"b.txt\"; the inode stays as it is.",
-    "2. Removing the directory: [ext4_empty_dir](2:ext4_empty_dir) asks whether it is empty. It is not (\"b.txt\" is in it), so the call fails with ENOTEMPTY.",
-    "3. Removing the file: [ext4_delete_entry](3:ext4_delete_entry) takes the name out of the directory block, and since it was the file's only name and nobody has it open, [ext4_free_inode](3:ext4_free_inode) frees the inode.",
-    "4. Now the directory is empty: [ext4_free_blocks](4:ext4_free_blocks) gives its block back to the block bitmap, and its inode is freed too.",
+    "1. Renaming within one directory: [ext4_rename](ext4_rename) changes the entry's name from \"a.txt\" to \"b.txt\"; the inode stays as it is.",
+    "2. Removing the directory: [ext4_empty_dir](ext4_empty_dir) asks whether it is empty. It is not (\"b.txt\" is in it), so the call fails with ENOTEMPTY.",
+    "3. Removing the file: [ext4_delete_entry](unlinkat#2/ext4_delete_entry) takes the name out of the directory block, and since it was the file's only name and nobody has it open, [ext4_free_inode](ext4_free_inode) frees the inode.",
+    "4. Now the directory is empty: [ext4_free_blocks](unlinkat#3/ext4_free_blocks) gives its block back to the block bitmap, and its inode is freed too.",
     "Try: [open b.txt before removing it](try:1): the name goes, but the inode stays until the close, which is where `ext4_free_inode` runs then. Or [rename across directories](try:2), to /mnt/b.txt."
   ],
   "tries": [

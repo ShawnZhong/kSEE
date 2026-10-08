@@ -2,9 +2,9 @@
   "title": "How is a thread made?",
   "text": [
     "A process so far had one task. A thread is another task in the same process: it shares the memory, the files, the name space, and has a stack of its own.",
-    "1. The stack first: [do_mmap](1:do_mmap) gives the program 64 KiB of anonymous, zeroed memory for it (no MMU here, so at one address, the same for every thread).",
-    "2. [copy_process](2:copy_process) makes the new task. The CLONE_ flags say what it shares instead of copies: memory (CLONE_VM), files, the file system's state, signal handlers, and the thread group (CLONE_THREAD): that makes it a thread, not a child. [wake_up_new_task](2:wake_up_new_task) puts it on the run queue; it starts at the top of its stack, `mem + 65536` (stacks grow down).",
-    "3. The thread asks who it is: getpid gives the process's id, the same as the program's (the thread group's), but gettid its own: [__task_pid_nr_ns](4:__task_pid_nr_ns) with the task's own pid, not the group's.",
+    "1. The stack first: [do_mmap](do_mmap) gives the program 64 KiB of anonymous, zeroed memory for it (no MMU here, so at one address, the same for every thread).",
+    "2. [copy_process](copy_process) makes the new task. The CLONE_ flags say what it shares instead of copies: memory (CLONE_VM), files, the file system's state, signal handlers, and the thread group (CLONE_THREAD): that makes it a thread, not a child. [wake_up_new_task](wake_up_new_task) puts it on the run queue; it starts at the top of its stack, `mem + 65536` (stacks grow down).",
+    "3. The thread asks who it is: getpid gives the process's id, the same as the program's (the thread group's), but gettid its own: [__task_pid_nr_ns](gettid/__task_pid_nr_ns) with the task's own pid, not the group's.",
     "Its calls have their own task column, headed by the thread's name, and the Tasks tab lists it with the program.",
     "Try: [a child instead](try:1): without CLONE_THREAD and the others, a process of its own (but for CLONE_VM, sharing memory: there is no MMU to give it its own), with its own getpid."
   ],

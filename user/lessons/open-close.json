@@ -2,11 +2,11 @@
   "title": "What is a file descriptor?",
   "text": [
     "fd 1 was open already. The others a program gets from open(), and gives back with close(). In the kernel the number is an index into the process's table of open files, and what it points to is a `struct file`.",
-    "1. [get_unused_fd_flags](1:get_unused_fd_flags) takes the lowest free slot of the table. 0, 1 and 2 are taken (the console), so the answer will be 3.",
-    "2. [path_openat](1:path_openat) finds the file by its path, one name at a time from the root: \"note.txt\" in /, an in-memory file system (ramfs).",
-    "3. [do_dentry_open](1:do_dentry_open) makes the open file itself, a `struct file`: which inode, where the program is in it (its position, 0), and how it was opened (read only).",
-    "4. [fd_install](1:fd_install) puts that struct file into slot 3, and the call returns 3.",
-    "Closing undoes it in the other order: [file_close_fd](2:file_close_fd) empties slot 3, so the number is free again, and [__fput](2:__fput) frees the struct file, which nothing refers to any more.",
+    "1. [get_unused_fd_flags](get_unused_fd_flags) takes the lowest free slot of the table. 0, 1 and 2 are taken (the console), so the answer will be 3.",
+    "2. [path_openat](path_openat) finds the file by its path, one name at a time from the root: \"note.txt\" in /, an in-memory file system (ramfs).",
+    "3. [do_dentry_open](do_dentry_open) makes the open file itself, a `struct file`: which inode, where the program is in it (its position, 0), and how it was opened (read only).",
+    "4. [fd_install](fd_install) puts that struct file into slot 3, and the call returns 3.",
+    "Closing undoes it in the other order: [file_close_fd](file_close_fd) empties slot 3, so the number is free again, and [__fput](__fput) frees the struct file, which nothing refers to any more.",
     "Try: [open the same file twice](try:1) before closing, and see what number the second open gets; or [close it twice](try:2): the second close fails with EBADF, decided before any file is looked at."
   ],
   "tries": [

@@ -1,11 +1,11 @@
 {
   "title": "What a call changed",
   "text": [
-    "The [Memory](1:fd_install:memory) tab lists what the call selected wrote in the kernel's memory: each object it changed, what it is, and each member with its value before and after.",
+    "The [Memory](fd_install/memory) tab lists what the call selected wrote in the kernel's memory: each object it changed, what it is, and each member with its value before and after.",
     "1. The process's table of open files, its `struct files_struct` (`current->files`): `fd_array[3]` from NULL to the console's `struct file`; `open_fds_init[0]` from 7 to 15, in binary 0111 to 1111, bit 3 now set too; and `next_fd`, where the next search starts, 4.",
     "2. The console's `struct file` counts one more reference, `f_ref`: two numbers now stand for it, and it stays open until both are closed.",
     "3. The program's own `task_struct`: `regs`, where the way in, `wasm_syscall`, keeps the call's number (23, dup's), its arguments, and its result, 3.",
-    "Click a row to go there: just after that write, the line that made it in the source. The [Tasks](1:fd_install:tasks) tab lists every task the kernel has, at the cursor: the program, `prog`, running; the kernel's own threads asleep or waiting their turn. Open one for its `task_struct`, the kernel's record of it: its `files` is the table dup changed.",
+    "Click a row to go there: just after that write, the line that made it in the source. The [Tasks](fd_install/tasks) tab lists every task the kernel has, at the cursor: the program, `prog`, running; the kernel's own threads asleep or waiting their turn. Open one for its `task_struct`, the kernel's record of it: its `files` is the table dup changed.",
     "Try: [close it again](try:1): `close(fd)` sets each back."
   ],
   "tries": [

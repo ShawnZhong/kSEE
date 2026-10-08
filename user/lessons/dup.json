@@ -2,8 +2,8 @@
   "title": "Two fds, one file",
   "text": [
     "An fd is only a number; behind it is the open file, a `struct file`. Two fds can stand for the same one: `dup`.",
-    "1. [fget_raw](2:fget_raw) finds the open file fd 3 stands for, and counts one more reference to it; [get_unused_fd_flags](2:get_unused_fd_flags) takes the lowest free slot, 4; [fd_install](2:fd_install) puts the same `struct file` there. [What it changed](2:fd_install:memory): `fd_array[4]`, the same file as `fd_array[3]`.",
-    "2. The position is the open file's, not the fd's: the read through fd moves `f_pos` from 0 to 5 (\"hello\"), and [the read through fd2](4:ksys_read) goes on from 5 (\" from\"): see `buf`.",
+    "1. [fget_raw](fget_raw) finds the open file fd 3 stands for, and counts one more reference to it; [get_unused_fd_flags](dup/get_unused_fd_flags) takes the lowest free slot, 4; [fd_install](dup/fd_install) puts the same `struct file` there. [What it changed](dup/fd_install/memory): `fd_array[4]`, the same file as `fd_array[3]`.",
+    "2. The position is the open file's, not the fd's: the read through fd moves `f_pos` from 0 to 5 (\"hello\"), and [the read through fd2](read#2/ksys_read) goes on from 5 (\" from\"): see `buf`.",
     "Try: [open it twice instead](try:1): two opens make two open files, each with its own position, so the second read starts at 0 again."
   ],
   "tries": [
