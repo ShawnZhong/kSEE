@@ -103,8 +103,7 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     let caller = place();
     press("Line ▶", false);
     settle().await;
-    check(caller.starts_with("ksys_read") && place().starts_with("ksys_read") && one(".transport .path a.on").is_some_and(|a| text(&a) == "ksys_read"),
-          "reading the caller: its own steps, the path saying so", (&caller, place()))?;
+    check(caller.starts_with("ksys_read") && place().starts_with("ksys_read"), "reading the caller: its own steps", (&caller, place()))?;
     Ok(())
 }
 

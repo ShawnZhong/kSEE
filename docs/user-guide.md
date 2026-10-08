@@ -160,9 +160,9 @@ for the current lesson run. The console is output-only.
 ## 5. Move through the recording
 
 You read one frame at a time: the function the source shows, highlighted in
-the Stack and named in the transport below the chart, with the stack around
-it (click a name there to read that frame). Left and right move through time
-in that function; up and down move between functions.
+the Stack (click another there to read it) and named in the transport below
+the chart. Left and right move through time in that function; up and down
+move between functions.
 
 | Control | Action |
 |---|---|

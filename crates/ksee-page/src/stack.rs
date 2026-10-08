@@ -55,18 +55,13 @@ pub fn frame(ui: Ui, d: Derived, dir: isize) {
     }
     let frames = d.stack.peek();
     let k = d.frame.peek().saturating_add_signed(dir).min(frames.len().saturating_sub(1));
-    choose(ui, at, frames.len(), k);
-}
-
-/// Frame `k` (of `n`, innermost first) chosen at moment `at`.
-fn choose(ui: Ui, at: Moment, n: usize, k: usize) {
-    ui.commit(Some(Moment { level: Some(n.saturating_sub(1 + k)), ..at }));
+    ui.commit(Some(Moment { level: Some(frames.len().saturating_sub(1 + k)), ..at }));
 }
 
 /// Under the strip: steps through the lines of the frame you are reading
 /// (◀ ▶, as ← → are; Shift: into every call), the frame you read (▲ the
 /// callee, from the innermost a step into it; ▼ the caller; as ↑ ↓), and
-/// where it is: the stack around it, a click on a frame reading it.
+/// where it is.
 #[component]
 pub fn Transport() -> Element {
     let ui = use_context::<Ui>();
@@ -82,25 +77,12 @@ pub fn Transport() -> Element {
     let turn = here.as_ref().filter(|l| l.run > 1).map_or(String::new(), |l| format!(" · turn {}", l.run));
     let returned = here.as_ref().and_then(|l| l.called.as_ref().filter(|c| c.at <= l.at))
         .map_or(String::new(), |c| format!(" · {} returned {}", c.func, machine().tables().types.result(c.value)));
-    // (The stack around the frame read, outermost first: two out, one in.)
-    let n = frames.len();
-    let path: Vec<(usize, String)> = (chosen.saturating_sub(1)..n.min(chosen + 3)).rev().map(|k| (k, frames[k].func.clone())).collect();
-    let (outer, inner) = (chosen + 3 < n, chosen > 1);
     rsx! {
         div { class: "transport",
             button { title: "the line before in the frame you read (←); Shift: into every call", onclick: move |e| walk(ui, d, -1, e.modifiers().shift()), "◀ Line" }
             button { title: "the next line in the frame you read, over its calls (→); Shift: into every call", onclick: move |e| walk(ui, d, 1, e.modifiers().shift()), "Line ▶" }
             button { title: "read the callee (↑); from the innermost, a step into the call", onclick: move |_| frame(ui, d, -1), "▲ Into" }
             button { title: "read the caller (↓)", onclick: move |_| frame(ui, d, 1), "▼ Out" }
-            span { class: "path mono",
-                if outer { "… › " }
-                for (k , name) in path {
-                    a { class: if k == chosen { "on" } else { "" }, title: "read this frame",
-                        onclick: move |_| if let Some(at) = ui.cursor.peek().clone() { choose(ui, at, n, k) }, "{name}" }
-                    if k > 0 && k > chosen.saturating_sub(1) { " › " }
-                }
-                if inner { " …" }
-            }
             span { class: "where mono dim", "{place}{turn}{returned}" }
         }
     }
