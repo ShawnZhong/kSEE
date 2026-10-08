@@ -62,7 +62,7 @@ Lesson paragraphs use Markdown-like inline code and links parsed by
 | `[try it](try:1)` | Run `tries[0]` instead of the lesson program. |
 
 Call and try numbers are one-based and must be positive. The reserved tab
-suffixes are `stack`, `objects`, `tasks`, and `console`; `any` is valid only
+suffixes are `stack`, `memory`, `tasks`, `disk`, and `console`; `any` is valid only
 after a function name. Call numbers count syscall lines only, so declarations
 do not increment them. Malformed targets fail lesson self-test validation.
 A try keeps the lesson prose visible, but recording links are disabled because

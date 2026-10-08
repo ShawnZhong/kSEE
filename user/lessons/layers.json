@@ -1,0 +1,24 @@
+{
+  "title": "From a line to the screen: the kernel's layers",
+  "question": "A write to fd 3, the console since dup: what does the kernel do for it, all the way down?",
+  "text": [
+    "A kernel is built in layers, each hiding the one below from the one above. Printing is a write to a file, `write(3, \"hello\\n\", 6)`, and it goes down through each layer; on the timeline, they are stacked: [the write](2:ksys_write).",
+    "1. The syscall: [ksys_write](2:ksys_write) turns the number 3 into the open file it stands for, a `struct file`, through the table dup filled, and the position to write at.",
+    "2. The VFS, [vfs_write](2:vfs_write), the layer that is the same for every kind of file: is the file open for writing, is the buffer readable? On the Stack: `count` is 6, the bytes of \"hello\" and a newline.",
+    "3. The driver, [console_dev_write](2:console_dev_write): the file's own write, the console's.",
+    "4. Below the driver there would be hardware. This kernel runs in a browser, so its machine is the page: the driver hands the bytes to it, and it shows them in the [Console](2:console_dev_write:console) tab. The disk, later on, is the same: an image the page keeps.",
+    "Try: [fd 1 instead](try:1), the same file: the same layers; or [fd 5](try:2), not open: the call stops at the first layer and returns -9, EBADF, a failed call's result being its error's number, negative."
+  ],
+  "tries": [
+    [
+      "write(1, \"hello\\n\", 6)"
+    ],
+    [
+      "write(5, \"hello\\n\", 6)"
+    ]
+  ],
+  "program": [
+    "dup(1)",
+    "write(3, \"hello\\n\", 6)"
+  ]
+}

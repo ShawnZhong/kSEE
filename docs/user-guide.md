@@ -2,8 +2,8 @@
 
 kSEE opens a lesson on the left and its kernel recording on the right. The
 usual workflow is to choose or edit a small program, select one of its
-syscalls, then move through that syscall while source, stack, tasks, objects,
-and console output stay aligned.
+syscalls, then move through that syscall while source, stack, memory, tasks,
+disk and console output stay aligned.
 
 ## 1. Open a lesson or edit its program
 
@@ -19,8 +19,9 @@ later row wakes it.
 
 Programs with more than one task use a task column for each. The dotted part
 of a column means that task is still blocked. Edit a row in place or add a row at the
-bottom. Press Enter to run the entire changed program on a fresh kernel. An
-invalid row explains why and does not run.
+bottom. Press Enter to run the entire changed program on a fresh kernel; to
+remove a row, empty it and press Enter. An invalid row explains why and does
+not run.
 
 Explanatory links can select a syscall, move directly to a function it called,
 switch a detail tab, or run a prepared alternative program. Use **reset** to
@@ -54,8 +55,9 @@ its source is in (the legend), a concept a color family: storage green (`fs/`,
 `block/`), the core kernel warm (`mm/` gold, `kernel/` orange, the scheduler
 coral: where a task sleeps and another runs), the machine blue (`drivers/`,
 the port's `arch/` fainter), and the helpers a cool gray (`lib/`,
-`include/`); a file in none of them, gray. Hover a bar to see what
-its call was (nothing else moves); click to move the cursor there. The task strip below the chart shows which task ran in each region
+`include/`); a file in none of them, gray. Hover the chart to see that
+moment everywhere (the bar's call in a tip); click to keep the cursor there.
+The task strip below the chart shows which task ran in each region
 (the idle task gray). The cursor is a cross: down, its moment; across,
 under the frame you read.
 

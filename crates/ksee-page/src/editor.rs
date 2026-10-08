@@ -76,7 +76,9 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
                         e.prevent_default();
                         let n = items2.len();
                         sel.set(if key == Key::ArrowDown { (sel_now + 1) % n } else { (sel_now + n - 1) % n });
-                    } else if shown && (key == Key::Tab || key == Key::Enter) {
+                    // (Enter takes a completion only for something written: on
+                    // an empty line, it removes the line.)
+                    } else if shown && (key == Key::Tab || (key == Key::Enter && !draft().trim().is_empty())) {
                         e.prevent_default();
                         take(items2[sel_now].clone());
                     } else if key == Key::Enter {

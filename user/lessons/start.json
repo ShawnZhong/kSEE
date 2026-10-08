@@ -1,0 +1,23 @@
+{
+  "title": "A real Linux, in your browser",
+  "question": "This page runs Linux itself. What happens when a program asks it something?",
+  "text": [
+    "This page runs a real Linux kernel, compiled to WebAssembly and started in this tab: no server, no virtual machine. On the left is a program for it to run. Each line is a syscall, a request from a program to the kernel, written as C calls it; the page makes it for the program, and the kernel's answer shows at the line's end.",
+    "The program here makes one: `dup(1)`. A process names the files it has open by small numbers, file descriptors: 0, 1 and 2 are open from the start, and 1 is the console, where a program prints. `dup(1)` asks for one more number for the same file. The kernel answered 3, the lowest number not in use, and remembers it: from now on, 3 is the console too, for this process. That memory is the kernel's state, and a syscall is how a program changes it.",
+    "While it ran, the kernel recorded everything it did for the call: each function, each line, each value it wrote. The rest of the page is that recording; the next lessons show how to read it.",
+    "Change the program: click its line, edit it, and press Enter; the kernel starts again and runs yours. Add a line in the empty row below it; remove one by emptying it and pressing Enter. Or try: [dup twice](try:1): 3, then 4; or [close 0 first](try:2): then dup answers 0, the lowest free number again."
+  ],
+  "tries": [
+    [
+      "dup(1)",
+      "dup(1)"
+    ],
+    [
+      "close(0)",
+      "dup(1)"
+    ]
+  ],
+  "program": [
+    "dup(1)"
+  ]
+}
