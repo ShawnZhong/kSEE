@@ -104,12 +104,12 @@ impl Machine {
         let at = global("wasm_machine");
         let line: Vec<u8> = state(|s| s.cmdline.iter().copied().take(511).chain([0]).collect());
         unsafe {
-            *(at as *mut u32) = RAM_BYTES;
-            *((at + 8) as *mut u64) = self.disk.len() as u64 / 512;
-            core::ptr::copy_nonoverlapping(line.as_ptr(), (at + 16) as *mut u8, line.len());
+            *((at + 4) as *mut u32) = RAM_BYTES;
+            *((at + 16) as *mut u64) = self.disk.len() as u64 / 512;
+            core::ptr::copy_nonoverlapping(line.as_ptr(), (at + 24) as *mut u8, line.len());
         }
         let trace = global("ksee_trace");
-        let (current, pending, deadline) = (global("__current_task"), global("wasm_irq_pending"), global("wasm_timer_deadline"));
+        let (current, pending, deadline) = (global("__current_task"), at, at + 8);
         // (Nothing of a machine before it but its command line, and the ids of
         // the calls asked: they are not used again.)
         state_mut(|s| *s = State { trace, current, pending, deadline, waiting: Some(0), booting: true,

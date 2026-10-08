@@ -25,7 +25,7 @@ __wasm_export(boot_stack) void *wasm_boot_stack(void)
 	return task_stack_top(&init_task);
 }
 
-struct wasm_machine wasm_machine;
+struct wasm_machine wasm_machine = { .timer_deadline = U64_MAX };
 
 /* Entry point: the boot CPU, which becomes init_task/idle. */
 __wasm_export(boot) void wasm_boot(void)

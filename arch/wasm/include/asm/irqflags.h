@@ -12,8 +12,9 @@
 
 #ifndef __ASSEMBLY__
 
+#include <asm/wasm.h>
+
 extern unsigned long wasm_irq_flags;
-extern int wasm_irq_pending;
 void wasm_deliver_irqs(void);
 
 static inline unsigned long arch_local_save_flags(void)
@@ -24,7 +25,7 @@ static inline unsigned long arch_local_save_flags(void)
 static inline void arch_local_irq_restore(unsigned long flags)
 {
 	wasm_irq_flags = flags;
-	if (flags == ARCH_IRQ_ENABLED && *(volatile int *)&wasm_irq_pending)
+	if (flags == ARCH_IRQ_ENABLED && READ_ONCE(wasm_machine.irq_pending))
 		wasm_deliver_irqs();
 }
 

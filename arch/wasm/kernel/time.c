@@ -2,7 +2,7 @@
 /*
  * Time: the clocksource reads the host's clock (virtual: it moves on as
  * the kernel reads it, and the host skips it ahead while the CPU idles);
- * the one-shot clockevent publishes its deadline in wasm_timer_deadline,
+ * the one-shot clockevent publishes its deadline in wasm_machine,
  * which the host turns into WASM_IRQ_TIMER once it passes.
  */
 #include <linux/clockchips.h>
@@ -11,8 +11,6 @@
 #include <linux/sched/clock.h>
 #include <linux/time.h>
 #include <asm/wasm.h>
-
-u64 wasm_timer_deadline = U64_MAX;
 
 static u64 wasm_clocksource_read(struct clocksource *cs)
 {
@@ -30,13 +28,13 @@ static struct clocksource wasm_clocksource = {
 static int wasm_set_next_event(unsigned long delta,
 			       struct clock_event_device *ce)
 {
-	WRITE_ONCE(wasm_timer_deadline, wasm_time_ns() + delta);
+	WRITE_ONCE(wasm_machine.timer_deadline, wasm_time_ns() + delta);
 	return 0;
 }
 
 static int wasm_set_state_shutdown(struct clock_event_device *ce)
 {
-	WRITE_ONCE(wasm_timer_deadline, U64_MAX);
+	WRITE_ONCE(wasm_machine.timer_deadline, U64_MAX);
 	return 0;
 }
 

@@ -34,15 +34,19 @@ extern struct console wasm_console;
 void wasm_console_interrupt(void);
 
 /*
- * The machine, as the host says it, written before it calls boot (setup.c;
- * ksee-host's machine.rs, the same layout): the end of RAM (the kernel uses
- * linear memory below it; the host may grow the memory beyond it for
- * itself), the disk's size in 512-byte sectors (0: none), and the command
- * line.
+ * The machine, the memory the kernel and the host share (setup.c;
+ * ksee-host's machine.rs, the same layout): the interrupts pending (bits,
+ * WASM_IRQ_*: the host sets them, the kernel takes them, irq.c); the next
+ * timer interrupt's time_ns, U64_MAX if none (the kernel sets it, the host
+ * raises the timer once it passes, time.c); and what the host says before
+ * it calls boot: the end of RAM (the kernel uses linear memory below it;
+ * the host may grow the memory beyond it for itself), the disk's size in
+ * 512-byte sectors (0: none), and the command line.
  */
 struct wasm_machine {
+	u32 irq_pending;
 	u32 memory_end;
-	u32 pad;
+	u64 timer_deadline;
 	u64 disk_sectors;
 	char cmdline[512];
 };
@@ -84,7 +88,7 @@ void wasm_switch_task(struct task_struct *prev, struct task_struct *next, bool d
 
 /*
  * Suspend until an interrupt may be pending: the timer's deadline (see
- * wasm_timer_deadline), or input from the host.
+ * wasm_machine), or input from the host.
  */
 __wasm_import(idle)
 void wasm_idle(void);
@@ -132,12 +136,9 @@ long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
 /* The timer's interrupt (time.c, irq.c). */
 void wasm_timer_interrupt(void);
 
-/* Interrupt lines, as bits of wasm_irq_pending (ksee-host's state.rs, IRQ_*, the same). */
+/* Interrupt lines, as bits of wasm_machine.irq_pending (ksee-host's state.rs, IRQ_*, the same). */
 #define WASM_IRQ_TIMER		0
 #define WASM_IRQ_CONSOLE	1	/* the console has input (drivers/console.c) */
 #define WASM_IRQ_DISK		2	/* the disk has done requests (drivers/disk.c) */
-
-/* Absolute time_ns of the next timer interrupt, U64_MAX if none. */
-extern u64 wasm_timer_deadline;
 
 #endif

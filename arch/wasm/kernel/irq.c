@@ -3,7 +3,7 @@
  * Interrupts.
  *
  * The host never interrupts running wasm code. It raises an interrupt by
- * setting a bit in wasm_irq_pending (and waking the CPU if it idles); the kernel
+ * setting a bit in wasm_machine.irq_pending (and waking the CPU if it idles); the kernel
  * takes pending interrupts when it re-enables interrupts and when the CPU
  * idles, which are the points real hardware would deliver them to a
  * PREEMPT_NONE kernel that has interrupts masked in between.
@@ -17,15 +17,14 @@
 #include <asm/wasm.h>
 
 unsigned long wasm_irq_flags = ARCH_IRQ_DISABLED;
-int wasm_irq_pending;
 
 void wasm_deliver_irqs(void)
 {
 	struct pt_regs *old_regs;
 	int pending;
 
-	while ((pending = READ_ONCE(wasm_irq_pending))) {
-		WRITE_ONCE(wasm_irq_pending, 0);
+	while ((pending = READ_ONCE(wasm_machine.irq_pending))) {
+		WRITE_ONCE(wasm_machine.irq_pending, 0);
 		wasm_irq_flags = ARCH_IRQ_DISABLED;
 		old_regs = set_irq_regs(task_pt_regs(current));
 		irq_enter();

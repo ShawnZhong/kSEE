@@ -89,7 +89,7 @@ when a pending interrupt or task switch makes work available. Because one
 WebAssembly stack runs at a time, the kernel remains uniprocessor and host code
 cannot observe it halfway through ordinary instructions.
 
-The runtime raises interrupts by setting `wasm_irq_pending`. Linux takes them
+The runtime raises interrupts by setting bits in `wasm_machine.irq_pending`. Linux takes them
 when it next enables interrupts. The console interrupt wakes the runners
 reading their next calls. The timer interrupt follows a virtual clock: reads advance it
 slightly, and idle can skip to an eligible sleeping runner's timer deadline.

@@ -43,7 +43,7 @@ CPU, and no host code runs while the kernel does.
 
 The host never interrupts running wasm code: its JavaScript runs only
 while the kernel is suspended. It raises an interrupt by setting a bit in
-`wasm_irq_pending`; the kernel takes pending interrupts when it re-enables
+`wasm_machine.irq_pending`; the kernel takes pending interrupts when it re-enables
 interrupts. The idle loop suspends until an interrupt may be pending
 (`idle`, suspending): the page's input, or (the clock being virtual,
 below) the timer's deadline, skipped to at once.
@@ -54,7 +54,7 @@ below) the timer's deadline, skipped to at once.
 | 1, console | the page | console input: the readers waiting (drivers/console.c) look for theirs |
 
 The clockevent is one-shot: the kernel writes its deadline to
-`wasm_timer_deadline`; the host raises the timer line once it passes. The
+`wasm_machine.timer_deadline`; the host raises the timer line once it passes. The
 clocksource reads the host's clock, `time_ns`, which is **virtual**: it
 moves on by a microsecond at each read (so delays, which spin on it, end),
 and, while the page waits for the kernel (a boot, a call), idle skips it
@@ -185,9 +185,10 @@ on the command line. Memory above RAM is the host's heap.
 ## The host interface
 
 All of it is in arch/wasm/include/asm/wasm.h (and the Makefile's
-`--export`s). What the machine is (its memory's end, the disk's size, the
-command line) is memory, not calls: the host writes `struct wasm_machine`
-before it calls `boot`. The calls are what memory cannot be: the clock (a
+`--export`s). What the kernel and the host share is memory, not calls:
+`struct wasm_machine`, the interrupts pending and the timer's deadline,
+and what the machine is (its memory's end, the disk's size, the command
+line), which the host writes before it calls `boot`. The calls are what memory cannot be: the clock (a
 read advances it), devices served at once (a console write's bytes are the
 program's until it returns; a disk request's moment is the Disk tab's),
 and switching stacks and loading programs:
@@ -198,5 +199,5 @@ and switching stacks and loading programs:
 | Time, the console | `time_ns`, `console_write`, `console_read`, `halt` | |
 | Tasks (JSPI: `switch_task`, `idle`, `restart_task` suspend) | `spawn_task`, `clone_user`, `switch_task`, `restart_task`, `idle` | `task_entry`, `user_entry`, `__stack_pointer`, `__current_task` |
 | Programs | `user_load`, `user_start` | `syscall` |
-| Interrupts, the disk | `disk_submit`, `disk_done` | `wasm_irq_pending`, `wasm_timer_deadline` |
+| Interrupts, the disk | `disk_submit`, `disk_done` | (`wasm_machine`) |
 | The trace ([recording.md](recording.md)) | | `ksee_trace` (the ring), `ksee_bulk`, `ksee_record` |
