@@ -1,4 +1,4 @@
-//! A lesson: its title and question, the paragraphs
+//! A lesson: its title, the paragraphs
 //! that explain it, and its program, each line with what it did (in task
 //! columns, with more than one task); made on a fresh kernel, a line
 //! at a time, as it opens.
@@ -40,14 +40,13 @@ impl ProgramLine {
     }
 }
 
-/// A lesson (lessons.json): its chapter, title, question, explanation,
+/// A lesson (lessons.json): its chapter, title, explanation,
 /// tries, and its program.
 #[derive(Deserialize, Clone, PartialEq)]
 pub struct Lesson {
     pub name: String,
     pub chapter: String,
     pub title: String,
-    pub question: String,
     pub text: Vec<String>,
     #[serde(default)]
     pub tries: Vec<Vec<ProgramLine>>,
@@ -168,43 +167,48 @@ pub fn LessonPane() -> Element {
     };
     let grid = format!("--columns: {}", columns.len());
     rsx! {
-        h1 { "{lesson.title}" }
-        p { class: "question", "{lesson.question}" }
-        // (A try: the lesson's text still shown, its call links no longer apply.)
-        div { class: "explain", for p in lesson.text.iter() {
-            ParagraphView { pieces: text::pieces(p), follow: move |target| follow(ui, target) }
-        } }
-        div { class: "ptitle dim", "Program"
-            if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| ui.open_lesson(at), "↺ reset" } }
+        // (The text, scrolling, the next lesson at its end; the program
+        // under it, always in view.)
+        article { class: "lesson",
+            h1 { "{lesson.title}" }
+            div { class: "explain", for p in lesson.text.iter() {
+                ParagraphView { pieces: text::pieces(p), follow: move |target| follow(ui, target) }
+            } }
+            crate::nav::Turn {}
         }
-        div { class: "program",
-            if many {
-                div { class: "taskheads", style: "{grid}",
-                    for (name , pid) in names.iter().cloned() { div { class: "task mono", style: "--hue: {crate::chart::hue(pid)}", "{name}" } }
-                }
+        section { class: "programpane",
+            div { class: "ptitle dim", "Program"
+                if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| ui.open_lesson(at), "↺ reset" } }
             }
-            ol { class: if many { "lines columns" } else { "lines" }, style: "{grid}",
-                for (j , step) in program.iter().enumerate() {
-                    li { key: "{j}:{step.text()}", class: if many { "row" } else { "" },
-                        if many {
-                            for w in waits(j).into_iter().filter(|&w| w != col(step)) {
-                                div { class: "wait", style: "grid-column: {w + 1}; --hue: {crate::chart::hue(names[w].1)}", title: "a call in this task column, waiting (blocked)" }
-                            }
-                        }
-                        Cell { j, step: step.clone(), outcome: outcomes.get(j).cloned(),
-                            column: if many { Some((col(step), crate::chart::hue(names[col(step)].1))) } else { None } }
+            div { class: "program",
+                if many {
+                    div { class: "taskheads", style: "{grid}",
+                        for (name , pid) in names.iter().cloned() { div { class: "task mono", style: "--hue: {crate::chart::hue(pid)}", "{name}" } }
                     }
                 }
-                li { class: if many { "add row" } else { "add" },
-                    for (c , task) in columns.iter().enumerate() {
-                        {
-                            let task = task.clone();
-                            let by = if many { format!("add a call, by {}…", names[c].0) } else { "add a call…".to_string() };
-                            rsx! {
-                                div { class: "cell", style: if many { format!("grid-column: {}", c + 1) } else { String::new() },
-                                    crate::editor::Editor { key: "{program.len()}:{c}", text: String::new(), task: task.clone(), line: program.len(),
-                                        placeholder: by,
-                                        done: move |text: String| if !text.is_empty() { ui.program.write().push(ProgramLine::on(task.as_deref(), text)); } }
+                ol { class: if many { "lines columns" } else { "lines" }, style: "{grid}",
+                    for (j , step) in program.iter().enumerate() {
+                        li { key: "{j}:{step.text()}", class: if many { "row" } else { "" },
+                            if many {
+                                for w in waits(j).into_iter().filter(|&w| w != col(step)) {
+                                    div { class: "wait", style: "grid-column: {w + 1}; --hue: {crate::chart::hue(names[w].1)}", title: "a call in this task column, waiting (blocked)" }
+                                }
+                            }
+                            Cell { j, step: step.clone(), outcome: outcomes.get(j).cloned(),
+                                column: if many { Some((col(step), crate::chart::hue(names[col(step)].1))) } else { None } }
+                        }
+                    }
+                    li { class: if many { "add row" } else { "add" },
+                        for (c , task) in columns.iter().enumerate() {
+                            {
+                                let task = task.clone();
+                                let by = if many { format!("add a call, by {}…", names[c].0) } else { "add a call…".to_string() };
+                                rsx! {
+                                    div { class: "cell", style: if many { format!("grid-column: {}", c + 1) } else { String::new() },
+                                        crate::editor::Editor { key: "{program.len()}:{c}", text: String::new(), task: task.clone(), line: program.len(),
+                                            placeholder: by,
+                                            done: move |text: String| if !text.is_empty() { ui.program.write().push(ProgramLine::on(task.as_deref(), text)); } }
+                                    }
                                 }
                             }
                         }

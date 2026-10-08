@@ -1,6 +1,5 @@
 {
   "title": "How is a file made?",
-  "question": "open() with O_CREAT makes a file that is not there. What does the kernel make? (In memory: ramfs.)",
   "text": [
     "A missing name fails an open, unless the open asks for it to be made: O_CREAT. What does the kernel make?",
     "The path walk reaches \"new.txt\" and finds no such name; with O_CREAT, [lookup_open](1:lookup_open) asks the file system to make it. In ramfs, [ramfs_mknod](1:ramfs_mknod) makes two things: a new inode, which is the file itself (its mode, its size, its pages), and a name for it in the directory, a dentry pointing at that inode.",

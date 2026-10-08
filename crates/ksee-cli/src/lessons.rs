@@ -48,9 +48,15 @@ pub fn write() {
         let _ = std::fs::remove_file(&out);
         crate::or_fail(std::fs::write(&out, text), &out);
     };
+    // (The pages of lessons no longer in the course: gone.)
+    for e in std::fs::read_dir(SITE).into_iter().flatten().flatten() {
+        if e.path().extension().is_some_and(|x| x == "html") {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
     out("lessons.json", serde_json::to_string(&all).unwrap_or_default());
     for lesson in &all {
-        out(&format!("{}.html", s(lesson, "name")), fill(&page, &format!("{} — kSEE", s(lesson, "title")), s(lesson, "question"), &as_text(lesson)));
+        out(&format!("{}.html", s(lesson, "name")), fill(&page, &format!("{} — kSEE", s(lesson, "title")), &summary(lesson), &as_text(lesson)));
     }
     out("index.html", fill(&page, TITLE, DESCRIPTION, &contents(&all)));
     // (For search engines: every page, at the address the site is published
@@ -63,7 +69,7 @@ pub fn write() {
     }
 }
 
-const TITLE: &str = "kSEE, the kernel Syscall Execution Explorer: step through a real Linux kernel in your browser";
+const TITLE: &str = "kSEE, the kernel Syscall Execution Explorer: see what the Linux kernel does for your program";
 const DESCRIPTION: &str = "kSEE runs a real Linux kernel in your browser and records everything a system call does: \
                            step through its source line by line, with the call stack, its arguments and locals, and every write to memory.";
 
@@ -106,10 +112,24 @@ fn paragraph(t: &str) -> String {
     }).collect()
 }
 
-/// Lesson `lesson`, as text: its chapter, title, question and text, its program.
+/// A paragraph as plain text: its code and links' labels as words.
+fn plain(t: &str) -> String {
+    pieces(t).into_iter().map(|p| match p {
+        Piece::Text(t) | Piece::Code(t) => t,
+        Piece::Link { label, .. } => plain(&label),
+    }).collect()
+}
+
+/// What lesson `lesson` is about, as a link preview says it: its first
+/// paragraph, as text.
+fn summary(lesson: &Value) -> String {
+    lesson["text"].get(0).and_then(Value::as_str).map(plain).unwrap_or_default()
+}
+
+/// Lesson `lesson`, as text: its chapter, title and text, its program.
 fn as_text(lesson: &Value) -> String {
-    let mut h = format!("<p><a href=\"./\">kSEE</a> · {}</p>\n<h1>{}</h1>\n<p>{}</p>\n",
-                        escape(s(lesson, "chapter")), escape(s(lesson, "title")), escape(s(lesson, "question")));
+    let mut h = format!("<p><a href=\"./\">kSEE</a> · {}</p>\n<h1>{}</h1>\n",
+                        escape(s(lesson, "chapter")), escape(s(lesson, "title")));
     for p in lesson["text"].as_array().into_iter().flatten().filter_map(Value::as_str) {
         h += &format!("<p>{}</p>\n", paragraph(p));
     }
@@ -135,7 +155,7 @@ fn contents(all: &[Value]) -> String {
             chapter = s(lesson, "chapter");
             h += &format!("<h2>{}</h2>\n", escape(chapter));
         }
-        h += &format!("<p><a href=\"{}.html\">{}</a>: {}</p>\n", s(lesson, "name"), escape(s(lesson, "title")), escape(s(lesson, "question")));
+        h += &format!("<p><a href=\"{}.html\">{}</a></p>\n", s(lesson, "name"), escape(s(lesson, "title")));
     }
     h
 }
@@ -153,11 +173,11 @@ mod tests {
     #[test]
     fn a_lesson_s_page() {
         let page = "<head>\n<title>x</title>\n<meta name=\"description\" content=\"x\">\n<meta property=\"og:title\" content=\"x\">\n</head>\n<body>\n<div id=\"root\"></div>\n</body>\n";
-        let lesson = json!({ "name": "r", "chapter": "G", "title": "T", "question": "Q?", "text": ["P `c`."],
+        let lesson = json!({ "name": "r", "chapter": "G", "title": "T", "text": ["P `c`, [here](1:f)."],
                          "program": ["read(fd)", { "task": "child", "text": "exit(0)" }] });
-        let h = fill(page, "T — kSEE", "Q?", &as_text(&lesson));
-        for want in ["<title>T — kSEE</title>", "content=\"Q?\">", "og:title\" content=\"T — kSEE\"", "<div id=\"root\"></div>\n<article id=\"static\">",
-                     "<h1>T</h1>", "<p>P <code>c</code>.</p>", "<code>read(fd)</code>", "(by child)"] {
+        let h = fill(page, "T — kSEE", &summary(&lesson), &as_text(&lesson));
+        for want in ["<title>T — kSEE</title>", "content=\"P c, here.\">", "og:title\" content=\"T — kSEE\"", "<div id=\"root\"></div>\n<article id=\"static\">",
+                     "<h1>T</h1>", "<p>P <code>c</code>, <em>here</em>.</p>", "<code>read(fd)</code>", "(by child)"] {
             assert!(h.contains(want), "{want} in {h}");
         }
     }

@@ -1,6 +1,5 @@
 {
   "title": "Writing to a file on a disk",
-  "question": "The same write, on ext4: is anything written to the disk?",
   "text": [
     "The same write as in memory, but on ext4. Is anything written to the disk?",
     "[ext4_buffered_write_iter](2:ext4_buffered_write_iter) puts the bytes into the page cache, as in memory, and marks the page dirty: to be written back later. [ext4_da_write_begin](2:ext4_da_write_begin) is delayed allocation: no disk block is chosen for the data yet, one is only reserved. So nothing reaches the disk in this call; that happens in writeback, or in fsync (the next example).",

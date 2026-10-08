@@ -1,6 +1,5 @@
 {
   "title": "Stopping a process",
-  "question": "A blocked call ends when what it waits for comes, or when a signal does. What does kill(child, SIGKILL) do to a child that waits?",
   "text": [
     "Every wait so far ended when what it waited for came. A signal ends one too. The child waits on a futex nobody will wake; the program kills it.",
     "1. [__send_signal_locked](4:__send_signal_locked) marks SIGKILL pending for the child (signal 9: the bit that is 256 in its mask); [complete_signal](4:complete_signal) chooses the task to act on it, and [signal_wake_up](4:signal_wake_up) wakes it from its wait ([try_to_wake_up](4:try_to_wake_up)).",

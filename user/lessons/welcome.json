@@ -1,10 +1,10 @@
 {
   "title": "Welcome to kSEE",
-  "question": "See what the Linux kernel does for a program.",
   "text": [
-    "A real Linux runs in this tab. The program below asks it two things, each a syscall: `int fd = dup(1)` gives the console (1) a second number, `fd`; `write(fd, \"hello\\n\", 6)` prints through it. The kernel's answer is at the end of each line.",
-    "The kernel recorded everything it did for them. Follow [the write to the console](2:console_dev_write), then step with the arrow keys; the hello it printed is in the [Console](2:console_dev_write:console) tab.",
-    "Now change the program: click a line and edit it; it runs again as you press Enter or click away. Or try one ready made: [print something else](try:1); [an fd that is not open](try:2): the kernel refuses, -9, EBADF; [a pointer that is not the program's](try:3): -14, EFAULT, the kernel checks before it reads; or [a fd closed first](try:4)."
+    "Hello! Every program leans on the operating system's kernel: to print, to read a file, to start another program. kSEE lets you watch the kernel, Linux, do that work, one step at a time, right here in your browser.",
+    "The program below asks the kernel two things. `int fd = dup(1)` gets a second number, `fd`, for the screen (number 1); `write(fd, \"hello\\n\", 6)` prints hello through it. Each such request is a syscall, and the kernel's answer is at the end of its line.",
+    "The kernel kept a record of everything it did. Follow [the write to the screen](2:console_dev_write), then step with the arrow keys; what it printed is in the [Console](2:console_dev_write:console) tab.",
+    "Now make it yours: click a line and change it; it runs again as you press Enter or click away. Or try one ready made: [print something else](try:1); [a number that is not open](try:2): the kernel refuses, -9, EBADF; [a pointer that is not the program's](try:3): -14, EFAULT, the kernel checks before it reads; or [a number closed first](try:4)."
   ],
   "program": [
     "int fd = dup(1)",

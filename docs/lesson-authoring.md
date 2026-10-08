@@ -12,8 +12,7 @@ A source lesson contains:
 | Field | Meaning |
 |---|---|
 | `title` | The lesson heading. |
-| `question` | The short question below the heading. |
-| `text` | Explanatory paragraphs with inline code and links into the recording. |
+| `text` | Explanatory paragraphs with inline code and links into the recording; the first is also the page's description (a link preview's). |
 | `program` | The lesson's program, in chronological order. |
 | `tries` | Optional alternative programs linked from the explanation. |
 
@@ -25,7 +24,6 @@ A minimal lesson looks like this:
 ```json
 {
   "title": "What happens in read()?",
-  "question": "Which parts of the kernel does a small read go through?",
   "text": [
     "Open the file, then follow [vfs_read](2:vfs_read).",
     "Try [reading twice](try:1)."

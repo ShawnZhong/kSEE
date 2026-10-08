@@ -1,6 +1,5 @@
 {
   "title": "Stepping through a syscall",
-  "question": "What does vfs_write check before it writes, line by line?",
   "text": [
     "The cursor is a moment of the recording: the source shows the line running then, marked, and the Stack the calls that led there, the innermost on top, each with its arguments and local variables as they were then. Move it with the buttons under the timeline, or the arrow keys:",
     "→ Next goes through the function you are reading, a line at a time, over the calls it makes. ↑ In goes into the call the line makes (with none, on to the next line: ↑ alone follows every line the kernel ran). ← Back goes back in time the way you came, through the function after →, every line after ↑. ↓ Out goes back to the caller, at its call.",

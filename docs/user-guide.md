@@ -8,10 +8,12 @@ disk and console output stay aligned.
 ## 1. Open a lesson or edit its program
 
 The **Lessons** menu groups lessons by chapter and marks the lesson currently
-open. The previous and next buttons move through the course. Opening a lesson
-starts a fresh kernel so every lesson begins from the same state.
+open; ◀ and ▶ beside it, and the link at the end of each lesson, move through
+the course. Opening a lesson starts a fresh kernel so every lesson begins from
+the same state. ◧ hides the lesson, the recording taking the page's width.
 
-A lesson contains a question, explanatory paragraphs, and a program. Each
+A lesson contains explanatory paragraphs and its program, which stays in view
+under them. Each
 program row is a declaration or syscall. A completed syscall row
 shows its result; errors include their kernel name. A row may also show program
 variables changed by the call. If a call blocks, its result appears when a

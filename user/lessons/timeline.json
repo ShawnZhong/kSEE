@@ -1,6 +1,5 @@
 {
   "title": "Reading the timeline",
-  "question": "Which functions did the kernel run for dup(1), and which called which?",
   "text": [
     "The program now makes two calls: `dup(1)`, then `close(fd)`, which gives the number back. Click a line of the program to select its call.",
     "Above the source is the timeline of the call selected, time going left to right. Each bar is a function the kernel ran, as wide as the lines it ran; a function sits on the one that called it. So the bottom row is the way in for every syscall, [wasm_syscall](1:wasm_syscall); above it is the syscall's own function, [__wasm_sys_dup](1:__wasm_sys_dup); above that, what it called, as [alloc_fd](1:alloc_fd), finding the free number.",

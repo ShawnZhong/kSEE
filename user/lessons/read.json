@@ -1,6 +1,5 @@
 {
   "title": "What happens in read()?",
-  "question": "A program reads 64 bytes of a file. Which parts of the kernel does that go through? (Here the file is in memory: no disk.)",
   "text": [
     "With the file open, reading from it. The bytes go through three layers, and here the file is in memory, so no disk is involved.",
     "1. [ksys_read](2:ksys_read) is the syscall's entry: the fd turns into the open file (a `struct file`) and the position to read at, which starts at 0.",

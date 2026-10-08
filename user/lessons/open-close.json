@@ -1,6 +1,5 @@
 {
   "title": "What is a file descriptor?",
-  "question": "open() gives a program a small number for a file, close() gives it back. What are they, in the kernel?",
   "text": [
     "fd 1 was open already. The others a program gets from open(), and gives back with close(). In the kernel the number is an index into the process's table of open files, and what it points to is a `struct file`.",
     "1. [get_unused_fd_flags](1:get_unused_fd_flags) takes the lowest free slot of the table. 0, 1 and 2 are taken (the console), so the answer will be 3.",

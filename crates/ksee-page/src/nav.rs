@@ -85,7 +85,7 @@ fn built() -> Option<(String, String)> {
 
 #[component]
 pub fn Header() -> Element {
-    let ui = use_context::<Ui>();
+    let mut ui = use_context::<Ui>();
     let mut menu = use_signal(|| false);
     let all = lessons();
     let at = (ui.lesson)();
@@ -95,10 +95,14 @@ pub fn Header() -> Element {
     rsx! {
         header { class: "topbar",
             div { class: "left",
+                button { class: if (ui.wide)() { "contents" } else { "contents on" }, title: "the lesson, shown or hidden (hidden: the recording the page's width)",
+                    onclick: move |_| ui.wide.toggle(), "◧" }
                 button { class: if menu() { "contents on" } else { "contents" }, title: "every lesson, by chapter", onclick: move |_| menu.toggle(), "☰ Lessons" }
+                button { title: "the lesson before", disabled: at == 0, onclick: move |_| ui.open_lesson(at.saturating_sub(1)), "◀" }
                 span { class: "crumb", "{all[at].chapter} · {place} of {chapter.len()}" }
+                button { title: "the next lesson", disabled: at + 1 == all.len(), onclick: move |_| ui.open_lesson(at + 1), "▶" }
             }
-            b { "kSEE" span { class: "dim", " · step through a real Linux kernel" } }
+            b { "kSEE" span { class: "dim", " · see what the Linux kernel does for your program" } }
             div { class: "right",
                 if let Some((commit, source)) = built() {
                     a { class: "build", href: "{source}/tree/{commit.trim_end_matches('+')}", target: "_blank",

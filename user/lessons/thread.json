@@ -1,6 +1,5 @@
 {
   "title": "How is a thread made?",
-  "question": "A thread is a second task in the same process: its own stack, the process's memory. What does it take to start one?",
   "text": [
     "A process so far had one task. A thread is another task in the same process: it shares the memory, the files, the name space, and has a stack of its own.",
     "1. The stack first: [do_mmap](1:do_mmap) gives the program 64 KiB of anonymous, zeroed memory for it (no MMU here, so at one address, the same for every thread).",

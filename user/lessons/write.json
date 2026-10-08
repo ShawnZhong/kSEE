@@ -1,6 +1,5 @@
 {
   "title": "What does write() do?",
-  "question": "A program adds a line to a file. Where do the bytes go? (In memory: ramfs.)",
   "text": [
     "Now the other way, into the file: the program appends a line. Where do the bytes go?",
     "1. [ksys_write](2:ksys_write) turns the fd into the open file; with O_APPEND, the position is the file's end, not the file's position.",

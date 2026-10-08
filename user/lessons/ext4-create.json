@@ -1,6 +1,5 @@
 {
   "title": "Making a file on a disk",
-  "question": "The same create, on ext4: what does a disk file system keep track of?",
   "text": [
     "The same create as in memory, but on ext4. A disk file system has to keep track of what it used, so that it is still right after a crash.",
     "1. [ext4_create](1:ext4_create) makes the file, all inside one journal transaction, so that a crash leaves all of it or none of it.",

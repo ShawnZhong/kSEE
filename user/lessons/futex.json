@@ -1,6 +1,5 @@
 {
   "title": "How does a thread sleep until another says so?",
-  "question": "Two threads share memory. One waits for a word to change, the other wakes it: a futex. How does the kernel make sure no wake-up is lost?",
   "text": [
     "A sleep waits for time; a thread can also wait for another. The program makes a thread (as in \"How is a thread made?\"), and they share a word of memory: one waits for it to change and the other wakes it, a futex, the primitive under every mutex and condition variable. How does the kernel make sure no wake-up is lost?",
     "1. The thread waits, saying it expects the word to hold 1. [futex_wait_setup](3:futex_wait_setup) checks the word with the waiter queue's lock held: it holds 0, so the call returns at once with EAGAIN. That check under the lock is the whole trick: a wake-up cannot slip in between the check and the sleep.",

@@ -1,6 +1,5 @@
 {
   "title": "What a call changed",
-  "question": "dup(1) answered 3. Where in the kernel's memory is that answer kept?",
   "text": [
     "The [Memory](1:fd_install:memory) tab lists what the call selected wrote in the kernel's memory: each object it changed, what it is, and each member with its value before and after.",
     "1. The process's table of open files, its `struct files_struct` (`current->files`): `fd_array[3]` from NULL to the console's `struct file`; `open_fds_init[0]` from 7 to 15, in binary 0111 to 1111, bit 3 now set too; and `next_fd`, where the next search starts, 4.",

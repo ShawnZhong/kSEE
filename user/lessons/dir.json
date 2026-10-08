@@ -1,6 +1,5 @@
 {
   "title": "What is a directory?",
-  "question": "A directory is names, each pointing to a file. What happens when one is made, and when one is listed? (In memory: ramfs.)",
   "text": [
     "The names files have live in directories: a directory is names, each pointing to a file. Here one is made and the root is listed, all in memory.",
     "1. [ramfs_mkdir](1:ramfs_mkdir) makes the new directory: an inode like a file's, and a name for it, \"sub\", in /.",

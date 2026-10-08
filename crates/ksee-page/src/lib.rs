@@ -137,10 +137,9 @@ fn App() -> Element {
     stack::listen(ui);
     rsx! {
         nav::Header {}
-        main { class: "page", style: "{sizes().style()}",
+        main { class: if (ui.wide)() { "page wide" } else { "page" }, style: "{sizes().style()}",
             aside { class: "side",
-                article { class: "lesson", lesson::LessonPane {} }
-                nav::Turn {}
+                lesson::LessonPane {}
             }
             layout::Handle { split: layout::Split::Left }
             section { class: "work",

@@ -1,6 +1,5 @@
 {
   "title": "Running a program",
-  "question": "execve replaces a process's program with another. What stays, and what is new?",
   "text": [
     "prctl renamed the task; running a program names it too, after the program. `execve` replaces the program a process runs: the task stays, with its pid; its memory and its program are new.",
     "1. [do_execveat_common](1:do_execveat_common) opens the file ([do_open_execat](1:do_open_execat)), and [load_wasm_binary](1:load_wasm_binary), this kernel's loader for wasm programs, reads it in.",

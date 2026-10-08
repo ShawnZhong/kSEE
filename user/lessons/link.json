@@ -1,6 +1,5 @@
 {
   "title": "A file with two names",
-  "question": "linkat gives a file a second name. Then removing the first: is the file gone?",
   "text": [
     "A name is not the file. The file is its inode; a directory entry is a name that points to it, and an inode can have several.",
     "1. [vfs_link](1:vfs_link), then ext4's [__ext4_link](1:__ext4_link): [inc_nlink](1:inc_nlink) counts the inode's names, from 1 to 2, and [__ext4_add_entry](1:__ext4_add_entry) writes \"also.txt\" into /mnt's directory block, with the same inode number; [d_instantiate](1:d_instantiate) points the new name's dentry at the same inode.",

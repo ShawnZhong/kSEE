@@ -1,6 +1,5 @@
 {
   "title": "How does a task get its name?",
-  "question": "prctl(PR_SET_NAME, \"worker\") renames the task that makes it, as ps shows it. Where does the name go?",
   "text": [
     "getpid read a task's field; prctl can write one. A task's name is `comm`, 16 bytes in its `task_struct`: what ps and top show, and the timeline here. The program renames itself.",
     "1. [__wasm_sys_prctl](1:__wasm_sys_prctl) is one big switch on the option, `PR_SET_NAME` here; first [cap_task_prctl](1:cap_task_prctl), the security module, gets a say.",

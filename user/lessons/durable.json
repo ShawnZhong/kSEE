@@ -1,6 +1,5 @@
 {
   "title": "How does a write reach the disk?",
-  "question": "A write is in memory until it is written back. fsync() makes it durable now: what does that take?",
   "text": [
     "The last write left the bytes in memory, to be written back later. fsync() asks for them to be durable now. What does that take?",
     "1. [ext4_sync_file](3:ext4_sync_file): the data must reach the disk. The dirty page is written back, and now [ext4_mb_new_blocks](3:ext4_mb_new_blocks), the multiblock allocator, chooses a block for it from the block bitmap.",

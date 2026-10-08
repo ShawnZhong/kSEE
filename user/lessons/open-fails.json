@@ -1,6 +1,5 @@
 {
   "title": "Why does open() fail?",
-  "question": "Opening a file that is not there fails with ENOENT; opening a directory for writing, with EISDIR. Where in the kernel is each decided?",
   "text": [
     "Every open so far worked. Here two fail, and each error is decided in a different place: a name that is not there, and a directory opened for writing.",
     "1. [path_openat](1:path_openat) walks the path one name at a time from the root. \"missing\" is not in the dentry cache (the kernel's memory of names), and an in-memory file system has nowhere else to look: [simple_lookup](1:simple_lookup) says no such file, and the call returns ENOENT.",

@@ -1,6 +1,5 @@
 {
   "title": "Two fds, one file",
-  "question": "dup(fd) gives a second fd for the same open file. What do the two share?",
   "text": [
     "An fd is only a number; behind it is the open file, a `struct file`. Two fds can stand for the same one: `dup`.",
     "1. [fget_raw](2:fget_raw) finds the open file fd 3 stands for, and counts one more reference to it; [get_unused_fd_flags](2:get_unused_fd_flags) takes the lowest free slot, 4; [fd_install](2:fd_install) puts the same `struct file` there. [What it changed](2:fd_install:memory): `fd_array[4]`, the same file as `fd_array[3]`.",
