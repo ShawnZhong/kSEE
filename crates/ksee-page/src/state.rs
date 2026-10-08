@@ -176,8 +176,8 @@ pub struct Ui {
     /// The lesson open (an index in the lessons), the program made for
     /// it (its own, or a try), and how each of its lines went.
     pub lesson: Signal<usize>,
-    /// The lesson hidden: the recording the page's width.
-    pub wide: Signal<bool>,
+    /// The lessons' list open, over the lesson (nav::Contents).
+    pub menu: Signal<bool>,
     pub program: Signal<Vec<crate::lesson::ProgramLine>>,
     pub outcomes: Signal<Vec<ksee_host::Outcome>>,
 }
@@ -196,7 +196,7 @@ impl Ui {
             seen: Signal::new(None),
             find: Signal::new(String::new()),
             lesson: Signal::new(0),
-            wide: Signal::new(false),
+            menu: Signal::new(false),
             program: Signal::new(crate::lessons().first().map(|e| e.program.clone()).unwrap_or_default()),
             outcomes: Signal::new(Vec::new()),
         }

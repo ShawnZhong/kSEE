@@ -86,7 +86,6 @@ fn built() -> Option<(String, String)> {
 #[component]
 pub fn Header() -> Element {
     let mut ui = use_context::<Ui>();
-    let mut menu = use_signal(|| false);
     let all = lessons();
     let at = (ui.lesson)();
     // (Where the lesson is: its chapter, and which of its lessons.)
@@ -95,9 +94,7 @@ pub fn Header() -> Element {
     rsx! {
         header { class: "topbar",
             div { class: "left",
-                button { class: if (ui.wide)() { "contents" } else { "contents on" }, title: "the lesson, shown or hidden (hidden: the recording the page's width)",
-                    onclick: move |_| ui.wide.toggle(), "◧" }
-                button { class: if menu() { "contents on" } else { "contents" }, title: "every lesson, by chapter", onclick: move |_| menu.toggle(), "☰ Lessons" }
+                button { class: if (ui.menu)() { "contents on" } else { "contents" }, title: "every lesson, by chapter", onclick: move |_| ui.menu.toggle(), "☰ Lessons" }
                 button { title: "the lesson before", disabled: at == 0, onclick: move |_| ui.open_lesson(at.saturating_sub(1)), "◀" }
                 span { class: "crumb", "{all[at].chapter} · {place} of {chapter.len()}" }
                 button { title: "the next lesson", disabled: at + 1 == all.len(), onclick: move |_| ui.open_lesson(at + 1), "▶" }
@@ -109,10 +106,6 @@ pub fn Header() -> Element {
                         title: "the source this page was built from: {commit} (+: with changes not committed)", "source" }
                 }
                 Theme {}
-            }
-            if menu() {
-                div { class: "menuback", onclick: move |_| menu.set(false) }
-                Contents { close: move |_| menu.set(false) }
             }
         }
     }
@@ -141,10 +134,11 @@ pub fn Turn() -> Element {
     }
 }
 
-/// Every lesson, by chapter, with the open one marked.
+/// Every lesson, by chapter, with the open one marked: over the lesson,
+/// while ☰ Lessons has it open; a choice closes it.
 #[component]
-fn Contents(close: EventHandler<()>) -> Element {
-    let ui = use_context::<Ui>();
+pub fn Contents() -> Element {
+    let mut ui = use_context::<Ui>();
     let all = lessons();
     let mut chapters: Vec<(String, Vec<usize>)> = Vec::new();
     for (k, e) in all.iter().enumerate() {
@@ -159,7 +153,7 @@ fn Contents(close: EventHandler<()>) -> Element {
                 div { class: "chapter", "{g}" }
                 for k in ks {
                     a { class: if k == (ui.lesson)() { "item on" } else { "item" },
-                        onclick: move |_| { ui.open_lesson(k); close.call(()); },
+                        onclick: move |_| { ui.open_lesson(k); ui.menu.set(false); },
                         "{all[k].title}" }
                 }
             }

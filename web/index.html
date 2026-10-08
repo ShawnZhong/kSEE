@@ -51,9 +51,6 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 /* (The program: after the text, kept in view at the side's bottom while
    the text is longer; scrolling once it is long itself.) */
 .programpane { position: sticky; bottom: 0; max-height: 55%; overflow: auto; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: 8px; }
-/* (The lesson hidden: the recording the page's width.) */
-.page.wide { grid-template-columns: minmax(0, 1fr); }
-.page.wide > .side, .page.wide > .vsplit:first-of-type { display: none; }
 .work { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .below { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 1fr) 5px var(--right); }
 .vsplit { cursor: col-resize; background: var(--line); opacity: .5; }
@@ -74,10 +71,8 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 /* (The small headings: the chapter, the menu's chapters, the program's title.) */
 .topbar .crumb, .menu .chapter, .ptitle { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 .topbar .crumb { margin: 0 4px; color: var(--dim); }
-.topbar .menu { top: 100%; left: 0; width: min(340px, 92vw); max-height: 70dvh; }
-.menuback { position: fixed; inset: 0; z-index: 9; }
-.menu { position: absolute; z-index: 10; overflow-y: auto; background: var(--panel);
-  border-top: 1px solid var(--line); padding: 4px 0 12px; box-shadow: 0 6px 16px rgb(0 0 0 / .12); }
+/* (The lessons' list: over the lesson, the side's whole.) */
+.menu { position: absolute; inset: 0; z-index: 10; overflow-y: auto; background: var(--panel); padding: 4px 0 12px; }
 .menu .chapter { margin: 12px 12px 2px; font-weight: 600; color: var(--dim); }
 .menu .item { display: block; padding: 4px 12px; color: var(--fg); }
 .menu .item:hover { background: var(--sel); text-decoration: none; }
