@@ -2,12 +2,12 @@
   "title": "Welcome to kSEE",
   "question": "See what the Linux kernel does for a program.",
   "text": [
-    "A real Linux runs in this tab. The program below asks it two things, each a syscall: `dup(1)` gives the console (fd 1) a second number, 3; `write(3, \"hello\\n\", 6)` prints through it.",
-    "The kernel recorded everything it did for them. Follow [the write to the console](2:console_dev_write), then step with the arrow keys.",
-    "Now change the program: click a line, edit it, and press Enter. Try `write(3, \"bye\\n\", 4)`."
+    "A real Linux runs in this tab. The program below asks it two things, each a syscall: `int fd = dup(1)` gives the console (1) a second number, `fd`; `write(fd, \"hello\\n\", 6)` prints through it. The kernel's answer is at the end of each line.",
+    "The kernel recorded everything it did for them. Follow [the write to the console](2:console_dev_write), then step with the arrow keys; the hello it printed is in the [Console](2:console_dev_write:console) tab.",
+    "Now change the program: click a line, edit it, and press Enter. Try `write(fd, \"bye\\n\", 4)`."
   ],
   "program": [
-    "dup(1)",
-    "write(3, \"hello\\n\", 6)"
+    "int fd = dup(1)",
+    "write(fd, \"hello\\n\", 6)"
   ]
 }

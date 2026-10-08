@@ -9,6 +9,6 @@
     "3. [fd_install](1:fd_install) puts the file at number 3 of the process's table, `fd_array`. On the Stack, `fd` is 3 and `file` the console's open file: click a pointer to open what it points to."
   ],
   "program": [
-    "dup(1)"
+    "int fd = dup(1)"
   ]
 }
