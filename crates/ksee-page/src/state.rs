@@ -257,22 +257,17 @@ impl Ui {
 
     /// Select run `k` (an index in the runs), the cursor at its own code's
     /// first line (a syscall's: past the syscall entry's), on its innermost
-    /// frame. (The window is the reader's: it moves only to keep the cursor
-    /// in it, see Timeline; or to fit a run.)
+    /// frame. (The window is the reader's: it zooms only as asked, and
+    /// slides only to keep the cursor in it, see Timeline.)
     pub fn select(self, k: usize) {
         let own = Ui::run_lines(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
         self.commit(Some(Moment { run: k, line: own.unwrap_or(0), level: None }));
     }
 
-    /// The timeline's window on run `k`, a twentieth more each side.
-    pub fn fit(self, k: usize) {
-        let span = machine().view(|v| v.rec.runs.get(k).map(|r| {
-            let a = v.rec.first_step(r.first);
-            (a as f64, (v.rec.step_of(r.last.unwrap_or(v.rec.last())) + 1).saturating_sub(a).max(1) as f64)
-        }));
-        if let Some((a, n)) = span {
-            self.view(a - n / 20.0, n * 1.1);
-        }
+    /// The timeline's window on steps `a..b`, a twentieth more each side.
+    pub fn zoom_to(self, (a, b): (usize, usize)) {
+        let n = b.saturating_sub(a).max(1) as f64;
+        self.view(a as f64 - n / 20.0, n * 1.1);
     }
 
     /// The timeline's window: `span` steps from `start`, kept in the

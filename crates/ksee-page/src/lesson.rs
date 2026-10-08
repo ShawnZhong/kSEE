@@ -56,8 +56,8 @@ pub struct Lesson {
 
 /// Make `lines` on a fresh kernel, one after another (a call: then the
 /// kernel run until it is quiet), each line's outcome (the Machine's) shown
-/// as it goes; then a call selected, the timeline's window fit to it: the
-/// first the lesson's text links to (its subject), else the last.
+/// as it goes; then a call selected: the first the lesson's text links to
+/// (its subject), else the last.
 /// (A run begun again cancels this one: it stops at its next await.)
 pub(crate) async fn make_program(mut ui: Ui, lines: Vec<ProgramLine>) {
     let m = machine();
@@ -92,10 +92,6 @@ pub(crate) async fn make_program(mut ui: Ui, lines: Vec<ProgramLine>) {
     match linked {
         Some(to) => follow(ui, to),
         None => if let Some(k) = run_of_call(ui, calls) { ui.select(k) },
-    }
-    // (The window, at first: the call selected, fit.)
-    if let Some(k) = ui.run() {
-        ui.fit(k);
     }
 }
 

@@ -61,11 +61,11 @@ The task strip below the chart shows which task ran in each region
 (the idle task gray). The cursor is a cross: down, its moment; across,
 under the frame you read.
 
-The chart opens on the lesson's subject call, with a little on each side.
-After that, only you zoom: choosing another line of the program, following a
-link or stepping moves the cursor, and the window slides along to keep it in
-view at the same zoom (from far away, centered on it). **fit** shows the
-selected call whole; **all**, the whole recording.
+The chart opens on the whole recording, and only you zoom: choosing a line of
+the program, following a link or stepping moves the cursor, and the window
+slides along to keep it in view at the same zoom (from far away, centered on
+it). **zoom to** shows the call you read whole (so does a double-click on a
+bar); **zoom out**, the whole recording again.
 
 ### Zoom and pan
 

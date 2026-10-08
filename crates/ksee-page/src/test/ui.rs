@@ -267,8 +267,10 @@ async fn tip() -> Result<(), String> {
 /// The timeline's window: find, pan, zoom out, the rows scrolled, the
 /// overview clicked.
 async fn window() -> Result<(), String> {
-    // (From the call whole: fit, the window on it.)
-    click(&named(".charthead a", "fit").ok_or("no fit")?);
+    // (From the call whole: ksys_read read, on the Stack, and zoomed to.)
+    click(&named(".stack tr.frame a", "ksys_read").ok_or("no ksys_read on the Stack")?);
+    settle().await;
+    click(&named(".charthead a", "zoom to ksys_read").ok_or("no zoom to ksys_read")?);
     settle().await;
     let canvas = one("#timeline-canvas").ok_or("no timeline canvas")?;
     let chart = one(".chart").ok_or("no chart")?;
@@ -454,7 +456,7 @@ pub(super) async fn tasks() -> Check {
     // (The child's line selected: its task in the strip as the program's other.)
     let _ = all("ol.lines .cell textarea").get(5).ok_or("no sixth line")?.dyn_ref::<HtmlElement>().map(|t| t.focus());
     settle().await;
-    click(&named(".charthead a", "fit").ok_or("no fit")?);
+    click(&all(".charthead a").into_iter().find(|a| text(a).starts_with("zoom to")).ok_or("no zoom to")?);
     settle().await;
     let mut strip: Vec<String> = drew("data-test-tasks").unwrap_or_default().lines().filter(|n| n.starts_with("prog(")).map(String::from).collect();
     strip.sort();

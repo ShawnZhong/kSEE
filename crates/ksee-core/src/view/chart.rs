@@ -42,6 +42,13 @@ pub struct Bar {
 }
 
 impl Timeline {
+    /// The steps the call from record `first` in `func` (or code inlined
+    /// as it) is on: from its first to one past its last.
+    pub fn extent(&self, first: usize, func: &str) -> Option<(usize, usize)> {
+        let of = |b: u32| self.bars.get(b as usize).is_some_and(|x| x.first == first && x.name == func);
+        self.rows.iter().flatten().filter(|s| of(s.2)).fold(None, |e, s| Some(e.map_or((s.0, s.1), |(a, b): (usize, usize)| (a.min(s.0), b.max(s.1)))))
+    }
+
     /// Row `d`'s spans that overlap steps `a..b`.
     pub fn spans(&self, d: usize, a: f64, b: f64) -> &[(usize, usize, u32)] {
         self.rows.get(d).map_or(&[], |row| within(row, a, b))

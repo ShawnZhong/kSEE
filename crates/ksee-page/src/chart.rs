@@ -90,13 +90,18 @@ pub fn Timeline() -> Element {
         }
     });
     let title = d.run.cloned().map(|s| s.title()).unwrap_or_default();
+    // (The frame read: its call, to zoom to.)
+    let read = d.stack.read().get(d.frame.cloned()).map(|f| (f.first, f.func.clone()));
     rsx! {
         section { class: "timeline",
             Overview {}
             div { class: "charthead",
                 span { class: "dim", "{title}"
-                    if let Some(k) = ui.run() { " · " a { title: "the window on this run, whole", onclick: move |_| ui.fit(k), "fit" } }
-                    if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.win.set(None), "all" } }
+                    if let Some((first, func)) = read {
+                        " · " a { title: "the window on the call you read, whole (or double-click a bar)",
+                            onclick: move |_| if let Some(e) = d.timeline.read().extent(first, &func) { ui.zoom_to(e) }, "zoom to {func}" }
+                    }
+                    if (ui.win)().is_some() { " · " a { title: "the whole recording", onclick: move |_| ui.win.set(None), "zoom out" } }
                 }
                 Find {}
                 span { class: "legend",
@@ -482,6 +487,14 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                         let _ = chart.release_pointer_capture(p.pointer_id);
                     }
                 }
+            },
+            // (A double-click on a bar: the window on its call.)
+            ondoubleclick: move |e: MouseEvent| {
+                let p = e.client_coordinates();
+                let Some((_, Some((_, b)))) = chart_coordinates(p.x, p.y).and_then(|(x, y)| hit(x, y)) else { return };
+                let chart = d.timeline.peek();
+                let bar = &chart.bars[b];
+                if let Some(e) = chart.extent(bar.first, &bar.name) { ui.zoom_to(e) }
             },
             // (A click, not a drag: the cursor pinned to the moment under it.)
             onclick: move |e: MouseEvent| {
