@@ -34,7 +34,7 @@ pub(super) async fn run(t: &mut KernelHarness) {
         let ops = m.view(|v| v.objects(op.first, oplast));
         t.check("a store through the task's files is named", ops.iter().any(|n| n.what.ends_with("->files") && n.changes.iter().any(|d| d.member == "next_fd")));
         let dso_def = def("do_sys_openat2");
-        t.check("a call begins at its signature line", stack.first().zip(dso_def.as_ref()).is_some_and(|(a, d)| a.line == Some(d.line) && a.file.as_deref() == Some(&d.file)));
+        t.check("a call begins at its signature line", stack.first().zip(dso_def.as_ref()).is_some_and(|(a, d)| a.at.as_ref() == Some(&(d.file.clone(), d.line))));
         let e = stack.last();
         let args: Vec<String> = e.map(|e| e.args.iter().map(|a| value(Some(a))).collect()).unwrap_or_default();
         t.check(format!("the entry frame: the syscall's arguments ({})", args.join(", ")),

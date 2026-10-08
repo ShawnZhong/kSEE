@@ -36,7 +36,7 @@ impl Machine {
     /// Call `id`'s run (see Machine::make), an index in the view's runs:
     /// the first syscall of its number its runner made since it was asked, if the snapshot has it.
     pub fn run_of_call_id(&self, id: u32) -> Option<usize> {
-        let (task, nr, from) = state(|s| s.session.calls.get(&id).map(|c| (c.task, c.nr, c.from)))?;
+        let (task, nr, from) = state(|s| s.session.calls.get(&id).and_then(|c| Some((c.task, c.nr, c.begun?))))?;
         let rec = self.rec.borrow();
         rec.runs.iter().position(|s| s.nr == Some(nr) && s.task == task && rec.ids[s.first] >= from)
     }

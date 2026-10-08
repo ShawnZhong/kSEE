@@ -95,8 +95,6 @@ pub struct TaskAt {
     /// thread group's leader; a process, its parent.
     pub up: Option<u32>,
     pub state: TaskState,
-    /// Its last record by then, if the recording has one.
-    pub last: Option<usize>,
     pub doing: Option<String>,
 }
 
@@ -217,7 +215,7 @@ impl View<'_> {
             TaskAt {
                 task: self.task(addr, i),
                 up: up(leader).or_else(|| up(parent)),
-                state, last,
+                state,
                 doing: last.and_then(|j| {
                     let syscall = self.rec.run_at(j).and_then(|s| t.types.syscalls.get(&self.rec.runs[s].nr?).cloned());
                     syscall.or_else(|| self.rec.calls.stack_at(t, j, None).into_iter().next().and_then(|c| t.functions.get(&c.func)).map(|f| f.name.clone()))

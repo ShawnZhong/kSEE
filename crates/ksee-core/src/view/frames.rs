@@ -27,8 +27,6 @@ pub struct Line {
     pub func: String,
     pub file: String,
     pub line: u32,
-    /// The function the line is inlined from, if.
-    pub inlined: Option<String>,
     /// How deep it runs: its frame's place in the stack, from the
     /// outermost (calls and inlined code alike: Frame::depth).
     pub depth: u32,
@@ -54,9 +52,8 @@ pub struct Frame {
     /// alike): a line run in it is as deep (Line::depth).
     pub depth: u32,
     /// Where the call is (the line it runs, or the one calling the frame
-    /// inside it; else where its function is).
-    pub file: Option<String>,
-    pub line: Option<u32>,
+    /// inside it; else where its function is): its file and line.
+    pub at: Option<(String, u32)>,
     pub args: Vec<Object>,
     pub locals: Vec<Object>,
 }
@@ -108,7 +105,7 @@ impl View<'_> {
     pub(super) fn line_only(&self, s: &LineStep) -> Line {
         let chain = &self.tables.chain(s.inlined)[s.cut as usize..];
         Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
-               inlined: chain.first().map(|&(f, _)| self.inline_name(f)), depth: self.rec.frame_depth(self.tables, s.call) + chain.len() as u32, run: s.run, tests: Vec::new(),
+               depth: self.rec.frame_depth(self.tables, s.call) + chain.len() as u32, run: s.run, tests: Vec::new(),
                called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }) }
     }
 
@@ -174,7 +171,7 @@ impl View<'_> {
             // (The code inlined into it first, innermost first; then it.)
             let frame = |func: String, inlined, at: Option<Loc>| {
                 let (args, locals) = if inlined { (mine(&func, true), mine(&func, false)) } else { (Vec::new(), Vec::new()) };
-                Frame { first: c.first, inlined, depth: 0, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args, locals, func }
+                Frame { first: c.first, inlined, depth: 0, at: at.map(|l| (t.file(l).to_string(), l.line)), args, locals, func }
             };
             let mut nest = self.nest(&c);
             if out.is_empty() {

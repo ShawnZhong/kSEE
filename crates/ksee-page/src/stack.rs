@@ -69,7 +69,7 @@ pub fn Transport() -> Element {
     let here = d.line.cloned();
     let frames = d.stack.cloned();
     let chosen = d.frame.cloned();
-    let place = frames.get(chosen).map_or(String::new(), |f| format!("{} {}:{}", f.func, f.file.as_deref().unwrap_or("?"), f.line.unwrap_or(0)));
+    let place = frames.get(chosen).map_or(String::new(), |f| format!("{}{}", f.func, f.at.as_ref().map_or(String::new(), |(file, line)| format!(" {file}:{line}"))));
     // (On the innermost frame: a line that runs more than once in this
     // call, which turn the cursor is on; a step that lands after a call,
     // what it returned.)
@@ -178,7 +178,7 @@ pub fn Stack() -> Element {
                     },
                         td { colspan: "3",
                             a { class: "mono", "{f.func}" }
-                            span { class: "dim mono", " {f.file.clone().unwrap_or_default()}:{f.line.unwrap_or(0)}" }
+                            if let Some((file, line)) = &f.at { span { class: "dim mono", " {file}:{line}" } }
                             if f.inlined { span { class: "dim", " · inlined" } }
                         }
                     }

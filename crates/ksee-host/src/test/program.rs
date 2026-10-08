@@ -29,7 +29,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     t.check("who wrote f_pos: ksys_read", who.and_then(|w| w.at).is_some_and(|l| l.func == "ksys_read"));
     {
         let nodes = m.view(|v| v.objects(read.first, rlast));
-        let obj = nodes.iter().find(|n| n.addr == open.addr && n.id == open.ty);
+        let obj = nodes.iter().find(|n| n.addr == open.addr && n.ty == open.ty);
         let d = obj.and_then(|o| o.changes.iter().find(|x| x.member == "f_pos"));
         t.check(format!("the read wrote its file: f_pos {:?} → {:?}", d.map(|d| &d.before), d.map(|d| &d.after)),
                 d.is_some_and(|d| d.before == "0" && d.after == "26" && d.streaks.len() == 1 && d.streaks[0].at.as_ref().is_some_and(|l| l.func == "ksys_read")));
@@ -37,7 +37,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         t.check("the read's notes in fs/read_write.c: the kiocb's ki_pos, named as the code names it",
                 notes.iter().any(|n| n.short.starts_with("ki_pos = ") && (n.full.contains("kiocb->ki_pos in ") || n.full.contains("kiocb.ki_pos in "))));
         t.check("what the read changed: its file, not its kiocb (on the stack)",
-                nodes.iter().any(|n| n.ty == "struct file") && !nodes.iter().any(|n| n.ty == "struct kiocb"));
+                nodes.iter().any(|n| n.type_name == "struct file") && !nodes.iter().any(|n| n.type_name == "struct kiocb"));
     }
     {
         // Where the read's bytes came from: copied from the page cache, which the write filled.

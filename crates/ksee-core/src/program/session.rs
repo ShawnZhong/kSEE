@@ -24,7 +24,7 @@ pub struct Runner {
 }
 
 /// A syscall a runner makes: asked (written into its request), begun
-/// (recorded from `from`, the id of the record there), then done.
+/// (recorded from then: the id of the record there), then done.
 #[derive(Default, Clone, Debug)]
 pub struct Call {
     pub id: u32,
@@ -32,8 +32,7 @@ pub struct Call {
     /// Its runner's task (its task_struct): as the recording names it.
     pub task: u32,
     pub nr: u32,
-    pub from: u32,
-    pub begun: bool,
+    pub begun: Option<u32>,
     pub done: bool,
     /// The program's line that made it, and its result's name and what its
     /// type points to, if declared (`int fd = openat(…)`).
@@ -107,7 +106,7 @@ impl Session {
 
     /// Whether a call is under way, begun and not done: what is recorded.
     pub fn recording(&self) -> bool {
-        self.calls.values().any(|c| c.begun && !c.done)
+        self.calls.values().any(|c| c.begun.is_some() && !c.done)
     }
 
     /// The tasks of the calls not done.
@@ -218,16 +217,16 @@ impl Session {
     /// Runner `tid`'s call begins, at record `from`: whether it had not.
     pub fn begin(&mut self, tid: u32, from: u32) -> bool {
         let Some(c) = self.in_flight(tid).and_then(|id| self.calls.get_mut(&id)) else { return false };
-        if c.begun {
+        if c.begun.is_some() {
             return false;
         }
-        (c.begun, c.from) = (true, from);
+        c.begun = Some(from);
         true
     }
 
     /// Whether runner `tid`'s call has begun.
     pub fn begun(&self, tid: u32) -> bool {
-        self.in_flight(tid).and_then(|id| self.calls.get(&id)).is_some_and(|c| c.begun)
+        self.in_flight(tid).and_then(|id| self.calls.get(&id)).is_some_and(|c| c.begun.is_some())
     }
 
     /// Runner `tid`'s call is over: returned (`ret`), or not (an execve ran
@@ -328,7 +327,7 @@ mod tests {
         ask(&mut s, 20, 1, None);
         assert!(s.finish(10, Some(3)) && !s.finish(10, Some(3)));
         assert_eq!(s.outcomes[0], Outcome::Call { id: a, done: true, ret: Some(3), during: Some(1), changed: Vec::new() });
-        assert_eq!(s.calls[&a].from, 7);
+        assert_eq!(s.calls[&a].begun, Some(7));
     }
 
     #[test]

@@ -9,15 +9,21 @@ use alloc::vec::Vec;
 use super::{Context, Sym};
 use crate::types::Types;
 
-/// A completion: `text` to put in (for a syscall's name, from the
-/// context's call_start; else from its word_start), shown as `label` and
-/// `detail`.
+/// A completion: `label` (and `detail`, shown beside it); a syscall's
+/// name, if `call` (put in from the context's call_start; else from its
+/// word_start).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Completion {
-    pub text: String,
     pub label: String,
     pub detail: String,
-    pub name: bool,
+    pub call: bool,
+}
+
+impl Completion {
+    /// What it puts in: a call's name and its "(", else the label.
+    pub fn text(&self) -> String {
+        if self.call { alloc::format!("{}(", self.label) } else { self.label.clone() }
+    }
 }
 
 /// What fits `c`: a syscall's name, those in `common` first, then those
@@ -38,17 +44,16 @@ pub fn completions(types: &Types, c: &Context, names: &[(&str, &Sym)], common: &
             }
         }
         return out.into_iter().map(|n| Completion {
-            text: format!("{n}("),
             label: n.into(),
             detail: types.params_of(n).map_or(String::new(), |ps| format!("({})", ps.join(", "))),
-            name: true,
+            call: true,
         }).collect();
     };
     let w = c.word.as_str();
     if w.is_empty() || w.starts_with(|ch: char| ch.is_ascii_digit()) {
         return Vec::new();
     }
-    let item = |label: &str, detail: String| Completion { text: label.into(), label: label.into(), detail, name: false };
+    let item = |label: &str, detail: String| Completion { label: label.into(), detail, call: false };
     let mut out: Vec<Completion> = names.iter().filter(|(n, _)| n.starts_with(w)).map(|&(n, sym)| item(n, match *sym {
         Sym::Var { .. } => "a variable".into(),
         Sym::Value { v, to: Some(_) } => format!("= {v:#x}"),

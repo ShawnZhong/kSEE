@@ -36,12 +36,15 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let (tl, ws, we) = m.view(|v| (v.timeline(), v.rec.step_of(w.first), v.rec.step_of(wlast)));
     t.check("a timeline of write's steps", tl.tasks_in(ws as f64, ws as f64 + 1.0).first().is_some_and(|s| s.2 == w.task.addr) && tl.depth(ws as f64, we as f64) > 3);
     let steps = m.view(|v| v.lines(w.first, wlast, w.task.addr));
-    t.check("write, line by line (inlined lines too)", steps.len() > 50 && steps.iter().any(|x| x.inlined.is_some()));
-    if let Some(k) = steps.iter().position(|x| x.inlined.is_some()) {
-        let s = &steps[k];
-        let inl = t.stack(s.i, Some(s.nth as usize), s.i);
-        t.check(format!("inlined code is a frame of its own ({} in {})", s.inlined.clone().unwrap_or_default(), s.func),
-                inl.first().is_some_and(|f| f.inlined && Some(&f.func) == s.inlined.as_ref() && f.line == Some(s.line)) && inl.iter().any(|f| f.func == s.func && !f.inlined));
+    // (A line of code inlined: a frame of its own, innermost, on the line; the function it is inlined into under it.)
+    let inlined = steps.iter().filter(|s| s.cut == 0).find_map(|s| {
+        let stack = t.stack(s.i, Some(s.nth as usize), s.i);
+        stack.first().filter(|f| f.inlined).map(|f| (s.clone(), f.clone(), stack.clone()))
+    });
+    t.check("write, line by line (inlined lines too)", steps.len() > 50 && inlined.is_some());
+    if let Some((s, f, stack)) = inlined {
+        t.check(format!("inlined code is a frame of its own ({} in {})", f.func, s.func),
+                f.at.as_ref().is_some_and(|a| a.1 == s.line) && stack.iter().any(|g| g.func == s.func && !g.inlined));
     }
     t.check("and a bar of its own in the timeline", tl.bars.iter().any(|b| b.inlined));
     let outer = tl.at(ws).first().map_or(String::new(), |&b| tl.bars[b as usize].name.clone());
@@ -66,7 +69,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let kw = stack.iter().find(|f| f.func == "ksys_write");
     let kw_def = m.view(|v| v.definition("ksys_write"));
     t.check("an outer call is where it calls the next one in",
-            kw.is_some_and(|f| f.file.as_deref() == Some("fs/read_write.c") && f.line > kw_def.as_ref().map(|d| d.line)));
+            kw.is_some_and(|f| f.at.as_ref().is_some_and(|a| a.0 == "fs/read_write.c" && Some(a.1) > kw_def.as_ref().map(|d| d.line))));
     t.check("a past call stack, with arguments", stack.first().is_some_and(|f| f.func == "vfs_write") && kw.is_some_and(|f| value(arg(f, "count")) == "11"));
     let undone = |i: usize| m.view(|v| v.rec.stores().between(i + 1, usize::MAX).len());
     t.check("memory as it was: writes undone", undone(w.first) > undone(wlast));

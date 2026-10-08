@@ -65,9 +65,9 @@ fn each_task_where_it_last_ran() {
     args.push(1, &[0x100, 0x200, 0]);
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), args);
     let v = View { tables: &t, rec: &rec, now: &alloc::vec![0; 16] };
-    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.last)).collect::<Vec<_>>();
-    assert_eq!(at(0), [(0x100, TaskState::Running, Some(0)), (0x200, TaskState::Sleeping, None)]);
-    assert_eq!(at(3), [(0x100, TaskState::Sleeping, Some(1)), (0x200, TaskState::Running, Some(3))]);
+    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state)).collect::<Vec<_>>();
+    assert_eq!(at(0), [(0x100, TaskState::Running), (0x200, TaskState::Sleeping)]);
+    assert_eq!(at(3), [(0x100, TaskState::Sleeping), (0x200, TaskState::Running)]);
     assert_eq!(v.tasks(3)[0].doing.as_deref(), Some("f"));
 }
 
@@ -92,9 +92,9 @@ fn the_tasks_are_the_kernels_list_then_the_recordings_others() {
     let r = [Record::Task { task: 0x300 }, Record::Block { func: 1, n: 0 }, Record::Task { task: 0x200 }, Record::Block { func: 1, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), (0..4).collect(), Args::default());
     let v = View { tables: &t, rec: &rec, now: &m };
-    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state, x.last)).collect::<Vec<_>>();
-    assert_eq!(at(1), [(0x100, TaskState::Sleeping, None), (0x200, TaskState::Runnable, None), (0x300, TaskState::Running, Some(1))]);
-    assert_eq!(at(3), [(0x100, TaskState::Sleeping, None), (0x200, TaskState::Running, Some(3)), (0x300, TaskState::Exited, Some(1))]);
+    let at = |i| v.tasks(i).into_iter().map(|x| (x.task.addr, x.state)).collect::<Vec<_>>();
+    assert_eq!(at(1), [(0x100, TaskState::Sleeping), (0x200, TaskState::Runnable), (0x300, TaskState::Running)]);
+    assert_eq!(at(3), [(0x100, TaskState::Sleeping), (0x200, TaskState::Running), (0x300, TaskState::Exited)]);
 }
 
 #[test]
@@ -353,9 +353,9 @@ fn a_value_is_followed_through_its_copies() {
     let r = [st(0x30, 0), st(0x10, 0x30), st(0x20, 0x10), st(0x24, 0x14)];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0; 4], Args::default());
     let v = View { tables: &t, rec: &rec, now: &alloc::vec![0; 64] };
-    let way = |a| v.origin(a, 4, 3, 8).iter().map(|w| (w.i, w.addr, w.from)).collect::<Vec<_>>();
-    assert_eq!(way(0x20), [(2, 0x20, Some(0x10)), (1, 0x10, Some(0x30)), (0, 0x30, None)]);
-    assert_eq!(way(0x24), [(3, 0x24, Some(0x14))]);
+    let way = |a| v.origin(a, 4, 3, 8).iter().map(|w| (w.addr, w.from)).collect::<Vec<_>>();
+    assert_eq!(way(0x20), [(0x20, Some(0x10)), (0x10, Some(0x30)), (0x30, None)]);
+    assert_eq!(way(0x24), [(0x24, Some(0x14))]);
 }
 
 #[test]
@@ -379,7 +379,7 @@ fn frames_are_where_their_calls_are() {
     let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
     let v = View { tables: &t, rec: &rec, now: &Vec::new() };
-    let lines: Vec<_> = v.call_stack(1, None, 0, 1).iter().map(|f| (f.func.clone(), f.line)).collect();
+    let lines: Vec<_> = v.call_stack(1, None, 0, 1).iter().map(|f| (f.func.clone(), f.at.as_ref().map(|a| a.1))).collect();
     assert_eq!(lines, [("g".into(), Some(10)), ("f".into(), Some(2))]);
 }
 
@@ -392,12 +392,12 @@ fn inlined_code_is_a_frame_of_its_own() {
     let r = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }];
     let rec = Recording::new(&t, r.to_vec(), alloc::vec![0, 1], Args::default());
     let v = View { tables: &t, rec: &rec, now: &Vec::new() };
-    let frames: Vec<_> = v.call_stack(1, None, 0, 1).iter().map(|f| (f.func.clone(), f.line, f.inlined)).collect();
+    let frames: Vec<_> = v.call_stack(1, None, 0, 1).iter().map(|f| (f.func.clone(), f.at.as_ref().map(|a| a.1), f.inlined)).collect();
     assert_eq!(frames, [("g".into(), Some(10), false), ("h".into(), Some(20), true), ("f".into(), Some(2), false)]);
     // (Line 2, where h is inlined, ran too: h's line 20 ran for it.)
     assert!(v.coverage("f.c", None).contains_key(&2));
     // At record 0, its first line (nth 0): f at line 1, nothing inlined.
-    let first: Vec<_> = v.call_stack(0, Some(0), 0, 0).iter().map(|f| (f.func.clone(), f.line)).collect();
+    let first: Vec<_> = v.call_stack(0, Some(0), 0, 0).iter().map(|f| (f.func.clone(), f.at.as_ref().map(|a| a.1))).collect();
     assert_eq!(first, [("f".into(), Some(1))]);
 }
 
@@ -524,7 +524,7 @@ fn no_wheel_delta_keeps_a_chart_window() {
 #[test]
 fn steps_go_into_or_over() {
     // f (depth 0) line 1, calls g (depth 1): lines 10, 11; then f's line 2.
-    let line = |depth, line| Line { i: 0, at: 0, nth: 0, cut: 0, func: String::new(), file: String::new(), line, inlined: None, depth, run: 1,
+    let line = |depth, line| Line { i: 0, at: 0, nth: 0, cut: 0, func: String::new(), file: String::new(), line, depth, run: 1,
                                    tests: Vec::new(), called: None };
     let lines = [line(0, 1), line(1, 10), line(1, 11), line(0, 2)];
     // (Into: the very next; within f (depth 0): over g; within g, its next.)
@@ -535,7 +535,7 @@ fn steps_go_into_or_over() {
 
 #[test]
 fn run_to_finds_an_exact_line_step() {
-    let line = |i, nth, cut, file: &str, line| Line { i, at: i, nth, cut, func: String::new(), file: file.into(), line, inlined: None, depth: 0, run: 1,
+    let line = |i, nth, cut, file: &str, line| Line { i, at: i, nth, cut, func: String::new(), file: file.into(), line, depth: 0, run: 1,
                                                          tests: Vec::new(), called: None };
     // Two lines share block record 0; h's line is an inline stop there; f's
     // line 3 resumes at g's Return record 2; then f's line 2 runs again.
@@ -560,7 +560,7 @@ fn an_inlined_call_is_stepped_into_as_a_call_is() {
     let lines = v.lines(0, 0, 0);
     let at: Vec<_> = lines.iter().map(|l| (l.file.as_str(), l.line, l.depth)).collect();
     assert_eq!(at, [("f.c", 1, 0), ("f.c", 2, 0), ("h.c", 3, 1), ("g.c", 30, 2), ("f.c", 4, 0)]);
-    let stack = |l: &Line| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, l.i).iter().map(|f| (f.func.clone(), f.line, f.depth)).collect::<Vec<_>>();
+    let stack = |l: &Line| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, l.i).iter().map(|f| (f.func.clone(), f.at.as_ref().map(|a| a.1), f.depth)).collect::<Vec<_>>();
     assert_eq!(stack(&lines[1]), [("f".into(), Some(2), 0)]);
     assert_eq!(stack(&lines[2]), [("h".into(), Some(3), 1), ("f".into(), Some(2), 0)]);
     assert_eq!(stack(&lines[3]), [("g".into(), Some(30), 2), ("h".into(), Some(3), 1), ("f".into(), Some(2), 0)]);

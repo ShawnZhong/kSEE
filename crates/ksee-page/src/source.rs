@@ -78,7 +78,7 @@ pub fn Source() -> Element {
     // call on it returned are said there only, not at a caller's.)
     let leaf = frames.get(d.frame.cloned()).is_none() || d.frame.cloned() == 0;
     let Some(f) = frames.get(d.frame.cloned()).or(frames.first()).cloned() else { return rsx! { div { class: "source" } } };
-    let (Some(path), Some(line)) = (f.file.clone(), f.line) else { return rsx! { div { class: "source" } } };
+    let Some((path, line)) = f.at.clone() else { return rsx! { div { class: "source" } } };
     let (path, line, def_of) = match seen() {
         Some((file, line)) => (file, line, true),
         None => (path, line, false),

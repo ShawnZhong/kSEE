@@ -54,9 +54,10 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
     let mut take = move |it: Completion| {
         let (d, a) = (draft(), at().min(draft().len()));
         let c = context(&d, a);
-        let start = if it.name { c.call_start } else { c.word_start }.min(a);
-        let t = format!("{}{}{}", &d[..start], it.text, &d[a..]);
-        at.set(start + it.text.len());
+        let start = if it.call { c.call_start } else { c.word_start }.min(a);
+        let text = it.text();
+        let t = format!("{}{}{}", &d[..start], text, &d[a..]);
+        at.set(start + text.len());
         draft.set(t);
         sel.set(0);
     };
@@ -98,7 +99,7 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
                         li { class: if k == sel_now { "on" } else { "" },
                             onmousedown: move |e| { e.prevent_default(); take(it.clone()); },
                             // (A syscall's parameters right after its name, as a call writes them.)
-                            span { class: "mono", "{it.label}" } if !it.name { " " } span { class: "dim mono", "{it.detail}" }
+                            span { class: "mono", "{it.label}" } if !it.call { " " } span { class: "dim mono", "{it.detail}" }
                         }
                     }
                 }

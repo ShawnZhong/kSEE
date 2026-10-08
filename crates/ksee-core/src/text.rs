@@ -80,8 +80,9 @@ fn positive(part: &str) -> Option<usize> {
 pub enum Piece {
     Text(String),
     Code(String),
-    /// [label](target): `to`, what it names, if it says (LessonTarget::parse).
-    Link { label: String, target: String, to: Option<LessonTarget> },
+    /// [label](target): `to`, what the target names, if it says
+    /// (LessonTarget::parse).
+    Link { label: String, to: Option<LessonTarget> },
 }
 
 /// Paragraph `p`'s pieces.
@@ -98,7 +99,7 @@ pub fn pieces(p: &str) -> Vec<Piece> {
             rest = &r[end + 1..];
         } else if let Some(r) = rest.strip_prefix('[') && let Some(close) = r.find("](") && let Some(end) = r[close..].find(')') {
             let (label, target) = (&r[..close], &r[close + 2..close + end]);
-            out.push(Piece::Link { label: label.into(), target: target.into(), to: LessonTarget::parse(target) });
+            out.push(Piece::Link { label: label.into(), to: LessonTarget::parse(target) });
             rest = &r[close + end + 1..];
         } else {
             out.push(Piece::Text(rest[..1].into()));
@@ -144,12 +145,12 @@ mod tests {
         let p = pieces("1. [vfs_read](2:vfs_read) reads `buf`; [try](try:1).");
         assert_eq!(p, [
             Piece::Text("1. ".into()),
-            Piece::Link { label: "vfs_read".into(), target: "2:vfs_read".into(),
+            Piece::Link { label: "vfs_read".into(),
                           to: Some(LessonTarget::Recording { call: 2, function: Some("vfs_read".into()), any_task: false, tab: None }) },
             Piece::Text(" reads ".into()),
             Piece::Code("buf".into()),
             Piece::Text("; ".into()),
-            Piece::Link { label: "try".into(), target: "try:1".into(), to: Some(LessonTarget::Try { index: 1 }) },
+            Piece::Link { label: "try".into(), to: Some(LessonTarget::Try { index: 1 }) },
             Piece::Text(".".into()),
         ]);
     }

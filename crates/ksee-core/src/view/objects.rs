@@ -6,7 +6,8 @@ use super::stores::RegionKind;
 
 /// An object a span of records (a call) changed, which is still there when
 /// it returns (see View::objects): as the Stores name it (`what`, `kind`,
-/// `ty`, `id`, `addr`, `size`), and the members the call wrote.
+/// `ty` and its name `type_name`, `addr`, `size`), and the members the
+/// call wrote.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     /// What to call it: an object a pointer reaches, its type's own name
@@ -18,8 +19,8 @@ pub struct Node {
     pub what: String,
     pub within: Option<String>,
     pub kind: RegionKind,
-    pub ty: String,
-    pub id: u32,
+    pub type_name: String,
+    pub ty: u32,
     pub addr: u32,
     pub size: u32,
     pub changes: Vec<Diff>,
@@ -122,7 +123,7 @@ impl View<'_> {
             if streaks.is_empty() {
                 continue;
             }
-            let k = match nodes.iter().position(|(n, _)| n.addr == r.addr && n.id == r.ty) {
+            let k = match nodes.iter().position(|(n, _)| n.addr == r.addr && n.ty == r.ty) {
                 Some(k) => k,
                 None => {
                     let task = self.rec.tasks[t.writes[0].i];
@@ -130,7 +131,7 @@ impl View<'_> {
                         (RegionKind::Object, name) if !name.is_empty() => name.to_string(),
                         _ => r.what.clone(),
                     };
-                    nodes.push((Node { label, what: r.what.clone(), within: r.within.clone(), kind: r.kind, ty: types.name(r.ty), id: r.ty, addr: r.addr, size: r.size,
+                    nodes.push((Node { label, what: r.what.clone(), within: r.within.clone(), kind: r.kind, type_name: types.name(r.ty), ty: r.ty, addr: r.addr, size: r.size,
                                        changes: Vec::new(), depth: r.depth, group: Group::Changed, by: (Some(task) != own).then(|| self.task(task, t.writes[0].i)),
                                        under: None, via: None }, Vec::new()));
                     nodes.len() - 1
@@ -192,7 +193,7 @@ impl View<'_> {
         // (Each node's pointers to the others of its group and task, as
         // memory is as the span ends: the tree each is shown as.)
         let links: Vec<Vec<(String, usize)>> = nodes.iter().enumerate().map(|(k, n)| {
-            types.pointers(n.id).into_iter().filter_map(|(member, off)| Some((member, within(mem.read_u32(n.addr.wrapping_add(off)))
+            types.pointers(n.ty).into_iter().filter_map(|(member, off)| Some((member, within(mem.read_u32(n.addr.wrapping_add(off)))
                 .filter(|&to| to != k && nodes[to].group == n.group && nodes[to].by == n.by)?))).collect()
         }).collect();
         let tos: Vec<Vec<Option<usize>>> = points.iter().enumerate().map(|(k, p)| p.iter().map(|p| p.and_then(within).filter(|&to| to != k)).collect()).collect();

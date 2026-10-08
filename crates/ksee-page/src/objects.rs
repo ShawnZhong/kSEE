@@ -120,7 +120,7 @@ fn ObjectBox(graph: Graph, k: usize, depth: usize) -> Element {
     let what = match (node.kind, &node.within) {
         (RegionKind::Object, Some(function)) => format!("{} in {function}", node.what),
         (RegionKind::Object, None) => node.what.clone(),
-        _ => node.ty.clone(),
+        _ => node.type_name.clone(),
     };
     let via = node.via.as_ref().map_or(String::new(), |via| format!("  ← {via}"));
     let declared = declared[k].clone();

@@ -45,7 +45,7 @@ pub(super) fn views(t: &mut KernelHarness) -> String {
     // (The syscall with the most records: the page's heaviest view of one.)
     let Some((k, s)) = m.view(|v| (0..calls).filter_map(|k| v.run(k).map(|s| (k, s))).filter(|(_, s)| s.nr.is_some()).max_by_key(|(_, s)| s.last - s.first)) else { return String::new() };
     let mid = (s.first + s.last) / 2;
-    let file = m.view(|v| v.call_stack(mid, None, 0, mid).first().and_then(|f| f.file.clone())).unwrap_or_default();
+    let file = m.view(|v| v.call_stack(mid, None, 0, mid).first().and_then(|f| f.at.clone()).map(|a| a.0)).unwrap_or_default();
     let chart = ms(3, || { m.view(|v| v.timeline()); });
     let runs = ms(3, || { m.view(|v| (0..v.rec.runs.len()).filter_map(|k| v.run(k)).count()); });
     let lines = ms(3, || { m.view(|v| v.lines(s.first, s.last, s.task.addr)); });

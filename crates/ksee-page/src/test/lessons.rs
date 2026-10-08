@@ -28,7 +28,7 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
         let mut missing = Vec::new();
         for p in &lesson.text {
             for x in text::pieces(p) {
-                let Piece::Link { target, to, .. } = x else { continue };
+                let Piece::Link { label, to } = x else { continue };
                 let found = match to {
                     Some(LessonTarget::Try { index }) => lesson.tries.get(index - 1).is_some(),
                     Some(LessonTarget::Recording { call, function, any_task, .. }) => {
@@ -40,7 +40,7 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
                     None => false,
                 };
                 if !found {
-                    missing.push(target);
+                    missing.push(label);
                 }
             }
         }

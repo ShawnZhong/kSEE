@@ -101,14 +101,13 @@ pub struct Note {
     pub full: String,
 }
 
-/// A write to a value (`addr`): at record `i`, on `task`, by the code at
+/// A write to a value (`addr`): on `task`, by the code at
 /// `at` (the line, if known); `old` what it overwrote (printed: a number,
 /// in hex past 0xffff); `from`: if it
 /// copied what was at another address (a value loaded and stored as it
 /// is, a memcpy), that address.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Write {
-    pub i: usize,
     pub addr: u32,
     pub old: String,
     pub task: Task,
@@ -132,7 +131,7 @@ impl View<'_> {
                 _ => None,
             };
             let line = self.rec.line_at(self.tables, i).map(|s| self.line_only(&s));
-            out.push(Write { i, addr, old: num(old), task: self.task(self.rec.tasks[i], i), at: line, from });
+            out.push(Write { addr, old: num(old), task: self.task(self.rec.tasks[i], i), at: line, from });
             let (Some(src), Some(before)) = (from, i.checked_sub(1)) else { break };
             (addr, at) = (src, before);
         }
