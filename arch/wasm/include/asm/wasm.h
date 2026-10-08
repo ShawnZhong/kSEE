@@ -34,8 +34,8 @@ extern struct console wasm_console;
 void wasm_console_interrupt(void);
 
 /*
- * The machine, the memory the kernel and the host share (setup.c;
- * ksee-host's machine.rs, the same layout): the interrupts pending (bits,
+ * The machine, the memory the kernel and the host share (setup.c; the
+ * host finds its fields by the kernel's debug info, ksee-host's machine.rs): the interrupts pending (bits,
  * WASM_IRQ_*: the host sets them, the kernel takes them, irq.c); the next
  * timer interrupt's time_ns, U64_MAX if none (the kernel sets it, the host
  * raises the timer once it passes, time.c); and what the host says before

@@ -100,16 +100,19 @@ impl Machine {
             return Err(format!("the kernel starts at {:#x}, not KERNEL_BASE ({KERNEL_BASE:#x}): build both alike", global("__global_base")).into());
         }
         // (The machine, as the kernel reads it as it boots: its struct
-        // wasm_machine, asm/wasm.h's.)
+        // wasm_machine, asm/wasm.h's, its fields where its types say.)
         let at = global("wasm_machine");
-        let line: Vec<u8> = state(|s| s.cmdline.iter().copied().take(511).chain([0]).collect());
+        let field = |f: &str| tables().types.field("wasm_machine", f).map(|(off, size)| (at + off, size))
+            .ok_or_else(|| JsValue::from(format!("the kernel has no wasm_machine.{f}")));
+        let ((end, _), (sectors, _), (line, room)) = (field("memory_end")?, field("disk_sectors")?, field("cmdline")?);
+        let cmdline: Vec<u8> = state(|s| s.cmdline.iter().copied().take(room as usize - 1).chain([0]).collect());
         unsafe {
-            *((at + 4) as *mut u32) = RAM_BYTES;
-            *((at + 16) as *mut u64) = self.disk.len() as u64 / 512;
-            core::ptr::copy_nonoverlapping(line.as_ptr(), (at + 24) as *mut u8, line.len());
+            *(end as *mut u32) = RAM_BYTES;
+            *(sectors as *mut u64) = self.disk.len() as u64 / 512;
+            core::ptr::copy_nonoverlapping(cmdline.as_ptr(), line as *mut u8, cmdline.len());
         }
         let trace = global("ksee_trace");
-        let (current, pending, deadline) = (global("__current_task"), at, at + 8);
+        let (current, pending, deadline) = (global("__current_task"), field("irq_pending")?.0, field("timer_deadline")?.0);
         // (Nothing of a machine before it but its command line, and the ids of
         // the calls asked: they are not used again.)
         state_mut(|s| *s = State { trace, current, pending, deadline, waiting: Some(0), booting: true,
