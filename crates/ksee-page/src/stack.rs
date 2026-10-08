@@ -66,8 +66,9 @@ pub fn walk(ui: Ui, d: Derived, m: Move) {
     }
 }
 
-/// Under the strip: the steps (Move), in a debugger's order: ◀ Back (←;
-/// Shift+←, back over), Over (Shift+→), Into (→), Out (↑); and where the
+/// Under the strip: the steps (Move), in a debugger's order and with its
+/// icons: ↶ Back (←; Shift+←, back over), ↷ Over (Shift+→), ↓ Into (→),
+/// ↑ Out (↑); and where the
 /// cursor is: the frame you read (chosen on the Stack or the chart; else the
 /// innermost).
 #[component]
@@ -87,10 +88,10 @@ pub fn Transport() -> Element {
         .map_or(String::new(), |c| format!(" · {} returned {}", c.func, machine().tables().types.result(c.value)));
     rsx! {
         div { class: "transport",
-            button { title: "Step back: the line before, wherever it is (←; Shift+←: back over, in the function you read)", onclick: move |_| walk(ui, d, Move::Back), "◀ Back" }
-            button { title: "Step over: the next line of the function you read, over what it calls (Shift+→)", onclick: move |_| walk(ui, d, Move::Over), "Over" }
-            button { title: "Step into: the very next line, into the calls (→)", onclick: move |_| walk(ui, d, Move::Into), "Into" }
-            button { title: "Step out: on until the function you read returns, its caller's next line (↑)", onclick: move |_| walk(ui, d, Move::Out), "Out" }
+            button { title: "Step back: the line before, wherever it is (←; Shift+←: back over, in the function you read)", onclick: move |_| walk(ui, d, Move::Back), "↶ Back" }
+            button { title: "Step over: the next line of the function you read, over what it calls (Shift+→)", onclick: move |_| walk(ui, d, Move::Over), "↷ Over" }
+            button { title: "Step into: the very next line, into the calls (→)", onclick: move |_| walk(ui, d, Move::Into), "↓ Into" }
+            button { title: "Step out: on until the function you read returns, its caller's next line (↑)", onclick: move |_| walk(ui, d, Move::Out), "↑ Out" }
             span { class: "where mono dim", "{place}{turn}{returned}" }
         }
     }
