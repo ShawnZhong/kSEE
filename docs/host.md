@@ -90,8 +90,8 @@ WebAssembly stack runs at a time, the kernel remains uniprocessor and host code
 cannot observe it halfway through ordinary instructions.
 
 The runtime raises interrupts by setting `wasm_irq_pending`. Linux takes them
-when it next enables interrupts. The doorbell interrupt wakes a runner whose
-request changed. The timer interrupt follows a virtual clock: reads advance it
+when it next enables interrupts. The console interrupt wakes the runners
+reading their next calls. The timer interrupt follows a virtual clock: reads advance it
 slightly, and idle can skip to an eligible sleeping runner's timer deadline.
 
 ## User programs and runners
@@ -101,15 +101,15 @@ kernel-managed memory. The runtime compiles and instantiates each module where
 Linux mapped its data, places its functions in the kernel table, and preserves
 a user `__stack_pointer` value per task.
 
-`/init` starts `/bin/prog`. A prog instance registers a request structure and
-program heap through `ksee.ready`. The main instance becomes the default
+`/init` starts `/bin/prog`. A prog instance registers its program heap through
+`ksee.ready`, then reads its calls from stdin, the console. The main instance becomes the default
 runner. A clone child or exec'd prog can register another runner.
 
 `Machine::make` handles one chronological lesson step. A declaration allocates
-the task's program memory. A syscall writes the number and arguments into the
-runner's request, records those host
-stores, and raises the doorbell. The runner wakes from its futex and calls the
-ordinary kernel syscall export.
+the task's program memory. A syscall is queued for its runner and the console
+interrupt raised; the runner's console read takes it (the host writes the
+number and arguments into the reader's buffer, recording those stores), and
+the runner calls the ordinary kernel syscall export.
 
 A secondary lesson step names the result-bearing call that created its task.
 The runtime resolves that structured task name to the active runner; task

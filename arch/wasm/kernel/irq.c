@@ -19,19 +19,6 @@
 unsigned long wasm_irq_flags = ARCH_IRQ_DISABLED;
 int wasm_irq_pending;
 
-/*
- * The doorbell: the host has something for a task (a program waiting for
- * it, as /bin/prog waits for the page's calls, in a futex on a word the host
- * has written: woken, the wait sees the word changed and returns).
- */
-static void wasm_ring(void)
-{
-	struct task_struct *p;
-
-	while ((p = wasm_doorbell()))
-		wake_up_process(p);
-}
-
 void wasm_deliver_irqs(void)
 {
 	struct pt_regs *old_regs;
@@ -44,8 +31,8 @@ void wasm_deliver_irqs(void)
 		irq_enter();
 		if (pending & BIT(WASM_IRQ_TIMER))
 			wasm_timer_interrupt();
-		if (pending & BIT(WASM_IRQ_DOORBELL))
-			wasm_ring();
+		if (pending & BIT(WASM_IRQ_CONSOLE))
+			wasm_console_interrupt();
 		if (pending & BIT(WASM_IRQ_DISK))
 			wasm_disk_interrupt();
 		irq_exit();

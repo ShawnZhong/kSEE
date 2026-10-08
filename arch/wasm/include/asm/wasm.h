@@ -22,15 +22,16 @@ struct task_struct;
 __wasm_import(console_write)
 void wasm_console_write(const char *buf, unsigned int len);
 
-/* The console the kernel prints on (drivers/console.c). */
-extern struct console wasm_console;
-
 /*
- * The next task the host rings (WASM_IRQ_DOORBELL: it has something for
- * it; see irq.c), or NULL: none left.
+ * The console's input for the current task, at most @len bytes into @buf:
+ * how many (0: none yet; WASM_IRQ_CONSOLE says when there may be).
  */
-__wasm_import(doorbell)
-struct task_struct *wasm_doorbell(void);
+__wasm_import(console_read)
+unsigned int wasm_console_read(char *buf, unsigned int len);
+
+/* The console the kernel prints on, and its input's interrupt (drivers/console.c). */
+extern struct console wasm_console;
+void wasm_console_interrupt(void);
 
 __wasm_import(get_cmdline)
 unsigned int wasm_get_cmdline(char *buf, unsigned int len);
@@ -135,7 +136,7 @@ void wasm_timer_interrupt(void);
 
 /* Interrupt lines, as bits of wasm_irq_pending (ksee-host's state.rs, IRQ_*, the same). */
 #define WASM_IRQ_TIMER		0
-#define WASM_IRQ_DOORBELL	1	/* the host rings tasks (irq.c) */
+#define WASM_IRQ_CONSOLE	1	/* the console has input (drivers/console.c) */
 #define WASM_IRQ_DISK		2	/* the disk has done requests (drivers/disk.c) */
 
 /* Absolute time_ns of the next timer interrupt, U64_MAX if none. */

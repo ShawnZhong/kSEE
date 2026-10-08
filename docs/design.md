@@ -120,9 +120,9 @@ runs at a time, and host code runs while the kernel is suspended.
 
 ### Programs make real syscalls
 
-The page does not call a special inspection syscall. It writes a request into
-a runner's program memory and rings a doorbell interrupt. The runner wakes from
-a futex and calls the kernel's ordinary syscall export. Threads and child
+The page does not call a special inspection syscall. A runner reads each
+request from its stdin, the console, as typed input, and calls the kernel's
+ordinary syscall export. Threads and child
 processes can become runners too, so one call may block while another task
 wakes it.
 

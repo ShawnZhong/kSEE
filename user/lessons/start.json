@@ -3,7 +3,7 @@
   "text": [
     "A process names the files it has open by small numbers, file descriptors: 0, 1 and 2 are open from the start, and 1 is the console. `int fd = dup(1)` asks for one more number for the same file, and the kernel answers with the lowest number not in use: 3.",
     "And it remembers: from now on, 3 is the console too, for this process, until it is closed. What the kernel remembers is its state; syscalls are how a program reads and changes it. The kernel's own function for dup is [__wasm_sys_dup](__wasm_sys_dup); the next lessons show how to read what it did.",
-    "Try: [dup twice](try:1): 3, then 4; or [close 0 first](try:2): then dup answers 0, the lowest free number again."
+    "Try: [dup twice](try:1): 3, then 4; or [close 2 first](try:2): then dup answers 2, the lowest free number again."
   ],
   "tries": [
     [
@@ -11,7 +11,7 @@
       "int b = dup(1)"
     ],
     [
-      "close(0)",
+      "close(2)",
       "int fd = dup(1)"
     ]
   ],

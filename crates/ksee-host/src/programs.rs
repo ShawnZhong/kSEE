@@ -40,7 +40,7 @@ thread_local! {
 }
 
 /// The current task's thread id.
-fn tid() -> u32 {
+pub(crate) fn tid() -> u32 {
     tables().types.read_task(&Direct, current()).map_or(0, |t| t.pid as u32)
 }
 
@@ -188,19 +188,19 @@ pub(crate) fn finish(tid: u32, ret: Option<i64>) {
     }
 }
 
-/// The imports of a runner (user/prog.c), module ksee. ready(req, heap,
-/// size, main): the current thread is a runner (the program's own, its
-/// main thread, if `main`: see Machine::main), waiting for calls in a futex on
-/// the number in its request at `req` (user/prog.c's struct request, { nr, args[6] }: the host puts a
-/// call there, and rings); its program's own memory at `heap` (its
-/// variables and its calls' literals, see Machine::make). begin(), end(ret): around the call it makes: recorded from the
-/// one to the other; the result.
+/// The imports of a runner (user/prog.c), module ksee. ready(heap, size,
+/// main): the current thread is a runner (the program's own, its main
+/// thread, if `main`: see Machine::main), reading its calls from the
+/// console (imports.rs's console_read); its program's own memory at `heap`
+/// (its variables and its calls' literals, see Machine::make). begin(),
+/// end(ret): around the call it makes: recorded from the one to the other;
+/// the result.
 fn runner_imports() -> Object {
     let ksee = Object::new();
-    js::set(&ksee, "ready", Closure::<dyn FnMut(u32, u32, u32, u32)>::new(|req: u32, heap: u32, size: u32, main: u32| {
+    js::set(&ksee, "ready", Closure::<dyn FnMut(u32, u32, u32)>::new(|heap: u32, size: u32, main: u32| {
         let (tid, task) = (tid(), current());
         state_mut(|s| {
-            if s.session.ready(tid, task, req, heap, size, main != 0) {
+            if s.session.ready(tid, task, heap, size, main != 0) {
                 // (The boot's over: let what it left for later run now, while
                 // nothing is recorded.)
                 s.waiting = Some(s.clock);

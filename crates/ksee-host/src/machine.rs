@@ -259,7 +259,7 @@ impl Machine {
 
 /// Write `bytes` at `addr` into kernel memory, as the host: recorded (as a
 /// call's writes into its request are), so memory as it was stays exact.
-fn write_logged(addr: u32, bytes: &[u8]) {
+pub(crate) fn write_logged(addr: u32, bytes: &[u8]) {
     // (Recorded from the first write of the host's on, a variable declared
     // before any call: memory as it was exact from there.)
     crate::programs::record();
@@ -276,7 +276,7 @@ pub enum Made {
 /// Have runner `tid` make syscall `nr` with `args`, for line `line` (its
 /// result named `result`): the call's id.
 fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, Option<u32>)>, said: (String, Vec<Option<String>>)) -> Result<u32, String> {
-    let (id, Runner { task, req, .. }) = state(|s| s.session.next_call(tid))?;
+    let (id, Runner { task, .. }) = state(|s| s.session.next_call(tid))?;
     // (A call's words as the buffers they point to are put in its program's
     // memory, recorded, as its variables are.)
     let mut put = |b: &[u8]| -> Result<u32, String> {
@@ -284,20 +284,16 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, Op
         write_logged(at, b);
         Ok(at)
     };
-    let words = ksee_core::program::words(args, &mut put)?;
-    let c = Request { id, tid, nr, task, line, result, said, ..Default::default() };
+    let words = core::iter::once(nr).chain(ksee_core::program::words(args, &mut put)?).collect();
+    let c = Request { id, tid, nr, task, line, result, said, words, ..Default::default() };
     state_mut(|s| {
         s.session.ask(c);
         // (The page waits for the kernel now: see State::waiting.)
         s.waiting = Some(s.clock);
-        // (Ring the runner: it waits on the request's number.)
-        s.doorbell.push_back(task);
     });
-    // (The call into the runner's request, in its memory, which is
-    // kernel memory: recorded, as its strings are.)
-    let head: Vec<u8> = core::iter::once(nr).chain(words).flat_map(u32::to_le_bytes).collect();
-    write_logged(req, &head);
-    sched::interrupt(IRQ_DOORBELL);
+    // (The runner reads it from the console: see imports.rs's console_read.)
+    crate::programs::record();
+    sched::interrupt(IRQ_CONSOLE);
     Ok(id)
 }
 

@@ -1,7 +1,7 @@
 //! The kernel's imports (arch/wasm/include/asm/wasm.h).
 //!
-//! Frequent ones (time, console, command line, memory_end, the doorbell,
-//! the disk; and sched.rs's spawn_task) are exports of this module, so the
+//! Frequent ones (time, the console, command line, memory_end, the disk;
+//! and sched.rs's spawn_task) are exports of this module, so the
 //! kernel calls them directly. The rest need JS objects (promises,
 //! programs' modules) and are closures reached through wasm-bindgen: the
 //! tasks' (sched.rs's switch_task, idle and restart_task, and halt here,
@@ -27,10 +27,17 @@ pub extern "C" fn console_write(p: *const u8, n: u32) {
     state_mut(|s| s.console_out.extend_from_slice(unsafe { core::slice::from_raw_parts(p, n as usize) }));
 }
 
-/// doorbell: the next task to ring, or 0.
+/// console_read: the console's input for the task running, its runner's
+/// next call (its number, then its arguments), written into the reader's
+/// buffer at `buf` (a program's memory is kernel memory: recorded, as the
+/// host's writes are): how many bytes, at most `len`; 0, none yet.
 #[unsafe(no_mangle)]
-pub extern "C" fn doorbell() -> u32 {
-    state_mut(|s| s.doorbell.pop_front().unwrap_or(0))
+pub extern "C" fn console_read(buf: u32, len: u32) -> u32 {
+    let tid = crate::programs::tid();
+    let Some(words) = state_mut(|s| s.session.take(tid)) else { return 0 };
+    let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).take(len as usize).collect();
+    crate::machine::write_logged(buf, &bytes);
+    bytes.len() as u32
 }
 
 /// Copy the command line (NUL-terminated) to `buf`.
@@ -160,7 +167,7 @@ pub fn kernel() -> Object {
     let export = |name: &str| js::get(&rt, name);
 
     let kernel = Object::new();
-    for name in ["console_write", "doorbell", "get_cmdline", "memory_end", "time_ns", "spawn_task",
+    for name in ["console_write", "console_read", "get_cmdline", "memory_end", "time_ns", "spawn_task",
                  "disk_sectors", "disk_submit", "disk_done"] {
         js::set(&kernel, name, export(name));
     }

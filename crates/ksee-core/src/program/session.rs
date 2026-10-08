@@ -11,20 +11,19 @@ use alloc::vec::Vec;
 use super::eval::Sym;
 use super::names::Names;
 
-/// A runner: its task (its task_struct), its request (where a call is put:
-/// its first word, the number, is what the runner waits on), its program's
-/// heap (its start), and the result-bearing call that created it (none for
-/// the main runner).
+/// A runner: its task (its task_struct), its program's heap (its start),
+/// and the result-bearing call that created it (none for the main
+/// runner).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Runner {
     pub task: u32,
-    pub req: u32,
     pub heap: u32,
     pub source: Option<u32>,
 }
 
-/// A syscall a runner makes: asked (written into its request), begun
-/// (recorded from then: the id of the record there), then done.
+/// A syscall a runner makes: asked, taken (the runner read it: its
+/// number, then its arguments, `words`), begun (recorded from then: the id
+/// of the record there), then done.
 #[derive(Default, Clone, Debug)]
 pub struct Request {
     pub id: u32,
@@ -32,6 +31,8 @@ pub struct Request {
     /// Its runner's task (its task_struct): as the recording names it.
     pub task: u32,
     pub nr: u32,
+    pub words: Vec<u32>,
+    pub taken: bool,
     pub begun: Option<u32>,
     pub done: bool,
     /// The program's line that made it, and its result's name and what its
@@ -125,12 +126,12 @@ impl Session {
     /// call's (a clone's child): that result's name stands for it already,
     /// before the clone returns. Whether the boot is over (the program
     /// ready, no call under way).
-    pub fn ready(&mut self, tid: u32, task: u32, req: u32, heap: u32, size: u32, main: bool) -> bool {
+    pub fn ready(&mut self, tid: u32, task: u32, heap: u32, size: u32, main: bool) -> bool {
         if main {
             self.main = Some(tid);
         }
         let source = if main { None } else { self.calls.values().next_back().and_then(|c| c.result.as_ref().map(|_| c.id)) };
-        self.runners.insert(tid, Runner { task, req, heap, source });
+        self.runners.insert(tid, Runner { task, heap, source });
         self.heaps.entry(heap).or_insert((heap, heap + size));
         if let Some(Request { line, result: Some((name, _)), .. }) = source.and_then(|id| self.calls.get(&id))
             && !self.names.has(name, *line)
@@ -208,6 +209,13 @@ impl Session {
         Ok((self.last_call_id + 1, runner))
     }
 
+    /// Runner `tid`'s call asked and not yet taken, taken: its words.
+    pub fn take(&mut self, tid: u32) -> Option<Vec<u32>> {
+        let c = self.in_flight(tid).and_then(|id| self.calls.get_mut(&id)).filter(|c| !c.taken)?;
+        c.taken = true;
+        Some(c.words.clone())
+    }
+
     /// Call `c` asked (its id the next: see next_call).
     pub fn ask(&mut self, c: Request) {
         self.last_call_id = c.id;
@@ -279,7 +287,7 @@ mod tests {
     /// A session with the program's runner (tid 10) ready.
     fn ready() -> Session {
         let mut s = Session::default();
-        assert!(s.ready(10, 0x100, 0x200, 0x1000, 0x100, true));
+        assert!(s.ready(10, 0x100, 0x1000, 0x100, true));
         s
     }
 
@@ -323,7 +331,7 @@ mod tests {
         assert!(s.next_call(10).is_err(), "one call at a time");
         assert!(s.begin(10, 7) && !s.begin(10, 8));
         // (Another runner's call, the next line's, wakes it.)
-        s.ready(20, 0x300, 0x400, 0x2000, 0x100, false);
+        s.ready(20, 0x300, 0x2000, 0x100, false);
         ask(&mut s, 20, 1, None);
         assert!(s.finish(10, Some(3)) && !s.finish(10, Some(3)));
         assert_eq!(s.outcomes[0], Outcome::Call { id: a, done: true, ret: Some(3), during: Some(1), changed: Vec::new() });
@@ -334,7 +342,7 @@ mod tests {
     fn a_clone_child_is_its_result_name_before_the_clone_returns() {
         let mut s = ready();
         let clone = ask(&mut s, 10, 0, Some("child"));
-        assert!(!s.ready(20, 0x300, 0x400, 0x1000, 0, false), "a call under way");
+        assert!(!s.ready(20, 0x300, 0x1000, 0, false), "a call under way");
         assert_eq!(s.runners[&20].source, Some(clone));
         assert_eq!(s.names.get("child", 1), Some(&Sym::Value { v: 20, to: None }));
         assert_eq!(s.task_tid(Some("child"), 1), Ok(20));

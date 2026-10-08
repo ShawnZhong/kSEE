@@ -1,19 +1,18 @@
 // /bin/prog: the page's program, a process as any (not /init: pid 1 is
 // special, it may not exit, it ignores the signals it has no handler for).
-// It makes the syscalls the page asks for, one at a time: it waits in a
-// futex on a word of its own, which the host sets when a call is asked for
-// (and rings the task: see crates/ksee-host's machine.rs, call). A clone child of it
+// It makes the syscalls the page asks for, one at a time, reading each from
+// its stdin, the console (the host's input: see crates/ksee-host's
+// machine.rs, call). A clone child of it
 // (a thread, or vfork's child) starts at __wasm_clone_start and is a runner
 // too. /init starts it, and again when it exits. Plain C, with no C
 // library: its syscalls as syscall.h makes them.
-#include <linux/futex.h>
 #include "syscall.h"
 
-// Ready for calls: the host puts a call in *req (its number, -1 while
-// none is asked; its arguments); the runner makes it between begin and
-// end (recorded from the one to the other), and end gets the result.
+// A call, as the console gives it: its number and its arguments. The runner
+// makes it between begin and end (recorded from the one to the other), and
+// end gets the result.
 struct request {
-	volatile int nr;
+	int nr;
 	int args[6];
 };
 
@@ -26,28 +25,24 @@ static char heap[65536];
 // (main: whether this runner is the program's own, its main thread, not a
 // clone child's.)
 __attribute__((import_module("ksee"), import_name("ready")))
-void ksee_ready(struct request *req, char *heap, int size, int main);
+void ksee_ready(char *heap, int size, int main);
 __attribute__((import_module("ksee"), import_name("begin")))
 void ksee_begin(void);
 __attribute__((import_module("ksee"), import_name("end")))
 void ksee_end(long long ret);
 
-// Make the page's calls, one at a time, as each is asked: the host puts
-// the call in `req` (its number: the word the wait is on) and wakes the
-// task; the wait sees the word changed, and returns.
+// Make the page's calls, one at a time, as each comes on stdin.
 static void __attribute__((noreturn)) serve(int main)
 {
 	struct request req;
 
-	req.nr = -1;
-	ksee_ready(&req, heap, sizeof heap, main);
+	ksee_ready(heap, sizeof heap, main);
 	for (;;) {
-		while (req.nr < 0)
-			sys(__NR_futex_time64, &req.nr, FUTEX_WAIT_PRIVATE, -1);
+		if (sys(__NR_read, 0, &req, sizeof req) != sizeof req)
+			continue;
 		ksee_begin();
 		long long ret = sys(req.nr, req.args[0], req.args[1], req.args[2],
 				    req.args[3], req.args[4], req.args[5]);
-		req.nr = -1;
 		ksee_end(ret);
 	}
 }

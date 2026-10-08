@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * The console: output only, to the host, synchronously (programs get the
- * host's input otherwise: see the doorbell, irq.c). It is printk's console
- * from setup_arch on, and /dev/console (a plain character device: no tty
- * layer, CONFIG_TTY=n) is /init's stdin, stdout and stderr: a write hands
- * the program's bytes to the host as they are, a read is at its end.
+ * The console: printk's console from setup_arch on, and /dev/console (a
+ * plain character device: no tty layer, CONFIG_TTY=n), /init's stdin,
+ * stdout and stderr. A write hands the program's bytes to the host as they
+ * are, synchronously. A read waits for the host's input for its task (the
+ * calls the page asks a program to make: user/prog.c reads them), which
+ * the console's interrupt says may have come.
  */
 #include <linux/console.h>
 #include <linux/device.h>
@@ -12,7 +13,10 @@
 #include <linux/init.h>
 #include <linux/major.h>
 #include <linux/uaccess.h>
+#include <linux/wait.h>
 #include <asm/wasm.h>
+
+static DECLARE_WAIT_QUEUE_HEAD(console_wait);
 
 static void wasm_console_write_con(struct console *con, const char *s,
 				   unsigned int n)
@@ -39,10 +43,22 @@ static ssize_t console_dev_write(struct file *file, const char __user *buf,
 	return count;
 }
 
+/* As a write, the host writes the program's memory directly. */
 static ssize_t console_dev_read(struct file *file, char __user *buf,
 				size_t count, loff_t *ppos)
 {
-	return 0;
+	unsigned int n;
+
+	if (!access_ok(buf, count))
+		return -EFAULT;
+	return wait_event_interruptible(console_wait,
+		(n = wasm_console_read((char __force *)buf, count))) ?: n;
+}
+
+/* Input may have come: its readers look. */
+void wasm_console_interrupt(void)
+{
+	wake_up_interruptible(&console_wait);
 }
 
 static const struct file_operations console_dev_fops = {

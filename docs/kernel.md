@@ -51,7 +51,7 @@ below) the timer's deadline, skipped to at once.
 | Line | Raised by | For |
 |---|---|---|
 | 0, timer | the host, when the deadline passes (at idle, or at a switch) | the clockevent (kernel/time.c) |
-| 1, doorbell | the page | the next task with something for it (`doorbell`, irq.c): woken, its wait returns |
+| 1, console | the page | console input: the readers waiting (drivers/console.c) look for theirs |
 
 The clockevent is one-shot: the kernel writes its deadline to
 `wasm_timer_deadline`; the host raises the timer line once it passes. The
@@ -122,30 +122,27 @@ sets up: it mounts the disk (below), then starts **/bin/prog**
 it exits. The program is the page's: a process as any (not pid 1), it
 makes the syscalls the page asks for, one at a time.
 
-The program waits for a call in a `futex` on the first word of its
-request (`struct request`: the number, -1 while none is asked; the
-arguments), in its own memory, which is kernel memory; `ksee.ready(&req,
-heap, size, main)` tells the host where it is, and where its own memory
-is (a static array: the page's variables, and each call's strings and
-compound literals, which the host puts there); `main`: it is the program
-itself, the runner the page's calls go to unless they name another. The
-page writes the call into the request (recorded, as any write to kernel
-memory), the number last, and rings the runner's task (the doorbell: its
-futex wait, woken, sees the number changed and returns); it makes the
-syscall between `ksee.begin` and `ksee.end(ret)`, which bracket the
-recording and carry the result, and waits again. So every syscall the page
-shows is a real process's, with its fds and its memory, and the protocol
-is a struct in shared memory and a bracket. (A plain futex, not console
-input, a signal, or a device: those would put a worker, a signal's
-delivery or the VFS at the start of every call's recording; and no syscall
-of this port's own.)
+The program reads each call from its stdin, the console: a `read` of fd
+0 that waits until the host has a call for its task (`struct request`:
+the number, then the arguments), which the host writes into the reader's
+buffer (recorded, as any write to kernel memory) and the console's
+interrupt says has come. `ksee.ready(heap, size, main)` tells the host
+where the program's own memory is (a static array: the page's variables,
+and each call's strings and compound literals, which the host puts
+there); `main`: it is the program itself, the runner the page's calls go
+to unless they name another. It makes the syscall between `ksee.begin`
+and `ksee.end(ret)`, which bracket the recording (from the call's entry:
+the read before it is not in it) and carry the result, and reads again.
+So every syscall the page shows is a real process's, with its fds and its
+memory, and no syscall of this port's own. (A program that closes its fd
+0 can take no more calls.)
 
 A clone child of the program (a thread, a child process: it shares the
 program's memory) is a **runner** too, and so is the program exec'd again
-(the doorbell rings one task). A runner's `execve` call is over once the
+(the console gives each its own calls). A runner's `execve` call is over once the
 new program is loaded: a runner again only if it says so
 (`ksee.ready`), as /bin/prog does. So the page can make calls as several
-threads and processes: one blocks (a futex's wait, a pipe's read), another
+threads and processes: one blocks (a pipe's read, a futex's wait), another
 wakes it.
 
 ## A disk
@@ -167,10 +164,12 @@ comes with files for the lessons to start from (`mkfs.ext4 -d user/disk`):
 
 ## Console
 
-drivers/console.c: one console, printk's from `setup_arch` on: output only,
+drivers/console.c: one console, printk's from `setup_arch` on: its output
 to the host, synchronously (`console_write`). `/dev/console`, the
 programs' stdin, stdout and stderr, is a plain character device on it: a
-write goes straight to the host, a read is at its end. There is no tty
+write goes straight to the host; a read waits for the host's input for
+its task (`console_read`: the runners' calls), which the console's
+interrupt says may have come. There is no tty
 layer (`CONFIG_TTY=n`): a tty's line discipline and locks would be in
 every write's recording for nothing.
 
@@ -191,8 +190,8 @@ All of it is in arch/wasm/include/asm/wasm.h (and the Makefile's
 | | The kernel imports (module `kernel`) | The kernel exports |
 |---|---|---|
 | Boot and memory | `get_cmdline`, `memory_end` | `boot_stack`, `boot` |
-| Time, the console | `time_ns`, `console_write`, `print_stack`, `halt` | |
-| Tasks (JSPI: `switch_task`, `idle`, `restart_task` suspend) | `spawn_task`, `clone_user`, `switch_task`, `restart_task`, `idle`, `doorbell` | `task_entry`, `user_entry`, `__stack_pointer`, `__current_task` |
+| Time, the console | `time_ns`, `console_write`, `console_read`, `print_stack`, `halt` | |
+| Tasks (JSPI: `switch_task`, `idle`, `restart_task` suspend) | `spawn_task`, `clone_user`, `switch_task`, `restart_task`, `idle` | `task_entry`, `user_entry`, `__stack_pointer`, `__current_task` |
 | Programs | `user_load`, `user_start` | `syscall` |
 | Interrupts, the disk | `disk_sectors`, `disk_submit`, `disk_done` | `wasm_irq_pending`, `wasm_timer_deadline` |
 | The trace ([recording.md](recording.md)) | | `ksee_trace` (the ring), `ksee_bulk`, `ksee_record` |

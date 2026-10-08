@@ -26,7 +26,7 @@ pub const RAM_BYTES: u32 = 64 << 20;
 
 /// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h: the same).
 pub const IRQ_TIMER: u32 = 0;
-pub const IRQ_DOORBELL: u32 = 1;
+pub const IRQ_CONSOLE: u32 = 1;
 pub const IRQ_DISK: u32 = 2;
 
 /// The kernel's clock advances this much at each read (so that a loop on
@@ -57,8 +57,6 @@ pub struct State {
     /// The halt code, once the kernel has halted.
     pub halted: Option<i32>,
     pub console_out: Vec<u8>,
-    /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
-    pub doorbell: VecDeque<u32>,
     /// The disk (arch/wasm/drivers/disk.c): its blocks; the transfers handed to
     /// it and not yet made, the tags of the requests done (for its
     /// interrupt to take); and every transfer made (the Disk tab's).
