@@ -1,12 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Syscalls take a pt_regs pointer, so that every sys_call_table entry has
- * the same wasm signature (call_indirect traps on a mismatch): the entry,
- * __wasm_sys_x, passes the registers to the body, __do_sys_x (inline: a
- * syscall is one function), each cast to its parameter's type, a long long
- * one whole. (No __se_sys_x: the registers are an array, so the cast needs
- * no shim pairing them with the types, and every syscall's stack is a frame
- * shorter.)
+ * the same wasm signature (call_indirect traps on a mismatch). The generic
+ * shims (__se_sys_x, which widens the arguments, and the body __do_sys_x)
+ * are inline: a syscall is one function, __wasm_sys_x. __se_sys_x has no
+ * debug info (nodebug): only the registers' pairing with the parameters'
+ * types, it is not a frame of every syscall's stack.
  */
 #ifndef _ASM_WASM_SYSCALL_WRAPPER_H
 #define _ASM_WASM_SYSCALL_WRAPPER_H
@@ -15,27 +14,25 @@
 
 long sys_ni_syscall(void);
 
-/* Register i as type t, through a long (or a long long) as __SC_LONG does. */
-#define __WASM_ARG(t, i)						\
-	(__force t)(__typeof(__builtin_choose_expr(__TYPE_IS_LL(t), 0LL, 0L)))regs->args[i]
-#define __WASM_ARGS1(t1, a1) __WASM_ARG(t1, 0)
-#define __WASM_ARGS2(t1, a1, t2, a2) __WASM_ARGS1(t1, a1), __WASM_ARG(t2, 1)
-#define __WASM_ARGS3(t1, a1, t2, a2, t3, a3)				\
-	__WASM_ARGS2(t1, a1, t2, a2), __WASM_ARG(t3, 2)
-#define __WASM_ARGS4(t1, a1, t2, a2, t3, a3, t4, a4)			\
-	__WASM_ARGS3(t1, a1, t2, a2, t3, a3), __WASM_ARG(t4, 3)
-#define __WASM_ARGS5(t1, a1, t2, a2, t3, a3, t4, a4, t5, a5)		\
-	__WASM_ARGS4(t1, a1, t2, a2, t3, a3, t4, a4), __WASM_ARG(t5, 4)
-#define __WASM_ARGS6(t1, a1, t2, a2, t3, a3, t4, a4, t5, a5, t6, a6)	\
-	__WASM_ARGS5(t1, a1, t2, a2, t3, a3, t4, a4, t5, a5), __WASM_ARG(t6, 5)
+#define SC_WASM_REGS_TO_ARGS(x, ...)					\
+	__MAP(x, __SC_ARGS, , regs->args[0], , regs->args[1],		\
+	      , regs->args[2], , regs->args[3], , regs->args[4],	\
+	      , regs->args[5])
 
 #define __SYSCALL_DEFINEx(x, name, ...)					\
 	long __wasm_sys##name(const struct pt_regs *regs);		\
 	static inline long __do_sys##name(__MAP(x, __SC_DECL, __VA_ARGS__)); \
+	static inline __attribute__((nodebug))				\
+	long __se_sys##name(__MAP(x, __SC_LONG, __VA_ARGS__))		\
+	{								\
+		long ret = __do_sys##name(__MAP(x, __SC_CAST, __VA_ARGS__)); \
+		__MAP(x, __SC_TEST, __VA_ARGS__);			\
+		__PROTECT(x, ret, __MAP(x, __SC_ARGS, __VA_ARGS__));	\
+		return ret;						\
+	}								\
 	long __wasm_sys##name(const struct pt_regs *regs)		\
 	{								\
-		__MAP(x, __SC_TEST, __VA_ARGS__);			\
-		return __do_sys##name(__WASM_ARGS##x(__VA_ARGS__));	\
+		return __se_sys##name(SC_WASM_REGS_TO_ARGS(x, __VA_ARGS__)); \
 	}								\
 	static inline long __do_sys##name(__MAP(x, __SC_DECL, __VA_ARGS__))
 
