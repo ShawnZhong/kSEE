@@ -1,7 +1,7 @@
 {
   "title": "How does a thread wait for another to end?",
   "text": [
-    "A futex waits for a word; joining a thread waits for the thread's end, and it is a futex too. With no thread library in between, this is how the kernel tells it.",
+    "Joining a thread waits for the thread's end. With no thread library in between, the kernel does it with a futex: a wait on a word in memory, until another task changes the word and wakes the waiter.",
     "1. [do_mmap](do_mmap): memory for the new thread's stack.",
     "2. [copy_process](copy_process) makes the thread and, because of CLONE_CHILD_SETTID and CLONE_CHILD_CLEARTID, notes that its tid is to be written at `mem` now and cleared there when it exits, with a wake-up of anyone waiting on that word.",
     "3. The join is a futex wait: [futex_do_wait](futex_do_wait) sleeps while `mem` still holds the thread's tid. The call blocks.",

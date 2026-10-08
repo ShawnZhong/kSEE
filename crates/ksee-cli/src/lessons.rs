@@ -19,7 +19,7 @@ const COURSE: &[(&str, &[&str])] = &[
     ("A process", &["getpid", "prctl", "exec", "thread"]),
     ("Files, in memory", &["open-close", "dup", "read", "write", "open-fails", "create", "dir"]),
     ("Files on a disk (ext4)", &["ext4-read", "ext4-create", "ext4-write", "durable", "ext4-dir", "link", "remove"]),
-    ("Waiting and waking", &["sleep", "futex", "join", "pipe", "kill"]),
+    ("Waiting and waking", &["sleep", "join", "pipe", "kill"]),
     ("Your own", &["yours"]),
 ];
 
