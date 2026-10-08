@@ -127,54 +127,11 @@ fn constants(include: &Path) -> Vec<(String, i64)> {
     out
 }
 
-/// A `#define`'s value: numbers (C's: octal, hex), the constants `known`,
-/// parentheses, unary `-` and `~`, and `| & << >> + -` (C's precedence).
+/// A `#define`'s value: a C expression of numbers and the constants
+/// `known` (ksee_core's, as a program's are).
 fn evaluate(text: &str, known: &[(String, i64)]) -> Option<i64> {
-    // (Tokens: numbers and names whole, else one character, or a shift's two.)
-    let mut toks: Vec<&str> = Vec::new();
-    let mut rest = text.trim();
-    while !rest.is_empty() {
-        let n = if rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
-            rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(rest.len())
-        } else if rest.starts_with("<<") || rest.starts_with(">>") { 2 } else { 1 };
-        toks.push(&rest[..n]);
-        rest = rest[n..].trim_start();
-    }
-    const LEVELS: [&[&str]; 4] = [&["|"], &["&"], &["<<", ">>"], &["+", "-"]];
-    fn binary(t: &[&str], at: &mut usize, level: usize, known: &[(String, i64)]) -> Option<i64> {
-        let Some(ops) = LEVELS.get(level) else { return unary(t, at, known) };
-        let mut v = binary(t, at, level + 1, known)?;
-        while let Some(&op) = t.get(*at).filter(|op| ops.contains(op)) {
-            *at += 1;
-            let r = binary(t, at, level + 1, known)?;
-            v = match op { "|" => v | r, "&" => v & r, "<<" => v << r, ">>" => v >> r, "+" => v + r, _ => v - r };
-        }
-        Some(v)
-    }
-    fn unary(t: &[&str], at: &mut usize, known: &[(String, i64)]) -> Option<i64> {
-        let tok = *t.get(*at)?;
-        *at += 1;
-        match tok {
-            "-" => Some(-unary(t, at, known)?),
-            "~" => Some(!unary(t, at, known)?),
-            "(" => {
-                let v = binary(t, at, 0, known)?;
-                (t.get(*at) == Some(&")")).then(|| { *at += 1; v })
-            }
-            _ if tok.starts_with(|c: char| c.is_ascii_digit()) => {
-                let digits = tok.trim_end_matches(['u', 'U', 'l', 'L']);
-                match digits.strip_prefix("0x").or(digits.strip_prefix("0X")) {
-                    Some(hex) => i64::from_str_radix(hex, 16).ok(),
-                    None if digits.len() > 1 && digits.starts_with('0') => i64::from_str_radix(&digits[1..], 8).ok(),
-                    None => digits.parse().ok(),
-                }
-            }
-            _ => known.iter().find(|(k, _)| k == tok).map(|&(_, v)| v),
-        }
-    }
-    let mut at = 0;
-    let v = binary(&toks, &mut at, 0, known)?;
-    (at == toks.len()).then_some(v)
+    let named = |n: &str| known.iter().find(|(k, _)| k == n).map(|&(_, v)| v);
+    ksee_core::program::value(&ksee_core::program::expression(text).ok()?, None, &named).ok()
 }
 
 /// The syscalls this kernel builds, as its syscall table (SYSCALL_TABLE,
