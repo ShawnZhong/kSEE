@@ -155,12 +155,13 @@ impl View<'_> {
     }
 
     /// The fields of the task at `addr`, as memory was after record `at`:
-    /// the key ones (arch::TASK_FIELDS, in its order), and all of them, as
-    /// declared.
+    /// the key ones (arch::TASK_FIELDS, its paths, in its order), and all
+    /// of them, as declared.
     pub fn task_fields(&self, addr: u32, at: usize) -> TaskFields {
-        let all = self.fields(arch::CURRENT, arch::TASK, addr, at);
-        let key = arch::TASK_FIELDS.iter().filter_map(|&n| all.iter().find(|o| o.name == n).cloned()).collect();
-        TaskFields { key, all }
+        let types = &self.tables.types;
+        let mem = self.rec.memory_at(self.now, at);
+        let key = types.find(arch::TASK).map_or(Vec::new(), |ty| arch::TASK_FIELDS.iter().filter_map(|p| types.at_path(&mem, ty, addr, p)).collect());
+        TaskFields { key, all: self.fields(arch::CURRENT, arch::TASK, addr, at) }
     }
 
     /// The fields of `name`, the struct `ty` at `addr`, as memory was

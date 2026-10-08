@@ -155,6 +155,28 @@ impl Types {
         format!("/{}", parts.join("/"))
     }
 
+    /// The value at `path` in the value of type `ty` at `addr`, as C names
+    /// it: members by `.`, a pointer followed by `->` ("files->fd_array");
+    /// named by the path. None if a member is not there, or a pointer on
+    /// the way is NULL.
+    pub fn at_path(&self, mem: &dyn Memory, ty: u32, addr: u32, path: &str) -> Option<Object> {
+        let (mut ty, mut addr) = (ty, addr);
+        for (k, step) in path.split("->").enumerate() {
+            if k > 0 {
+                let Kind::Pointer(to) = self.get(self.resolve(ty)).kind else { return None };
+                (ty, addr) = (to, mem.read_u32(addr));
+                if addr == 0 {
+                    return None;
+                }
+            }
+            for name in step.split('.') {
+                let m = self.members(&self.get(self.resolve(ty)).kind).into_iter().find(|m| m.name == name)?;
+                (ty, addr) = (m.ty, addr + m.bit_offset / 8);
+            }
+        }
+        Some(self.object(mem, path, addr, ty, 0))
+    }
+
     /// The value of type `ty` at `addr`, aggregates expanded `depth` deep.
     pub fn object(&self, mem: &dyn Memory, name: &str, addr: u32, ty: u32, depth: u32) -> Object {
         self.object_bits(mem, name, addr, ty, None, depth)

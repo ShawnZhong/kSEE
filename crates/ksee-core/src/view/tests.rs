@@ -588,3 +588,17 @@ fn the_steps_are_the_lines_stepping_visits() {
     assert_eq!((tl.spans(2, 3.0, 4.0), tl.depth(3.0, 4.0), tl.depth(0.0, 2.0)), (&[(3, 4, 2)][..], 3, 1));
 }
 
+
+#[test]
+fn a_path_follows_pointers() {
+    // struct f { int a[4]; }; struct t { int pid; struct f *files; }: at
+    // 0x10, files at 0x40 (a = {0, 0, 0, 7}); "files->a", by its path.
+    let t = Tables::parse("U\n", "T\t1\tbase\tint\t4\ts\nT\t2\tarray\t\t16\t1\t4\nT\t3\tstruct\tf\t16\nM\t3\ta\t0\t0\t2\n\
+        T\t4\tptr\t\t4\t3\nT\t5\tstruct\tt\t8\nM\t5\tpid\t0\t0\t1\nM\t5\tfiles\t32\t0\t4\n");
+    let mut m = alloc::vec![0u8; 0x80];
+    m[0x14..0x18].copy_from_slice(&0x40u32.to_le_bytes());
+    m[0x4c..0x50].copy_from_slice(&7u32.to_le_bytes());
+    let o = t.types.at_path(&m, 5, 0x10, "files->a").unwrap();
+    assert_eq!((o.name.as_str(), o.addr), ("files->a", 0x40));
+    assert!(t.types.at_path(&m, 5, 0x10, "files->b").is_none());
+}

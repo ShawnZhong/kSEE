@@ -57,8 +57,9 @@ pub(crate) const INODE_NO: (&str, &str) = ("inode", "i_ino");
 /// A mount (holding the vfsmount a path names, at `mnt`), mounted on a
 /// dentry of its parent's (itself, for a mount at the top).
 pub(crate) const MOUNT: (&str, &str, &str, &str) = ("mount", "mnt", "mnt_parent", "mnt_mountpoint");
-/// A task's fields shown first (the Tasks'), in this order.
-pub(crate) const TASK_FIELDS: [&str; 10] = ["pid", "tgid", "comm", "__state", "prio", "real_parent", "mm", "fs", "files", "signal"];
+/// A task's fields shown first (the Tasks'), in this order: paths in it, as
+/// C names them (Types::at_path).
+pub(crate) const TASK_FIELDS: [&str; 8] = ["pid", "tgid", "comm", "__state", "prio", "real_parent", "files->fd_array", "mm"];
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
 /// are the syscall's.
 pub(crate) const SYSCALL_BODY: &str = "__do_sys_";

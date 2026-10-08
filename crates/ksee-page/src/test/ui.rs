@@ -379,9 +379,9 @@ async fn editor() -> Result<(), String> {
     Ok(())
 }
 
-/// The selected task's files opened, then their fd_array: its values.
+/// The selected task's files->fd_array opened: its values.
 async fn open_files() -> Result<Vec<String>, String> {
-    for name in ["files", "fd_array"] {
+    for name in ["files->fd_array"] {
         click(&all(".detail tr.opens").into_iter().find(|r| r.first_element_child().is_some_and(|d| text(&d).ends_with(name))).ok_or(format!("no {name}"))?);
         settle().await;
     }
