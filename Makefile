@@ -5,7 +5,7 @@
 #   linux/                       Linux, the stable tree's LINUX_TAG, fetched once; linux.patch
 #                                (the port's edits to Linux's own files) applied, and arch/wasm/
 #                                (the port's own files) linked in
-#   plugin/ksee-trace.so         the LLVM pass that instruments the kernel
+#   target/ksee-trace.so         the LLVM pass that instruments the kernel (plugin/'s)
 #   linux/vmlinux                the kernel, instrumented (kbuild), and its UAPI headers
 #   target/initramfs/initramfs.cpio
 #                                /init and /bin/prog (user/: plain C, no C library), and a
@@ -30,7 +30,7 @@ CHROME_VERSION := 156.0.8078.4
 # (setup.sh's LLVM 22 first.)
 export PATH := /usr/lib/llvm-22/bin:$(PATH)
 export OUT := target/initramfs
-PLUGIN := plugin/ksee-trace.so
+PLUGIN := target/ksee-trace.so
 # (The same build each time: the release's date, not the clock's; a version,
 # user and host of its own, not the tree's state (-dirty: the patch applied)
 # or the machine's; build #1. A hash of the pass's source in the flags:
@@ -61,6 +61,7 @@ linux/Makefile:
 	ln -s ../../arch/wasm linux/arch/wasm
 
 $(PLUGIN): plugin/ksee-trace.cpp | llvm
+	@mkdir -p $(@D)
 	clang++ -shared -fPIC -O2 $< -o $@ $$(llvm-config --cxxflags)
 
 # (Every Kconfig the port has: a new one runs defconfig again; touched,

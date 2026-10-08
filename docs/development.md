@@ -44,7 +44,7 @@ dependency set, then runs it. `ksee build` performs these stages:
 
 1. `make` (the Makefile: the kernel's half, C and LLVM): require LLVM 22; fetch
    Linux stable `v7.2.7` into `linux/` if it is absent, verify the pinned
-   commit, apply `linux.patch` and link `arch/wasm/` in; build `plugin/ksee-trace.so`; run kbuild
+   commit, apply `linux.patch` and link `arch/wasm/` in; build the pass, `plugin/ksee-trace.cpp`, into `target/ksee-trace.so`; run kbuild
    for the WebAssembly kernel and its UAPI headers (a hash of the plugin's
    source is part of the kernel flags, so changing the pass rebuilds the
    kernel); compile freestanding `user/init.c` and `user/prog.c` and archive
@@ -74,7 +74,7 @@ fixed, its times the release's (`SOURCE_DATE_EPOCH`).
 
 LLVM 22, as [getting-started.md](getting-started.md#use-a-custom-llvm-22-build)
 says. The build does not track which LLVM it used: after switching, rebuild the
-plugin and the kernel (remove `plugin/*.so` and `linux/`).
+plugin and the kernel (remove `target/ksee-trace.so` and `linux/`).
 
 Cargo build and test commands use `--locked`, so `Cargo.lock` is the selected
 dependency set.
