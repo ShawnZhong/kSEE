@@ -1,13 +1,13 @@
 //! The timeline. On top, an overview of the whole recording: which task
 //! ran when, where each syscall starts, the window shown below, the cursor.
-//! Below, the window as a stack chart: columns of moments, each its task's
-//! stack, the outermost at the bottom; a bar a call (or code inlined into
-//! one) over the columns it is on, colored by the kernel's part it is in,
+//! Below, the window as a stack chart (View::timeline): each step its
+//! task's stack, the outermost at the bottom; a bar a call (or code inlined
+//! into one) over the steps it is on, colored by the kernel's part it is in,
 //! the calls at the cursor darker; the task strip under it; then the
 //! transport. The wheel zooms vertically and pans horizontally; a drag pans.
-//! Hovered, a moment is shown everywhere but the source's cursor line, and a
-//! bar says what its call was; clicked, the cursor goes there. Find a
-//! function by any part of its name.
+//! Hovered, the cross is there and a bar says what its call was (nothing
+//! else moves); clicked, the cursor goes there. Find a function by any part
+//! of its name.
 
 use dioxus::prelude::*;
 use ksee_core::arch::AREAS;
@@ -373,22 +373,22 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let calls: Vec<(usize, String)> = stack.iter().map(|f| (f.first, f.func.clone())).collect();
         let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
         draw_chart(&chart, &tasks.read(), scale, height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
-                   d.hover_step.cloned().or(d.cursor_step.cloned()), stack.len().checked_sub(1 + d.frame.cloned()),
+                   (ui.hover)().or(d.cursor_step.cloned()), stack.len().checked_sub(1 + d.frame.cloned()),
                    ui.cursor.read().as_ref().and_then(|m| m.level));
         if let Some(scroll) = element("timeline-scroll") {
             scroll.set_scroll_top((scroll.scroll_height() - scroll.client_height() - *from_bottom.peek()).max(0));
         }
     });
-    // (One rule for hover and click: the step under the pointer, its
-    // stack's bar there, and the moment; off the bars, at level `off`.)
-    let hit = move |x: f64, y: f64, off: Option<usize>| -> Option<(Option<crate::state::Moment>, Option<usize>)> {
+    // (One rule for hover and click: the step under the pointer, and the
+    // bar there, if any, its row.)
+    let hit = move |x: f64, y: f64| -> Option<(usize, Option<(usize, usize)>)> {
         let s = scale().step(x).floor();
-        let i = machine().view(|v| (s >= 0.0).then(|| v.rec.steps.get(s as usize).map(|x| x.0)).flatten())?;
-        let stack = d.timeline.peek().at(s as usize);
+        let steps = machine().view(|v| v.rec.steps.len());
+        let s = (s >= 0.0 && (s as usize) < steps).then_some(s as usize)?;
+        let stack = d.timeline.peek().at(s);
         let dd = ((height - y) / ROW).floor();
-        let bar = (y < height && dd >= 0.0 && (dd as usize) < stack.len()).then(|| stack[dd as usize] as usize);
-        let level = bar.map(|_| dd as usize).or(off);
-        Some((Ui::moment_at(d, i, Some(s as usize), level), bar))
+        let bar = (y < height && dd >= 0.0 && (dd as usize) < stack.len()).then(|| (dd as usize, stack[dd as usize] as usize));
+        Some((s, bar))
     };
     // (The wheel: up and down zoom around the pointer's step, in
     // proportion to how far it turned; left and right (or Shift) pan.)
@@ -451,14 +451,13 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                         return;
                     }
                 }
-                // (Else the moment under the pointer shown everywhere but the line: over a bar, what its call was.)
+                // (Else the cross at the step under the pointer: over a bar, what its call was.)
                 let p = e.client_coordinates();
                 let Some((x, y)) = chart_coordinates(p.x, p.y) else { return };
-                // (Off the bars, the level chosen, kept.)
-                let Some((hover, bar)) = hit(x, y, ui.level()) else { return };
-                ui.set_hover(hover);
+                let Some((step, bar)) = hit(x, y) else { return };
+                ui.set_hover(Some(step as f64));
                 let chart = d.timeline.peek();
-                match bar.map(|b| &chart.bars[b]) {
+                match bar.map(|(_, b)| &chart.bars[b]) {
                     None => if tip.peek().is_some() { tip.set(None) },
                     Some(b) => match tip() {
                         Some(t) if t.call.0 == b.first && t.call.1 == b.name => tip.set(Some(Tip { x: p.x, y: p.y, ..t })),
@@ -474,12 +473,14 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     }
                 }
             },
-            // (A click, not a drag: resolve its coordinates afresh, then
-            // commit; off the bars, no level chosen: the innermost.)
+            // (A click, not a drag: the cursor to the step under it, at the
+            // level of the bar clicked; off the bars, none: the innermost.)
             onclick: move |e: MouseEvent| {
                 if dragged() { dragged.set(false); return }
                 let p = e.client_coordinates();
-                if let Some(moment) = chart_coordinates(p.x, p.y).and_then(|(x, y)| hit(x, y, None)).and_then(|h| h.0) {
+                let Some((step, bar)) = chart_coordinates(p.x, p.y).and_then(|(x, y)| hit(x, y)) else { return };
+                let i = machine().view(|v| v.rec.steps[step].0);
+                if let Some(moment) = Ui::moment_at(i, Some(step), bar.map(|b| b.0)) {
                     ui.commit(Some(moment));
                 }
             },
@@ -569,7 +570,7 @@ fn Find() -> Element {
                     calls.iter().find(|&&c| c > here).or(calls.first())
                 };
                 if let Some(&i) = to {
-                    ui.go_record(d, i);
+                    ui.go_record(i);
                 }
             } }
         if !w.is_empty() { span { class: "dim", if count == 0 { "none in the recording" } else { "{count} calls" } } }

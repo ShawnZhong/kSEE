@@ -202,7 +202,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
     let values: Vec<String> = if here && line >= 1 && (line as usize) <= total {
         let words: Vec<&str> = src.pieces[line as usize - 1].iter().filter(|p| p.kind.is_ident()).map(|p| p.text.as_str()).collect();
         // (A call made on this line or this function's line before it, returned by now.)
-        let before = d.shown.read().as_ref().and_then(|m| {
+        let before = (ui.cursor).read().as_ref().and_then(|m| {
             let lines = d.lines.read();
             let depth = lines.get(m.line)?.depth;
             lines[..m.line].iter().rev().find(|l| l.depth <= depth).filter(|l| l.depth == depth).cloned()
@@ -283,7 +283,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
                                     span { class: "values", title: "{values.join(\"\n\")}", "{values.join(\"   \")}" }
                                 }
                                 if let Some((short, full, at)) = note {
-                                    a { class: "stored", title: "{full}", onclick: move |_| ui.go_record(d, at), "{short}" }
+                                    a { class: "stored", title: "{full}", onclick: move |_| ui.go_record(at), "{short}" }
                                 }
                             }
                         }

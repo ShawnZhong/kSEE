@@ -50,13 +50,12 @@ pub struct Moment {
 }
 
 /// What the state makes, computed once each time what it depends on
-/// changes: the moment shown (the pointer's, else the cursor's), its run
-/// (as the snapshot has it) and lines; the timeline and its window;
-/// its line, stack, and the frame shown on it; and where the cursor and
-/// the pointer's moment are, in steps (their lines': the chart's lines).
+/// changes: the cursor's run (as the snapshot has it) and lines; the
+/// timeline and its window; its line, stack, and the frame shown on it; and
+/// where the cursor is, in steps (its line's: the chart's line). (The
+/// pointer over the timeline moves only its cross: Ui::hover.)
 #[derive(Clone, Copy)]
 pub struct Derived {
-    pub shown: Memo<Option<Moment>>,
     pub run: Memo<Option<RunSummary>>,
     pub lines: Memo<Shared<Vec<Line>>>,
     /// The timeline's window: its first step and how many (fractional).
@@ -66,7 +65,6 @@ pub struct Derived {
     pub stack: Memo<Shared<Vec<Frame>>>,
     pub frame: Memo<usize>,
     pub cursor_step: Memo<Option<f64>>,
-    pub hover_step: Memo<Option<f64>>,
 }
 
 /// A moment's step: its line's (the steps are the lines stepping visits).
@@ -84,13 +82,12 @@ fn run_lines(s: &ksee_core::view::RunSummary) -> Vec<Line> {
 impl Derived {
     /// The memos (a component's hooks: the App's).
     pub fn new(ui: Ui) -> Derived {
-        let shown = use_memo(move || (ui.hover)().or((ui.cursor)()));
         let run = use_memo(move || {
             (ui.snapshot)();
             if !ui.up() {
                 return None;
             }
-            let k = shown()?.run;
+            let k = (ui.cursor)()?.run;
             machine().view(|v| v.run(k))
         });
         let lines = use_memo(move || {
@@ -108,7 +105,7 @@ impl Derived {
             (ui.snapshot)();
             Shared(Rc::new(if up() { machine().view(|v| v.timeline()) } else { Timeline::default() }))
         });
-        let line = use_memo(move || lines.read().get(shown()?.line).cloned());
+        let line = use_memo(move || lines.read().get((ui.cursor)()?.line).cloned());
         // (Its values as they are just before the line runs: at its own
         // record, past what the lines before it in its stretch did.)
         let stack = use_memo(move || {
@@ -119,17 +116,10 @@ impl Derived {
         });
         let frame = use_memo(move || {
             let n = stack.read().len();
-            shown().and_then(|m| m.level).filter(|&l| l < n).map_or(0, |l| n - 1 - l)
+            (ui.cursor)().and_then(|m| m.level).filter(|&l| l < n).map_or(0, |l| n - 1 - l)
         });
-        let cursor_step = use_memo(move || {
-            (ui.snapshot)();
-            let at = (ui.cursor)()?;
-            if shown().is_some_and(|s| s.run == at.run) { moment_step(&at, &lines.read()) }
-            else { moment_step(&at, &Ui::run_lines(at.run)) }
-        });
-        // (The pointer's: the moment shown, its lines `lines`.)
-        let hover_step = use_memo(move || moment_step(&(ui.hover)()?, &lines.read()));
-        Derived { shown, run, lines, window, timeline, line, stack, frame, cursor_step, hover_step }
+        let cursor_step = use_memo(move || moment_step(&(ui.cursor)()?, &lines.read()));
+        Derived { run, lines, window, timeline, line, stack, frame, cursor_step }
     }
 }
 
@@ -141,10 +131,10 @@ pub struct Ui {
     /// The published recording snapshot: what reads the recording subscribes
     /// to this identity and reads it again when it changes.
     pub snapshot: Signal<u64>,
-    /// The cursor (none: no run selected), and the moment under the
-    /// pointer, if it is over the chart.
+    /// The cursor (none: no run selected), and the step under the pointer,
+    /// if it is over the timeline (only its cross moves with it).
     pub cursor: Signal<Option<Moment>>,
-    pub hover: Signal<Option<Moment>>,
+    pub hover: Signal<Option<f64>>,
     /// The timeline's window: its first step and how many, fractional
     /// (none: the whole recording).
     pub win: Signal<Option<(f64, f64)>>,
@@ -209,9 +199,9 @@ impl Ui {
         self.cursor.set(moment);
     }
 
-    pub fn set_hover(mut self, moment: Option<Moment>) {
-        if *self.hover.peek() != moment {
-            self.hover.set(moment);
+    pub fn set_hover(mut self, step: Option<f64>) {
+        if *self.hover.peek() != step {
+            self.hover.set(step);
         }
     }
 
@@ -271,7 +261,7 @@ impl Ui {
 
     /// The moment at record `i` (in the chart: at its `step`), at level `level` there:
     /// the run it is in, its line there (the last at or before it).
-    pub fn moment_at(d: Derived, i: usize, step: Option<usize>, level: Option<usize>) -> Option<Moment> {
+    pub fn moment_at(i: usize, step: Option<usize>, level: Option<usize>) -> Option<Moment> {
         let (run, own, first) = machine().view(|v| (v.rec.run_at(i), v.line_of(i), v.rec.first_step(i)));
         let run = run?;
         // (A step: the line it is, its record's lines being its steps; a
@@ -282,14 +272,13 @@ impl Ui {
             (None, Some((r, nth))) => lines.iter().rposition(|l| l.i == r && l.nth <= nth),
             (None, None) => lines.iter().position(|l| l.i == i),
         }.or_else(|| lines.iter().rposition(|l| l.i <= i)).unwrap_or(0);
-        // (The run shown's lines, as the memo has them; another's, read.)
-        let line = if d.shown.peek().as_ref().map(|m| m.run) == Some(run) { line(&d.lines.peek()) } else { line(&Ui::run_lines(run)) };
+        let line = line(&Ui::run_lines(run));
         Some(Moment { run, line, level })
     }
 
     /// The cursor to record `i`, at the level chosen.
-    pub fn go_record(self, d: Derived, i: usize) {
-        if let Some(m) = Ui::moment_at(d, i, None, self.level()) {
+    pub fn go_record(self, i: usize) {
+        if let Some(m) = Ui::moment_at(i, None, self.level()) {
             self.commit(Some(m));
         }
     }

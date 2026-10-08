@@ -89,8 +89,8 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
-/// The timeline: hover and click on a bar, the cross, a level chosen and
-/// kept, a drag after a click; how long a hover and a step take.
+/// The timeline: hover (the cross alone) and click on a bar, a level chosen
+/// and kept, a drag after a click; how long a hover and a step take.
 async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     // (Hover and click resolve the same canvas bar and moment.)
     let canvas = one("#timeline-canvas").ok_or("no timeline canvas")?;
@@ -107,6 +107,9 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     mouse(&chart, "mouseleave", x, y, false);
     settle().await;
     check(during != before && cross() == before, "the cross follows the pointer, and goes back", (&before, &during, cross()))?;
+    // (Hovered, only the cross moves: the cursor's place stays; a click
+    // takes it there, the bar's level chosen.)
+    let before = place();
     pointer(&chart, "pointermove", x, y);
     settle().await;
     let hovered = place();
@@ -114,11 +117,8 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     settle().await;
     let chosen = one("tr.frame.on a").map(|a| text(&a)).unwrap_or_default();
     let level = || canvas.get_attribute("data-test-level");
-    check(
-        chosen == "vfs_read" && hovered == place() && level().is_some(),
-        "hover and click on a bar: its level chosen, a line across",
-        (&chosen, &hovered, place(), level()),
-    )?;
+    check(chosen == "vfs_read" && hovered == before && level().is_some(),
+          "a hover moves the cross alone; a click on a bar, its level chosen, a line across", (&chosen, &before, &hovered, level()))?;
     // (A click above the bars: no level chosen, the innermost frame shown.)
     mouse(&chart, "click", x, b.top() + 2.0, false);
     settle().await;

@@ -179,11 +179,11 @@ fn Disk() -> Element {
                     let title = format!("bytes {start}–{} (sector {}); the request's tag {} (blk-mq's: how the disk says which request it did); by: the task running as it was handed over", start + t.len as u64 - 1, t.sector, t.tag);
                     let bytes = if t.write { changed(&t.before, &t.after) } else { format!("read: {}", hex(&t.after[..t.after.len().min(16)])) };
                     rsx! {
-                        div { class, title: "a click: where it was handed to the disk (queue_rq)", onclick: move |_| ui.go_record(d, asked),
+                        div { class, title: "a click: where it was handed to the disk (queue_rq)", onclick: move |_| ui.go_record(asked),
                             a { class: "mono", title: "{title}", "{what}" }
                             " · "
                             a { class: "dim", title: "where the kernel took it as done (the disk's interrupt)",
-                                onclick: move |e| { e.stop_propagation(); ui.go_record(d, done) }, "done" }
+                                onclick: move |e| { e.stop_propagation(); ui.go_record(done) }, "done" }
                             div { class: "mono dim bytes", "{bytes}" }
                         }
                     }

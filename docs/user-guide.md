@@ -167,7 +167,7 @@ cursor.
 | Up / Down, or the up/down buttons | Choose the callee or caller frame. |
 | Click a source line number | Run to that line's next occurrence. |
 | Shift+click a source line number | Run to that line's previous occurrence. |
-| Hover the chart | Preview a moment without moving the cursor. |
+| Hover the chart | Move the cross there, and see what a bar's call was; nothing else moves. |
 | Click the chart | Commit the previewed moment. |
 
 Arrow shortcuts do not take over while focus is in the program editor or

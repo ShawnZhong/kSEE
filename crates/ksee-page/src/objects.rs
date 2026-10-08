@@ -159,7 +159,7 @@ fn ObjectBox(graph: Graph, k: usize, depth: usize) -> Element {
             }
             table { class: "fields",
                 for (class, title, member, before, after, to, function, last) in rows {
-                    tr { class, title, onclick: move |_| ui.go_record(d, last),
+                    tr { class, title, onclick: move |_| ui.go_record(last),
                         td { class: "fname", "{member}" }
                         td { class: "fval",
                             span { class: "dim", "{before} → " }
