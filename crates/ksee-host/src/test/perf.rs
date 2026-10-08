@@ -63,7 +63,9 @@ pub(super) fn views(t: &mut KernelHarness) -> String {
         let n = m.view(|v| v.call_stack(i, None, 0, i).len());
         (n, ms(3, || { m.view(|v| v.call_stack(i, None, 0, i)); }))
     });
-    format!("{mix}; {records} records, {steps} steps, {calls} runs; the largest, {} records: snapshot {snapshot:.1} ms, \
+    // (The module's memory: the kernel's, its ring among it, and the views'; it never shrinks.)
+    let mib = core::arch::wasm32::memory_size(0) * 64 / 1024;
+    format!("{mix}; {records} records, {steps} steps, {calls} runs, {mib} MiB of memory; the largest, {} records: snapshot {snapshot:.1} ms, \
              chart {chart:.1}, runs {runs:.1}, its lines {lines:.1}, a stack {stack:.1}, its objects {objects:.1}, \
              its stores named {named:.1}, a file's notes {notes:.1} and coverage {coverage:.1} ({file}); at vma_iter_prealloc, a stack {deep:?}", s.last - s.first + 1)
 }

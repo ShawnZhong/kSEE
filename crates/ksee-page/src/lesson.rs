@@ -76,11 +76,12 @@ pub(crate) async fn make_program(mut ui: Ui, lines: Vec<Statement>) {
         if m.quiet().await.is_err() {
             return;
         }
-        m.snapshot();
         ui.outcomes.set(m.outcomes());
         ui.console.write().push_str(&m.console());
-        ui.snapshot += 1;
     }
+    // (The recording decoded once, the lines made: what the views read.)
+    m.snapshot();
+    ui.snapshot += 1;
     let outcomes = m.outcomes();
     let lesson = &lessons()[(ui.lesson)()];
     let calls = outcomes.iter().filter(|o| matches!(o, Outcome::Call { .. })).count();

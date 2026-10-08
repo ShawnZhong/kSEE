@@ -114,7 +114,11 @@ pub fn disk_work() -> bool {
                 unsafe { core::ptr::copy_nonoverlapping(blocks.as_ptr(), t.buf as *mut u8, t.len as usize) };
             }
             t.after = blocks.to_vec();
-            s.disk_log.push(t);
+            // (Logged if recorded: the trace's word 0 until the recording
+            // begins, the boot's transfers left out.)
+            if t.asked != 0 {
+                s.disk_log.push(t);
+            }
         });
     }
     any

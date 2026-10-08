@@ -172,29 +172,18 @@ fn Disk() -> Element {
             for x in all.iter().cloned() {
                 {
                     let t = &x.transfer;
-                    // (Not in the recording, in its task: made before the cursor, if
-                    // before the recording; else said, not gone to.)
-                    let (a, z) = (x.asked.unwrap_or(0), x.done.unwrap_or(0));
-                    let class = if x.asked.is_some() && a > cursor { "xfer later" } else if x.asked.is_some() && cursor < z { "xfer on" } else { "xfer made" };
-                    let start = t.sector * 512;
-                    let by = format!(" · by {}", x.by);
-                    let what = format!("{} {} at {}{by}", if t.write { "write" } else { "read" }, size(t.len as u64), size(start));
-                    let title = format!("bytes {start}–{} (sector {}); the request's tag {} (blk-mq's: how the disk says which request it did); by: the task running as it was handed over", start + t.len as u64 - 1, t.sector, t.tag);
                     let (asked, done) = (x.asked, x.done);
-                    let away = "before the recording";
+                    let class = if asked > cursor { "xfer later" } else if cursor < done { "xfer on" } else { "xfer made" };
+                    let start = t.sector * 512;
+                    let what = format!("{} {} at {} · by {}", if t.write { "write" } else { "read" }, size(t.len as u64), size(start), x.by);
+                    let title = format!("bytes {start}–{} (sector {}); the request's tag {} (blk-mq's: how the disk says which request it did); by: the task running as it was handed over", start + t.len as u64 - 1, t.sector, t.tag);
                     let bytes = if t.write { changed(&t.before, &t.after) } else { format!("read: {}", hex(&t.after[..t.after.len().min(16)])) };
                     rsx! {
-                        div { class, title: if asked.is_some() { "a click: where it was handed to the disk (queue_rq)" } else { "" },
-                            onclick: move |_| if let Some(asked) = asked { ui.go_record(d, asked) },
-                            if let (Some(_), Some(done)) = (asked, done) {
-                                a { class: "mono", title: "{title}", "{what}" }
-                                " · "
-                                a { class: "dim", title: "where the kernel took it as done (the disk's interrupt)",
-                                    onclick: move |e| { e.stop_propagation(); ui.go_record(d, done) }, "done" }
-                            } else {
-                                span { class: "mono", title: "{title}; {away}", "{what}" }
-                                span { class: "dim", " · {away}" }
-                            }
+                        div { class, title: "a click: where it was handed to the disk (queue_rq)", onclick: move |_| ui.go_record(d, asked),
+                            a { class: "mono", title: "{title}", "{what}" }
+                            " · "
+                            a { class: "dim", title: "where the kernel took it as done (the disk's interrupt)",
+                                onclick: move |e| { e.stop_propagation(); ui.go_record(d, done) }, "done" }
                             div { class: "mono dim bytes", "{bytes}" }
                         }
                     }

@@ -114,7 +114,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
         t.line("char dbuf[16]").await;
         t.line("int dfd = openat(AT_FDCWD, \"/mnt/note.txt\", O_RDWR | O_APPEND)").await;
         let r = t.line("read(dfd, dbuf, 16)").await.syscall.unwrap();
-        let span = |s: &ksee_core::view::RunSummary| m.disk().into_iter().filter(|x| x.asked.is_some_and(|a| a >= s.first && a <= s.last)).collect::<Vec<_>>();
+        let span = |s: &ksee_core::view::RunSummary| m.disk().into_iter().filter(|x| (s.first..=s.last).contains(&x.asked)).collect::<Vec<_>>();
         let reads = span(&r);
         t.check(format!("a first read on ext4 reads the disk ({} transfers)", reads.len()),
                 !reads.is_empty() && reads.iter().all(|x| !x.transfer.write && x.asked <= x.done));
