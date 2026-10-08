@@ -93,7 +93,6 @@ const CONSTANTS: &[(&str, &[&str])] = &[
     ("asm-generic/errno-base.h", &["E"]),
     ("asm-generic/errno.h", &["E"]),
     ("linux/sched.h", &["CLONE_"]),
-    ("linux/futex.h", &["FUTEX_"]),
     ("asm-generic/mman-common.h", &["PROT_", "MAP_"]),
     ("linux/mman.h", &["MAP_"]),
     ("asm-generic/signal.h", &["SIG"]),

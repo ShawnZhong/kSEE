@@ -140,7 +140,7 @@ request returned, ended through `execve`, or disappeared with an exiting task.
 `Machine::quiet` resolves when the scheduler is idle and no immediately
 eligible kernel work remains. It returns every requested call completed since
 the previous wait. Quiet does not mean every requested call has returned; a
-pipe read or futex wait can be blocked pending a later lesson step.
+pipe read or a wait for a child can be blocked pending a later lesson step.
 
 `Machine::snapshot` decodes the current trace ring into a new `Recording`. The
 snapshot owns decoded records, stable record IDs, call arguments, inferred task

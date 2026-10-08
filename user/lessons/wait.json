@@ -1,0 +1,33 @@
+{
+  "title": "How does a parent wait for its child to end?",
+  "text": [
+    "A parent waits for its child with a wait: `waitid` sleeps until the child has exited, then collects what it exited with.",
+    "1. [copy_process](copy_process) makes the child, a process of its own; SIGCHLD in the flags is the signal its parent is sent when it ends.",
+    "2. The wait: [do_wait](do_wait) finds the child still running, so the parent sleeps on its wait queue for children, `wait_chldexit`. The call blocks.",
+    "3. The child exits: [do_exit](do_exit) tears it down, and [exit_notify](exit_notify) tells the parent: it sends SIGCHLD and wakes the waiters ([__wake_up_parent](__wake_up_parent)). The child is a zombie now: gone, but for what it exited with.",
+    "4. Back in the parent: [wait_task_zombie](wait_task_zombie) collects the exit code, 3, into `info`, and frees what is left of the child ([release_task](release_task)). The wait returns 0.",
+    "Try: [the exit before the wait](try:1): the wait then finds a zombie at once, and returns without a sleep."
+  ],
+  "tries": [
+    [
+      "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
+      "pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)",
+      {
+        "task": "child",
+        "text": "exit(3)"
+      },
+      "char info[128]",
+      "waitid(P_PID, child, info, WEXITED, NULL)"
+    ]
+  ],
+  "program": [
+    "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)",
+    "pid_t child = clone(CLONE_VM | SIGCHLD, mem + 65536, NULL, NULL, 0)",
+    "char info[128]",
+    "waitid(P_PID, child, info, WEXITED, NULL)",
+    {
+      "task": "child",
+      "text": "exit(3)"
+    }
+  ]
+}

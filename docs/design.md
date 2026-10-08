@@ -76,7 +76,7 @@ from the page and makes each requested syscall as an ordinary Linux process.
 The interesting behavior must be Linux's, not a model's. `arch/wasm` supplies
 only what WebAssembly makes architecture-specific: task-stack suspension,
 interrupt delivery, virtual time, program loading, and the host interface.
-Generic kernel code, the VFS, ext4, the block layer, scheduler, futexes, and
+Generic kernel code, the VFS, ext4, the block layer, the scheduler, and
 other subsystems run directly.
 
 ### Compiler instrumentation, not subsystem hooks

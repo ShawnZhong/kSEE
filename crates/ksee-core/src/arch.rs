@@ -73,7 +73,7 @@ pub(crate) const SYSCALL_CONSTS: &[(&str, &[&str])] = &[
     ("prctl.option", &["PR_"]), ("waitid.which", &["P_"]), ("waitid.options", &["W"]), ("clone.clone_flags", &["CLONE_", "SIG"]),
     ("clock_nanosleep.flags", &["TIMER_"]),
     ("dfd", &["AT_"]), ("olddfd", &["AT_"]), ("newdfd", &["AT_"]), ("flags", &["O_"]), ("prot", &["PROT_"]),
-    ("which_clock", &["CLOCK_"]), ("op", &["FUTEX_"]),
+    ("which_clock", &["CLOCK_"]),
 ];
 /// The starts of the names of the constants that fit syscall `syscall`'s
 /// parameter `param` (SYSCALL_CONSTS).

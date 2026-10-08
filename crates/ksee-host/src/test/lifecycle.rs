@@ -21,16 +21,18 @@ pub(super) async fn run(t: &mut KernelHarness) {
     let made = t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await.ret;
     t.check("... on a fresh kernel: /tmp is not there", made == Some(0));
     // Deterministic: the same calls on a fresh kernel make the same recording, record for record.
-    // (A file made; a thread waiting on a futex, woken.)
+    // (A file made; a thread waiting on a pipe, woken.)
     let made: &[(Option<&str>, &str)] = &[(None, "int fd = openat(AT_FDCWD, \"/new.txt\", O_CREAT | O_WRONLY, 0644)")];
-    let futex: &[(Option<&str>, &str)] = &[
+    let woken: &[(Option<&str>, &str)] = &[
         (None, "void *mem = mmap2(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)"),
+        (None, "int fds[2]"),
+        (None, "pipe2(fds, 0)"),
+        (None, "char buf[4]"),
         (None, "pid_t thread = clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM, mem + 65536, NULL, NULL, 0)"),
-        (Some("thread"), "futex(mem, FUTEX_WAIT_PRIVATE, 1, NULL)"),
-        (Some("thread"), "futex(mem, FUTEX_WAIT_PRIVATE, 0, NULL)"),
-        (None, "futex(mem, FUTEX_WAKE_PRIVATE, 1, NULL)"),
+        (Some("thread"), "read(fds[0], buf, 4)"),
+        (None, "write(fds[1], \"hi\", 2)"),
     ];
-    for (name, program) in [("a file made", made), ("a futex", futex)] {
+    for (name, program) in [("a file made", made), ("a thread woken", woken)] {
         let mut runs = Vec::new();
         for _ in 0..2 {
             let ids = t.program(program.iter().copied()).await;

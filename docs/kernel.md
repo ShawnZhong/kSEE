@@ -142,7 +142,7 @@ program's memory) is a **runner** too, and so is the program exec'd again
 (the console gives each its own calls). A runner's `execve` call is over once the
 new program is loaded: a runner again only if it says so
 (`ksee.ready`), as /bin/prog does. So the page can make calls as several
-threads and processes: one blocks (a pipe's read, a futex's wait), another
+threads and processes: one blocks (a pipe's read, a wait for a child), another
 wakes it.
 
 ## A disk
