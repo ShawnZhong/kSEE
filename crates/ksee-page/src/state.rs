@@ -147,7 +147,7 @@ pub struct Ui {
     /// The lesson open (an index in the lessons), the program made for
     /// it (its own, or a try), and how each of its lines went.
     pub lesson: Signal<usize>,
-    pub program: Signal<Vec<crate::lesson::Statement>>,
+    pub program: Signal<Vec<crate::lesson::ProgramLine>>,
     pub outcomes: Signal<Vec<ksee_host::Outcome>>,
 }
 
@@ -179,7 +179,7 @@ impl Ui {
 
     /// Lesson `k` open, with `program` (its own, or a try): made on a
     /// fresh kernel.
-    pub fn open(mut self, k: usize, program: Vec<crate::lesson::Statement>) {
+    pub fn open(mut self, k: usize, program: Vec<crate::lesson::ProgramLine>) {
         self.lesson.set(k);
         self.program.set(program);
     }

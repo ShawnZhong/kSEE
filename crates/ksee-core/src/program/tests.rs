@@ -24,7 +24,7 @@ fn known(name: &str) -> Option<i64> {
 #[test]
 fn a_line_is_a_call_or_a_declaration() {
     let call = |t: &str| match statement(t).unwrap() {
-        Line::Call { result, call, args } => (result.clone().map(|(t, _)| t.text()), result.map(|(_, n)| n), call, args),
+        Statement::Call { result, call, args } => (result.clone().map(|(t, _)| t.text()), result.map(|(_, n)| n), call, args),
         s => panic!("{s:?}"),
     };
     assert_eq!(call("int fd = openat(AT_FDCWD, \"/a, b\", O_RDONLY);"),
@@ -34,7 +34,7 @@ fn a_line_is_a_call_or_a_declaration() {
     assert!(statement("fd = getpid()").is_err()); // (a result: declared)
     assert!(statement("child: getpid()").is_err()); // (task selection is metadata)
     let decl = |t: &str| match statement(t).unwrap() {
-        Line::Decl { ty, name, count, .. } => (ty.text(), name, count.is_some()),
+        Statement::Decl { ty, name, count, .. } => (ty.text(), name, count.is_some()),
         s => panic!("{s:?}"),
     };
     assert_eq!(decl("char buf[64]"), ("char".into(), "buf".into(), true));

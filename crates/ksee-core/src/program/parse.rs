@@ -37,7 +37,7 @@ impl TypeName {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Line {
+pub enum Statement {
     /// `[type name =] call(args)`: a syscall, its result declared.
     Call { result: Option<(TypeName, String)>, call: String, args: Vec<Expr> },
     /// `type name[count] = init`: a variable of the program's (`count`:
@@ -239,7 +239,7 @@ impl<'a> Parser<'a> {
         Ok((name, args))
     }
 
-    pub(super) fn statement(&mut self) -> Result<Line, String> {
+    pub(super) fn statement(&mut self) -> Result<Statement, String> {
         while self.toks.last().is_some_and(|t| t.tok == Tok::Op(";")) {
             self.toks.pop();
         }
@@ -257,16 +257,16 @@ impl<'a> Parser<'a> {
             if self.eat("=") {
                 if count.is_none() && self.call_ends_at(0) {
                     let (call, args) = self.call()?;
-                    Line::Call { result: Some((ty, name)), call, args }
+                    Statement::Call { result: Some((ty, name)), call, args }
                 } else {
-                    Line::Decl { ty, name, count, init: Some(self.init()?) }
+                    Statement::Decl { ty, name, count, init: Some(self.init()?) }
                 }
             } else {
-                Line::Decl { ty, name, count, init: None }
+                Statement::Decl { ty, name, count, init: None }
             }
         } else if self.call_ends_at(0) {
             let (call, args) = self.call()?;
-            Line::Call { result: None, call, args }
+            Statement::Call { result: None, call, args }
         } else {
             return Err(format!("a call or declaration expected{}", self.here()));
         };
@@ -278,7 +278,7 @@ impl<'a> Parser<'a> {
 }
 
 /// A program's line, parsed.
-pub fn statement(text: &str) -> Result<Line, String> {
+pub fn statement(text: &str) -> Result<Statement, String> {
     Parser::new(text)?.statement()
 }
 

@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 
 use super::eval::{Env, Eval};
 use super::layout::{Arg, Decl};
-use super::parse::{statement, Line};
+use super::parse::{statement, Statement};
 use crate::types::Types;
 
 /// What a line of the program makes, checked.
@@ -26,8 +26,8 @@ pub enum Lowered {
 pub fn lower(text: &str, types: &Types, env: &dyn Env) -> Result<Lowered, String> {
     let line = statement(text)?;
     Ok(match line {
-        Line::Decl { .. } => Lowered::Decl(types.declare(&line, env)?),
-        Line::Call { result, call, args } => {
+        Statement::Decl { .. } => Lowered::Decl(types.declare(&line, env)?),
+        Statement::Call { result, call, args } => {
             let nr = types.syscalls.iter().find(|(_, n)| **n == call).map(|(&nr, _)| nr)
                 .ok_or_else(|| {
                     let like: Vec<&str> = types.syscalls.values().filter(|n| n.starts_with(call.as_str())).take(3).map(String::as_str).collect();

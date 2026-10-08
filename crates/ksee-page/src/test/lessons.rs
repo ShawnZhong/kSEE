@@ -3,15 +3,15 @@
 
 use std::rc::Rc;
 
-use ksee_core::program::{statement, Line as Stmt};
+use ksee_core::program::{statement, Statement};
 use ksee_core::text::{self, LessonTarget, Piece};
 use ksee_host::machine::Machine;
 use ksee_host::test::KernelHarness;
 
-use crate::lesson::Statement;
+use crate::lesson::ProgramLine;
 
 /// Each step as the harness makes it: its task and its text.
-fn lines(steps: &[Statement]) -> impl Iterator<Item = (Option<&str>, &str)> {
+fn lines(steps: &[ProgramLine]) -> impl Iterator<Item = (Option<&str>, &str)> {
     steps.iter().map(|s| (s.task(), s.text()))
 }
 
@@ -21,7 +21,7 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
     let lessons = crate::lessons();
     for lesson in lessons {
         let ids = t.program(lines(&lesson.program)).await;
-        let is_call = |step: &Statement| matches!(statement(step.text()), Ok(Stmt::Call { .. }));
+        let is_call = |step: &ProgramLine| matches!(statement(step.text()), Ok(Statement::Call { .. }));
         let blocked: Vec<String> = lesson.program.iter().zip(&ids).filter(|(step, id)| is_call(step) && !id.is_some_and(|id| t.finished(id).is_some()))
             .map(|(step, _)| step.text().into()).collect();
         let calls: Vec<Option<u32>> = lesson.program.iter().zip(&ids).filter(|(step, _)| is_call(step)).map(|(_, id)| *id).collect();

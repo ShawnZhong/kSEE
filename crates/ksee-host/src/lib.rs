@@ -25,6 +25,6 @@ mod sched;
 mod state;
 pub mod test;
 
-pub use ksee_core::program::{Outcome, Var};
+pub use ksee_core::program::{Outcome, ProgramVar};
 pub use replay::DiskTransfer;
 pub use state::Transfer;

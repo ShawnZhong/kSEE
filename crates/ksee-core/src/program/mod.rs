@@ -34,6 +34,6 @@ pub use eval::{value, Env, Sym};
 pub use layout::{Arg, Decl};
 pub use lower::{lower, words, Lowered};
 pub use names::Names;
-pub use parse::{context, expression, statement, Line};
+pub use parse::{context, expression, statement, Statement};
 pub use parse::{Context, Expr, TypeName};
-pub use session::{Call, Outcome, Runner, Session, Var};
+pub use session::{Outcome, ProgramVar, Request, Runner, Session};

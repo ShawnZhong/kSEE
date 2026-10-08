@@ -26,7 +26,7 @@ pub struct Runner {
 /// A syscall a runner makes: asked (written into its request), begun
 /// (recorded from then: the id of the record there), then done.
 #[derive(Default, Clone, Debug)]
-pub struct Call {
+pub struct Request {
     pub id: u32,
     pub tid: u32,
     /// Its runner's task (its task_struct): as the recording names it.
@@ -57,7 +57,7 @@ pub enum Outcome {
 /// A variable of the program's: memory of type `ty` (an array of `count`)
 /// at `addr`, `bytes` long.
 #[derive(Clone, Debug)]
-pub struct Var {
+pub struct ProgramVar {
     pub name: String,
     pub addr: u32,
     pub ty: u32,
@@ -77,7 +77,7 @@ pub struct Session {
     pub heaps: BTreeMap<u32, (u32, u32)>,
     /// The calls asked, by id; and the last id (ids are not used again, a
     /// boot after another's: see again).
-    pub calls: BTreeMap<u32, Call>,
+    pub calls: BTreeMap<u32, Request>,
     pub last_call_id: u32,
     /// The program's names (a variable's, a result's), how many of its
     /// lines have been made, how each went, and the variables declared,
@@ -85,7 +85,7 @@ pub struct Session {
     pub names: Names,
     pub lines: usize,
     pub outcomes: Vec<Outcome>,
-    pub vars: Vec<(Var, String)>,
+    pub vars: Vec<(ProgramVar, String)>,
 }
 
 impl Session {
@@ -132,7 +132,7 @@ impl Session {
         let source = if main { None } else { self.calls.values().next_back().and_then(|c| c.result.as_ref().map(|_| c.id)) };
         self.runners.insert(tid, Runner { task, req, heap, source });
         self.heaps.entry(heap).or_insert((heap, heap + size));
-        if let Some(Call { line, result: Some((name, _)), .. }) = source.and_then(|id| self.calls.get(&id))
+        if let Some(Request { line, result: Some((name, _)), .. }) = source.and_then(|id| self.calls.get(&id))
             && !self.names.has(name, *line)
         {
             self.names.set(name, *line, Sym::Value { v: tid as i64, to: None });
@@ -209,7 +209,7 @@ impl Session {
     }
 
     /// Call `c` asked (its id the next: see next_call).
-    pub fn ask(&mut self, c: Call) {
+    pub fn ask(&mut self, c: Request) {
         self.last_call_id = c.id;
         self.calls.insert(c.id, c);
     }
@@ -256,9 +256,9 @@ impl Session {
     /// to the call as an argument, as `records` reads its first `len`
     /// bytes (the result's, if positive), if it is records of a variable
     /// length (a directory's entries).
-    pub fn changed(&mut self, show: impl Fn(&Var) -> String, records: impl Fn(&str, usize, &Var, u32) -> Option<String>) {
+    pub fn changed(&mut self, show: impl Fn(&ProgramVar) -> String, records: impl Fn(&str, usize, &ProgramVar, u32) -> Option<String>) {
         let Some(Outcome::Call { id, ret, changed, .. }) = self.outcomes.last_mut() else { return };
-        let Some(Call { said: (call, names), .. }) = self.calls.get(id) else { return };
+        let Some(Request { said: (call, names), .. }) = self.calls.get(id) else { return };
         changed.clear();
         for (v, last) in self.vars.iter_mut() {
             let now = show(v);
@@ -285,7 +285,7 @@ mod tests {
 
     fn ask(s: &mut Session, tid: u32, line: usize, result: Option<&str>) -> u32 {
         let (id, r) = s.next_call(tid).unwrap();
-        s.ask(Call { id, tid, task: r.task, line, result: result.map(|n| (n.into(), None)), ..Default::default() });
+        s.ask(Request { id, tid, task: r.task, line, result: result.map(|n| (n.into(), None)), ..Default::default() });
         s.outcomes.push(Outcome::Call { id, done: false, ret: None, during: None, changed: Vec::new() });
         s.lines = line + 1;
         id
@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn what_a_call_changed() {
         let mut s = ready();
-        let var = |name: &str, addr| (Var { name: name.into(), addr, ty: 1, count: None, bytes: 64 }, "0".to_string());
+        let var = |name: &str, addr| (ProgramVar { name: name.into(), addr, ty: 1, count: None, bytes: 64 }, "0".to_string());
         s.vars = alloc::vec![var("buf", 0x1000), var("n", 0x1040), var("same", 0x1080)];
         let id = ask(&mut s, 10, 2, None);
         s.calls.get_mut(&id).unwrap().said = ("getdents64".into(), alloc::vec![None, Some("buf".into()), None]);

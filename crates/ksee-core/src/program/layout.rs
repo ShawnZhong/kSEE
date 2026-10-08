@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use super::eval::{Env, Eval};
-use super::parse::{Expr, Line};
+use super::parse::{Expr, Statement};
 use crate::types::{Base, Kind, Types};
 use crate::Memory;
 
@@ -38,8 +38,8 @@ impl Types {
     /// the type the
     /// kernel's own (a struct, union or enum by its tag, a typedef, a base
     /// type by its name). `known`: as for arg.
-    pub(crate) fn declare(&self, line: &Line, known: &dyn Env) -> Result<Decl, String> {
-        let Line::Decl { ty, name, count, init } = line else {
+    pub(crate) fn declare(&self, line: &Statement, known: &dyn Env) -> Result<Decl, String> {
+        let Statement::Decl { ty, name, count, init } = line else {
             return Err("a declaration: a type, then a name".into());
         };
         let (e, name) = (Eval { types: Some(self), env: known }, name.clone());

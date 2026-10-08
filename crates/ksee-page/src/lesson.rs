@@ -4,7 +4,7 @@
 //! at a time, as it opens.
 
 use dioxus::prelude::*;
-use ksee_core::program::{statement, Line};
+use ksee_core::program::{statement, Statement};
 use ksee_core::text::{self, LessonTarget, Piece};
 use ksee_host::machine::Made;
 use ksee_host::Outcome;
@@ -17,26 +17,26 @@ use crate::{lessons, machine};
 /// or one for the task named by an earlier clone's result.
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(untagged)]
-pub enum Statement {
+pub enum ProgramLine {
     Main(String),
     Task { task: String, text: String },
 }
 
-impl Statement {
+impl ProgramLine {
     pub fn text(&self) -> &str {
-        match self { Statement::Main(text) | Statement::Task { text, .. } => text }
+        match self { ProgramLine::Main(text) | ProgramLine::Task { text, .. } => text }
     }
 
     pub fn task(&self) -> Option<&str> {
-        match self { Statement::Main(_) => None, Statement::Task { task, .. } => Some(task) }
+        match self { ProgramLine::Main(_) => None, ProgramLine::Task { task, .. } => Some(task) }
     }
 
-    fn with_text(&self, text: String) -> Statement {
-        match self { Statement::Main(_) => Statement::Main(text), Statement::Task { task, .. } => Statement::Task { task: task.clone(), text } }
+    fn with_text(&self, text: String) -> ProgramLine {
+        match self { ProgramLine::Main(_) => ProgramLine::Main(text), ProgramLine::Task { task, .. } => ProgramLine::Task { task: task.clone(), text } }
     }
 
-    fn on(task: Option<&str>, text: String) -> Statement {
-        match task { Some(task) => Statement::Task { task: task.into(), text }, None => Statement::Main(text) }
+    fn on(task: Option<&str>, text: String) -> ProgramLine {
+        match task { Some(task) => ProgramLine::Task { task: task.into(), text }, None => ProgramLine::Main(text) }
     }
 }
 
@@ -50,8 +50,8 @@ pub struct Lesson {
     pub question: String,
     pub text: Vec<String>,
     #[serde(default)]
-    pub tries: Vec<Vec<Statement>>,
-    pub program: Vec<Statement>,
+    pub tries: Vec<Vec<ProgramLine>>,
+    pub program: Vec<ProgramLine>,
 }
 
 /// Make `lines` on a fresh kernel, one after another (a call: then the
@@ -60,7 +60,7 @@ pub struct Lesson {
 /// call selected: the first the lesson's text links to (its subject), else
 /// the last.
 /// (A run begun again cancels this one: it stops at its next await.)
-pub(crate) async fn make_program(mut ui: Ui, lines: Vec<Statement>) {
+pub(crate) async fn make_program(mut ui: Ui, lines: Vec<ProgramLine>) {
     let m = machine();
     if m.restart().await.is_err() {
         return;
@@ -151,7 +151,7 @@ pub fn LessonPane() -> Element {
         }
     }
     let many = columns.len() > 1;
-    let col = |step: &Statement| columns.iter().position(|column| column.as_deref() == step.task()).unwrap_or(0);
+    let col = |step: &ProgramLine| columns.iter().position(|column| column.as_deref() == step.task()).unwrap_or(0);
     let names: Vec<(String, i32)> = columns.iter().map(|task| task_name(ui, task.as_deref(), &program)).collect();
     // (A task waits at row r while one of its earlier calls has not returned.)
     let waits = |r: usize| -> Vec<usize> {
@@ -201,7 +201,7 @@ pub fn LessonPane() -> Element {
                                 div { class: "cell", style: if many { format!("grid-column: {}", c + 1) } else { String::new() },
                                     crate::editor::Editor { key: "{program.len()}:{c}", text: String::new(), task: task.clone(), line: program.len(),
                                         placeholder: by,
-                                        done: move |text: String| if !text.is_empty() { ui.program.write().push(Statement::on(task.as_deref(), text)); } }
+                                        done: move |text: String| if !text.is_empty() { ui.program.write().push(ProgramLine::on(task.as_deref(), text)); } }
                                 }
                             }
                         }
@@ -214,7 +214,7 @@ pub fn LessonPane() -> Element {
 
 /// A task column's head: its task's recorded name and pid, or the name the
 /// program gave it before its first call runs.
-fn task_name(ui: Ui, task: Option<&str>, program: &[Statement]) -> (String, i32) {
+fn task_name(ui: Ui, task: Option<&str>, program: &[ProgramLine]) -> (String, i32) {
     let id = program.iter().enumerate().filter(|(_, step)| step.task() == task).find_map(|(j, _)| match ui.outcomes.read().get(j) {
         Some(Outcome::Call { id, .. }) => Some(*id),
         _ => None,
@@ -236,7 +236,7 @@ fn task_name(ui: Ui, task: Option<&str>, program: &[Statement]) -> (String, i32)
 /// call, its recording selected as it gets the focus. In a task column: its
 /// column, and its task's hue.
 #[component]
-fn Cell(j: usize, step: Statement, outcome: Option<Outcome>, column: Option<(usize, i32)>) -> Element {
+fn Cell(j: usize, step: ProgramLine, outcome: Option<Outcome>, column: Option<(usize, i32)>) -> Element {
     let mut ui = use_context::<Ui>();
     // (A call's run, once the recording has it: drawn again as it changes.)
     (ui.snapshot)();
@@ -269,7 +269,7 @@ thread_local! {
     static COMMON: &'static [String] = {
         let mut out: Vec<String> = Vec::new();
         for step in lessons().iter().flat_map(|e| e.program.iter()) {
-            if let Ok(Line::Call { call, .. }) = statement(step.text()) && !out.contains(&call) {
+            if let Ok(Statement::Call { call, .. }) = statement(step.text()) && !out.contains(&call) {
                 out.push(call);
             }
         }

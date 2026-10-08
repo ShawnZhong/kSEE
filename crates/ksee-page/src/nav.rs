@@ -6,7 +6,7 @@
 use dioxus::prelude::*;
 
 use crate::lessons;
-use crate::lesson::Statement;
+use crate::lesson::ProgramLine;
 use crate::state::Ui;
 
 /// The URL's state: the lesson, its page's name (NAME.html); and #p=JSON,
@@ -21,12 +21,12 @@ fn url() -> (Option<String>, Option<String>) {
 }
 
 /// A program as the URL has it: JSON.
-fn program_json(program: &[Statement]) -> Option<String> {
+fn program_json(program: &[ProgramLine]) -> Option<String> {
     let value = serde_wasm_bindgen::to_value(program).ok()?;
     js_sys::JSON::stringify(&value).ok()?.as_string()
 }
 
-fn program_from_json(text: &str) -> Option<Vec<Statement>> {
+fn program_from_json(text: &str) -> Option<Vec<ProgramLine>> {
     serde_wasm_bindgen::from_value(js_sys::JSON::parse(text).ok()?).ok()
 }
 
@@ -41,7 +41,7 @@ pub fn from_url(ui: Ui) {
 }
 
 /// The URL, as the lesson and its program are.
-pub(crate) fn to_url(k: usize, program: &[Statement]) {
+pub(crate) fn to_url(k: usize, program: &[ProgramLine]) {
     let Some(lesson) = lessons().get(k) else { return };
     let p = if program == lesson.program { String::new() } else {
         program_json(program).map_or_else(String::new, |p| format!("#p={}", js_sys::encode_uri_component(&p)))

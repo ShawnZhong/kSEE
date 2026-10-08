@@ -17,7 +17,7 @@ use ksee_core::view::{Frame, Object, RunSummary};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
-use ksee_core::highlight::{self, Kind, Piece};
+use ksee_core::highlight::{self, Class, Piece};
 use crate::machine;
 use crate::state::{Derived, Ui};
 
@@ -28,21 +28,21 @@ pub struct File {
 }
 
 /// The page's CSS class for a semantic source piece.
-fn kind_class(kind: Kind) -> &'static str {
+fn kind_class(kind: Class) -> &'static str {
     match kind {
-        Kind::Plain => "",
-        Kind::Keyword => "kw",
-        Kind::Type => "ty",
-        Kind::Str => "str",
-        Kind::Esc => "esc",
-        Kind::Comment => "com",
-        Kind::Number => "num",
-        Kind::Pre => "pp",
-        Kind::Name => "nm",
-        Kind::Func => "fn",
-        Kind::Field => "fld",
-        Kind::Macro => "mac",
-        Kind::Bool => "bl",
+        Class::Plain => "",
+        Class::Keyword => "kw",
+        Class::Type => "ty",
+        Class::Str => "str",
+        Class::Esc => "esc",
+        Class::Comment => "com",
+        Class::Number => "num",
+        Class::Pre => "pp",
+        Class::Name => "nm",
+        Class::Func => "fn",
+        Class::Field => "fld",
+        Class::Macro => "mac",
+        Class::Bool => "bl",
     }
 }
 
