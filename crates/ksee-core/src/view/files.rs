@@ -10,10 +10,9 @@ use crate::types::c_str;
 use crate::Memory;
 
 /// A number in an fd table and the open file it stands for (a struct
-/// file): its address, where it is ("/note.txt"; a file of no place's, as
-/// Linux names it: "pipefs:[12]"), its position, and its mode ("r", "w",
-/// "rw"); and the other numbers that stand for it too, in this table or
-/// another (`also`: each the table's index in those asked for, and its fd).
+/// file): its address (the same for each number that stands for it), where
+/// it is ("/note.txt"; a file of no place's, as Linux names it:
+/// "pipefs:[12]"), its position, and its mode ("r", "w", "rw").
 #[derive(Debug, Clone, PartialEq)]
 pub struct OpenFile {
     pub fd: u32,
@@ -21,7 +20,6 @@ pub struct OpenFile {
     pub name: String,
     pub pos: i64,
     pub mode: String,
-    pub also: Vec<(usize, u32)>,
 }
 
 impl View<'_> {
@@ -29,15 +27,7 @@ impl View<'_> {
     /// after record `at`: each its open files, by number.
     pub fn open_files(&self, tables: &[u32], at: usize) -> Vec<Vec<OpenFile>> {
         let mem = self.rec.memory_at(self.now, at);
-        let mut all: Vec<Vec<OpenFile>> = tables.iter().map(|&t| self.table(&mem, t).unwrap_or_default()).collect();
-        // (The numbers that stand for the same open file: each the others'.)
-        let places: Vec<(usize, u32, u32)> = all.iter().enumerate().flat_map(|(k, t)| t.iter().map(move |f| (k, f.fd, f.file))).collect();
-        for (k, table) in all.iter_mut().enumerate() {
-            for f in table {
-                f.also = places.iter().filter(|p| p.2 == f.file && (p.0, p.1) != (k, f.fd)).map(|p| (p.0, p.1)).collect();
-            }
-        }
-        all
+        tables.iter().map(|&t| self.table(&mem, t).unwrap_or_default()).collect()
     }
 
     /// Fd table `files`' open files.
@@ -57,7 +47,7 @@ impl View<'_> {
                 let mode: String = arch::FMODE.iter().filter(|(b, _)| bits & b != 0).map(|(_, m)| *m).collect();
                 let name = self.place(mem, mem.read_u32(file.wrapping_add(dentry)), mem.read_u32(file.wrapping_add(mnt)), mem.read_u32(file.wrapping_add(inode)));
                 let p = (mem.read_u32(file.wrapping_add(pos)) as u64 | (mem.read_u32(file.wrapping_add(pos + 4)) as u64) << 32) as i64;
-                OpenFile { fd: n, file, name, pos: p, mode, also: Vec::new() }
+                OpenFile { fd: n, file, name, pos: p, mode }
             })
         }).collect())
     }

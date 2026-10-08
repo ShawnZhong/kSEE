@@ -476,13 +476,12 @@ pub(super) async fn tasks() -> Check {
     strip.dedup();
     check(c[5].1 == "= 6 (during write)" && c[6].1 == "= 6" && changed.iter().any(|x| x == "fds = {3, 4}") && strip.len() >= 2,
           "the pipe", (&c, &changed, &strip))?;
-    // (The write's: the program's open files, the pipe's two ends, the same
-    // open files as the child's.)
+    // (The write's: the program's open files, the pipe's two ends.)
     let _ = all("ol.lines .cell textarea").get(6).ok_or("no seventh line")?.dyn_ref::<HtmlElement>().map(|t| t.focus());
     settle().await;
     tab("Tasks").await;
     let files: Vec<String> = all(".pane td.fval").iter().map(text).collect();
-    check(files.iter().filter(|f| f.starts_with("pipefs:[") && f.contains("shared with") && f.contains("prog(")).count() == 2, "the pipe's ends, the child's too", &files)?;
+    check(files.iter().filter(|f| f.starts_with("pipefs:[")).count() == 2, "the pipe's ends", &files)?;
     tab("Stack").await;
     // (The idle task, between the calls: a click on its bar, the cursor in
     // its run, as in any task's.)

@@ -145,29 +145,17 @@ fn Tasks() -> Element {
                             }
                             for f in own {
                                 {
-                                    // (The other numbers for its open file: this table's, then
-                                    // the other tasks', each named once.)
-                                    let here = table.unwrap_or(usize::MAX);
-                                    let mut with: Vec<String> = f.also.iter().filter(|a| a.0 == here).map(|a| a.1.to_string()).collect();
-                                    for &(x, _) in f.also.iter().filter(|a| a.0 != here) {
-                                        if !with.contains(&owner(x)) { with.push(owner(x)) }
-                                    }
-                                    let with = match &with[..] {
-                                        [] => String::new(),
-                                        [one] => format!(" · shared with {one}"),
-                                        [rest @ .., last] => format!(" · shared with {} and {last}", rest.join(", ")),
-                                    };
                                     // (A click: its struct file, as it was.)
                                     let path = format!("{p}/fd{}", f.fd);
                                     let file_open = open.read().contains(&path);
                                     let fields = if file_open { m.view(|v| v.file_fields(f.file, at)) } else { Vec::new() };
                                     let pp = path.clone();
                                     rsx! {
-                                        tr { class: "opens", title: "task->files->fdt->fd[{f.fd}]: an open file, a struct file at {f.file:#x} (a click: its fields)",
+                                        tr { class: "opens", title: "task->files->fdt->fd[{f.fd}]: an open file, the struct file at {f.file:#x} (the same address: the same open file; a click: its fields)",
                                             onclick: move |_| { let mut s = open.write(); if !s.remove(&pp) { s.insert(pp.clone()); } },
                                             td { class: "fname mono", style: "padding-left: {24 + depth * 16}px",
                                                 span { class: "tw", if file_open { "▾ " } else { "▸ " } } "{f.fd}" }
-                                            td { class: "fval mono", colspan: "2", "{f.name}" span { class: "dim", " · {f.mode} · position {f.pos}{with}" } }
+                                            td { class: "fval mono", colspan: "2", "{f.name}" span { class: "dim", " · {f.mode} · position {f.pos} · {f.file:#x}" } }
                                         }
                                         for o in fields {
                                             crate::stack::Value { o: o.clone(), path: format!("{path}.{}", o.name), depth: 3, at }

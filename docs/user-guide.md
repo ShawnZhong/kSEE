@@ -125,7 +125,8 @@ its parent when those relationships are available.
 
 Open a task (the running one is open) to see its open files: each fd, where
 its open file is (a path, or for a pipe `pipefs:[inode]`), its mode and
-position, and the other fds, here or in other tasks, that share it. A thread
+position, and the `struct file`'s address (fds with the same address, here or
+in other tasks, stand for the same open file). A thread
 that shares its process's fd table says so. Click an fd for its `struct file`;
 the task's own `task_struct`, as memory was at that moment, is folded under
 them.
