@@ -72,7 +72,7 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     global_key("ArrowRight");
     wait(|| cursor() != before, 20, "the global → key", || format!("{} at {}", cursor(), place())).await?;
     // (Stepping: Over, in the function read, vfs_read, over its calls, each
-    // step somewhere else; Back to where Next went; Next, into the calls,
+    // step somewhere else; Back to where Into went; Into, into the calls,
     // each step somewhere else too; Out, its caller's next line, and Over on
     // there.)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
@@ -80,7 +80,7 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     let at = place();
     let mut over = vec![at.clone()];
     for _ in 0..8 {
-        press("Over ▶");
+        press("Over");
         settle().await;
         over.push(place());
     }
@@ -88,7 +88,7 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     settle().await;
     let mut next = vec![place()];
     for _ in 0..12 {
-        press("Next ▶");
+        press("Into");
         settle().await;
         next.push(place());
     }
@@ -102,10 +102,10 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
           "stepping: Over within the function; Next into the calls; Back; each step a move", (&over, &next, &back))?;
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
-    press("Out ▲");
+    press("Out");
     settle().await;
     let caller = place();
-    press("Over ▶");
+    press("Over");
     settle().await;
     check(caller.starts_with("ksys_read") && place().starts_with("ksys_read"), "reading the caller: its own steps", (&caller, place()))?;
     Ok(())
@@ -154,7 +154,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let chosen = || one(".stack tr.frame.on").map(|r| (text(&r), r.get_bounding_client_rect().top().round()));
     let mut seen = vec![chosen()];
     for _ in 0..6 {
-        press("Over ▶");
+        press("Over");
         settle().await;
         seen.push(chosen());
     }
@@ -203,7 +203,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let edge = || drew("data-test-now").and_then(|n| n.parse::<f64>().ok());
     let mut seen = Vec::new();
     for _ in 0..200 {
-        press("Next ▶");
+        press("Into");
         settle().await;
         if let Some(n) = edge() { seen.push(n.round()) }
     }
@@ -225,7 +225,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let hover = (now() - t0) / 30.0;
     let t0 = now();
     for _ in 0..20 {
-        press("Next ▶");
+        press("Into");
         sleep(0).await;
     }
     let step = (now() - t0) / 20.0;
@@ -475,7 +475,7 @@ pub(super) async fn responsive() -> Check {
     let (sw, cw) = (src.scroll_width(), src.client_width());
     check(sw > cw, "the source scrolls sideways", (sw, cw))?;
     let at = place();
-    press("Next ▶");
+    press("Into");
     settle().await;
     Ok(format!("{at} → {}", place()))
 }

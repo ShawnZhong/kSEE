@@ -159,21 +159,21 @@ for the current lesson run. The console is output-only.
 
 ## 5. Move through the recording
 
-You follow the code line by line: Next goes to the very next line wherever
-it is, into the calls. To stay in one function instead, step over: the
-function you read is the frame the source shows, highlighted in the Stack and
-named in the transport below the chart (the innermost, unless you choose
-another: a Stack row, or a bar in the chart). Each move goes somewhere else:
-a line the recording stops at more than once in a row (before each function
-inlined into it) counts once.
+You follow the code line by line, as in a debugger: Step Into goes to the
+very next line wherever it is, into the calls. To stay in one function
+instead, step over: the function you read is the frame the source shows,
+highlighted in the Stack and named in the transport below the chart (the
+innermost, unless you choose another: a Stack row, or a bar in the chart).
+Each step goes somewhere else: a line the recording stops at more than once in
+a row (before each function inlined into it) counts once.
 
 | Control | Action |
 |---|---|
-| Right, or Next ▶ | The very next line, wherever it is: into the calls. |
-| Left, or ◀ Back | The line before, the same way. |
-| Shift+Right, or Over ▶ | The next line of the function you read, over what it calls; past its end, on in its caller. |
-| Shift+Left | The line before in the function you read, the same way. |
-| Up, or Out ▲ | On until the function you read returns: its caller's next line. |
+| Right, or Into | Step into: the very next line, wherever it is. |
+| Left, or ◀ Back | Step back: the line before, the same way. |
+| Shift+Right, or Over | Step over: the next line of the function you read, over what it calls; past its end, on in its caller. |
+| Shift+Left | Step back over: the line before in the function you read. |
+| Up, or Out | Step out: on until the function you read returns, its caller's next line. |
 | Hover the chart | See what a bar's call was (outlined, a tip); nothing else moves. |
 | Click the chart | Commit the previewed moment. |
 
