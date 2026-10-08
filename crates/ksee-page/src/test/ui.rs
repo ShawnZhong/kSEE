@@ -71,38 +71,41 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     let before = cursor();
     global_key("ArrowRight");
     wait(|| cursor() != before, 20, "the global → key", || format!("{} at {}", cursor(), place())).await?;
-    // (Stepping: Next, in the function read, vfs_read, over its calls, each
-    // step somewhere else; Back as far; Into, into a call; Out, its caller's
-    // next line, and Next on there.)
+    // (Stepping: Over, in the function read, vfs_read, over its calls, each
+    // step somewhere else; Back to where Next went; Next, into the calls,
+    // each step somewhere else too; Out, its caller's next line, and Over on
+    // there.)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
     let at = place();
     let mut over = vec![at.clone()];
     for _ in 0..8 {
-        press("Next ▶");
+        press("Over ▶");
         settle().await;
         over.push(place());
     }
-    let moved = over.windows(2).all(|w| w[0] != w[1]);
-    for _ in 0..8 {
+    click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
+    settle().await;
+    let mut next = vec![place()];
+    for _ in 0..12 {
+        press("Next ▶");
+        settle().await;
+        next.push(place());
+    }
+    for _ in 0..12 {
         press("◀ Back");
         settle().await;
     }
     let back = place();
-    let mut into = Vec::new();
-    for _ in 0..6 {
-        press("▲ Into");
-        settle().await;
-        into.push(place());
-    }
-    check(over.iter().all(|p| p.starts_with("vfs_read")) && moved && back == at && into.iter().any(|p| !p.starts_with("vfs_read")),
-          "stepping: Next within the function, each step a move; Back; Into", (&over, &back, &into))?;
+    let moved = |p: &[String]| p.windows(2).all(|w| w[0] != w[1]);
+    check(over.iter().all(|p| p.starts_with("vfs_read")) && moved(&over) && moved(&next) && next.iter().any(|p| !p.starts_with("vfs_read")) && back == at,
+          "stepping: Over within the function; Next into the calls; Back; each step a move", (&over, &next, &back))?;
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
-    press("▼ Out");
+    press("Out ▲");
     settle().await;
     let caller = place();
-    press("Next ▶");
+    press("Over ▶");
     settle().await;
     check(caller.starts_with("ksys_read") && place().starts_with("ksys_read"), "reading the caller: its own steps", (&caller, place()))?;
     Ok(())
@@ -146,12 +149,12 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     check(level().is_none() && innermost, "a click off the bars: no level chosen", (level(), innermost))?;
     mouse(&chart, "click", x, y, false);
     settle().await;
-    // (Its level chosen, stepping on: callees come and go above it, and it,
-    // the same call, stays where it is.)
+    // (Its level chosen, stepping over in it: callees come and go above it,
+    // and it, the same call, stays where it is.)
     let chosen = || one(".stack tr.frame.on").map(|r| (text(&r), r.get_bounding_client_rect().top().round()));
     let mut seen = vec![chosen()];
     for _ in 0..6 {
-        press("Next ▶");
+        press("Over ▶");
         settle().await;
         seen.push(chosen());
     }

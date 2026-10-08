@@ -13,16 +13,17 @@ use wasm_bindgen::prelude::Closure;
 use crate::machine;
 use crate::state::{Derived, Moment, Tab, Ui};
 
-/// A move of the cursor in time. Back and Next: a line of the frame you
-/// read (the level chosen), over what it calls (on in its caller once it
-/// returns). Into: the very next line (into the call on this one). Out: on
-/// until the frame read returns, its caller's next line. (Into and Out: the
-/// innermost frame then.)
+/// A move of the cursor in time. Back and Next: the line before or after,
+/// wherever it is (into the calls: the innermost frame then). Over and
+/// Under: the line after or before in the function you read (the level
+/// chosen), over what it calls (on in its caller once it returns). Out: on
+/// until the function read returns, its caller's next line.
 #[derive(Clone, Copy)]
 pub enum Move {
     Back,
     Next,
-    Into,
+    Under,
+    Over,
     Out,
 }
 
@@ -34,17 +35,18 @@ pub fn walk(ui: Ui, d: Derived, m: Move) {
     let lines = Ui::run_lines(k);
     let depth = d.stack.peek().get(*d.frame.peek()).map_or(0, |f| f.depth);
     let (dir, within) = match m {
-        Move::Back => (-1, Some(depth)),
-        Move::Next => (1, Some(depth)),
-        Move::Into => (1, None),
+        Move::Back => (-1, None),
+        Move::Next => (1, None),
+        Move::Under => (-1, Some(depth)),
+        Move::Over => (1, Some(depth)),
         // (Out of the outermost: past the run.)
         Move::Out => (1, Some(depth.wrapping_sub(1))),
     };
     let to = if matches!(m, Move::Out) && depth == 0 { None } else { step(&lines, at.line, dir, within) };
     if let Some(j) = to {
         match m {
-            Move::Into | Move::Out => ui.commit(Some(Moment { run: k, line: j, level: None })),
-            Move::Back | Move::Next => ui.go(j),
+            Move::Back | Move::Next | Move::Out => ui.commit(Some(Moment { run: k, line: j, level: None })),
+            Move::Under | Move::Over => ui.go(j),
         }
         return;
     }
@@ -63,9 +65,9 @@ pub fn walk(ui: Ui, d: Derived, m: Move) {
     }
 }
 
-/// Under the strip: the moves (Move: ◀ Back, Next ▶, ▲ Into, ▼ Out, as
-/// ← → ↑ ↓), and where the cursor is: the frame you read (chosen on the
-/// Stack or the chart; else the innermost).
+/// Under the strip: the moves (Move: ◀ Back and Next ▶ as ← →, Over ▶ as
+/// Shift+→ (Shift+←: under), Out as ↑), and where the cursor is: the frame
+/// you read (chosen on the Stack or the chart; else the innermost).
 #[component]
 pub fn Transport() -> Element {
     let ui = use_context::<Ui>();
@@ -83,17 +85,17 @@ pub fn Transport() -> Element {
         .map_or(String::new(), |c| format!(" · {} returned {}", c.func, machine().tables().types.result(c.value)));
     rsx! {
         div { class: "transport",
-            button { title: "the line before, in the function you read (←)", onclick: move |_| walk(ui, d, Move::Back), "◀ Back" }
-            button { title: "the next line, in the function you read, over what it calls (→)", onclick: move |_| walk(ui, d, Move::Next), "Next ▶" }
-            button { title: "into the call on this line: the very next line (↑)", onclick: move |_| walk(ui, d, Move::Into), "▲ Into" }
-            button { title: "on until the function you read returns: its caller's next line (↓)", onclick: move |_| walk(ui, d, Move::Out), "▼ Out" }
+            button { title: "the line before, wherever it is (←)", onclick: move |_| walk(ui, d, Move::Back), "◀ Back" }
+            button { title: "the next line, wherever it is: into the calls (→)", onclick: move |_| walk(ui, d, Move::Next), "Next ▶" }
+            button { title: "the next line of the function you read, over what it calls (Shift+→; Shift+←: the one before)", onclick: move |_| walk(ui, d, Move::Over), "Over ▶" }
+            button { title: "on until the function you read returns: its caller's next line (↑)", onclick: move |_| walk(ui, d, Move::Out), "Out ▲" }
             span { class: "where mono dim", "{place}{turn}{returned}" }
         }
     }
 }
 
-/// The page's keys, anywhere on it: one listener on the window; ← → ↑ ↓
-/// the moves (Back, Next, Into, Out: see Move). Not in text fields (the lesson's
+/// The page's keys, anywhere on it: one listener on the window; ← → Back
+/// and Next (Shift: Under and Over), ↑ Out (see Move). Not in text fields (the lesson's
 /// lines, find): arrows move the cursor there.
 pub fn listen(ui: Ui) {
     let d = use_context::<Derived>();
@@ -114,10 +116,9 @@ pub fn listen(ui: Ui) {
             // (← →: once the kernel is up.)
             let up = matches!(*ui.kernel.peek(), Some(Ok(())));
             let arrow = match e.key().as_str() {
-                "ArrowLeft" if up => { walk(ui, d, Move::Back); true }
-                "ArrowRight" if up => { walk(ui, d, Move::Next); true }
-                "ArrowUp" if up => { walk(ui, d, Move::Into); true }
-                "ArrowDown" if up => { walk(ui, d, Move::Out); true }
+                "ArrowLeft" if up => { walk(ui, d, if e.shift_key() { Move::Under } else { Move::Back }); true }
+                "ArrowRight" if up => { walk(ui, d, if e.shift_key() { Move::Over } else { Move::Next }); true }
+                "ArrowUp" if up => { walk(ui, d, Move::Out); true }
                 _ => false,
             };
             if arrow {
