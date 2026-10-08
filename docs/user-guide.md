@@ -100,12 +100,6 @@ A sealed function is marked in the source header. Its call and return are
 recorded, but loop turns inside its body are intentionally omitted because it
 writes no reconstructible memory and makes no calls.
 
-### The tabs
-
-Beside the source, the tabs come in three groups, by what they show: the
-cursor's moment (Stack, Tasks), the call selected (Objects), and the whole
-recording (Disk, Console).
-
 ### Stack
 
 The Stack tab lists calls at the current moment at the bottom of the pane, the
