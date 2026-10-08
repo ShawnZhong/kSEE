@@ -79,8 +79,8 @@ pub fn Source() -> Element {
     let frames = d.stack.cloned();
     // (The innermost's line is the line run: what it compared and what a
     // call on it returned are said there only, not at a caller's.)
-    let leaf = frames.get(d.frame.cloned()).is_none() || d.frame.cloned() == 0;
-    let Some(f) = frames.get(d.frame.cloned()).or(frames.first()).cloned() else { return rsx! { div { class: "source" } } };
+    let leaf = d.frame.cloned() == 0;
+    let Some(f) = frames.get(d.frame.cloned()).cloned() else { return rsx! { div { class: "source" } } };
     let Some((path, line)) = f.at.clone() else { return rsx! { div { class: "source" } } };
     let (path, line, def_of) = match seen() {
         Some((file, line)) => (file, line, true),
@@ -104,11 +104,10 @@ pub fn Source() -> Element {
     }
 }
 
-/// What the run selected did on each line of `file`: the lines that ran,
-/// how often; what each stored, its note (by its line).
-fn ran(ui: Ui, run: Option<RunSummary>, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, ksee_core::view::Note>) {
+/// What run `k` (`run`: the one shown) did on each line of `file`: the
+/// lines that ran, how often; what each stored, its note (by its line).
+fn ran(k: Option<usize>, run: Option<RunSummary>, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, ksee_core::view::Note>) {
     let m = machine();
-    let k = ui.run();
     let counts = m.view(|v| v.coverage(file, k));
     let notes = run.map(|s| m.view(|v| v.notes(s.first, s.last, file, at)))
         .unwrap_or_default().into_iter().map(|n| (n.line, n)).collect();
@@ -196,7 +195,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
         Some(Some(src)) => src,
     };
     let d = use_context::<Derived>();
-    let (counts, notes) = ran(ui, d.run.cloned(), &path, at);
+    let (counts, notes) = ran(d.shown.cloned().map(|m| m.run), d.run.cloned(), &path, at);
     let total = src.text.len();
     // (The cursor's line, at its end: the frame's values its names have, as
     // they are before it runs; what it compared, which way its branch went;
