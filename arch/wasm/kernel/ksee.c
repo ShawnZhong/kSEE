@@ -30,8 +30,9 @@ void __ksee_record(u32 level);
 /*
  * pos counts the words ever written (the ring keeps the most recent),
  * stored with release order after each record, so a reader that loads it
- * sees whole records, from their end; words, the ring's size; on: whether it records (see
- * ksee_record). One writer at a time: the kernel is uniprocessor.
+ * sees whole records, from their end; words, the ring's size; on, what it
+ * records (see ksee_record). One writer at a time: the kernel is
+ * uniprocessor.
  */
 struct ksee_ring {
 	u32 pos, words, on;
@@ -69,10 +70,11 @@ static __always_inline void done(u32 p)
 	__atomic_store_n(&ksee_trace.pos, p, __ATOMIC_RELEASE);
 }
 
-/* The probes' records: the n values the probe put in __ksee_values just
- * before, and [a, tag], while everything is (see ksee_record). At most VALUES: a call's
- * seven arguments, wide ones two words, and its frame base (the plugin's
- * Values, the same). */
+/* Every other record (a block, a return, a call's arguments): the n values
+ * the probe put in __ksee_values just before, then [a, tag]; only while
+ * everything is recorded (see ksee_record). At most VALUES: a call's seven
+ * arguments, wide ones two words, and its frame base (the plugin's Values,
+ * the same). */
 #define VALUES (2 * 7 + 1)
 u32 __ksee_values[VALUES];
 
@@ -88,10 +90,10 @@ void __ksee_put(u32 a, u32 tag, u32 n)
 	done(head(p, a, tag, n));
 }
 
-/* A store of 1 << k bytes at addr, on a line: its old value (before the
- * write), low word first; a copy's (from: not 0) says where from. (Loads
- * of a size known each: memcpy of one not known is the kernel's own,
- * instrumented.) */
+/* One Store record: 1 << k bytes at addr, on a line, with their old value
+ * (before the write), low word first, and for a copy (from: not 0) where
+ * from. (The old value is read with one load of a fixed size, never a
+ * memcpy: the kernel's memcpy is instrumented, and would record itself.) */
 static __always_inline void store(u32 k, u32 addr, u32 line, u32 from)
 {
 	const void *a = (const void *)(unsigned long)addr;
@@ -108,11 +110,11 @@ static __always_inline void store(u32 k, u32 addr, u32 line, u32 from)
 	done(head(p, addr, STORE | line << 4 | k, (k == 3) + 1 + !!from));
 }
 
-/* The writes of len bytes at addr (every store the probes see: one of 1, 2,
- * 4 or 8 bytes is one record), as Store records of up to 8 bytes each;
- * from: where a copy takes them from, else 0. A copy whose higher
- * destination overlaps its source goes backwards, so no earlier chunk's
- * destination is a later one's apparent source. */
+/* Every write the probes see (a store, a memcpy, a memset) and the host's
+ * own: len bytes at addr, as Store records of up to 8 bytes each (a store
+ * of 1, 2, 4 or 8 bytes: one); from: where a copy takes them from, else 0.
+ * A copy onto a source it overlaps from above goes backwards, so each
+ * piece's source is still as it was (memmove's order). */
 __wasm_export(ksee_bulk) void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from)
 {
 	bool back = from && from < addr && addr - from < len;
