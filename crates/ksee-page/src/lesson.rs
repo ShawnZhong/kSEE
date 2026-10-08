@@ -129,7 +129,7 @@ fn resolve(ui: Ui, call: &Option<(String, usize)>, func: &str) -> Option<(usize,
     let m = machine();
     let calls = calls(&ui.program.read(), &ui.outcomes.read());
     let (k, at) = m.find(&calls, call.as_ref().map(|(c, n)| (c.as_str(), *n)), func)?;
-    Some((k, Ui::run_lines(k).iter().position(|l| l.i >= at)?))
+    Some((k, crate::state::run_lines(k).iter().position(|l| l.i >= at)?))
 }
 
 #[component]

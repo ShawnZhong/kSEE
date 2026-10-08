@@ -36,7 +36,7 @@ pub enum Move {
 pub fn walk(ui: Ui, d: Derived, m: Move) {
     let Some(at) = d.shown.peek().clone() else { return };
     let k = at.run;
-    let lines = Ui::run_lines(k);
+    let lines = crate::state::run_lines(k);
     let (n, f) = (d.stack.peek().len(), *d.frame.peek());
     let depth = d.stack.peek().get(f).map_or(0, |f| f.depth);
     let read = |f: usize| Some(Moment { level: (f > 0).then(|| n - 1 - f), ..at.clone() });
@@ -66,7 +66,7 @@ pub fn walk(ui: Ui, d: Derived, m: Move) {
     if let Some(next) = next {
         ui.select(next);
         if dir < 0 {
-            ui.go(Ui::run_lines(next).len().saturating_sub(1));
+            ui.go(crate::state::run_lines(next).len().saturating_sub(1));
         }
     }
 }

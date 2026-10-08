@@ -84,7 +84,7 @@ thread_local! {
 
 /// Run `k`'s lines (its task's): the last run's kept, until the recording
 /// grows or a program begins (hovering reads them at each move).
-fn run_lines(k: usize) -> Rc<Vec<Line>> {
+pub(crate) fn run_lines(k: usize) -> Rc<Vec<Line>> {
     let n = machine().view(|v| v.rec.len());
     if let Some(l) = LAST.with_borrow(|c| c.as_ref().filter(|c| (c.0, c.1) == (k, n)).map(|c| c.2.clone())) {
         return l;
@@ -253,17 +253,12 @@ impl Ui {
         self.cursor.read().as_ref().map(|m| m.run)
     }
 
-    /// Run `k`'s lines (its task's), as the snapshot has them.
-    pub fn run_lines(k: usize) -> Rc<Vec<Line>> {
-        run_lines(k)
-    }
-
     /// Select run `k` (an index in the runs), the cursor at its own code's
     /// first line (a syscall's: past the syscall entry's), on its innermost
     /// frame. (The window is the reader's: it zooms only as asked, and
     /// slides only to keep the cursor in it, see Timeline.)
     pub fn select(self, k: usize) {
-        let own = Ui::run_lines(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
+        let own = crate::state::run_lines(k).iter().position(|l| l.func != ksee_core::arch::SYSCALL);
         self.commit(Some(Moment { run: k, line: own.unwrap_or(0), level: None }));
     }
 
@@ -296,7 +291,7 @@ impl Ui {
     pub fn moment_at(i: usize, step: Option<usize>, level: Option<usize>) -> Option<Moment> {
         let (run, first) = machine().view(|v| (v.rec.run_at(i), v.rec.first_step(i)));
         let run = run?;
-        let lines = Ui::run_lines(run);
+        let lines = crate::state::run_lines(run);
         let line = match step {
             // (A step: its record's lines are its steps.)
             Some(s) => lines.iter().position(|l| l.i == i).map(|p| p + s.saturating_sub(first)),
