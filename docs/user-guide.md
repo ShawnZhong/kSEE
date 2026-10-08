@@ -54,9 +54,9 @@ its source is in (the legend), a concept a color family: storage green (`fs/`,
 `block/`), the core kernel warm (`mm/` gold, `kernel/` orange, the scheduler
 coral: where a task sleeps and another runs), the machine blue (`drivers/`,
 the port's `arch/` fainter), and the helpers a cool gray (`lib/`,
-`include/`); a file in none of them, gray. Hover to
-preview that moment and see what the call was; click to move the cursor
-there. The task strip below the chart shows which task ran in each region
+`include/`); a file in none of them, gray. Hover to move the
+cross there and see what the call was (nothing else moves); click to move
+the cursor there. The task strip below the chart shows which task ran in each region
 (the idle task gray). The cursor is a cross: down, its moment; across, its
 frame's level.
 
