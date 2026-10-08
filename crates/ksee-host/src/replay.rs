@@ -61,7 +61,7 @@ impl Machine {
             // it over, in a run: one handed over between the calls (stores
             // only, recorded), or the ring has let go of, not.)
             state(|s| s.disk_log.iter().filter_map(|t| {
-                let (asked, done) = (record(t.asked).filter(|&i| v.rec.run_at(i).is_some())?, record(t.done)?);
+                let (asked, done) = (record(t.asked_word).filter(|&i| v.rec.run_at(i).is_some())?, record(t.done_word)?);
                 let by = v.task(t.task, asked).named();
                 Some(DiskTransfer { transfer: t.clone(), asked, done, by })
             }).collect())

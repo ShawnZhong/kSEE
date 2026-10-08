@@ -68,7 +68,7 @@ pub(crate) struct Named {
 /// A store or a variable set: at record `i`, to `region`, on line `at`
 /// (Recording::line_at).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Wrote {
+pub struct RegionWrite {
     pub i: usize,
     pub region: u32,
     pub at: Option<LineStep>,
@@ -83,7 +83,7 @@ pub struct Thing {
     pub region: u32,
     pub member: String,
     pub leaf: Option<Leaf>,
-    pub writes: Vec<Wrote>,
+    pub writes: Vec<RegionWrite>,
 }
 
 /// A member's scalar, as Types::leaf finds it: its type, its offset in the
@@ -185,11 +185,11 @@ impl View<'_> {
     /// each line's notes, origins), and naming it again each time would
     /// cost the span's records over.
     pub(crate) fn stores(&self, first: usize, last: usize) -> alloc::rc::Rc<Named> {
-        if let Some((span, got)) = &*self.rec.named.borrow() && *span == (first, last) {
+        if let Some((span, got)) = &*self.rec.span_stores.borrow() && *span == (first, last) {
             return got.clone();
         }
         let got = alloc::rc::Rc::new(self.name_stores(first, last));
-        *self.rec.named.borrow_mut() = Some(((first, last), got.clone()));
+        *self.rec.span_stores.borrow_mut() = Some(((first, last), got.clone()));
         got
     }
 
@@ -417,7 +417,7 @@ impl View<'_> {
     /// Each store in records `first..=last` to the outermost region
     /// holding its first byte (a global, or an address nothing names, gets
     /// a region of its own).
-    fn store_writes(&self, first: usize, last: usize, regions: &mut Vec<Region>) -> Vec<Wrote> {
+    fn store_writes(&self, first: usize, last: usize, regions: &mut Vec<Region>) -> Vec<RegionWrite> {
         let (t, types) = (self.tables, &self.tables.types);
         let records = &self.rec.records;
         // (The kernel's globals, by address, for the stores nothing else holds.)
@@ -457,7 +457,7 @@ impl View<'_> {
                     })
                 }
             };
-            writes.push(Wrote { i, region, at: self.rec.line_at(t, i) });
+            writes.push(RegionWrite { i, region, at: self.rec.line_at(t, i) });
         }
         writes
     }
@@ -474,7 +474,7 @@ impl View<'_> {
     /// Each variable the code keeps in a wasm local, as it sets it in
     /// records `first..=last`: from its value before, in its call, to its
     /// value then.
-    fn var_writes(&self, first: usize, last: usize, regions: &mut Vec<Region>) -> Vec<Wrote> {
+    fn var_writes(&self, first: usize, last: usize, regions: &mut Vec<Region>) -> Vec<RegionWrite> {
         let (t, calls, records) = (self.tables, &self.rec.calls, &self.rec.records);
         // (Each call's variable's region (none: of no type known).)
         let mut vars: BTreeMap<(usize, u32), Option<u32>> = BTreeMap::new();
@@ -488,7 +488,7 @@ impl View<'_> {
                 r.map(|r| (regions.push(r), regions.len() as u32 - 1).1)
             });
             let Some(region) = region else { continue };
-            writes.push(Wrote { i, region, at: self.rec.line_at(t, i) });
+            writes.push(RegionWrite { i, region, at: self.rec.line_at(t, i) });
         }
         writes
     }

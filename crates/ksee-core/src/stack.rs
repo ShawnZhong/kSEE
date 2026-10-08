@@ -235,7 +235,7 @@ impl Calls {
                 (*steps.last()?, steps.len() as u32 - 1)
             }
         };
-        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, call: p.call, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run: 0, callee: None })
+        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, call: p.call, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, turn: 0, callee: None })
     }
 
     /// The source lines task `task` ran in records `from..=to`, in order: each block's lines up to its first call, then, as
@@ -246,7 +246,7 @@ impl Calls {
         let mut out: Vec<LineStep> = Vec::new();
         // (How often each call entered each block so far: in a call, a block
         // runs again only in a loop, so its lines' turn.)
-        let mut runs: BTreeMap<(u32, u32), u32> = BTreeMap::new();
+        let mut turns: BTreeMap<(u32, u32), u32> = BTreeMap::new();
         for i in from..=to.min(records.len().saturating_sub(1)) {
             if tasks[i] != task {
                 continue;
@@ -260,11 +260,11 @@ impl Calls {
                 && let Some(l) = out.iter_mut().rev().find(|l| l.depth <= c.depth).filter(|l| l.depth == c.depth && l.func == c.func) {
                 l.callee = Some((func, value, i));
             }
-            let run = runs.entry((p.call, p.n)).or_default();
+            let turn = turns.entry((p.call, p.n)).or_default();
             if p.seg == 0 {
-                *run += 1;
+                *turn += 1;
             }
-            let run = *run;
+            let turn = *turn;
             // (The stretch's lines are numbered on from the block's earlier
             // ones: a store says which it is on; the first store of each line,
             // among the records up to the task's next block or return.)
@@ -291,7 +291,7 @@ impl Calls {
                 // before it left it: the record before the first on it or a
                 // later one; with none, after the stretch's last.)
                 let at = first_at.range((base + nth) as u32..).map(|(_, &j)| j).min().map_or(last, |j| j - 1).max(i);
-                let step = LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, call: p.call, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run, callee: None };
+                let step = LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, call: p.call, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, turn, callee: None };
                 // (Code inlined it enters, as a call would be: first the line
                 // calling each function it enters, in the one calling it, the
                 // outermost first; from this call's line before, or, the
@@ -335,7 +335,7 @@ pub(crate) struct StackCall {
 /// (before the first record on it or on a later line of its stretch, a
 /// store, a comparison, a variable set: Record::Store's line; with none,
 /// the stretch's last): where the cursor goes, and memory as it was there,
-/// as a debugger stops before a line. `run`:
+/// as a debugger stops before a line. `turn`:
 /// the how-manieth time its call enters its block (in the lines asked
 /// for; 0 if not counted): a block runs again in a call only in a loop,
 /// so a loop's turn.
@@ -356,7 +356,7 @@ pub struct LineStep {
     /// A line calling code inlined (`inlined`'s), not yet in it: how many
     /// of its inline chain's functions, innermost first, it is not in.
     pub cut: u32,
-    pub run: u32,
+    pub turn: u32,
     /// A line that made a call: the call's function, what it returned,
     /// and where (its Return record).
     pub callee: Option<(u32, i64, usize)>,
@@ -410,7 +410,7 @@ mod tests {
         let got = lines(&t, &r, &tasks, 0, r.len() - 1, 7);
         assert_eq!(got.len(), 1 + 2000 * 2);
         assert_eq!(got[0].loc.line, 1);
-        assert_eq!(got.last().map(|s| (s.loc.line, s.run)), Some((6, 2000)));
+        assert_eq!(got.last().map(|s| (s.loc.line, s.turn)), Some((6, 2000)));
         assert!(got.iter().all(|s| s.at <= s.record + 2));
     }
 
@@ -438,7 +438,7 @@ mod tests {
         // A loop: f's block 1 (lines 5, 6) three times; each turn counted.
         let t = crate::tables::Tables::parse("U\nP\t0\tf.c\nL\t1\t0\t0:1\nL\t1\t1\t0:5;:6\n", "");
         let r = [b(1, 0), b(1, 1), b(1, 1), b(1, 1)];
-        let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, 7).iter().map(|s| (s.loc.line, s.run)).collect();
+        let got: Vec<_> = lines(&t, &r, &[7; 4], 0, 3, 7).iter().map(|s| (s.loc.line, s.turn)).collect();
         assert_eq!(got, [(1, 1), (5, 1), (6, 1), (5, 2), (6, 2), (5, 3), (6, 3)]);
     }
 

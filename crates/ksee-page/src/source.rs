@@ -210,7 +210,7 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
         let returned = shown.as_ref().and_then(|l| [Some(l), before.as_ref()].into_iter().flatten().find_map(|c| c.called.as_ref())
             .filter(|c| c.at <= l.at).map(|c| format!("{} → {}", c.func, machine().tables().types.result(c.value))));
         frame.args.iter().chain(&frame.locals)
-            .filter(|o| words.contains(&o.name.as_str()) && o.none != Some(ksee_core::view::Missing::NotRecorded))
+            .filter(|o| words.contains(&o.name.as_str()) && o.missing != Some(ksee_core::view::Missing::NotRecorded))
             .map(|o| format!("{} = {}", o.name, o.shown()))
             .chain(shown.filter(|_| leaf).map(|l| l.tests).unwrap_or_default()).chain(returned.filter(|_| leaf)).collect()
     } else { Vec::new() };

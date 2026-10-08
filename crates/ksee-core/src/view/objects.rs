@@ -110,7 +110,7 @@ impl View<'_> {
                 continue;
             }
             // (A streak: one function's writes in a row; one that left it as it was, not.)
-            let func = |w: &Wrote| w.at.and_then(|s| self.tables.functions.get(&s.func)).map(|f| f.name.as_str());
+            let func = |w: &RegionWrite| w.at.and_then(|s| self.tables.functions.get(&s.func)).map(|f| f.name.as_str());
             let mut streaks: Vec<Streak> = Vec::new();
             let mut k = 0;
             for run in t.writes.chunk_by(|a, b| func(a) == func(b)) {

@@ -60,21 +60,23 @@ pub struct State {
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
     pub doorbell: VecDeque<u32>,
     /// The disk (arch/wasm/drivers/disk.c): its blocks; the transfers handed to
-    /// it and not yet made, the tags of the
-    /// requests done; and every transfer made (the Disk tab's).
+    /// it and not yet made, the tags of the requests done (for its
+    /// interrupt to take); and every transfer made (the Disk tab's).
     pub disk: Vec<u8>,
     pub transfers: Vec<Transfer>,
-    pub done: VecDeque<u32>,
+    pub done_tags: VecDeque<u32>,
     pub disk_log: Vec<Transfer>,
     /// The page's program: its runners, calls and lines.
     pub session: Session,
 }
 
 /// A transfer the disk made: its request's tag, `len` bytes at `sector`
-/// to (a read) or from (`write`) kernel memory at `buf`; the trace's words
-/// written when it was handed over (`asked`) and when the kernel took it
-/// as done (`done`: in the disk's interrupt, its tag taken); and its bytes, `after` (a write's: what the disk holds then;
-/// a read's: what it read), and a write's `before`.
+/// to (a read) or from (`write`) kernel memory at `buf`; the trace's
+/// position (words written by then) when it was handed over
+/// (`asked_word`) and when the kernel took it as done (`done_word`: in the
+/// disk's interrupt, its tag taken); and its bytes, `after` (a write's:
+/// what the disk holds then; a read's: what it read), and a write's
+/// `before`.
 #[derive(Clone, Debug, Default)]
 pub struct Transfer {
     /// The task it was handed over by (its task_struct: the kernel's
@@ -85,8 +87,8 @@ pub struct Transfer {
     pub buf: u32,
     pub len: u32,
     pub write: bool,
-    pub asked: u32,
-    pub done: u32,
+    pub asked_word: u32,
+    pub done_word: u32,
     pub before: Vec<u8>,
     pub after: Vec<u8>,
 }

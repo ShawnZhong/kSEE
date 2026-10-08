@@ -78,7 +78,7 @@ pub struct Session {
     /// The calls asked, by id; and the last id (ids are not used again, a
     /// boot after another's: see again).
     pub calls: BTreeMap<u32, Call>,
-    pub asked: u32,
+    pub last_call_id: u32,
     /// The program's names (a variable's, a result's), how many of its
     /// lines have been made, how each went, and the variables declared,
     /// each as it was shown last.
@@ -91,7 +91,7 @@ pub struct Session {
 impl Session {
     /// A new machine's: nothing but the ids already used.
     pub fn again(&self) -> Session {
-        Session { asked: self.asked, ..Default::default() }
+        Session { last_call_id: self.last_call_id, ..Default::default() }
     }
 
     /// The call runner `tid` is making (asked, not done), if any: its id.
@@ -205,12 +205,12 @@ impl Session {
         if self.in_flight(tid).is_some() {
             return Err(format!("{tid} is still making its call"));
         }
-        Ok((self.asked + 1, runner))
+        Ok((self.last_call_id + 1, runner))
     }
 
     /// Call `c` asked (its id the next: see next_call).
     pub fn ask(&mut self, c: Call) {
-        self.asked = c.id;
+        self.last_call_id = c.id;
         self.calls.insert(c.id, c);
     }
 

@@ -74,7 +74,7 @@ pub fn Transport() -> Element {
     // call, which turn the cursor is on; a step that lands after a call,
     // what it returned.)
     let here = here.filter(|_| chosen == 0);
-    let turn = here.as_ref().filter(|l| l.run > 1).map_or(String::new(), |l| format!(" · turn {}", l.run));
+    let turn = here.as_ref().filter(|l| l.turn > 1).map_or(String::new(), |l| format!(" · turn {}", l.turn));
     let returned = here.as_ref().and_then(|l| l.called.as_ref().filter(|c| c.at <= l.at))
         .map_or(String::new(), |c| format!(" · {} returned {}", c.func, machine().tables().types.result(c.value)));
     rsx! {
@@ -231,7 +231,7 @@ pub fn Value(o: Object, path: String, depth: usize, at: usize) -> Element {
     let (addr, size) = (o.addr, o.size.clamp(1, 8));
     rsx! {
         // (One that opens: a click anywhere on its row.)
-        tr { class: format!("{}{}", if o.none.is_some() { "none" } else { "" }, if can { " opens" } else { "" }),
+        tr { class: format!("{}{}", if o.missing.is_some() { "none" } else { "" }, if can { " opens" } else { "" }),
             onclick: move |_| if can { let mut s = open.write(); if !s.remove(&p) { s.insert(p.clone()); } },
             td { class: "fname", style: "padding-left: {depth * 14}px",
                 if can { span { class: "tw", if is_open { "▾ " } else { "▸ " } } }

@@ -64,10 +64,10 @@ pub struct Recording {
     pub calls: stack::Calls,
     /// Who each task was (by its task_struct's address, and the last write
     /// to its pid or comm by then), read once per snapshot (View::task).
-    pub(crate) names: core::cell::RefCell<alloc::collections::BTreeMap<(u32, Option<usize>), crate::types::TaskId>>,
+    pub(crate) task_ids: core::cell::RefCell<alloc::collections::BTreeMap<(u32, Option<usize>), crate::types::TaskId>>,
     /// The last span's stores, named (View::stores: what Objects and the
     /// source's notes ask again at each moment), by its first and last.
-    pub(crate) named: core::cell::RefCell<Option<((usize, usize), alloc::rc::Rc<crate::view::Named>)>>,
+    pub(crate) span_stores: core::cell::RefCell<Option<((usize, usize), alloc::rc::Rc<crate::view::Named>)>>,
     /// The stores, indexed (once asked for).
     stores: OnceCell<mem::History>,
     /// Each call's frame depth (see frame_depth), once asked for.
@@ -144,7 +144,7 @@ impl Recording {
             steps.extend(calls.lines(t, &records, &tasks, s.first, end - 1, s.task).iter().map(|l| (l.record, l.nth, l.cut)));
         }
         steps.sort_by_key(|s| s.0);
-        Recording { records, ids, args, tasks, runs, steps, calls, stores: OnceCell::new(), frames: OnceCell::new(), names: Default::default(), named: Default::default() }
+        Recording { records, ids, args, tasks, runs, steps, calls, stores: OnceCell::new(), frames: OnceCell::new(), task_ids: Default::default(), span_stores: Default::default() }
     }
 
     /// Record `i`'s step: its last line's, so a record between two lines
@@ -208,7 +208,7 @@ impl Recording {
         use alloc::collections::BTreeSet;
         let ids: BTreeSet<u32> = t.functions.iter().filter(|(_, f)| is(&f.name)).map(|(&id, _)| id).collect();
         // The inline chains with one of them in them.
-        let inl: BTreeSet<u32> = t.names.iter().enumerate().filter(|(_, n)| is(n)).map(|(k, _)| k as u32).collect();
+        let inl: BTreeSet<u32> = t.inline_names.iter().enumerate().filter(|(_, n)| is(n)).map(|(k, _)| k as u32).collect();
         let chains: BTreeSet<u32> = t.inlines.iter().enumerate()
             .filter(|(_, c)| c.iter().any(|(k, _)| inl.contains(k))).map(|(c, _)| c as u32).collect();
         let inlined = move |func: u32, n: u32| !chains.is_empty() && t.block(func, n)

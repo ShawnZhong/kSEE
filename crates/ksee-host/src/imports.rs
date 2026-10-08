@@ -71,8 +71,8 @@ pub extern "C" fn disk_sectors() -> u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn disk_submit(tag: u32, sector: u64, buf: u32, len: u32, write: u32) {
     state_mut(|s| {
-        let (asked, task) = (Direct.read_u32(s.trace), Direct.read_u32(s.current));
-        s.transfers.push(Transfer { task, tag, sector, buf, len, write: write != 0, asked, ..Default::default() });
+        let (asked_word, task) = (Direct.read_u32(s.trace), Direct.read_u32(s.current));
+        s.transfers.push(Transfer { task, tag, sector, buf, len, write: write != 0, asked_word, ..Default::default() });
     });
 }
 
@@ -80,11 +80,11 @@ pub extern "C" fn disk_submit(tag: u32, sector: u64, buf: u32, len: u32, write: 
 #[unsafe(no_mangle)]
 pub extern "C" fn disk_done() -> i32 {
     state_mut(|s| {
-        let Some(tag) = s.done.pop_front() else { return -1 };
+        let Some(tag) = s.done_tags.pop_front() else { return -1 };
         // (Its transfers done now, as the kernel sees them: the trace's word.)
         let at = Direct.read_u32(s.trace);
-        for t in s.disk_log.iter_mut().filter(|t| t.tag == tag && t.done == 0) {
-            t.done = at;
+        for t in s.disk_log.iter_mut().filter(|t| t.tag == tag && t.done_word == 0) {
+            t.done_word = at;
         }
         tag as i32
     })
@@ -101,8 +101,8 @@ pub fn disk_work() -> bool {
         let at = t.sector as usize * 512;
         state_mut(|s| {
             // (A request's segments come together: its tag once.)
-            if s.done.back() != Some(&t.tag) {
-                s.done.push_back(t.tag);
+            if s.done_tags.back() != Some(&t.tag) {
+                s.done_tags.push_back(t.tag);
             }
             // (Past the disk's end: the request ends all the same, its bytes not moved.)
             let Some(blocks) = s.disk.get_mut(at..at + t.len as usize) else { return };
@@ -116,7 +116,7 @@ pub fn disk_work() -> bool {
             t.after = blocks.to_vec();
             // (Logged if recorded: the trace's word 0 until the recording
             // begins, the boot's transfers left out.)
-            if t.asked != 0 {
+            if t.asked_word != 0 {
                 s.disk_log.push(t);
             }
         });

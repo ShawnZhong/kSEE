@@ -28,7 +28,7 @@ pub use chart::{wheel_window, Bar, Timeline};
 pub use frames::{run_to, step, Called, Frame, Line};
 pub use objects::{Diff, Group, Node, Streak};
 pub use stores::{Note, RegionKind, Write};
-pub(crate) use stores::{Named, Wrote};
+pub(crate) use stores::{Named, RegionWrite};
 pub use value::{Missing, Object, Target};
 
 /// Who a task was, at a record (see View::task).
@@ -74,7 +74,7 @@ pub struct RunSummary {
 /// its own file), and whether only its call and returns are recorded
 /// (tables::Function::sealed).
 #[derive(Debug, Clone, PartialEq)]
-pub struct Place {
+pub struct Definition {
     pub name: String,
     pub file: String,
     pub line: u32,
@@ -137,10 +137,10 @@ impl View<'_> {
         let h = self.rec.stores();
         let last = |f: &str| t.types.field(arch::TASK, f).and_then(|(off, len)| h.last_write(addr.wrapping_add(off), len, at)).map(|(i, _)| i);
         let key = (addr, last(arch::TASK_PID).max(last(arch::TASK_COMM)));
-        let known = self.rec.names.borrow().get(&key).cloned();
+        let known = self.rec.task_ids.borrow().get(&key).cloned();
         let task = known.or_else(|| {
             let task = t.types.read_task(&self.rec.memory_at(self.now, at), addr)?;
-            self.rec.names.borrow_mut().insert(key, task.clone());
+            self.rec.task_ids.borrow_mut().insert(key, task.clone());
             Some(task)
         });
         Task { addr, pid: task.as_ref().map(|t| t.pid), comm: task.map(|t| t.comm) }
@@ -243,17 +243,17 @@ impl View<'_> {
     /// Where `name` is defined: an instrumented function (its source), else
     /// a function with no probe (inline), a type, a global, or a member as
     /// "struct.member" (".member": of any struct) (where it is declared).
-    pub fn definition(&self, name: &str) -> Option<Place> {
+    pub fn definition(&self, name: &str) -> Option<Definition> {
         if let Some(id) = self.tables.find(name) {
-            return self.place(id);
+            return self.function_definition(id);
         }
         let (file, line) = self.tables.types.declared.get(name)?;
-        Some(Place { name: name.to_string(), file: file.clone(), line: *line, last: None, sealed: false })
+        Some(Definition { name: name.to_string(), file: file.clone(), line: *line, last: None, sealed: false })
     }
 
     /// Where member `member` is declared: of the one struct that has a
     /// member so named, if only one does.
-    pub fn member_definition(&self, member: &str) -> Option<Place> {
+    pub fn member_definition(&self, member: &str) -> Option<Definition> {
         let suffix = format!(".{member}");
         let mut of = self.tables.types.declared.keys().filter(|k| k.ends_with(&suffix) && !k[..k.len() - suffix.len()].contains('.'));
         match (of.next(), of.next()) {
@@ -263,11 +263,11 @@ impl View<'_> {
     }
 
     /// Function `id`: where it is.
-    pub(crate) fn place(&self, id: u32) -> Option<Place> {
+    pub(crate) fn function_definition(&self, id: u32) -> Option<Definition> {
         let t = self.tables;
         let f = t.functions.get(&id)?;
         let last = t.blocks_of(id).filter(|l| l.file == f.loc.file).map(|l| l.line).fold(f.loc.line, u32::max);
-        Some(Place { name: f.name.clone(), file: t.file(f.loc).to_string(), line: f.loc.line, last: Some(last), sealed: f.sealed })
+        Some(Definition { name: f.name.clone(), file: t.file(f.loc).to_string(), line: f.loc.line, last: Some(last), sealed: f.sealed })
     }
 
     /// The lines of `file` that code ran, in run `n` (or the whole

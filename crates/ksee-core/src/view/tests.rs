@@ -524,7 +524,7 @@ fn no_wheel_delta_keeps_a_chart_window() {
 #[test]
 fn steps_go_into_or_over() {
     // f (depth 0) line 1, calls g (depth 1): lines 10, 11; then f's line 2.
-    let line = |depth, line| Line { i: 0, at: 0, nth: 0, cut: 0, func: String::new(), file: String::new(), line, depth, run: 1,
+    let line = |depth, line| Line { i: 0, at: 0, nth: 0, cut: 0, func: String::new(), file: String::new(), line, depth, turn: 1,
                                    tests: Vec::new(), called: None };
     let lines = [line(0, 1), line(1, 10), line(1, 11), line(0, 2)];
     // (Into: the very next; within f (depth 0): over g; within g, its next.)
@@ -535,7 +535,7 @@ fn steps_go_into_or_over() {
 
 #[test]
 fn run_to_finds_an_exact_line_step() {
-    let line = |i, nth, cut, file: &str, line| Line { i, at: i, nth, cut, func: String::new(), file: file.into(), line, depth: 0, run: 1,
+    let line = |i, nth, cut, file: &str, line| Line { i, at: i, nth, cut, func: String::new(), file: file.into(), line, depth: 0, turn: 1,
                                                          tests: Vec::new(), called: None };
     // Two lines share block record 0; h's line is an inline stop there; f's
     // line 3 resumes at g's Return record 2; then f's line 2 runs again.

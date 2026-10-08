@@ -13,7 +13,7 @@ pub struct Object {
     pub size: u32,
     pub value: Option<String>,
     /// Why it has none, if (its `value` says it too, in parentheses).
-    pub none: Option<Missing>,
+    pub missing: Option<Missing>,
     pub children: Option<Vec<Object>>,
     /// What opening it reads (its children not read yet): itself, an
     /// aggregate; or what it points to, a pointer to a struct or union not
@@ -67,7 +67,7 @@ impl Object {
 
     /// Without a value, for `why`.
     pub(crate) fn missing(self, why: Missing) -> Object {
-        Object { value: Some(why.text().into()), none: Some(why), children: None, open: None, ..self }
+        Object { value: Some(why.text().into()), missing: Some(why), children: None, open: None, ..self }
     }
 }
 
@@ -84,7 +84,7 @@ impl Types {
         let t = self.get(id);
         let mut o = Object {
             name: name.to_string(), ty: self.name(ty), addr, size: self.size_of(ty),
-            value: None, none: None, children: None, open: None,
+            value: None, missing: None, children: None, open: None,
         };
         match &t.kind {
             Kind::Struct(_) | Kind::Union(_) => {
@@ -110,7 +110,7 @@ impl Types {
                     // (Past the first SHOWN: a row saying how many more.)
                     if *count > SHOWN {
                         shown.push(Object { name: format!("[{SHOWN}…{}]", count - 1), ty: String::new(), addr: addr + SHOWN * esize, size: 0,
-                                            value: Some(format!("… {} more", count - SHOWN)), none: None, children: None, open: None });
+                                            value: Some(format!("… {} more", count - SHOWN)), missing: None, children: None, open: None });
                     }
                     o.children = Some(shown);
                 }

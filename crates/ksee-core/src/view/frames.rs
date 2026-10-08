@@ -30,8 +30,8 @@ pub struct Line {
     /// How deep it runs: its frame's place in the stack, from the
     /// outermost (calls and inlined code alike: Frame::depth).
     pub depth: u32,
-    /// Which turn of a loop it is (see LineStep::run).
-    pub run: u32,
+    /// Which turn of a loop it is (see LineStep::turn).
+    pub turn: u32,
     /// The comparisons it made that decided where it went ("18 >= 0 ✓"),
     /// in order.
     pub tests: Vec<String>,
@@ -105,7 +105,7 @@ impl View<'_> {
     pub(super) fn line_only(&self, s: &LineStep) -> Line {
         let chain = &self.tables.chain(s.inlined)[s.cut as usize..];
         Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
-               depth: self.rec.frame_depth(self.tables, s.call) + chain.len() as u32, run: s.run, tests: Vec::new(),
+               depth: self.rec.frame_depth(self.tables, s.call) + chain.len() as u32, turn: s.turn, tests: Vec::new(),
                called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }) }
     }
 
@@ -308,7 +308,7 @@ impl View<'_> {
 
     /// Inlined function `k`'s name (Tables::names).
     pub(crate) fn inline_name(&self, k: u32) -> String {
-        self.tables.names.get(k as usize).cloned().unwrap_or_default()
+        self.tables.inline_names.get(k as usize).cloned().unwrap_or_default()
     }
 }
 

@@ -89,12 +89,12 @@ impl View<'_> {
             nest.drain(..cut.min(nest.len() - 1));
             for (k, at) in nest.into_iter().rev() {
                 out.push(*known.entry((c.first, k)).or_insert_with(|| {
-                    let place = self.place(c.func);
-                    let name = k.map_or_else(|| place.as_ref().map_or("?".into(), |p| p.name.clone()), |k| self.inline_name(k));
+                    let defined = self.function_definition(c.func);
+                    let name = k.map_or_else(|| defined.as_ref().map_or("?".into(), |p| p.name.clone()), |k| self.inline_name(k));
                     // (Its file: code inlined, its own function's, where its line is.)
                     let file = match k {
                         Some(_) => at.map(|l| t.file(l).to_string()),
-                        None => place.map(|p| p.file),
+                        None => defined.map(|p| p.file),
                     };
                     tl.bars.push(Bar { first: c.first, name, file, inlined: k.is_some() });
                     tl.bars.len() as u32 - 1

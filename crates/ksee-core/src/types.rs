@@ -77,7 +77,7 @@ pub struct Type {
 pub struct Types {
     pub types: Vec<Type>,
     /// Struct, union, enum and typedef names -> ids.
-    names: BTreeMap<String, u32>,
+    type_ids: BTreeMap<String, u32>,
     /// Variables with fixed addresses: name -> (address, type).
     pub globals: BTreeMap<String, (u32, u32)>,
     /// Syscall names, by number.
@@ -86,7 +86,7 @@ pub struct Types {
     pub params: BTreeMap<u32, Vec<(String, u32)>>,
     /// The function ids of the names (the first of a name: for the
     /// syscalls' bodies, looked for by name).
-    by_name: BTreeMap<String, u32>,
+    function_ids: BTreeMap<String, u32>,
     /// Functions' local variables, by function id: [(variable, type,
     /// offset from the frame base, if it is in memory)].
     pub locals: BTreeMap<u32, Vec<(String, u32, Option<u32>)>>,
@@ -107,7 +107,7 @@ impl Types {
         let mut globals = BTreeMap::new();
         let mut syscalls = BTreeMap::new();
         let mut params = BTreeMap::new();
-        let mut by_name = BTreeMap::new();
+        let mut function_ids = BTreeMap::new();
         let mut locals = BTreeMap::new();
         let mut constants = BTreeMap::new();
         let mut declared = BTreeMap::new();
@@ -143,7 +143,7 @@ impl Types {
                         (n.to_string(), t.parse().unwrap_or(0))
                     }).collect();
                     params.insert(num(1), list);
-                    by_name.entry(c[2].to_string()).or_insert(num(1));
+                    function_ids.entry(c[2].to_string()).or_insert(num(1));
                 }
                 // (Q: name:type:offset for each local, the offset empty
                 // for one not in memory.)
@@ -171,7 +171,7 @@ impl Types {
                 _ => {}
             }
         }
-        let mut names = BTreeMap::new();
+        let mut type_ids = BTreeMap::new();
         for (id, (kind, extra)) in kinds.into_iter().enumerate() {
             let arg = |i: usize| extra.get(i).and_then(|s| s.parse().ok()).unwrap_or(0);
             let t = &mut types[id];
@@ -195,10 +195,10 @@ impl Types {
             if matches!(t.kind, Kind::Struct(_) | Kind::Union(_) | Kind::Enum(_) | Kind::Typedef(_))
                 && !t.name.is_empty()
             {
-                names.entry(t.name.clone()).or_insert(id as u32);
+                type_ids.entry(t.name.clone()).or_insert(id as u32);
             }
         }
-        Types { types, names, globals, syscalls, params, by_name, locals, constants, declared }
+        Types { types, type_ids, globals, syscalls, params, function_ids, locals, constants, declared }
     }
 
     pub fn get(&self, id: u32) -> &Type {
@@ -218,7 +218,7 @@ impl Types {
 
     /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY).
     pub fn syscall_params(&self, name: &str) -> Option<&Vec<(String, u32)>> {
-        self.params.get(self.by_name.get(&format!("{}{name}", crate::arch::SYSCALL_BODY))?)
+        self.params.get(self.function_ids.get(&format!("{}{name}", crate::arch::SYSCALL_BODY))?)
     }
 
     /// Every pointer in a value of type `ty` (it, or in the structs,
@@ -280,7 +280,7 @@ impl Types {
 
     /// A struct, union, enum or typedef by name ("task_struct").
     pub fn find(&self, name: &str) -> Option<u32> {
-        self.names.get(name).copied()
+        self.type_ids.get(name).copied()
     }
 
     /// Follow typedefs.

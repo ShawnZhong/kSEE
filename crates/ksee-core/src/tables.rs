@@ -105,7 +105,7 @@ pub struct Tables {
     /// (function, n) -> its block n.
     pub blocks: BTreeMap<(u32, u32), Block>,
     /// Names of inlined functions.
-    pub names: Vec<String>,
+    pub inline_names: Vec<String>,
     /// Inline chains (see [`Step`]): innermost first, each an inlined
     /// function (in [`Tables::names`]) and where it is inlined (a line of
     /// the next one out; the last: of the block's function).
@@ -184,8 +184,8 @@ impl Tables {
                 ["I", k, name, site] => {
                     if let Ok(k) = k.parse() {
                         let name = *names.entry(name.to_string()).or_insert_with(|| {
-                            t.names.push(name.to_string());
-                            t.names.len() as u32 - 1
+                            t.inline_names.push(name.to_string());
+                            t.inline_names.len() as u32 - 1
                         });
                         unit.sites.insert(k, (name, unit.loc(site)));
                     }
@@ -253,7 +253,7 @@ impl Tables {
     /// it is inlined at, in the function that inlined it, so that nothing
     /// shows a frame, a node or a line of get_current.
     fn fold_primitives(&mut self) {
-        let prim: Vec<bool> = self.names.iter()
+        let prim: Vec<bool> = self.inline_names.iter()
             .map(|n| self.types.declared.get(n).is_some_and(|(f, _)| arch::PRIMITIVES.iter().any(|p| f.starts_with(p)))).collect();
         if !prim.iter().any(|&p| p) {
             return;
@@ -367,7 +367,7 @@ mod tests {
                       F\t1\tf\t0:1\t0\nL\t1\t0\t2:3@0@1;0:4\n";
         let t = Tables::parse(code, "W\tget_current\tarch/wasm/include/asm/current.h\t12\nW\tspin_lock\tinclude/linux/spinlock.h\t7\n");
         let steps = &t.blocks[&(1, 0)].steps;
-        let chain = |s: &Step| s.inlined.map(|k| t.inlines[k as usize].iter().map(|&(n, _)| t.names[n as usize].clone()).collect::<Vec<_>>());
+        let chain = |s: &Step| s.inlined.map(|k| t.inlines[k as usize].iter().map(|&(n, _)| t.inline_names[n as usize].clone()).collect::<Vec<_>>());
         assert_eq!((t.file(steps[0].loc), steps[0].loc.line, chain(&steps[0])), ("include/linux/spinlock.h", 9, Some(alloc::vec!["spin_lock".into()])));
         assert_eq!((steps[1].loc.line, steps[1].inlined), (4, None));
         // The block's own location was get_current's: now its first line's.
