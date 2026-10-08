@@ -399,7 +399,7 @@ async fn panels(r: &mut Vec<String>) -> Result<(), String> {
     let rows = all(".pane tr").len();
     click(&one(".pane tr.frame a").ok_or("no task")?);
     settle().await;
-    let raw = all(".pane tr.opens").into_iter().find(|r| text(r).ends_with("task_struct")).ok_or("no task_struct row")?;
+    let raw = all(".pane tr.opens").into_iter().find(|r| text(r).starts_with("▸ task_struct")).ok_or("no task_struct row")?;
     click(&raw);
     settle().await;
     let opened = all(".pane tr").len();
