@@ -36,7 +36,6 @@ void clone_start(void)
 __attribute__((export_name("_start")))
 void start(void)
 {
-	sys(__NR_mount, "devtmpfs", "/dev", "devtmpfs", 0, 0);
 	disk();
 	for (;;) {
 		long pid = sys(__NR_clone, CLONE_VM | CLONE_VFORK | SIGCHLD, 0, 0, 0, 0);

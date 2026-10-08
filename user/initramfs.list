@@ -1,8 +1,11 @@
 # The initramfs (gen_init_cpio's list; ${OUT}: the Makefile's): the console
-# (the kernel opens it before init; its own initramfs is empty), the
-# programs, and a note for the lessons (the disk, /dev/wda, has its own).
+# (the kernel opens it before init; its own initramfs is empty) and the
+# disk (init mounts it: a block device's first dynamic number, 259:0, as
+# the driver takes none of its own), the programs, and a note for the
+# lessons (the disk has its own).
 dir /dev 0755 0 0
 nod /dev/console 0600 0 0 c 5 1
+nod /dev/wda 0600 0 0 b 259 0
 file /init ${OUT}/init.wasm 0755 0 0
 file /note.txt user/note.txt 0644 0 0
 dir /bin 0755 0 0
