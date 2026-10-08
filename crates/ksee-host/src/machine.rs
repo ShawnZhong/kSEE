@@ -109,11 +109,16 @@ impl Machine {
             *(sectors as *mut u64) = self.disk.len() as u64 / 512;
             core::ptr::copy_nonoverlapping(cmdline.as_ptr(), line as *mut u8, cmdline.len());
         }
-        let trace = global("ksee_trace");
+        // (The trace's ring, its struct ksee_ring's fields, where its types say.)
+        let ksee_ring = global("ksee_trace");
+        let ring_field = |f: &str| tables().types.field("ksee_ring", f).map(|(off, _)| ksee_ring + off)
+            .ok_or_else(|| JsValue::from(format!("the kernel has no ksee_ring.{f}")));
+        let ring = trace::Ring { pos: ring_field("pos")?, words: ring_field("words")?, ring: ring_field("ring")? };
+        let trace = ring.pos;
         let (current, pending, deadline) = (global("__current_task"), field("irq_pending")?.0, field("timer_deadline")?.0);
         // (Nothing of a machine before it but the ids of the calls asked:
         // they are not used again.)
-        state_mut(|s| *s = State { trace, current, pending, deadline, waiting: Some(0), booting: true,
+        state_mut(|s| *s = State { trace, ring, current, pending, deadline, waiting: Some(0), booting: true,
                                session: s.session.again(), disk: self.disk.clone(),
                                quiet_waiters: std::mem::take(&mut s.quiet_waiters), ..Default::default() });
         crate::programs::instantiated(&kernel);
@@ -152,7 +157,7 @@ impl Machine {
     /// Decode the trace ring (again). The views use the last snapshot.
     pub fn snapshot(&self) {
         let t = tables();
-        let (records, ids, args) = trace::ring(&Direct, state(|s| s.trace));
+        let (records, ids, args) = trace::ring(&Direct, state(|s| s.ring));
         *self.rec.borrow_mut() = Recording::new(t, records, ids, args);
     }
 

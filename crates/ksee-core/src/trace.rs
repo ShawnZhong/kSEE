@@ -1,14 +1,59 @@
 //! Decoding the trace ring (the record format is in plugin/ksee-trace.cpp).
 
-pub mod wire;
-
 use alloc::vec::Vec;
 use core::num::NonZeroU32;
 
 use crate::Memory;
-use wire::Kind;
 
-pub use wire::RING;
+// (A record's tag: a kind, a count of values, fields: the plugin and
+// arch/wasm/kernel/ksee.c write them.)
+const KIND_SHIFT: u32 = 28;
+const COUNT_SHIFT: u32 = 24;
+const FIELDS: u32 = (1 << COUNT_SHIFT) - 1;
+
+#[derive(Clone, Copy, PartialEq)]
+#[repr(u32)]
+enum Kind {
+    Block = 1,
+    Task = 3,
+    Return = 4,
+    Compare = 6,
+    Store = 7,
+    Var = 9,
+}
+
+impl Kind {
+    fn of(tag: u32) -> Option<Kind> {
+        Some(match tag >> KIND_SHIFT {
+            1 => Kind::Block,
+            3 => Kind::Task,
+            4 => Kind::Return,
+            6 => Kind::Compare,
+            7 => Kind::Store,
+            9 => Kind::Var,
+            _ => return None,
+        })
+    }
+}
+
+const fn fields(tag: u32) -> u32 {
+    tag & FIELDS
+}
+
+/// How many values come before the record's head.
+const fn count(tag: u32) -> u32 {
+    tag >> COUNT_SHIFT & 0xf
+}
+
+/// Where the kernel's ring is, its struct ksee_ring's fields
+/// (arch/wasm/kernel/ksee.c; the host finds them by its debug info): the
+/// count of the words ever written, the ring's size in words, its first.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Ring {
+    pub pos: u32,
+    pub words: u32,
+    pub ring: u32,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Record {
@@ -92,15 +137,15 @@ impl Args {
 /// The ring at `trace`, decoded, with each record's id: the word it
 /// starts at, counting every word ever written (so an id stays the same
 /// while the ring goes on; indexes do not); and the calls' arguments.
-pub fn ring(mem: &dyn Memory, trace: u32) -> (Vec<Record>, Vec<u32>, Args) {
+pub fn ring(mem: &dyn Memory, at: Ring) -> (Vec<Record>, Vec<u32>, Args) {
     // (The ring's size, as its header says; the words ever written, of
     // which it keeps the last.)
-    let words = mem.read_u32(trace + wire::WORDS);
+    let words = mem.read_u32(at.words);
     if words == 0 {
         return Default::default();
     }
-    let pos = mem.read_u32(trace);
-    let found = decode(pos, pos.saturating_sub(words), |i| mem.read_u32(trace + RING + i % words * 4));
+    let pos = mem.read_u32(at.pos);
+    let found = decode(pos, pos.saturating_sub(words), |i| mem.read_u32(at.ring + i % words * 4));
     let (mut records, mut ids, mut args) = (Vec::with_capacity(found.len()), Vec::with_capacity(found.len()), Args::default());
     for (id, r, values) in found {
         if matches!(r, Record::Block { n: 0, .. }) {
@@ -123,7 +168,7 @@ pub(crate) fn decode(pos: u32, oldest: u32, word: impl Fn(u32) -> u32) -> Vec<(u
     let mut p = pos;
     while p >= oldest.saturating_add(2) {
         let tag = word(p - 1);
-        let Some(start) = p.checked_sub(2 + wire::count(tag)).filter(|&s| s >= oldest) else { break };
+        let Some(start) = p.checked_sub(2 + count(tag)).filter(|&s| s >= oldest) else { break };
         let values: Vec<u32> = (start..p - 2).map(&word).collect();
         if let Some(r) = record(word(p - 2), tag, &values) {
             out.push((start, r, values));
@@ -137,7 +182,7 @@ pub(crate) fn decode(pos: u32, oldest: u32, word: impl Fn(u32) -> u32) -> Vec<(u
 /// The record head `a`, `tag` and its `values` are (none: malformed, or
 /// unknown).
 fn record(a: u32, tag: u32, v: &[u32]) -> Option<Record> {
-    let fields = wire::fields(tag);
+    let fields = fields(tag);
     let got = v.len();
     let word = |k: usize| v.get(k).copied().unwrap_or(0) as u64;
     Some(match Kind::of(tag)? {
@@ -301,14 +346,15 @@ pub(crate) mod tests {
         // A 5-word ring after 7 words were written: a store (3 words), then
         // blocks 1 and 2; the store's first words overwritten.
         let words = [rec(0x100, STORE, 2, &[5]), block(9, 1), block(9, 2)].concat();
-        let mut m = alloc::vec![0u8; RING as usize + 20];
+        let at = Ring { pos: 0, words: 4, ring: 12 };
+        let mut m = alloc::vec![0u8; 12 + 20];
         m[0..4].copy_from_slice(&7u32.to_le_bytes());
         m[4..8].copy_from_slice(&5u32.to_le_bytes());
         for (i, w) in words.iter().enumerate() {
-            let at = RING as usize + i % 5 * 4;
-            m[at..at + 4].copy_from_slice(&w.to_le_bytes());
+            let w_at = 12 + i % 5 * 4;
+            m[w_at..w_at + 4].copy_from_slice(&w.to_le_bytes());
         }
-        let (got, ids, _) = ring(&m, 0);
+        let (got, ids, _) = ring(&m, at);
         assert_eq!(got, [Record::Block { func: 9, n: 1 }, Record::Block { func: 9, n: 2 }]);
         assert_eq!(ids, [3, 5]);
     }
