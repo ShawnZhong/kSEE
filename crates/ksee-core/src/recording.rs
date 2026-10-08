@@ -70,6 +70,8 @@ pub struct Recording {
     pub(crate) named: core::cell::RefCell<Option<((usize, usize), alloc::rc::Rc<crate::view::Named>)>>,
     /// The stores, indexed (once asked for).
     stores: OnceCell<mem::History>,
+    /// Each call's frame depth (see frame_depth), once asked for.
+    frames: OnceCell<Vec<u32>>,
 }
 
 impl Recording {
@@ -142,7 +144,7 @@ impl Recording {
             steps.extend(calls.lines(t, &records, &tasks, s.first, end - 1, s.task).iter().map(|l| (l.record, l.nth, l.cut)));
         }
         steps.sort_by_key(|s| s.0);
-        Recording { records, ids, args, tasks, runs, steps, calls, stores: OnceCell::new(), names: Default::default(), named: Default::default() }
+        Recording { records, ids, args, tasks, runs, steps, calls, stores: OnceCell::new(), frames: OnceCell::new(), names: Default::default(), named: Default::default() }
     }
 
     /// Record `i`'s step: its last line's, so a record between two lines
@@ -249,6 +251,25 @@ impl Recording {
     /// The line the store at record `i` is on.
     pub(crate) fn line_at(&self, t: &Tables, i: usize) -> Option<LineStep> {
         self.calls.line_at(t, i, &self.records)
+    }
+
+    /// How many frames are outside call `k`'s own (an index in
+    /// Calls::calls), calls and inlined code alike: its callers, and the code
+    /// inlined into each at the line calling the next; its frame's place
+    /// in a stack, from the outermost (Frame::depth). (A caller comes before
+    /// its callees: one pass.)
+    pub(crate) fn frame_depth(&self, t: &Tables, k: u32) -> u32 {
+        let all = self.frames.get_or_init(|| {
+            let mut out: Vec<u32> = Vec::with_capacity(self.calls.calls.len());
+            for k in 0..self.calls.calls.len() as u32 {
+                let d = self.calls.caller(t, k).map_or(0, |(parent, at)| {
+                    out[parent as usize] + 1 + t.chain(at.step.and_then(|s| s.inlined)).len() as u32
+                });
+                out.push(d);
+            }
+            out
+        });
+        all.get(k as usize).copied().unwrap_or(0)
     }
 
     /// The stores in records `from..=to`, oldest first.

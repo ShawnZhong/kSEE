@@ -71,21 +71,40 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     let before = cursor();
     global_key("ArrowRight");
     wait(|| cursor() != before, 20, "the global → key", || format!("{} at {}", cursor(), place())).await?;
-    // (Stepping: on a line, back, and over vfs_read's calls (no deeper).)
+    // (Stepping: in the frame read, vfs_read, over its calls (no deeper);
+    // back; Shift, into every call; ▼ Out, the caller read; its step,
+    // over vfs_read.)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
     let at = place();
-    press("Line ▶", false);
-    settle().await;
-    let into = place();
-    press("◀ Line", false);
-    settle().await;
+    let mut over = Vec::new();
     for _ in 0..3 {
-        press("Line ▶", true);
+        press("Line ▶", false);
+        settle().await;
+        over.push(place());
+    }
+    for _ in 0..3 {
+        press("◀ Line", false);
         settle().await;
     }
-    let over = place();
-    check(into != at && over.starts_with("vfs_read"), "stepping", (&at, &into, &over))?;
+    let back = place();
+    let mut into = Vec::new();
+    for _ in 0..6 {
+        press("Line ▶", true);
+        settle().await;
+        into.push(place());
+    }
+    check(over.iter().all(|p| p.starts_with("vfs_read")) && over[0] != at && back == at && into.iter().any(|p| !p.starts_with("vfs_read")),
+          "stepping: within the frame read; Shift, into", (&at, &over, &back, &into))?;
+    click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
+    settle().await;
+    press("▼ Out", false);
+    settle().await;
+    let caller = place();
+    press("Line ▶", false);
+    settle().await;
+    check(caller.starts_with("ksys_read") && place().starts_with("ksys_read") && one(".transport .path a.on").is_some_and(|a| text(&a) == "ksys_read"),
+          "reading the caller: its own steps, the path saying so", (&caller, place()))?;
     Ok(())
 }
 
@@ -208,6 +227,9 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     }
     let step = (now() - t0) / 20.0;
     r.push(format!("hover {hover:.1} ms, step {step:.1} ms"));
+    // (Back in vfs_read for what follows: twenty steps leave it.)
+    click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
+    settle().await;
     Ok(())
 }
 
@@ -215,7 +237,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
 async fn tip() -> Result<(), String> {
     // (A name in the source, hovered: its value as the Stack has one, open,
     // and a member opens further.)
-    let name = all(".code .val").into_iter().find(|e| text(e) == "file").ok_or("no `file` in the source")?;
+    let name = all(".code .val").into_iter().find(|e| text(e) == "file").ok_or(format!("no `file` in the source, at {}", place()))?;
     let at = name.get_bounding_client_rect();
     mouse(&name, "mouseover", at.left() + 2.0, at.top() + 2.0, false);
     mouse(&name, "mouseenter", at.left() + 2.0, at.top() + 2.0, false);

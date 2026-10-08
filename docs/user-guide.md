@@ -56,8 +56,8 @@ coral: where a task sleeps and another runs), the machine blue (`drivers/`,
 the port's `arch/` fainter), and the helpers a cool gray (`lib/`,
 `include/`); a file in none of them, gray. Hover a bar to see what
 its call was (nothing else moves); click to move the cursor there. The task strip below the chart shows which task ran in each region
-(the idle task gray). The cursor is a cross: down, its moment; across, its
-frame's level.
+(the idle task gray). The cursor is a cross: down, its moment; across,
+under the frame you read.
 
 The chart opens on the selected call (a lesson's subject, or a line of the
 program you choose), with a little on each side; **all** shows the whole
@@ -159,14 +159,17 @@ for the current lesson run. The console is output-only.
 
 ## 5. Move through the recording
 
-The transport below the chart shows the task, function, file, and line at the
-cursor.
+You read one frame at a time: the function the source shows, highlighted in
+the Stack and named in the transport below the chart, with the stack around
+it (click a name there to read that frame). Left and right move through time
+in that function; up and down move between functions.
 
 | Control | Action |
 |---|---|
-| Left / Right, or the left/right buttons | Move one reconstructed line step backward or forward. |
-| Shift+Left / Shift+Right | Step over calls at the current level. |
-| Up / Down, or the up/down buttons | Choose the callee or caller frame. |
+| Left / Right, or ◀ ▶ | The previous or next line of the function you read, over what it calls; past its end, on in its caller. |
+| Shift+Left / Shift+Right | The previous or next line anywhere: into every call. |
+| Up, or ▲ Into | Read the callee; already at the innermost, step into the call on this line. |
+| Down, or ▼ Out | Read the caller (then Right finishes the call you were in). |
 | Click a source line number | Run to that line's next occurrence. |
 | Shift+click a source line number | Run to that line's previous occurrence. |
 | Hover the chart | See what a bar's call was (outlined, a tip); nothing else moves. |

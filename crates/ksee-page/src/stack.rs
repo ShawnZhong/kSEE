@@ -13,15 +13,21 @@ use wasm_bindgen::prelude::Closure;
 use crate::machine;
 use crate::state::{Derived, Moment, Tab, Ui};
 
-/// A step from the cursor (`dir`: on, 1, or back, -1): past the call's
-/// lines, into its task's run after it (or before): its next syscall, or
-/// what it did between.
-pub fn walk(ui: Ui, dir: isize, over: bool) {
+/// A step from the cursor (`dir`: on, 1, or back, -1): in the frame you
+/// are reading (the level chosen: its own lines, over what it calls, and
+/// on into its caller's once it returns), or, `into`, to the very next
+/// line, the innermost frame then; past the run's lines, into its task's
+/// run after it (or before): its next syscall, or what it did between.
+pub fn walk(ui: Ui, d: Derived, dir: isize, into: bool) {
     let Some(at) = ui.cursor.peek().clone() else { return };
     let k = at.run;
     let lines = Ui::run_lines(k);
-    if let Some(j) = step(&lines, at.line, dir, over) {
-        ui.go(j);
+    let within = if into { None } else { d.stack.peek().get(*d.frame.peek()).map(|f| f.depth) };
+    if let Some(j) = step(&lines, at.line, dir, within) {
+        match into {
+            true => ui.commit(Some(Moment { run: k, line: j, level: None })),
+            false => ui.go(j),
+        }
         return;
     }
     let next = machine().view(|v| {
@@ -40,42 +46,70 @@ pub fn walk(ui: Ui, dir: isize, over: bool) {
 }
 
 /// The frame chosen on the cursor's stack (`d.stack`), `dir` up it (-1:
-/// the callee) or down (1: the caller).
+/// the callee; from the innermost, a step into the next line) or down (1:
+/// the caller).
 pub fn frame(ui: Ui, d: Derived, dir: isize) {
     let Some(at) = ui.cursor.peek().clone() else { return };
+    if dir < 0 && *d.frame.peek() == 0 {
+        return walk(ui, d, 1, true);
+    }
     let frames = d.stack.peek();
     let k = d.frame.peek().saturating_add_signed(dir).min(frames.len().saturating_sub(1));
-    ui.commit(Some(Moment { level: Some(frames.len().saturating_sub(1 + k)), ..at }));
+    choose(ui, at, frames.len(), k);
 }
 
-/// Under the strip: steps through the call's lines (◀ ▶; Shift: over the
-/// calls, as ← → are), the frame up or down the Stack (▲ ▼, as ↑ ↓), and
-/// where the cursor is (its task: the overview's, the Stack's).
+/// Frame `k` (of `n`, innermost first) chosen at moment `at`.
+fn choose(ui: Ui, at: Moment, n: usize, k: usize) {
+    ui.commit(Some(Moment { level: Some(n.saturating_sub(1 + k)), ..at }));
+}
+
+/// Under the strip: steps through the lines of the frame you are reading
+/// (◀ ▶, as ← → are; Shift: into every call), the frame you read (▲ the
+/// callee, from the innermost a step into it; ▼ the caller; as ↑ ↓), and
+/// where it is: the stack around it, a click on a frame reading it.
 #[component]
 pub fn Transport() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
     let here = d.line.cloned();
-    let place = here.as_ref().map_or(String::new(), |l| format!("{} {}:{}", l.inlined.as_deref().unwrap_or(&l.func), l.file, l.line));
-    // (A line that runs more than once in this call: which turn the cursor is on.)
+    let frames = d.stack.cloned();
+    let chosen = d.frame.cloned();
+    let place = frames.get(chosen).map_or(String::new(), |f| format!("{} {}:{}", f.func, f.file.as_deref().unwrap_or("?"), f.line.unwrap_or(0)));
+    // (On the innermost frame: a line that runs more than once in this
+    // call, which turn the cursor is on; a step that lands after a call,
+    // what it returned.)
+    let here = here.filter(|_| chosen == 0);
     let turn = here.as_ref().filter(|l| l.run > 1).map_or(String::new(), |l| format!(" · turn {}", l.run));
-    // (A step that lands after a call: what it returned.)
     let returned = here.as_ref().and_then(|l| l.called.as_ref().filter(|c| c.at <= l.at))
         .map_or(String::new(), |c| format!(" · {} returned {}", c.func, machine().tables().types.result(c.value)));
+    // (The stack around the frame read, outermost first: two out, one in.)
+    let n = frames.len();
+    let path: Vec<(usize, String)> = (chosen.saturating_sub(1)..n.min(chosen + 3)).rev().map(|k| (k, frames[k].func.clone())).collect();
+    let (outer, inner) = (chosen + 3 < n, chosen > 1);
     rsx! {
         div { class: "transport",
-            button { title: "the line before (←); Shift: back over the calls", onclick: move |e| walk(ui, -1, e.modifiers().shift()), "◀ Line" }
-            button { title: "the next line (→); Shift: over the calls", onclick: move |e| walk(ui, 1, e.modifiers().shift()), "Line ▶" }
-            button { title: "the frame up the Stack, the callee (↑)", onclick: move |_| frame(ui, d, -1), "▲ Callee" }
-            button { title: "the frame down the Stack, the caller (↓)", onclick: move |_| frame(ui, d, 1), "▼ Caller" }
+            button { title: "the line before in the frame you read (←); Shift: into every call", onclick: move |e| walk(ui, d, -1, e.modifiers().shift()), "◀ Line" }
+            button { title: "the next line in the frame you read, over its calls (→); Shift: into every call", onclick: move |e| walk(ui, d, 1, e.modifiers().shift()), "Line ▶" }
+            button { title: "read the callee (↑); from the innermost, a step into the call", onclick: move |_| frame(ui, d, -1), "▲ Into" }
+            button { title: "read the caller (↓)", onclick: move |_| frame(ui, d, 1), "▼ Out" }
+            span { class: "path mono",
+                if outer { "… › " }
+                for (k , name) in path {
+                    a { class: if k == chosen { "on" } else { "" }, title: "read this frame",
+                        onclick: move |_| if let Some(at) = ui.cursor.peek().clone() { choose(ui, at, n, k) }, "{name}" }
+                    if k > 0 && k > chosen.saturating_sub(1) { " › " }
+                }
+                if inner { " …" }
+            }
             span { class: "where mono dim", "{place}{turn}{returned}" }
         }
     }
 }
 
 /// The page's keys, anywhere on it: one listener on the window; ← → a
-/// line (Shift: over the calls); ↑ ↓ the frame
-/// up (its callee) or down (its caller). Not in text fields (the lesson's
+/// line of the frame you read (Shift: into every call); ↑ ↓ the frame
+/// read, the callee (from the innermost, a step into the call) or the
+/// caller. Not in text fields (the lesson's
 /// lines, find): arrows move the cursor there.
 pub fn listen(ui: Ui) {
     let d = use_context::<Derived>();
@@ -93,12 +127,12 @@ pub fn listen(ui: Ui) {
                     return;
                 }
             }
-            let over = e.shift_key();
+            let into = e.shift_key();
             // (← →: once the kernel is up.)
             let up = matches!(*ui.kernel.peek(), Some(Ok(())));
             let arrow = match e.key().as_str() {
-                "ArrowLeft" if up => { walk(ui, -1, over); true }
-                "ArrowRight" if up => { walk(ui, 1, over); true }
+                "ArrowLeft" if up => { walk(ui, d, -1, into); true }
+                "ArrowRight" if up => { walk(ui, d, 1, into); true }
                 "ArrowUp" => { frame(ui, d, -1); true }
                 "ArrowDown" => { frame(ui, d, 1); true }
                 _ => false,

@@ -235,7 +235,7 @@ impl Calls {
                 (*steps.last()?, steps.len() as u32 - 1)
             }
         };
-        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run: 0, callee: None })
+        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, call: p.call, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run: 0, callee: None })
     }
 
     /// The source lines task `task` ran in records `from..=to`, in order: each block's lines up to its first call, then, as
@@ -291,7 +291,7 @@ impl Calls {
                 // before it left it: the record before the first on it or a
                 // later one; with none, after the stretch's last.)
                 let at = first_at.range((base + nth) as u32..).map(|(_, &j)| j).min().map_or(last, |j| j - 1).max(i);
-                let step = LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run, callee: None };
+                let step = LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, call: p.call, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, run, callee: None };
                 // (Code inlined it enters, as a call would be: first the line
                 // calling each function it enters, in the one calling it, the
                 // outermost first; from this call's line before, or, the
@@ -348,6 +348,8 @@ pub struct LineStep {
     /// line: Record::line).
     pub index: u32,
     pub func: u32,
+    /// Its call (an index in Calls::calls), `depth` calls deep.
+    pub call: u32,
     pub depth: u32,
     pub loc: crate::tables::Loc,
     pub inlined: Option<u32>,

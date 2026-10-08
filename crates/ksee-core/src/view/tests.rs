@@ -524,17 +524,18 @@ fn no_wheel_delta_keeps_a_chart_window() {
 #[test]
 fn steps_go_into_or_over() {
     // f (depth 0) line 1, calls g (depth 1): lines 10, 11; then f's line 2.
-    let line = |depth, line| Line { i: 0, at: 0, nth: 0, cut: 0, func: String::new(), file: String::new(), line, inlined: None, depth, inl: 0, run: 1,
+    let line = |depth, line| Line { i: 0, at: 0, nth: 0, cut: 0, func: String::new(), file: String::new(), line, inlined: None, depth, run: 1,
                                    tests: Vec::new(), called: None };
     let lines = [line(0, 1), line(1, 10), line(1, 11), line(0, 2)];
-    assert_eq!((step(&lines, 0, 1, false), step(&lines, 0, 1, true), step(&lines, 1, 1, true)), (Some(1), Some(3), Some(2)));
-    assert_eq!((step(&lines, 3, -1, true), step(&lines, 0, -1, false)), (Some(0), None));
-    assert_eq!(step(&lines, 3, 1, false), None);
+    // (Into: the very next; within f (depth 0): over g; within g, its next.)
+    assert_eq!((step(&lines, 0, 1, None), step(&lines, 0, 1, Some(0)), step(&lines, 1, 1, Some(1))), (Some(1), Some(3), Some(2)));
+    assert_eq!((step(&lines, 3, -1, Some(0)), step(&lines, 0, -1, None)), (Some(0), None));
+    assert_eq!(step(&lines, 3, 1, None), None);
 }
 
 #[test]
 fn run_to_finds_an_exact_line_step() {
-    let line = |i, nth, cut, file: &str, line| Line { i, at: i, nth, cut, func: String::new(), file: file.into(), line, inlined: None, depth: 0, inl: 0, run: 1,
+    let line = |i, nth, cut, file: &str, line| Line { i, at: i, nth, cut, func: String::new(), file: file.into(), line, inlined: None, depth: 0, run: 1,
                                                          tests: Vec::new(), called: None };
     // Two lines share block record 0; h's line is an inline stop there; f's
     // line 3 resumes at g's Return record 2; then f's line 2 runs again.
@@ -557,14 +558,15 @@ fn an_inlined_call_is_stepped_into_as_a_call_is() {
     let rec = Recording::new(&t, alloc::vec![Record::Block { func: 1, n: 0 }], alloc::vec![0], Args::default());
     let v = View { tables: &t, rec: &rec, now: &Vec::new() };
     let lines = v.lines(0, 0, 0);
-    let at: Vec<_> = lines.iter().map(|l| (l.file.as_str(), l.line, l.inl)).collect();
+    let at: Vec<_> = lines.iter().map(|l| (l.file.as_str(), l.line, l.depth)).collect();
     assert_eq!(at, [("f.c", 1, 0), ("f.c", 2, 0), ("h.c", 3, 1), ("g.c", 30, 2), ("f.c", 4, 0)]);
-    let stack = |l: &Line| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, l.i).iter().map(|f| (f.func.clone(), f.line)).collect::<Vec<_>>();
-    assert_eq!(stack(&lines[1]), [("f".into(), Some(2))]);
-    assert_eq!(stack(&lines[2]), [("h".into(), Some(3)), ("f".into(), Some(2))]);
-    assert_eq!(stack(&lines[3]), [("g".into(), Some(30)), ("h".into(), Some(3)), ("f".into(), Some(2))]);
-    // (Over the call at f's line 2: its next line, 4.)
-    assert_eq!(step(&lines, 1, 1, true), Some(4));
+    let stack = |l: &Line| v.call_stack(l.i, Some(l.nth as usize), l.cut as usize, l.i).iter().map(|f| (f.func.clone(), f.line, f.depth)).collect::<Vec<_>>();
+    assert_eq!(stack(&lines[1]), [("f".into(), Some(2), 0)]);
+    assert_eq!(stack(&lines[2]), [("h".into(), Some(3), 1), ("f".into(), Some(2), 0)]);
+    assert_eq!(stack(&lines[3]), [("g".into(), Some(30), 2), ("h".into(), Some(3), 1), ("f".into(), Some(2), 0)]);
+    // (Within f, over the code inlined at its line 2: its next line, 4;
+    // within h, from g's line: h's own next, none, so f's 4.)
+    assert_eq!((step(&lines, 1, 1, Some(0)), step(&lines, 3, 1, Some(1))), (Some(4), Some(4)));
 }
 
 #[test]

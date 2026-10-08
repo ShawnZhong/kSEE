@@ -29,10 +29,9 @@ pub struct Line {
     pub line: u32,
     /// The function the line is inlined from, if.
     pub inlined: Option<String>,
-    /// How deep it runs: calls deep, and inlined (how many functions its
-    /// code is inlined from): a stepper's level.
+    /// How deep it runs: its frame's place in the stack, from the
+    /// outermost (calls and inlined code alike: Frame::depth).
     pub depth: u32,
-    pub inl: u32,
     /// Which turn of a loop it is (see LineStep::run).
     pub run: u32,
     /// The comparisons it made that decided where it went ("18 >= 0 ✓"),
@@ -51,6 +50,9 @@ pub struct Frame {
     pub first: usize,
     /// Code inlined into the call (the frame outside it), not a call.
     pub inlined: bool,
+    /// Its place in the stack, from the outermost (calls and inlined code
+    /// alike): a line run in it is as deep (Line::depth).
+    pub depth: u32,
     /// Where the call is (the line it runs, or the one calling the frame
     /// inside it; else where its function is).
     pub file: Option<String>,
@@ -60,12 +62,11 @@ pub struct Frame {
 }
 
 /// The line a step goes to from line `k` of `lines`, in direction `dir`
-/// (1: on; -1: back), if any, as a debugger's: the next line, into the
-/// calls; or, `over` them, the next as deep as line k or shallower (code
-/// inlined counts as a level deeper).
-pub fn step(lines: &[Line], k: usize, dir: isize, over: bool) -> Option<usize> {
-    let here = lines.get(k).map(|l| (l.depth, l.inl))?;
-    seek(lines, k, dir, |l| !over || (l.depth, l.inl) <= here)
+/// (1: on; -1: back), if any: the next line no deeper than `within` (a
+/// frame's depth, Frame::depth: its own lines, over what it calls, and on
+/// into its caller's once it returns); none, the very next, into the calls.
+pub fn step(lines: &[Line], k: usize, dir: isize, within: Option<u32>) -> Option<usize> {
+    seek(lines, k, dir, |l| within.is_none_or(|w| l.depth <= w))
 }
 
 /// The next (`dir` 1) or previous (`dir` -1) run of `file`'s `line`, from
@@ -107,7 +108,7 @@ impl View<'_> {
     pub(super) fn line_only(&self, s: &LineStep) -> Line {
         let chain = &self.tables.chain(s.inlined)[s.cut as usize..];
         Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
-               inlined: chain.first().map(|&(f, _)| self.inline_name(f)), depth: s.depth, inl: chain.len() as u32, run: s.run, tests: Vec::new(),
+               inlined: chain.first().map(|&(f, _)| self.inline_name(f)), depth: self.rec.frame_depth(self.tables, s.call) + chain.len() as u32, run: s.run, tests: Vec::new(),
                called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }) }
     }
 
@@ -173,7 +174,7 @@ impl View<'_> {
             // (The code inlined into it first, innermost first; then it.)
             let frame = |func: String, inlined, at: Option<Loc>| {
                 let (args, locals) = if inlined { (mine(&func, true), mine(&func, false)) } else { (Vec::new(), Vec::new()) };
-                Frame { first: c.first, inlined, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args, locals, func }
+                Frame { first: c.first, inlined, depth: 0, file: at.map(|l| t.file(l).to_string()), line: at.map(|l| l.line), args, locals, func }
             };
             let mut nest = self.nest(&c);
             if out.is_empty() {
@@ -182,6 +183,11 @@ impl View<'_> {
             let (&(_, at), inner) = nest.split_last().expect("a call");
             out.extend(inner.iter().map(|&(k, at)| frame(self.inline_name(k.unwrap_or(0)), true, at)));
             out.push(Frame { args, locals, ..frame(name, false, at) });
+        }
+        // (Each its place, from the outermost.)
+        let n = out.len() as u32;
+        for (k, f) in out.iter_mut().enumerate() {
+            f.depth = n - 1 - k as u32;
         }
         out
     }
