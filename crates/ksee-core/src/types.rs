@@ -295,10 +295,15 @@ impl Types {
     }
 
     /// Byte offset and size of `field` in struct `s` (a member, or one of
-    /// an anonymous struct's or union's in it: see members).
+    /// an anonymous struct's or union's in it: see members; a member's
+    /// member, "f_path.dentry").
     pub fn field(&self, s: &str, field: &str) -> Option<(u32, u32)> {
-        let m = self.members(&self.get(self.resolve(self.find(s)?)).kind).into_iter().find(|m| m.name == field)?;
-        Some((m.bit_offset / 8, self.size_of(m.ty)))
+        let (mut ty, mut off) = (self.find(s)?, 0);
+        for name in field.split('.') {
+            let m = self.members(&self.get(self.resolve(ty)).kind).into_iter().find(|m| m.name == name)?;
+            (off, ty) = (off + m.bit_offset / 8, m.ty);
+        }
+        Some((off, self.size_of(ty)))
     }
 
     /// A struct's or union's members, as C names them: an anonymous

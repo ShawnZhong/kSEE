@@ -94,6 +94,16 @@ fn Tasks() -> Element {
         }
     }
     visit(&list, &up, None, 0, &mut order);
+    // (The fd tables, each once, in the order shown: each's open files, and
+    // the task it is first shown under, its owner; the others share it.)
+    let mut tables: Vec<(u32, usize)> = Vec::new();
+    for &(k, _) in &order {
+        if let Some(f) = list[k].files && !tables.iter().any(|t| t.0 == f) {
+            tables.push((f, k));
+        }
+    }
+    let files = m.view(|v| v.open_files(&tables.iter().map(|t| t.0).collect::<Vec<_>>(), at));
+    let owner = |table: usize| list[tables[table].1].task.named();
     rsx! {
         table { class: "fields",
             for (k , depth) in order {
@@ -106,9 +116,17 @@ fn Tasks() -> Element {
                     let (said, title) = state(t.state);
                     let place = t.doing.as_ref().map_or(String::new(), |s| format!(" in {s}"));
                     let class = format!("frame{}{}", if running { " on" } else { "" }, if matches!(t.state, TaskState::Later | TaskState::Exited) { " later" } else { "" });
-                    let fields = if is_open { m.view(|v| v.task_fields(t.task.addr, at)) } else { Vec::new() };
+                    // (Open: its open files, then its task_struct, folded.)
+                    let raw = format!("{p}/task_struct");
+                    let raw_open = is_open && open.read().contains(&raw);
+                    let fields = if raw_open { m.view(|v| v.task_fields(t.task.addr, at)) } else { Vec::new() };
+                    let table = t.files.and_then(|f| tables.iter().position(|x| x.0 == f));
+                    // (Another's table, if it has open files: a kernel thread's, the
+                    // empty one they all share, is not said.)
+                    let shared = table.filter(|&x| tables[x].1 != k && !files[x].is_empty()).map(owner);
+                    let own: Vec<ksee_core::view::OpenFile> = table.filter(|_| shared.is_none() && is_open).map_or(Vec::new(), |x| files[x].clone());
                     let name = t.task.named();
-                    let q = p.clone();
+                    let (q, r) = (p.clone(), raw.clone());
                     rsx! {
                         tr { class: "{class} opens", title,
                             onclick: move |_| { let mut s = open.write(); if !s.remove(&q) { s.insert(q.clone()); } },
@@ -119,8 +137,31 @@ fn Tasks() -> Element {
                                 span { class: "dim", "  {said}{place}" }
                             }
                         }
+                        if is_open {
+                            if let Some(s) = shared {
+                                tr { td { colspan: "3", class: "dim", style: "padding-left: {24 + depth * 16}px", "open files: {s}'s, shared" } }
+                            } else if !own.is_empty() {
+                                tr { td { colspan: "3", class: "dim", style: "padding-left: {24 + depth * 16}px", "open files" } }
+                            }
+                            for f in own {
+                                {
+                                    let also: Vec<String> = f.also.iter().map(|&(x, fd)| if x == table.unwrap_or(usize::MAX) { format!("{fd}") } else { format!("{}'s {fd}", owner(x)) }).collect();
+                                    let also = if also.is_empty() { String::new() } else { format!(" · the same open file as {}", also.join(", ")) };
+                                    rsx! {
+                                        tr { title: "task->files->fdt->fd[{f.fd}]: the open file, a struct file at {f.file:#x}",
+                                            td { class: "fname mono", style: "padding-left: {24 + depth * 16}px", "{f.fd}" }
+                                            td { class: "fval mono", colspan: "2", "{f.name}" span { class: "dim", " · {f.mode} · position {f.pos}{also}" } }
+                                        }
+                                    }
+                                }
+                            }
+                            tr { class: "opens", onclick: move |_| { let mut s = open.write(); if !s.remove(&r) { s.insert(r.clone()); } },
+                                td { colspan: "3", class: "dim", style: "padding-left: {24 + depth * 16}px",
+                                    span { class: "tw", if raw_open { "▾ " } else { "▸ " } } "task_struct" }
+                            }
+                        }
                         for o in fields {
-                            crate::stack::Value { o: o.clone(), path: format!("{p}.{}", o.name), depth: 1, at }
+                            crate::stack::Value { o: o.clone(), path: format!("{p}.{}", o.name), depth: 2, at }
                         }
                     }
                 }

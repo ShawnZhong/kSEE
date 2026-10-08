@@ -47,6 +47,24 @@ pub(crate) const THREAD_HEAD: &str = "thread_head";
 pub(crate) const THREAD_NODE: &str = "thread_node";
 /// Whether a task is on its CPU's run queue (runnable, or running).
 pub(crate) const TASK_ON_RQ: &str = "on_rq";
+/// A task's open files: its fd table (task->files->fdt), an array of
+/// pointers to open files (`fd`, `max_fds` long); the table, shared by the
+/// tasks that share it (threads).
+pub(crate) const TASK_FILES: (&str, &str) = ("files", "files_struct");
+pub(crate) const FDTABLE: (&str, &str, &str, &str) = ("fdt", "fdtable", "fd", "max_fds");
+/// An open file: where it is (its dentry, in its mount), its position, its
+/// mode (FMODE_READ, FMODE_WRITE: its low bits), its inode.
+pub(crate) const FILE: &str = "file";
+pub(crate) const FILE_FIELDS: (&str, &str, &str, &str, &str) = ("f_path.dentry", "f_path.mnt", "f_pos", "f_mode", "f_inode");
+pub(crate) const FMODE: [(u32, &str); 2] = [(1, "r"), (2, "w")];
+/// A name in the dentry tree: its own name, its parent (itself, at a file
+/// system's root), its file system (a super_block, its type's name).
+pub(crate) const DENTRY: (&str, &str, &str, &str) = ("dentry", "d_name.name", "d_parent", "d_sb");
+pub(crate) const SUPER: (&str, &str, &str, &str) = ("super_block", "s_type", "file_system_type", "name");
+pub(crate) const INODE_NO: (&str, &str) = ("inode", "i_ino");
+/// A mount (holding the vfsmount a path names, at `mnt`), mounted on a
+/// dentry of its parent's (itself, for a mount at the top).
+pub(crate) const MOUNT: (&str, &str, &str, &str) = ("mount", "mnt", "mnt_parent", "mnt_mountpoint");
 /// A task's fields shown first (the Tasks'), in this order.
 pub(crate) const TASK_FIELDS: [&str; 12] = ["pid", "tgid", "comm", "__state", "flags", "prio", "mm", "files", "fs", "real_parent", "group_leader", "signal"];
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters

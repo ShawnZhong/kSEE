@@ -17,6 +17,7 @@ use crate::Memory;
 
 
 mod chart;
+mod files;
 mod frames;
 mod objects;
 mod stores;
@@ -25,6 +26,7 @@ mod value;
 mod tests;
 
 pub use chart::{wheel_window, Bar, Timeline};
+pub use files::OpenFile;
 pub use frames::{step, Called, Frame, Line};
 pub use objects::{Diff, Group, Node, Streak};
 pub use stores::{Note, RegionKind, Write};
@@ -101,6 +103,9 @@ pub struct TaskAt {
     pub up: Option<u32>,
     pub state: TaskState,
     pub doing: Option<String>,
+    /// Its fd table (a files_struct's address: shared by the tasks that
+    /// share it; none, exited), see View::open_files.
+    pub files: Option<u32>,
 }
 
 /// What the scheduler has a task doing then.
@@ -170,7 +175,7 @@ impl View<'_> {
         // (The fields read, where they are: looked up once.)
         let offset = |s: &str, f: &str| t.types.field(s, f).map(|(off, _)| off);
         let of_task = |f: &str| offset(arch::TASK, f);
-        let (signal, on_rq, leader, parent) = (of_task(arch::TASK_SIGNAL.0), of_task(arch::TASK_ON_RQ), of_task(arch::TASK_LEADER), of_task(arch::TASK_PARENT));
+        let (signal, on_rq, leader, parent, files) = (of_task(arch::TASK_SIGNAL.0), of_task(arch::TASK_ON_RQ), of_task(arch::TASK_LEADER), of_task(arch::TASK_PARENT), of_task(arch::TASK_FILES.0));
         let word = |addr: u32, off: Option<u32>| off.map(|off| mem.read_u32(addr.wrapping_add(off)));
         // (The kernel's: each process, then its threads, the leader among them.)
         let mut list: Vec<u32> = Vec::new();
@@ -220,6 +225,7 @@ impl View<'_> {
             TaskAt {
                 task: self.task(addr, i),
                 up: up(leader).or_else(|| up(parent)),
+                files: word(addr, files).filter(|&f| f != 0 && listed),
                 state,
                 doing: last.and_then(|j| {
                     let syscall = self.rec.run_at(j).and_then(|s| t.types.syscalls.get(&self.rec.runs[s].nr?).cloned());

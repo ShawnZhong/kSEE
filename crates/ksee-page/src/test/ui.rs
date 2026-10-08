@@ -379,7 +379,7 @@ async fn editor() -> Result<(), String> {
     Ok(())
 }
 
-/// Memory (what the read changed) and Tasks (a task_struct opened).
+/// Memory (what the read changed) and Tasks (open files; a task_struct opened).
 async fn panels(r: &mut Vec<String>) -> Result<(), String> {
     // (Memory: what the read changed, its file's position; Tasks: a task_struct opened.)
     tab("Memory").await;
@@ -387,8 +387,16 @@ async fn panels(r: &mut Vec<String>) -> Result<(), String> {
     check(named(".obj td", "f_pos").is_some(), "objects", &objects)?;
     r.push(format!("objects {objects:?}"));
     tab("Tasks").await;
+    // (The running one, open: its open files, the file the program read
+    // among them.)
+    let files: Vec<String> = all(".pane td.fval").iter().map(text).collect();
+    check(files.iter().any(|f| f.starts_with("/note.txt · r")), "the running task's open files", &files)?;
+    // (A task opened, then its task_struct.)
     let rows = all(".pane tr").len();
     click(&one(".pane tr.frame a").ok_or("no task")?);
+    settle().await;
+    let raw = all(".pane tr.opens").into_iter().find(|r| text(r).ends_with("task_struct")).ok_or("no task_struct row")?;
+    click(&raw);
     settle().await;
     let opened = all(".pane tr").len();
     check(opened > rows + 5 && named(".pane td", "comm").is_some(), "a task_struct opened", (rows, opened))?;
@@ -464,6 +472,14 @@ pub(super) async fn tasks() -> Check {
     strip.dedup();
     check(c[5].1 == "= 6 (during write)" && c[6].1 == "= 6" && changed.iter().any(|x| x == "fds = {3, 4}") && strip.len() >= 2,
           "the pipe", (&c, &changed, &strip))?;
+    // (The write's: the program's open files, the pipe's two ends, the same
+    // open files as the child's.)
+    let _ = all("ol.lines .cell textarea").get(6).ok_or("no seventh line")?.dyn_ref::<HtmlElement>().map(|t| t.focus());
+    settle().await;
+    tab("Tasks").await;
+    let files: Vec<String> = all(".pane td.fval").iter().map(text).collect();
+    check(files.iter().filter(|f| f.starts_with("pipefs:[") && f.contains("the same open file as prog(")).count() == 2, "the pipe's ends, the child's too", &files)?;
+    tab("Stack").await;
     // (The idle task, between the calls: a click on its bar, the cursor in
     // its run, as in any task's.)
     let canvas = one("#timeline-canvas").ok_or("no timeline canvas")?;
