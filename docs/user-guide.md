@@ -122,13 +122,15 @@ The Tasks tab lists every task at the cursor, newest first (the program's,
 then the kernel's own): which is running, and the others runnable, sleeping,
 exited, or not yet created, each with what it is doing.
 
-Click a task (the running one, at first) for its details under its line: its
-open files, each fd with where its open file is (a path, or for a pipe
-`pipefs:[inode]`), its mode and position, and the `struct file`'s address (fds
-with the same address, here or in other tasks, stand for the same open file).
-A thread that shares its process's fd table says so. Click an fd for its
-`struct file`; the task's own `task_struct`, as memory was at that moment, is
-folded under them.
+Click a task (the running one, at first) for its `task_struct` under its line,
+as memory was at that moment: its key fields, as paths in it (`pid`, `tgid`,
+`comm`, `__state`, `real_parent`, and `files->fd_array`, its open files by
+number). Check **all fields** for the whole struct instead, as declared.
+
+Everywhere a value is shown, a pointer to a task, an open file or a dentry
+says what it is: `→ init(1)`, `→ /dev/console`, `→ pipefs:[12]` (a pipe,
+as Linux names it). The same address is the same object. A run of three or
+more of the same plain value in an array is one row (`[4…63] NULL`).
 
 ### Memory
 

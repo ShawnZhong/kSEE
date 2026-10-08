@@ -2,7 +2,6 @@
 //! moment shown; what the run selected wrote in the kernel's memory (Memory);
 //! what it asked of the disk (Disk); the kernel's console.
 
-use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
@@ -70,6 +69,8 @@ fn Tasks() -> Element {
     (ui.snapshot)();
     let d = use_context::<Derived>();
     let mut chosen = use_signal(|| None::<u32>);
+    // (Every task's fields, as declared, in place of its key ones.)
+    let mut all = use_signal(|| false);
     let at = d.line.cloned().map_or(0, |l| l.at);
     let m = machine();
     let list = m.view(|v| v.tasks(at));
@@ -80,6 +81,8 @@ fn Tasks() -> Element {
     // (The one selected: the one chosen, if the list has it; else the one running.)
     let sel = chosen().filter(|&a| list.iter().any(|t| t.task.addr == a)).or_else(|| list.iter().find(|t| t.state == TaskState::Running).map(|t| t.task.addr));
     rsx! {
+        label { class: "tasksopt dim", title: "the selected task's whole task_struct, as declared, in place of its key fields",
+            input { r#type: "checkbox", checked: all(), onchange: move |e| all.set(e.checked()) } " all fields" }
         div { class: "tasks",
             for k in order {
                 {
@@ -95,7 +98,7 @@ fn Tasks() -> Element {
                             span { class: "name", "{name}" }
                             span { class: "dim", "{said}{place}" }
                         }
-                        if on { TaskDetail { addr, at } }
+                        if on { TaskDetail { addr, at, all: all() } }
                     }
                 }
             }
@@ -104,30 +107,17 @@ fn Tasks() -> Element {
 }
 
 /// Under a task's line (Tasks), the task at `addr`, its task_struct as it
-/// was after record `at`: its key fields, and a click away, all of them;
-/// each opening as any value does.
+/// was after record `at`: its key fields (paths in it), or `all`, as
+/// declared; each opening as any value does.
 #[component]
-fn TaskDetail(addr: u32, at: usize) -> Element {
-    let mut open = use_context::<Signal<BTreeSet<String>>>();
+fn TaskDetail(addr: u32, at: usize, all: bool) -> Element {
     let fields = machine().view(|v| v.task_fields(addr, at));
-    let all = format!("task/{addr}/all");
-    let all_open = open.read().contains(&all);
+    let shown = if all { fields.all } else { fields.key };
     rsx! {
         div { class: "detail",
             table { class: "fields",
-                for o in fields.key {
+                for o in shown {
                     crate::stack::Value { o: o.clone(), path: format!("task/{addr}.{}", o.name), depth: 1, at }
-                }
-                tr { class: "opens", title: "its whole task_struct, as declared",
-                    onclick: move |_| { let mut s = open.write(); if !s.remove(&all) { s.insert(all.clone()); } },
-                    td { class: "fname", style: "padding-left: 14px", span { class: "tw", if all_open { "▾ " } else { "▸ " } } "all fields" }
-                    td { class: "fval dim", "{fields.all.len()}" }
-                    td { class: "ftype", "struct task_struct" }
-                }
-                if all_open {
-                    for o in fields.all {
-                        crate::stack::Value { o: o.clone(), path: format!("task/{addr}/all.{}", o.name), depth: 2, at }
-                    }
                 }
             }
         }

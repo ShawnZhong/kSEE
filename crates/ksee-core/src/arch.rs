@@ -59,7 +59,7 @@ pub(crate) const INODE_NO: (&str, &str) = ("inode", "i_ino");
 pub(crate) const MOUNT: (&str, &str, &str, &str) = ("mount", "mnt", "mnt_parent", "mnt_mountpoint");
 /// A task's fields shown first (the Tasks'), in this order: paths in it, as
 /// C names them (Types::at_path).
-pub(crate) const TASK_FIELDS: [&str; 8] = ["pid", "tgid", "comm", "__state", "prio", "real_parent", "files->fd_array", "mm"];
+pub(crate) const TASK_FIELDS: [&str; 6] = ["pid", "tgid", "comm", "__state", "real_parent", "files->fd_array"];
 /// A syscall's body (SYSCALL_DEFINE's `__do_sys_NAME`), whose parameters
 /// are the syscall's.
 pub(crate) const SYSCALL_BODY: &str = "__do_sys_";

@@ -407,10 +407,12 @@ async fn panels(r: &mut Vec<String>) -> Result<(), String> {
     let rows = all(".pane tr").len();
     click(&all(".tasks .task").into_iter().last().ok_or("no task")?);
     settle().await;
-    click(&all(".detail tr.opens").into_iter().find(|r| text(r).contains("all fields")).ok_or("no all fields row")?);
+    click(&one(".tasksopt input").ok_or("no all fields")?);
     settle().await;
     let opened = all(".pane tr").len();
     check(opened > rows + 5 && named(".pane td", "comm").is_some(), "a task_struct opened", (rows, opened))?;
+    click(&one(".tasksopt input").ok_or("no all fields")?);
+    settle().await;
     tab("Stack").await;
     Ok(())
 }
