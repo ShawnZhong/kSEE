@@ -207,23 +207,14 @@ table.fields tr.frame a { font-weight: 600; }
 .tw { color: var(--dim); display: inline-block; width: 1.2em; }
 tr.opens { cursor: pointer; }
 table.fields tr.later { opacity: .45; }
-/* (Tasks: a line each, the one selected open under it: its open files, a
-   table of their own; its task_struct, a table of its own.) */
-.tasks .task { display: flex; gap: 10px; padding: 3px 10px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; font-size: 12px; }
-.tasks .task:hover { background: var(--sel); }
-.tasks .task.on { background: var(--sel); }
+/* (Tasks: a line each, the one selected open under it: its task_struct's
+   key fields and open files, and the rest a click away.) */
+/* (A task's line as the Stack's frames; its fields as their values.) */
+.tasks .task { display: flex; gap: 10px; padding: 5px 8px 2px; border-top: 1px solid var(--line); cursor: pointer; white-space: nowrap; font: 12px var(--mono); }
+.tasks .task:hover, .tasks .task.on { background: var(--sel); }
 .tasks .task.later { opacity: .45; }
-.tasks .task .name { font: 600 12px var(--mono); }
-.tasks .detail { padding: 4px 10px 8px 24px; border-bottom: 1px solid var(--line); font: 12px var(--mono); }
-.tasks .detail table { border-collapse: collapse; }
-.tasks .detail table.fields { width: auto; min-width: 0; }
-table.files th { text-align: left; font-weight: normal; color: var(--dim); padding: 1px 14px 2px 0; white-space: nowrap; }
-table.files th:first-child { padding-left: 1.2em; }
-table.files td { padding: 1px 14px 1px 0; white-space: nowrap; }
-table.files tr.opens { cursor: pointer; }
-table.files tr.opens:hover { background: var(--sel); }
-table.files td.file { color: var(--accent); }
-.tasks .detail .toggle { padding: 4px 0 2px; cursor: pointer; }
+.tasks .task .name { font-weight: 600; }
+.tasks .detail { padding-bottom: 4px; }
 /* The Objects: a box per object, a row a run of writes (the moment's marked, those after it gray) */
 .listing { padding: 0 10px 12px; }
 .listhead { padding: 6px 2px 2px; font-size: 11.5px; }

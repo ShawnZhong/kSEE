@@ -469,10 +469,21 @@ fn a_member_of_size_0_is_not_shown() {
 
 #[test]
 fn a_long_array_says_how_many_more() {
-    // int a[100]: the first 64, then "… 36 more".
+    // int a[100], each its index: the first 64, then "… 36 more".
     let t = Tables::parse("U\n", "T\t1\tbase\tint\t4\ts\nT\t2\tarray\t\t400\t1\t100\n");
-    let c = t.types.object(&alloc::vec![0u8; 400], "a", 0, 2, 1).children.unwrap();
+    let m: Vec<u8> = (0..100u32).flat_map(|i| i.to_le_bytes()).collect();
+    let c = t.types.object(&m, "a", 0, 2, 1).children.unwrap();
     assert_eq!((c.len(), c[64].name.as_str(), c[64].value.as_deref()), (65, "[64…99]", Some("… 36 more")));
+}
+
+#[test]
+fn an_array_s_runs_fold() {
+    // int a[8] = {1, 0, 0, 0, 0, 2, 0, 0}: a run of three or more one row.
+    let t = Tables::parse("U\n", "T\t1\tbase\tint\t4\ts\nT\t2\tarray\t\t32\t1\t8\n");
+    let m: Vec<u8> = [1u32, 0, 0, 0, 0, 2, 0, 0].iter().flat_map(|i| i.to_le_bytes()).collect();
+    let c = t.types.object(&m, "a", 0, 2, 1).children.unwrap();
+    let names: Vec<&str> = c.iter().map(|o| o.name.as_str()).collect();
+    assert_eq!(names, ["[0]", "[1…4]", "[5]", "[6]", "[7]"]);
 }
 
 #[test]

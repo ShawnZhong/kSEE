@@ -17,7 +17,6 @@ use crate::Memory;
 
 
 mod chart;
-mod files;
 mod frames;
 mod objects;
 mod stores;
@@ -26,7 +25,6 @@ mod value;
 mod tests;
 
 pub use chart::{wheel_window, Bar, Timeline};
-pub use files::OpenFile;
 pub use frames::{step, Called, Frame, Line};
 pub use objects::{Diff, Group, Node, Streak};
 pub use stores::{Note, RegionKind, Write};
@@ -93,15 +91,19 @@ pub struct Definition {
 /// A task at a record: what the scheduler has it doing (`state`); what it
 /// is `doing` at its last record by then (none: it first runs after, or the
 /// recording never saw it run): the syscall it is in, else its outermost
-/// call (off the CPU, its innermost is always the switch); its fd table.
+/// call (off the CPU, its innermost is always the switch).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskAt {
     pub task: Task,
     pub state: TaskState,
     pub doing: Option<String>,
-    /// Its fd table (a files_struct's address: shared by the tasks that
-    /// share it; none, exited), see View::open_files.
-    pub files: Option<u32>,
+}
+
+/// A task_struct's fields (View::task_fields).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskFields {
+    pub key: Vec<Object>,
+    pub all: Vec<Object>,
 }
 
 /// What the scheduler has a task doing then.
@@ -153,17 +155,12 @@ impl View<'_> {
     }
 
     /// The fields of the task at `addr`, as memory was after record `at`:
-    /// the key ones first (arch::TASK_FIELDS), then the others as declared.
-    pub fn task_fields(&self, addr: u32, at: usize) -> Vec<Object> {
-        let mut fields = self.fields(arch::CURRENT, arch::TASK, addr, at);
-        fields.sort_by_key(|o| arch::TASK_FIELDS.iter().position(|&k| k == o.name).unwrap_or(usize::MAX));
-        fields
-    }
-
-    /// The fields of the open file (a struct file) at `addr`, as memory
-    /// was after record `at`, as declared.
-    pub fn file_fields(&self, addr: u32, at: usize) -> Vec<Object> {
-        self.fields(arch::FILE, arch::FILE, addr, at)
+    /// the key ones (arch::TASK_FIELDS, in its order), and all of them, as
+    /// declared.
+    pub fn task_fields(&self, addr: u32, at: usize) -> TaskFields {
+        let all = self.fields(arch::CURRENT, arch::TASK, addr, at);
+        let key = arch::TASK_FIELDS.iter().filter_map(|&n| all.iter().find(|o| o.name == n).cloned()).collect();
+        TaskFields { key, all }
     }
 
     /// The fields of `name`, the struct `ty` at `addr`, as memory was
@@ -183,7 +180,7 @@ impl View<'_> {
         // (The fields read, where they are: looked up once.)
         let offset = |s: &str, f: &str| t.types.field(s, f).map(|(off, _)| off);
         let of_task = |f: &str| offset(arch::TASK, f);
-        let (signal, on_rq, files) = (of_task(arch::TASK_SIGNAL.0), of_task(arch::TASK_ON_RQ), of_task(arch::TASK_FILES.0));
+        let (signal, on_rq) = (of_task(arch::TASK_SIGNAL.0), of_task(arch::TASK_ON_RQ));
         let word = |addr: u32, off: Option<u32>| off.map(|off| mem.read_u32(addr.wrapping_add(off)));
         // (The kernel's: each process, then its threads, the leader among them.)
         let mut list: Vec<u32> = Vec::new();
@@ -231,7 +228,6 @@ impl View<'_> {
             };
             TaskAt {
                 task: self.task(addr, i),
-                files: word(addr, files).filter(|&f| f != 0 && listed),
                 state,
                 doing: last.and_then(|j| {
                     let syscall = self.rec.run_at(j).and_then(|s| t.types.syscalls.get(&self.rec.runs[s].nr?).cloned());

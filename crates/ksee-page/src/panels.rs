@@ -79,15 +79,6 @@ fn Tasks() -> Element {
     order.sort_by_key(|&k| (list[k].state == TaskState::Later, std::cmp::Reverse(list[k].task.pid())));
     // (The one selected: the one chosen, if the list has it; else the one running.)
     let sel = chosen().filter(|&a| list.iter().any(|t| t.task.addr == a)).or_else(|| list.iter().find(|t| t.state == TaskState::Running).map(|t| t.task.addr));
-    let selected = sel.and_then(|a| list.iter().find(|t| t.task.addr == a));
-    // (Its fd table: its own, or the oldest task's that has it, shared, if
-    // it has files: a kernel thread's, the empty one they share, is not said.)
-    let (files, shared) = selected.and_then(|t| t.files).map_or((Vec::new(), None), |f| {
-        let files = m.view(|v| v.open_files(f, at));
-        let first = order.iter().map(|&k| &list[k]).filter(|t| t.files == Some(f)).last();
-        let shared = first.filter(|o| Some(o.task.addr) != sel && !files.is_empty()).map(|o| o.task.named());
-        (files, shared)
-    });
     rsx! {
         div { class: "tasks",
             for k in order {
@@ -104,7 +95,7 @@ fn Tasks() -> Element {
                             span { class: "name", "{name}" }
                             span { class: "dim", "{said}{place}" }
                         }
-                        if on { TaskDetail { addr, files: files.clone(), shared: shared.clone(), at } }
+                        if on { TaskDetail { addr, at } }
                     }
                 }
             }
@@ -112,61 +103,30 @@ fn Tasks() -> Element {
     }
 }
 
-/// Under a task's line (Tasks), the task at `addr`: its open files, `files`
-/// (or whose it shares), a table of its own, each a click from its struct
-/// file; and its task_struct, folded; as they were after record `at`.
-/// (Each struct in a table of its own: opening one moves nothing else.)
+/// Under a task's line (Tasks), the task at `addr`, its task_struct as it
+/// was after record `at`: its key fields, and a click away, all of them;
+/// each opening as any value does.
 #[component]
-fn TaskDetail(addr: u32, files: Vec<ksee_core::view::OpenFile>, shared: Option<String>, at: usize) -> Element {
+fn TaskDetail(addr: u32, at: usize) -> Element {
     let mut open = use_context::<Signal<BTreeSet<String>>>();
-    let m = machine();
-    let raw = format!("task/{addr}/task_struct");
-    let raw_open = open.read().contains(&raw);
-    let fields = if raw_open { m.view(|v| v.task_fields(addr, at)) } else { Vec::new() };
-    let mut toggle = move |p: String| { let mut s = open.write(); if !s.remove(&p) { s.insert(p); } };
+    let fields = machine().view(|v| v.task_fields(addr, at));
+    let all = format!("task/{addr}/all");
+    let all_open = open.read().contains(&all);
     rsx! {
         div { class: "detail",
-            if let Some(s) = &shared {
-                div { class: "dim", title: "its fd table is another task's (a thread's: its process's)", "open files: {s}'s, shared" }
-            } else if !files.is_empty() {
-                table { class: "files",
-                    tr { th { "fd" } th { "file" } th { "mode" } th { "position" } th { title: "the open file's struct file: the same address, the same open file", "struct file" } }
-                    for f in files {
-                        {
-                            // (A click: its struct file, as it was.)
-                            let path = format!("task/{addr}/fd{}", f.fd);
-                            let file_open = open.read().contains(&path);
-                            let fields = if file_open { m.view(|v| v.file_fields(f.file, at)) } else { Vec::new() };
-                            let p = path.clone();
-                            rsx! {
-                                tr { class: "opens", title: "task->files->fdt->fd[{f.fd}] (a click: its struct file)", onclick: move |_| toggle(p.clone()),
-                                    td { span { class: "tw", if file_open { "▾" } else { "▸" } } "{f.fd}" }
-                                    td { class: "file", "{f.name}" }
-                                    td { "{f.mode}" }
-                                    td { "{f.pos}" }
-                                    td { class: "dim", "{f.file:#x}" }
-                                }
-                                if file_open {
-                                    tr { td { colspan: "5",
-                                        table { class: "fields",
-                                            for o in fields {
-                                                crate::stack::Value { o: o.clone(), path: format!("{path}.{}", o.name), depth: 1, at }
-                                            }
-                                        }
-                                    } }
-                                }
-                            }
-                        }
-                    }
+            table { class: "fields",
+                for o in fields.key {
+                    crate::stack::Value { o: o.clone(), path: format!("task/{addr}.{}", o.name), depth: 1, at }
                 }
-            }
-            div { class: "toggle", title: "the task's task_struct, as it was (a click: its fields)", onclick: move |_| toggle(raw.clone()),
-                span { class: "tw", if raw_open { "▾" } else { "▸" } } "task_struct " span { class: "dim", "{addr:#x}" }
-            }
-            if raw_open {
-                table { class: "fields",
-                    for o in fields {
-                        crate::stack::Value { o: o.clone(), path: format!("task/{addr}.{}", o.name), depth: 1, at }
+                tr { class: "opens", title: "its whole task_struct, as declared",
+                    onclick: move |_| { let mut s = open.write(); if !s.remove(&all) { s.insert(all.clone()); } },
+                    td { class: "fname", style: "padding-left: 14px", span { class: "tw", if all_open { "▾ " } else { "▸ " } } "all fields" }
+                    td { class: "fval dim", "{fields.all.len()}" }
+                    td { class: "ftype", "struct task_struct" }
+                }
+                if all_open {
+                    for o in fields.all {
+                        crate::stack::Value { o: o.clone(), path: format!("task/{addr}/all.{}", o.name), depth: 2, at }
                     }
                 }
             }

@@ -80,7 +80,81 @@ impl Object {
     }
 }
 
+/// An array's elements, a run of three or more the same plain value (none
+/// to open: NULL, 0) one row ("[4…63]").
+fn fold(rows: Vec<Object>) -> Vec<Object> {
+    let plain = |o: &Object| o.children.is_none() && o.open.is_none() && o.missing.is_none() && o.value.is_some();
+    let mut out = Vec::with_capacity(rows.len());
+    let mut i = 0;
+    while i < rows.len() {
+        let j = (i + 1..rows.len()).find(|&j| !(plain(&rows[i]) && plain(&rows[j]) && rows[j].value == rows[i].value)).unwrap_or(rows.len());
+        if j - i >= 3 {
+            out.push(Object { name: format!("[{i}…{}]", j - 1), ..rows[i].clone() });
+        } else {
+            out.extend(rows[i..j].iter().cloned());
+        }
+        i = j;
+    }
+    out
+}
+
 impl Types {
+    /// What the struct of type `id` (resolved) at `addr` is, if it is one
+    /// a value names (arch's): a task, comm(pid); an open file, where it
+    /// is; a dentry, its name.
+    fn label(&self, mem: &dyn Memory, id: u32, addr: u32) -> Option<String> {
+        let is = |name: &str| self.find(name).map(|t| self.resolve(t)) == Some(id);
+        let at = |s: &str, f: &str| self.field(s, f).map(|(off, _)| mem.read_u32(addr.wrapping_add(off)));
+        if is(arch::TASK) {
+            return self.read_task(mem, addr).map(|t| format!("{}({})", t.comm, t.pid));
+        }
+        if is(arch::FILE) {
+            let (d, m, i) = arch::FILE_FIELDS;
+            return Some(self.path(mem, at(arch::FILE, d)?, at(arch::FILE, m)?, at(arch::FILE, i)?));
+        }
+        if is(arch::DENTRY.0) {
+            return Some(String::from_utf8_lossy(&c_str(mem, at(arch::DENTRY.0, arch::DENTRY.1)?, 256)).into_owned());
+        }
+        None
+    }
+
+    /// Where the dentry `dentry` in the mount whose vfsmount is at
+    /// `vfsmount` is: its names up to the top mount's root ("/mnt/note.txt").
+    /// One that is no place's (its own parent, with no name: a pipe's), as
+    /// Linux names it: its file system's type and its inode's number
+    /// ("pipefs:[12]").
+    fn path(&self, mem: &dyn Memory, dentry: u32, vfsmount: u32, inode: u32) -> String {
+        let field = |s: &str, f: &str| self.field(s, f).map_or(0, |(off, _)| off);
+        let (d, name, parent, sb) = arch::DENTRY;
+        let (mount, mnt, mnt_parent, mountpoint) = arch::MOUNT;
+        let name_of = |d_: u32| String::from_utf8_lossy(&c_str(mem, mem.read_u32(d_.wrapping_add(field(d, name))), 256)).into_owned();
+        let (mut at, mut m) = (dentry, vfsmount.wrapping_sub(field(mount, mnt)));
+        let mut parts: Vec<String> = Vec::new();
+        // (Guards: a tree read from memory as it was may be torn.)
+        for _ in 0..64 {
+            let up = mem.read_u32(at.wrapping_add(field(d, parent)));
+            if up != at && up != 0 {
+                parts.push(name_of(at));
+                at = up;
+                continue;
+            }
+            // (A file system's root: on in the mount it is mounted on, if any.)
+            let above = mem.read_u32(m.wrapping_add(field(mount, mnt_parent)));
+            if above == m || above == 0 {
+                break;
+            }
+            (at, m) = (mem.read_u32(m.wrapping_add(field(mount, mountpoint))), above);
+        }
+        if parts.is_empty() && name_of(dentry).is_empty() {
+            let (sup, s_type, fs_type, fs_name) = arch::SUPER;
+            let ty = mem.read_u32(mem.read_u32(dentry.wrapping_add(field(d, sb))).wrapping_add(field(sup, s_type)));
+            let fs = String::from_utf8_lossy(&c_str(mem, mem.read_u32(ty.wrapping_add(field(fs_type, fs_name))), 32)).into_owned();
+            return format!("{fs}:[{}]", mem.read_u32(inode.wrapping_add(field(arch::INODE_NO.0, arch::INODE_NO.1))));
+        }
+        parts.reverse();
+        format!("/{}", parts.join("/"))
+    }
+
     /// The value of type `ty` at `addr`, aggregates expanded `depth` deep.
     pub fn object(&self, mem: &dyn Memory, name: &str, addr: u32, ty: u32, depth: u32) -> Object {
         self.object_bits(mem, name, addr, ty, None, depth)
@@ -97,6 +171,7 @@ impl Types {
         };
         match &t.kind {
             Kind::Struct(_) | Kind::Union(_) => {
+                o.value = self.label(mem, id, addr);
                 if depth == 0 {
                     o.open = Some(Target { ty: id, addr });
                 } else {
@@ -116,6 +191,7 @@ impl Types {
                     let mut shown: Vec<Object> = (0..(*count).min(SHOWN)).map(|i| {
                         self.object_bits(mem, &format!("[{i}]"), addr + i * esize, *elem, None, depth - 1)
                     }).collect();
+                    shown = fold(shown);
                     // (Past the first SHOWN: a row saying how many more.)
                     if *count > SHOWN {
                         shown.push(Object { name: format!("[{SHOWN}…{}]", count - 1), ty: String::new(), addr: addr + SHOWN * esize, size: 0,
@@ -136,7 +212,12 @@ impl Types {
                 });
                 let target = self.resolve(*to);
                 match self.get(target).kind {
-                    Kind::Struct(_) | Kind::Union(_) if p != 0 && self.size_of(target) > 0 => o.open = Some(Target { ty: target, addr: p }),
+                    Kind::Struct(_) | Kind::Union(_) if p != 0 && self.size_of(target) > 0 => {
+                        o.open = Some(Target { ty: target, addr: p });
+                        if let Some(l) = self.label(mem, target, p) {
+                            o.value = Some(format!("{p:#x} → {l}"));
+                        }
+                    }
                     // (A pointer to a scalar: what it points to, in line: "0x7ffd8 → 0".)
                     Kind::Base(_) | Kind::Enum(_) | Kind::Pointer(_) if p != 0 && !self.is_string(*to) => {
                         let v = self.print(mem, p, *to, 0, 0);

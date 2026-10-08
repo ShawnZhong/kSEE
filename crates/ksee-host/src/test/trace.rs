@@ -74,7 +74,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let undone = |i: usize| m.view(|v| v.rec.stores().between(i + 1, usize::MAX).len());
     t.check("memory as it was: writes undone", undone(w.first) > undone(wlast));
     let in_write = m.first_call("vfs_write", w.first, wlast, Some(w.task.addr)).unwrap_or(0);
-    let comm = m.view(|v| v.task_fields(w.task.addr, in_write)).into_iter().find(|c| c.name == "comm").and_then(|c| c.value);
+    let comm = m.view(|v| v.task_fields(w.task.addr, in_write)).all.into_iter().find(|c| c.name == "comm").and_then(|c| c.value);
     t.check("the task, as it was", comm.as_deref() == Some("\"prog\""));
     let rq = m.at_moment(in_write, |v, mem| v.tables.types.globals.get("runqueues").map(|&(a, ty)| v.tables.types.object(mem, "runqueues", a, ty, 1)));
     t.check("a global", rq.is_some_and(|o| child(&o, "nr_running").is_some()));
