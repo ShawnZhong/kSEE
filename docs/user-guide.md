@@ -127,8 +127,9 @@ while it ran, and values changed and restored before the end. Each object is
 named from typed kernel data and arranged under an object that points to it.
 
 A member row shows its before and after values and the function that changed
-it. Click the row to move to that write. The tab intentionally omits a call's
-ordinary stack locals; those belong in Stack.
+it. Click the row to move just after that write (the next line, its value
+written). The tab intentionally omits a call's ordinary stack locals; those
+belong in Stack.
 
 ### Disk
 

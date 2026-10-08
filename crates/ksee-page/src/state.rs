@@ -285,19 +285,19 @@ impl Ui {
     }
 
     /// The moment at record `i` (in the chart: at its `step`), at level `level` there:
-    /// the run it is in, its line there (the last at or before it).
+    /// the run it is in, its line there. A step: the line it is. Else the
+    /// first line it has happened by (its memory after it, as a debugger
+    /// stops before a line: after a write, a disk's request, a call made);
+    /// none, the last.
     pub fn moment_at(i: usize, step: Option<usize>, level: Option<usize>) -> Option<Moment> {
-        let (run, own, first) = machine().view(|v| (v.rec.run_at(i), v.line_of(i), v.rec.first_step(i)));
+        let (run, first) = machine().view(|v| (v.rec.run_at(i), v.rec.first_step(i)));
         let run = run?;
-        // (A step: the line it is, its record's lines being its steps; a
-        // write, a comparison: its own line; a block: its first line; else
-        // the last before.)
-        let line = |lines: &[Line]| match (step, own) {
-            (Some(s), _) => lines.iter().position(|l| l.i == i).map(|p| p + s.saturating_sub(first)),
-            (None, Some((r, nth))) => lines.iter().rposition(|l| l.i == r && l.nth <= nth),
-            (None, None) => lines.iter().position(|l| l.i == i),
-        }.or_else(|| lines.iter().rposition(|l| l.i <= i)).unwrap_or(0);
-        let line = line(&Ui::run_lines(run));
+        let lines = Ui::run_lines(run);
+        let line = match step {
+            // (A step: its record's lines are its steps.)
+            Some(s) => lines.iter().position(|l| l.i == i).map(|p| p + s.saturating_sub(first)),
+            None => lines.iter().position(|l| l.at >= i),
+        }.unwrap_or(lines.len().saturating_sub(1));
         Some(Moment { run, line, level })
     }
 
