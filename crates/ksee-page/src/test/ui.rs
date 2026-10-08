@@ -72,9 +72,9 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     global_key("ArrowRight");
     wait(|| cursor() != before, 20, "the global → key", || format!("{} at {}", cursor(), place())).await?;
     // (Stepping: Next, in the function read, vfs_read, over its calls,
-    // each step somewhere else; In, every line, into the calls, each
-    // somewhere else too, and Shift+Back as far; In, into the call a line
-    // makes; Out, its caller at its call, and Next on there.)
+    // each step somewhere else, and Back as far; In, every line, into the
+    // calls, each somewhere else too; Out, its caller at its call, and Next
+    // on there.)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
     let at = place();
@@ -84,6 +84,11 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
         settle().await;
         over.push(place());
     }
+    for _ in 0..8 {
+        press("← Back");
+        settle().await;
+    }
+    let back = place();
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
     let mut next = vec![place()];
@@ -92,14 +97,9 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
         settle().await;
         next.push(place());
     }
-    for _ in 0..12 {
-        shift_press("← Back");
-        settle().await;
-    }
-    let back = place();
     let moved = |p: &[String]| p.windows(2).all(|w| w[0] != w[1]);
     check(over.iter().all(|p| p.starts_with("vfs_read")) && moved(&over) && moved(&next) && next.iter().any(|p| !p.starts_with("vfs_read")) && back == at,
-          "stepping: Next within the function; In, into the calls; Shift+Back; each step a move", (&over, &next, &back))?;
+          "stepping: Next within the function, Back as far; In, into the calls; each step a move", (&over, &next, &back))?;
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
     press("↓ Out");

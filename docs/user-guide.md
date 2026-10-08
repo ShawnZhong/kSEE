@@ -175,7 +175,6 @@ inlined into it) counts once.
 | Right, or → Next | The next line of the function you read, over what it calls; past its end, on in its caller. |
 | Left, or ← Back | The line before, the same way. |
 | Up, or ↑ In | The very next line, wherever it is: into the call this line makes (its first line), else on; with a caller's frame chosen, the frame above it. |
-| Shift+Left (or Shift-click ← Back) | The line before, wherever it is: Up's way back. |
 | Down, or ↓ Out | Out to the caller, at its call (Next then goes on there). |
 | Hover the chart | See the moment there everywhere (the source, the Stack, the tabs), the bar's call in a tip; leave, and the page is back at the cursor. |
 | Click the chart | Pin the cursor to the moment hovered. |
