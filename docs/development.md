@@ -64,6 +64,12 @@ dependency set, then runs it. `ksee build` performs these stages:
 Most stages ask their owning build system for dependency tracking. Smaller
 packing steps compare output and input modification times.
 
+The kernel and the images come out the same each time. The kernel says
+`7.2.7-ksee (ksee@ksee) #1` and the release's date (its tag's commit), not the
+tree's state (`-dirty`: the patch applied), the machine's user and host, or
+the clock. The initramfs's times are 0, and the disk's UUID and hash seed are
+fixed, its times the release's (`SOURCE_DATE_EPOCH`).
+
 ### LLVM selection
 
 LLVM 22, as [getting-started.md](getting-started.md#use-a-custom-llvm-22-build)
