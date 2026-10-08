@@ -120,9 +120,15 @@ value was copied, its earlier origins.
 
 The Tasks tab reconstructs the task tree at the cursor. It identifies the
 running task and labels others as runnable, sleeping, exited, or not yet
-created. Open a task to inspect its `task_struct` as memory was at that moment.
-A thread appears under its thread-group leader and a process under its parent
-when those relationships are available.
+created. A thread appears under its thread-group leader and a process under
+its parent when those relationships are available.
+
+Open a task (the running one is open) to see its open files: each fd, where
+its open file is (a path, or for a pipe `pipefs:[inode]`), its mode and
+position, and the other fds, here or in other tasks, that share it. A thread
+that shares its process's fd table says so. Click an fd for its `struct file`;
+the task's own `task_struct`, as memory was at that moment, is folded under
+them.
 
 ### Memory
 

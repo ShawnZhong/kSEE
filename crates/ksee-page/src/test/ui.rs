@@ -391,6 +391,10 @@ async fn panels(r: &mut Vec<String>) -> Result<(), String> {
     // among them.)
     let files: Vec<String> = all(".pane td.fval").iter().map(text).collect();
     check(files.iter().any(|f| f.starts_with("/note.txt · r")), "the running task's open files", &files)?;
+    // (An fd clicked: its struct file, its position among its fields.)
+    click(&all(".pane tr.opens").into_iter().find(|r| text(r).contains("/note.txt")).ok_or("no /note.txt row")?);
+    settle().await;
+    check(named(".pane td", "f_pos").is_some(), "an open file's struct file", all(".pane td.fname").iter().map(text).collect::<Vec<_>>())?;
     // (A task opened, then its task_struct.)
     let rows = all(".pane tr").len();
     click(&one(".pane tr.frame a").ok_or("no task")?);
@@ -478,7 +482,7 @@ pub(super) async fn tasks() -> Check {
     settle().await;
     tab("Tasks").await;
     let files: Vec<String> = all(".pane td.fval").iter().map(text).collect();
-    check(files.iter().filter(|f| f.starts_with("pipefs:[") && f.contains("the same open file as prog(")).count() == 2, "the pipe's ends, the child's too", &files)?;
+    check(files.iter().filter(|f| f.starts_with("pipefs:[") && f.contains("shared with") && f.contains("prog(")).count() == 2, "the pipe's ends, the child's too", &files)?;
     tab("Stack").await;
     // (The idle task, between the calls: a click on its bar, the cursor in
     // its run, as in any task's.)

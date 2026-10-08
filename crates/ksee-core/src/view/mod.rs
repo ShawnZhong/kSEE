@@ -159,11 +159,23 @@ impl View<'_> {
     /// The fields of the task at `addr`, as memory was after record `at`:
     /// the key ones first (arch::TASK_FIELDS), then the others as declared.
     pub fn task_fields(&self, addr: u32, at: usize) -> Vec<Object> {
-        let types = &self.tables.types;
-        let mem = self.rec.memory_at(self.now, at);
-        let mut fields = types.find(arch::TASK).and_then(|ty| types.object(&mem, arch::CURRENT, addr, ty, 1).children).unwrap_or_default();
+        let mut fields = self.fields(arch::CURRENT, arch::TASK, addr, at);
         fields.sort_by_key(|o| arch::TASK_FIELDS.iter().position(|&k| k == o.name).unwrap_or(usize::MAX));
         fields
+    }
+
+    /// The fields of the open file (a struct file) at `addr`, as memory
+    /// was after record `at`, as declared.
+    pub fn file_fields(&self, addr: u32, at: usize) -> Vec<Object> {
+        self.fields(arch::FILE, arch::FILE, addr, at)
+    }
+
+    /// The fields of `name`, the struct `ty` at `addr`, as memory was
+    /// after record `at`, as declared.
+    fn fields(&self, name: &str, ty: &str, addr: u32, at: usize) -> Vec<Object> {
+        let types = &self.tables.types;
+        let mem = self.rec.memory_at(self.now, at);
+        types.find(ty).and_then(|t| types.object(&mem, name, addr, t, 1).children).unwrap_or_default()
     }
 
     /// The tasks at record `i`: the kernel's, as its lists had them then
