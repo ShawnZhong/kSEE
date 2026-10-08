@@ -72,8 +72,8 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     global_key("ArrowRight");
     wait(|| cursor() != before, 20, "the global → key", || format!("{} at {}", cursor(), place())).await?;
     // (Stepping: Next, in the function read, vfs_read, over its calls,
-    // each step somewhere else; with Shift, every line, into the calls,
-    // each somewhere else too, and Back as far; In, into the call a line
+    // each step somewhere else; In, every line, into the calls, each
+    // somewhere else too, and Shift+Back as far; In, into the call a line
     // makes; Out, its caller at its call, and Next on there.)
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
@@ -88,7 +88,7 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     settle().await;
     let mut next = vec![place()];
     for _ in 0..12 {
-        shift_press("→ Next");
+        press("↑ In");
         settle().await;
         next.push(place());
     }
@@ -99,23 +99,7 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     let back = place();
     let moved = |p: &[String]| p.windows(2).all(|w| w[0] != w[1]);
     check(over.iter().all(|p| p.starts_with("vfs_read")) && moved(&over) && moved(&next) && next.iter().any(|p| !p.starts_with("vfs_read")) && back == at,
-          "stepping: Next within the function; with Shift, into the calls; Back; each step a move", (&over, &next, &back))?;
-    // (In: from the first line making a call, into it.)
-    click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
-    settle().await;
-    let mut into = None;
-    for _ in 0..40 {
-        let here = place();
-        press("↑ In");
-        settle().await;
-        if place() != here {
-            into = Some((here, place()));
-            break;
-        }
-        press("→ Next");
-        settle().await;
-    }
-    check(into.as_ref().is_some_and(|(_, p)| !p.starts_with("vfs_read")), "In: into the call a line makes", &into)?;
+          "stepping: Next within the function; In, into the calls; Shift+Back; each step a move", (&over, &next, &back))?;
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
     press("↓ Out");
@@ -219,7 +203,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let edge = || drew("data-test-now").and_then(|n| n.parse::<f64>().ok());
     let mut seen = Vec::new();
     for _ in 0..200 {
-        shift_press("→ Next");
+        press("↑ In");
         settle().await;
         if let Some(n) = edge() { seen.push(n.round()) }
     }
@@ -241,7 +225,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let hover = (now() - t0) / 30.0;
     let t0 = now();
     for _ in 0..20 {
-        shift_press("→ Next");
+        press("↑ In");
         sleep(0).await;
     }
     let step = (now() - t0) / 20.0;
@@ -491,7 +475,7 @@ pub(super) async fn responsive() -> Check {
     let (sw, cw) = (src.scroll_width(), src.client_width());
     check(sw > cw, "the source scrolls sideways", (sw, cw))?;
     let at = place();
-    shift_press("→ Next");
+    press("↑ In");
     settle().await;
     Ok(format!("{at} → {}", place()))
 }

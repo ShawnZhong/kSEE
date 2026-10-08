@@ -16,9 +16,10 @@ use crate::state::{Derived, Moment, Tab, Ui};
 /// A move of the moment read. Step: to the line after (`dir` 1) or before
 /// (-1) in the function you read (the frame chosen; else the innermost),
 /// over what it calls, on in its caller once it returns; `every`, the very
-/// next line wherever it is (into the calls). In: up the stack, the frame
-/// above chosen; at the innermost, into the call its line makes. Out: down
-/// it, the caller chosen, at its call. (A step reads the innermost frame
+/// next (or last) line wherever it is, into the calls. In: up the stack,
+/// the frame above chosen; at the innermost, the very next line (into the
+/// call its line makes, if it makes one). Out: down it, the caller chosen,
+/// at its call. (A step reads the innermost frame
 /// it lands in: the frame chosen is one the cursor is not in yet.)
 #[derive(Clone, Copy)]
 pub enum Move {
@@ -40,14 +41,8 @@ pub fn walk(ui: Ui, d: Derived, m: Move) {
     let dir = match m {
         Move::Out if f + 1 < n => return ui.commit(read(f + 1)),
         Move::In if f > 0 => return ui.commit(read(f - 1)),
-        // (The line's call: the very next line, deeper.)
-        Move::In => {
-            if let Some(j) = step(&lines, at.line, 1, None).filter(|&j| lines[j].depth > depth) {
-                ui.commit(Some(Moment { run: k, line: j, level: None }));
-            }
-            return;
-        }
         Move::Out => return,
+        Move::In => return walk(ui, d, Move::Step { dir: 1, every: true }),
         Move::Step { dir, every } => {
             if let Some(j) = step(&lines, at.line, dir, (!every).then_some(depth)) {
                 return ui.commit(Some(Moment { run: k, line: j, level: None }));
@@ -71,8 +66,8 @@ pub fn walk(ui: Ui, d: Derived, m: Move) {
 }
 
 /// Under the strip: the moves (Move), with their keys as their icons: ←
-/// Back and → Next in time (Shift: every line), ↑ In and ↓ Out on the
-/// stack; and where the cursor is: the frame you read (chosen on the Stack
+/// Back and → Next in the function read (Shift+←: every line back, as ↑
+/// goes on), ↑ In and ↓ Out on the stack; and where the cursor is: the frame you read (chosen on the Stack
 /// or the chart; else the innermost).
 #[component]
 pub fn Transport() -> Element {
@@ -93,9 +88,10 @@ pub fn Transport() -> Element {
         div { class: "transport",
             button { title: "The line before in the function you read (←; with Shift: the line before, wherever it is)",
                 onclick: move |e| walk(ui, d, Move::Step { dir: -1, every: e.modifiers().shift() }), "← Back" }
-            button { title: "The next line in the function you read, over what it calls (→; with Shift: the very next line, into the calls)",
-                onclick: move |e| walk(ui, d, Move::Step { dir: 1, every: e.modifiers().shift() }), "→ Next" }
-            button { title: "Into the call this line makes; or the frame above, chosen (↑)", onclick: move |_| walk(ui, d, Move::In), "↑ In" }
+            button { title: "The next line in the function you read, over what it calls (→)",
+                onclick: move |_| walk(ui, d, Move::Step { dir: 1, every: false }), "→ Next" }
+            button { title: "The very next line, into the call this line makes, if any (↑; with a caller's frame chosen: the frame above)",
+                onclick: move |_| walk(ui, d, Move::In), "↑ In" }
             button { title: "Out to the caller, at its call (↓)", onclick: move |_| walk(ui, d, Move::Out), "↓ Out" }
             span { class: "where mono dim", "{place}{turn}{returned}" }
         }
@@ -125,7 +121,7 @@ pub fn listen(ui: Ui) {
             let up = matches!(*ui.kernel.peek(), Some(Ok(())));
             let arrow = match e.key().as_str() {
                 "ArrowLeft" if up => { walk(ui, d, Move::Step { dir: -1, every: e.shift_key() }); true }
-                "ArrowRight" if up => { walk(ui, d, Move::Step { dir: 1, every: e.shift_key() }); true }
+                "ArrowRight" if up => { walk(ui, d, Move::Step { dir: 1, every: false }); true }
                 // (Up and down: the stack, as the Stack and the chart have
                 // it, the callers below.)
                 "ArrowUp" if up => { walk(ui, d, Move::In); true }
