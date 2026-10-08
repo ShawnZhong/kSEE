@@ -105,15 +105,18 @@ fn run_of_call(ui: Ui, n: usize) -> Option<usize> {
 
 /// Follow link `target` of the lesson's text: `N` (its call N selected),
 /// `N:func` (the cursor at func's first line in it), and a tab to show
-/// (`:stack`, `:memory`, `:tasks`, `:console`); `try:N`, its program made
-/// instead.
+/// (`:stack`, `:memory`, `:tasks`, `:console`, `:disk`); a tab alone;
+/// `try:N`, its program made instead.
 fn follow(mut ui: Ui, target: LessonTarget) {
-    let LessonTarget::Recording { call, function, any_task, tab } = target else {
-        let LessonTarget::Try { index } = target else { unreachable!() };
-        if let Some(t) = lessons()[(ui.lesson)()].tries.get(index - 1) {
-            ui.program.set(t.clone());
+    let (call, function, any_task, tab) = match target {
+        LessonTarget::Recording { call, function, any_task, tab } => (call, function, any_task, tab),
+        LessonTarget::Tab(tab) => return ui.tab.set(tab),
+        LessonTarget::Try { index } => {
+            if let Some(t) = lessons()[(ui.lesson)()].tries.get(index - 1) {
+                ui.program.set(t.clone());
+            }
+            return;
         }
-        return;
     };
     let Some((k, line)) = resolve(ui, call, function.as_deref(), any_task) else { return };
     ui.select(k);
@@ -330,7 +333,7 @@ pub(crate) fn ParagraphView(
     (ui.snapshot)();
     let live = |to: &LessonTarget| match to {
         LessonTarget::Recording { call, function, any_task, .. } => ui.up() && resolve(ui, *call, function.as_deref(), *any_task).is_some(),
-        LessonTarget::Try { .. } => true,
+        LessonTarget::Try { .. } | LessonTarget::Tab(_) => true,
     };
     rsx! {
         p {

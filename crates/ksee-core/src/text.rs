@@ -31,6 +31,8 @@ impl LessonTab {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum LessonTarget {
     Try { index: usize },
+    /// A tab, whatever the recording has.
+    Tab(LessonTab),
     Recording {
         call: usize,
         function: Option<String>,
@@ -40,8 +42,11 @@ pub enum LessonTarget {
 }
 
 impl LessonTarget {
-    /// Parse `N`, `N:function[:any][:tab]`, `N:tab`, or `try:N`.
+    /// Parse `N`, `N:function[:any][:tab]`, `N:tab`, `tab`, or `try:N`.
     pub fn parse(target: &str) -> Option<Self> {
+        if let Some(tab) = LessonTab::parse(target) {
+            return Some(Self::Tab(tab));
+        }
         let mut parts = target.split(':');
         let first = parts.next()?;
         if first == "try" {
@@ -126,6 +131,7 @@ mod tests {
             ("2:vfs_read:any:tasks", Recording { call: 2, function: Some("vfs_read".into()), any_task: true, tab: Some(Tasks) }),
             ("2:console", Recording { call: 2, function: None, any_task: false, tab: Some(Console) }),
             ("try:3", Try { index: 3 }),
+            ("console", Tab(Console)),
         ] {
             assert_eq!(LessonTarget::parse(text), Some(target), "{text}");
         }

@@ -31,6 +31,7 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
                 let Piece::Link { label, to } = x else { continue };
                 let found = match to {
                     Some(LessonTarget::Try { index }) => lesson.tries.get(index - 1).is_some(),
+                    Some(LessonTarget::Tab(_)) => true,
                     Some(LessonTarget::Recording { call, function, any_task, .. }) => {
                         let s = calls.get(call - 1).copied().flatten().and_then(|id| t.syscall(id));
                         s.as_ref().is_some_and(|s| function.as_ref().is_none_or(|f|

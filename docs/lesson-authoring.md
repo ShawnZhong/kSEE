@@ -57,6 +57,7 @@ Lesson paragraphs use Markdown-like inline code and links parsed by
 | `[changed data](2:memory)` | Select call 2 and open Memory. |
 | `[the stack](2:vfs_read:stack)` | Move into the function and open Stack. |
 | `[wake stack](2:try_to_wake_up:any:stack)` | Find the function on any task and open Stack. |
+| `[the console](console)` | Open Console, whatever the recording has. |
 | `[try it](try:1)` | Run `tries[0]` instead of the lesson program. |
 
 Call and try numbers are one-based and must be positive. The reserved tab
