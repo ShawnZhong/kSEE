@@ -5,8 +5,7 @@
 /*
  * Signals whose default action is to stop or kill are handled in
  * get_signal(). Running a user handler needs a way to call into the user
- * module; until then such a signal kills the task. A syscall one
- * interrupted, and did not kill, is made again (syscall.c's restart).
+ * module; until then such a signal kills the task.
  */
 void arch_do_signal_or_restart(struct pt_regs *regs)
 {

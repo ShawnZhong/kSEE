@@ -27,26 +27,6 @@ const syscall_fn_t sys_call_table[__NR_syscalls] = {
 #include <asm/syscall_table_32.h>
 };
 
-/*
- * Whether a syscall a signal interrupted is made again: still -ERESTART*
- * once the signal is dealt with (no handler ran: there are none, see
- * signal.c), as a port whose user code re-issues it would. One with a
- * restart block goes on in restart_syscall.
- */
-static bool restart(struct pt_regs *regs)
-{
-	switch (regs->ret) {
-	case -ERESTART_RESTARTBLOCK:
-		regs->syscall_nr = __NR_restart_syscall;
-		fallthrough;
-	case -ERESTARTNOHAND:
-	case -ERESTARTSYS:
-	case -ERESTARTNOINTR:
-		return true;
-	}
-	return false;
-}
-
 noinline long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2, u64 a3, u64 a4,
 			   u64 a5)
 {
@@ -54,20 +34,18 @@ noinline long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2, u64 a3, u64 a4,
 	void (*entry)(void) = current->thread.entry;
 
 	*regs = (struct pt_regs){ .args = { a0, a1, a2, a3, a4, a5 }, .syscall_nr = nr };
-	do {
-		nr = syscall_enter_from_user_mode(regs, regs->syscall_nr);
-		if (nr >= 0 && nr < __NR_syscalls && sys_call_table[nr])
-			regs->ret = sys_call_table[nr](regs);
-		else if (nr != -1)
-			regs->ret = sys_ni_syscall();
-		/*
-		 * After an execve, the new program runs instead, on a fresh
-		 * stack (the old program's frames are never returned to).
-		 */
-		if (current->thread.entry != entry)
-			wasm_restart_task(current, task_stack_top(current));
-		syscall_exit_to_user_mode(regs);
-	} while (restart(regs));
+	nr = syscall_enter_from_user_mode(regs, nr);
+	if (nr >= 0 && nr < __NR_syscalls && sys_call_table[nr])
+		regs->ret = sys_call_table[nr](regs);
+	else if (nr != -1)
+		regs->ret = sys_ni_syscall();
+	/*
+	 * After an execve, the new program runs instead, on a fresh stack
+	 * (the old program's frames are never returned to).
+	 */
+	if (current->thread.entry != entry)
+		wasm_restart_task(current, task_stack_top(current));
+	syscall_exit_to_user_mode(regs);
 	return regs->ret;
 }
 
