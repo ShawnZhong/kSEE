@@ -389,18 +389,17 @@ async fn panels(r: &mut Vec<String>) -> Result<(), String> {
     tab("Tasks").await;
     // (The running one, open: its open files, the file the program read
     // among them.)
-    let files: Vec<String> = all(".pane td.fval").iter().map(text).collect();
-    check(files.iter().any(|f| f.starts_with("/note.txt · r")), "the running task's open files", &files)?;
+    let files: Vec<String> = all(".files td.file").iter().map(text).collect();
+    check(files.iter().any(|f| f == "/note.txt"), "the running task's open files", &files)?;
     // (An fd clicked: its struct file, its position among its fields.)
-    click(&all(".pane tr.opens").into_iter().find(|r| text(r).contains("/note.txt")).ok_or("no /note.txt row")?);
+    click(&all(".files tr.opens").into_iter().find(|r| text(r).contains("/note.txt")).ok_or("no /note.txt row")?);
     settle().await;
     check(named(".pane td", "f_pos").is_some(), "an open file's struct file", all(".pane td.fname").iter().map(text).collect::<Vec<_>>())?;
-    // (A task opened, then its task_struct.)
+    // (Another task selected, then its task_struct.)
     let rows = all(".pane tr").len();
-    click(&one(".pane tr.frame a").ok_or("no task")?);
+    click(&all(".tasks .task").into_iter().last().ok_or("no task")?);
     settle().await;
-    let raw = all(".pane tr.opens").into_iter().find(|r| text(r).starts_with("▸ task_struct")).ok_or("no task_struct row")?;
-    click(&raw);
+    click(&one(".detail .toggle").ok_or("no task_struct toggle")?);
     settle().await;
     let opened = all(".pane tr").len();
     check(opened > rows + 5 && named(".pane td", "comm").is_some(), "a task_struct opened", (rows, opened))?;
@@ -480,7 +479,7 @@ pub(super) async fn tasks() -> Check {
     let _ = all("ol.lines .cell textarea").get(6).ok_or("no seventh line")?.dyn_ref::<HtmlElement>().map(|t| t.focus());
     settle().await;
     tab("Tasks").await;
-    let files: Vec<String> = all(".pane td.fval").iter().map(text).collect();
+    let files: Vec<String> = all(".files td.file").iter().map(text).collect();
     check(files.iter().filter(|f| f.starts_with("pipefs:[")).count() == 2, "the pipe's ends", &files)?;
     tab("Stack").await;
     // (The idle task, between the calls: a click on its bar, the cursor in
