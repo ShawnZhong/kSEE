@@ -186,6 +186,10 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     }
     let leaps: Vec<_> = seen.windows(2).filter(|w| w[0] - w[1] > b.width() / 4.0).collect();
     check(leaps.is_empty(), "stepping slides the window along", (&leaps, seen.len()))?;
+    // (Back in vfs_read, by the lesson's link: the window has moved since.)
+    click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
+    settle().await;
+    let (x, y) = bar(&canvas, "vfs_read").map(|(bx, by)| (b.left() + bx, b.top() + by)).ok_or("no vfs_read bar")?;
     mouse(&chart, "click", x, y, false);
     settle().await;
     // (How long a hover takes, the page drawn again: 30 moves across the chart.)

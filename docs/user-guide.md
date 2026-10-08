@@ -60,16 +60,17 @@ the cursor there. The task strip below the chart shows which task ran in each re
 (the idle task gray). The cursor is a cross: down, its moment; across, its
 frame's level.
 
-A lesson's run shows whole; after zooming in, **all** restores the full
-recording.
+The chart opens on the selected call (a lesson's subject, or a line of the
+program you choose), with a little on each side; **all** shows the whole
+recording. Moving the cursor past the window's edge slides the window along;
+a jump to another call centers it there.
 
 ### Zoom and pan
 
 - Turn the wheel vertically to zoom around the pointer.
 - Scroll horizontally, or hold Shift while using a vertical wheel, to pan.
 - Drag the chart to pan directly.
-- Drag the overview window by clicking where the current-width window should
-  move.
+- Click the overview where the window, as wide as it is, should move.
 
 The wheel-window calculation lives in `ksee-core`, so native tests cover the
 interaction math separately from the WebAssembly page.

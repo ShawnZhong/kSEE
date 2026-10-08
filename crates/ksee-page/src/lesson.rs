@@ -94,8 +94,6 @@ pub(crate) async fn make_program(mut ui: Ui, lines: Vec<Statement>) {
         Some(to) => follow(ui, to),
         None => if let Some(k) = run_of_call(ui, calls) { ui.select(k) },
     }
-    // (A new run: the timeline the whole of it.)
-    ui.win.set(None);
 }
 
 /// The run (an index in the runs) of the program's call `n` (from 1), if the recording has it.
