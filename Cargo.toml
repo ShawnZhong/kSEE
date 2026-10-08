@@ -8,6 +8,17 @@ default-members = ["crates/ksee-core", "crates/ksee-cli"]
 edition = "2024"
 publish = false
 
+# (Each version once: wasm-bindgen's, the library's, and its CLI's, the
+# pack's, must be the same, exactly.)
+[workspace.dependencies]
+ksee-core = { path = "crates/ksee-core" }
+ksee-host = { path = "crates/ksee-host" }
+wasm-bindgen = "=0.2.128"
+wasm-bindgen-cli-support = "=0.2.128"
+wasm-bindgen-futures = "0.4.78"
+js-sys = "0.3.105"
+web-sys = "0.3.105"
+
 [profile.release]
 opt-level = "s"
 lto = true

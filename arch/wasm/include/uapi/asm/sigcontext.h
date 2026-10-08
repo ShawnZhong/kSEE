@@ -2,10 +2,11 @@
 #ifndef _UAPI_ASM_WASM_SIGCONTEXT_H
 #define _UAPI_ASM_WASM_SIGCONTEXT_H
 
-#include <asm/ptrace.h>
-
+/*
+ * Every port has one (a signal handler's frame holds it); wasm has no user
+ * registers to save in it, only the signal mask.
+ */
 struct sigcontext {
-	struct pt_regs regs;
 	unsigned long oldmask;
 };
 
