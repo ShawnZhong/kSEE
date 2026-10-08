@@ -65,8 +65,9 @@ Call and try numbers are one-based and must be positive. The reserved tab
 suffixes are `stack`, `memory`, `tasks`, `disk`, and `console`; `any` is valid only
 after a function name. Call numbers count syscall lines only, so declarations
 do not increment them. Malformed targets fail lesson self-test validation.
-A try keeps the lesson prose visible, but recording links are disabled because
-the alternative program may have different calls.
+A try keeps the lesson prose visible. A link into the recording stays a link
+while the recording has where it goes (its call, and its function in that call),
+whatever program made it; otherwise it is shown dimmed.
 
 Use backticks for inline kernel names, paths, values, and code. Keep each
 paragraph focused on what the linked point demonstrates.

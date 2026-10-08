@@ -434,12 +434,11 @@ async fn program() -> Result<(), String> {
 }
 
 /// The page opened with a program changed (the URL's p=): its lines made,
-/// said to be a try, and the lesson's own program a click away.
+/// and the lesson's own program a click away.
 pub(super) async fn url() -> Check {
     wait(|| done(2), 300, "the program made", || format!("{:?}", cells())).await?;
-    let note = one(".explain.dim").map(|n| text(&n)).unwrap_or_default();
     let c = cells();
-    check(c.len() == 2 && c[1].1 == "= 9" && note.contains("not the lesson's own program") && one(".ptitle a").is_some(), "not back", (&c, &note))?;
+    check(c.len() == 2 && c[1].1 == "= 9" && one(".ptitle a").is_some(), "not back", &c)?;
     // (The header's link to the source it was built from: the page's head says which.)
     let source = one("a.build").and_then(|a| a.get_attribute("href")).unwrap_or_default();
     check(source.contains("/tree/"), "the source link", &source)?;

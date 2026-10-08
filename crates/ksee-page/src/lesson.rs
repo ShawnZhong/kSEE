@@ -116,20 +116,25 @@ fn follow(mut ui: Ui, target: LessonTarget) {
         }
         return;
     };
-    let Some(k) = run_of_call(ui, call) else { return };
+    let Some((k, line)) = resolve(ui, call, function.as_deref(), any_task) else { return };
     ui.select(k);
-    if let Some(func) = function {
-        // (The call's lines and syscall now: the memos have them as they were.)
-        let m = machine();
-        let (lines, s) = (Ui::run_lines(k), m.view(|v| v.run(k)));
-        let at = s.and_then(|s| m.first_call(&func, s.first, s.last, (!any_task).then_some(s.task.addr)));
-        if let Some(at) = at && let Some(j) = lines.iter().position(|l| l.i >= at) {
-            ui.go(j);
-        }
+    if let Some(j) = line {
+        ui.go(j);
     }
     if let Some(tab) = tab {
         ui.tab.set(tab);
     }
+}
+
+/// Where a link into the recording goes, if the recording has it: call
+/// `call`'s run, and in it `func`'s first line (on any task's, `any_task`).
+fn resolve(ui: Ui, call: usize, func: Option<&str>, any_task: bool) -> Option<(usize, Option<usize>)> {
+    let k = run_of_call(ui, call)?;
+    let Some(func) = func else { return Some((k, None)) };
+    let m = machine();
+    let s = m.view(|v| v.run(k))?;
+    let at = m.first_call(func, s.first, s.last, (!any_task).then_some(s.task.addr))?;
+    Some((k, Some(Ui::run_lines(k).iter().position(|l| l.i >= at)?)))
 }
 
 #[component]
@@ -167,9 +172,8 @@ pub fn LessonPane() -> Element {
         p { class: "question", "{lesson.question}" }
         // (A try: the lesson's text still shown, its call links no longer apply.)
         div { class: "explain", for p in lesson.text.iter() {
-            ParagraphView { pieces: text::pieces(p), stale: !mine, follow: move |target| follow(ui, target) }
+            ParagraphView { pieces: text::pieces(p), follow: move |target| follow(ui, target) }
         } }
-        if !mine { p { class: "explain dim", "A try, not the lesson's own program." } }
         div { class: "ptitle dim", "Program"
             if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| ui.open_lesson(at), "↺ reset" } }
         }
@@ -297,14 +301,21 @@ fn later(during: Option<usize>) -> String {
     during.map_or(String::new(), |j| format!(" (during line {})", j + 1))
 }
 
-/// A parsed lesson paragraph. Recording links are disabled when the lesson's
-/// program is stale; try links remain available.
+/// A parsed lesson paragraph. A link into the recording is one while the
+/// recording has where it goes (the program changed, maybe); try links
+/// always.
 #[component]
 pub(crate) fn ParagraphView(
     pieces: Vec<Piece>,
-    stale: bool,
     follow: EventHandler<LessonTarget>,
 ) -> Element {
+    let ui = use_context::<Ui>();
+    // (Read again as the recording grows.)
+    (ui.snapshot)();
+    let live = |to: &LessonTarget| match to {
+        LessonTarget::Recording { call, function, any_task, .. } => ui.up() && resolve(ui, *call, function.as_deref(), *any_task).is_some(),
+        LessonTarget::Try { .. } => true,
+    };
     rsx! {
         p {
             for piece in pieces {
@@ -312,7 +323,7 @@ pub(crate) fn ParagraphView(
                     Piece::Text(text) => rsx! { "{text}" },
                     Piece::Code(code) => rsx! { code { "{code}" } },
                     Piece::Link { label, to, .. } => match to {
-                        Some(to) if !(stale && matches!(to, LessonTarget::Recording { .. })) => {
+                        Some(to) if live(&to) => {
                             let class = match &to {
                                 LessonTarget::Try { .. } => "try",
                                 LessonTarget::Recording { function: Some(_), .. } => "place mono",
