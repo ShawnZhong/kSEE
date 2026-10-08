@@ -56,7 +56,13 @@ impl Timeline {
 
     /// The tasks' spans that overlap steps `a..b`.
     pub fn tasks_in(&self, a: f64, b: f64) -> &[(usize, usize, u32)] {
-        within(&self.tasks, a, b)
+        &self.tasks[self.task_range(a, b)]
+    }
+
+    /// Which of the tasks' spans overlap steps `a..b`: their indexes.
+    pub fn task_range(&self, a: f64, b: f64) -> core::ops::Range<usize> {
+        let i = self.tasks.partition_point(|s| s.1 as f64 <= a);
+        i..self.tasks.partition_point(|s| (s.0 as f64) < b).max(i)
     }
 
     /// How many rows steps `a..b` stack.

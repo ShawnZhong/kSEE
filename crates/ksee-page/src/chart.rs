@@ -268,10 +268,10 @@ fn draw_chart(
     let foreground = foreground();
     task_ctx.set_font("10px ui-monospace, SFMono-Regular, Menlo, monospace");
     task_ctx.set_text_baseline("middle");
-    let k0 = chart.tasks.len() - chart.tasks.iter().rev().take_while(|s| s.1 as f64 > a).count();
-    for (k, &(s0, s1, _)) in chart.tasks_in(a, b).iter().enumerate() {
+    for k in chart.task_range(a, b) {
+        let (s0, s1, _) = chart.tasks[k];
         let (x0, x1) = place(s0, s1);
-        let (name, color) = &tasks[k0 + k];
+        let (name, color) = &tasks[k];
         task_ctx.set_fill_style_str(color);
         task_ctx.fill_rect(x0, 0.0, (x1 - x0 - 1.0).max(1.0), TASK_LANE);
         let (v0, v1) = (x0.max(0.0), x1.min(width));
@@ -349,7 +349,7 @@ fn draw_chart(
         attr("found", Some(found_count.to_string()));
         attr("now", now.map(|n| n.to_string()));
         attr("reach", Some(format!("{},{}", reach.0, reach.1)));
-        let names: Vec<&str> = chart.tasks_in(a, b).iter().enumerate().map(|(k, _)| tasks[k0 + k].0.as_str()).collect();
+        let names: Vec<&str> = chart.task_range(a, b).map(|k| tasks[k].0.as_str()).collect();
         attr("tasks", Some(names.join("\n")));
     }
 }
@@ -420,8 +420,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
     let (b, labels, task_labels) = (a + span, std::collections::BTreeSet::new(), tasks.read().clone());
     let labels: Vec<String> = (0..chart.depth(a, b)).flat_map(|d| chart.spans(d, a, b).iter().map(|s| chart.bars[s.2 as usize].name.clone()))
         .fold(labels, |mut set, n| { set.insert(n); set }).into_iter().collect();
-    let k0 = chart.tasks.len() - chart.tasks.iter().rev().take_while(|s| s.1 as f64 > a).count();
-    let task_labels: Vec<String> = (0..chart.tasks_in(a, b).len()).map(|k| task_labels[k0 + k].0.clone()).collect();
+    let task_labels: Vec<String> = chart.task_range(a, b).map(|k| task_labels[k].0.clone()).collect();
     rsx! {
         div { id: "timeline-chart", class: "chart",
             onresize: move |e| if let Ok(s) = e.get_content_box_size() { width.set(s.width.max(1.0)) },
