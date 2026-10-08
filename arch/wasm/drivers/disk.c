@@ -59,7 +59,7 @@ static int __init wasm_disk_init(void)
 	struct gendisk *disk;
 	int err;
 
-	if (!wasm_disk_sectors())
+	if (!wasm_machine.disk_sectors)
 		return 0;
 	wasm_disk_set.ops = &wasm_disk_ops;
 	wasm_disk_set.nr_hw_queues = 1;
@@ -76,7 +76,7 @@ static int __init wasm_disk_init(void)
 	disk->flags |= GENHD_FL_NO_PART;
 	disk->fops = &wasm_disk_fops;
 	strscpy(disk->disk_name, "wda");
-	set_capacity(disk, wasm_disk_sectors());
+	set_capacity(disk, wasm_machine.disk_sectors);
 	err = add_disk(disk);
 	if (err) {
 		put_disk(disk);

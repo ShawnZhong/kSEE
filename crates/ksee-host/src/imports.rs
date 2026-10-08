@@ -1,7 +1,6 @@
 //! The kernel's imports (arch/wasm/include/asm/wasm.h).
 //!
-//! Frequent ones (time, the console, command line, memory_end, the disk;
-//! and sched.rs's spawn_task) are exports of this module, so the
+//! Frequent ones (time, the console, the disk; and sched.rs's spawn_task) are exports of this module, so the
 //! kernel calls them directly. The rest need JS objects (promises,
 //! programs' modules) and are closures reached through wasm-bindgen: the
 //! tasks' (sched.rs's switch_task, idle and restart_task, and halt here,
@@ -40,24 +39,6 @@ pub extern "C" fn console_read(buf: u32, len: u32) -> u32 {
     bytes.len() as u32
 }
 
-/// Copy the command line (NUL-terminated) to `buf`.
-#[unsafe(no_mangle)]
-pub extern "C" fn get_cmdline(buf: *mut u8, len: u32) -> u32 {
-    state(|s| {
-        let n = s.cmdline.len().min(len as usize - 1);
-        unsafe {
-            core::ptr::copy_nonoverlapping(s.cmdline.as_ptr(), buf, n);
-            *buf.add(n) = 0;
-        }
-        n as u32
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn memory_end() -> u32 {
-    RAM_BYTES
-}
-
 /// The kernel's clock (ns): virtual (see State::clock), a tick on at
 /// each read.
 #[unsafe(no_mangle)]
@@ -69,11 +50,6 @@ pub extern "C" fn time_ns() -> u64 {
 }
 
 // ---- The disk (arch/wasm/drivers/disk.c) ------------------------------------------
-
-#[unsafe(no_mangle)]
-pub extern "C" fn disk_sectors() -> u64 {
-    state(|s| s.disk.len() as u64 / 512)
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn disk_submit(tag: u32, sector: u64, buf: u32, len: u32, write: u32) {
@@ -167,8 +143,7 @@ pub fn kernel() -> Object {
     let export = |name: &str| js::get(&rt, name);
 
     let kernel = Object::new();
-    for name in ["console_write", "console_read", "get_cmdline", "memory_end", "time_ns", "spawn_task",
-                 "disk_sectors", "disk_submit", "disk_done"] {
+    for name in ["console_write", "console_read", "time_ns", "spawn_task", "disk_submit", "disk_done"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "switch_task", sched::suspending(Closure::<dyn FnMut(u32, u32, u32) -> Promise>::new(sched::switch_task).into_js_value()));
@@ -179,9 +154,6 @@ pub fn kernel() -> Object {
         crate::machine::settle(Some(format!("the kernel halted ({code})")));
         sched::never()
     }).into_js_value()));
-    js::set(&kernel, "print_stack", Closure::<dyn FnMut()>::new(|| {
-        web_sys::console::log_1(&js::get(&js_sys::Error::new("kernel stack"), "stack"));
-    }).into_js_value());
     js::set(&kernel, "user_load", Closure::<dyn FnMut(u32, u32) -> i32>::new(user_load).into_js_value());
     js::set(&kernel, "user_start", Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(user_start).into_js_value());
     js::set(&kernel, "clone_user", Closure::<dyn FnMut(u32, u32)>::new(clone_user).into_js_value());

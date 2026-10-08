@@ -2,12 +2,9 @@
 #include <linux/printk.h>
 #include <linux/sched.h>
 #include <linux/sched/debug.h>
-#include <asm/wasm.h>
 
-/* The wasm call stack is only visible to the host. */
+/* A wasm call stack cannot be walked from inside: none to show. */
 void show_stack(struct task_struct *task, unsigned long *sp,
 		const char *loglvl)
 {
-	if (!task || task == current)
-		wasm_print_stack();
 }

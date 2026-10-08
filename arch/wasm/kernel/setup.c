@@ -25,16 +25,18 @@ __wasm_export(boot_stack) void *wasm_boot_stack(void)
 	return task_stack_top(&init_task);
 }
 
+struct wasm_machine wasm_machine;
+
 /* Entry point: the boot CPU, which becomes init_task/idle. */
 __wasm_export(boot) void wasm_boot(void)
 {
-	wasm_get_cmdline(boot_command_line, COMMAND_LINE_SIZE);
+	strscpy(boot_command_line, wasm_machine.cmdline, COMMAND_LINE_SIZE);
 	start_kernel();
 }
 
 void __init setup_arch(char **cmdline_p)
 {
-	phys_addr_t mem_end = wasm_memory_end();
+	phys_addr_t mem_end = wasm_machine.memory_end;
 
 	*cmdline_p = boot_command_line;
 	register_console(&wasm_console);

@@ -178,20 +178,25 @@ every write's recording for nothing.
 The kernel's memory is the host runtime's (the kernel imports it; not
 shared: one thread). `CONFIG_WASM_HOST_MEMORY` (16 MiB) at its bottom
 belongs to the runtime, its static data and stack; the kernel image is
-linked above it. RAM ends where the host says (`memory_end`: 64 MiB, see
-ksee-host's state.rs); the host puts the initramfs at its top and passes `initrd=`
+linked above it. RAM ends where the host says (`wasm_machine.memory_end`:
+64 MiB, see ksee-host's state.rs); the host puts the initramfs at its top and passes `initrd=`
 on the command line. Memory above RAM is the host's heap.
 
 ## The host interface
 
 All of it is in arch/wasm/include/asm/wasm.h (and the Makefile's
-`--export`s):
+`--export`s). What the machine is (its memory's end, the disk's size, the
+command line) is memory, not calls: the host writes `struct wasm_machine`
+before it calls `boot`. The calls are what memory cannot be: the clock (a
+read advances it), devices served at once (a console write's bytes are the
+program's until it returns; a disk request's moment is the Disk tab's),
+and switching stacks and loading programs:
 
 | | The kernel imports (module `kernel`) | The kernel exports |
 |---|---|---|
-| Boot and memory | `get_cmdline`, `memory_end` | `boot_stack`, `boot` |
-| Time, the console | `time_ns`, `console_write`, `console_read`, `print_stack`, `halt` | |
+| Boot and memory | | `boot_stack`, `boot`, `wasm_machine` |
+| Time, the console | `time_ns`, `console_write`, `console_read`, `halt` | |
 | Tasks (JSPI: `switch_task`, `idle`, `restart_task` suspend) | `spawn_task`, `clone_user`, `switch_task`, `restart_task`, `idle` | `task_entry`, `user_entry`, `__stack_pointer`, `__current_task` |
 | Programs | `user_load`, `user_start` | `syscall` |
-| Interrupts, the disk | `disk_sectors`, `disk_submit`, `disk_done` | `wasm_irq_pending`, `wasm_timer_deadline` |
+| Interrupts, the disk | `disk_submit`, `disk_done` | `wasm_irq_pending`, `wasm_timer_deadline` |
 | The trace ([recording.md](recording.md)) | | `ksee_trace` (the ring), `ksee_bulk`, `ksee_record` |

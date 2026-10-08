@@ -33,15 +33,20 @@ unsigned int wasm_console_read(char *buf, unsigned int len);
 extern struct console wasm_console;
 void wasm_console_interrupt(void);
 
-__wasm_import(get_cmdline)
-unsigned int wasm_get_cmdline(char *buf, unsigned int len);
-
 /*
- * End of RAM: the kernel uses linear memory below this. (The host may grow
- * the memory beyond it for itself.)
+ * The machine, as the host says it, written before it calls boot (setup.c;
+ * ksee-host's machine.rs, the same layout): the end of RAM (the kernel uses
+ * linear memory below it; the host may grow the memory beyond it for
+ * itself), the disk's size in 512-byte sectors (0: none), and the command
+ * line.
  */
-__wasm_import(memory_end)
-unsigned long wasm_memory_end(void);
+struct wasm_machine {
+	u32 memory_end;
+	u32 pad;
+	u64 disk_sectors;
+	char cmdline[512];
+};
+extern struct wasm_machine wasm_machine;
 
 /* The host's clock, in nanoseconds: monotonic, and virtual (see time.c). */
 __wasm_import(time_ns)
@@ -84,10 +89,6 @@ void wasm_switch_task(struct task_struct *prev, struct task_struct *next, bool d
 __wasm_import(idle)
 void wasm_idle(void);
 
-/* The call stack, as the host sees it, on its console (traps.c's show_stack). */
-__wasm_import(print_stack)
-void wasm_print_stack(void);
-
 /* Stop the machine. Does not return. */
 __wasm_import(halt)
 void __noreturn wasm_halt(int code);
@@ -111,13 +112,10 @@ unsigned long wasm_user_start(unsigned long base, unsigned long top,
 			      unsigned long *clone_entry);
 
 /*
- * The disk (drivers/disk.c): its size, in 512-byte sectors (0: none); a
- * transfer handed to it, for the request tagged @tag, @len bytes at
+ * The disk (drivers/disk.c): a transfer handed to it, for the request tagged @tag, @len bytes at
  * @sector to (or, @write, from) @buf, made when the CPU next idles; and
  * the next request it has done (WASM_IRQ_DISK), its tag, or -1: none left.
  */
-__wasm_import(disk_sectors)
-u64 wasm_disk_sectors(void);
 __wasm_import(disk_submit)
 void wasm_disk_submit(unsigned int tag, u64 sector, void *buf, unsigned int len, bool write);
 __wasm_import(disk_done)

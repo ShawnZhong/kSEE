@@ -99,6 +99,15 @@ impl Machine {
         if global("__global_base") != KERNEL_BASE {
             return Err(format!("the kernel starts at {:#x}, not KERNEL_BASE ({KERNEL_BASE:#x}): build both alike", global("__global_base")).into());
         }
+        // (The machine, as the kernel reads it as it boots: its struct
+        // wasm_machine, asm/wasm.h's.)
+        let at = global("wasm_machine");
+        let line: Vec<u8> = state(|s| s.cmdline.iter().copied().take(511).chain([0]).collect());
+        unsafe {
+            *(at as *mut u32) = RAM_BYTES;
+            *((at + 8) as *mut u64) = self.disk.len() as u64 / 512;
+            core::ptr::copy_nonoverlapping(line.as_ptr(), (at + 16) as *mut u8, line.len());
+        }
         let trace = global("ksee_trace");
         let (current, pending, deadline) = (global("__current_task"), global("wasm_irq_pending"), global("wasm_timer_deadline"));
         // (Nothing of a machine before it but its command line, and the ids of
