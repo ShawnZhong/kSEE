@@ -19,9 +19,9 @@ later row wakes it.
 
 Programs with more than one task use a task column for each. The dotted part
 of a column means that task is still blocked. Edit a row in place or add a row at the
-bottom. Press Enter to run the entire changed program on a fresh kernel; to
-remove a row, empty it and press Enter. An invalid row explains why and does
-not run.
+bottom. A row changed runs the entire program again on a fresh kernel, as
+you press Enter or click away from it; to remove a row, empty it. An invalid
+row explains why and does not run.
 
 Explanatory links can select a syscall, move directly to a function it called,
 switch a detail tab, or run a prepared alternative program. Use **reset** to

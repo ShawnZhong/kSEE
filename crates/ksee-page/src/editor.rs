@@ -27,9 +27,9 @@ fn below_focus() -> Option<String> {
 }
 
 /// Line `line` of the program (the names it sees are the lines' before
-/// it), starting as `text`; `done(text)` as Enter makes it (empty: the
-/// line removed), unless the Machine says it cannot be made; `focus`, as
-/// it gets the focus.
+/// it), starting as `text`; `done(text)` as Enter makes it, or as it loses
+/// the focus (empty: the line removed), if it changed, unless the Machine
+/// says it cannot be made; `focus`, as it gets the focus.
 #[component]
 pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: String, done: EventHandler<String>, #[props(default)] focus: EventHandler<()>) -> Element {
     let mut draft = use_signal(|| text.clone());
@@ -38,6 +38,8 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
     let mut open = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
     let mut place = use_signal(String::new);
+    // (The text last made: a line unchanged is not made again.)
+    let mut made = use_signal(|| text.clone());
     // (The Machine's, once the kernel is up.)
     let up = use_context::<crate::state::Ui>().up();
     let items: Vec<Completion> = if open() && up { machine().complete(&draft(), at(), line, crate::lesson::common()) } else { Vec::new() };
@@ -63,13 +65,24 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
     };
     let items2 = items.clone();
     let original = text.clone();
+    // (Made, if it changed and can be; else why not, said.)
+    let mut apply = move || {
+        let t = draft().trim().to_string();
+        if t == *made.peek() {
+            return;
+        }
+        match if t.is_empty() { Ok(()) } else if !up { Err("the kernel is starting".into()) } else { machine().can_make(task.as_deref(), &t, line) } {
+            Ok(()) => { made.set(t.clone()); done.call(t); }
+            Err(why) => error.set(Some(why)),
+        }
+    };
     rsx! {
         div { class: "editor",
             textarea { class: "mono", rows: 1, value: "{draft}", placeholder: "{placeholder}", spellcheck: false, autocomplete: "off",
                 oninput: move |e| { draft.set(e.value()); at.set(cursor().unwrap_or(e.value().len())); place.set(below_focus().unwrap_or_default()); open.set(true); error.set(None); },
                 onclick: move |_| at.set(cursor().unwrap_or(0)),
                 onfocus: move |_| { place.set(below_focus().unwrap_or_default()); open.set(true); focus.call(()); },
-                onblur: move |_| open.set(false),
+                onblur: { let mut apply = apply.clone(); move |_| { open.set(false); apply(); } },
                 onkeydown: move |e| {
                     let key = e.key();
                     if shown && (key == Key::ArrowDown || key == Key::ArrowUp) {
@@ -83,11 +96,8 @@ pub fn Editor(text: String, task: Option<String>, line: usize, placeholder: Stri
                         take(items2[sel_now].clone());
                     } else if key == Key::Enter {
                         e.prevent_default();
-                        let t = draft().trim().to_string();
-                        match if t.is_empty() { Ok(()) } else if !up { Err("the kernel is starting".into()) } else { machine().can_make(task.as_deref(), &t, line) } {
-                            Ok(()) => { open.set(false); done.call(t); }
-                            Err(why) => error.set(Some(why)),
-                        }
+                        open.set(false);
+                        apply();
                     } else if key == Key::Escape {
                         draft.set(original.clone());
                         open.set(false);

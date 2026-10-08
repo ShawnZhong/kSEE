@@ -434,11 +434,13 @@ async fn program() -> Result<(), String> {
 }
 
 /// The page opened with a program changed (the URL's p=): its lines made,
-/// and the lesson's own program a click away.
+/// the text's links still links, and the lesson's own program a click away.
 pub(super) async fn url() -> Check {
     wait(|| done(2), 300, "the program made", || format!("{:?}", cells())).await?;
     let c = cells();
     check(c.len() == 2 && c[1].1 == "= 9" && one(".ptitle a").is_some(), "not back", &c)?;
+    // (Its text's links into the recording: still links, where the recording has them.)
+    wait(|| named(".explain a", "ksys_write").is_some(), 100, "a link, the program changed", || all(".explain a").iter().map(text).collect::<Vec<_>>().join(", ")).await?;
     // (The header's link to the source it was built from: the page's head says which.)
     let source = one("a.build").and_then(|a| a.get_attribute("href")).unwrap_or_default();
     check(source.contains("/tree/"), "the source link", &source)?;
