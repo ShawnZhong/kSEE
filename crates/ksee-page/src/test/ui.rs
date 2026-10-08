@@ -468,6 +468,9 @@ pub(super) async fn url() -> Check {
     wait(|| done(2), 300, "the program made", || format!("{:?}", cells())).await?;
     let c = cells();
     check(c.len() == 2 && c[1].1 == "= 9" && one(".ptitle a").is_some(), "not back", &c)?;
+    // (The tab's title, the lesson's, as its page's own.)
+    let (title, h1) = (doc().title(), one("h1").map(|h| text(&h)).unwrap_or_default());
+    check(title == format!("{h1} — kSEE"), "the title, the lesson's", (&title, &h1))?;
     // (Its text's links into the recording: still links, where the recording has them.)
     wait(|| named(".explain a", "ksys_write").is_some(), 100, "a link, the program changed", || all(".explain a").iter().map(text).collect::<Vec<_>>().join(", ")).await?;
     // (The header's link to the source it was built from: the page's head says which.)

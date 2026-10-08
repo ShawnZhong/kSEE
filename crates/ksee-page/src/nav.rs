@@ -40,7 +40,7 @@ pub fn from_url(ui: Ui) {
     }
 }
 
-/// The URL, as the lesson and its program are.
+/// The URL and the title, as the lesson and its program are.
 pub(crate) fn to_url(k: usize, program: &[ProgramLine]) {
     let Some(lesson) = lessons().get(k) else { return };
     let p = if program == lesson.program { String::new() } else {
@@ -48,6 +48,10 @@ pub(crate) fn to_url(k: usize, program: &[ProgramLine]) {
     };
     if let Some(h) = web_sys::window().and_then(|w| w.history().ok()) {
         let _ = h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&format!("{}.html{p}", lesson.name)));
+    }
+    // (The title, as that page's own: the lesson's, as the build writes it, lessons.rs.)
+    if let Some(d) = crate::document() {
+        d.set_title(&format!("{} — kSEE", lesson.title));
     }
 }
 
