@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use js_sys::{Promise, Uint8Array, WebAssembly};
 use ksee_core::recording::Recording;
 use ksee_core::tables::Tables;
-use ksee_core::program::{lower, statement, Arg, Expr, Lowered, Outcome, ProgramVar, Request, Runner, Statement, Sym};
+use ksee_core::program::{lower, Arg, Lowered, Outcome, ProgramVar, Request, Runner, Sym};
 use ksee_core::{trace, Memory};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -196,15 +196,8 @@ impl Machine {
                 state_mut(|s| s.session.names.set(&d.name, line, Sym::Var { addr, ty: d.ty, count: d.count }));
                 Made::Decl(ProgramVar { name: d.name, addr, ty: d.ty, count: d.count, bytes: d.bytes.len() as u32 })
             }
-            Lowered::Call { nr, args, result } => {
-                // (What it names: the variables it may change, see quiet.)
-                let said = match statement(text) {
-                    Ok(Statement::Call { call, args, .. }) =>
-                        (call, args.into_iter().map(|a| match a { Expr::Name(n) => Some(n), _ => None }).collect()),
-                    _ => Default::default(),
-                };
-                Made::Call(call(tid, nr, &args, line, result, said)?)
-            }
+            // (What it names: the variables it may change, see quiet.)
+            Lowered::Call { nr, args, result, said } => Made::Call(call(tid, nr, &args, line, result, said)?),
         };
         state_mut(|s| s.session.lines = line + 1);
         Ok(made)

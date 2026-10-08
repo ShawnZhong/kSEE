@@ -42,11 +42,11 @@ impl Machine {
     }
 
     /// Where a lesson's link goes: function `func`'s first call in one of
-    /// `calls` (the program's, in order: each its syscall's name and its
-    /// id), the `n`th named `name` if `call` says (else the first call that
-    /// ran it); on the call's own task, else on any (one it woke, a kernel
-    /// thread). Its run and record.
-    pub fn find(&self, calls: &[(String, u32)], call: Option<(&str, usize)>, func: &str) -> Option<(usize, usize)> {
+    /// the program's calls, in order, the `n`th named `name` (its syscall's)
+    /// if `call` says (else the first call that ran it); on the call's own
+    /// task, else on any (one it woke, a kernel thread). Its run and record.
+    pub fn find(&self, call: Option<(&str, usize)>, func: &str) -> Option<(usize, usize)> {
+        let calls: Vec<(String, u32)> = state(|s| s.session.calls.values().map(|c| (c.said.0.clone(), c.id)).collect());
         let runs: Vec<usize> = match call {
             Some((name, n)) => calls.iter().filter(|c| c.0 == name).nth(n.checked_sub(1)?).and_then(|c| self.run_of_call_id(c.1)).into_iter().collect(),
             None => calls.iter().filter_map(|c| self.run_of_call_id(c.1)).collect(),

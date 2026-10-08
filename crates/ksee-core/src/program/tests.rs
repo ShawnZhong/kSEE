@@ -213,7 +213,7 @@ fn a_line_is_lowered_to_what_it_makes() {
     let lower = |text: &str| super::lower(text, &t, &env);
     // A call: its number, its arguments, its result's name and type.
     match lower("int fd = getpid()").unwrap() {
-        Lowered::Call { nr, args, result } => {
+        Lowered::Call { nr, args, result, .. } => {
             assert_eq!((nr, args, result), (3, Vec::new(), Some(("fd".to_string(), None))));
         }
         l => panic!("{l:?}"),

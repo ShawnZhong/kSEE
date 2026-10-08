@@ -88,17 +88,11 @@ pub(crate) async fn make_program(mut ui: Ui, lines: Vec<ProgramLine>) {
     })).flatten();
     match linked {
         Some(to) => follow(ui, to),
-        None => if let Some(k) = calls(&ui.program.peek(), &ui.outcomes.peek()).last().and_then(|c| m.run_of_call_id(c.1)) { ui.select(k) },
+        None => {
+            let last = ui.outcomes.peek().iter().rev().find_map(|o| match o { Outcome::Call { id, .. } => Some(*id), _ => None });
+            if let Some(k) = last.and_then(|id| m.run_of_call_id(id)) { ui.select(k) }
+        }
     }
-}
-
-/// The program's calls, in order: each its syscall's name and its id
-/// (Machine::find), as `outcomes` has them.
-pub(crate) fn calls(program: &[ProgramLine], outcomes: &[Outcome]) -> Vec<(String, u32)> {
-    program.iter().zip(outcomes).filter_map(|(step, o)| match (statement(step.text()), o) {
-        (Ok(Statement::Call { call, .. }), Outcome::Call { id, .. }) => Some((call, *id)),
-        _ => None,
-    }).collect()
 }
 
 /// Follow link `target` of the lesson's text: a function's first call
@@ -127,8 +121,9 @@ fn follow(mut ui: Ui, target: LessonTarget) {
 /// run, and there `func`'s first line (Machine::find).
 fn resolve(ui: Ui, call: &Option<(String, usize)>, func: &str) -> Option<(usize, usize)> {
     let m = machine();
-    let calls = calls(&ui.program.read(), &ui.outcomes.read());
-    let (k, at) = m.find(&calls, call.as_ref().map(|(c, n)| (c.as_str(), *n)), func)?;
+    // (Read again as the program's outcomes change.)
+    let _ = ui.outcomes.read();
+    let (k, at) = m.find(call.as_ref().map(|(c, n)| (c.as_str(), *n)), func)?;
     Some((k, crate::state::run_lines(k).iter().position(|l| l.i >= at)?))
 }
 

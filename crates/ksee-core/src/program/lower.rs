@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 
 use super::eval::{Env, Eval};
 use super::layout::{Arg, Decl};
-use super::parse::{statement, Statement};
+use super::parse::{statement, Expr, Statement};
 use crate::types::Types;
 
 /// What a line of the program makes, checked.
@@ -17,8 +17,9 @@ use crate::types::Types;
 pub enum Lowered {
     Decl(Decl),
     /// (`result`: the name its result is declared with, and what a pointer
-    /// of its type points to, a type of the kernel's.)
-    Call { nr: u32, args: Vec<Arg>, result: Option<(String, Option<u32>)> },
+    /// of its type points to, a type of the kernel's; `said`: the syscall's
+    /// name, and the variable each argument names, if it is one.)
+    Call { nr: u32, args: Vec<Arg>, result: Option<(String, Option<u32>)>, said: (String, Vec<Option<String>>) },
 }
 
 /// Line `text` of the program, checked and lowered with the names `env`
@@ -37,6 +38,7 @@ pub fn lower(text: &str, types: &Types, env: &dyn Env) -> Result<Lowered, String
             if args.len() > params.len() {
                 return Err(format!("{call}: {} arguments, not {}", params.len(), args.len()));
             }
+            let named = args.iter().map(|a| match a { Expr::Name(n) => Some(n.clone()), _ => None }).collect();
             let args = args.iter().enumerate().map(|(k, a)| types.arg(a, params.get(k).map_or(0, |p| p.1), env))
                 .collect::<Result<Vec<_>, _>>()?;
             let result = match result {
@@ -46,7 +48,7 @@ pub fn lower(text: &str, types: &Types, env: &dyn Env) -> Result<Lowered, String
                 }
                 None => None,
             };
-            Lowered::Call { nr, args, result }
+            Lowered::Call { nr, args, result, said: (call, named) }
         }
     })
 }
