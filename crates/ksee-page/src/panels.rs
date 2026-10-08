@@ -17,19 +17,22 @@ use crate::state::{Derived, Tab, Ui};
 pub fn Tabs() -> Element {
     let mut ui = use_context::<Ui>();
     let tab = (ui.tab)();
-    let head = |t: Tab, label: &'static str, title: &'static str| {
+    // (By what they show: the cursor's moment; the call selected; the whole
+    // recording. A group's first, a line before it.)
+    let head = |t: Tab, label: &'static str, title: &'static str, first: bool| {
+        let class = format!("tab{}{}", if tab == t { " on" } else { "" }, if first { " group" } else { "" });
         rsx! {
-            a { class: if tab == t { "tab on" } else { "tab" }, title, onclick: move |_| ui.tab.set(t), "{label}" }
+            a { class, title, onclick: move |_| ui.tab.set(t), "{label}" }
         }
     };
     rsx! {
         div { class: "panels",
             nav { class: "tabs",
-                {head(Tab::Stack, "Stack", "the calls at the cursor, their values as they were then")}
-                {head(Tab::Tasks, "Tasks", "every task at the cursor: what each is doing, its task_struct")}
-                {head(Tab::Objects, "Objects", "the objects the run selected changed, and how they point to each other")}
-                {head(Tab::Disk, "Disk", "the disk's history: each transfer, for which task, and what it wrote; at the cursor's moment")}
-                {head(Tab::Console, "Console", "the kernel's log and the programs' output")}
+                {head(Tab::Stack, "Stack", "at the cursor: the calls, their values as they were then", false)}
+                {head(Tab::Tasks, "Tasks", "at the cursor: every task, what each is doing, its task_struct", false)}
+                {head(Tab::Objects, "Objects", "the run selected: the objects it changed, and how they point to each other", true)}
+                {head(Tab::Disk, "Disk", "the whole recording: each transfer, for which task, and what it wrote; the cursor's place in it", true)}
+                {head(Tab::Console, "Console", "the whole recording: the kernel's log and the programs' output", false)}
             }
             div { class: "pane",
                 match tab {

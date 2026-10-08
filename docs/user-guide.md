@@ -101,6 +101,12 @@ A sealed function is marked in the source header. Its call and return are
 recorded, but loop turns inside its body are intentionally omitted because it
 writes no reconstructible memory and makes no calls.
 
+### The tabs
+
+Beside the source, the tabs come in three groups, by what they show: the
+cursor's moment (Stack, Tasks), the call selected (Objects), and the whole
+recording (Disk, Console).
+
 ### Stack
 
 The Stack tab lists calls at the current moment at the bottom of the pane, the
@@ -131,7 +137,7 @@ A member row shows its before and after values and the function that changed
 it. Click the row to move to that write. Objects intentionally omit a call's
 ordinary stack locals; those belong in Stack.
 
-### Console
+### Disk
 
 The Disk tab is the disk's history (`/dev/wda`, the host's): every transfer
 it made, in the order the driver handed them over (the disk makes them first
@@ -152,6 +158,8 @@ memory then). The host notes each moment as it happens: the trace's position
 when the driver calls its `disk_submit`, and when the interrupt takes the
 request's tag (`disk_done`). The transfers handed over during the calls are
 listed: the boot's, and the kernel's own between calls (writeback), are not. A write shows the bytes it changed, a read the bytes it read.
+
+### Console
 
 The Console tab contains kernel log messages and program output accumulated
 for the current lesson run. The console is output-only.
