@@ -8,9 +8,8 @@
 // library: its syscalls as syscall.h makes them.
 #include "syscall.h"
 
-// A call, as the console gives it: its number and its arguments. The runner
-// makes it between begin and end (recorded from the one to the other), and
-// end gets the result.
+// A call, as the console gives it: its number and its arguments. The host
+// records it from the kernel's syscall entry to its return.
 struct request {
 	int nr;
 	int args[6];
@@ -26,10 +25,6 @@ static char heap[65536];
 // clone child's.)
 __attribute__((import_module("ksee"), import_name("ready")))
 void ksee_ready(char *heap, int size, int main);
-__attribute__((import_module("ksee"), import_name("begin")))
-void ksee_begin(void);
-__attribute__((import_module("ksee"), import_name("end")))
-void ksee_end(long long ret);
 
 // Make the page's calls, one at a time, as each comes on stdin.
 static void __attribute__((noreturn)) serve(int main)
@@ -40,10 +35,8 @@ static void __attribute__((noreturn)) serve(int main)
 	for (;;) {
 		if (sys(__NR_read, 0, &req, sizeof req) != sizeof req)
 			continue;
-		ksee_begin();
-		long long ret = sys(req.nr, req.args[0], req.args[1], req.args[2],
-				    req.args[3], req.args[4], req.args[5]);
-		ksee_end(ret);
+		sys(req.nr, req.args[0], req.args[1], req.args[2],
+		    req.args[3], req.args[4], req.args[5]);
 	}
 }
 

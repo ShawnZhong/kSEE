@@ -88,9 +88,10 @@ recording that may contain no preceding context switch; later task changes
 are inferred from kernel call and return records.
 
 Probes record from the program's first line (a declaration's write, or a
-call's `ksee.begin`, user/prog.c), at one of two levels, as the host says
+call's entry), at one of two levels, as the host says
 (`ksee_record`). `1`: everything, while a call the page asked for is under
-way (a runner between `ksee.begin` and `ksee.end`): the syscall, entry to
+way (from the kernel's `syscall_enter` to its `syscall_exit`, around
+`wasm_syscall`, arch/wasm/kernel/syscall.c): the syscall, entry to
 return, and whatever the kernel does meanwhile (other tasks it wakes or
 waits for, the journal, timers, the clock skipping in idle), from a `Task`
 record. `2`: stores only, between calls, so memory stays exact: the

@@ -222,10 +222,11 @@ impl Session {
         self.calls.insert(c.id, c);
     }
 
-    /// Runner `tid`'s call begins, at record `from`: whether it had not.
+    /// Runner `tid` enters a syscall, at record `from`: its call begins,
+    /// if it has read it and it had not. Whether it began.
     pub fn begin(&mut self, tid: u32, from: u32) -> bool {
         let Some(c) = self.in_flight(tid).and_then(|id| self.calls.get_mut(&id)) else { return false };
-        if c.begun.is_some() {
+        if !c.taken || c.begun.is_some() {
             return false;
         }
         c.begun = Some(from);
@@ -329,6 +330,9 @@ mod tests {
         let mut s = ready();
         let a = ask(&mut s, 10, 0, None);
         assert!(s.next_call(10).is_err(), "one call at a time");
+        // (Not begun by a syscall before its runner read it: the read itself.)
+        assert!(!s.begin(10, 6));
+        assert!(s.take(10).is_some());
         assert!(s.begin(10, 7) && !s.begin(10, 8));
         // (Another runner's call, the next line's, wakes it.)
         s.ready(20, 0x300, 0x2000, 0x100, false);

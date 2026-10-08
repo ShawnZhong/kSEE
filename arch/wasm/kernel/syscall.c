@@ -27,8 +27,8 @@ const syscall_fn_t sys_call_table[__NR_syscalls] = {
 #include <asm/syscall_table_32.h>
 };
 
-__wasm_export(syscall) long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2,
-					 u64 a3, u64 a4, u64 a5)
+noinline long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2, u64 a3, u64 a4,
+			   u64 a5)
 {
 	struct pt_regs *regs = current_pt_regs();
 	void (*entry)(void) = current->thread.entry;
@@ -54,6 +54,22 @@ __wasm_export(syscall) long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2,
 		wasm_restart_task(current, task_stack_top(current));
 	syscall_exit_to_user_mode(regs);
 	return regs->ret;
+}
+
+/*
+ * The syscall export: wasm_syscall, which the host is told of as it enters
+ * and returns, so its call and return are in the recording (__ksee_*: not
+ * itself instrumented).
+ */
+__wasm_export(syscall) long __ksee_syscall(long nr, u64 a0, u64 a1, u64 a2,
+					   u64 a3, u64 a4, u64 a5)
+{
+	long ret;
+
+	wasm_syscall_enter();
+	ret = wasm_syscall(nr, a0, a1, a2, a3, a4, a5);
+	wasm_syscall_exit(ret);
+	return ret;
 }
 
 SYSCALL_DEFINE6(mmap2, unsigned long, addr, unsigned long, len,

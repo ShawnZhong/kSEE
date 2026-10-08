@@ -29,6 +29,15 @@ void wasm_console_write(const char *buf, unsigned int len);
 __wasm_import(console_read)
 unsigned int wasm_console_read(char *buf, unsigned int len);
 
+/*
+ * A syscall from user mode enters, and returns @ret (syscall.c): the host
+ * records the calls the page asks for from the one to the other.
+ */
+__wasm_import(syscall_enter)
+void wasm_syscall_enter(void);
+__wasm_import(syscall_exit)
+void wasm_syscall_exit(long ret);
+
 /* The console the kernel prints on, and its input's interrupt (drivers/console.c). */
 extern struct console wasm_console;
 void wasm_console_interrupt(void);

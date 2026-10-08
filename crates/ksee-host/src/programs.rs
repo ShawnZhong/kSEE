@@ -188,13 +188,30 @@ pub(crate) fn finish(tid: u32, ret: Option<i64>) {
     }
 }
 
+/// syscall_enter: a syscall from user mode enters. A runner's, once it
+/// has read its call (see imports.rs's console_read), is that call: it is
+/// recorded from here (the records' id, which counts the words ever
+/// written: see trace::ring).
+pub(crate) fn syscall_enter() {
+    let tid = tid();
+    if state_mut(|s| s.session.begin(tid, Direct.read_u32(s.trace))) {
+        record();
+    }
+}
+
+/// syscall_exit: it returns `ret`: a runner's call, begun, is done.
+pub(crate) fn syscall_exit(ret: i32) {
+    let tid = tid();
+    if state(|s| s.session.begun(tid)) {
+        finish(tid, Some(ret.into()));
+    }
+}
+
 /// The imports of a runner (user/prog.c), module ksee. ready(heap, size,
 /// main): the current thread is a runner (the program's own, its main
 /// thread, if `main`: see Machine::main), reading its calls from the
 /// console (imports.rs's console_read); its program's own memory at `heap`
-/// (its variables and its calls' literals, see Machine::make). begin(),
-/// end(ret): around the call it makes: recorded from the one to the other;
-/// the result.
+/// (its variables and its calls' literals, see Machine::make).
 fn runner_imports() -> Object {
     let ksee = Object::new();
     js::set(&ksee, "ready", Closure::<dyn FnMut(u32, u32, u32)>::new(|heap: u32, size: u32, main: u32| {
@@ -206,21 +223,6 @@ fn runner_imports() -> Object {
                 s.waiting = Some(s.clock);
             }
         });
-    }).into_js_value());
-    js::set(&ksee, "begin", Closure::<dyn FnMut()>::new(|| {
-        let tid = tid();
-        // (Its recording starts here: the records' id, which counts the
-        // words ever written: see trace::ring.)
-        let begun = state_mut(|s| s.session.begin(tid, Direct.read_u32(s.trace)));
-        if begun {
-            record();
-        }
-    }).into_js_value());
-    js::set(&ksee, "end", Closure::<dyn FnMut(i64)>::new(|ret: i64| {
-        let tid = tid();
-        if state(|s| s.session.begun(tid)) {
-            finish(tid, Some(ret));
-        }
     }).into_js_value());
     ksee
 }

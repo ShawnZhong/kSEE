@@ -130,9 +130,11 @@ interrupt says has come. `ksee.ready(heap, size, main)` tells the host
 where the program's own memory is (a static array: the page's variables,
 and each call's strings and compound literals, which the host puts
 there); `main`: it is the program itself, the runner the page's calls go
-to unless they name another. It makes the syscall between `ksee.begin`
-and `ksee.end(ret)`, which bracket the recording (from the call's entry:
-the read before it is not in it) and carry the result, and reads again.
+to unless they name another. It makes the syscall, and reads again. The
+kernel's syscall export tells the host as a syscall enters and returns
+(`syscall_enter`, `syscall_exit(ret)`): a runner's first syscall after its
+read is its call, recorded from the one to the other (the read before it
+is not in it), with its result.
 So every syscall the page shows is a real process's, with its fds and its
 memory, and no syscall of this port's own. (A program that closes its fd
 0 can take no more calls.)
@@ -197,7 +199,8 @@ and switching stacks and loading programs:
 |---|---|---|
 | Boot and memory | | `boot_stack`, `boot`, `wasm_machine` |
 | Time, the console | `time_ns`, `console_write`, `console_read`, `halt` | |
+| Syscalls | `syscall_enter`, `syscall_exit` | `syscall` |
 | Tasks (JSPI: `switch_task`, `idle`, `restart_task` suspend) | `spawn_task`, `clone_user`, `switch_task`, `restart_task`, `idle` | `task_entry`, `user_entry`, `__stack_pointer`, `__current_task` |
-| Programs | `user_load`, `user_start` | `syscall` |
+| Programs | `user_load`, `user_start` | |
 | Interrupts, the disk | `disk_submit`, `disk_done` | (`wasm_machine`) |
 | The trace ([recording.md](recording.md)) | | `ksee_trace` (the ring), `ksee_bulk`, `ksee_record` |

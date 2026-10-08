@@ -118,9 +118,10 @@ selection is not part of the program expression language. See
 
 ## Recording boundaries
 
-The runner brackets its syscall with `ksee.begin` and `ksee.end(ret)`.
-While a call the page asked for is under way (a runner between its `begin`
-and its `end`), the kernel records everything (its `ksee_record(1)`
+The kernel tells the host as each syscall from user mode enters
+(`syscall_enter`) and returns (`syscall_exit(ret)`): a runner's first
+syscall after it read its call is that call. While a call the page asked
+for is under way (from its enter to its exit), the kernel records everything (its `ksee_record(1)`
 export): blocks, calls, returns, variables, comparisons, and stores, from a
 `Task` record naming the running `task_struct`, because no context switch
 in the recording necessarily identifies it. Between calls it records stores

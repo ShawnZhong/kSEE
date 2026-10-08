@@ -154,6 +154,8 @@ pub fn kernel() -> Object {
         crate::machine::settle(Some(format!("the kernel halted ({code})")));
         sched::never()
     }).into_js_value()));
+    js::set(&kernel, "syscall_enter", Closure::<dyn FnMut()>::new(crate::programs::syscall_enter).into_js_value());
+    js::set(&kernel, "syscall_exit", Closure::<dyn FnMut(i32)>::new(crate::programs::syscall_exit).into_js_value());
     js::set(&kernel, "user_load", Closure::<dyn FnMut(u32, u32) -> i32>::new(user_load).into_js_value());
     js::set(&kernel, "user_start", Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(user_start).into_js_value());
     js::set(&kernel, "clone_user", Closure::<dyn FnMut(u32, u32)>::new(clone_user).into_js_value());
