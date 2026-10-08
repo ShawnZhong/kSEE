@@ -1,14 +1,13 @@
 {
   "title": "Welcome to kSEE",
-  "question": "What is this page, and how do you use it?",
+  "question": "See what the Linux kernel does for a program.",
   "text": [
-    "kSEE shows what the Linux kernel does when a program asks it for something. The kernel is the program under all the others: it runs them, and they ask it for whatever they cannot do alone, as reading a file, printing, or starting another program. Each such request is a syscall.",
-    "Usually the kernel is out of sight. Here it is not: a real Linux runs in this browser tab, and records everything it does for each syscall, function by function and line by line, with the values in its memory. Then you go through that recording at your own pace, forwards and back, as with a debugger on a program that has already run.",
-    "The page has two halves. On the left, the lesson: a question, an explanation, and a small program, a syscall on each line. On the right, the recording of the program's calls: the timeline on top, the kernel's source under it, and on the side, tabs for the calls' values, the kernel's memory, its tasks, the disk and the console.",
-    "A link in an explanation goes to the moment it names. This program is one line, `write(1, \"hello\\n\", 6)`: it prints hello. Follow it to [the kernel writing to the console](1:console_dev_write): the source shows the line, the timeline marks the moment, and the output is in the [Console](1:console_dev_write:console) tab.",
-    "Change any program and run it again: each lesson starts the kernel afresh, so nothing you do can break anything, and ↺ reset brings the lesson's own program back. ☰ Lessons, at the top, lists every lesson; the link under each goes to the next. Some C helps; the kernel, the lessons explain as they go, from here to files, disks, processes and waiting."
+    "A real Linux runs in this tab. The program below asks it two things, each a syscall: `dup(1)` gives the console (fd 1) a second number, 3; `write(3, \"hello\\n\", 6)` prints through it.",
+    "The kernel recorded everything it did for them. Follow [the write to the console](2:console_dev_write), then step with the arrow keys.",
+    "Now change the program: click a line, edit it, and press Enter. Try `write(3, \"bye\\n\", 4)`."
   ],
   "program": [
-    "write(1, \"hello\\n\", 6)"
+    "dup(1)",
+    "write(3, \"hello\\n\", 6)"
   ]
 }
