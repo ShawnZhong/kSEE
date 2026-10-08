@@ -1,6 +1,6 @@
 # Lesson authoring
 
-Lessons live as JSON files in `user/lessons/`. The file stem is the lesson
+Lessons live as JSON files in `web/lessons/`. The file stem is the lesson
 name used in URLs and commands. The build reads each file the course lists,
 adds its name and chapter, and writes the ordered collection to
 `target/site/lessons.json`.

@@ -7,7 +7,7 @@
 //!   vmlinux.gz, src/       the kernel for the page (pack; target/vmlinux)
 //!   initramfs.cpio.gz, disk.img.gz
 //!                          the Makefile's target/initramfs/initramfs.cpio, disk.img
-//!   lessons.json, NAME.html the lessons (user/lessons/*.json): the page's, and
+//!   lessons.json, NAME.html the lessons (web/lessons/*.json): the page's, and
 //!                          a page of it each (see lessons.rs)
 //!
 //! (Gzipped by the build: hosts compress them less, or not at all; the

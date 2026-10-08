@@ -1,4 +1,4 @@
-//! The lessons (user/lessons/NAME.json), for the site: lessons.json, the
+//! The lessons (web/lessons/NAME.json), for the site: lessons.json, the
 //! page's; and the page for each, NAME.html (and index.html, the first's
 //! place): web/index.html with the lesson's title and description, and its
 //! text as plain HTML (#static), which a search engine or a link preview
@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use crate::build::SITE;
 
-/// The course: its chapters, each its lessons (user/lessons/NAME.json)
+/// The course: its chapters, each its lessons (web/lessons/NAME.json)
 /// in order, from the simplest.
 const COURSE: &[(&str, &[&str])] = &[
     ("Start here", &["welcome", "start", "timeline", "stepping", "changes", "layers"]),
@@ -23,14 +23,14 @@ const COURSE: &[(&str, &[&str])] = &[
     ("Your own", &["yours"]),
 ];
 
-/// lessons.json and the pages, from user/lessons/*.json (a file not in
+/// lessons.json and the pages, from web/lessons/*.json (a file not in
 /// the course is left out) and web/index.html.
 pub fn write() {
-    eprintln!("+ (lessons) user/lessons/*.json, web/index.html -> {SITE}/lessons.json, {SITE}/NAME.html");
+    eprintln!("+ (lessons) web/lessons/*.json, web/index.html -> {SITE}/lessons.json, {SITE}/NAME.html");
     let mut all: Vec<Value> = Vec::new();
     for &(chapter, names) in COURSE {
         for &name in names {
-            let path = format!("user/lessons/{name}.json");
+            let path = format!("web/lessons/{name}.json");
             let mut lesson: Value = crate::or_fail(serde_json::from_slice(&crate::read(Path::new(&path))), &path);
             lesson["name"] = json!(name);
             lesson["chapter"] = json!(chapter);

@@ -16,8 +16,8 @@ shape the code.
 | `crates/ksee-host/` | Browser host for the kernel: shared memory, JSPI task scheduling, programs, snapshots, and the `Machine` API. |
 | `crates/ksee-page/` | Dioxus UI built into the same WebAssembly module as the runtime. |
 | `crates/ksee-cli/` | Build, packing, test, browser driver, server, deployment, and patch commands. |
-| `user/` | Freestanding `/init`, syscall runner, headers, and lesson JSON. |
-| `web/` | Static frame, styles, and JavaScript loader. |
+| `user/` | What the kernel runs: freestanding `/init`, the syscall runner, their headers, the initramfs list, and the disk's files. |
+| `web/` | The page: its static frame, styles, and JavaScript loader (`index.html`), and the lessons (`lessons/*.json`). |
 | `target/site/` | Generated deployable site. |
 
 The crate dependencies are intentional:
@@ -54,7 +54,7 @@ dependency set, then runs it. `ksee build` performs these stages:
    DWARF-derived types, symbols, syscalls, constants, and declaration
    locations; copy referenced kernel sources; strip DWARF; and write
    `vmlinux.gz`, then `initramfs.cpio.gz` and `disk.img.gz`.
-3. Write the lessons (`lessons.rs`): `user/lessons/*.json` in course order
+3. Write the lessons (`lessons.rs`): `web/lessons/*.json` in course order
    into `lessons.json`, a page per lesson from `web/index.html`, and
    `sitemap.xml`.
 4. Build `ksee-page` for `wasm32-unknown-unknown` with `--locked --release`.
