@@ -118,18 +118,17 @@ value was copied, its earlier origins.
 
 ### Tasks
 
-The Tasks tab reconstructs the task tree at the cursor. It identifies the
-running task and labels others as runnable, sleeping, exited, or not yet
-created. A thread appears under its thread-group leader and a process under
-its parent when those relationships are available.
+The Tasks tab lists every task at the cursor, newest first (the program's,
+then the kernel's own): which is running, and the others runnable, sleeping,
+exited, or not yet created, each with what it is doing.
 
-Open a task (the running one is open) to see its open files: each fd, where
-its open file is (a path, or for a pipe `pipefs:[inode]`), its mode and
-position, and the `struct file`'s address (fds with the same address, here or
-in other tasks, stand for the same open file). A thread
-that shares its process's fd table says so. Click an fd for its `struct file`;
-the task's own `task_struct`, as memory was at that moment, is folded under
-them.
+Click a task (the running one, at first) for its details under its line: its
+open files, each fd with where its open file is (a path, or for a pipe
+`pipefs:[inode]`), its mode and position, and the `struct file`'s address (fds
+with the same address, here or in other tasks, stand for the same open file).
+A thread that shares its process's fd table says so. Click an fd for its
+`struct file`; the task's own `task_struct`, as memory was at that moment, is
+folded under them.
 
 ### Memory
 

@@ -90,17 +90,13 @@ pub struct Definition {
 }
 
 
-/// A task at a record: what the scheduler has it doing (`state`); its
-/// `last` record by then (None: it first runs after, or the recording
-/// never saw it run), and there what it is `doing`: the syscall it is in,
-/// else its outermost call (off the CPU, its innermost is always the
-/// switch).
+/// A task at a record: what the scheduler has it doing (`state`); what it
+/// is `doing` at its last record by then (none: it first runs after, or the
+/// recording never saw it run): the syscall it is in, else its outermost
+/// call (off the CPU, its innermost is always the switch); its fd table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskAt {
     pub task: Task,
-    /// The task it sits under (its task_struct's address): a thread, its
-    /// thread group's leader; a process, its parent.
-    pub up: Option<u32>,
     pub state: TaskState,
     pub doing: Option<String>,
     /// Its fd table (a files_struct's address: shared by the tasks that
@@ -187,7 +183,7 @@ impl View<'_> {
         // (The fields read, where they are: looked up once.)
         let offset = |s: &str, f: &str| t.types.field(s, f).map(|(off, _)| off);
         let of_task = |f: &str| offset(arch::TASK, f);
-        let (signal, on_rq, leader, parent, files) = (of_task(arch::TASK_SIGNAL.0), of_task(arch::TASK_ON_RQ), of_task(arch::TASK_LEADER), of_task(arch::TASK_PARENT), of_task(arch::TASK_FILES.0));
+        let (signal, on_rq, files) = (of_task(arch::TASK_SIGNAL.0), of_task(arch::TASK_ON_RQ), of_task(arch::TASK_FILES.0));
         let word = |addr: u32, off: Option<u32>| off.map(|off| mem.read_u32(addr.wrapping_add(off)));
         // (The kernel's: each process, then its threads, the leader among them.)
         let mut list: Vec<u32> = Vec::new();
@@ -233,10 +229,8 @@ impl View<'_> {
                 _ if on_rq => TaskState::Runnable,
                 _ => TaskState::Sleeping,
             };
-            let up = |off| word(addr, off).filter(|&p| p != 0 && p != addr);
             TaskAt {
                 task: self.task(addr, i),
-                up: up(leader).or_else(|| up(parent)),
                 files: word(addr, files).filter(|&f| f != 0 && listed),
                 state,
                 doing: last.and_then(|j| {

@@ -34,9 +34,6 @@ pub(crate) const TASK: &str = "task_struct";
 pub(crate) const CURRENT: &str = "current";
 pub(crate) const TASK_PID: &str = "pid";
 pub(crate) const TASK_COMM: &str = "comm";
-/// A task's parent, and its thread group's leader (itself, for a process).
-pub(crate) const TASK_PARENT: &str = "real_parent";
-pub(crate) const TASK_LEADER: &str = "group_leader";
 /// The kernel's tasks, as for_each_process_thread walks them: from
 /// init_task, each process by its `tasks` link, and each process's
 /// threads, its signal_struct's `thread_head` list, by their `thread_node`.

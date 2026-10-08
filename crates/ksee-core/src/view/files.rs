@@ -23,14 +23,12 @@ pub struct OpenFile {
 }
 
 impl View<'_> {
-    /// The fd tables `tables` (files_structs, TaskAt::files), as memory was
-    /// after record `at`: each its open files, by number.
-    pub fn open_files(&self, tables: &[u32], at: usize) -> Vec<Vec<OpenFile>> {
-        let mem = self.rec.memory_at(self.now, at);
-        tables.iter().map(|&t| self.table(&mem, t).unwrap_or_default()).collect()
+    /// The fd table `files` (a files_struct, TaskAt::files), as memory was
+    /// after record `at`: its open files, by number.
+    pub fn open_files(&self, files: u32, at: usize) -> Vec<OpenFile> {
+        self.table(&self.rec.memory_at(self.now, at), files).unwrap_or_default()
     }
 
-    /// Fd table `files`' open files.
     fn table(&self, mem: &dyn Memory, files: u32) -> Option<Vec<OpenFile>> {
         let t = &self.tables.types;
         let field = |s: &str, f: &str| t.field(s, f).map(|(off, _)| off);
