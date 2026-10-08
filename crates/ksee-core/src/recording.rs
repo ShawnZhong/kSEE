@@ -118,9 +118,10 @@ impl Recording {
         }
         let mut gaps = Vec::new();
         for (&task, at) in &mine {
+            // (One that ran code: a block; stores alone, a runner's wait, not.)
             let mut gap = |from: usize, to: usize| {
                 let (a, b) = (at.partition_point(|&i| i < from), at.partition_point(|&i| i < to));
-                if a < b {
+                if a < b && at[a..b].iter().any(|&i| matches!(records[i], Record::Block { .. })) {
                     gaps.push(Run { task, nr: None, ret: None, first: at[a], last: Some(at[b - 1]) });
                 }
             };

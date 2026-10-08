@@ -145,12 +145,11 @@ pub fn logged(addr: u32, len: u32) {
     });
 }
 
-/// The kernel's recording on, from now on, everything (once: a Task record
-/// first): the program's first line's, a declaration's write or a call's
-/// begin. The boot, before, is not recorded.
-pub fn record() {
+/// What the kernel records (see programs.rs's record): 1, everything,
+/// from a Task record naming `task`; 2, stores only.
+pub fn record(level: u32, task: u32) {
     WRITERS.with_borrow(|w| if let Some((_, record)) = w {
-        let _ = record.call0(&JsValue::NULL);
+        let _ = record.call2(&JsValue::NULL, &level.into(), &task.into());
     });
 }
 

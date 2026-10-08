@@ -120,12 +120,15 @@ selection is not part of the program expression language. See
 
 The runner brackets its syscall with `ksee.begin` and `ksee.end(ret)`.
 At the program's first line (a declaration's write, or a call's `begin`),
-the runtime turns the kernel's recording on (its `ksee_record` export), for
-good: it starts with a `Task` record naming the currently running
-`task_struct`, because no context switch inside the recording necessarily
-identifies it, and from then on records blocks, calls, returns, variables,
-comparisons, and stores, between the calls too. The boot, before, is not
-recorded. Host writes to kernel memory are logged by the kernel's
+the runtime turns the kernel's recording on (its `ksee_record` export): from
+then on it records blocks, calls, returns, variables, comparisons, and
+stores, between the calls too; but while a runner waits for its next call
+(from its `end` to its next `begin`: its futex, the program's machinery)
+stores only, so the wait is not shown and memory stays exact. The runtime
+says so at each task switch (programs.rs's `record`); each time everything
+is recorded again the kernel writes a `Task` record naming the task that
+runs, because no context switch in the recording says so. The boot, before,
+is not recorded. Host writes to kernel memory are logged by the kernel's
 `ksee_bulk` export before they are made, as its own bulk writes are, so
 historical memory stays coherent across request setup and program
 variables.

@@ -262,7 +262,7 @@ impl Machine {
 fn write_logged(addr: u32, bytes: &[u8]) {
     // (Recorded from the first write of the host's on, a variable declared
     // before any call: memory as it was exact from there.)
-    imports::record();
+    crate::programs::record(current());
     imports::logged(addr, bytes.len() as u32);
     unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), addr as *mut u8, bytes.len()) };
 }

@@ -59,6 +59,9 @@ pub struct State {
     pub console_out: Vec<u8>,
     /// The tasks to ring (WASM_IRQ_DOORBELL: see the kernel's irq.c).
     pub doorbell: VecDeque<u32>,
+    /// What the kernel records (see programs.rs's record): 0 until the
+    /// program's first line.
+    pub level: u32,
     /// The disk (arch/wasm/drivers/disk.c): its blocks; the transfers handed to
     /// it and not yet made, the tags of the
     /// requests done; and every transfer made (the Disk tab's).

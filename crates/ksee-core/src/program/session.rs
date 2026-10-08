@@ -105,6 +105,12 @@ impl Session {
         self.calls.values().all(|c| c.done)
     }
 
+    /// Whether the task at `task` is a runner waiting for its next call (no
+    /// call of its begun and not done).
+    pub fn waiting(&self, task: u32) -> bool {
+        self.runners.iter().any(|(&tid, r)| r.task == task && !self.calls.values().any(|c| c.tid == tid && c.begun && !c.done))
+    }
+
     /// The tasks of the calls not done.
     pub fn waiting_tasks(&self) -> Vec<u32> {
         self.calls.values().filter(|c| !c.done).map(|c| c.task).collect()

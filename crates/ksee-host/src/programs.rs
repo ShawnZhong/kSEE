@@ -163,6 +163,17 @@ pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
 
 // ---- Runners -----------------------------------------------------------------
 
+/// What the kernel records, `task` about to run: everything, but while a
+/// runner waits for its next call stores only (its wait, a futex, is the
+/// program's machinery, not its lines; memory stays exact); said to the
+/// kernel as it changes (full again: a Task record naming `task`).
+pub(crate) fn record(task: u32) {
+    let level = state(|s| if s.session.waiting(task) { 2 } else { 1 });
+    if state_mut(|s| std::mem::replace(&mut s.level, level)) != level {
+        crate::imports::record(level, task);
+    }
+}
+
 /// Finish runner `tid`'s call, if it has one (for Machine::quiet); the
 /// page waits no more once none is left.
 pub(crate) fn finish(tid: u32, ret: Option<i64>) {
@@ -191,6 +202,10 @@ fn runner_imports() -> Object {
                 s.waiting = Some(s.clock);
             }
         });
+        // (A runner now, waiting: a clone child's, recorded so from here.)
+        if state(|s| s.level) != 0 {
+            record(task);
+        }
     }).into_js_value());
     js::set(&ksee, "begin", Closure::<dyn FnMut()>::new(|| {
         let tid = tid();
@@ -198,13 +213,14 @@ fn runner_imports() -> Object {
         // words ever written: see trace::ring.)
         let begun = state_mut(|s| s.session.begin(tid, Direct.read_u32(s.trace)));
         if begun {
-            crate::imports::record();
+            record(current());
         }
     }).into_js_value());
     js::set(&ksee, "end", Closure::<dyn FnMut(i64)>::new(|ret: i64| {
         let tid = tid();
         if state(|s| s.session.begun(tid)) {
             finish(tid, Some(ret));
+            record(current());
         }
     }).into_js_value());
     ksee

@@ -94,7 +94,8 @@ locations, inline chains, frame offsets, syscalls, and constants.
 
 The kernel is not stopped for inspection. From the program's first line,
 probes append full events to a ring: the calls, and whatever the kernel does
-between and meanwhile (the boot, before, is not recorded). The runtime snapshots the ring when the machine is quiet.
+between and meanwhile; a runner's wait for its next call, stores only (the
+boot, before, is not recorded). The runtime snapshots the ring when the machine is quiet.
 
 `ksee-core` then combines three inputs:
 

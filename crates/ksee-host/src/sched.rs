@@ -156,6 +156,10 @@ pub fn switch_task(prev: u32, next: u32, dead: u32) -> Promise {
     }
     let sp = S.with_borrow(|s| s.sp.as_ref().and_then(|g| g.value().as_f64()).unwrap_or(0.0) as u32);
     crate::programs::switch_user(prev, next, dead != 0);
+    // (Recording, what `next` is to: see programs.rs's record.)
+    if state(|s| s.level) != 0 {
+        crate::programs::record(next);
+    }
     let back = if dead != 0 {
         S.with_borrow_mut(|s| s.tasks.remove(&prev));
         never()

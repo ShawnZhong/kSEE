@@ -67,7 +67,7 @@ one the ring has partly overwritten:
 | Head | Record |
 |---|---|
 | `[fn, 1<<28 \| n]` | block n of fn; block 0 is a call: its values its arguments, then its frame base |
-| `[task, 3<<28]` | the `task_struct` address running as the recording begins (once) |
+| `[task, 3<<28]` | the `task_struct` address running as everything is recorded again (after the boot, or a runner's wait) |
 | `[fn, 4<<28]` | a return from fn; its values the value (low, then high for one wider than 32 bits; none for a void function) |
 | `[lhs, 6<<28 \| line<<4 \| p]` | a comparison deciding a branch (or a select), on its block's line `line`: lhs, its values rhs (for 64-bit ones, then lhs's high word, rhs's); p its predicate (LLVM's icmp's, from eq) |
 | `[addr, 7<<28 \| line<<4 \| k]` | a store of 1<<k bytes at addr (k < 4), on its block's line `line` (its L line's items, `\|` apart, from 0; 20 bits); its values the old value (low, then high for 8 bytes), then, if it copies (a value loaded and stored as it is, a memcpy), where its bytes come from |
@@ -80,19 +80,23 @@ time because the kernel is uniprocessor.
 
 Block, return, comparison and variable records come from the LLVM
 pass's probes, store records from the writes they see, all written by
-`ksee.c`. Only the kernel writes its ring: at the program's first line, the
-runtime calls the kernel's `ksee_record` export, which turns the probes on
-and writes the `Task` record; and the host's own writes into kernel memory (a
+`ksee.c`. Only the kernel writes its ring: the runtime calls the kernel's
+`ksee_record` export (see below), which writes a `Task` record each time
+everything is recorded again; and the host's own writes into kernel memory (a
 runner request, a lesson variable) go through its `ksee_bulk` export first. The initial task record identifies a
 recording that may contain no preceding context switch; later task changes
 are inferred from kernel call and return records.
 
-Probes record **only while `on` is set**: from the program's first line (a
-declaration's write, or a call's `ksee.begin`, user/prog.c), for good, so
-the recording is every call, entry to return, and whatever the kernel does
-meanwhile and between (other tasks it wakes, writeback, the journal, timers,
-the clock skipping in idle). The boot, before, is not: until then each probe
-costs a load and a branch.
+Probes record from the program's first line (a declaration's write, or a
+call's `ksee.begin`, user/prog.c): every call, entry to return, and whatever
+the kernel does meanwhile and between (other tasks it wakes, writeback, the
+journal, timers, the clock skipping in idle). The host says what `on` is as
+it changes (`ksee_record`): `1`, everything; `2`, stores only, while a
+runner waits for its next call (from its `ksee.end` to its next
+`ksee.begin`, its futex: the program's machinery, not its lines; memory
+stays exact), set at each switch to it and back to `1`, with a `Task`
+record, at each switch away; `0`, nothing, the boot, before. Off, each
+probe costs a load and a branch.
 
 ## What the kernel says about itself
 

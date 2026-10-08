@@ -20,7 +20,7 @@
 /* (Called by the plugin's probes and the host only: no header has them.) */
 void __ksee_put(u32 a, u32 tag, u32 n);
 void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from);
-void __ksee_record(void);
+void __ksee_record(u32 level, u32 task);
 
 #define RING_WORDS (1u << 21)
 #define COUNT 24
@@ -70,7 +70,7 @@ static __always_inline void done(u32 p)
 }
 
 /* The probes' records: the n values the probe put in __ksee_values just
- * before, and [a, tag], once on (see ksee_record). At most VALUES: a call's
+ * before, and [a, tag], while everything is (see ksee_record). At most VALUES: a call's
  * seven arguments, wide ones two words, and its frame base (the plugin's
  * Values, the same). */
 #define VALUES (2 * 7 + 1)
@@ -80,7 +80,7 @@ void __ksee_put(u32 a, u32 tag, u32 n)
 {
 	u32 p, i;
 
-	if (!ksee_trace.on)
+	if (ksee_trace.on != 1)
 		return;
 	p = ksee_trace.pos;
 	for (i = 0; i < n; i++)
@@ -132,13 +132,16 @@ __wasm_export(ksee_bulk) void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from)
 	}
 }
 
-/* Everything recorded from now on (the host says when: the program's
- * first line; the boot, before, is not), from a Task record: who runs (no
- * switch in the recording says so). */
-__wasm_export(ksee_record) void __ksee_record(void)
+/* What the probes record, as the host says: 1, everything, from a Task
+ * record naming `task`, who runs from there (no switch in the recording
+ * says so); 2, stores only, so that memory stays exact (a runner waiting
+ * for its next call: the wait is the program's machinery, not its lines);
+ * 0, nothing (the boot, until the program's first line). */
+__wasm_export(ksee_record) void __ksee_record(u32 level, u32 task)
 {
-	if (ksee_trace.on)
-		return;
-	ksee_trace.on = 1;
-	done(head(ksee_trace.pos, (u32)(unsigned long)current, TASK, 0));
+	bool begins = level == 1 && ksee_trace.on != 1;
+
+	ksee_trace.on = level;
+	if (begins)
+		done(head(ksee_trace.pos, task, TASK, 0));
 }
