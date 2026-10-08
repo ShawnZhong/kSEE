@@ -135,9 +135,12 @@ more of the same plain value in an array is one row (`[4…63] NULL`).
 
 ### Memory
 
-The Memory tab summarizes what the selected syscall wrote in kernel memory. It
-groups changes made by the syscall's own task, changes made by other tasks
-while it ran, and values changed and restored before the end. Each object is
+The Memory tab summarizes what the call you read (the frame chosen on the
+Stack or the chart: the innermost, unless you choose another) wrote in kernel
+memory, with everything it called; for the whole syscall, choose its
+outermost frame (Down, to the bottom). It groups changes made by the call's
+own task, changes made by other tasks while it ran, and values changed and
+restored before the end. Each object is
 named from typed kernel data and arranged under an object that points to it.
 
 A member row shows its before and after values and the function that changed

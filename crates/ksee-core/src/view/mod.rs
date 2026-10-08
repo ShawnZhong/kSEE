@@ -284,6 +284,12 @@ impl View<'_> {
         Some(Definition { name: f.name.clone(), file: t.file(f.loc).to_string(), line: f.loc.line, last: Some(last), sealed: f.sealed })
     }
 
+    /// The records of the call from record `first` (a Frame's): to its
+    /// return (still running: the recording's end).
+    pub fn call_span(&self, first: usize) -> (usize, usize) {
+        (first, self.rec.calls.call_end(first).unwrap_or(self.rec.last()))
+    }
+
     /// The lines of `file` that code ran, in run `n` (or the whole
     /// recording), with how often (the most of the blocks running it): the
     /// lines each block runs (Tables::block_lines: inlined code's, and where it is

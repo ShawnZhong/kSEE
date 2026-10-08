@@ -3,7 +3,7 @@
   "text": [
     "A missing name fails an open, unless the open asks for it to be made: O_CREAT. What does the kernel make?",
     "The path walk reaches \"new.txt\" and finds no such name; with O_CREAT, [lookup_open](lookup_open) asks the file system to make it. In ramfs, [ramfs_mknod](ramfs_mknod) makes two things: a new inode, which is the file itself (its mode, its size, its pages), and a name for it in the directory, a dentry pointing at that inode.",
-    "Then the open goes on as any open: a `struct file`, a slot in the fd table, and the call returns the fd. [The objects it made and changed](ramfs_mknod/memory) are on the right.",
+    "Then the open goes on as any open: a `struct file`, a slot in the fd table, and the call returns the fd. [The objects it made and changed](wasm_syscall/memory) are on the right.",
     "Try: [create the same file twice](try:1): the second time the name is there, so `lookup_open` takes the other branch and nothing is made. [With O_EXCL](try:2) the second open fails with EEXIST instead."
   ],
   "tries": [

@@ -1,7 +1,7 @@
 {
   "title": "What a call changed",
   "text": [
-    "The [Memory](fd_install/memory) tab lists what the call selected wrote in the kernel's memory: each object it changed, what it is, and each member with its value before and after.",
+    "The [Memory](wasm_syscall/memory) tab lists what the call you read wrote in the kernel's memory, with what it called: here the whole syscall, from its way in, `wasm_syscall` (the call at the bottom of the Stack; ↑ and ↓ narrow and widen it). Each object it changed, what it is, and each member with its value before and after.",
     "1. The process's table of open files, its `struct files_struct` (`current->files`): `fd_array[3]` from NULL to the console's `struct file`; `open_fds_init[0]` from 7 to 15, in binary 0111 to 1111, bit 3 now set too; and `next_fd`, where the next search starts, 4.",
     "2. The console's `struct file` counts one more reference, `f_ref`: two numbers now stand for it, and it stays open until both are closed.",
     "3. The program's own `task_struct`: `regs`, where the way in, `wasm_syscall`, keeps the call's number (23, dup's), its arguments, and its result, 3.",

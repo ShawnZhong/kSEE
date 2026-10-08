@@ -26,7 +26,7 @@ pub fn Tabs() -> Element {
             nav { class: "tabs",
                 {head(Tab::Stack, "Stack", "the calls at the cursor, their values as they were then")}
                 {head(Tab::Tasks, "Tasks", "every task at the cursor: what each is doing, its task_struct")}
-                {head(Tab::Memory, "Memory", "what the run selected wrote in the kernel's memory: the objects it changed, and how they point to each other")}
+                {head(Tab::Memory, "Memory", "what the call you read wrote in the kernel's memory, with what it called (the bottom frame: the whole syscall): the objects it changed, and how they point to each other")}
                 {head(Tab::Disk, "Disk", "every transfer the disk made during the calls, for which task, and what it wrote; the cursor's place among them")}
                 {head(Tab::Console, "Console", "the kernel's log and the programs' output")}
             }

@@ -36,25 +36,31 @@ fn labels<'a>(nodes: impl IntoIterator<Item = &'a Node>) -> String {
         .collect::<Vec<_>>().join(", ")
 }
 
-/// The objects the run selected changed, by the task that changed them and
-/// by whether their changes survived to the run's end.
+/// The objects the call you read changed (with what it called), by the
+/// task that changed them and by whether their changes survived to its end.
 #[component]
 pub(crate) fn Objects() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
+    // (What it shows: what the call you read changed, with what it called
+    // (the frame chosen; inlined code, the call it is in): the whole
+    // syscall, its outermost.)
+    let scope = use_memo(move || {
+        let stack = d.stack.read();
+        stack.get(*d.frame.read()..).and_then(|up| up.iter().find(|f| !f.inlined)).map(|f| (f.first, f.func.clone()))
+    });
     let graph = use_memo(move || {
         (ui.snapshot)();
         let m = machine();
-        let nodes = d.run.cloned().map_or_else(Vec::new, |run| m.view(|v| v.objects(run.first, run.last)));
+        let nodes = scope.cloned().map_or_else(Vec::new, |(first, _)| m.view(|v| { let (a, b) = v.call_span(first); v.objects(a, b) }));
         let declared = nodes.iter().map(|n| {
             (n.kind == RegionKind::Global).then(|| m.view(|v| v.definition(&n.what))).flatten().map(|p| (p.file, p.line))
         }).collect();
         Shared(Rc::new((nodes, declared)))
     });
-    let Some(run) = d.run.cloned() else {
+    let Some((_, title)) = scope.cloned() else {
         return rsx! { p { class: "pad dim", "Select a run: what it did to the kernel's data." } };
     };
-    let title = run.title();
     let graph = graph.cloned();
     let nodes = &(*graph).0;
     if nodes.is_empty() {

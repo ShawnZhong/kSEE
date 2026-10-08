@@ -395,6 +395,14 @@ async fn panels(r: &mut Vec<String>) -> Result<(), String> {
     let objects: Vec<String> = all(".obj .title").iter().map(text).collect();
     check(named(".obj td", "f_pos").is_some(), "objects", &objects)?;
     r.push(format!("objects {objects:?}"));
+    // (What the call read changed; out to the syscall's outermost, what all
+    // of it did: more, the program's task among them, its registers.)
+    for _ in 0..12 {
+        press("↓ Out");
+        settle().await;
+    }
+    let whole: Vec<String> = all(".obj .title").iter().map(text).collect();
+    check(whole.len() > objects.len() && whole.iter().any(|o| o.starts_with("prog(")), "the whole syscall's objects", (&objects, &whole))?;
     tab("Tasks").await;
     // (The running one, open: its files, then their fd_array, the file the
     // program read among them, by where it is; opened, its position.)
