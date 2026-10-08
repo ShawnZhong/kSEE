@@ -31,13 +31,13 @@ CHROME_VERSION := 156.0.8078.4
 export PATH := /usr/lib/llvm-22/bin:$(PATH)
 export OUT := target/initramfs
 PLUGIN := plugin/ksee-trace.so
-# (A hash of the pass's source in the flags: kbuild rebuilds when the
-# instrumentation changes, not when an equivalent object is relinked.
-# Inlining only what the source asks for, `inline`: the compiler's own
-# choices would hide calls, with their arguments, as inlined code.)
-# (A build the same each time: the release's date, not the clock's; a
-# version, user and host of its own, not the tree's state (-dirty: the patch
-# applied) or the machine's; build #1.)
+# (The same build each time: the release's date, not the clock's; a version,
+# user and host of its own, not the tree's state (-dirty: the patch applied)
+# or the machine's; build #1. A hash of the pass's source in the flags:
+# kbuild rebuilds when the instrumentation changes, not when an equivalent
+# object is relinked. Inlining only what the source asks for, `inline`: the
+# compiler's own choices would hide calls, with their arguments, as inlined
+# code.)
 EPOCH = $(shell git -C linux log -1 --format=%ct $(LINUX_TAG))
 KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=1 \
 	LOCALVERSION=-ksee KBUILD_BUILD_USER=ksee KBUILD_BUILD_HOST=ksee KBUILD_BUILD_VERSION=1 KBUILD_BUILD_TIMESTAMP="$(shell LC_ALL=C date -u -d @$(EPOCH))" \
@@ -78,8 +78,10 @@ linux/vmlinux: $(PLUGIN) linux/.config
 
 # The programs: position-independent, in the kernel's memory (see
 # binfmt_wasm.c), their syscalls user/syscall.h's, with the UAPI headers.
-$(OUT)/%.wasm: user/%.c user/syscall.h | linux/vmlinux
-	@mkdir -p $(OUT)
+$(OUT):
+	mkdir -p $@
+
+$(OUT)/%.wasm: user/%.c user/syscall.h | linux/vmlinux $(OUT)
 	clang --target=wasm32 -O2 -g0 -ffreestanding -nostdlib -fPIC -Wl,-pie -Wl,--experimental-pic \
 		-Wl,--import-memory -Wl,--no-entry -nostdinc -isystem linux/usr/include -o $@ $<
 
@@ -87,12 +89,11 @@ $(OUT)/%.wasm: user/%.c user/syscall.h | linux/vmlinux
 # the files the lessons start from; blocks of 4 KiB, a page each (the
 # page cache's unit: one block to one page, as most systems have it), 8 MiB
 # (the journal's room); initialized in full: no background work after the
-# mount (ext4lazyinit's). The same each time: its UUID and hash seed fixed,
-# its times the release's.
-$(OUT)/disk.img: $(shell find user/disk) Makefile | linux/Makefile
-	@mkdir -p $(OUT)
+# mount (ext4lazyinit's). The same each time: made anew (no blocks of the
+# last left), its UUID and hash seed fixed, its times the release's.
+$(OUT)/disk.img: $(shell find user/disk) Makefile | linux/Makefile $(OUT)
 	rm -f $@
-	SOURCE_DATE_EPOCH=$(EPOCH) E2FSPROGS_FAKE_TIME=$(EPOCH) mkfs.ext4 -q -F -b 4096 -L ksee -N 32 -d user/disk \
+	SOURCE_DATE_EPOCH=$(EPOCH) mkfs.ext4 -q -F -b 4096 -L ksee -N 32 -d user/disk \
 		-U 6b736565-0000-4000-8000-000000000001 -E lazy_itable_init=0,lazy_journal_init=0,hash_seed=6b736565-0000-4000-8000-000000000002 $@ 8M
 
 # The archive (all times 0): the console (the kernel opens it before init),

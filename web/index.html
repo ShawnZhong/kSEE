@@ -46,7 +46,8 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 
 /* The layout: the lesson | the work (the timeline over the source and the tabs); the splits */
 .page { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--left) 5px minmax(0, 1fr); }
-.side { min-height: 0; overflow: auto; background: var(--panel); border-right: 1px solid var(--line); position: relative; }
+.side { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--line); position: relative; }
+.sidescroll { flex: 1; min-height: 0; overflow: auto; }
 /* (The program: after the text, kept in view at the side's bottom while
    the text is longer; scrolling once it is long itself.) */
 .programpane { position: sticky; bottom: 0; max-height: 55%; overflow: auto; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: 8px; }
@@ -93,7 +94,7 @@ h1 { margin: 12px 12px 0; font-size: 17px; line-height: 1.3; font-weight: 600; }
 .ptitle { margin: 10px 12px 0; display: flex; align-items: baseline; }
 .ptitle a { margin-left: auto; text-transform: none; letter-spacing: 0; }
 .program { overflow-x: auto; }
-.turn { display: flex; flex-direction: column; gap: 2px; padding: 6px 12px 12px; }
+.turn { flex: none; display: flex; flex-direction: column; gap: 2px; padding: 6px 12px; border-top: 1px solid var(--line); }
 .turn .next { align-self: flex-end; text-align: right; }
 ol.lines { margin: 8px 12px; padding: 0; list-style: none; }
 ol.lines > li { margin: 4px 0; }
@@ -227,7 +228,8 @@ table.fields tr.later { opacity: .45; }
   html, body { overflow: auto; }
   #root { height: auto; }
   .page, .below { display: block; }
-  .side { border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+  .side { border-right: 0; border-bottom: 1px solid var(--line); }
+  .sidescroll { overflow: visible; }
   .programpane { position: static; max-height: none; }
   .vsplit, .hsplit, .legend { display: none; }
   .source, .panels { height: 70dvh; border-top: 1px solid var(--line); }

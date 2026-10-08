@@ -167,46 +167,49 @@ pub fn LessonPane() -> Element {
     };
     let grid = format!("--columns: {}", columns.len());
     rsx! {
-        // (The text; the program after it, kept in view at the bottom
-        // while the text is longer than the side; then the next lesson.)
-        article { class: "lesson",
-            h1 { "{lesson.title}" }
-            div { class: "explain", for p in lesson.text.iter() {
-                ParagraphView { pieces: text::pieces(p), follow: move |target| follow(ui, target) }
-            } }
-        }
-        section { class: "programpane",
-            div { class: "ptitle dim", "Program"
-                if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| ui.open_lesson(at), "↺ reset" } }
+        // (The text, and the program after it, kept in view at the
+        // bottom while the text is longer than the side, scrolling; the
+        // lessons before and after under them, always.)
+        div { class: "sidescroll",
+            article { class: "lesson",
+                h1 { "{lesson.title}" }
+                div { class: "explain", for p in lesson.text.iter() {
+                    ParagraphView { pieces: text::pieces(p), follow: move |target| follow(ui, target) }
+                } }
             }
-            div { class: "program",
-                if many {
-                    div { class: "taskheads", style: "{grid}",
-                        for (name , pid) in names.iter().cloned() { div { class: "task mono", style: "--hue: {crate::chart::hue(pid)}", "{name}" } }
-                    }
+            section { class: "programpane",
+                div { class: "ptitle dim", "Program"
+                    if !mine { a { title: "the lesson's own program again, on a fresh kernel", onclick: move |_| ui.open_lesson(at), "↺ reset" } }
                 }
-                ol { class: if many { "lines columns" } else { "lines" }, style: "{grid}",
-                    for (j , step) in program.iter().enumerate() {
-                        li { key: "{j}:{step.text()}", class: if many { "row" } else { "" },
-                            if many {
-                                for w in waits(j).into_iter().filter(|&w| w != col(step)) {
-                                    div { class: "wait", style: "grid-column: {w + 1}; --hue: {crate::chart::hue(names[w].1)}", title: "a call in this task column, waiting (blocked)" }
-                                }
-                            }
-                            Cell { j, step: step.clone(), outcome: outcomes.get(j).cloned(),
-                                column: if many { Some((col(step), crate::chart::hue(names[col(step)].1))) } else { None } }
+                div { class: "program",
+                    if many {
+                        div { class: "taskheads", style: "{grid}",
+                            for (name , pid) in names.iter().cloned() { div { class: "task mono", style: "--hue: {crate::chart::hue(pid)}", "{name}" } }
                         }
                     }
-                    li { class: if many { "add row" } else { "add" },
-                        for (c , task) in columns.iter().enumerate() {
-                            {
-                                let task = task.clone();
-                                let by = if many { format!("add a call, by {}…", names[c].0) } else { "add a call…".to_string() };
-                                rsx! {
-                                    div { class: "cell", style: if many { format!("grid-column: {}", c + 1) } else { String::new() },
-                                        crate::editor::Editor { key: "{program.len()}:{c}", text: String::new(), task: task.clone(), line: program.len(),
-                                            placeholder: by,
-                                            done: move |text: String| if !text.is_empty() { ui.program.write().push(ProgramLine::on(task.as_deref(), text)); } }
+                    ol { class: if many { "lines columns" } else { "lines" }, style: "{grid}",
+                        for (j , step) in program.iter().enumerate() {
+                            li { key: "{j}:{step.text()}", class: if many { "row" } else { "" },
+                                if many {
+                                    for w in waits(j).into_iter().filter(|&w| w != col(step)) {
+                                        div { class: "wait", style: "grid-column: {w + 1}; --hue: {crate::chart::hue(names[w].1)}", title: "a call in this task column, waiting (blocked)" }
+                                    }
+                                }
+                                Cell { j, step: step.clone(), outcome: outcomes.get(j).cloned(),
+                                    column: if many { Some((col(step), crate::chart::hue(names[col(step)].1))) } else { None } }
+                            }
+                        }
+                        li { class: if many { "add row" } else { "add" },
+                            for (c , task) in columns.iter().enumerate() {
+                                {
+                                    let task = task.clone();
+                                    let by = if many { format!("add a call, by {}…", names[c].0) } else { "add a call…".to_string() };
+                                    rsx! {
+                                        div { class: "cell", style: if many { format!("grid-column: {}", c + 1) } else { String::new() },
+                                            crate::editor::Editor { key: "{program.len()}:{c}", text: String::new(), task: task.clone(), line: program.len(),
+                                                placeholder: by,
+                                                done: move |text: String| if !text.is_empty() { ui.program.write().push(ProgramLine::on(task.as_deref(), text)); } }
+                                        }
                                     }
                                 }
                             }
