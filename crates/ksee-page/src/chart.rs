@@ -5,8 +5,8 @@
 //! into one) over the steps it is on, colored by the kernel's part it is in,
 //! the calls at the cursor darker; the task strip under it; then the
 //! transport. The wheel zooms vertically and pans horizontally; a drag pans.
-//! Hovered, the cross is there and a bar says what its call was (nothing
-//! else moves); clicked, the cursor goes there. Find a function by any part
+//! Hovered, a bar is outlined and says what its call was (nothing else
+//! moves); clicked, the cursor goes there. Find a function by any part
 //! of its name.
 
 use dioxus::prelude::*;
@@ -373,7 +373,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let calls: Vec<(usize, String)> = stack.iter().map(|f| (f.first, f.func.clone())).collect();
         let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
         draw_chart(&chart, &tasks.read(), scale, height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
-                   (ui.hover)().or(d.cursor_step.cloned()), stack.len().checked_sub(1 + d.frame.cloned()),
+                   d.cursor_step.cloned(), stack.len().checked_sub(1 + d.frame.cloned()),
                    ui.cursor.read().as_ref().and_then(|m| m.level));
         if let Some(scroll) = element("timeline-scroll") {
             scroll.set_scroll_top((scroll.scroll_height() - scroll.client_height() - *from_bottom.peek()).max(0));
@@ -416,7 +416,6 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             onpointerdown: move |e| {
                 e.prevent_default();
                 tip.set(None);
-                ui.set_hover(None);
                 dragged.set(false);
                 let p = e.client_coordinates();
                 let scroll = element("timeline-scroll").map_or(0, |e| e.scroll_top());
@@ -435,8 +434,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     if dx.hypot(dy) >= 4.0 || *dragged.peek() {
                         if !*dragged.peek() {
                             dragged.set(true);
-                            ui.set_hover(None);
-                            tip.set(None);
+                                        tip.set(None);
                         }
                         // (Up and down: the rows, their distance from the bottom
                         // kept before the redraw the pan makes restores it.)
@@ -451,11 +449,10 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                         return;
                     }
                 }
-                // (Else the cross at the step under the pointer: over a bar, what its call was.)
+                // (Else, over a bar, what its call was: outlined, a tip.)
                 let p = e.client_coordinates();
                 let Some((x, y)) = chart_coordinates(p.x, p.y) else { return };
-                let Some((step, bar)) = hit(x, y) else { return };
-                ui.set_hover(Some(step as f64));
+                let Some((_, bar)) = hit(x, y) else { return };
                 let chart = d.timeline.peek();
                 match bar.map(|(_, b)| &chart.bars[b]) {
                     None => if tip.peek().is_some() { tip.set(None) },
@@ -492,8 +489,7 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             },
             onmouseleave: move |_| {
                 if pan().is_none() {
-                    ui.set_hover(None);
-                    tip.set(None);
+                        tip.set(None);
                 }
             },
             div { id: "timeline-scroll", class: "chartscroll",

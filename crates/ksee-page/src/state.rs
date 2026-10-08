@@ -52,8 +52,7 @@ pub struct Moment {
 /// What the state makes, computed once each time what it depends on
 /// changes: the cursor's run (as the snapshot has it) and lines; the
 /// timeline and its window; its line, stack, and the frame shown on it; and
-/// where the cursor is, in steps (its line's: the chart's line). (The
-/// pointer over the timeline moves only its cross: Ui::hover.)
+/// where the cursor is, in steps (its line's: the chart's line).
 #[derive(Clone, Copy)]
 pub struct Derived {
     pub run: Memo<Option<RunSummary>>,
@@ -131,10 +130,8 @@ pub struct Ui {
     /// The published recording snapshot: what reads the recording subscribes
     /// to this identity and reads it again when it changes.
     pub snapshot: Signal<u64>,
-    /// The cursor (none: no run selected), and the step under the pointer,
-    /// if it is over the timeline (only its cross moves with it).
+    /// The cursor (none: no run selected).
     pub cursor: Signal<Option<Moment>>,
-    pub hover: Signal<Option<f64>>,
     /// The timeline's window: its first step and how many, fractional
     /// (none: the whole recording).
     pub win: Signal<Option<(f64, f64)>>,
@@ -159,7 +156,6 @@ impl Ui {
         Ui {
             snapshot: Signal::new(0),
             cursor: Signal::new(None),
-            hover: Signal::new(None),
             win: Signal::new(None),
             tab: Signal::new(Tab::Stack),
             kernel: Signal::new(None),
@@ -177,7 +173,6 @@ impl Ui {
         self.outcomes.write().clear();
         self.console.set(String::new());
         self.cursor.set(None);
-        self.hover.set(None);
         self.seen.set(None);
         self.win.set(None);
     }
@@ -195,15 +190,8 @@ impl Ui {
     }
 
     pub fn commit(mut self, moment: Option<Moment>) {
-        self.hover.set(None);
         self.seen.set(None);
         self.cursor.set(moment);
-    }
-
-    pub fn set_hover(mut self, step: Option<f64>) {
-        if *self.hover.peek() != step {
-            self.hover.set(step);
-        }
     }
 
     /// Whether the kernel is up (booted, not failed).

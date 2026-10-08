@@ -54,9 +54,8 @@ its source is in (the legend), a concept a color family: storage green (`fs/`,
 `block/`), the core kernel warm (`mm/` gold, `kernel/` orange, the scheduler
 coral: where a task sleeps and another runs), the machine blue (`drivers/`,
 the port's `arch/` fainter), and the helpers a cool gray (`lib/`,
-`include/`); a file in none of them, gray. Hover to move the
-cross there and see what the call was (nothing else moves); click to move
-the cursor there. The task strip below the chart shows which task ran in each region
+`include/`); a file in none of them, gray. Hover a bar to see what
+its call was (nothing else moves); click to move the cursor there. The task strip below the chart shows which task ran in each region
 (the idle task gray). The cursor is a cross: down, its moment; across, its
 frame's level.
 
@@ -176,7 +175,7 @@ cursor.
 | Up / Down, or the up/down buttons | Choose the callee or caller frame. |
 | Click a source line number | Run to that line's next occurrence. |
 | Shift+click a source line number | Run to that line's previous occurrence. |
-| Hover the chart | Move the cross there, and see what a bar's call was; nothing else moves. |
+| Hover the chart | See what a bar's call was (outlined, a tip); nothing else moves. |
 | Click the chart | Commit the previewed moment. |
 
 Arrow shortcuts do not take over while focus is in the program editor or

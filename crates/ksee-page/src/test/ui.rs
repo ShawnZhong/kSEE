@@ -98,15 +98,16 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let b = canvas.get_bounding_client_rect();
     let chart = one(".chart").ok_or("no chart")?;
     let (x, y) = (b.left() + x, b.top() + y);
-    // (The cross: the pointer's moment while it hovers, the cursor's again once it leaves.)
+    // (Hovered, a bar says what its call was, the cross where it was; left, no tip.)
     let cross = || canvas.get_attribute("data-test-now");
     let before = cross();
     pointer(&chart, "pointermove", x, y);
     settle().await;
+    let tip = one(".tip").map(|t| text(&t)).unwrap_or_default();
     let during = cross();
     mouse(&chart, "mouseleave", x, y, false);
     settle().await;
-    check(during != before && cross() == before, "the cross follows the pointer, and goes back", (&before, &during, cross()))?;
+    check(tip.contains("vfs_read") && during == before && one(".tip").is_none(), "a hover: the bar's tip, the cross still", (&tip, &before, &during))?;
     // (Hovered, only the cross moves: the cursor's place stays; a click
     // takes it there, the bar's level chosen.)
     let before = place();

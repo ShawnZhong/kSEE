@@ -93,7 +93,6 @@ pub fn listen(ui: Ui) {
                     return;
                 }
             }
-            ui.set_hover(None);
             let over = e.shift_key();
             // (← →: once the kernel is up.)
             let up = matches!(*ui.kernel.peek(), Some(Ok(())));
