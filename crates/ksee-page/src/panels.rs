@@ -87,7 +87,7 @@ fn Tasks() -> Element {
         out: &mut Vec<(usize, usize)>,
     ) {
         let mut kids: Vec<usize> = (0..list.len()).filter(|&k| up(&list[k]) == at).collect();
-        kids.sort_by_key(|&k| list[k].task.pid.unwrap_or(0));
+        kids.sort_by_key(|&k| list[k].task.pid());
         for k in kids {
             out.push((k, depth));
             visit(list, up, Some(list[k].task.addr), depth + 1, out);

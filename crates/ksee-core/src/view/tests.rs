@@ -488,8 +488,8 @@ fn a_task_is_named_as_it_was_then() {
     m[0x40] = 19;
     m[0x44..0x47].copy_from_slice(b"hi\0");
     let v = View { tables: &t, rec: &rec, now: &m };
-    let name = |i| v.task(0x40, i).comm;
-    assert_eq!((name(1), name(3), v.task(0x40, 3).pid), (Some("prog".into()), Some("hi".into()), Some(19)));
+    let name = |i| v.task(0x40, i).id.map(|t| t.comm);
+    assert_eq!((name(1), name(3), v.task(0x40, 3).pid()), (Some("prog".into()), Some("hi".into()), 19));
 }
 
 #[test]

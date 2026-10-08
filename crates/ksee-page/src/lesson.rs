@@ -225,7 +225,7 @@ fn task_name(ui: Ui, task: Option<&str>, program: &[ProgramLine]) -> (String, i3
         m.run_of_call_id(id).and_then(|k| m.view(|v| v.run(k))).map(|s| s.task)
     });
     match recorded {
-        Some(t) => (t.named(), t.pid.unwrap_or(0)),
+        Some(t) => (t.named(), t.pid()),
         None if task.is_none() => ("the program".into(), 0),
         None => (task.unwrap_or_default().into(), 0),
     }

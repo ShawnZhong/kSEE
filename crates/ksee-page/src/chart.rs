@@ -127,7 +127,7 @@ fn Overview() -> Element {
         let n = v.rec.steps.len().max(1);
         let tasks: Vec<i32> = (0..BUCKETS).map(|k| {
             let i = v.rec.record_of(k * n / BUCKETS);
-            v.rec.tasks.get(i).and_then(|&t| v.task(t, i).pid).unwrap_or(0)
+            v.rec.tasks.get(i).map_or(0, |&t| v.task(t, i).pid())
         }).collect();
         let starts: Vec<usize> = v.rec.runs.iter().filter(|s| s.nr.is_some()).map(|s| v.rec.step_of(s.first)).collect();
         (n as f64, tasks, starts)
@@ -198,7 +198,7 @@ fn task_names(chart: &Chart) -> Vec<(String, String)> {
     let m = machine();
     m.view(|v| chart.tasks.iter().map(|&(_, end, task)| {
         let t = v.task(task, v.rec.steps[end - 1].0);
-        (t.named(), task_color(t.pid.unwrap_or(0)))
+        (t.named(), task_color(t.pid()))
     }).collect())
 }
 

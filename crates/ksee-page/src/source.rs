@@ -102,13 +102,13 @@ pub fn Source() -> Element {
 }
 
 /// What the run selected did on each line of `file`: the lines that ran,
-/// how often; what each stored, its note and the write's record.
-fn ran(ui: Ui, run: Option<RunSummary>, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, (String, String, usize)>) {
+/// how often; what each stored, its note (by its line).
+fn ran(ui: Ui, run: Option<RunSummary>, file: &str, at: usize) -> (BTreeMap<u32, u64>, BTreeMap<u32, ksee_core::view::Note>) {
     let m = machine();
     let k = ui.run();
     let counts = m.view(|v| v.coverage(file, k));
     let notes = run.map(|s| m.view(|v| v.notes(s.first, s.last, file, at)))
-        .unwrap_or_default().into_iter().map(|n| (n.line, (n.short, n.full, n.i))).collect();
+        .unwrap_or_default().into_iter().map(|n| (n.line, n)).collect();
     (counts, notes)
 }
 
@@ -282,8 +282,8 @@ fn Code(path: String, from: u32, to: u32, line: u32, here: bool, leaf: bool, fra
                                 if is_here && !values.is_empty() {
                                     span { class: "values", title: "{values.join(\"\n\")}", "{values.join(\"   \")}" }
                                 }
-                                if let Some((short, full, at)) = note {
-                                    a { class: "stored", title: "{full}", onclick: move |_| ui.go_record(at), "{short}" }
+                                if let Some(note) = note {
+                                    a { class: "stored", title: "{note.full}", onclick: move |_| ui.go_record(note.i), "{note.short}" }
                                 }
                             }
                         }

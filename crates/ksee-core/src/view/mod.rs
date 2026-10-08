@@ -12,7 +12,7 @@ use crate::recording::Recording;
 use crate::stack::{self, LineStep};
 use crate::tables::{Loc, Tables, Var};
 use crate::trace::Record;
-use crate::types::{c_str, num, quote, Kind, Types};
+use crate::types::{c_str, num, quote, Kind, TaskId, Types};
 use crate::Memory;
 
 
@@ -31,12 +31,12 @@ pub use stores::{Note, RegionKind, Write};
 pub(crate) use stores::{Named, RegionWrite};
 pub use value::{Missing, Object, Target};
 
-/// Who a task was, at a record (see View::task).
+/// Who a task was, at a record (see View::task): its task_struct's
+/// address, and its pid and comm then, if they can be read.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Task {
     pub addr: u32,
-    pub pid: Option<i32>,
-    pub comm: Option<String>,
+    pub id: Option<TaskId>,
 }
 
 impl RunSummary {
@@ -49,7 +49,12 @@ impl RunSummary {
 impl Task {
     /// As the page names it: comm(pid).
     pub fn named(&self) -> String {
-        format!("{}({})", self.comm.as_deref().unwrap_or_default(), self.pid.unwrap_or(0))
+        format!("{}({})", self.id.as_ref().map_or("", |t| t.comm.as_str()), self.pid())
+    }
+
+    /// Its pid (0 if it cannot be read).
+    pub fn pid(&self) -> i32 {
+        self.id.as_ref().map_or(0, |t| t.pid)
     }
 }
 
@@ -143,7 +148,7 @@ impl View<'_> {
             self.rec.task_ids.borrow_mut().insert(key, task.clone());
             Some(task)
         });
-        Task { addr, pid: task.as_ref().map(|t| t.pid), comm: task.map(|t| t.comm) }
+        Task { addr, id: task }
     }
 
     /// The fields of the task at `addr`, as memory was after record `at`:

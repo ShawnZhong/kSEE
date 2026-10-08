@@ -7,15 +7,15 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     // Calls, traced.
     let w = t.line("write(1, \"hello kSEE\\n\", 11)").await.syscall.unwrap();
     until(|| { t.console(); t.console_output.contains("hello kSEE") }, 10, 100).await;
-    t.check(format!("a write, by the program ({}, pid {:?}), shown on the console", w.task.comm.clone().unwrap_or_default(), w.task.pid),
-            w.ret == Some(11) && w.task.comm.as_deref() == Some("prog") && w.task.pid == Some(main as i32) && t.console_output.contains("hello kSEE"));
+    t.check(format!("a write, by the program ({}, pid {:?}), shown on the console", w.task.named(), w.task.pid()),
+            w.ret == Some(11) && w.task.id.as_ref().is_some_and(|t| t.comm == "prog" && t.pid == main as i32) && t.console_output.contains("hello kSEE"));
     t.check("write ran vfs_write", t.ran(&Some(w.clone()), "vfs_write"));
     let s = t.line("getpid()").await.syscall;
     t.check("getpid ran __task_pid_nr_ns", t.ran(&s, "__task_pid_nr_ns"));
     let s = t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await.syscall;
     t.check("mkdirat ran vfs_mkdir", t.ran(&s, "vfs_mkdir"));
     let nap = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {0, 30000000}, NULL)").await.syscall.unwrap();
-    let idle = m.view(|v| v.timeline().tasks_in(v.rec.step_of(nap.first) as f64, v.rec.step_of(nap.last) as f64).iter().any(|s| v.task(s.2, nap.first).comm.as_deref() == Some("swapper/0")));
+    let idle = m.view(|v| v.timeline().tasks_in(v.rec.step_of(nap.first) as f64, v.rec.step_of(nap.last) as f64).iter().any(|s| v.task(s.2, nap.first).id.is_some_and(|t| t.comm == "swapper/0")));
     t.check("sleeping switched to the idle task and back", t.ran(&Some(nap.clone()), "__schedule") && idle);
     let long = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {2, 0}, NULL)").await;
     t.check("a 2 s sleep returns (the clock skipped ahead)", long.ret == Some(0));
