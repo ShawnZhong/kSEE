@@ -42,8 +42,6 @@ pub struct State {
     pub current: u32,
     pub pending: u32,
     pub deadline: u32,
-    /// The kernel's command line.
-    pub cmdline: Vec<u8>,
     /// The kernel's clock (ns): virtual, so that a run is the same each
     /// time (it moves only as the kernel does: see TICK_NS and sched).
     pub clock: u64,

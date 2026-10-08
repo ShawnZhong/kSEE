@@ -8,7 +8,6 @@
  * the console's interrupt says may have come.
  */
 #include <linux/console.h>
-#include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/major.h>
@@ -67,19 +66,12 @@ static const struct file_operations console_dev_fops = {
 	.llseek	= noop_llseek,
 };
 
-/* /dev/console (5, 1), as the tty layer would have made it. */
+/*
+ * /dev/console (5, 1), the tty layer's number: the node is the initramfs's
+ * (no sysfs, no devtmpfs: nothing would see a device made here).
+ */
 static int __init console_dev_init(void)
 {
-	struct class *cls;
-	int ret;
-
-	ret = register_chrdev(TTYAUX_MAJOR, "console", &console_dev_fops);
-	if (ret)
-		return ret;
-	cls = class_create("console");
-	if (IS_ERR(cls))
-		return PTR_ERR(cls);
-	return PTR_ERR_OR_ZERO(device_create(cls, NULL, MKDEV(TTYAUX_MAJOR, 1),
-					     NULL, "console"));
+	return register_chrdev(TTYAUX_MAJOR, "console", &console_dev_fops);
 }
 device_initcall(console_dev_init);

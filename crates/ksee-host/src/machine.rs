@@ -75,10 +75,7 @@ impl Machine {
         TABLES.set(tables).map_err(|_| "one machine per page")?;
 
         // The initramfs goes at the top of RAM; the kernel reserves it.
-        let initrd = initrd.to_vec();
-        let at = initrd_at(&initrd)?;
-        state_mut(|s| s.cmdline = format!("initrd={at:#x},{}", initrd.len()).into_bytes());
-        let m = Machine { module, initrd, disk: disk.to_vec(), rec: Default::default() };
+        let m = Machine { module, initrd: initrd.to_vec(), disk: disk.to_vec(), rec: Default::default() };
         m.boot().await?;
         Ok(m)
     }
@@ -88,8 +85,8 @@ impl Machine {
     /// once the program (user/prog.c) is ready for calls.
     async fn boot(&self) -> Result<(), JsValue> {
         unsafe { core::ptr::write_bytes(KERNEL_BASE as *mut u8, 0, (RAM_BYTES - KERNEL_BASE) as usize) };
-        let at = initrd_at(&self.initrd)? as usize;
-        unsafe { core::ptr::copy_nonoverlapping(self.initrd.as_ptr(), at as *mut u8, self.initrd.len()) };
+        let initrd = initrd_at(&self.initrd)?;
+        unsafe { core::ptr::copy_nonoverlapping(self.initrd.as_ptr(), initrd as *mut u8, self.initrd.len()) };
         let inst: WebAssembly::Instance =
             JsFuture::from(WebAssembly::instantiate_module(&self.module, &imports::kernel())).await?.unchecked_into();
         let kernel = inst.exports();
@@ -105,7 +102,8 @@ impl Machine {
         let field = |f: &str| tables().types.field("wasm_machine", f).map(|(off, size)| (at + off, size))
             .ok_or_else(|| JsValue::from(format!("the kernel has no wasm_machine.{f}")));
         let ((end, _), (sectors, _), (line, room)) = (field("memory_end")?, field("disk_sectors")?, field("cmdline")?);
-        let cmdline: Vec<u8> = state(|s| s.cmdline.iter().copied().take(room as usize - 1).chain([0]).collect());
+        // (The command line: where the initramfs is, the kernel reserving it.)
+        let cmdline: Vec<u8> = format!("initrd={initrd:#x},{}", self.initrd.len()).bytes().take(room as usize - 1).chain([0]).collect();
         unsafe {
             *(end as *mut u32) = RAM_BYTES;
             *(sectors as *mut u64) = self.disk.len() as u64 / 512;
@@ -113,10 +111,10 @@ impl Machine {
         }
         let trace = global("ksee_trace");
         let (current, pending, deadline) = (global("__current_task"), field("irq_pending")?.0, field("timer_deadline")?.0);
-        // (Nothing of a machine before it but its command line, and the ids of
-        // the calls asked: they are not used again.)
+        // (Nothing of a machine before it but the ids of the calls asked:
+        // they are not used again.)
         state_mut(|s| *s = State { trace, current, pending, deadline, waiting: Some(0), booting: true,
-                               cmdline: std::mem::take(&mut s.cmdline), session: s.session.again(), disk: self.disk.clone(),
+                               session: s.session.again(), disk: self.disk.clone(),
                                quiet_waiters: std::mem::take(&mut s.quiet_waiters), ..Default::default() });
         crate::programs::instantiated(&kernel);
         imports::instantiated(&kernel);

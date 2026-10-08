@@ -209,7 +209,7 @@ pub(crate) fn syscall_exit(ret: i32) {
 
 /// The imports of a runner (user/prog.c), module ksee. ready(heap, size,
 /// main): the current thread is a runner (the program's own, its main
-/// thread, if `main`: see Machine::main), reading its calls from the
+/// thread, if `main`: see Session::main), reading its calls from the
 /// console (imports.rs's console_read); its program's own memory at `heap`
 /// (its variables and its calls' literals, see Machine::make).
 fn runner_imports() -> Object {

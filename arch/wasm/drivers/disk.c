@@ -61,11 +61,7 @@ static int __init wasm_disk_init(void)
 
 	if (!wasm_machine.disk_sectors)
 		return 0;
-	wasm_disk_set.ops = &wasm_disk_ops;
-	wasm_disk_set.nr_hw_queues = 1;
-	wasm_disk_set.queue_depth = 16;
-	wasm_disk_set.numa_node = NUMA_NO_NODE;
-	err = blk_mq_alloc_tag_set(&wasm_disk_set);
+	err = blk_mq_alloc_sq_tag_set(&wasm_disk_set, &wasm_disk_ops, 16, 0);
 	if (err)
 		return err;
 	disk = blk_mq_alloc_disk(&wasm_disk_set, NULL, NULL);

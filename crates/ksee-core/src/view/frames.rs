@@ -306,7 +306,7 @@ impl View<'_> {
         out
     }
 
-    /// Inlined function `k`'s name (Tables::names).
+    /// Inlined function `k`'s name (Tables::inline_names).
     pub(crate) fn inline_name(&self, k: u32) -> String {
         self.tables.inline_names.get(k as usize).cloned().unwrap_or_default()
     }

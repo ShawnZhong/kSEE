@@ -107,7 +107,7 @@ pub struct Tables {
     /// Names of inlined functions.
     pub inline_names: Vec<String>,
     /// Inline chains (see [`Step`]): innermost first, each an inlined
-    /// function (in [`Tables::names`]) and where it is inlined (a line of
+    /// function (in [`Tables::inline_names`]) and where it is inlined (a line of
     /// the next one out; the last: of the block's function).
     pub inlines: Vec<Vec<(u32, Loc)>>,
     /// Source file paths.

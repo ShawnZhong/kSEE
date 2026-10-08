@@ -4,8 +4,7 @@
 //! edged and the one it runs marked, with its values at its end as they are before it runs;
 //! the lines that ran in the run selected (hover a line's number: how
 //! often), each with what it stored so far (a click: that write); a name's
-//! value at the moment shown, hovered (Ctrl+click: its definition). A
-//! click on a line's number runs to its next run (Shift: its last).
+//! value at the moment shown, hovered (Ctrl+click: its definition).
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;

@@ -155,8 +155,8 @@ Stack's, take the record and rebuild memory as it was), while
 not own a second replay model.
 
 Chart window calculations are split at the ownership boundary. Dioxus event
-handling and rendering remain in `ksee-page`, while `wheel_window`,
-`clamped_pan` and their native unit tests live in `ksee-core`. The page and
+handling and rendering remain in `ksee-page`, while `wheel_window` and its
+native unit tests live in `ksee-core`. The page and
 the host build only for `wasm32`: the browser suites test them, and the
 workspace's default members (a bare `cargo test`) are the native crates.
 

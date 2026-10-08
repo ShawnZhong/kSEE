@@ -110,8 +110,7 @@ task's value and puts it back when the task gets the CPU. After an
 `execve` from user mode, the host drops the task's stack (the old
 program's frames are never returned to) and starts it again on a fresh
 one, in `user_entry`. No `CLONE_SETTLS`: programs have no thread-local
-storage. Futexes are the kernel's own (one CPU, so plain loads and stores
-in user space).
+storage. No futexes (`CONFIG_FUTEX=n`): no program here needs one.
 
 ## /init, the program, and the runners
 
