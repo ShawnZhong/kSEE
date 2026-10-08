@@ -12,7 +12,6 @@
 #include <linux/sched/task.h>
 #include <linux/sched/task_stack.h>
 #include <linux/printk.h>
-#include <linux/ptrace.h>
 #include <asm/switch_to.h>
 #include <asm/wasm.h>
 
@@ -89,15 +88,4 @@ void flush_thread(void)
 void show_regs(struct pt_regs *regs)
 {
 	show_regs_print_info(KERN_DEFAULT);
-}
-
-/* ptrace: there are no user registers, only the generic requests. */
-long arch_ptrace(struct task_struct *child, long request,
-		 unsigned long addr, unsigned long data)
-{
-	return ptrace_request(child, request, addr, data);
-}
-
-void ptrace_disable(struct task_struct *child)
-{
 }
