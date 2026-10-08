@@ -88,12 +88,12 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     settle().await;
     let mut next = vec![place()];
     for _ in 0..12 {
-        press("↓ Into");
+        press("→ Into");
         settle().await;
         next.push(place());
     }
     for _ in 0..12 {
-        press("↶ Back");
+        press("← Back");
         settle().await;
     }
     let back = place();
@@ -203,7 +203,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let edge = || drew("data-test-now").and_then(|n| n.parse::<f64>().ok());
     let mut seen = Vec::new();
     for _ in 0..200 {
-        press("↓ Into");
+        press("→ Into");
         settle().await;
         if let Some(n) = edge() { seen.push(n.round()) }
     }
@@ -225,7 +225,7 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let hover = (now() - t0) / 30.0;
     let t0 = now();
     for _ in 0..20 {
-        press("↓ Into");
+        press("→ Into");
         sleep(0).await;
     }
     let step = (now() - t0) / 20.0;
@@ -475,7 +475,7 @@ pub(super) async fn responsive() -> Check {
     let (sw, cw) = (src.scroll_width(), src.client_width());
     check(sw > cw, "the source scrolls sideways", (sw, cw))?;
     let at = place();
-    press("↓ Into");
+    press("→ Into");
     settle().await;
     Ok(format!("{at} → {}", place()))
 }

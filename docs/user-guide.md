@@ -169,8 +169,8 @@ a row (before each function inlined into it) counts once.
 
 | Control | Action |
 |---|---|
-| Right, or ↓ Into | Step into: the very next line, wherever it is. |
-| Left, or ↶ Back | Step back: the line before, the same way. |
+| Right, or → Into | Step into: the very next line, wherever it is. |
+| Left, or ← Back | Step back: the line before, the same way. |
 | Shift+Right, or ↷ Over | Step over: the next line of the function you read, over what it calls; past its end, on in its caller. |
 | Shift+Left | Step back over: the line before in the function you read. |
 | Up, or ↑ Out | Step out: on until the function you read returns, its caller's next line. |
