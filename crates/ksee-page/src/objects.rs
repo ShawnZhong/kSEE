@@ -29,13 +29,6 @@ fn grouped<T>(items: impl IntoIterator<Item = (String, T)>) -> Vec<(String, Vec<
     out
 }
 
-/// Their labels, once each: "file, inode, folio ×23".
-fn labels<'a>(nodes: impl IntoIterator<Item = &'a Node>) -> String {
-    grouped(nodes.into_iter().map(|n| (n.label.clone(), ()))).into_iter()
-        .map(|(label, n)| if n.len() > 1 { format!("{label} ×{}", n.len()) } else { label })
-        .collect::<Vec<_>>().join(", ")
-}
-
 /// The objects the call you read changed (with what it called), by the
 /// task that changed them and by whether their changes survived to its end.
 #[component]
@@ -75,11 +68,10 @@ pub(crate) fn Objects() -> Element {
     let same: Vec<usize> = (0..nodes.len()).filter(|&k| nodes[k].group == Group::Same).collect();
     let others = grouped((0..nodes.len()).filter(|&k| nodes[k].group == Group::Changed)
         .filter_map(|k| Some((nodes[k].by.as_ref()?.named(), k))));
-    let names = |list: &[usize]| labels(list.iter().map(|&k| &nodes[k]));
     let mut head = if own.is_empty() {
         format!("{title} itself changed nothing of the kernel's data")
     } else {
-        format!("{title} changed {}: {}", count(own.len()), names(&own))
+        format!("{title} changed {}", count(own.len()))
     };
     if !others.is_empty() {
         head += &format!("; while it ran, other tasks changed {} more", count(others.iter().map(|(_, list)| list.len()).sum()));
@@ -91,11 +83,11 @@ pub(crate) fn Objects() -> Element {
     // they were, under one.)
     let mut sections: Vec<(Option<(&str, &str, String)>, Vec<usize>)> = vec![(None, own)];
     for (task, list) in others {
-        let said = format!("By {task}, while it ran: {}: {}", count(list.len()), names(&list));
+        let said = format!("By {task}, while it ran: {}", count(list.len()));
         sections.push((Some(("listhead", "a task that ran while it did (one it woke, or waited for), and first wrote these", said)), list));
     }
     if !same.is_empty() {
-        let said = format!("Left as it was, changed and changed back: {}", names(&same));
+        let said = format!("Left as it was, changed and changed back: {}", count(same.len()));
         sections.push((Some(("listhead dim", "changed, then changed back by the end (a lock taken and released, a count taken and dropped)", said)), same));
     }
 
