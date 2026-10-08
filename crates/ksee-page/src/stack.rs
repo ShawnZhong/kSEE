@@ -28,10 +28,11 @@ pub enum Move {
     Out,
 }
 
-/// The cursor moved by `m`; past the run's lines, into its task's run after
-/// it (or before): its next syscall, or what it did between.
+/// The moment shown (hovered, else the cursor) moved by `m`, the cursor
+/// pinned there; past the run's lines, into its task's run after it (or
+/// before): its next syscall, or what it did between.
 pub fn walk(ui: Ui, d: Derived, m: Move) {
-    let Some(at) = ui.cursor.peek().clone() else { return };
+    let Some(at) = d.shown.peek().clone() else { return };
     let k = at.run;
     let lines = Ui::run_lines(k);
     let depth = d.stack.peek().get(*d.frame.peek()).map_or(0, |f| f.depth);
@@ -66,9 +67,9 @@ pub fn walk(ui: Ui, d: Derived, m: Move) {
     }
 }
 
-/// Under the strip: the steps (Move), in a debugger's order and with its
-/// keys as their icons: ← Back, ↷ Over (Shift+→; Shift+←, back over),
-/// → Into, ↓ Out; and where the
+/// Under the strip: the steps (Move), with their keys as their icons: the
+/// pair ← Back, → Into (↑ too: in, as ↓ is out); ↷ Over (Shift+→; Shift+←,
+/// back over); ↓ Out; and where the
 /// cursor is: the frame you read (chosen on the Stack or the chart; else the
 /// innermost).
 #[component]
@@ -89,8 +90,8 @@ pub fn Transport() -> Element {
     rsx! {
         div { class: "transport",
             button { title: "Step back: the line before, wherever it is (←; Shift+←: back over, in the function you read)", onclick: move |_| walk(ui, d, Move::Back), "← Back" }
+            button { title: "Step into: the very next line, into the calls (→ or ↑)", onclick: move |_| walk(ui, d, Move::Into), "→ Into" }
             button { title: "Step over: the next line of the function you read, over what it calls (Shift+→)", onclick: move |_| walk(ui, d, Move::Over), "↷ Over" }
-            button { title: "Step into: the very next line, into the calls (→)", onclick: move |_| walk(ui, d, Move::Into), "→ Into" }
             button { title: "Step out: on until the function you read returns, its caller's next line (↓)", onclick: move |_| walk(ui, d, Move::Out), "↓ Out" }
             span { class: "where mono dim", "{place}{turn}{returned}" }
         }
@@ -98,7 +99,7 @@ pub fn Transport() -> Element {
 }
 
 /// The page's keys, anywhere on it: one listener on the window, each its
-/// button's arrow: ← Back, → Into (Shift: over, back over), ↓ Out (see
+/// button's arrow: ← Back, → or ↑ Into (Shift: over, back over), ↓ Out (see
 /// Move). Not in text fields (the lesson's
 /// lines, find): arrows move the cursor there.
 pub fn listen(ui: Ui) {
@@ -122,6 +123,8 @@ pub fn listen(ui: Ui) {
             let arrow = match e.key().as_str() {
                 "ArrowLeft" if up => { walk(ui, d, if e.shift_key() { Move::BackOver } else { Move::Back }); true }
                 "ArrowRight" if up => { walk(ui, d, if e.shift_key() { Move::Over } else { Move::Into }); true }
+                // (Up: in, as down is out.)
+                "ArrowUp" if up => { walk(ui, d, Move::Into); true }
                 // (Down: out to the caller, under it in the Stack and the chart.)
                 "ArrowDown" if up => { walk(ui, d, Move::Out); true }
                 _ => false,

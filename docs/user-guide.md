@@ -170,8 +170,8 @@ a row (before each function inlined into it) counts once.
 
 | Control | Action |
 |---|---|
-| Right, or → Into | Step into: the very next line, wherever it is. |
-| Left, or ← Back | Step back: the line before, the same way. |
+| Left, or ← Back | Step back: the line before, wherever it is. |
+| Right or Up, or → Into | Step into: the very next line, the same way (into a call the line makes: above it, in the Stack and the chart). |
 | Shift+Right, or ↷ Over | Step over: the next line of the function you read, over what it calls; past its end, on in its caller. |
 | Shift+Left | Step back over: the line before in the function you read. |
 | Down, or ↓ Out | Step out: on until the function you read returns, its caller's next line (below it, in the Stack and the chart). |
