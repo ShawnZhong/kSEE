@@ -33,14 +33,7 @@ noinline long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2, u64 a3, u64 a4,
 	struct pt_regs *regs = current_pt_regs();
 	void (*entry)(void) = current->thread.entry;
 
-	regs->syscall_nr = nr;
-	regs->args[0] = a0;
-	regs->args[1] = a1;
-	regs->args[2] = a2;
-	regs->args[3] = a3;
-	regs->args[4] = a4;
-	regs->args[5] = a5;
-
+	*regs = (struct pt_regs){ .args = { a0, a1, a2, a3, a4, a5 }, .syscall_nr = nr };
 	nr = syscall_enter_from_user_mode(regs, nr);
 	if (nr >= 0 && nr < __NR_syscalls && sys_call_table[nr])
 		regs->ret = sys_call_table[nr](regs);
@@ -76,7 +69,9 @@ SYSCALL_DEFINE6(mmap2, unsigned long, addr, unsigned long, len,
 		unsigned long, prot, unsigned long, flags,
 		unsigned long, fd, unsigned long, pgoff)
 {
-	/* pgoff is in 4096-byte units, as on every 32-bit port. */
-	return ksys_mmap_pgoff(addr, len, prot, flags, fd,
-			       pgoff >> (PAGE_SHIFT - 12));
+	/*
+	 * The generic 32-bit table's mmap, which each port defines: pgoff in
+	 * 4096-byte units, this port's only page size (HAVE_PAGE_SIZE_4KB).
+	 */
+	return ksys_mmap_pgoff(addr, len, prot, flags, fd, pgoff);
 }
