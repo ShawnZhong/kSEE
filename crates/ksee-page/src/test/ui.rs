@@ -102,7 +102,7 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
           "stepping: Over within the function; Next into the calls; Back; each step a move", (&over, &next, &back))?;
     click(&named(".explain a", "vfs_read").ok_or("no link to vfs_read")?);
     settle().await;
-    press("↑ Out");
+    press("↓ Out");
     settle().await;
     let caller = place();
     press("↷ Over");
@@ -111,7 +111,7 @@ async fn links_and_steps(r: &mut Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
-/// The timeline: hover (the cross alone) and click on a bar, a level chosen
+/// The timeline: hover (the moment shown) and click (pinned) on a bar, a level chosen
 /// and kept, a drag after a click; how long a hover and a step take.
 async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     // (Hover and click resolve the same canvas bar and moment.)
@@ -120,28 +120,28 @@ async fn timeline(r: &mut Vec<String>) -> Result<(), String> {
     let b = canvas.get_bounding_client_rect();
     let chart = one(".chart").ok_or("no chart")?;
     let (x, y) = (b.left() + x, b.top() + y);
-    // (Hovered, a bar says what its call was, the cross where it was; left, no tip.)
+    // (Hovered, the moment there shown everywhere, a bar saying what its
+    // call was; left, the cursor's again, no tip.)
     let cross = || canvas.get_attribute("data-test-now");
-    let before = cross();
+    let chosen = || one("tr.frame.on a").map(|a| text(&a)).unwrap_or_default();
+    let (before, at) = (cross(), place());
     pointer(&chart, "pointermove", x, y);
     settle().await;
     let tip = one(".tip").map(|t| text(&t)).unwrap_or_default();
-    let during = cross();
+    let (during, hovered, frame) = (cross(), place(), chosen());
     mouse(&chart, "mouseleave", x, y, false);
     settle().await;
-    check(tip.contains("vfs_read") && during == before && one(".tip").is_none(), "a hover: the bar's tip, the cross still", (&tip, &before, &during))?;
-    // (Hovered, only the cross moves: the cursor's place stays; a click
-    // takes it there, the bar's level chosen.)
-    let before = place();
+    check(tip.contains("vfs_read") && during != before && hovered != at && frame == "vfs_read", "a hover: the moment shown, the bar's tip",
+          (&tip, &before, &during, &at, &hovered, &frame))?;
+    check(one(".tip").is_none() && cross() == before && place() == at, "left: the cursor's moment again", (cross(), &before, place(), &at))?;
+    // (A click pins it: left, it stays, the bar's level chosen.)
     pointer(&chart, "pointermove", x, y);
-    settle().await;
-    let hovered = place();
     mouse(&chart, "click", x, y, false);
+    mouse(&chart, "mouseleave", x, y, false);
     settle().await;
-    let chosen = one("tr.frame.on a").map(|a| text(&a)).unwrap_or_default();
     let level = || canvas.get_attribute("data-test-level");
-    check(chosen == "vfs_read" && hovered == before && level().is_some(),
-          "a hover moves the cross alone; a click on a bar, its level chosen, a line across", (&chosen, &before, &hovered, level()))?;
+    check(chosen() == "vfs_read" && place() == hovered && level().is_some(),
+          "a click pins the moment hovered, its bar's level chosen, a line across", (chosen(), place(), &hovered, level()))?;
     // (A click above the bars: no level chosen, the innermost frame shown.)
     mouse(&chart, "click", x, b.top() + 2.0, false);
     settle().await;

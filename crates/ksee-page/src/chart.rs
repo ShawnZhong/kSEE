@@ -5,9 +5,10 @@
 //! into one) over the steps it is on, colored by the kernel's part it is in,
 //! the calls at the cursor darker; the task strip under it; then the
 //! transport. The wheel zooms vertically and pans horizontally; a drag pans.
-//! Hovered, a bar is outlined and says what its call was (nothing else
-//! moves); clicked, the cursor goes there. Find a function by any part
-//! of its name.
+//! Hovered, the moment there is shown everywhere (the source, the stack,
+//! the tabs), a bar outlined and saying what its call was; clicked, the
+//! cursor is pinned there (left, the page is back at it). Find a function
+//! by any part of its name.
 
 use dioxus::prelude::*;
 use ksee_core::arch::AREAS;
@@ -238,7 +239,7 @@ impl Scale {
 /// The stack chart and the task strip drawn, the window `scale`: the bars
 /// (`calls`, the stack's, darker; `find`'s, lit; `lit`, outlined), a bar
 /// thinner than a pixel once per pixel; the cross at step `now` and
-/// `level`.
+/// `level`; a faint line at the cursor's step, `pinned`, if elsewhere.
 fn draw_chart(
     chart: &Chart,
     tasks: &[(String, String)],
@@ -250,6 +251,7 @@ fn draw_chart(
     now: Option<f64>,
     level: Option<usize>,
     locked: Option<usize>,
+    pinned: Option<f64>,
 ) {
     let width = scale.width;
     let (Some((canvas, ctx)), Some((_, task_ctx))) = (canvas_context("timeline-canvas", width, height), canvas_context("timeline-task-canvas", width, TASK_LANE))
@@ -313,6 +315,10 @@ fn draw_chart(
     }
     // (The moment shown, a cross: down, its step; across, under its frame's
     // level, the Stack's (under: its bars' names stay readable).)
+    if let Some(x) = pinned.filter(|&s| s >= a && s < b && Some(s) != now).map(|s| scale.x(s)) {
+        ctx.set_fill_style_str("rgba(127, 127, 127, 0.6)");
+        ctx.fill_rect(x - 1.0, 0.0, 2.0, height);
+    }
     ctx.set_fill_style_str(&foreground);
     let now = now.filter(|&s| s >= a && s < b).map(|s| scale.x(s));
     if let Some(x) = now {
@@ -373,8 +379,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let calls: Vec<(usize, String)> = stack.iter().map(|f| (f.first, f.func.clone())).collect();
         let lit = tip().map(|t| t.call).or_else(|| stack.get(d.frame.cloned()).map(|f| (f.first, f.func.clone())));
         draw_chart(&chart, &tasks.read(), scale, height, &calls, &(ui.find)().to_lowercase(), lit.as_ref(),
-                   d.cursor_step.cloned(), stack.len().checked_sub(1 + d.frame.cloned()),
-                   ui.cursor.read().as_ref().and_then(|m| m.level));
+                   d.shown_step.cloned(), stack.len().checked_sub(1 + d.frame.cloned()),
+                   d.shown.read().as_ref().and_then(|m| m.level), d.cursor_step.cloned());
         if let Some(scroll) = element("timeline-scroll") {
             scroll.set_scroll_top((scroll.scroll_height() - scroll.client_height() - *from_bottom.peek()).max(0));
         }
@@ -390,6 +396,9 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
         let bar = (y < height && dd >= 0.0 && (dd as usize) < stack.len()).then(|| (dd as usize, stack[dd as usize] as usize));
         Some((s, bar))
     };
+    // (The moment at a step and bar: at the level of the bar; off the
+    // bars, none: the innermost.)
+    let moment = |step: usize, bar: Option<(usize, usize)>| Ui::moment_at(machine().view(|v| v.rec.steps[step].0), Some(step), bar.map(|b| b.0));
     // (The wheel: up and down zoom around the pointer's step, in
     // proportion to how far it turned; left and right (or Shift) pan.)
     let wheel = move |x: f64, dx: f64, dy: f64, shift: bool| {
@@ -434,7 +443,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     if dx.hypot(dy) >= 4.0 || *dragged.peek() {
                         if !*dragged.peek() {
                             dragged.set(true);
-                                        tip.set(None);
+                            tip.set(None);
+                            ui.set_hover(None);
                         }
                         // (Up and down: the rows, their distance from the bottom
                         // kept before the redraw the pan makes restores it.)
@@ -449,10 +459,12 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                         return;
                     }
                 }
-                // (Else, over a bar, what its call was: outlined, a tip.)
+                // (Else the moment under it shown, as a click would pin it;
+                // over a bar, what its call was: outlined, a tip.)
                 let p = e.client_coordinates();
                 let Some((x, y)) = chart_coordinates(p.x, p.y) else { return };
-                let Some((_, bar)) = hit(x, y) else { return };
+                let Some((step, bar)) = hit(x, y) else { return ui.set_hover(None) };
+                ui.set_hover(moment(step, bar));
                 let chart = d.timeline.peek();
                 match bar.map(|(_, b)| &chart.bars[b]) {
                     None => if tip.peek().is_some() { tip.set(None) },
@@ -470,14 +482,12 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
                     }
                 }
             },
-            // (A click, not a drag: the cursor to the step under it, at the
-            // level of the bar clicked; off the bars, none: the innermost.)
+            // (A click, not a drag: the cursor pinned to the moment under it.)
             onclick: move |e: MouseEvent| {
                 if dragged() { dragged.set(false); return }
                 let p = e.client_coordinates();
                 let Some((step, bar)) = chart_coordinates(p.x, p.y).and_then(|(x, y)| hit(x, y)) else { return };
-                let i = machine().view(|v| v.rec.steps[step].0);
-                if let Some(moment) = Ui::moment_at(i, Some(step), bar.map(|b| b.0)) {
+                if let Some(moment) = moment(step, bar) {
                     ui.commit(Some(moment));
                 }
             },
@@ -489,7 +499,8 @@ fn Bars(tip: Signal<Option<Tip>>) -> Element {
             },
             onmouseleave: move |_| {
                 if pan().is_none() {
-                        tip.set(None);
+                    tip.set(None);
+                    ui.set_hover(None);
                 }
             },
             div { id: "timeline-scroll", class: "chartscroll",
