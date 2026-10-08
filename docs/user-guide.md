@@ -160,21 +160,23 @@ for the current lesson run. The console is output-only.
 
 ## 5. Move through the recording
 
-You follow the code line by line, as in a debugger: Step Into goes to the
-very next line wherever it is, into the calls. To stay in one function
-instead, step over: the function you read is the frame the source shows,
-highlighted in the Stack and named in the transport below the chart (the
-innermost, unless you choose another: a Stack row, or a bar in the chart).
-Each step goes somewhere else: a line the recording stops at more than once in
-a row (before each function inlined into it) counts once.
+You read one function at a time: the frame the source shows, highlighted in
+the Stack and named in the transport below the chart (the innermost, unless
+you choose another: a Stack row, a bar in the chart, or Up and Down). Left
+and right move through its lines, over what it calls; when it returns, on in
+its caller. Up and down move along the stack, as the Stack and the chart draw
+it: up, into the call a line makes; down, out to its caller. To follow every
+line instead, into each call, hold Shift. Each step goes somewhere else: a
+line the recording stops at more than once in a row (before each function
+inlined into it) counts once.
 
 | Control | Action |
 |---|---|
-| Left, or ← Back | Step back: the line before, wherever it is. |
-| Right or Up, or → Into | Step into: the very next line, the same way (into a call the line makes: above it, in the Stack and the chart). |
-| Shift+Right, or ↷ Over | Step over: the next line of the function you read, over what it calls; past its end, on in its caller. |
-| Shift+Left | Step back over: the line before in the function you read. |
-| Down, or ↓ Out | Step out: on until the function you read returns, its caller's next line (below it, in the Stack and the chart). |
+| Right, or → Next | The next line of the function you read, over what it calls; past its end, on in its caller. |
+| Left, or ← Back | The line before, the same way. |
+| Shift+Right, Shift+Left (or Shift-click) | The very next line, or the one before, wherever it is: into the calls. |
+| Up, or ↑ In | Into the call this line makes (its first line); with a caller's frame chosen, the frame above it. |
+| Down, or ↓ Out | Out to the caller, at its call (Next then goes on there). |
 | Hover the chart | See the moment there everywhere (the source, the Stack, the tabs), the bar's call in a tip; leave, and the page is back at the cursor. |
 | Click the chart | Pin the cursor to the moment hovered. |
 

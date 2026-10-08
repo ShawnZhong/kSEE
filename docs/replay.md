@@ -72,11 +72,10 @@ a later line of its stretch, a store, a comparison or a variable set, each
 saying its line; with none, after the stretch's last; a stretch's first
 line at the block's record: the cursor goes there, and memory and the
 variables are as they were) and how deep it runs (calls deep, and inlined
-deep): the level stepping over or out of a call compares. A line that
-made a call says what the call returned (`called`), from its return on:
-`ret = f(...)` shows the value `ret` got. A store's line is the one it says, in the block its task is in.
-The run-to-line lookup finds the next or previous reconstructed step for a
-given source line.
+deep): the depth a step in one function compares. A line that made a
+call says what the call returned (`called`), from its return on:
+`ret = f(...)` shows the value `ret` got. A store's line is the one it
+says, in the block its task is in.
 
 ## Records and line steps
 

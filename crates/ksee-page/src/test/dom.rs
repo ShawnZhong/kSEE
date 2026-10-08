@@ -126,6 +126,13 @@ pub(super) fn press(label: &str) {
     }
 }
 
+/// A transport button clicked with Shift.
+pub(super) fn shift_press(label: &str) {
+    if let Some(b) = named(".transport button", label) {
+        mouse(&b, "click", 0.0, 0.0, true);
+    }
+}
+
 /// A line's text changed and Enter pressed.
 pub(super) fn write(ta: &Element, t: &str) {
     let Some(a) = ta.dyn_ref::<HtmlTextAreaElement>() else { return };

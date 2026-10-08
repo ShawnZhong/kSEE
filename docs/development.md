@@ -121,7 +121,7 @@ runtime's WebAssembly module and calls `Machine` directly.
 | `nav.rs` | The header (lessons menu, chapter, source link, theme), the lessons before and after, and the URL (`NAME.html#p=…`). |
 | `editor.rs` | In-place program editing, completions, signatures, and validation. |
 | `chart.rs` | Whole-recording overview, stack chart, task strip, zoom/pan input, and function search. |
-| `source.rs` | Virtualized kernel source, executed lines, values, stores, run-to-line, and definition navigation. |
+| `source.rs` | Virtualized kernel source, executed lines, values, stores, and definition navigation. |
 | `stack.rs` | The transport (line and frame stepping, its buttons and keys), stack frames, values, and origins. |
 | `panels.rs` | Stack, Tasks, Memory, Disk, and Console tabs. |
 | `layout.rs` | Resizable panes and persisted dimensions. |

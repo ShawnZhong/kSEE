@@ -166,8 +166,7 @@ The current replay boundary is closure-based:
   and lends both the view and that historical memory.
 
 The page uses these methods for syscalls, reconstructed lines, the timeline,
-stacks, tasks, objects, notes, origins, source definitions, and run-to-line
-lookups. Historical memory is available only through `Machine::at_moment`.
+stacks, tasks, objects, notes, origins, and source definitions. Historical memory is available only through `Machine::at_moment`.
 
 ## Determinism
 
