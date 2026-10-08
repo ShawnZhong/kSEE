@@ -6,20 +6,4 @@
 #define PTRACE_SYSEMU			31
 #define PTRACE_SYSEMU_SINGLESTEP	32
 
-#ifndef __ASSEMBLY__
-
-#include <linux/types.h>
-
-/*
- * Wasm has no user-visible registers. pt_regs records the syscall being
- * made (arguments are 64 bits wide: see the syscall export) so the generic
- * entry code and signal handling have something to inspect and restart.
- */
-struct pt_regs {
-	__u64 args[6];
-	long syscall_nr;
-	long ret;
-};
-
-#endif /* __ASSEMBLY__ */
 #endif
