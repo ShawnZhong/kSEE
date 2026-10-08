@@ -3,7 +3,7 @@
 //! then its program's lines, each with what it did, made one after another
 //! on a fresh kernel. Beside it, the recording: the timeline (chart.rs),
 //! the source where the cursor is (source.rs), and the tabs: the Stack,
-//! the tasks, the objects the run selected changed, and the console
+//! the tasks, what the run selected wrote in the kernel's memory, and the console
 //! (stack.rs, panels.rs); the header, the URL (nav.rs). The state
 //! (state.rs): the lesson and its program, the moment shown (the call
 //! selected, the cursor in it, the frame chosen), and the views of them.

@@ -107,7 +107,7 @@ fn run_of_call(ui: Ui, n: usize) -> Option<usize> {
 
 /// Follow link `target` of the lesson's text: `N` (its call N selected),
 /// `N:func` (the cursor at func's first line in it), and a tab to show
-/// (`:stack`, `:objects`, `:tasks`, `:console`); `try:N`, its program made
+/// (`:stack`, `:memory`, `:tasks`, `:console`); `try:N`, its program made
 /// instead.
 fn follow(mut ui: Ui, target: LessonTarget) {
     let LessonTarget::Recording { call, function, any_task, tab } = target else {

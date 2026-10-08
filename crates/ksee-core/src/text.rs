@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LessonTab {
     Stack,
-    Objects,
+    Memory,
     Tasks,
     Console,
     Disk,
@@ -18,7 +18,7 @@ impl LessonTab {
     fn parse(part: &str) -> Option<Self> {
         match part {
             "stack" => Some(Self::Stack),
-            "objects" => Some(Self::Objects),
+            "memory" => Some(Self::Memory),
             "tasks" => Some(Self::Tasks),
             "console" => Some(Self::Console),
             "disk" => Some(Self::Disk),
@@ -120,7 +120,7 @@ mod tests {
             ("1", Recording { call: 1, function: None, any_task: false, tab: None }),
             ("2:vfs_read", Recording { call: 2, function: Some("vfs_read".into()), any_task: false, tab: None }),
             ("2:vfs_read:any", Recording { call: 2, function: Some("vfs_read".into()), any_task: true, tab: None }),
-            ("2:objects", Recording { call: 2, function: None, any_task: false, tab: Some(Objects) }),
+            ("2:memory", Recording { call: 2, function: None, any_task: false, tab: Some(Memory) }),
             ("2:vfs_read:stack", Recording { call: 2, function: Some("vfs_read".into()), any_task: false, tab: Some(Stack) }),
             ("2:vfs_read:any:tasks", Recording { call: 2, function: Some("vfs_read".into()), any_task: true, tab: Some(Tasks) }),
             ("2:console", Recording { call: 2, function: None, any_task: false, tab: Some(Console) }),
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn invalid_lesson_targets() {
         for text in ["", "abc", "0", ":vfs_read", "2:", "try", "try:", "try:0", "try:abc",
-                     "try:1:stack", "2:any", "2:vfs_read:unknown", "2:vfs_read:stack:objects",
+                     "try:1:stack", "2:any", "2:vfs_read:unknown", "2:vfs_read:stack:memory",
                      "2:vfs_read:any:any", "2:vfs_read:any:stack:extra"] {
             assert!(LessonTarget::parse(text).is_none(), "{text}");
         }

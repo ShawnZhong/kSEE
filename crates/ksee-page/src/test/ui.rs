@@ -10,7 +10,7 @@ use super::dom::*;
 /// from where the one before left the page): the timeline's colors; its
 /// calls made; its links and stepping; the timeline (hover, click, the
 /// cross, a level kept); a name's tip in the source; the timeline's window
-/// (find, pan, zoom, the overview); the editor's completions; the Objects
+/// (find, pan, zoom, the overview); the editor's completions; the Memory
 /// and Tasks tabs; the program changed, a try, the lessons before and after.
 pub(super) async fn read() -> Check {
     let mut r = Vec::new();
@@ -362,10 +362,10 @@ async fn editor() -> Result<(), String> {
     Ok(())
 }
 
-/// Objects (what the read changed) and Tasks (a task_struct opened).
+/// Memory (what the read changed) and Tasks (a task_struct opened).
 async fn panels(r: &mut Vec<String>) -> Result<(), String> {
-    // (Objects: what the read changed, its file's position; Tasks: a task_struct opened.)
-    tab("Objects").await;
+    // (Memory: what the read changed, its file's position; Tasks: a task_struct opened.)
+    tab("Memory").await;
     let objects: Vec<String> = all(".obj .title").iter().map(text).collect();
     check(named(".obj td", "f_pos").is_some(), "objects", &objects)?;
     r.push(format!("objects {objects:?}"));

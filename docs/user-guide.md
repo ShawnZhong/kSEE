@@ -119,15 +119,15 @@ created. Open a task to inspect its `task_struct` as memory was at that moment.
 A thread appears under its thread-group leader and a process under its parent
 when those relationships are available.
 
-### Objects
+### Memory
 
-The Objects tab summarizes kernel data changed by the selected syscall. It
+The Memory tab summarizes what the selected syscall wrote in kernel memory. It
 groups changes made by the syscall's own task, changes made by other tasks
 while it ran, and values changed and restored before the end. Each object is
 named from typed kernel data and arranged under an object that points to it.
 
 A member row shows its before and after values and the function that changed
-it. Click the row to move to that write. Objects intentionally omit a call's
+it. Click the row to move to that write. The tab intentionally omits a call's
 ordinary stack locals; those belong in Stack.
 
 ### Disk

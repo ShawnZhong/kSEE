@@ -5,7 +5,7 @@
     "getpid read a task's field; prctl can write one. A task's name is `comm`, 16 bytes in its `task_struct`: what ps and top show, and the timeline here. The program renames itself.",
     "1. [__wasm_sys_prctl](1:__wasm_sys_prctl) is one big switch on the option, `PR_SET_NAME` here; first [cap_task_prctl](1:cap_task_prctl), the security module, gets a say.",
     "2. [strncpy_from_user](1:strncpy_from_user) copies the new name in from the program's memory, at most 15 bytes and a NUL: the kernel never uses a user pointer as it is.",
-    "3. [__set_task_comm](1:__set_task_comm) copies it into `comm`, under the task's lock, padded with zeros: [what it changed](1:__set_task_comm:objects), `comm` from \"prog\" to \"worker\".",
+    "3. [__set_task_comm](1:__set_task_comm) copies it into `comm`, under the task's lock, padded with zeros: [what it changed](1:__set_task_comm:memory), `comm` from \"prog\" to \"worker\".",
     "The Tasks tab lists every task of the kernel, what each is doing, and its `task_struct`: open the program's, and step: `comm` changes at the call.",
     "Try: [read it back](try:1), with `PR_GET_NAME`, into a buffer of the program's; or [a name too long](try:2): it is cut to 15 characters."
   ],

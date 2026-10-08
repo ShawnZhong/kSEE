@@ -56,7 +56,7 @@ Lesson paragraphs use Markdown-like inline code and links parsed by
 | `[the call](2)` | Select the second syscall row. |
 | `[vfs_read](2:vfs_read)` | Select call 2 and move to the first `vfs_read` on that call's task. |
 | `[wake it](2:try_to_wake_up:any)` | Find the function on any task that ran during call 2. |
-| `[changed data](2:objects)` | Select call 2 and open Objects. |
+| `[changed data](2:memory)` | Select call 2 and open Memory. |
 | `[the stack](2:vfs_read:stack)` | Move into the function and open Stack. |
 | `[wake stack](2:try_to_wake_up:any:stack)` | Find the function on any task and open Stack. |
 | `[try it](try:1)` | Run `tries[0]` instead of the lesson program. |

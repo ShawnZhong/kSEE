@@ -1,4 +1,4 @@
-//! The Objects tab: the objects the run selected changed (View::objects),
+//! The Memory tab: the objects the run selected changed (View::objects),
 //! each a table of its fields, under the task that changed it.
 
 use std::rc::Rc;

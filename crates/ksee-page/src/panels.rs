@@ -1,5 +1,5 @@
 //! Beside the source, a tab each: the Stack (stack.rs); the tasks at the
-//! moment shown; what the run selected did to the kernel's data (Objects);
+//! moment shown; what the run selected wrote in the kernel's memory (Memory);
 //! what it asked of the disk (Disk); the kernel's console.
 
 use std::collections::BTreeSet;
@@ -27,14 +27,14 @@ pub fn Tabs() -> Element {
             nav { class: "tabs",
                 {head(Tab::Stack, "Stack", "the calls at the cursor, their values as they were then")}
                 {head(Tab::Tasks, "Tasks", "every task at the cursor: what each is doing, its task_struct")}
-                {head(Tab::Objects, "Objects", "the objects the run selected changed, and how they point to each other")}
+                {head(Tab::Memory, "Memory", "what the run selected wrote in the kernel's memory: the objects it changed, and how they point to each other")}
                 {head(Tab::Disk, "Disk", "every transfer the disk made during the calls, for which task, and what it wrote; the cursor's place among them")}
                 {head(Tab::Console, "Console", "the kernel's log and the programs' output")}
             }
             div { class: "pane",
                 match tab {
                     Tab::Stack => rsx! { crate::stack::Stack {} },
-                    Tab::Objects => rsx! { Objects {} },
+                    Tab::Memory => rsx! { Objects {} },
                     Tab::Tasks => rsx! { Tasks {} },
                     Tab::Disk => rsx! { Disk {} },
                     Tab::Console => rsx! { pre { class: "console", "{ui.console}" } },

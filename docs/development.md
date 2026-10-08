@@ -123,7 +123,7 @@ runtime's WebAssembly module and calls `Machine` directly.
 | `chart.rs` | Whole-recording overview, stack chart, task strip, zoom/pan input, and function search. |
 | `source.rs` | Virtualized kernel source, executed lines, values, stores, run-to-line, and definition navigation. |
 | `stack.rs` | The transport (line and frame stepping, its buttons and keys), stack frames, values, and origins. |
-| `panels.rs` | Stack, Tasks, Objects, and Console tabs. |
+| `panels.rs` | Stack, Tasks, Memory, Disk, and Console tabs. |
 | `layout.rs` | Resizable panes and persisted dimensions. |
 | `state.rs` | Semantic state transitions, the snapshot identity, navigation, lesson program, and derived views. |
 | `test/lessons.rs` | Every lesson and try on a fresh kernel: its calls finished, its links found. |
