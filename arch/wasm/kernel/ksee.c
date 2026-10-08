@@ -20,7 +20,7 @@
 /* (Called by the plugin's probes and the host only: no header has them.) */
 void __ksee_put(u32 a, u32 tag, u32 n);
 void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from);
-void __ksee_record(u32 level, u32 task);
+void __ksee_record(u32 level);
 
 #define RING_WORDS (1u << 21)
 #define COUNT 24
@@ -132,16 +132,15 @@ __wasm_export(ksee_bulk) void __ksee_bulk(u32 addr, u32 len, u32 line, u32 from)
 	}
 }
 
-/* What the probes record, as the host says: 1, everything, from a Task
- * record naming `task`, who runs from there (no switch in the recording
- * says so); 2, stores only, so that memory stays exact (a runner waiting
- * for its next call: the wait is the program's machinery, not its lines);
- * 0, nothing (the boot, until the program's first line). */
-__wasm_export(ksee_record) void __ksee_record(u32 level, u32 task)
+/* What the probes record, as the host says: 1, everything, while a call
+ * the page asked for is under way, from a Task record: who runs (no switch
+ * in the recording says so); 2, stores only, between them, so that memory
+ * stays exact; 0, nothing (the boot, until the program's first line). */
+__wasm_export(ksee_record) void __ksee_record(u32 level)
 {
 	bool begins = level == 1 && ksee_trace.on != 1;
 
 	ksee_trace.on = level;
 	if (begins)
-		done(head(ksee_trace.pos, task, TASK, 0));
+		done(head(ksee_trace.pos, (u32)(unsigned long)current, TASK, 0));
 }

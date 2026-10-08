@@ -8,8 +8,8 @@ use ksee_core::Memory;
 use crate::machine::Machine;
 use crate::state::{state, tables, Direct, Transfer};
 
-/// A transfer the disk made (Transfer): the records it was handed over and
-/// taken as done at, and the task that handed it over, named.
+/// A transfer the disk made during a call (Transfer): the records it was
+/// handed over and taken as done at, and the task that handed it over, named.
 #[derive(Clone, Debug)]
 pub struct DiskTransfer {
     pub transfer: Transfer,
@@ -58,9 +58,10 @@ impl Machine {
             // end.)
             let record = |word: u32| Some(ids.partition_point(|&id| id < word)).filter(|&i| i < ids.len() && ids.first().is_some_and(|&f| word > f));
             // (Each a moment to go to, just after the driver's call handing
-            // it over; one the ring has let go of, gone too.)
+            // it over, in a run: one handed over between the calls (stores
+            // only, recorded), or the ring has let go of, not.)
             state(|s| s.disk_log.iter().filter_map(|t| {
-                let (asked, done) = (record(t.asked)?, record(t.done)?);
+                let (asked, done) = (record(t.asked).filter(|&i| v.rec.run_at(i).is_some())?, record(t.done)?);
                 let by = v.task(t.task, asked).named();
                 Some(DiskTransfer { transfer: t.clone(), asked, done, by })
             }).collect())

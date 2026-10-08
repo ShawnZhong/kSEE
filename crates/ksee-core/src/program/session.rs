@@ -105,10 +105,9 @@ impl Session {
         self.calls.values().all(|c| c.done)
     }
 
-    /// Whether the task at `task` is a runner waiting for its next call (no
-    /// call of its begun and not done).
-    pub fn waiting(&self, task: u32) -> bool {
-        self.runners.iter().any(|(&tid, r)| r.task == task && !self.calls.values().any(|c| c.tid == tid && c.begun && !c.done))
+    /// Whether a call is under way, begun and not done: what is recorded.
+    pub fn recording(&self) -> bool {
+        self.calls.values().any(|c| c.begun && !c.done)
     }
 
     /// The tasks of the calls not done.

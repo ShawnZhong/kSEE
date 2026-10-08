@@ -149,8 +149,8 @@ task that did, the block layer's calls below on its stack; "done" to go
 where the kernel took it as done, in the disk's interrupt (a read's bytes in
 memory then). The host notes each moment as it happens: the trace's position
 when the driver calls its `disk_submit`, and when the interrupt takes the
-request's tag (`disk_done`). The boot's transfers, before the recording, are
-not listed. A write shows the bytes it changed, a read the bytes it read.
+request's tag (`disk_done`). The transfers handed over during the calls are
+listed: the boot's, and the kernel's own between calls (writeback), are not. A write shows the bytes it changed, a read the bytes it read.
 
 The Console tab contains kernel log messages and program output accumulated
 for the current lesson run. The console is output-only.

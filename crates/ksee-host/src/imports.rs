@@ -145,11 +145,11 @@ pub fn logged(addr: u32, len: u32) {
     });
 }
 
-/// What the kernel records (see programs.rs's record): 1, everything,
-/// from a Task record naming `task`; 2, stores only.
-pub fn record(level: u32, task: u32) {
+/// What the kernel records (see programs.rs's record): 1, everything
+/// (a Task record first, as it begins); 2, stores only.
+pub fn record(level: u32) {
     WRITERS.with_borrow(|w| if let Some((_, record)) = w {
-        let _ = record.call2(&JsValue::NULL, &level.into(), &task.into());
+        let _ = record.call1(&JsValue::NULL, &level.into());
     });
 }
 

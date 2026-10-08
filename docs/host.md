@@ -119,16 +119,14 @@ selection is not part of the program expression language. See
 ## Recording boundaries
 
 The runner brackets its syscall with `ksee.begin` and `ksee.end(ret)`.
-At the program's first line (a declaration's write, or a call's `begin`),
-the runtime turns the kernel's recording on (its `ksee_record` export): from
-then on it records blocks, calls, returns, variables, comparisons, and
-stores, between the calls too; but while a runner waits for its next call
-(from its `end` to its next `begin`: its futex, the program's machinery)
-stores only, so the wait is not shown and memory stays exact. The runtime
-says so at each task switch (programs.rs's `record`); each time everything
-is recorded again the kernel writes a `Task` record naming the task that
-runs, because no context switch in the recording says so. The boot, before,
-is not recorded. Host writes to kernel memory are logged by the kernel's
+While a call the page asked for is under way (a runner between its `begin`
+and its `end`), the kernel records everything (its `ksee_record(1)`
+export): blocks, calls, returns, variables, comparisons, and stores, from a
+`Task` record naming the running `task_struct`, because no context switch
+in the recording necessarily identifies it. Between calls it records stores
+only (`ksee_record(2)`), so memory as it was stays exact while the runners'
+waits and the kernel's own work then are not shown. The boot, before the
+program's first line, is not recorded. Host writes to kernel memory are logged by the kernel's
 `ksee_bulk` export before they are made, as its own bulk writes are, so
 historical memory stays coherent across request setup and program
 variables.
