@@ -124,8 +124,8 @@ exited, or not yet created, each with what it is doing.
 
 Click a task (the running one, at first) for its `task_struct` under its line,
 as memory was at that moment: its key fields, as paths in it (`pid`, `tgid`,
-`comm`, `__state`, `real_parent`, and `files->fd_array`, its open files by
-number). Check **all fields** for the whole struct instead, as declared.
+`comm`, `__state`, `files->fd_array`, its open files by number, and
+`bio_list`, set while it submits disk requests). Check **all fields** for the whole struct instead, as declared.
 
 Everywhere a value is shown, a pointer to a task, an open file or a dentry
 says what it is: `→ init(1)`, `→ /dev/console`, `→ pipefs:[12]` (a pipe,
