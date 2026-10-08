@@ -69,22 +69,8 @@ pub struct Frame {
 pub fn step(lines: &[Line], k: usize, dir: isize, within: Option<u32>) -> Option<usize> {
     let here = lines.get(k)?;
     let same = |l: &Line| l.file == here.file && l.line == here.line && l.depth == here.depth && l.turn == here.turn;
-    seek(lines, k, dir, |l| within.is_none_or(|w| l.depth <= w) && !same(l))
-}
-
-/// The first of `lines` from line `k` in direction `dir` (none: 0) that `is` says yes to.
-fn seek(lines: &[Line], k: usize, dir: isize, is: impl Fn(&Line) -> bool) -> Option<usize> {
-    if dir == 0 {
-        return None;
-    }
-    let mut j = k.checked_add_signed(dir)?;
-    while j < lines.len() {
-        if is(&lines[j]) {
-            return Some(j);
-        }
-        j = j.checked_add_signed(dir)?;
-    }
-    None
+    let is = |&j: &usize| within.is_none_or(|w| lines[j].depth <= w) && !same(&lines[j]);
+    if dir < 0 { (0..k).rev().find(is) } else { (k + 1..lines.len()).find(is) }
 }
 
 impl View<'_> {

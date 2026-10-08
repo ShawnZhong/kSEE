@@ -160,16 +160,9 @@ impl View<'_> {
     pub fn task_fields(&self, addr: u32, at: usize) -> TaskFields {
         let types = &self.tables.types;
         let mem = self.rec.memory_at(self.now, at);
-        let key = types.find(arch::TASK).map_or(Vec::new(), |ty| arch::TASK_FIELDS.iter().filter_map(|p| types.at_path(&mem, ty, addr, p)).collect());
-        TaskFields { key, all: self.fields(arch::CURRENT, arch::TASK, addr, at) }
-    }
-
-    /// The fields of `name`, the struct `ty` at `addr`, as memory was
-    /// after record `at`, as declared.
-    fn fields(&self, name: &str, ty: &str, addr: u32, at: usize) -> Vec<Object> {
-        let types = &self.tables.types;
-        let mem = self.rec.memory_at(self.now, at);
-        types.find(ty).and_then(|t| types.object(&mem, name, addr, t, 1).children).unwrap_or_default()
+        let Some(ty) = types.find(arch::TASK) else { return TaskFields { key: Vec::new(), all: Vec::new() } };
+        let key = arch::TASK_FIELDS.iter().filter_map(|p| types.at_path(&mem, ty, addr, p)).collect();
+        TaskFields { key, all: types.object(&mem, arch::CURRENT, addr, ty, 1).children.unwrap_or_default() }
     }
 
     /// The tasks at record `i`: the kernel's, as its lists had them then
