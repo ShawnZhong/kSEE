@@ -26,7 +26,7 @@ pub struct Machine {
     module: WebAssembly::Module,
     initrd: Vec<u8>,
     /// The disk as built (each boot's starts as it).
-    disk: Vec<u8>,
+    disk: Disk,
     /// The last snapshot of the trace.
     pub(crate) rec: RefCell<Recording>,
 }
@@ -50,7 +50,9 @@ impl Memory for Bytes<'_> {
 
 /// Custom section `name` of the kernel's image, as text.
 fn section(kernel: &Uint8Array, name: &str) -> String {
-    String::from_utf8_lossy(&ksee_core::wasm::section(&Bytes(kernel), 0, kernel.length(), name)).into_owned()
+    // (The bytes as they are, if text: one copy of a section megabytes long.)
+    String::from_utf8(ksee_core::wasm::section(&Bytes(kernel), 0, kernel.length(), name))
+        .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
 }
 
 #[wasm_bindgen]
@@ -75,7 +77,8 @@ impl Machine {
         TABLES.set(tables).map_err(|_| "one machine per page")?;
 
         // The initramfs goes at the top of RAM; the kernel reserves it.
-        let m = Machine { module, initrd: initrd.to_vec(), disk: disk.to_vec(), rec: Default::default() };
+        let m = Machine { module, initrd: initrd.to_vec(), disk: Disk::new(disk.length() as usize, |at, buf| disk.subarray(at as u32, (at + buf.len()) as u32).copy_to(buf)),
+                         rec: Default::default() };
         m.boot().await?;
         Ok(m)
     }
@@ -106,7 +109,7 @@ impl Machine {
         let cmdline: Vec<u8> = format!("initrd={initrd:#x},{}", self.initrd.len()).bytes().take(room as usize - 1).chain([0]).collect();
         unsafe {
             *(end as *mut u32) = RAM_BYTES;
-            *(sectors as *mut u64) = self.disk.len() as u64 / 512;
+            *(sectors as *mut u64) = self.disk.len as u64 / 512;
             core::ptr::copy_nonoverlapping(cmdline.as_ptr(), line as *mut u8, cmdline.len());
         }
         // (The trace's ring, its struct ksee_ring's fields, where its types say.)

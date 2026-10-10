@@ -88,15 +88,21 @@ pub fn disk_work() -> bool {
                 s.done_tags.push_back(t.tag);
             }
             // (Past the disk's end: the request ends all the same, its bytes not moved.)
-            let Some(blocks) = s.disk.get_mut(at..at + t.len as usize) else { return };
+            if at + t.len as usize > s.disk.len {
+                return;
+            }
+            let mut blocks = vec![0; t.len as usize];
+            s.disk.read(at, &mut blocks);
             if t.write {
-                t.before = blocks.to_vec();
-                Direct.read(t.buf, blocks);
+                t.before = std::mem::take(&mut blocks);
+                blocks = vec![0; t.len as usize];
+                Direct.read(t.buf, &mut blocks);
+                s.disk.write(at, &blocks);
             } else {
                 logged(t.buf, t.len);
                 unsafe { core::ptr::copy_nonoverlapping(blocks.as_ptr(), t.buf as *mut u8, t.len as usize) };
             }
-            t.after = blocks.to_vec();
+            t.after = blocks;
             // (Logged if recorded: the trace's word 0 until the recording
             // begins, the boot's transfers left out.)
             if t.asked_word != 0 {

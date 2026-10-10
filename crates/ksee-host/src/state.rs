@@ -25,6 +25,49 @@ pub const KERNEL_BASE: u32 = 0x100_0000;
 pub const RAM_BYTES: u32 = 64 << 20;
 
 /// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h: the same).
+/// A disk's bytes, `len` long: its blocks that are not all zeros (the
+/// others read as zeros: an image of mostly free space, 8 MiB, is a few
+/// blocks).
+#[derive(Clone, Default)]
+pub struct Disk {
+    blocks: std::collections::BTreeMap<usize, Box<[u8; DISK_BLOCK]>>,
+    pub len: usize,
+}
+
+const DISK_BLOCK: usize = 4096;
+
+impl Disk {
+    /// A disk `len` bytes long, read a block at a time by `read` (its
+    /// offset, the bytes there): never all of it at once.
+    pub fn new(len: usize, mut read: impl FnMut(usize, &mut [u8])) -> Disk {
+        let mut blocks = std::collections::BTreeMap::new();
+        for at in (0..len).step_by(DISK_BLOCK) {
+            let mut block = Box::new([0; DISK_BLOCK]);
+            read(at, &mut block[..DISK_BLOCK.min(len - at)]);
+            if block.iter().any(|&x| x != 0) {
+                blocks.insert(at / DISK_BLOCK, block);
+            }
+        }
+        Disk { blocks, len }
+    }
+
+    /// The bytes at `at`, `out.len()` of them.
+    pub fn read(&self, at: usize, out: &mut [u8]) {
+        for (k, o) in out.iter_mut().enumerate() {
+            let p = at + k;
+            *o = self.blocks.get(&(p / DISK_BLOCK)).map_or(0, |b| b[p % DISK_BLOCK]);
+        }
+    }
+
+    /// `data` written at `at`.
+    pub fn write(&mut self, at: usize, data: &[u8]) {
+        for (k, &x) in data.iter().enumerate() {
+            let p = at + k;
+            self.blocks.entry(p / DISK_BLOCK).or_insert_with(|| Box::new([0; DISK_BLOCK]))[p % DISK_BLOCK] = x;
+        }
+    }
+}
+
 pub const IRQ_TIMER: u32 = 0;
 pub const IRQ_CONSOLE: u32 = 1;
 pub const IRQ_DISK: u32 = 2;
@@ -61,7 +104,7 @@ pub struct State {
     /// The disk (arch/wasm/drivers/disk.c): its blocks; the transfers handed to
     /// it and not yet made, the tags of the requests done (for its
     /// interrupt to take); and every transfer made (the Disk tab's).
-    pub disk: Vec<u8>,
+    pub disk: Disk,
     pub transfers: Vec<Transfer>,
     pub done_tags: VecDeque<u32>,
     pub disk_log: Vec<Transfer>,
