@@ -59,7 +59,7 @@ pub fn completions(types: &Types, c: &Context, names: &[(&str, &Sym)], common: &
         Sym::Value { v, to: Some(_) } => format!("= {v:#x}"),
         Sym::Value { v, to: None } => format!("= {v}"),
     })).collect();
-    let pname = types.syscall_params(&c.call).and_then(|p| p.get(param)).map_or("", |p| &*p.0);
+    let pname = types.syscall_params(&c.call).and_then(|p| p.get(param)).map_or("", |p| p.0);
     let fits = crate::arch::consts_of(&c.call, pname);
     let mut consts: Vec<(&String, i64)> = types.constants.iter().filter(|(n, _)| n.starts_with(w)).map(|(n, &v)| (n, v)).collect();
     consts.sort_by_key(|(n, _)| !fits.iter().any(|f| n.starts_with(f)));

@@ -21,7 +21,6 @@
 //! ```
 
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::sync::Arc;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -45,6 +44,23 @@ pub struct Member {
     /// 0 unless a bitfield.
     pub bit_size: u32,
     pub ty: u32,
+}
+
+/// Names, each once for the page's life: the kernel's tables are made once
+/// and never dropped (one kernel a page), so each name is allocated once,
+/// kept, and a `&'static str` (no count of who holds it).
+#[derive(Default)]
+pub(crate) struct Names(BTreeSet<&'static str>);
+
+impl Names {
+    pub(crate) fn name(&mut self, s: &str) -> &'static str {
+        if let Some(&r) = self.0.get(s) {
+            return r;
+        }
+        let r: &'static str = alloc::boxed::Box::leak(s.into());
+        self.0.insert(r);
+        r
+    }
 }
 
 /// A task's id and name, as its task_struct says them.
@@ -84,19 +100,19 @@ pub struct Types {
     /// Syscall names, by number.
     pub syscalls: BTreeMap<u32, String>,
     /// Functions' parameters, by function id (the probes' F lines'): [(parameter, type)].
-    pub params: BTreeMap<u32, Vec<(Arc<str>, u32)>>,
+    pub params: BTreeMap<u32, Vec<(&'static str, u32)>>,
     /// The function ids of the names (the first of a name: for the
     /// syscalls' bodies, looked for by name).
     function_ids: BTreeMap<String, u32>,
     /// Functions' local variables, by function id: [(variable, type,
     /// offset from the frame base, if it is in memory)].
-    pub locals: BTreeMap<u32, Vec<(Arc<str>, u32, Option<u32>)>>,
+    pub locals: BTreeMap<u32, Vec<(&'static str, u32, Option<u32>)>>,
     /// Constants from the UAPI headers (flags, errno names): name -> value.
     pub constants: BTreeMap<String, i64>,
     /// Where a function (the inline ones too, which have no probe), a type
     /// (struct, union, enum, typedef) or a global is declared: name ->
     /// (file, line).
-    pub declared: BTreeMap<String, (Arc<str>, u32)>,
+    pub declared: BTreeMap<String, (&'static str, u32)>,
 }
 
 impl Types {
@@ -114,12 +130,8 @@ impl Types {
         let mut declared = BTreeMap::new();
         // (Each name once: a file's, a parameter's, a local's, each the same
         // in thousands of declarations and functions.)
-        let mut pool: BTreeSet<Arc<str>> = BTreeSet::new();
-        let mut intern = |s: &str| pool.get(s).cloned().unwrap_or_else(|| {
-            let r: Arc<str> = s.into();
-            pool.insert(r.clone());
-            r
-        });
+        let mut pool = Names::default();
+        let mut intern = |s: &str| pool.name(s);
         for line in text.lines() {
             let c: Vec<&str> = line.split('\t').collect();
             let num = |i: usize| c.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -226,7 +238,7 @@ impl Types {
     }
 
     /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY).
-    pub fn syscall_params(&self, name: &str) -> Option<&Vec<(Arc<str>, u32)>> {
+    pub fn syscall_params(&self, name: &str) -> Option<&Vec<(&'static str, u32)>> {
         self.params.get(self.function_ids.get(&format!("{}{name}", crate::arch::SYSCALL_BODY))?)
     }
 

@@ -5,7 +5,6 @@ use alloc::collections::BTreeMap;
 
 use crate::arch;
 use alloc::string::{String, ToString};
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 /// A source location; `file` indexes [`Tables::files`].
@@ -41,8 +40,8 @@ pub struct Function {
 pub struct Var {
     pub of: u32,
     /// (Shared: the same names, many times over.)
-    pub function: Arc<str>,
-    pub name: Arc<str>,
+    pub function: &'static str,
+    pub name: &'static str,
     pub param: u32,
     pub arg: u32,
 }
@@ -180,12 +179,8 @@ impl Tables {
         let mut chains: BTreeMap<Vec<(u32, Loc)>, u32> = BTreeMap::new();
         let mut seen: alloc::collections::BTreeSet<(u32, u32)> = Default::default();
         // (Each name once: variables repeat their functions' and their own.)
-        let mut pool: alloc::collections::BTreeSet<Arc<str>> = Default::default();
-        let mut intern = |s: &str| pool.get(s).cloned().unwrap_or_else(|| {
-            let r: Arc<str> = s.into();
-            pool.insert(r.clone());
-            r
-        });
+        let mut pool = crate::types::Names::default();
+        let mut intern = |s: &str| pool.name(s);
         for line in code.lines() {
             let cols: Vec<&str> = line.split('\t').collect();
             match cols.as_slice() {
