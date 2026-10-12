@@ -161,9 +161,11 @@ impl Machine {
 
     /// Decode the trace ring (again). The views use the last snapshot.
     pub fn snapshot(&self) {
-        let t = tables();
+        // (The last one dropped first: never two at once, the memory's high
+        // water a recording's, not two's.)
+        drop(std::mem::take(&mut *self.rec.borrow_mut()));
         let (records, ids, args) = trace::ring(&Direct, state(|s| s.ring));
-        *self.rec.borrow_mut() = Recording::new(t, records, ids, args);
+        *self.rec.borrow_mut() = Recording::new(tables(), records, ids, args);
     }
 
     // ---- The page's program, a line at a time ----
