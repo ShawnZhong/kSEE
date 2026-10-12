@@ -20,7 +20,8 @@
 //!                                        frame base, if in memory)
 //! ```
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::sync::Arc;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -83,19 +84,19 @@ pub struct Types {
     /// Syscall names, by number.
     pub syscalls: BTreeMap<u32, String>,
     /// Functions' parameters, by function id (the probes' F lines'): [(parameter, type)].
-    pub params: BTreeMap<u32, Vec<(String, u32)>>,
+    pub params: BTreeMap<u32, Vec<(Arc<str>, u32)>>,
     /// The function ids of the names (the first of a name: for the
     /// syscalls' bodies, looked for by name).
     function_ids: BTreeMap<String, u32>,
     /// Functions' local variables, by function id: [(variable, type,
     /// offset from the frame base, if it is in memory)].
-    pub locals: BTreeMap<u32, Vec<(String, u32, Option<u32>)>>,
+    pub locals: BTreeMap<u32, Vec<(Arc<str>, u32, Option<u32>)>>,
     /// Constants from the UAPI headers (flags, errno names): name -> value.
     pub constants: BTreeMap<String, i64>,
     /// Where a function (the inline ones too, which have no probe), a type
     /// (struct, union, enum, typedef) or a global is declared: name ->
     /// (file, line).
-    pub declared: BTreeMap<String, (String, u32)>,
+    pub declared: BTreeMap<String, (Arc<str>, u32)>,
 }
 
 impl Types {
@@ -111,6 +112,14 @@ impl Types {
         let mut locals = BTreeMap::new();
         let mut constants = BTreeMap::new();
         let mut declared = BTreeMap::new();
+        // (Each name once: a file's, a parameter's, a local's, each the same
+        // in thousands of declarations and functions.)
+        let mut pool: BTreeSet<Arc<str>> = BTreeSet::new();
+        let mut intern = |s: &str| pool.get(s).cloned().unwrap_or_else(|| {
+            let r: Arc<str> = s.into();
+            pool.insert(r.clone());
+            r
+        });
         for line in text.lines() {
             let c: Vec<&str> = line.split('\t').collect();
             let num = |i: usize| c.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -140,7 +149,7 @@ impl Types {
                 Some(&"P") if c.len() == 4 => {
                     let list = c[3].split(',').filter(|p| !p.is_empty()).map(|p| {
                         let (n, t) = p.rsplit_once(':').unwrap_or((p, "0"));
-                        (n.to_string(), t.parse().unwrap_or(0))
+                        (intern(n), t.parse().unwrap_or(0))
                     }).collect();
                     params.insert(num(1), list);
                     function_ids.entry(c[2].to_string()).or_insert(num(1));
@@ -155,12 +164,12 @@ impl Types {
                         if n.starts_with(crate::arch::MADE_UP) {
                             return None;
                         }
-                        Some((n.to_string(), t.parse().ok()?, o.parse().ok()))
+                        Some((intern(n), t.parse().ok()?, o.parse().ok()))
                     }).collect();
                     locals.insert(num(1), list);
                 }
                 Some(&"W") if c.len() == 4 => {
-                    declared.entry(c[1].to_string()).or_insert((c[2].to_string(), num(3)));
+                    declared.entry(c[1].to_string()).or_insert((intern(c[2]), num(3)));
                 }
                 Some(&"G") if c.len() == 4 => {
                     globals.insert(c[1].to_string(), (num(2), num(3)));
@@ -217,7 +226,7 @@ impl Types {
     }
 
     /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY).
-    pub fn syscall_params(&self, name: &str) -> Option<&Vec<(String, u32)>> {
+    pub fn syscall_params(&self, name: &str) -> Option<&Vec<(Arc<str>, u32)>> {
         self.params.get(self.function_ids.get(&format!("{}{name}", crate::arch::SYSCALL_BODY))?)
     }
 

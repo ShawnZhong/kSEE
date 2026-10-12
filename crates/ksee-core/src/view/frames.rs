@@ -264,7 +264,7 @@ impl View<'_> {
         // (A name once: two variables of one name, in two of its scopes, are
         // one to the recording, which knows a variable by its name.)
         let mut seen = alloc::collections::BTreeSet::new();
-        types.locals.get(&func).into_iter().flatten().filter(|(var, _, _)| seen.insert(var.as_str())).map(|(var, ty, off)| match off {
+        types.locals.get(&func).into_iter().flatten().filter(|(var, _, _)| seen.insert(&**var)).map(|(var, ty, off)| match off {
             Some(off) => {
                 let addr = frame.wrapping_add(*off);
                 let o = types.object(mem, var, addr, *ty, 0);
@@ -272,7 +272,7 @@ impl View<'_> {
                 let written = self.rec.stores().last_write(addr, types.size_of(*ty).max(1), at).is_some_and(|(i, _)| i >= first);
                 if written { o } else { o.missing(Missing::Uninitialized) }
             }
-            None => set.iter().find(|o| &o.name == var).cloned()
+            None => set.iter().find(|o| *o.name == **var).cloned()
                 .unwrap_or_else(|| types.object(&Arg(&[0; 8], mem), var, 0, *ty, 0).missing(Missing::NotRecorded)),
         }).collect()
     }

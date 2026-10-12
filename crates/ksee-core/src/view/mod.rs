@@ -255,7 +255,7 @@ impl View<'_> {
             return self.function_definition(id);
         }
         let (file, line) = self.tables.types.declared.get(name)?;
-        Some(Definition { name: name.to_string(), file: file.clone(), line: *line, last: None, sealed: false })
+        Some(Definition { name: name.to_string(), file: file.to_string(), line: *line, last: None, sealed: false })
     }
 
     /// Where member `member` is declared: of the one struct that has a
