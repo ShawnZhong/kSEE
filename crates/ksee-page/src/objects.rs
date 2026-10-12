@@ -140,7 +140,7 @@ fn ObjectBox(graph: Graph, k: usize, depth: usize) -> Element {
                 _ => String::new(),
             };
             let to = (q + 1 == change.streaks.len()).then_some(change.to).flatten().map(|t| (t, nodes[t].label.clone()));
-            let function = run.at.as_ref().map_or(String::new(), |l| l.func.clone());
+            let function = run.at.as_ref().map_or(String::new(), |l| l.func.to_string());
             rows.push((class, format!("{times}{place}: click to go there"), member, run.before.clone(), run.after.clone(), to, function, run.last));
         }
     }

@@ -24,8 +24,8 @@ pub struct Line {
     pub nth: u32,
     /// A line calling code inlined, not yet in it (LineStep::cut).
     pub cut: u32,
-    pub func: String,
-    pub file: String,
+    pub func: &'static str,
+    pub file: &'static str,
     pub line: u32,
     /// How deep it runs: its frame's place in the stack, from the
     /// outermost (calls and inlined code alike: Frame::depth).
@@ -90,7 +90,7 @@ impl View<'_> {
     /// what it compared.
     pub(super) fn line_only(&self, s: &LineStep) -> Line {
         let chain = &self.tables.chain(s.inlined)[s.cut as usize..];
-        Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.name(s.func), file: self.tables.file(s.loc).to_string(), line: s.loc.line,
+        Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.tables.functions.get(&s.func).map_or("?", |f| f.name), file: self.tables.file(s.loc), line: s.loc.line,
                depth: self.rec.frame_depth(self.tables, s.call) + chain.len() as u32, turn: s.turn, tests: Vec::new(),
                called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }) }
     }
@@ -164,7 +164,7 @@ impl View<'_> {
                 nest.drain(..cut.min(nest.len() - 1));
             }
             let (&(_, at), inner) = nest.split_last().expect("a call");
-            out.extend(inner.iter().map(|&(k, at)| frame(self.inline_name(k.unwrap_or(0)), true, at)));
+            out.extend(inner.iter().map(|&(k, at)| frame(self.inline_name(k.unwrap_or(0)).to_string(), true, at)));
             out.push(Frame { args, locals, ..frame(name, false, at) });
         }
         // (Each its place, from the outermost.)
@@ -293,8 +293,8 @@ impl View<'_> {
     }
 
     /// Inlined function `k`'s name (Tables::inline_names).
-    pub(crate) fn inline_name(&self, k: u32) -> String {
-        self.tables.inline_names.get(k as usize).cloned().unwrap_or_default()
+    pub(crate) fn inline_name(&self, k: u32) -> &'static str {
+        self.tables.inline_names.get(k as usize).copied().unwrap_or("")
     }
 }
 

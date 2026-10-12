@@ -17,7 +17,7 @@ pub struct Loc {
 /// An instrumented function.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
-    pub name: String,
+    pub name: &'static str,
     /// Where it is defined.
     pub loc: Loc,
     /// Which of the source's parameters call records carry (a bit each);
@@ -117,13 +117,13 @@ pub struct Tables {
     steps: Vec<Step>,
     cuts: Vec<u32>,
     /// Names of inlined functions.
-    pub inline_names: Vec<String>,
+    pub inline_names: Vec<&'static str>,
     /// Inline chains (see [`Step`]): innermost first, each an inlined
     /// function (in [`Tables::inline_names`]) and where it is inlined (a line of
     /// the next one out; the last: of the block's function).
     pub inlines: Vec<Vec<(u32, Loc)>>,
     /// Source file paths.
-    pub files: Vec<String>,
+    pub files: Vec<&'static str>,
     /// The kernel's types.
     pub types: Types,
     /// (function, k) -> its variable k, as its Var records have it.
@@ -133,18 +133,19 @@ pub struct Tables {
 /// Interns file paths while parsing.
 #[derive(Default)]
 struct Files {
-    ids: BTreeMap<String, u32>,
-    paths: Vec<String>,
+    ids: BTreeMap<&'static str, u32>,
+    paths: Vec<&'static str>,
 }
 
 impl Files {
-    fn intern(&mut self, path: &str) -> u32 {
+    fn intern(&mut self, path: &str, names: &mut crate::types::Names) -> u32 {
         match self.ids.get(path) {
             Some(&id) => id,
             None => {
-                self.paths.push(path.to_string());
+                let path = names.name(path);
+                self.paths.push(path);
                 let id = self.paths.len() as u32 - 1;
-                self.ids.insert(path.to_string(), id);
+                self.ids.insert(path, id);
                 id
             }
         }
@@ -186,20 +187,19 @@ impl Tables {
         let mut seen: alloc::collections::BTreeSet<(u32, u32)> = Default::default();
         // (Each name once: variables repeat their functions' and their own.)
         let mut pool = crate::types::Names::default();
-        let mut intern = |s: &str| pool.name(s);
         for line in code.lines() {
             let cols: Vec<&str> = line.split('\t').collect();
             match cols.as_slice() {
                 ["U"] => unit = Unit::default(),
                 ["P", k, path] => {
                     if let Ok(k) = k.parse() {
-                        unit.files.insert(k, files.intern(path));
+                        unit.files.insert(k, files.intern(path, &mut pool));
                     }
                 }
                 ["I", k, name, site] => {
                     if let Ok(k) = k.parse() {
                         let name = *names.entry(name.to_string()).or_insert_with(|| {
-                            t.inline_names.push(name.to_string());
+                            t.inline_names.push(pool.name(name));
                             t.inline_names.len() as u32 - 1
                         });
                         unit.sites.insert(k, (name, unit.loc(site)));
@@ -208,7 +208,7 @@ impl Tables {
                 ["V", id, k, of, function, name, param, arg] => {
                     if let (Ok(id), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) && !name.starts_with(crate::arch::MADE_UP) {
                         let (param, arg) = (param.parse().unwrap_or(0), arg.parse().unwrap_or(0));
-                        t.vars.insert((id, k), Var { of, function: intern(function), name: intern(name), param, arg });
+                        t.vars.insert((id, k), Var { of, function: pool.name(function), name: pool.name(name), param, arg });
                     }
                 }
                 ["F", id, name, location, known, rest @ ..] => {
@@ -216,7 +216,7 @@ impl Tables {
                     let loc = unit.loc(location);
                     let sealed = rest.first() == Some(&"1");
                     let wide = rest.get(1).and_then(|w| w.parse().ok()).unwrap_or(0);
-                    t.functions.insert(id, Function { name: name.to_string(), loc, known: known.parse().unwrap_or(0), wide, sealed });
+                    t.functions.insert(id, Function { name: pool.name(name), loc, known: known.parse().unwrap_or(0), wide, sealed });
                 }
                 ["L", id, n, items] => {
                     if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {
@@ -274,7 +274,7 @@ impl Tables {
     /// shows a frame, a node or a line of get_current.
     fn fold_primitives(&mut self) {
         let prim: Vec<bool> = self.inline_names.iter()
-            .map(|n| self.types.declared.get(n).is_some_and(|(f, _)| arch::PRIMITIVES.iter().any(|p| f.starts_with(p)))).collect();
+            .map(|n| self.types.declared.get(*n).is_some_and(|(f, _)| arch::PRIMITIVES.iter().any(|p| f.starts_with(p)))).collect();
         if !prim.iter().any(|&p| p) {
             return;
         }
@@ -350,13 +350,13 @@ impl Tables {
         self.blocks[from..].iter().take_while(move |b| b.key.0 == func).map(|b| self.view(b).loc())
     }
 
-    pub fn file(&self, loc: Loc) -> &str {
-        self.files.get(loc.file as usize).map_or("?", String::as_str)
+    pub fn file(&self, loc: Loc) -> &'static str {
+        self.files.get(loc.file as usize).copied().unwrap_or("?")
     }
 
     /// The id of file `path` (Loc::file; the paths are each once).
     pub(crate) fn file_id(&self, path: &str) -> Option<u32> {
-        self.files.iter().position(|f| f == path).map(|k| k as u32)
+        self.files.iter().position(|f| *f == path).map(|k| k as u32)
     }
 
     /// The id of the (first) instrumented function called `name`.
