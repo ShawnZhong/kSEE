@@ -172,7 +172,13 @@ impl Tables {
     /// Parse the `ksee.code` and `ksee.types` sections. Lines are
     /// tab-separated and may repeat (one copy per compilation unit).
     pub fn parse(code: &str, types: &str) -> Tables {
-        let mut t = Tables::default();
+        Tables::with_types(code, Types::parse(types))
+    }
+
+    /// Parse the `ksee.code` section, the types parsed already (the host:
+    /// one section's text at a time, the kernel's being megabytes).
+    pub fn with_types(code: &str, types: Types) -> Tables {
+        let mut t = Tables { types, ..Default::default() };
         let mut files = Files::default();
         let mut unit = Unit::default();
         let mut names: BTreeMap<String, u32> = BTreeMap::new();
@@ -258,7 +264,6 @@ impl Tables {
         t.steps.shrink_to_fit();
         t.cuts.shrink_to_fit();
         t.files = files.paths;
-        t.types = Types::parse(types);
         t.fold_primitives();
         t
     }
