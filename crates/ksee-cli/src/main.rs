@@ -1,7 +1,8 @@
 //! The ksee command (./ksee.sh runs it, in the kSEE tree):
 //!
 //!   ksee                     build, then serve the page (as serve)
-//!   ksee build               build the kernel, runtime and page (build.rs)
+//!   ksee build               build the kernel, runtime and page (the
+//!                            Makefile's `make site`)
 //!   ksee test [--built] [--ui | NAME ...]
 //!                            build, then run named Chromium tests; --built
 //!                            uses an existing production build
@@ -10,6 +11,15 @@
 //!                            differs from the release)
 //!   ksee serve [--port=N]    serve target/site (the page, as built) for
 //!                            a browser
+//!
+//! and the build's steps that are code (the Makefile runs them):
+//!
+//!   ksee pack DEBUG LINUX TABLES SOURCES
+//!                            the kernel's tables, of its description
+//!                            DEBUG and the tree LINUX, and the sources
+//!                            they name (pack/)
+//!   ksee lessons             lessons.json and the lessons' pages (lessons.rs)
+//!   ksee bindgen WASM OUT    wasm-bindgen's glue for WASM, in OUT
 mod build;
 mod chrome;
 mod deploy;
@@ -21,7 +31,8 @@ use std::fmt::Display;
 use std::path::Path;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: ksee [build | test [--built] [--ui | NAME ...] | deploy | serve [--port=N] | patch]";
+const USAGE: &str = "usage: ksee [build | test [--built] [--ui | NAME ...] | deploy | serve [--port=N] | patch \
+                     | pack DEBUG LINUX TABLES SOURCES | lessons | bindgen WASM OUT]";
 
 #[derive(Debug, Eq, PartialEq)]
 enum Command {
@@ -31,6 +42,9 @@ enum Command {
     Patch,
     /// (`build`: build first, as plain `ksee` does.)
     Serve { build: bool, port: u16 },
+    Pack { debug: String, linux: String, tables: String, sources: String },
+    Lessons,
+    Bindgen { wasm: String, out: String },
 }
 
 fn parse_args(args: &[&str]) -> Result<Command, String> {
@@ -38,12 +52,21 @@ fn parse_args(args: &[&str]) -> Result<Command, String> {
         return Ok(Command::Serve { build: true, port: 8000 });
     };
     match *command {
-        "build" | "deploy" | "patch" if !options.is_empty() => {
+        "pack" => match options {
+            [debug, linux, tables, sources] => Ok(Command::Pack { debug: debug.to_string(), linux: linux.to_string(), tables: tables.to_string(), sources: sources.to_string() }),
+            _ => Err("pack takes DEBUG LINUX TABLES SOURCES".into()),
+        },
+        "bindgen" => match options {
+            [wasm, out] => Ok(Command::Bindgen { wasm: wasm.to_string(), out: out.to_string() }),
+            _ => Err("bindgen takes WASM OUT".into()),
+        },
+        "build" | "deploy" | "patch" | "lessons" if !options.is_empty() => {
             Err(format!("{command} takes no options or arguments"))
         }
         "build" => Ok(Command::Build),
         "deploy" => Ok(Command::Deploy),
         "patch" => Ok(Command::Patch),
+        "lessons" => Ok(Command::Lessons),
         "test" => {
             let (built, selection) = match options.first() {
                 Some(&"--built") => (true, &options[1..]),
@@ -131,6 +154,9 @@ fn main() -> ExitCode {
             }
             or_fail(serve::serve(Path::new(build::SITE), port), "serve");
         }
+        Command::Pack { debug, linux, tables, sources } => pack::kernel(Path::new(&debug), Path::new(&linux), Path::new(&tables), Path::new(&sources)),
+        Command::Lessons => lessons::write(),
+        Command::Bindgen { wasm, out } => build::bindgen(&wasm, &out),
     }
     ExitCode::SUCCESS
 }
@@ -157,6 +183,9 @@ mod tests {
         assert_eq!(parse(&["serve"]), Command::Serve { build: false, port: 8000 });
         assert_eq!(parse(&["serve", "--port=9000"]), Command::Serve { build: false, port: 9000 });
         assert_eq!(parse(&["serve", "--port=0"]), Command::Serve { build: false, port: 0 });
+        assert_eq!(parse(&["pack", "d", "l", "t", "s"]), Command::Pack { debug: "d".into(), linux: "l".into(), tables: "t".into(), sources: "s".into() });
+        assert_eq!(parse(&["lessons"]), Command::Lessons);
+        assert_eq!(parse(&["bindgen", "w", "o"]), Command::Bindgen { wasm: "w".into(), out: "o".into() });
     }
 
     #[test]
@@ -177,6 +206,9 @@ mod tests {
             &["build", "--ui"][..],
             &["deploy", "extra"][..],
             &["patch", "--unknown"][..],
+            &["pack", "d"][..],
+            &["lessons", "x"][..],
+            &["bindgen", "w"][..],
             &["test", "--port=9000"][..],
             &["test", "--ui", "--ui"][..],
             &["serve", "--ui"][..],

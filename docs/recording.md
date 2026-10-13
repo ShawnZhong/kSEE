@@ -101,7 +101,7 @@ shown. Before, the boot, nothing; each probe costs a load and a branch.
 ## What the kernel says about itself
 
 The instrumented kernel describes its code in a custom section,
-`ksee.code` (lines of text, one part per compilation unit,
+`ksee` (lines of text, one part per compilation unit,
 concatenated by wasm-ld):
 
 - `U`: a unit's start; `P k path`: file k; `I k …`: an inline site (the
@@ -137,5 +137,5 @@ The pack parses both texts (core's parser) and writes the result as one
 binary file, `tables` (`flat.rs`): sorted arrays of fixed-size records, and
 one text their names are offsets into, which the page reads where they are
 (nothing to parse or decode but the few thousand types).
-The page's kernel is a copy of vmlinux without DWARF and `ksee.code`, plus
+The page's kernel is a copy of vmlinux without DWARF and the `ksee` section, plus
 the sources the probes name.

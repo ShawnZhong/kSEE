@@ -26,7 +26,7 @@
 // __ksee_put and __ksee_bulk (arch/wasm/kernel/ksee.c: the ring, its
 // header, and when it records).
 //
-// The records they write, and the ksee.code section that describes the
+// The records they write, and the ksee section that describes the
 // code they are in (one part per object, wasm-ld concatenating them):
 // docs/recording.md. fn, in both, is a hash of the function's name (for a
 // function local to its file, of "file:name": fnId).
@@ -459,7 +459,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         break;
       IRBuilder<> B(&*BB.getFirstInsertionPt());
       // (The entry block's is the call: its arguments follow, then the
-      // frame base, where its locals are: see ksee.types's Q lines, the pack's.)
+      // frame base, where its locals are: see the types' Q lines, the pack's.)
       SmallVector<Value *, Values> args;
       if (n == 0) {
         for (Value *p : params)
@@ -558,7 +558,7 @@ public:
       head += "P\t" + std::to_string(k) + "\t" + path + "\n";
     for (auto &[site, k] : sites)
       head += "I\t" + std::to_string(k) + "\t" + site + "\n";
-    emitCustomSection(Mod, "ksee.code", head + code);
+    emitCustomSection(Mod, "ksee", head + code);
     return PreservedAnalyses::none();
   }
 };

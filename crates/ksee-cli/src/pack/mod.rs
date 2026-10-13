@@ -17,7 +17,7 @@ pub fn id(name: &str) -> u32 {
 }
 
 /// The columns after the first of each of `text`'s lines of kind `kind`
-/// (tab-separated: ksee.code's, the types').
+/// (tab-separated: the ksee section's, the types').
 fn rows<'a>(text: &'a str, kind: &'a str) -> impl Iterator<Item = Vec<&'a str>> {
     text.lines().filter_map(move |l| l.strip_prefix(kind)?.strip_prefix('\t').map(|r| r.split('\t').collect()))
 }
@@ -29,13 +29,13 @@ fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'
 
 /// Write the kernel's tables (parsed here, once, not by the page) and its
 /// referenced sources to their final paths: of its description `debug`
-/// (the Makefile's vmlinux.debug: its DWARF and ksee.code), and the tree
+/// (the Makefile's vmlinux.debug: its DWARF and ksee section), and the tree
 /// `kernel` (its UAPI headers and sources).
 pub fn kernel(debug: &Path, kernel: &Path, tables_out: &Path, sources_out: &Path) {
     let image = crate::read(debug);
     let sections = crate::or_fail(custom_sections(&image), debug.display());
     let mut types = crate::or_fail(dwarf::types(&sections), "DWARF");
-    let code = String::from_utf8_lossy(sections.get("ksee.code").copied().unwrap_or(&[])).into_owned();
+    let code = String::from_utf8_lossy(sections.get("ksee").copied().unwrap_or(&[])).into_owned();
     for (name, value) in constants(&kernel.join("usr/include")) {
         types += &format!("C\t{name}\t{value}\n");
     }
@@ -59,7 +59,7 @@ pub fn kernel(debug: &Path, kernel: &Path, tables_out: &Path, sources_out: &Path
 }
 
 /// The custom sections of a wasm module (vmlinux.debug's: the kernel's
-/// DWARF, the plugin's ksee.code), by name, in place.
+/// DWARF, the plugin's ksee section), by name, in place.
 fn custom_sections(bytes: &[u8]) -> Result<BTreeMap<&str, &[u8]>, wasmparser::BinaryReaderError> {
     let mut out = BTreeMap::new();
     for payload in wasmparser::Parser::new(0).parse_all(bytes) {
@@ -255,14 +255,14 @@ mod code_tests {
 
     #[test]
     fn a_modules_custom_sections() {
-        let m = wat::parse_str(r#"(module (func) (@custom "ksee.code" "F") (@custom ".debug_info" "D"))"#).unwrap();
+        let m = wat::parse_str(r#"(module (func) (@custom "ksee" "F") (@custom ".debug_info" "D"))"#).unwrap();
         let s = custom_sections(&m).unwrap();
-        assert_eq!((s.get("ksee.code"), s.get(".debug_info")), (Some(&&b"F"[..]), Some(&&b"D"[..])));
+        assert_eq!((s.get("ksee"), s.get(".debug_info")), (Some(&&b"F"[..]), Some(&&b"D"[..])));
     }
 
     #[test]
     fn ids_are_the_plugins() {
-        // (From a kernel's ksee.code section.)
+        // (From a kernel's ksee section.)
         assert_eq!(id("try_to_wake_up"), 2218239081);
     }
 }

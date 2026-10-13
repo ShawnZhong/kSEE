@@ -1,4 +1,4 @@
-//! The code and type tables: the trace plugin's (its ksee.code section)
+//! The code and type tables: the trace plugin's (its ksee section)
 //! and the pack's (the types' text), parsed by the pack into the page's
 //! `tables` file, which the page reads in place (see flat).
 
@@ -257,7 +257,7 @@ impl Tables {
         })
     }
 
-    /// Parse the `ksee.code` section and the types' text. Lines are
+    /// Parse the `ksee` section and the types' text. Lines are
     /// tab-separated and may repeat (one copy per compilation unit).
     pub fn parse(code: &str, types: &str) -> Tables {
         let types = Types::parse(types);

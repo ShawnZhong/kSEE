@@ -1,20 +1,6 @@
-//! `ksee build` and `ksee test`: the build, in order. The kernel's half
-//! (the plugin, linux/, the initramfs) is the Makefile's; then, each step
-//! asking the tool that knows its own dependencies (cargo) or checking
-//! whether its output is older than its inputs, the site, in target/site
-//! (what `ksee serve` serves and `ksee deploy` pushes):
-//!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
-//!   vmlinux.gz             the kernel for the page (the Makefile's target/vmlinux)
-//!   tables.gz, src/        its tables and sources (pack, of the Makefile's
-//!                          target/vmlinux.debug; target/tables)
-//!   initramfs.cpio.gz, disk.img.gz
-//!                          the Makefile's target/initramfs/initramfs.cpio, disk.img
-//!   lessons.json, NAME.html the lessons (web/lessons/*.json): the page's, and
-//!                          a page of it each (see lessons.rs)
-//!
-//! (Gzipped by the build: hosts compress them less, or not at all; the
-//! page unpacks them.)
-use std::path::Path;
+//! `ksee build` and `ksee test`: the build is the Makefile's (`make site`:
+//! the kernel's half, then the site, target/site, its steps that are code
+//! this command's: pack, lessons, bindgen).
 use std::process::Command;
 
 /// `cmd` as a line: its program and arguments, spaced.
@@ -35,32 +21,16 @@ pub fn run(cmd: &mut Command) {
 /// The site: what the page loads.
 pub const SITE: &str = "target/site";
 
-/// Whether `out` is missing or older than any of `inputs`.
-fn stale(out: &str, inputs: &[&str]) -> bool {
-    let time = |p: &str| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    let Some(t) = time(out) else { return true };
-    inputs.iter().any(|i| time(i).is_none_or(|ti| ti > t))
+/// `make` (the Makefile's) for `args`, its jobs in parallel; this
+/// command, its steps'.
+fn make(args: &[&str]) {
+    let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
+    let me = std::env::current_exe().map(|p| format!("KSEE={}", p.display())).unwrap_or_default();
+    run(Command::new("make").args(["--no-print-directory", &jobs, &me]).args(args));
 }
 
 pub fn build() {
-    assets();
-    page();
-}
-
-/// The site but its module: the kernel, its sources, the initramfs, the
-/// lessons and their pages.
-fn assets() {
-    let jobs = format!("-j{}", std::thread::available_parallelism().map_or(4, |n| n.get()));
-    run(Command::new("make").args(["--no-print-directory", &jobs]));
-    crate::or_fail(std::fs::create_dir_all(SITE), SITE);
-    packed_kernel();
-    for name in ["initramfs.cpio", "disk.img"] {
-        let (from, to) = (format!("target/initramfs/{name}"), format!("{SITE}/{name}.gz"));
-        if stale(&to, &[&from]) {
-            gzip(&from, &to);
-        }
-    }
-    crate::lessons::write();
+    make(&["site"]);
 }
 
 /// The commit checked out, and + if it has changes not committed.
@@ -89,41 +59,14 @@ pub(crate) fn published() -> Option<String> {
     Some(if repo.eq_ignore_ascii_case(&host) { format!("https://{host}/") } else { format!("https://{host}/{repo}/") })
 }
 
-/// pkg/: the runtime and the page, one module (the page calls the Machine).
-fn page() {
-    run(Command::new("cargo").args(["build", "--locked", "--release", "-p", "ksee-page",
-        "--target", "wasm32-unknown-unknown"]));
-    bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
-}
-
-/// The kernel for the page: its tables and the sources (pack), and
-/// vmlinux.gz (the Makefile's target/vmlinux) and tables.gz.
-fn packed_kernel() {
-    // (Packed again for a new kernel or pack implementation, or to restore
-    // either required result after a partial clean.)
-    let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
-    let pack_inputs = ["target/vmlinux.debug", me.as_str()];
-    let sources = format!("{SITE}/src");
-    if stale("target/tables", &pack_inputs) || stale(&sources, &pack_inputs) {
-        eprintln!("+ (pack) target/vmlinux.debug, linux -> target/tables, {sources}");
-        crate::pack::kernel(Path::new("target/vmlinux.debug"), Path::new("linux"), Path::new("target/tables"), Path::new(&sources));
-    }
-    for name in ["vmlinux", "tables"] {
-        let (from, to) = (format!("target/{name}"), format!("{SITE}/{name}.gz"));
-        if stale(&to, &[&from]) {
-            gzip(&from, &to);
-        }
-    }
-}
-
 /// linux.patch, written from linux/ (the Makefile's), never by the build.
 pub fn patch() {
-    run(Command::new("make").args(["--no-print-directory", "patch"]));
+    make(&["patch"]);
 }
 
 /// wasm-bindgen's glue for `wasm`, in `out` (cli-support, at ksee-page's
 /// wasm-bindgen version: the two must match).
-fn bindgen(wasm: &str, out: &str) {
+pub fn bindgen(wasm: &str, out: &str) {
     eprintln!("+ (wasm-bindgen) {wasm} -> {out}");
     wasm_bindgen_cli_support::Bindgen::new()
         .input_path(wasm)
@@ -131,12 +74,6 @@ fn bindgen(wasm: &str, out: &str) {
         .and_then(|b| b.typescript(false).generate(out))
         .unwrap_or_else(|e| crate::fail(&format!("wasm-bindgen: {e:#}")));
 }
-
-fn gzip(from: &str, to: &str) {
-    let out = crate::or_fail(std::fs::File::create(to), to);
-    run(Command::new("gzip").args(["-9nc", from]).stdout(out));
-}
-
 
 /// Run native tests, build (`built`: an earlier CI step did), and run
 /// `names` on the site in the headless shell (target/chrome/).
@@ -146,39 +83,10 @@ pub fn test(names: &[String], built: bool) {
         build();
     }
     // (The browser, the Makefile's version: fetched the first time.)
-    run(Command::new("make").args(["--no-print-directory", "chrome"]));
+    make(&["chrome"]);
     for name in names {
         if !crate::chrome::test(name) {
             crate::fail(&format!("the {name} test failed"));
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stale_outputs_are_detected() {
-        let scratch = crate::Scratch::new("stale");
-        let dir = &scratch.0;
-        let input = dir.join("input");
-        let first = dir.join("first");
-        let second = dir.join("second");
-        let input_s = input.to_string_lossy();
-        let first_s = first.to_string_lossy();
-        let second_s = second.to_string_lossy();
-
-        std::fs::write(&first, b"output").unwrap();
-        assert!(stale(&second_s, &[&input_s]));
-        assert!(stale(&first_s, &[&input_s]));
-
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        std::fs::write(&input, b"input").unwrap();
-        assert!(stale(&first_s, &[&input_s]));
-
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        std::fs::write(&first, b"new output").unwrap();
-        assert!(!stale(&first_s, &[&input_s]));
     }
 }
