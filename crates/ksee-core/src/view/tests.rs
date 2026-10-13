@@ -319,7 +319,7 @@ fn a_members_changes_are_a_run_a_function() {
     let v = View { tables: &t, rec: &rec, now: &m };
     let nodes = v.objects(0, 4);
     let d = &nodes[0].changes[0];
-    let streaks: Vec<_> = d.streaks.iter().map(|r| (r.at.as_ref().map(|l| l.func.clone()), r.before.clone(), r.after.clone(), r.last)).collect();
+    let streaks: Vec<_> = d.streaks.iter().map(|r| (r.at.as_ref().map(|l| l.func), r.before.clone(), r.after.clone(), r.last)).collect();
     assert_eq!((named(&nodes[0].what, &nodes[0].within).as_str(), d.member.as_str(), d.before.as_str(), d.after.as_str()), ("p in f", "b", "1", "1"));
     // (Left as it was, in the end: an object of the "same" group.)
     assert_eq!(nodes[0].group, Group::Same);

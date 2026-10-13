@@ -10,6 +10,8 @@ use alloc::vec::Vec;
 
 use super::eval::Sym;
 use super::names::Names;
+use crate::types::Types;
+use crate::Memory;
 
 /// A runner: its task (its task_struct), its program's heap (its start),
 /// and the result-bearing call that created it (none for the main
@@ -39,8 +41,9 @@ pub struct Request {
     /// type points to, if declared (`int fd = openat(…)`).
     pub line: usize,
     pub result: Option<(String, Option<u32>)>,
-    /// The syscall's name, and the variable each argument names (if it is one).
-    pub said: (String, Vec<Option<String>>),
+    /// The variable each argument names (if it is one), and what its
+    /// parameter points to.
+    pub named: Vec<Option<(String, Option<u32>)>>,
 }
 
 /// How a line of the program went: a variable declared (as it starts), or
@@ -260,20 +263,22 @@ impl Session {
 }
 
 impl Session {
-    /// The variables the last line's call changed, by now, in its outcome:
-    /// each as `show` shows it now, if not as it was shown last; one passed
-    /// to the call as an argument, as `records` reads its first `len`
-    /// bytes (the result's, if positive), if it is records of a variable
-    /// length (a directory's entries).
-    pub fn changed(&mut self, show: impl Fn(&ProgramVar) -> String, records: impl Fn(&str, usize, &ProgramVar, u32) -> Option<String>) {
+    /// The variables the last line's call changed, by now (in `mem`), in
+    /// its outcome: each as it is now (Types::show), if not as it was shown
+    /// last; one passed to the call as an argument, its first bytes (the
+    /// result's count, if positive) as the records its parameter points to,
+    /// if they are of a variable length (Types::records: a directory's
+    /// entries).
+    pub fn changed(&mut self, types: &Types, mem: &dyn Memory) {
         let Some(Outcome::Call { id, ret, changed, .. }) = self.outcomes.last_mut() else { return };
-        let Some(Request { said: (call, names), .. }) = self.calls.get(id) else { return };
+        let Some(Request { named, .. }) = self.calls.get(id) else { return };
         changed.clear();
         for (v, last) in self.vars.iter_mut() {
-            let now = show(v);
+            let now = types.show(mem, v.addr, v.ty, v.count);
             if now != *last {
-                let read = names.iter().position(|n| n.as_deref() == Some(v.name.as_str())).zip(ret.filter(|r| *r > 0))
-                    .and_then(|(k, r)| records(call, k, v, (r as u32).min(v.bytes)));
+                let to = named.iter().flatten().find(|(n, _)| *n == v.name).and_then(|n| n.1);
+                let read = to.zip(ret.filter(|r| *r > 0))
+                    .and_then(|(to, r)| types.records(mem, v.addr, (r as u32).min(v.bytes), to));
                 changed.push(format!("{} = {}", v.name, read.unwrap_or_else(|| now.clone())));
                 *last = now;
             }
@@ -303,17 +308,18 @@ mod tests {
     #[test]
     fn what_a_call_changed() {
         let mut s = ready();
-        let var = |name: &str, addr| (ProgramVar { name: name.into(), addr, ty: 1, count: None, bytes: 64 }, "0".to_string());
-        s.vars = alloc::vec![var("buf", 0x1000), var("n", 0x1040), var("same", 0x1080)];
+        let var = |name: &str, addr| (ProgramVar { name: name.into(), addr, ty: 1, count: None, bytes: 4 }, "0".to_string());
+        s.vars = alloc::vec![var("buf", 0x10), var("n", 0x14), var("same", 0x18)];
         let id = ask(&mut s, 10, 2, None);
-        s.calls.get_mut(&id).unwrap().said = ("getdents64".into(), alloc::vec![None, Some("buf".into()), None]);
-        s.finish(10, Some(48));
-        // (buf, passed: read as records, its first 48 bytes; n, changed; same, not.)
-        s.changed(|v| if v.name == "same" { "0".into() } else { format!("{:#x}", v.addr) },
-                  |call, k, v, len| (call == "getdents64" && k == 1).then(|| format!("{len} bytes of {}", v.name)));
+        s.calls.get_mut(&id).unwrap().named = alloc::vec![None, Some(("buf".into(), None)), None];
+        s.finish(10, Some(4));
+        // (buf and n, changed; same, not.)
+        let mut mem = alloc::vec![0u8; 0x20];
+        (mem[0x10], mem[0x14]) = (7, 5);
+        s.changed(&Types::parse("T\t1\tbase\tint\t4\ts\n"), &mem);
         let Outcome::Call { changed, .. } = &s.outcomes[0] else { panic!() };
-        assert_eq!(changed, &["buf = 48 bytes of buf", "n = 0x1040"]);
-        assert_eq!(s.vars[1].1, "0x1040", "shown last: now");
+        assert_eq!(changed, &["buf = 7", "n = 5"]);
+        assert_eq!(s.vars[1].1, "5", "shown last: now");
     }
 
     #[test]

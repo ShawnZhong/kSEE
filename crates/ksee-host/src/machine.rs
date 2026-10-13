@@ -198,7 +198,7 @@ impl Machine {
                 Made::Decl(ProgramVar { name: d.name, addr, ty: d.ty, count: d.count, bytes: d.bytes.len() as u32 })
             }
             // (What it names: the variables it may change, see quiet.)
-            Lowered::Call { nr, args, result, said } => Made::Call(call(tid, nr, &args, line, result, said)?),
+            Lowered::Call { nr, args, result, named } => Made::Call(call(tid, nr, &args, line, result, named)?),
         };
         state_mut(|s| s.session.lines = line + 1);
         Ok(made)
@@ -242,7 +242,7 @@ impl Machine {
             }
         })).await?;
         let mut p = state_mut(|s| std::mem::take(&mut s.session));
-        p.changed(|v| self.show(v.ty, v.addr, v.count), |call, k, v, len| self.as_records(call, k, v.addr, len));
+        p.changed(&tables().types, &Direct);
         state_mut(|s| s.session = p);
         Ok(())
     }
@@ -254,16 +254,6 @@ impl Machine {
         tables().types.show(&Direct, addr, ty, count)
     }
 
-    /// The `len` bytes at `addr`, passed as argument `k` of syscall `call`,
-    /// as the records its parameter's type says they are, if they are of
-    /// variable length (Types::records: getdents64's entries).
-    pub(crate) fn as_records(&self, call: &str, k: usize, addr: u32, len: u32) -> Option<String> {
-        use ksee_core::types::Kind;
-        let types = &tables().types;
-        let &(_, ty) = types.syscall_params(call)?.get(k)?;
-        let Kind::Pointer(to) = types.get(types.resolve(ty)).kind else { return None };
-        types.records(&Direct, addr, len, to)
-    }
 }
 
 /// Write `bytes` at `addr` into kernel memory, as the host: recorded (as a
@@ -284,7 +274,7 @@ pub enum Made {
 
 /// Have runner `tid` make syscall `nr` with `args`, for line `line` (its
 /// result named `result`): the call's id.
-fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, Option<u32>)>, said: (String, Vec<Option<String>>)) -> Result<u32, String> {
+fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, Option<u32>)>, named: Vec<Option<(String, Option<u32>)>>) -> Result<u32, String> {
     let (id, Runner { task, .. }) = state(|s| s.session.next_call(tid))?;
     // (A call's words as the buffers they point to are put in its program's
     // memory, recorded, as its variables are.)
@@ -294,7 +284,7 @@ fn call(tid: u32, nr: u32, args: &[Arg], line: usize, result: Option<(String, Op
         Ok(at)
     };
     let words = core::iter::once(nr).chain(ksee_core::program::words(args, &mut put)?).collect();
-    let c = Request { id, tid, nr, task, line, result, said, words, ..Default::default() };
+    let c = Request { id, tid, nr, task, line, result, named, words, ..Default::default() };
     state_mut(|s| {
         s.session.ask(c);
         // (The page waits for the kernel now: see State::waiting.)
