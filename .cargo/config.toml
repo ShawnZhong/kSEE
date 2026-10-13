@@ -1,2 +1,7 @@
 [target.'cfg(target_os = "linux")']
 linker = "clang-22"
+
+# (The runtime's static data, and its heap after it, above the kernel's RAM:
+# at its end, ksee-host's RAM_BYTES; its stack below it, the first MiB.)
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--global-base=33554432"]

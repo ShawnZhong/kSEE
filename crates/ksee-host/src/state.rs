@@ -19,10 +19,11 @@ pub fn tables() -> &'static Tables {
 }
 
 /// Where the kernel's memory starts (CONFIG_WASM_HOST_MEMORY: below it,
-/// the runtime's own static data and stack; checked at boot).
-pub const KERNEL_BASE: u32 = 0x100_0000;
-/// Where it ends.
-pub const RAM_BYTES: u32 = 64 << 20;
+/// the runtime's stack, a MiB; checked at boot).
+pub const KERNEL_BASE: u32 = 0x20_0000;
+/// Where it ends: where the runtime's static data begins (.cargo/config.toml's
+/// --global-base), its heap after it (checked at start).
+pub const RAM_BYTES: u32 = 32 << 20;
 
 /// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h: the same).
 /// A disk's bytes, `len` long: its blocks that are not all zeros (the

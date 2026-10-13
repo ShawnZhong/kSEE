@@ -177,10 +177,10 @@ every write's recording for nothing.
 ## Memory
 
 The kernel's memory is the host runtime's (the kernel imports it; not
-shared: one thread). `CONFIG_WASM_HOST_MEMORY` (16 MiB) at its bottom
-belongs to the runtime, its static data and stack; the kernel image is
+shared: one thread). `CONFIG_WASM_HOST_MEMORY` (2 MiB) at its bottom
+belongs to the runtime, its stack (its static data is above RAM); the kernel image is
 linked above it. RAM ends where the host says (`wasm_machine.memory_end`:
-64 MiB, see ksee-host's state.rs); the host puts the initramfs at its top and passes `initrd=`
+32 MiB, see ksee-host's state.rs); the host puts the initramfs at its top and passes `initrd=`
 on the command line. Memory above RAM is the host's heap.
 
 ## The host interface

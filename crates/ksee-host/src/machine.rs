@@ -40,18 +40,16 @@ fn initrd_at(initrd: &[u8]) -> Result<u32, JsValue> {
 
 #[wasm_bindgen]
 impl Machine {
-    /// Boot the built kernel and initramfs bytes in 64 MiB of RAM, with the
-    /// disk image; the kernel's tables, the pack's.
+    /// Boot the built kernel and initramfs bytes in its RAM, with the disk
+    /// image; the kernel's tables, the pack's.
     pub async fn start(kernel: Uint8Array, tables: Uint8Array, initrd: Uint8Array, disk: Uint8Array) -> Result<Machine, JsValue> {
         if js::webassembly("Suspending").is_undefined() {
             return Err("this browser has no JSPI (WebAssembly.Suspending): kSEE needs Chrome 137, Firefox 153, Safari 27 or later".into());
         }
-        // The kernel's RAM: this module's memory, grown to it first (the
-        // runtime's heap grows above it, its data and stack are below).
-        let memory: WebAssembly::Memory = wasm_bindgen::memory().unchecked_into();
-        let have = Uint8Array::new(&memory.buffer()).length();
-        if have < RAM_BYTES {
-            memory.grow((RAM_BYTES - have).div_ceil(PAGE_BYTES));
+        // The kernel's RAM: this module's memory between its stack and its
+        // static data, its heap above.
+        if (&*Box::new(0u8) as *const u8 as u32) < RAM_BYTES {
+            return Err("the runtime's heap is in the kernel's RAM: link it with --global-base=RAM_BYTES (.cargo/config.toml)".into());
         }
 
         let module: WebAssembly::Module =
@@ -68,11 +66,11 @@ impl Machine {
         Ok(m)
     }
 
-    /// Boot: kernel memory as new (zeros, and the initramfs), a new kernel
-    /// instance (instantiating initializes its data), and its boot CPU; done
-    /// once the program (user/prog.c) is ready for calls.
+    /// Boot: kernel memory with the initramfs (zeros else: as it began, or
+    /// zeroed by restart), a new kernel instance (instantiating initializes
+    /// its data), and its boot CPU; done once the program (user/prog.c) is
+    /// ready for calls.
     async fn boot(&self) -> Result<(), JsValue> {
-        unsafe { core::ptr::write_bytes(KERNEL_BASE as *mut u8, 0, (RAM_BYTES - KERNEL_BASE) as usize) };
         let initrd = initrd_at(&self.initrd)?;
         unsafe { core::ptr::copy_nonoverlapping(self.initrd.as_ptr(), initrd as *mut u8, self.initrd.len()) };
         let inst: WebAssembly::Instance =
@@ -133,6 +131,9 @@ impl Machine {
         // (What waits for the old machine gives up.)
         settle(Some("the kernel started again".into()));
         *self.rec.borrow_mut() = Default::default();
+        // (Kernel memory as new. Not at the first boot: zeros as it began,
+        // not one page of it touched until the kernel does.)
+        unsafe { core::ptr::write_bytes(KERNEL_BASE as *mut u8, 0, (RAM_BYTES - KERNEL_BASE) as usize) };
         self.boot().await
     }
 

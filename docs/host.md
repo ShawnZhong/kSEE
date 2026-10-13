@@ -16,13 +16,16 @@ memory.
 The layout is:
 
 ```text
-runtime static data and stack
-kernel image and 64 MiB RAM
-runtime heap above kernel RAM
+runtime stack (its first MiB)
+kernel image and RAM (2 to 32 MiB)
+runtime static data, then its heap
 ```
 
-`CONFIG_WASM_HOST_MEMORY` reserves the lower runtime region before the kernel
-image. The runtime can read kernel objects and the trace ring directly. There
+`CONFIG_WASM_HOST_MEMORY` (2 MiB) reserves the lower runtime region, its stack,
+before the kernel image. The runtime's static data is linked at the end of RAM
+(`--global-base`, `.cargo/config.toml`; `RAM_BYTES`), so its heap, after it,
+is never in it; the pages of RAM the kernel never writes, the browser never
+commits (only a restart zeroes RAM). The runtime can read kernel objects and the trace ring directly. There
 is no worker, message channel, copied snapshot memory, or shared-memory
 cross-origin-isolation requirement.
 
@@ -55,8 +58,8 @@ Page modules and Dioxus state are documented in
 ## Boot and restart
 
 JavaScript fetches and decompresses the packed kernel, its tables, the
-initramfs and the disk, then `Machine::start` receives their bytes. It grows
-the outer memory to the product's fixed 64 MiB of kernel RAM, compiles the
+initramfs and the disk, then `Machine::start` receives their bytes. It checks
+that the runtime's heap is above the kernel's RAM (see above), compiles the
 kernel, places the initramfs on the built-in command line, and reads the
 tables where their bytes are (`Tables::from_bytes`: the pack parsed them,
 into flat records, see `flat.rs`; the bytes are kept for the page's life,
@@ -64,7 +67,7 @@ copied once into 8-aligned memory).
 
 Each boot then:
 
-1. zeros the kernel memory range;
+1. (a restart's: zeros the kernel memory range first;)
 2. copies the initramfs to the top of RAM and adds its location to the command
    line;
 3. instantiates Linux with the runtime imports;

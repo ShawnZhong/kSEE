@@ -31,7 +31,7 @@ config GENERIC_HWEIGHT
 
 config WASM_HOST_MEMORY
 	hex "Memory reserved for the host runtime"
-	default 0x1000000
+	default 0x200000
 	help
 	  The host runtime (wasm too, whose memory the kernel imports) owns
 	  linear memory below this address; the kernel image is linked above
