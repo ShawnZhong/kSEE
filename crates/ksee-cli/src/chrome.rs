@@ -30,8 +30,8 @@ const SCREEN: (u32, u32) = (1500, 900);
 /// The browser: `make chrome`'s.
 const BROWSER: &str = "target/chrome/chrome-headless-shell";
 
-/// How long a test may take (the kernel's take minutes).
-const TIMEOUT: Duration = Duration::from_secs(300);
+/// How long a test may take (the longest, seconds: the kernel's).
+const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Test `name` (on the site, target/site, in the headless shell): whether the page said `ok` (its log printed either way).
 pub fn test(name: &str) -> bool {
@@ -64,7 +64,9 @@ pub fn test(name: &str) -> bool {
             }
         });
     }
-    let (passed, log) = rx.recv_timeout(TIMEOUT).unwrap_or_default();
+    // (Nothing said by then: stuck, a kernel that hangs.)
+    let (passed, log) = rx.recv_timeout(TIMEOUT)
+        .unwrap_or_else(|_| (false, format!("{name}: nothing said in {} s (stuck?)", TIMEOUT.as_secs())));
     let _ = child.kill();
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&profile);
