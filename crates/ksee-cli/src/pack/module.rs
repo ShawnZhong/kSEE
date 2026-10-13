@@ -137,13 +137,6 @@ pub fn function_names(module: &[u8]) -> BTreeMap<u32, String> {
     out
 }
 
-/// Every section: (id, custom section name or "", the whole section's bytes
-/// including its header).
-pub fn sections(module: &[u8]) -> impl Iterator<Item = (u8, String, &[u8])> {
-    ksee_core::wasm::sections(&module, 0, module.len() as u32).into_iter()
-        .map(move |(id, name, start, _, end)| (id, name, &module[start as usize..end as usize]))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

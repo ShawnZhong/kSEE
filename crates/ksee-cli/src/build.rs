@@ -4,7 +4,8 @@
 //! whether its output is older than its inputs, the site, in target/site
 //! (what `ksee serve` serves and `ksee deploy` pushes):
 //!   pkg/                   the runtime, and wasm-bindgen's glue (cargo)
-//!   vmlinux.gz, src/       the kernel for the page (pack; target/vmlinux)
+//!   vmlinux.gz             the kernel for the page (the Makefile's target/vmlinux)
+//!   tables.gz, src/        its tables and sources (pack; target/tables)
 //!   initramfs.cpio.gz, disk.img.gz
 //!                          the Makefile's target/initramfs/initramfs.cpio, disk.img
 //!   lessons.json, NAME.html the lessons (web/lessons/*.json): the page's, and
@@ -94,17 +95,17 @@ fn page() {
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
 }
 
-/// The kernel for the page: target/vmlinux, its tables and the sources
-/// (pack), and vmlinux.gz and tables.gz.
+/// The kernel for the page: its tables and the sources (pack), and
+/// vmlinux.gz (the Makefile's target/vmlinux) and tables.gz.
 fn packed_kernel() {
     // (Packed again for a new kernel or pack implementation, or to restore
     // either required result after a partial clean.)
     let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
     let pack_inputs = ["linux/vmlinux", me.as_str()];
     let sources = format!("{SITE}/src");
-    if stale("target/vmlinux", &pack_inputs) || stale(&sources, &pack_inputs) {
-        eprintln!("+ (pack) linux -> target/vmlinux, {sources}");
-        crate::pack::kernel(Path::new("linux"), Path::new("target/vmlinux"), Path::new(&sources));
+    if stale("target/tables", &pack_inputs) || stale(&sources, &pack_inputs) {
+        eprintln!("+ (pack) linux -> target/tables, {sources}");
+        crate::pack::kernel(Path::new("linux"), Path::new("target/tables"), Path::new(&sources));
     }
     for name in ["vmlinux", "tables"] {
         let (from, to) = (format!("target/{name}"), format!("{SITE}/{name}.gz"));

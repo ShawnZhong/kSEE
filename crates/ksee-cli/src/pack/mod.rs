@@ -1,6 +1,7 @@
-//! Package the raw Kbuild kernel for the page (called by `ksee build`): a
-//! rewritten image with packed metadata and no DWARF, plus the kernel sources
-//! referenced by its probes.
+//! Package the raw Kbuild kernel for the page (called by `ksee build`): its
+//! tables (the plugin's, and its DWARF's), plus the kernel sources
+//! referenced by its probes. (The image itself, without them, is the
+//! Makefile's: llvm-objcopy's.)
 
 mod dwarf;
 mod module;
@@ -32,10 +33,9 @@ fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'
     rows(text, kind).filter_map(move |c| c.get(k - 1).copied())
 }
 
-/// Write the packed image, its tables beside it (`tables`, in the image's
-/// directory: parsed here, once, not by the page), and its referenced
-/// sources to their final paths.
-pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
+/// Write the kernel's tables (parsed here, once, not by the page) and its
+/// referenced sources to their final paths.
+pub fn kernel(kernel: &Path, tables_out: &Path, sources_out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
     let mut types = crate::or_fail(dwarf::types(&image), "DWARF");
     let code = String::from_utf8_lossy(&ksee_core::wasm::section(&image, 0, image.len() as u32, "ksee.code")).into_owned();
@@ -46,12 +46,8 @@ pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     for (nr, name) in &calls {
         types += &format!("S\t{nr}\t{name}\n");
     }
-    let packed = rewrite(&image);
-    let dir = image_out.parent().unwrap_or(Path::new("."));
-    crate::or_fail(std::fs::create_dir_all(dir), dir.display());
-    crate::or_fail(std::fs::write(image_out, &packed), image_out.display());
     let tables = ksee_core::tables::Tables::parse(&code, &types).to_bytes();
-    crate::or_fail(std::fs::write(dir.join("tables"), &tables), "tables");
+    crate::or_fail(std::fs::write(tables_out, &tables), tables_out.display());
 
     // The sources, for the page's source view.
     // (The functions the trace has whose parameters DWARF gave, by id: the
@@ -60,9 +56,9 @@ pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     let known = column(&types, "P", 1).collect::<BTreeSet<_>>().intersection(&functions).count();
     let sources: Vec<String> = column(&code, "P", 2).map(String::from).collect();
     let (files, bytes) = publish_sources(kernel, &sources, sources_out);
-    eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} -> {} KiB, tables {} KiB; {files} sources, {} KiB",
-              image_out.display(), column(&types, "T", 1).count(), calls.len(), functions.len(),
-              image.len() >> 10, packed.len() >> 10, tables.len() >> 10, bytes >> 10);
+    eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} KiB; {files} sources, {} KiB",
+              tables_out.display(), column(&types, "T", 1).count(), calls.len(), functions.len(),
+              tables.len() >> 10, bytes >> 10);
 }
 
 fn source_path(file: &str) -> Option<&Path> {
@@ -153,17 +149,6 @@ fn syscalls(image: &[u8], types: &str) -> Vec<(u32, String)> {
         let f = table.get(&u32::from_le_bytes(e.try_into().ok()?))?;
         Some((nr as u32, names.get(f)?.strip_prefix(SYSCALL_WRAPPER)?.to_string()))
     }).collect()
-}
-
-/// `image` without DWARF and the plugin's tables (the pack's `tables` has them).
-fn rewrite(image: &[u8]) -> Vec<u8> {
-    let mut out = image[..8].to_vec();
-    for (id, name, raw) in module::sections(image) {
-        if !(id == 0 && (name.starts_with(".debug_") || name == "ksee.code")) {
-            out.extend_from_slice(raw);
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -272,22 +257,6 @@ mod image_tests {
         payload.extend_from_slice(name.as_bytes());
         payload.extend_from_slice(contents);
         section(0, &payload)
-    }
-
-    fn image() -> Vec<u8> {
-        [&b"\0asm\x01\0\0\0"[..], &section(10, &[1, 2, 3]), &custom(".debug_info", b"DWARF"), &custom("name", b"kept")].concat()
-    }
-
-    #[test]
-    fn rewrite_drops_dwarf_and_the_tables() {
-        let out = rewrite(&image());
-        assert_eq!(&out[..8], b"\0asm\x01\0\0\0");
-        let section = |m: &[u8], name| ksee_core::wasm::section(&m, 0, m.len() as u32, name);
-        assert!(section(&out, ".debug_info").is_empty() && section(&out, "ksee.code").is_empty());
-        assert_eq!(section(&out, "name"), b"kept");
-        let kept: Vec<_> = module::sections(&out).filter(|s| s.0 == 10).collect();
-        assert_eq!(kept.len(), 1);
-        assert_eq!(&kept[0].2[2..], &[1, 2, 3]);
     }
 
     /// An image whose table calls `__wasm_sys_read` at 0 and nothing at 1.

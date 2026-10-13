@@ -7,6 +7,8 @@
 #                                (the port's own files) linked in
 #   target/ksee-trace.so         the LLVM pass that instruments the kernel (plugin/'s)
 #   linux/vmlinux                the kernel, instrumented (kbuild), and its UAPI headers
+#   target/vmlinux               the page's: without DWARF and the plugin's ksee.code (the
+#                                pack has read them: its tables)
 #   target/initramfs/initramfs.cpio
 #                                /init and /bin/prog (user/: plain C, no C library), and a
 #                                note (user/note.txt): user/initramfs.list
@@ -43,7 +45,7 @@ KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=1 \
 	LOCALVERSION=-ksee KBUILD_BUILD_USER=ksee KBUILD_BUILD_HOST=ksee KBUILD_BUILD_VERSION=1 KBUILD_BUILD_TIMESTAMP="$(shell LC_ALL=C date -u -d @$(EPOCH))" \
 	KCFLAGS="-g -finline-hint-functions -fpass-plugin=$(CURDIR)/$(PLUGIN) -DKSEE_ID=$(shell cksum < plugin/ksee-trace.cpp | cut -d' ' -f1)"
 
-all: linux/vmlinux $(OUT)/initramfs.cpio $(OUT)/disk.img
+all: target/vmlinux $(OUT)/initramfs.cpio $(OUT)/disk.img
 .PHONY: all linux/vmlinux patch llvm chrome
 
 llvm:
@@ -76,6 +78,12 @@ linux/usr/gen_init_cpio: linux/vmlinux ;
 linux/vmlinux: $(PLUGIN) linux/.config
 	$(KMAKE)
 	$(KMAKE) headers
+
+# (Replaced only if it changed: kbuild is always asked, and the site's
+# copy of it is gzipped again when it is newer.)
+target/vmlinux: linux/vmlinux
+	llvm-objcopy --strip-debug --remove-section=ksee.code $< $@.new
+	cmp -s $@.new $@ && rm $@.new || mv $@.new $@
 
 # The programs: position-independent, in the kernel's memory (see
 # binfmt_wasm.c), their syscalls user/syscall.h's, with the UAPI headers.
