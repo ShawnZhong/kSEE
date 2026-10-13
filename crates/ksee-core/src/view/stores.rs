@@ -372,16 +372,8 @@ impl View<'_> {
             // (Record::Var): its last value; in the order the code first
             // sets them: the call's own filp names the file before an
             // inlined callee's file.)
-            let mut values: Vec<(Var, u32)> = Vec::new();
-            for j in calls.vars_of(i, end) {
-                if let Record::Var { var, value, .. } = records[j] && let Some(v) = t.var(func, var) {
-                    match values.iter_mut().find(|(w, _)| w.function == v.function && w.name == v.name) {
-                        Some(w) => w.1 = value as u32,
-                        None => values.push((v, value as u32)),
-                    }
-                }
-            }
-            for (v, value) in values {
+            for (v, value) in self.set_vars(func, i, end) {
+                let value = value as u32;
                 if let Some(to) = self.var_ty(&v).and_then(|ty| types.struct_target(ty)) {
                     add(Naming { what: Cow::Borrowed(v.name), within: Some(v.function), kind: kind(RegionKind::Object), ty: to, addr: value,
                                  call: Self::frame_of(&frames, value), by: Some(i) });

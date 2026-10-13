@@ -184,10 +184,23 @@ impl View<'_> {
                 out.insert((v.function, v.param, v.name), (v, value));
             }
         }
-        for j in self.rec.calls.vars_of(c.first, at) {
-            if let Record::Var { var, value, .. } = self.rec.records[j]
-                && let Some(v) = self.tables.var(c.func, var) {
-                out.insert((v.function, v.param, v.name), (v, value));
+        for (v, value) in self.set_vars(c.func, c.first, at) {
+            out.insert((v.function, v.param, v.name), (v, value));
+        }
+        out
+    }
+
+    /// The variables the call from record `first` (of `func`) sets in wasm
+    /// locals (Record::Var) by record `upto`: each one's last value, in the
+    /// order it first sets them.
+    pub(super) fn set_vars(&self, func: u32, first: usize, upto: usize) -> Vec<(Var, u64)> {
+        let mut out: Vec<(Var, u64)> = Vec::new();
+        for j in self.rec.calls.vars_of(first, upto) {
+            if let Record::Var { var, value, .. } = self.rec.records[j] && let Some(v) = self.tables.var(func, var) {
+                match out.iter_mut().find(|(w, _)| (w.function, w.param, w.name) == (v.function, v.param, v.name)) {
+                    Some(w) => w.1 = value,
+                    None => out.push((v, value)),
+                }
             }
         }
         out
