@@ -1,30 +1,18 @@
 name: CI
 on: [push, pull_request]
 
-# The kernel is its own job, cached by what builds it (the port, the
-# plugin, the Makefile's Linux lines), so a change elsewhere reuses it; saved
-# even when the tests fail. The cache: linux/, the tree; target/linux/,
-# kbuild's output; and arch/wasm/, the port's sources (restored over the
-# checkout, as old as the objects, so nothing is rebuilt). The
-# plugin is not: kbuild does not watch it (KSEE_ID, the hash of its source,
-# does), and it builds in seconds.
+# The kernel is cached by what builds it (the Makefile, the patch, the port,
+# the plugin), saved once built, before the tests (kept even when they
+# fail). The cache: linux/, the tree; target/linux/, kbuild's output; and
+# arch/wasm/, the port's sources, restored over the checkout as old as the
+# objects, so nothing is rebuilt.
 jobs:
-  kernel:
+  test:
     runs-on: ubuntu-26.04
-    outputs:
-      key: ${{ steps.key.outputs.key }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: What builds the kernel
-        id: key
-        run: |
-          # (The port, the plugin, and the Makefile's lines for Linux: its
-          # release and kbuild's command.)
-          make=$(grep -E '^(LINUX_|KMAKE|	KCFLAGS)' Makefile | sha256sum | cut -c1-16)
-          echo "key=linux-v4-${{ runner.arch }}-llvm22-${{ hashFiles('linux.patch', 'arch/wasm/**', 'plugin/ksee-trace.cpp') }}-$make" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
       - name: Restore the kernel
-        id: cache
+        id: kernel
         uses: actions/cache/restore@v5
         with:
           path: |
@@ -32,13 +20,12 @@ jobs:
             !linux/.git
             target/linux
             arch/wasm
-          key: ${{ steps.key.outputs.key }}
-          lookup-only: true
-      - name: Build the kernel
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: make -j$(nproc) target/linux/vmlinux
+          key: linux-${{ runner.arch }}-${{ hashFiles('Makefile', 'linux.patch', 'arch/wasm/**', 'plugin/**') }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --locked --release -p ksee-cli && target/release/ksee build
       - name: Save the kernel
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.kernel.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: |
@@ -46,29 +33,6 @@ jobs:
             !linux/.git
             target/linux
             arch/wasm
-          key: ${{ steps.key.outputs.key }}
-
-  test:
-    needs: kernel
-    runs-on: ubuntu-26.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Restore the kernel
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            linux
-            !linux/.git
-            target/linux
-            arch/wasm
-          key: ${{ needs.kernel.outputs.key }}
-          fail-on-cache-miss: true
-      - name: Restore Rust cache
-        uses: Swatinem/rust-cache@v2
-      - name: Build ksee CLI
-        run: cargo build --locked --release -p ksee-cli
-      - name: Build the site (the user programs, the initramfs, the page)
-        run: target/release/ksee build
+          key: ${{ steps.kernel.outputs.cache-primary-key }}
       - name: Test
         run: target/release/ksee test --built --ui
