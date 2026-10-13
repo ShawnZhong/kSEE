@@ -197,7 +197,7 @@ page to be drawn (`settle`: two animation frames) or for a condition
 (`wait`), never a fixed time; the whole run, native and browser, takes
 under a minute.
 
-CI (one job: the native tests, `./ksee.sh build`, then
+CI (one job: `./setup.sh`, the native tests, `./ksee.sh build`, then
 `./ksee.sh test --built --ui`) caches
 the kernel's products, by what builds them (the Makefile, the patch, the
 port, the plugin): the split kernel (`target/vmlinux`, `vmlinux.debug`), its
@@ -208,8 +208,10 @@ Linux tree); else it builds the kernel and saves them, before the tests
 (kept even when they fail).
 
 The browser is Chrome's headless shell at setup.sh's `CHROME_VERSION`,
-fetched into `target/chrome/` by `./setup.sh`; without it, the machine's
-own Chrome (`google-chrome`: CI's, the runner's).
+fetched into `target/chrome/` by `./setup.sh` (CI runs it too). Not a full
+Chrome: even headless, Chrome keeps its window's frame (some 140 px of the
+height, and at least 500 px wide), so a test would not get the size it asks
+for (the phone test's 390 px).
 
 The CLI serves the test site on a temporary local port and reads the
 shell's console on its stderr: each browser suite says `ksee test: ok` or

@@ -6,12 +6,14 @@ on: [push, pull_request]
 # Makefile, the patch, the port, the plugin): restored, the build uses them
 # (KERNEL_BUILT: no Linux tree, no kbuild); else it builds them and saves
 # them, before the browser tests (kept even when they fail). The unit tests
-# first: they need neither. The browser: the runner's Chrome.
+# first: they need neither.
 jobs:
   test:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
+      - name: Setup
+        run: ./setup.sh
       - name: Restore the kernel
         id: kernel
         uses: actions/cache/restore@v5

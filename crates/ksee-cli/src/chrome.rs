@@ -1,5 +1,5 @@
-//! `ksee test` in Chrome: setup.sh's headless shell (target/chrome/), else
-//! the machine's own (CI's: the runner's),
+//! `ksee test` in Chrome's headless shell (target/chrome/, setup.sh's: no
+//! browser window, so the page gets the exact size each test asks for),
 //! without its debugging protocol: the page under `#test=NAME` runs its test
 //! and says `ok` or `fail` and its log on the console, which the shell
 //! writes on its stderr; there an error nothing caught fails it at once,
@@ -29,11 +29,8 @@ pub const TESTS: &[(&str, &str, (u32, u32))] = &[
 ];
 const SCREEN: (u32, u32) = (1500, 900);
 
-/// The browser: setup.sh's, else the machine's.
-fn browser() -> &'static str {
-    const SHELL: &str = "target/chrome/chrome-headless-shell";
-    if Path::new(SHELL).exists() { SHELL } else { "google-chrome" }
-}
+/// The browser: setup.sh's.
+const BROWSER: &str = "target/chrome/chrome-headless-shell";
 
 /// How long a test may take (the longest, seconds: the kernel's).
 const TIMEOUT: Duration = Duration::from_secs(60);
@@ -46,11 +43,10 @@ pub fn test(name: &str) -> bool {
     let (tx, rx) = channel();
     std::thread::spawn(move || crate::serve::serve_on(listener, Path::new(crate::build::SITE)));
     let profile = std::env::temp_dir().join(format!("ksee-chrome-{}", std::process::id()));
-    let browser = browser();
-    let mut child = or_fail(Command::new(browser)
+    let mut child = or_fail(Command::new(BROWSER)
         .args(["--headless=new", "--no-sandbox", "--no-first-run", "--enable-logging=stderr", "--v=0", &format!("--user-data-dir={}", profile.display()),
                &format!("--window-size={width},{height}"), &format!("http://127.0.0.1:{port}/{hash}")])
-        .stdout(Stdio::null()).stderr(Stdio::piped()).spawn(), format!("{browser} (./setup.sh fetches a browser)"));
+        .stdout(Stdio::null()).stderr(Stdio::piped()).spawn(), format!("{BROWSER} (./setup.sh fetches it)"));
     // (The console's lines: the test's outcome; "Uncaught …", a failure.)
     if let Some(err) = child.stderr.take() {
         std::thread::spawn(move || {
