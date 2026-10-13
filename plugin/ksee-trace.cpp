@@ -71,6 +71,11 @@ uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
   return h;
 }
 
+// `k`'s number in `m`: the next, the first time.
+template <class K> unsigned number(std::map<K, unsigned> &m, const K &k) {
+  return m.try_emplace(k, m.size()).first->second;
+}
+
 // A function's id: its name's hash; one local to a file is told apart by
 // the file's name, as its debug info has it (the unit's: DWARF's too).
 uint32_t fnId(StringRef name, bool local, const Module &M) {
@@ -137,7 +142,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
   std::string fileRef(const DIScope *S) {
     StringRef path = S->getFilename();
     path.consume_front("./");
-    return std::to_string(files.try_emplace(path.str(), files.size()).first->second);
+    return std::to_string(number(files, path.str()));
   }
 
   // FILE:line, `line` of a scope's file.
@@ -196,7 +201,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
         for (DILocation *At = L; DILocation *Site = At->getInlinedAt(); At = Site) {
           DISubprogram *SP = At->getScope()->getSubprogram();
           std::string site = (SP ? SP->getName().str() : std::string("?")) + "\t" + at(Site->getScope(), Site->getLine());
-          item += "@" + std::to_string(sites.try_emplace(site, sites.size()).first->second);
+          item += "@" + std::to_string(number(sites, site));
         }
         auto [it, fresh] = seen.try_emplace(item, lines);
         if (fresh) {
@@ -335,7 +340,6 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
                   ArrayRef<std::pair<DbgVariableRecord *, Instruction *>> sets) {
     // (A debug record's value need not dominate it, as a use must: only one
     // that does.)
-    std::map<std::pair<uint32_t, std::string>, unsigned> vars;
     // (A variable that only ever takes one value, where a set of it follows
     // another, surely: nothing new; only the sets no other dominates. Each
     // inline site's copy of a variable is a variable of its own.)
@@ -378,24 +382,24 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
             arg = k;
       todo.push_back({R, I, of, fname, arg});
     }
-    // (A variable is the call's argument k if every set of it is.)
-    std::map<std::pair<uint32_t, std::string>, int> argOf;
-    for (Set &t : todo) {
-      auto [it, fresh] = argOf.try_emplace({t.of, t.R->getVariable()->getName().str()}, t.arg);
-      if (!fresh && it->second != t.arg)
-        it->second = -1;
-    }
+    // (Each variable, by its function and name: its number, in the order
+    // first set; the call's argument it is if every set of it is (else -1).)
+    struct Var { unsigned k; int arg; StringRef function; unsigned param; };
+    std::map<std::pair<uint32_t, std::string>, Var> vars;
     for (Set &t : todo) {
       DILocalVariable *V = t.R->getVariable();
+      auto [it, fresh] = vars.try_emplace({t.of, V->getName().str()}, Var{unsigned(vars.size()), t.arg, t.function, V->getArg()});
+      if (!fresh && it->second.arg != t.arg)
+        it->second.arg = -1;
+    }
+    for (auto &[key, var] : vars)
+      if (var.k < 1u << 12)
+        code += ("V\t" + Twine(id) + "\t" + Twine(var.k) + "\t" + Twine(key.first) + "\t" + var.function + "\t" + key.second + "\t" +
+                   Twine(var.param) + "\t" + Twine(var.arg + 1) + "\n").str();
+    for (Set &t : todo) {
       Value *v = t.R->getVariableLocationOp(0);
-      int arg = argOf[{t.of, V->getName().str()}];
-      auto [it, fresh] = vars.try_emplace({t.of, V->getName().str()}, vars.size());
-      if (it->second >= 1u << 12)
-        continue;
-      if (fresh)
-        code += ("V\t" + Twine(id) + "\t" + Twine(it->second) + "\t" + Twine(t.of) + "\t" + t.function + "\t" + V->getName() + "\t" +
-                   Twine(V->getArg()) + "\t" + Twine(arg + 1) + "\n").str();
-      if (arg >= 0)
+      const Var &var = vars.at({t.of, t.R->getVariable()->getName().str()});
+      if (var.k >= 1u << 12 || var.arg >= 0)
         continue;
       IRBuilder<> B(beforeReturn(t.I));
       SmallVector<Value *, 2> w;
@@ -406,7 +410,7 @@ class KseeTrace : public PassInfoMixin<KseeTrace> {
       // record goes before the next instruction, a later line's.)
       auto *D = dyn_cast<Instruction>(v);
       unsigned line = lineField(D && D->getParent() == t.I->getParent() ? D : t.I, 12);
-      record(B, low, tag(Kind::Var, line << 12 | it->second), w);
+      record(B, low, tag(Kind::Var, line << 12 | var.k), w);
     }
 
   }
