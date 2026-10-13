@@ -7,5 +7,3 @@ publish.workspace = true
 
 [dependencies]
 bytemuck.workspace = true
-serde.workspace = true
-postcard.workspace = true

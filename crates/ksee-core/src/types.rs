@@ -20,7 +20,7 @@
 //!                                        frame base, if in memory)
 //! ```
 
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -29,7 +29,7 @@ use core::fmt::Write;
 use crate::Memory;
 use crate::flat::{At, Lists, Pod, Reader, Str, Text, Writer, Zeroable};
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Base {
     Signed,
     Unsigned,
@@ -38,30 +38,13 @@ pub enum Base {
     Char,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Member {
     pub name: &'static str,
     pub bit_offset: u32,
     /// 0 unless a bitfield.
     pub bit_size: u32,
     pub ty: u32,
-}
-
-/// Names, each once for the page's life: the kernel's tables are made once
-/// and never dropped (one kernel a page), so each name is allocated once,
-/// kept, and a `&'static str` (no count of who holds it).
-#[derive(Default)]
-pub(crate) struct Names(BTreeSet<&'static str>);
-
-impl Names {
-    pub(crate) fn name(&mut self, s: &str) -> &'static str {
-        if let Some(&r) = self.0.get(s) {
-            return r;
-        }
-        let r: &'static str = alloc::boxed::Box::leak(s.into());
-        self.0.insert(r);
-        r
-    }
 }
 
 /// A task's id and name, as its task_struct says them.
@@ -71,8 +54,7 @@ pub struct TaskId {
     pub comm: String,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(bound(deserialize = "'de: 'static"))]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
     Void,
     Base(Base),
@@ -85,16 +67,16 @@ pub enum Kind {
     Func,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Type {
     pub name: &'static str,
     pub size: u32,
     pub kind: Kind,
 }
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-// (Names borrowed from the tables' bytes, kept for the page's life.)
-#[serde(bound(deserialize = "'de: 'static"))]
+/// The types: flat (see flat), the file's as it is, or as parse made
+/// them; the few thousand types and the names of a few, as values too.
+#[derive(Debug, Default)]
 pub struct Types {
     pub types: Vec<Type>,
     /// Struct, union, enum and typedef names -> ids.
@@ -107,20 +89,77 @@ pub struct Types {
     bodies: BTreeMap<&'static str, u32>,
     /// Constants from the UAPI headers (flags, errno names): name -> value.
     pub constants: BTreeMap<&'static str, i64>,
-    /// The functions' parameters and locals, and the declarations: tens
-    /// of thousands, flat (see flat), the file's as it is.
-    #[serde(skip)]
     flat: Flat,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 struct Flat {
     text: &'static str,
+    /// By id.
+    types: &'static [TypeAt],
+    /// A struct's or union's, an enum's (TypeAt's a..b).
+    members: &'static [MemberAt],
+    enumerators: &'static [Value],
+    globals: &'static [Global],
+    syscalls: &'static [Number],
+    bodies: &'static [Number],
+    constants: &'static [Value],
     /// By function id (the probes' F lines'), in order.
     params: (&'static [At], &'static [Param]),
     locals: (&'static [At], &'static [Local]),
     /// Sorted by name.
     declared: &'static [Declared],
+}
+
+/// The kinds of types, as the T lines name them (TypeAt::kind: an index).
+const KINDS: [&str; 9] = ["void", "base", "ptr", "array", "struct", "union", "enum", "typedef", "func"];
+/// A base type's codes (its T line's extra; TypeAt::a: an index).
+const BASES: [(&str, Base); 5] = [("u", Base::Unsigned), ("s", Base::Signed), ("f", Base::Float), ("b", Base::Bool), ("c", Base::Char)];
+
+/// A type: `kind` (KINDS), and its numbers: base: BASES's index; ptr,
+/// typedef: its target; array: elem, count; struct, union: its members
+/// a..b; enum: its enumerators a..b.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct TypeAt {
+    name: Str,
+    size: u32,
+    kind: u32,
+    a: u32,
+    b: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct MemberAt {
+    name: Str,
+    bit_offset: u32,
+    bit_size: u32,
+    ty: u32,
+}
+
+/// An enumerator, a constant.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct Value {
+    name: Str,
+    value: i64,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct Global {
+    name: Str,
+    addr: u32,
+    ty: u32,
+}
+
+/// A syscall's number, a function's id: its name's.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct Number {
+    n: u32,
+    name: Str,
 }
 
 #[repr(C)]
@@ -150,23 +189,15 @@ struct Declared {
 
 impl Types {
     pub fn parse(text: &str) -> Types {
-        let mut types = Vec::new();
-        let mut kinds: Vec<(String, Vec<String>)> = Vec::new();
-        let mut members: BTreeMap<u32, Vec<Member>> = BTreeMap::new();
-        let mut values: BTreeMap<u32, Vec<(&'static str, i64)>> = BTreeMap::new();
-        let mut globals = BTreeMap::new();
-        let mut syscalls = BTreeMap::new();
-        let mut params = Lists::default();
-        let mut bodies = BTreeMap::new();
-        let mut locals = Lists::default();
-        let mut constants = BTreeMap::new();
+        let mut types: Vec<TypeAt> = Vec::new();
+        let mut members: BTreeMap<u32, Vec<MemberAt>> = BTreeMap::new();
+        let mut values: BTreeMap<u32, Vec<Value>> = BTreeMap::new();
+        let (mut globals, mut syscalls, mut bodies, mut constants) = (BTreeMap::new(), BTreeMap::new(), BTreeMap::new(), BTreeMap::new());
+        let (mut params, mut locals) = (Lists::default(), Lists::default());
         let mut declared: BTreeMap<&str, (Str, u32)> = BTreeMap::new();
-        // (The flat tables' names, each once.)
-        let mut strs = Text::default();
         // (Each name once: a file's, a parameter's, a local's, a member's,
         // each the same in thousands of declarations and functions.)
-        let mut pool = Names::default();
-        let mut intern = |s: &str| pool.name(s);
+        let mut strs = Text::default();
         for line in text.lines() {
             let c: Vec<&str> = line.split('\t').collect();
             let num = |i: usize| c.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -174,22 +205,24 @@ impl Types {
                 Some(&"T") if c.len() >= 5 => {
                     let id = num(1) as usize;
                     if types.len() <= id {
-                        types.resize(id + 1, Type { name: "", size: 0, kind: Kind::Void });
-                        kinds.resize(id + 1, (String::new(), Vec::new()));
+                        types.resize(id + 1, TypeAt::zeroed());
                     }
-                    types[id].name = intern(c[3]);
-                    types[id].size = num(4);
-                    kinds[id] = (c[2].to_string(), c[5..].iter().map(|s| s.to_string()).collect());
+                    let kind = KINDS.iter().position(|&k| k == c[2]).unwrap_or(0) as u32;
+                    let a = match c[2] {
+                        "base" => BASES.iter().position(|b| Some(&b.0) == c.get(5)).unwrap_or(0) as u32,
+                        _ => num(5),
+                    };
+                    types[id] = TypeAt { name: strs.name(c[3]), size: num(4), kind, a, b: num(6) };
                 }
-                Some(&"M") if c.len() == 6 => members.entry(num(1)).or_default().push(Member {
-                    name: intern(c[2]), bit_offset: num(3), bit_size: num(4), ty: num(5),
+                Some(&"M") if c.len() == 6 => members.entry(num(1)).or_default().push(MemberAt {
+                    name: strs.name(c[2]), bit_offset: num(3), bit_size: num(4), ty: num(5),
                 }),
                 Some(&"S") if c.len() >= 3 => {
-                    syscalls.insert(num(1), intern(c[2]));
+                    syscalls.insert(num(1), strs.name(c[2]));
                 }
                 Some(&"C") if c.len() == 3 => {
                     if let Ok(v) = c[2].parse() {
-                        constants.insert(intern(c[1]), v);
+                        constants.insert(c[1], (strs.name(c[1]), v));
                     }
                 }
                 // (P: id, name, then name:type for each parameter.)
@@ -200,7 +233,7 @@ impl Types {
                     }).collect();
                     params.push(num(1), list);
                     if c[2].starts_with(crate::arch::SYSCALL_BODY) {
-                        bodies.entry(intern(c[2])).or_insert(num(1));
+                        bodies.entry(c[2]).or_insert((strs.name(c[2]), num(1)));
                     }
                 }
                 // (Q: name:type:offset for each local, the offset empty
@@ -221,57 +254,108 @@ impl Types {
                     declared.entry(c[1]).or_insert((strs.name(c[2]), num(3)));
                 }
                 Some(&"G") if c.len() == 4 => {
-                    globals.insert(intern(c[1]), (num(2), num(3)));
+                    globals.insert(c[1], Global { name: strs.name(c[1]), addr: num(2), ty: num(3) });
                 }
                 Some(&"V") if c.len() == 4 => {
-                    values.entry(num(1)).or_default().push((intern(c[2]), c[3].parse().unwrap_or(0)))
+                    values.entry(num(1)).or_default().push(Value { name: strs.name(c[2]), value: c[3].parse().unwrap_or(0) })
                 }
                 _ => {}
             }
         }
-        let mut type_ids = BTreeMap::new();
-        for (id, (kind, extra)) in kinds.into_iter().enumerate() {
-            let arg = |i: usize| extra.get(i).and_then(|s| s.parse().ok()).unwrap_or(0);
-            let t = &mut types[id];
-            t.kind = match kind.as_str() {
-                "base" => Kind::Base(match extra.first().map(String::as_str) {
-                    Some("s") => Base::Signed,
-                    Some("f") => Base::Float,
-                    Some("b") => Base::Bool,
-                    Some("c") => Base::Char,
-                    _ => Base::Unsigned,
-                }),
-                "ptr" => Kind::Pointer(arg(0)),
-                "array" => Kind::Array { elem: arg(0), count: arg(1) },
-                "struct" => Kind::Struct(members.remove(&(id as u32)).unwrap_or_default()),
-                "union" => Kind::Union(members.remove(&(id as u32)).unwrap_or_default()),
-                "enum" => Kind::Enum(values.remove(&(id as u32)).unwrap_or_default()),
-                "typedef" => Kind::Typedef(arg(0)),
-                "func" => Kind::Func,
-                _ => Kind::Void,
-            };
-            if matches!(t.kind, Kind::Struct(_) | Kind::Union(_) | Kind::Enum(_) | Kind::Typedef(_))
-                && !t.name.is_empty()
-            {
-                type_ids.entry(t.name).or_insert(id as u32);
+        // (Each struct's, union's or enum's members where its record says.)
+        let (mut all, mut enumerators) = (Vec::new(), Vec::new());
+        for (id, t) in types.iter_mut().enumerate() {
+            let id = id as u32;
+            match KINDS[t.kind as usize] {
+                "struct" | "union" => {
+                    t.a = all.len() as u32;
+                    all.extend(members.remove(&id).unwrap_or_default());
+                    t.b = all.len() as u32;
+                }
+                "enum" => {
+                    t.a = enumerators.len() as u32;
+                    enumerators.extend(values.remove(&id).unwrap_or_default());
+                    t.b = enumerators.len() as u32;
+                }
+                _ => {}
             }
         }
         let declared = declared.into_iter().map(|(name, (file, line))| Declared { name: strs.name(name), file, line }).collect();
-        let flat = Flat { text: strs.keep(), params: params.keep(), locals: locals.keep(), declared: crate::flat::keep(declared) };
-        Types { types, type_ids, globals, syscalls, bodies, constants, flat }
+        use crate::flat::keep;
+        Types::of(Flat {
+            text: strs.keep(),
+            types: keep(types),
+            members: keep(all),
+            enumerators: keep(enumerators),
+            globals: keep(globals.into_values().collect()),
+            syscalls: keep(syscalls.into_iter().map(|(n, name)| Number { n, name }).collect()),
+            bodies: keep(bodies.into_values().map(|(name, n)| Number { n, name }).collect()),
+            constants: keep(constants.into_values().map(|(name, value)| Value { name, value }).collect()),
+            params: params.keep(),
+            locals: locals.keep(),
+            declared: keep(declared),
+        })
+    }
+
+    /// The types of their flat tables: the types, and the names of a few,
+    /// as values.
+    fn of(flat: Flat) -> Types {
+        let s = |n: Str| n.of(flat.text);
+        let mut type_ids = BTreeMap::new();
+        let types = flat.types.iter().enumerate().map(|(id, t)| {
+            let range = t.a as usize..t.b as usize;
+            let members = || flat.members.get(range.clone()).unwrap_or(&[]).iter()
+                .map(|m| Member { name: s(m.name), bit_offset: m.bit_offset, bit_size: m.bit_size, ty: m.ty }).collect();
+            let kind = match KINDS.get(t.kind as usize).copied().unwrap_or("void") {
+                "base" => Kind::Base(BASES.get(t.a as usize).map_or(Base::Unsigned, |b| b.1)),
+                "ptr" => Kind::Pointer(t.a),
+                "array" => Kind::Array { elem: t.a, count: t.b },
+                "struct" => Kind::Struct(members()),
+                "union" => Kind::Union(members()),
+                "enum" => Kind::Enum(flat.enumerators.get(range.clone()).unwrap_or(&[]).iter().map(|v| (s(v.name), v.value)).collect()),
+                "typedef" => Kind::Typedef(t.a),
+                "func" => Kind::Func,
+                _ => Kind::Void,
+            };
+            let name = s(t.name);
+            if matches!(kind, Kind::Struct(_) | Kind::Union(_) | Kind::Enum(_) | Kind::Typedef(_)) && !name.is_empty() {
+                type_ids.entry(name).or_insert(id as u32);
+            }
+            Type { name, size: t.size, kind }
+        }).collect();
+        Types {
+            types,
+            type_ids,
+            globals: flat.globals.iter().map(|g| (s(g.name), (g.addr, g.ty))).collect(),
+            syscalls: flat.syscalls.iter().map(|x| (x.n, s(x.name))).collect(),
+            bodies: flat.bodies.iter().map(|x| (s(x.name), x.n)).collect(),
+            constants: flat.constants.iter().map(|c| (s(c.name), c.value)).collect(),
+            flat,
+        }
     }
 
     pub(crate) fn write(&self, w: &mut Writer) {
-        w.bytes(&postcard::to_allocvec(self).expect("types"));
         let f = &self.flat;
         w.bytes(f.text.as_bytes());
+        (w.slice(f.types), w.slice(f.members), w.slice(f.enumerators), w.slice(f.globals));
+        (w.slice(f.syscalls), w.slice(f.bodies), w.slice(f.constants));
         (w.slice(f.params.0), w.slice(f.params.1), w.slice(f.locals.0), w.slice(f.locals.1), w.slice(f.declared));
     }
 
     pub(crate) fn read(r: &mut Reader) -> Option<Types> {
-        let mut t: Types = postcard::from_bytes(r.bytes()?).ok()?;
-        t.flat = Flat { text: r.text()?, params: (r.slice()?, r.slice()?), locals: (r.slice()?, r.slice()?), declared: r.slice()? };
-        Some(t)
+        Some(Types::of(Flat {
+            text: r.text()?,
+            types: r.slice()?,
+            members: r.slice()?,
+            enumerators: r.slice()?,
+            globals: r.slice()?,
+            syscalls: r.slice()?,
+            bodies: r.slice()?,
+            constants: r.slice()?,
+            params: (r.slice()?, r.slice()?),
+            locals: (r.slice()?, r.slice()?),
+            declared: r.slice()?,
+        }))
     }
 
     /// Function `func`'s parameters (its id, the probes' F lines'):
