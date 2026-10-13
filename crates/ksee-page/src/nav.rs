@@ -22,12 +22,11 @@ fn url() -> (Option<String>, Option<String>) {
 
 /// A program as the URL has it: JSON.
 fn program_json(program: &[ProgramLine]) -> Option<String> {
-    let value = serde_wasm_bindgen::to_value(program).ok()?;
-    js_sys::JSON::stringify(&value).ok()?.as_string()
+    serde_json::to_string(program).ok()
 }
 
 fn program_from_json(text: &str) -> Option<Vec<ProgramLine>> {
-    serde_wasm_bindgen::from_value(js_sys::JSON::parse(text).ok()?).ok()
+    serde_json::from_str(text).ok()
 }
 
 /// The lesson and program the URL says, at first.

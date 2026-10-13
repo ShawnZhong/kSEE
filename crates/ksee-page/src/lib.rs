@@ -74,12 +74,12 @@ pub(crate) fn lessons() -> &'static [Lesson] {
 /// (lessons.json), and `machine`, the kernel booting (a promise of the
 /// Machine: the page owns it once booted; the lesson shows meanwhile).
 #[wasm_bindgen]
-pub fn mount(root: &str, lessons: JsValue, machine: Promise) -> Result<(), JsValue> {
+pub fn mount(root: &str, lessons: &str, machine: Promise) -> Result<(), JsValue> {
     // (A panic said on the console, not only "unreachable".)
     std::panic::set_hook(Box::new(|p| {
         web_sys::console::error_1(&p.to_string().into())
     }));
-    let lessons: Vec<Lesson> = serde_wasm_bindgen::from_value(lessons)?;
+    let lessons: Vec<Lesson> = serde_json::from_str(lessons).map_err(|e| JsValue::from(format!("lessons.json: {e}")))?;
     BOOT.with_borrow_mut(|b| *b = Some(machine));
     LESSONS.set(Box::leak(lessons.into_boxed_slice()));
     // (The lesson's text as the page came with it, for what reads it without

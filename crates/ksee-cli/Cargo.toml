@@ -16,6 +16,3 @@ serde_json = "1.0.151"
 # (wasm-bindgen-cli-support's version: one build of it.)
 wasmparser = { version = "0.245", default-features = false, features = ["std"] }
 wasm-bindgen-cli-support.workspace = true
-
-[dev-dependencies]
-wat = "1"

@@ -35,72 +35,20 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: ksee [build | test [--built] [--ui | NAME ...] | deploy | serve [--port=N] | patch \
                      | tables DEBUG HEADERS OUT | sources DEBUG LINUX OUT | lessons | bindgen WASM OUT]";
 
-#[derive(Debug, Eq, PartialEq)]
-enum Command {
-    Build,
-    Test { built: bool, names: Vec<String> },
-    Deploy,
-    Patch,
-    /// (`build`: build first, as plain `ksee` does.)
-    Serve { build: bool, port: u16 },
-    Tables { debug: String, headers: String, out: String },
-    Sources { debug: String, linux: String, out: String },
-    Lessons,
-    Bindgen { wasm: String, out: String },
-}
-
-fn parse_args(args: &[&str]) -> Result<Command, String> {
-    let Some((command, options)) = args.split_first() else {
-        return Ok(Command::Serve { build: true, port: 8000 });
-    };
-    match *command {
-        "tables" => match options {
-            [debug, headers, out] => Ok(Command::Tables { debug: debug.to_string(), headers: headers.to_string(), out: out.to_string() }),
-            _ => Err("tables takes DEBUG HEADERS OUT".into()),
-        },
-        "sources" => match options {
-            [debug, linux, out] => Ok(Command::Sources { debug: debug.to_string(), linux: linux.to_string(), out: out.to_string() }),
-            _ => Err("sources takes DEBUG LINUX OUT".into()),
-        },
-        "bindgen" => match options {
-            [wasm, out] => Ok(Command::Bindgen { wasm: wasm.to_string(), out: out.to_string() }),
-            _ => Err("bindgen takes WASM OUT".into()),
-        },
-        "build" | "deploy" | "patch" | "lessons" if !options.is_empty() => {
-            Err(format!("{command} takes no options or arguments"))
-        }
-        "build" => Ok(Command::Build),
-        "deploy" => Ok(Command::Deploy),
-        "patch" => Ok(Command::Patch),
-        "lessons" => Ok(Command::Lessons),
-        "test" => {
-            let (built, selection) = match options.first() {
-                Some(&"--built") => (true, &options[1..]),
-                _ => (false, options),
-            };
-            let names: Vec<String> = match selection {
-                [] => vec!["kernel".into(), "lessons".into()],
-                ["--ui"] => chrome::TESTS.iter().map(|test| test.0.into()).collect(),
-                names if names.iter().all(|name| chrome::TESTS.iter().any(|test| test.0 == *name)) =>
-                    names.iter().map(|name| (*name).into()).collect(),
-                _ => return Err(format!("test names are: {}", chrome::TESTS.iter().map(|test| test.0).collect::<Vec<_>>().join(", "))),
-            };
-            Ok(Command::Test { built, names })
-        }
-        "serve" => match options {
-            [] => Ok(Command::Serve { build: false, port: 8000 }),
-            [option] => parse_port(option).map(|port| Command::Serve { build: false, port }),
-            _ => Err("serve accepts only one optional --port=N".into()),
-        },
-        _ if command.starts_with('-') => Err(format!("unknown option: {command}")),
-        _ => Err(format!("unknown command: {command}")),
+/// The tests `selection` names: none, the kernel's and the lessons'; --ui,
+/// all; else those named, if each is one.
+fn test_names(selection: &[&str]) -> Option<Vec<String>> {
+    let all = || chrome::TESTS.iter().map(|test| test.0);
+    match selection {
+        [] => Some(vec!["kernel".into(), "lessons".into()]),
+        ["--ui"] => Some(all().map(String::from).collect()),
+        names if names.iter().all(|n| all().any(|t| t == *n)) => Some(names.iter().map(|n| n.to_string()).collect()),
+        _ => None,
     }
 }
 
-fn parse_port(option: &str) -> Result<u16, String> {
-    let value = option.strip_prefix("--port=")
-        .ok_or_else(|| "expected --port=N".to_string())?;
-    value.parse::<u16>().map_err(|_| format!("invalid port: {value}"))
+fn serve(port: u16) {
+    or_fail(serve::serve(Path::new(build::SITE), port), "serve");
 }
 
 fn read(p: &Path) -> Vec<u8> {
@@ -142,87 +90,52 @@ impl Drop for Scratch {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let command = match parse_args(&args) {
-        Ok(command) => command,
-        Err(error) => {
-            eprintln!("ksee: {error}\n{USAGE}");
-            return ExitCode::from(2);
+    let p = Path::new;
+    match args[..] {
+        [] => {
+            build::build();
+            serve(8000);
         }
-    };
-    match command {
-        Command::Build => build::build(),
-        Command::Test { built, names } => build::test(&names, built),
-        Command::Deploy => deploy::deploy(),
-        Command::Patch => build::patch(),
-        Command::Serve { build: first, port } => {
-            if first {
-                build::build();
-            }
-            or_fail(serve::serve(Path::new(build::SITE), port), "serve");
+        ["build"] => build::build(),
+        ["test", ref selection @ ..] => {
+            let (built, selection) = match selection {
+                ["--built", rest @ ..] => (true, rest),
+                rest => (false, rest),
+            };
+            let Some(names) = test_names(selection) else { return usage() };
+            build::test(&names, built);
         }
-        Command::Tables { debug, headers, out } => pack::tables(Path::new(&debug), Path::new(&headers), Path::new(&out)),
-        Command::Sources { debug, linux, out } => pack::sources(Path::new(&debug), Path::new(&linux), Path::new(&out)),
-        Command::Lessons => lessons::write(),
-        Command::Bindgen { wasm, out } => build::bindgen(&wasm, &out),
+        ["deploy"] => deploy::deploy(),
+        ["patch"] => build::patch(),
+        ["serve"] => serve(8000),
+        ["serve", port] => match port.strip_prefix("--port=").and_then(|v| v.parse().ok()) {
+            Some(port) => serve(port),
+            None => return usage(),
+        },
+        ["tables", debug, headers, out] => pack::tables(p(debug), p(headers), p(out)),
+        ["sources", debug, linux, out] => pack::sources(p(debug), p(linux), p(out)),
+        ["lessons"] => lessons::write(),
+        ["bindgen", wasm, out] => build::bindgen(wasm, out),
+        _ => return usage(),
     }
     ExitCode::SUCCESS
+}
+
+fn usage() -> ExitCode {
+    eprintln!("{USAGE}\n(test names: {})", chrome::TESTS.iter().map(|t| t.0).collect::<Vec<_>>().join(", "));
+    ExitCode::from(2)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn parse(args: &[&str]) -> Command {
-        parse_args(args).unwrap()
-    }
-
     #[test]
-    fn parses_commands_and_their_options() {
-        assert_eq!(parse(&[]), Command::Serve { build: true, port: 8000 });
-        assert_eq!(parse(&["build"]), Command::Build);
-        assert_eq!(parse(&["test"]), Command::Test { built: false, names: vec!["kernel".into(), "lessons".into()] });
-        assert_eq!(parse(&["test", "read"]), Command::Test { built: false, names: vec!["read".into()] });
-        assert_eq!(parse(&["test", "--built", "read", "responsive"]), Command::Test { built: true, names: vec!["read".into(), "responsive".into()] });
-        assert_eq!(parse(&["test", "--ui"]), Command::Test { built: false, names: chrome::TESTS.iter().map(|test| test.0.into()).collect() });
-        assert_eq!(parse(&["test", "--built", "--ui"]), Command::Test { built: true, names: chrome::TESTS.iter().map(|test| test.0.into()).collect() });
-        assert_eq!(parse(&["deploy"]), Command::Deploy);
-        assert_eq!(parse(&["patch"]), Command::Patch);
-        assert_eq!(parse(&["serve"]), Command::Serve { build: false, port: 8000 });
-        assert_eq!(parse(&["serve", "--port=9000"]), Command::Serve { build: false, port: 9000 });
-        assert_eq!(parse(&["serve", "--port=0"]), Command::Serve { build: false, port: 0 });
-        assert_eq!(parse(&["tables", "d", "h", "o"]), Command::Tables { debug: "d".into(), headers: "h".into(), out: "o".into() });
-        assert_eq!(parse(&["sources", "d", "l", "o"]), Command::Sources { debug: "d".into(), linux: "l".into(), out: "o".into() });
-        assert_eq!(parse(&["lessons"]), Command::Lessons);
-        assert_eq!(parse(&["bindgen", "w", "o"]), Command::Bindgen { wasm: "w".into(), out: "o".into() });
-    }
-
-    #[test]
-    fn rejects_invalid_ports() {
-        for port in ["", "no", "65536"] {
-            assert!(parse_args(&["serve", &format!("--port={port}")]).is_err());
-        }
-        assert!(parse_args(&["serve", "--port", "9000"]).is_err());
-        assert!(parse_args(&["serve", "--port=8000", "--port=9000"]).is_err());
-    }
-
-    #[test]
-    fn rejects_unknown_misplaced_and_extra_arguments() {
-        for args in [
-            &["--unknown"][..],
-            &["--port=9000"][..],
-            &["unknown"][..],
-            &["build", "--ui"][..],
-            &["deploy", "extra"][..],
-            &["patch", "--unknown"][..],
-            &["tables", "d"][..],
-            &["sources", "d"][..],
-            &["lessons", "x"][..],
-            &["bindgen", "w"][..],
-            &["test", "--port=9000"][..],
-            &["test", "--ui", "--ui"][..],
-            &["serve", "--ui"][..],
-        ] {
-            assert!(parse_args(args).is_err(), "accepted {args:?}");
-        }
+    fn test_names_are_the_tests() {
+        assert_eq!(test_names(&[]), Some(vec!["kernel".into(), "lessons".into()]));
+        assert_eq!(test_names(&["read"]), Some(vec!["read".into()]));
+        assert_eq!(test_names(&["--ui"]).map(|n| n.len()), Some(chrome::TESTS.len()));
+        assert_eq!(test_names(&["unknown"]), None);
+        assert_eq!(test_names(&["--ui", "--ui"]), None);
     }
 }

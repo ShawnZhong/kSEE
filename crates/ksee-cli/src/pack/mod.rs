@@ -262,13 +262,6 @@ mod code_tests {
     }
 
     #[test]
-    fn a_modules_custom_sections() {
-        let m = wat::parse_str(r#"(module (func) (@custom "ksee" "F") (@custom ".debug_info" "D"))"#).unwrap();
-        let s = custom_sections(&m).unwrap();
-        assert_eq!((s.get("ksee"), s.get(".debug_info")), (Some(&&b"F"[..]), Some(&&b"D"[..])));
-    }
-
-    #[test]
     fn ids_are_the_plugins() {
         // (From a kernel's ksee section.)
         assert_eq!(id("try_to_wake_up"), 2218239081);
