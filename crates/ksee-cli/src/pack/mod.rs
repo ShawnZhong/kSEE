@@ -37,8 +37,9 @@ fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'
 /// referenced sources to their final paths.
 pub fn kernel(kernel: &Path, tables_out: &Path, sources_out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
+    let image = crate::or_fail(module::Module::read(&image), "vmlinux");
     let mut types = crate::or_fail(dwarf::types(&image), "DWARF");
-    let code = String::from_utf8_lossy(&ksee_core::wasm::section(&image, 0, image.len() as u32, "ksee.code")).into_owned();
+    let code = String::from_utf8_lossy(image.custom.get("ksee.code").copied().unwrap_or(&[])).into_owned();
     for (name, value) in constants(&kernel.join("usr/include")) {
         types += &format!("C\t{name}\t{value}\n");
     }
@@ -138,16 +139,14 @@ fn evaluate(text: &str, known: &[(String, i64)]) -> Option<i64> {
 /// each entry the function a number calls, SYSCALL_WRAPPER and its name,
 /// by its index in the function table; NULL for a syscall it does not
 /// build: (number, NAME).
-fn syscalls(image: &[u8], types: &str) -> Vec<(u32, String)> {
+fn syscalls(image: &module::Module, types: &str) -> Vec<(u32, String)> {
     let Some((addr, ty)) = rows(types, "G").find(|c| c.first() == Some(&SYSCALL_TABLE))
         .and_then(|c| Some((c.get(1)?.parse::<u32>().ok()?, *c.get(2)?))) else { return Vec::new() };
     // (Its size as the page reads it: an array's, count * its element's.)
     let size = ty.parse().map_or(0, |ty| ksee_core::types::Types::parse(types).size_of(ty));
-    let entries = module::memory(image, addr, size);
-    let (table, names) = (module::table(image), module::function_names(image));
-    entries.chunks(4).enumerate().filter_map(|(nr, e)| {
-        let f = table.get(&u32::from_le_bytes(e.try_into().ok()?))?;
-        Some((nr as u32, names.get(f)?.strip_prefix(SYSCALL_WRAPPER)?.to_string()))
+    image.memory(addr, size).chunks(4).enumerate().filter_map(|(nr, e)| {
+        let f = image.table.get(&u32::from_le_bytes(e.try_into().ok()?))?;
+        Some((nr as u32, image.names.get(f)?.strip_prefix(SYSCALL_WRAPPER)?.to_string()))
     }).collect()
 }
 
@@ -244,46 +243,18 @@ mod constants_tests {
 mod image_tests {
     use super::*;
 
-    fn section(id: u8, payload: &[u8]) -> Vec<u8> {
-        let mut s = vec![id];
-        module::leb(&mut s, payload.len() as u32);
-        s.extend_from_slice(payload);
-        s
-    }
-
-    fn custom(name: &str, contents: &[u8]) -> Vec<u8> {
-        let mut payload = Vec::new();
-        module::leb(&mut payload, name.len() as u32);
-        payload.extend_from_slice(name.as_bytes());
-        payload.extend_from_slice(contents);
-        section(0, &payload)
-    }
-
-    /// An image whose table calls `__wasm_sys_read` at 0 and nothing at 1.
+    /// An image whose table calls `__wasm_sys_read` at 0 and nothing at 1:
+    /// the table's two entries at 0x100, table index 5 (function 0), then NULL.
     fn syscall_image() -> Vec<u8> {
-        // (The table's two entries, at 0x100: table index 5, then NULL.)
-        let mut data = vec![1, 0, 0x41, 0x80, 0x02, 0x0b];
-        module::leb(&mut data, 8);
-        data.extend_from_slice(&[5, 0, 0, 0, 0, 0, 0, 0]);
-        // (Table index 5 is function 7.)
-        let mut elem = vec![1, 0, 0x41, 0x05, 0x0b];
-        module::leb(&mut elem, 1);
-        module::leb(&mut elem, 7);
-        // (Function 7 is __wasm_sys_read.)
-        let mut names = vec![1];
-        let mut sub = Vec::new();
-        module::leb(&mut sub, 1);
-        module::leb(&mut sub, 7);
-        module::leb(&mut sub, "__wasm_sys_read".len() as u32);
-        sub.extend_from_slice(b"__wasm_sys_read");
-        module::leb(&mut names, sub.len() as u32);
-        names.extend_from_slice(&sub);
-        [&b"\0asm\x01\0\0\0"[..], &section(11, &data), &section(9, &elem), &custom("name", &names)].concat()
+        wat::parse_str(r#"(module
+            (func $__wasm_sys_read)
+            (table 8 funcref) (elem (i32.const 5) $__wasm_sys_read)
+            (memory 1) (data (i32.const 0x100) "\05\00\00\00\00\00\00\00"))"#).unwrap()
     }
 
     #[test]
     fn syscalls_names_come_from_the_table() {
-        assert_eq!(syscalls(&syscall_image(), "T\t1\tbase\tint\t8\tu\nG\tsys_call_table\t256\t1\n"), [(0, "read".to_string())]);
+        assert_eq!(syscalls(&module::Module::read(&syscall_image()).unwrap(), "T\t1\tbase\tint\t8\tu\nG\tsys_call_table\t256\t1\n"), [(0, "read".to_string())]);
     }
 
     #[test]
@@ -294,6 +265,6 @@ mod image_tests {
 
     #[test]
     fn syscalls_without_a_table_are_none() {
-        assert!(syscalls(&syscall_image(), "T\t1\tbase\tint\t8\tu\n").is_empty());
+        assert!(syscalls(&module::Module::read(&syscall_image()).unwrap(), "T\t1\tbase\tint\t8\tu\n").is_empty());
     }
 }

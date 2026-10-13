@@ -13,14 +13,9 @@ type R<'a> = EndianSlice<'a, LittleEndian>;
 /// parameters (`P name params`, as "name:type": the call stack's
 /// arguments). (The syscalls' names, `S nr name`, come after: see
 /// syscalls.)
-pub fn types(image: &[u8]) -> Result<String, gimli::Error> {
-    let sections: HashMap<String, Vec<u8>> = ksee_core::wasm::custom_sections(&image, 0, image.len() as u32).into_iter()
-        .filter(|(name, _, _)| name.starts_with(".debug_"))
-        .map(|(name, at, n)| (name, image[at as usize..(at + n) as usize].to_vec()))
-        .collect();
+pub fn types(module: &super::module::Module) -> Result<String, gimli::Error> {
     let dwarf = gimli::Dwarf::load(|id| -> Result<R, gimli::Error> {
-        let data = sections.get(id.name()).map_or(&[][..], Vec::as_slice);
-        Ok(EndianSlice::new(data, LittleEndian))
+        Ok(EndianSlice::new(module.custom.get(id.name()).copied().unwrap_or(&[]), LittleEndian))
     })?;
     let mut b = Builder::default();
     let mut units = dwarf.units();
@@ -522,7 +517,6 @@ mod tests {
 
     #[test]
     fn types_of_an_image_without_dwarf_is_empty() {
-        let image: Vec<u8> = [b"\0asm\x01\0\0\0".as_slice()].concat();
-        assert_eq!(types(&image).unwrap(), "");
+        assert_eq!(types(&Default::default()).unwrap(), "");
     }
 }

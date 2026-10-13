@@ -2,9 +2,8 @@
 //!
 //! * [`tables`], [`types`]: what the kernel says about itself (the plugin's
 //!   probe tables; types from DWARF, see crates/ksee-cli's pack), the big
-//!   ones [`flat`], read in place; [`wasm`]:
-//!   where they are, a module's custom sections; [`arch`]: the kernel's own
-//!   names, and its timers.
+//!   ones [`flat`], read in place; [`wasm`]: a program's dylink.0;
+//!   [`arch`]: the kernel's own names, and its timers.
 //! * [`trace`]: decoding the trace ring into records.
 //! * [`recording`]: what the host rebuilds from the records: tasks,
 //!   syscalls, and the calls and lines ([`stack`]), memory as it was
