@@ -5,18 +5,19 @@
 #
 #   linux/                       Linux, the stable tree's LINUX_TAG, fetched once; linux.patch
 #                                (the port's edits to Linux's own files) applied, and arch/wasm/
-#                                (the port's own files) linked in
+#                                (the port's own files) linked in: sources only
 #   target/ksee-trace.so         the LLVM pass that instruments the kernel (plugin/'s)
-#   linux/vmlinux                the kernel, instrumented (kbuild), and its UAPI headers
+#   target/linux/vmlinux         the kernel, instrumented (kbuild's, out of the tree: all it
+#                                makes in target/linux/), and its UAPI headers
 #   target/vmlinux               the page's: without DWARF and the plugin's ksee section
 #   target/vmlinux.debug         those, the kernel's description (the pack's: its tables)
-#   target/initramfs/initramfs.cpio
+#   target/user/initramfs.cpio
 #                                /init and /bin/prog (user/: plain C, no C library), and a
 #                                note (user/note.txt): user/initramfs.list
-#   target/initramfs/disk.img    the disk (the host's: the kernel's /dev/wda), ext4, of
+#   target/user/disk.img         the disk (the host's: the kernel's /dev/wda), ext4, of
 #                                user/disk/
-#   target/tables                the kernel's tables (ksee pack: target/vmlinux.debug's), and
-#                                target/site/src/, the sources they name
+#   target/tables                the kernel's tables (ksee tables: target/vmlinux.debug's), and
+#                                target/site/src/, the sources it names (ksee sources)
 #   target/site/                 the site: vmlinux.gz, tables.gz, initramfs.cpio.gz, disk.img.gz
 #                                (gzipped here: hosts compress them less, or not at all; the
 #                                page unpacks them); lessons.json and a page per lesson (ksee
@@ -40,7 +41,8 @@ CHROME_VERSION := 156.0.8078.4
 
 # (setup.sh's LLVM 22 first.)
 export PATH := /usr/lib/llvm-22/bin:$(PATH)
-export OUT := target/initramfs
+export OUT := target/user
+KOUT := target/linux
 PLUGIN := target/ksee-trace.so
 SITE := target/site
 # (The ksee command: the one running make, as `ksee build` says.)
@@ -51,14 +53,15 @@ KSEE ?= target/release/ksee
 # kbuild rebuilds when the instrumentation changes, not when an equivalent
 # object is relinked. Inlining only what the source asks for, `inline`: the
 # compiler's own choices would hide calls, with their arguments, as inlined
-# code.)
+# code. Its files named from the tree's top, fs/read_write.c, as in it, not
+# where it is: kbuild, out of the tree, names them by absolute path.)
 EPOCH = $(shell git -C linux log -1 --format=%ct $(LINUX_TAG))
-KMAKE = $(MAKE) -C linux ARCH=wasm LLVM=1 \
+KMAKE = $(MAKE) -C linux O=$(CURDIR)/$(KOUT) ARCH=wasm LLVM=1 \
 	LOCALVERSION=-ksee KBUILD_BUILD_USER=ksee KBUILD_BUILD_HOST=ksee KBUILD_BUILD_VERSION=1 KBUILD_BUILD_TIMESTAMP="$(shell LC_ALL=C date -u -d @$(EPOCH))" \
-	KCFLAGS="-g -finline-hint-functions -fpass-plugin=$(CURDIR)/$(PLUGIN) -DKSEE_ID=$(shell cksum < plugin/ksee-trace.cpp | cut -d' ' -f1)"
+	KCFLAGS="-g -ffile-prefix-map=$(CURDIR)/linux/= -finline-hint-functions -fpass-plugin=$(CURDIR)/$(PLUGIN) -DKSEE_ID=$(shell cksum < plugin/ksee-trace.cpp | cut -d' ' -f1)"
 
 all: target/vmlinux target/vmlinux.debug $(OUT)/initramfs.cpio $(OUT)/disk.img
-.PHONY: all site lessons page linux/vmlinux patch llvm chrome
+.PHONY: all site lessons page $(KOUT)/vmlinux patch llvm chrome
 
 llvm:
 	@v=$$(llvm-config --version); test "$${v%%.*}" = 22 || { echo "LLVM 22 is required, found $$v" >&2; exit 1; }
@@ -80,24 +83,24 @@ $(PLUGIN): plugin/ksee-trace.cpp | llvm
 
 # (Every Kconfig the port has: a new one runs defconfig again; touched,
 # as kbuild leaves a .config the same as it was.)
-linux/.config: arch/wasm/configs/defconfig $(wildcard arch/wasm/Kconfig*) | linux/Makefile
+$(KOUT)/.config: arch/wasm/configs/defconfig $(wildcard arch/wasm/Kconfig*) | linux/Makefile
 	$(KMAKE) defconfig
 	touch $@
 
 # (kbuild knows the kernel's own dependencies: it is always asked; it
 # builds gen_init_cpio too, the kernel's own initramfs writer.)
-linux/usr/gen_init_cpio: linux/vmlinux ;
-linux/vmlinux: $(PLUGIN) linux/.config
+$(KOUT)/usr/gen_init_cpio: $(KOUT)/vmlinux ;
+$(KOUT)/vmlinux: $(PLUGIN) $(KOUT)/.config
 	$(KMAKE)
 	$(KMAKE) headers
 
 # The kernel, split: the page's, and its description (DWARF, and the
 # plugin's ksee section). (Each replaced only if it changed: kbuild is always
 # asked, and what is made of them is made again when they are newer.)
-target/vmlinux: linux/vmlinux
+target/vmlinux: $(KOUT)/vmlinux
 	llvm-objcopy --strip-debug --remove-section=ksee $< $@.new
 	cmp -s $@.new $@ && rm $@.new || mv $@.new $@
-target/vmlinux.debug: linux/vmlinux
+target/vmlinux.debug: $(KOUT)/vmlinux
 	llvm-objcopy --only-keep-debug --keep-section=ksee $< $@.new
 	cmp -s $@.new $@ && rm $@.new || mv $@.new $@
 
@@ -106,9 +109,9 @@ target/vmlinux.debug: linux/vmlinux
 $(OUT):
 	mkdir -p $@
 
-$(OUT)/%.wasm: user/%.c user/syscall.h | linux/vmlinux $(OUT)
+$(OUT)/%.wasm: user/%.c user/syscall.h | $(KOUT)/vmlinux $(OUT)
 	clang --target=wasm32 -O2 -g0 -ffreestanding -nostdlib -fPIC -Wl,-pie -Wl,--experimental-pic \
-		-Wl,--import-memory -Wl,--no-entry -nostdinc -isystem linux/usr/include -o $@ $<
+		-Wl,--import-memory -Wl,--no-entry -nostdinc -isystem $(KOUT)/usr/include -o $@ $<
 
 # The disk /init mounts (/dev/wda: its blocks the host's), ext4: user/disk/,
 # the files the lessons start from; blocks of 4 KiB, a page each (the
@@ -123,18 +126,20 @@ $(OUT)/disk.img: $(shell find user/disk) Makefile | linux/Makefile $(OUT)
 
 # The archive (all times 0): the console (the kernel opens it before init),
 # the programs, the note.
-$(OUT)/initramfs.cpio: user/initramfs.list linux/usr/gen_init_cpio $(OUT)/init.wasm $(OUT)/prog.wasm user/note.txt
-	linux/usr/gen_init_cpio -t 0 $< > $@
+$(OUT)/initramfs.cpio: user/initramfs.list $(KOUT)/usr/gen_init_cpio $(OUT)/init.wasm $(OUT)/prog.wasm user/note.txt
+	$(KOUT)/usr/gen_init_cpio -t 0 $< > $@
 
 # The site.
-site: $(SITE)/vmlinux.gz $(SITE)/tables.gz $(SITE)/initramfs.cpio.gz $(SITE)/disk.img.gz lessons page
+site: $(SITE)/vmlinux.gz $(SITE)/tables.gz $(SITE)/src $(SITE)/initramfs.cpio.gz $(SITE)/disk.img.gz lessons page
 
 $(SITE):
 	mkdir -p $@
 
 # The kernel's tables, and the sources they name (again for a new ksee).
-target/tables $(SITE)/src &: target/vmlinux.debug $(KSEE) | $(SITE)
-	$(KSEE) pack target/vmlinux.debug linux target/tables $(SITE)/src
+target/tables: target/vmlinux.debug $(KSEE)
+	$(KSEE) tables $< $(KOUT)/usr/include $@
+$(SITE)/src: target/vmlinux.debug $(KSEE) | $(SITE)
+	$(KSEE) sources $< linux $@
 
 $(SITE)/%.gz: target/% | $(SITE)
 	gzip -9nc $< > $@.new && mv $@.new $@

@@ -3,9 +3,9 @@ on: [push, pull_request]
 
 # The kernel is its own job, cached by what builds it (the port, the
 # plugin, the Makefile's Linux lines), so a change elsewhere reuses it; saved
-# even when the tests fail. The cache: linux/, and arch/wasm/ (its objects,
-# which kbuild writes through linux/'s link to it, and its sources: restored
-# over the checkout, as old as the objects, so nothing is rebuilt). The
+# even when the tests fail. The cache: linux/, the tree; target/linux/,
+# kbuild's output; and arch/wasm/, the port's sources (restored over the
+# checkout, as old as the objects, so nothing is rebuilt). The
 # plugin is not: kbuild does not watch it (KSEE_ID, the hash of its source,
 # does), and it builds in seconds.
 jobs:
@@ -22,7 +22,7 @@ jobs:
           # (The port, the plugin, and the Makefile's lines for Linux: its
           # release and kbuild's command.)
           make=$(grep -E '^(LINUX_|KMAKE|	KCFLAGS)' Makefile | sha256sum | cut -c1-16)
-          echo "key=linux-v3-${{ runner.arch }}-llvm22-${{ hashFiles('linux.patch', 'arch/wasm/**', 'plugin/ksee-trace.cpp') }}-$make" >> "$GITHUB_OUTPUT"
+          echo "key=linux-v4-${{ runner.arch }}-llvm22-${{ hashFiles('linux.patch', 'arch/wasm/**', 'plugin/ksee-trace.cpp') }}-$make" >> "$GITHUB_OUTPUT"
       - name: Restore the kernel
         id: cache
         uses: actions/cache/restore@v5
@@ -30,12 +30,13 @@ jobs:
           path: |
             linux
             !linux/.git
+            target/linux
             arch/wasm
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - name: Build the kernel
         if: steps.cache.outputs.cache-hit != 'true'
-        run: make -j$(nproc) linux/vmlinux
+        run: make -j$(nproc) target/linux/vmlinux
       - name: Save the kernel
         if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
@@ -43,6 +44,7 @@ jobs:
           path: |
             linux
             !linux/.git
+            target/linux
             arch/wasm
           key: ${{ steps.key.outputs.key }}
 
@@ -58,6 +60,7 @@ jobs:
           path: |
             linux
             !linux/.git
+            target/linux
             arch/wasm
           key: ${{ needs.kernel.outputs.key }}
           fail-on-cache-miss: true

@@ -27,16 +27,19 @@ fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'
     rows(text, kind).filter_map(move |c| c.get(k - 1).copied())
 }
 
-/// Write the kernel's tables (parsed here, once, not by the page) and its
-/// referenced sources to their final paths: of its description `debug`
-/// (the Makefile's vmlinux.debug: its DWARF and ksee section), and the tree
-/// `kernel` (its UAPI headers and sources).
-pub fn kernel(debug: &Path, kernel: &Path, tables_out: &Path, sources_out: &Path) {
+/// The plugin's ksee section, of the kernel's description's sections.
+fn code(sections: &BTreeMap<&str, &[u8]>) -> String {
+    String::from_utf8_lossy(sections.get("ksee").copied().unwrap_or(&[])).into_owned()
+}
+
+/// Write the kernel's tables (parsed here, once, not by the page) to
+/// `out`: of its description `debug` and its UAPI headers `headers`.
+pub fn tables(debug: &Path, headers: &Path, out: &Path) {
     let image = crate::read(debug);
     let sections = crate::or_fail(custom_sections(&image), debug.display());
+    let code = code(&sections);
     let mut types = crate::or_fail(dwarf::types(&sections), "DWARF");
-    let code = String::from_utf8_lossy(sections.get("ksee").copied().unwrap_or(&[])).into_owned();
-    for (name, value) in constants(&kernel.join("usr/include")) {
+    for (name, value) in constants(headers) {
         types += &format!("C\t{name}\t{value}\n");
     }
     let calls = syscalls(&code);
@@ -44,18 +47,23 @@ pub fn kernel(debug: &Path, kernel: &Path, tables_out: &Path, sources_out: &Path
         types += &format!("S\t{nr}\t{name}\n");
     }
     let tables = ksee_core::tables::Tables::parse(&code, &types).to_bytes();
-    crate::or_fail(std::fs::write(tables_out, &tables), tables_out.display());
-
-    // The sources, for the page's source view.
+    crate::or_fail(std::fs::write(out, &tables), out.display());
     // (The functions the trace has whose parameters DWARF gave, by id: the
     // two agree on what a function is.)
     let functions: BTreeSet<&str> = column(&code, "F", 1).collect();
     let known = column(&types, "P", 1).collect::<BTreeSet<_>>().intersection(&functions).count();
+    eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} KiB",
+              out.display(), column(&types, "T", 1).count(), calls.len(), functions.len(), tables.len() >> 10);
+}
+
+/// Copy the sources the kernel's description `debug` names (its P lines),
+/// of its tree `kernel`, to `out`, for the page's source view.
+pub fn sources(debug: &Path, kernel: &Path, out: &Path) {
+    let image = crate::read(debug);
+    let code = code(&crate::or_fail(custom_sections(&image), debug.display()));
     let sources: Vec<String> = column(&code, "P", 2).map(String::from).collect();
-    let (files, bytes) = publish_sources(kernel, &sources, sources_out);
-    eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} KiB; {files} sources, {} KiB",
-              tables_out.display(), column(&types, "T", 1).count(), calls.len(), functions.len(),
-              tables.len() >> 10, bytes >> 10);
+    let (files, bytes) = publish_sources(kernel, &sources, out);
+    eprintln!("{}: {files} sources, {} KiB", out.display(), bytes >> 10);
 }
 
 /// The custom sections of a wasm module (vmlinux.debug's: the kernel's

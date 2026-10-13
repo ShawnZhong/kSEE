@@ -72,9 +72,11 @@ uint32_t fnv(StringRef s, uint32_t h = 2166136261u) {
 }
 
 // A function's id: its name's hash; one local to a file is told apart by
-// the file's name.
+// the file's name, as its debug info has it (the unit's: DWARF's too).
 uint32_t fnId(StringRef name, bool local, const Module &M) {
-  return local ? fnv(name, fnv(":", fnv(M.getSourceFileName()))) : fnv(name);
+  auto units = M.debug_compile_units();
+  StringRef file = units.empty() ? M.getSourceFileName() : (*units.begin())->getFilename();
+  return local ? fnv(name, fnv(":", fnv(file))) : fnv(name);
 }
 
 // Whether `V` is an integer wider than 32 bits (two words).

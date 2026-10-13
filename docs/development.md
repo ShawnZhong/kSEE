@@ -43,7 +43,7 @@ kernel suite checks end to end.
 `./ksee.sh` first builds `ksee-cli` in release mode with Cargo's locked
 dependency set, then runs it. `ksee build` is `make site` (in parallel): the
 Makefile is the build, file to file, and its steps that are code are the
-ksee command's (`ksee pack`, `ksee lessons`, `ksee bindgen`). Its stages:
+ksee command's (`ksee tables`, `ksee sources`, `ksee lessons`, `ksee bindgen`). Its stages:
 
 1. The kernel's half, C and LLVM: require LLVM 22; fetch
    Linux stable `v7.2.7` into `linux/` if it is absent, verify the pinned
@@ -55,10 +55,10 @@ ksee command's (`ksee pack`, `ksee lessons`, `ksee bindgen`). Its stages:
    `gen_init_cpio`); make the disk, an ext4 image of `user/disk/`; split
    the kernel (`llvm-objcopy`): `target/vmlinux`, without DWARF and
    the `ksee` section, and `target/vmlinux.debug`, only those.
-2. Pack `target/vmlinux.debug` (`ksee pack`): combine probe descriptions with
+2. Pack `target/vmlinux.debug` (`ksee tables`): combine probe descriptions with
    DWARF-derived types, symbols, syscalls, constants, and declaration
-   locations into the tables (`Tables::to_bytes`, `target/tables`), and copy
-   the kernel sources they name to `target/site/src/`; gzip `vmlinux`,
+   locations into the tables (`Tables::to_bytes`, `target/tables`); copy
+   the kernel sources it names to `target/site/src/` (`ksee sources`); gzip `vmlinux`,
    `tables`, `initramfs.cpio` and `disk.img` into `target/site/`.
 3. Write the lessons (`ksee lessons`, `lessons.rs`): `web/lessons/*.json` in course order
    into `lessons.json`, a page per lesson from `web/index.html`, and
@@ -108,7 +108,7 @@ Do not edit generated output as source:
 
 | Output | Contents |
 |---|---|
-| `linux/vmlinux` | Raw instrumented Kbuild kernel with DWARF; retained with the Linux build cache in CI. |
+| `target/linux/` | Kbuild's output, out of the tree (`linux/` and `arch/wasm/` stay sources): `vmlinux`, the raw instrumented kernel with DWARF, and the UAPI headers; retained with the Linux build cache in CI. |
 | `target/site/` | Normal site served locally and deployed. |
 | `target/site/pkg/` | wasm-bindgen output for the combined page/runtime module. |
 | `target/site/vmlinux.gz` | Instrumented, packed kernel without DWARF and the `ksee` section. |
@@ -119,7 +119,7 @@ Do not edit generated output as source:
 | `target/site/NAME.html`, `index.html` | The page, once per lesson (and the first's, `index.html`), from `web/index.html`: the lesson's title and description (its first paragraph), and its text as plain HTML for search engines and link previews (`index.html`: every lesson's title), which the page replaces once it runs. |
 | `target/site/sitemap.xml` | Every page, at the address `ksee deploy` publishes the site at (the origin's GitHub Pages), for search engines (submit it in Google's Search Console). |
 | `target/vmlinux`, `target/vmlinux.debug`, `target/tables` | The kernel split (`llvm-objcopy`'s): the page's, without DWARF and the `ksee` section, and those, the pack's; and its tables (the pack's), uncompressed: the site's copies' sources. |
-| `target/initramfs/` | Intermediate programs, ext4 image, fixture tree, and archive. |
+| `target/user/` | The programs, the initramfs, and the disk's ext4 image. |
 | `target/chrome/` | The tests' browser, Chrome's headless shell (`make chrome`). |
 
 ## Page modules and state
