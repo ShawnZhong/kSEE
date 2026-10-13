@@ -15,13 +15,13 @@ sudo apt-get install -y --no-install-recommends \
 	libxcomposite1 libxdamage1 libxrandr2 libxkbcommon0 fonts-dejavu-core
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 
-# Chrome for Testing's headless shell (Playwright's mirror has arm64 builds).
+# Chrome for Testing's headless shell: Google's, for automated tests.
 if [ ! -f "target/chrome/$CHROME_VERSION" ]; then
 	a=$(uname -m | sed 's/x86_64/linux64/; s/aarch64/linux-arm64/')
 	rm -rf target/chrome target/chrome.zip
 	mkdir -p target
 	curl -fsSL --proto '=https' -o target/chrome.zip \
-		"https://cdn.playwright.dev/builds/cft/$CHROME_VERSION/$a/chrome-headless-shell-$a.zip"
+		"https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/$a/chrome-headless-shell-$a.zip"
 	unzip -q -d target target/chrome.zip
 	mv "target/chrome-headless-shell-$a" target/chrome
 	rm target/chrome.zip
