@@ -141,6 +141,7 @@ void wasm_boot(void);
 void wasm_task_entry(struct task_struct *p);
 void __noreturn wasm_user_entry(void);
 long wasm_syscall(long nr, u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
+long __ksee_syscall(long nr, u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
 
 /* The timer's interrupt (time.c, irq.c). */
 void wasm_timer_interrupt(void);
