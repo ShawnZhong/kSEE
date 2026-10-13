@@ -56,9 +56,9 @@ pub fn write() {
     }
     out("lessons.json", serde_json::to_string(&all).unwrap_or_default());
     for lesson in &all {
-        out(&format!("{}.html", s(lesson, "name")), fill(&page, &format!("{} — kSEE", s(lesson, "title")), &summary(lesson), &as_text(lesson)));
+        out(&format!("{}.html", s(lesson, "name")), fill(&page, Some((&format!("{} — kSEE", s(lesson, "title")), &summary(lesson))), &as_text(lesson)));
     }
-    out("index.html", fill(&page, TITLE, DESCRIPTION, &contents(&all)));
+    out("index.html", fill(&page, None, &contents(&all, &meta(&page, "description"))));
     // (For search engines: every page, at the address the site is published
     // at, if it is known. Given to them by hand (Google's Search Console):
     // a robots.txt naming it would have to be at the host's root.)
@@ -69,9 +69,12 @@ pub fn write() {
     }
 }
 
-const TITLE: &str = "kSEE, the kernel Syscall Execution Explorer: step inside the Linux kernel";
-const DESCRIPTION: &str = "kSEE runs a real Linux kernel in your browser and records everything a system call does: \
-                           step through its source line by line, with the call stack, its arguments and locals, and every write to memory.";
+/// The page's meta tag `name`'s content (web/index.html's own: the site's
+/// description).
+fn meta(page: &str, name: &str) -> String {
+    let tag = format!("<meta name=\"{name}\" content=\"");
+    page.lines().find_map(|l| l.trim_start().strip_prefix(&tag)?.split('"').next()).unwrap_or_default().to_string()
+}
 
 /// A lesson's string field.
 fn s<'a>(lesson: &'a Value, key: &str) -> &'a str {
@@ -82,22 +85,20 @@ fn escape(t: &str) -> String {
     t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-/// The page, its title and description `title` and `description` (the
-/// page's own, and a link preview's), and `body` its static text.
-fn fill(page: &str, title: &str, description: &str, body: &str) -> String {
-    let (title, description) = (escape(title), escape(description));
+/// The page, its title and description `head` (the page's own, and a
+/// link preview's; none: web/index.html's, the site's), and `body` its
+/// static text.
+fn fill(page: &str, head: Option<(&str, &str)>, body: &str) -> String {
+    let head = head.map(|(title, description)| (escape(title), escape(description)));
     page.lines().map(|l| {
         let t = l.trim_start();
-        if t.starts_with("<title>") {
-            format!("<title>{title}</title>")
-        } else if t.starts_with("<meta name=\"description\"") || t.starts_with("<meta property=\"og:description\"") {
-            l.split("content=").next().map(|a| format!("{a}content=\"{description}\">")).unwrap_or_default()
-        } else if t.starts_with("<meta property=\"og:title\"") {
-            format!("<meta property=\"og:title\" content=\"{title}\">")
-        } else if t == "<div id=\"root\"></div>" {
-            format!("{l}\n<article id=\"static\">\n{body}</article>")
-        } else {
-            l.to_string()
+        match &head {
+            Some((title, _)) if t.starts_with("<title>") => format!("<title>{title}</title>"),
+            Some((_, description)) if t.starts_with("<meta name=\"description\"") || t.starts_with("<meta property=\"og:description\"") =>
+                l.split("content=").next().map(|a| format!("{a}content=\"{description}\">")).unwrap_or_default(),
+            Some((title, _)) if t.starts_with("<meta property=\"og:title\"") => format!("<meta property=\"og:title\" content=\"{title}\">"),
+            _ if t == "<div id=\"root\"></div>" => format!("{l}\n<article id=\"static\">\n{body}</article>"),
+            _ => l.to_string(),
         }
     }).collect::<Vec<_>>().join("\n") + "\n"
 }
@@ -146,9 +147,10 @@ fn as_text(lesson: &Value) -> String {
     h + "</ol>\n"
 }
 
-/// The lessons, by chapter: the site's own page's text.
-fn contents(all: &[Value]) -> String {
-    let mut h = format!("<h1>kSEE</h1>\n<p>{}</p>\n", escape(DESCRIPTION));
+/// The lessons, by chapter, after the site's `description`: the site's own
+/// page's text.
+fn contents(all: &[Value], description: &str) -> String {
+    let mut h = format!("<h1>kSEE</h1>\n<p>{}</p>\n", escape(description));
     let mut chapter = "";
     for lesson in all {
         if s(lesson, "chapter") != chapter {
@@ -175,7 +177,7 @@ mod tests {
         let page = "<head>\n<title>x</title>\n<meta name=\"description\" content=\"x\">\n<meta property=\"og:title\" content=\"x\">\n</head>\n<body>\n<div id=\"root\"></div>\n</body>\n";
         let lesson = json!({ "name": "r", "chapter": "G", "title": "T", "text": ["P `c`, [here](f)."],
                          "program": ["read(fd)", { "task": "child", "text": "exit(0)" }] });
-        let h = fill(page, "T — kSEE", &summary(&lesson), &as_text(&lesson));
+        let h = fill(page, Some(("T — kSEE", &summary(&lesson))), &as_text(&lesson));
         for want in ["<title>T — kSEE</title>", "content=\"P c, here.\">", "og:title\" content=\"T — kSEE\"", "<div id=\"root\"></div>\n<article id=\"static\">",
                      "<h1>T</h1>", "<p>P <code>c</code>, <em>here</em>.</p>", "<code>read(fd)</code>", "(by child)"] {
             assert!(h.contains(want), "{want} in {h}");
