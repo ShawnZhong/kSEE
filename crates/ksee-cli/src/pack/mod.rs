@@ -22,7 +22,7 @@ pub fn id(name: &str) -> u32 {
 }
 
 /// The columns after the first of each of `text`'s lines of kind `kind`
-/// (tab-separated: ksee.code', ksee.types').
+/// (tab-separated: ksee.code's, the types').
 fn rows<'a>(text: &'a str, kind: &'a str) -> impl Iterator<Item = Vec<&'a str>> {
     text.lines().filter_map(move |l| l.strip_prefix(kind)?.strip_prefix('\t').map(|r| r.split('\t').collect()))
 }
@@ -32,7 +32,9 @@ fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'
     rows(text, kind).filter_map(move |c| c.get(k - 1).copied())
 }
 
-/// Write the packed image and its referenced sources to their final paths.
+/// Write the packed image, its tables beside it (`tables`, in the image's
+/// directory: parsed here, once, not by the page), and its referenced
+/// sources to their final paths.
 pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
     let mut types = crate::or_fail(dwarf::types(&image), "DWARF");
@@ -44,11 +46,12 @@ pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     for (nr, name) in &calls {
         types += &format!("S\t{nr}\t{name}\n");
     }
-    let packed = rewrite(&image, &types);
-    if let Some(parent) = image_out.parent() {
-        crate::or_fail(std::fs::create_dir_all(parent), parent.display());
-    }
+    let packed = rewrite(&image);
+    let dir = image_out.parent().unwrap_or(Path::new("."));
+    crate::or_fail(std::fs::create_dir_all(dir), dir.display());
     crate::or_fail(std::fs::write(image_out, &packed), image_out.display());
+    let tables = ksee_core::tables::Tables::parse(&code, &types).to_bytes();
+    crate::or_fail(std::fs::write(dir.join("tables"), &tables), "tables");
 
     // The sources, for the page's source view.
     // (The functions the trace has whose parameters DWARF gave, by id: the
@@ -57,9 +60,9 @@ pub fn kernel(kernel: &Path, image_out: &Path, sources_out: &Path) {
     let known = column(&types, "P", 1).collect::<BTreeSet<_>>().intersection(&functions).count();
     let sources: Vec<String> = column(&code, "P", 2).map(String::from).collect();
     let (files, bytes) = publish_sources(kernel, &sources, sources_out);
-    eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} -> {} KiB; {files} sources, {} KiB",
+    eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} -> {} KiB, tables {} KiB; {files} sources, {} KiB",
               image_out.display(), column(&types, "T", 1).count(), calls.len(), functions.len(),
-              image.len() >> 10, packed.len() >> 10, bytes >> 10);
+              image.len() >> 10, packed.len() >> 10, tables.len() >> 10, bytes >> 10);
 }
 
 fn source_path(file: &str) -> Option<&Path> {
@@ -152,21 +155,14 @@ fn syscalls(image: &[u8], types: &str) -> Vec<(u32, String)> {
     }).collect()
 }
 
-/// `image` without DWARF and with `types` as its ksee.types section.
-fn rewrite(image: &[u8], types: &str) -> Vec<u8> {
+/// `image` without DWARF and the plugin's tables (the pack's `tables` has them).
+fn rewrite(image: &[u8]) -> Vec<u8> {
     let mut out = image[..8].to_vec();
     for (id, name, raw) in module::sections(image) {
-        if !(id == 0 && name.starts_with(".debug_")) {
+        if !(id == 0 && (name.starts_with(".debug_") || name == "ksee.code")) {
             out.extend_from_slice(raw);
         }
     }
-    let mut payload = Vec::new();
-    module::leb(&mut payload, "ksee.types".len() as u32);
-    payload.extend_from_slice(b"ksee.types");
-    payload.extend_from_slice(types.as_bytes());
-    out.push(0);
-    module::leb(&mut out, payload.len() as u32);
-    out.extend_from_slice(&payload);
     out
 }
 
@@ -283,12 +279,11 @@ mod image_tests {
     }
 
     #[test]
-    fn rewrite_drops_dwarf_and_adds_types() {
-        let out = rewrite(&image(), "T\t1\tbase\tint\t4\ts\n");
+    fn rewrite_drops_dwarf_and_the_tables() {
+        let out = rewrite(&image());
         assert_eq!(&out[..8], b"\0asm\x01\0\0\0");
         let section = |m: &[u8], name| ksee_core::wasm::section(&m, 0, m.len() as u32, name);
-        assert!(section(&out, ".debug_info").is_empty());
-        assert_eq!(section(&out, "ksee.types"), b"T\t1\tbase\tint\t4\ts\n");
+        assert!(section(&out, ".debug_info").is_empty() && section(&out, "ksee.code").is_empty());
         assert_eq!(section(&out, "name"), b"kept");
         let kept: Vec<_> = module::sections(&out).filter(|s| s.0 == 10).collect();
         assert_eq!(kept.len(), 1);

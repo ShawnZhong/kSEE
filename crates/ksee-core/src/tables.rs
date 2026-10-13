@@ -1,5 +1,6 @@
-//! The code and type tables (the ksee.code and ksee.types sections) the
-//! trace plugin and the pack put in the kernel module.
+//! The code and type tables: the trace plugin's (its ksee.code section)
+//! and the pack's (the types' text), parsed by the pack into the page's
+//! `tables` file.
 
 use alloc::collections::BTreeMap;
 
@@ -8,14 +9,14 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 /// A source location; `file` indexes [`Tables::files`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct Loc {
     pub file: u32,
     pub line: u32,
 }
 
 /// An instrumented function.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Function {
     pub name: &'static str,
     /// Where it is defined.
@@ -36,7 +37,7 @@ pub struct Function {
 /// `param` of it (from 1; 0: a local). `arg`: if nonzero, it is the
 /// call's parameter `arg` throughout (an inlined call's parameter passed
 /// one of the call's own), with no records.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Var {
     pub of: u32,
     /// (Shared: the same names, many times over.)
@@ -49,7 +50,7 @@ pub struct Var {
 /// A source line a block runs; `inlined`: if it is code inlined into the
 /// block's function, the functions it is inlined from (an index into
 /// [`Tables::inlines`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Step {
     pub loc: Loc,
     pub inlined: Option<u32>,
@@ -69,7 +70,7 @@ pub struct Block<'a> {
 }
 
 /// Where block `key` (function, n)'s steps and cuts are in the Tables'.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 struct BlockAt {
     key: (u32, u32),
     steps: (u32, u32),
@@ -107,7 +108,9 @@ impl<'a> Block<'a> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+// (Names borrowed from the tables' bytes, kept for the page's life.)
+#[serde(bound(deserialize = "'de: 'static"))]
 pub struct Tables {
     pub functions: BTreeMap<u32, Function>,
     /// The blocks, by (function, n): where each one's steps and cuts are
@@ -170,16 +173,22 @@ impl Unit {
 }
 
 impl Tables {
-    /// Parse the `ksee.code` and `ksee.types` sections. Lines are
-    /// tab-separated and may repeat (one copy per compilation unit).
-    pub fn parse(code: &str, types: &str) -> Tables {
-        Tables::with_types(code, Types::parse(types))
+    /// The tables as the page loads them (the pack's: parsed once, at
+    /// build time).
+    pub fn to_bytes(&self) -> Vec<u8> {
+        postcard::to_allocvec(self).expect("tables")
     }
 
-    /// Parse the `ksee.code` section, the types parsed already (the host:
-    /// one section's text at a time, the kernel's being megabytes).
-    pub fn with_types(code: &str, types: Types) -> Tables {
-        let mut t = Tables { types, ..Default::default() };
+    /// The tables from [`Tables::to_bytes`]' bytes, which the names
+    /// borrow: kept, as the tables are, for the page's life.
+    pub fn from_bytes(bytes: &'static [u8]) -> Option<Tables> {
+        postcard::from_bytes(bytes).ok()
+    }
+
+    /// Parse the `ksee.code` section and the types' text. Lines are
+    /// tab-separated and may repeat (one copy per compilation unit).
+    pub fn parse(code: &str, types: &str) -> Tables {
+        let mut t = Tables { types: Types::parse(types), ..Default::default() };
         let mut files = Files::default();
         let mut unit = Unit::default();
         let mut names: BTreeMap<String, u32> = BTreeMap::new();
@@ -404,5 +413,13 @@ mod tests {
         // f(int a, loff_t b, int c): b is wide (bit 1).
         let t = Tables::parse("F\t7\tf\t0:1\t7\t0\t2\n", "");
         assert_eq!(t.values(7, &[1, 2, 3, 4]), [1, 3 << 32 | 2, 4]);
+    }
+
+    #[test]
+    fn bytes_are_the_tables() {
+        let t = Tables::parse("U\nP\t0\tf.c\nF\t7\tf\t0:1\t7\t0\t2\nL\t7\t0\t0:3\n", "T\t1\tbase\tint\t4\ts\nP\t7\tf\ta:1\n");
+        let back = Tables::from_bytes(t.to_bytes().leak()).unwrap();
+        assert_eq!((back.functions[&7].name, back.file(back.block(7, 0).unwrap().loc())), ("f", "f.c"));
+        assert_eq!(back.types.params[&7], [("a", 1)]);
     }
 }

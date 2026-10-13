@@ -275,7 +275,7 @@ async function bytes(name) {
 }
 // (The page at once; the kernel boots meanwhile, the page's once up.)
 const [, lessons] = await Promise.all([init({ module_or_path: `pkg/ksee_page_bg.wasm${v}` }), fetch(`lessons.json${v}`).then((r) => r.json())]);
-mount("root", lessons, Promise.all(["vmlinux.gz", "initramfs.cpio.gz", "disk.img.gz"].map(bytes)).then(([kernel, initrd, disk]) => Machine.start(kernel, initrd, disk)));
+mount("root", lessons, Promise.all(["vmlinux.gz", "tables.gz", "initramfs.cpio.gz", "disk.img.gz"].map(bytes)).then(([kernel, tables, initrd, disk]) => Machine.start(kernel, tables, initrd, disk)));
 </script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 //! Kernel types (from DWARF, see crates/ksee-cli's pack) and decoding memory with them.
 //!
-//! The `ksee.types` custom section lists types by dense id (0 is void),
+//! The types' text (the pack's) lists types by dense id (0 is void),
 //! one per line, tab-separated:
 //! ```text
 //! T id kind name size [extra]   kind: base (extra s|u|f|b|c), ptr (target),
@@ -28,7 +28,7 @@ use core::fmt::Write;
 
 use crate::Memory;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Base {
     Signed,
     Unsigned,
@@ -37,7 +37,7 @@ pub enum Base {
     Char,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Member {
     pub name: String,
     pub bit_offset: u32,
@@ -70,7 +70,7 @@ pub struct TaskId {
     pub comm: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Kind {
     Void,
     Base(Base),
@@ -83,14 +83,16 @@ pub enum Kind {
     Func,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Type {
     pub name: String,
     pub size: u32,
     pub kind: Kind,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+// (Names borrowed from the tables' bytes, kept for the page's life.)
+#[serde(bound(deserialize = "'de: 'static"))]
 pub struct Types {
     pub types: Vec<Type>,
     /// Struct, union, enum and typedef names -> ids.

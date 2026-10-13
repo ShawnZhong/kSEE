@@ -33,7 +33,8 @@ ksee-core <- ksee-cli              (only its lesson text, for the lessons' pages
 `ksee-page` depends on both `ksee-host` and `ksee-core`; the host depends on
 core. The CLI uses core only for a lesson's text (text.rs's pieces, the
 lessons' pages); else it writes the formats core reads
-(`ksee.types`, see `types.rs`; the probes' function ids, FNV-1a of the name,
+(the types' text, see `types.rs`, which it parses into the page's
+`tables` with core's own parser; the probes' function ids, FNV-1a of the name,
 see `tables.rs` and the plugin), so the two meet only in those texts, which the
 kernel suite checks end to end.
 
@@ -52,8 +53,9 @@ dependency set, then runs it. `ksee build` performs these stages:
    `gen_init_cpio`); make the disk, an ext4 image of `user/disk/`.
 2. Pack `linux/vmlinux` into `target/site/`: combine probe descriptions with
    DWARF-derived types, symbols, syscalls, constants, and declaration
-   locations; copy referenced kernel sources; strip DWARF; and write
-   `vmlinux.gz`, then `initramfs.cpio.gz` and `disk.img.gz`.
+   locations into the tables (`Tables::to_bytes`); copy referenced kernel
+   sources; strip DWARF and `ksee.code`; and write `vmlinux.gz`,
+   `tables.gz`, then `initramfs.cpio.gz` and `disk.img.gz`.
 3. Write the lessons (`lessons.rs`): `web/lessons/*.json` in course order
    into `lessons.json`, a page per lesson from `web/index.html`, and
    `sitemap.xml`.
@@ -105,7 +107,8 @@ Do not edit generated output as source:
 | `linux/vmlinux` | Raw instrumented Kbuild kernel with DWARF; retained with the Linux build cache in CI. |
 | `target/site/` | Normal site served locally and deployed. |
 | `target/site/pkg/` | wasm-bindgen output for the combined page/runtime module. |
-| `target/site/vmlinux.gz` | Instrumented, packed kernel without DWARF. |
+| `target/site/vmlinux.gz` | Instrumented, packed kernel without DWARF and `ksee.code`. |
+| `target/site/tables.gz` | The kernel's code and type tables, parsed (postcard: `Tables::to_bytes`). |
 | `target/site/src/` | Kernel source files referenced by probe metadata. |
 | `target/site/initramfs.cpio.gz` | `/init`, `/bin/prog`, root fixture, and ext4 image. |
 | `target/site/lessons.json` | Built lesson index and content. |

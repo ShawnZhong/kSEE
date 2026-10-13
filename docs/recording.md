@@ -121,7 +121,7 @@ concatenated by wasm-ld):
 The plugin cannot say the rest itself: a local's frame offset is the
 backend's (after the pass), a global's address the linker's, and a type is
 one across all the units. The build's pack (crates/ksee-cli/src/pack) reads the kernel's
-DWARF and adds `ksee.types`: the types (deduplicated across units), globals,
+DWARF and adds the types' text (see `types.rs`): the types (deduplicated across units), globals,
 each function's parameters with their types (`P`, as C declares them) and
 its locals with their types and, those in memory, their offsets from the
 frame base (`Q`, the offset empty for one in a wasm local), the syscalls
@@ -131,5 +131,7 @@ the enums' values: for the page's calls, written as in C), and `W name
 file line` lines: where a function (an inline one too, which has no probe),
 a struct, union, enum or typedef, a global, or a member (as
 `struct.member`) is declared (the page's Ctrl+click and F12 go there).
-The page's kernel is a copy of vmlinux with that section and without
-DWARF, plus the sources the probes name.
+The pack parses both texts (core's parser) and writes the result as one
+binary file, `tables`, which the page decodes as it is (no text to parse).
+The page's kernel is a copy of vmlinux without DWARF and `ksee.code`, plus
+the sources the probes name.

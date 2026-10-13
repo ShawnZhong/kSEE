@@ -21,7 +21,8 @@ pub fn uleb(buf: &[u8], pos: &mut usize) -> Option<u32> {
     }
 }
 
-/// `v` as unsigned LEB128, appended to `out`.
+/// `v` as unsigned LEB128, appended to `out` (the tests' modules).
+#[cfg(test)]
 pub fn leb(out: &mut Vec<u8>, mut v: u32) {
     loop {
         let b = (v & 0x7f) as u8;

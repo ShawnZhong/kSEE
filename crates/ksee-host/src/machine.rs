@@ -38,28 +38,11 @@ fn initrd_at(initrd: &[u8]) -> Result<u32, JsValue> {
         .ok_or_else(|| JsValue::from_str("initramfs does not fit in RAM"))
 }
 
-/// Bytes outside the module's memory (the kernel's image, a JS array):
-/// read in place.
-struct Bytes<'a>(&'a Uint8Array);
-
-impl Memory for Bytes<'_> {
-    fn read(&self, addr: u32, buf: &mut [u8]) {
-        self.0.subarray(addr, addr + buf.len() as u32).copy_to(buf);
-    }
-}
-
-/// Custom section `name` of the kernel's image, as text.
-fn section(kernel: &Uint8Array, name: &str) -> String {
-    // (The bytes as they are, if text: one copy of a section megabytes long.)
-    String::from_utf8(ksee_core::wasm::section(&Bytes(kernel), 0, kernel.length(), name))
-        .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
-}
-
 #[wasm_bindgen]
 impl Machine {
     /// Boot the built kernel and initramfs bytes in 64 MiB of RAM, with the
-    /// disk image.
-    pub async fn start(kernel: Uint8Array, initrd: Uint8Array, disk: Uint8Array) -> Result<Machine, JsValue> {
+    /// disk image; the kernel's tables, the pack's.
+    pub async fn start(kernel: Uint8Array, tables: Uint8Array, initrd: Uint8Array, disk: Uint8Array) -> Result<Machine, JsValue> {
         if js::webassembly("Suspending").is_undefined() {
             return Err("this browser has no JSPI (WebAssembly.Suspending): kSEE needs Chrome 137, Firefox 153, Safari 27 or later".into());
         }
@@ -73,9 +56,8 @@ impl Machine {
 
         let module: WebAssembly::Module =
             JsFuture::from(WebAssembly::compile(&kernel)).await?.unchecked_into();
-        // (One section's text at a time: the types', parsed, then the code's.)
-        let types = ksee_core::types::Types::parse(&section(&kernel, "ksee.types"));
-        let tables = Tables::with_types(&section(&kernel, "ksee.code"), types);
+        // (Its bytes kept, as the tables are: their names are in them.)
+        let tables = Tables::from_bytes(tables.to_vec().leak()).ok_or("the kernel's tables are not this build's")?;
         TABLES.set(tables).map_err(|_| "one machine per page")?;
 
         // The initramfs goes at the top of RAM; the kernel reserves it.

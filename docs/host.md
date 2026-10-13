@@ -54,11 +54,12 @@ Page modules and Dioxus state are documented in
 
 ## Boot and restart
 
-JavaScript fetches and decompresses the packed kernel and initramfs, then
-`Machine::start` receives their bytes. It grows the outer memory to the
-product's fixed 64 MiB of kernel RAM, compiles the kernel, places the initramfs
-on the built-in command line, and parses the packed `ksee.probes` and
-`ksee.types` custom sections once.
+JavaScript fetches and decompresses the packed kernel, its tables, the
+initramfs and the disk, then `Machine::start` receives their bytes. It grows
+the outer memory to the product's fixed 64 MiB of kernel RAM, compiles the
+kernel, places the initramfs on the built-in command line, and decodes the
+tables once (`Tables::from_bytes`: the pack parsed them; their names stay in
+their bytes, kept for the page's life).
 
 Each boot then:
 

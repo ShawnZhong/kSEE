@@ -94,8 +94,8 @@ fn page() {
     bindgen("target/wasm32-unknown-unknown/release/ksee_page.wasm", &format!("{SITE}/pkg"));
 }
 
-/// The kernel for the page: target/vmlinux and the sources (pack), and
-/// vmlinux.gz.
+/// The kernel for the page: target/vmlinux, its tables and the sources
+/// (pack), and vmlinux.gz and tables.gz.
 fn packed_kernel() {
     // (Packed again for a new kernel or pack implementation, or to restore
     // either required result after a partial clean.)
@@ -106,9 +106,11 @@ fn packed_kernel() {
         eprintln!("+ (pack) linux -> target/vmlinux, {sources}");
         crate::pack::kernel(Path::new("linux"), Path::new("target/vmlinux"), Path::new(&sources));
     }
-    let packed = format!("{SITE}/vmlinux.gz");
-    if stale(&packed, &["target/vmlinux"]) {
-        gzip("target/vmlinux", &packed);
+    for name in ["vmlinux", "tables"] {
+        let (from, to) = (format!("target/{name}"), format!("{SITE}/{name}.gz"));
+        if stale(&to, &[&from]) {
+            gzip(&from, &to);
+        }
     }
 }
 

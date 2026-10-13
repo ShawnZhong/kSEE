@@ -1,6 +1,6 @@
 //! The kernel's types, read from DWARF (types deduplicated across
 //! compilation units, as pahole does for BTF): the type table as
-//! ksee.types text (see ksee_core::types).
+//! the types' text (see ksee_core::types).
 
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -9,7 +9,7 @@ use gimli::{AttributeValue, DwAt, DwTag, EndianSlice, LittleEndian, UnitOffset, 
 
 type R<'a> = EndianSlice<'a, LittleEndian>;
 
-/// The type table as ksee.types text: types, globals, every function's
+/// The type table as text: types, globals, every function's
 /// parameters (`P name params`, as "name:type": the call stack's
 /// arguments). (The syscalls' names, `S nr name`, come after: see
 /// syscalls.)

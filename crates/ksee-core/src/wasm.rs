@@ -1,5 +1,5 @@
-//! What the host reads of a wasm module itself: its custom sections (the
-//! kernel's code and types; a program's dylink.0), where it is, in memory or
+//! What the host and the pack read of a wasm module itself: its sections
+//! (the kernel's, the pack's; a program's dylink.0), where it is, in memory or
 //! not, with no copy of it.
 
 use alloc::string::String;
