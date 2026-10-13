@@ -103,5 +103,5 @@ compatible `clang` and `wasm-ld` binaries.
 ### The browser does not start
 
 Run `target/chrome/chrome-headless-shell --version`: a missing library is
-named there (`./setup.sh` installs them). To fetch the shell again, remove
-`target/chrome/`.
+named there. `./setup.sh` installs the libraries and fetches the shell (again
+when its `CHROME_VERSION` changes, or after `target/chrome/` is removed).

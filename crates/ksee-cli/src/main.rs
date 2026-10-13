@@ -4,8 +4,8 @@
 //!   ksee build               build the kernel, runtime and page (the
 //!                            Makefile's `make site`)
 //!   ksee test [--built] [--ui | NAME ...]
-//!                            build, then run named Chromium tests; --built
-//!                            uses an existing production build
+//!                            native tests and build, then the named browser
+//!                            tests; --built: earlier steps (CI's) did both
 //!   ksee deploy              build, then push the page to origin's gh-pages
 //!   ksee patch               write linux.patch from linux/ (the port, as it
 //!                            differs from the release)

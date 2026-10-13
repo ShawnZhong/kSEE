@@ -75,15 +75,16 @@ pub fn bindgen(wasm: &str, out: &str) {
         .unwrap_or_else(|e| crate::fail(&format!("wasm-bindgen: {e:#}")));
 }
 
-/// Run native tests, build (`built`: an earlier CI step did), and run
-/// `names` on the site in the headless shell (target/chrome/).
+/// Run the native tests and build (unless `built`: earlier CI steps did),
+/// then `names` on the site in the headless shell (setup.sh's).
 pub fn test(names: &[String], built: bool) {
-    run(Command::new("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
     if !built {
+        run(Command::new("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
         build();
     }
-    // (The browser, the Makefile's version: fetched the first time.)
-    make(&["chrome"]);
+    if !std::path::Path::new(crate::chrome::BROWSER).exists() {
+        crate::fail(&format!("no {}: run ./setup.sh", crate::chrome::BROWSER));
+    }
     for name in names {
         if !crate::chrome::test(name) {
             crate::fail(&format!("the {name} test failed"));

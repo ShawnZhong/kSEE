@@ -95,7 +95,7 @@ and passes all arguments through.
 | `./ksee.sh` | Build changed outputs, then serve `target/site/` on port 8000. |
 | `./ksee.sh build` | Build the plugin, kernel, browser module, programs, metadata, lessons, and site. |
 | `./ksee.sh serve [--port=N]` | Serve the existing `target/site/` without rebuilding it. |
-| `./ksee.sh test [--built] [--ui \| NAME ...]` | Run native tests, build (`--built`: not, the site is), then the selected browser suites in headless Chrome; the default is `kernel` and `lessons`. |
+| `./ksee.sh test [--built] [--ui \| NAME ...]` | Run native tests and build (`--built`: not, earlier steps did), then the selected browser suites in headless Chrome; the default is `kernel` and `lessons`. |
 | `./ksee.sh deploy` | Build, then publish the generated site to the remote `gh-pages` branch. |
 | `./ksee.sh patch` | Write `linux.patch` from Linux's own files' difference between `linux/` and `v7.2.7` (`make patch`). |
 
@@ -120,7 +120,7 @@ Do not edit generated output as source:
 | `target/site/sitemap.xml` | Every page, at the address `ksee deploy` publishes the site at (the origin's GitHub Pages), for search engines (submit it in Google's Search Console). |
 | `target/vmlinux`, `target/vmlinux.debug`, `target/tables` | The kernel split (`llvm-objcopy`'s): the page's, without DWARF and the `ksee` section, and those, the pack's; and its tables (the pack's), uncompressed: the site's copies' sources. |
 | `target/user/` | The programs, the initramfs, and the disk's ext4 image. |
-| `target/chrome/` | The tests' browser, Chrome's headless shell (`make chrome`). |
+| `target/chrome/` | The tests' browser, Chrome's headless shell (`setup.sh`'s). |
 
 ## Page modules and state
 
@@ -197,7 +197,8 @@ page to be drawn (`settle`: two animation frames) or for a condition
 (`wait`), never a fixed time; the whole run, native and browser, takes
 under a minute.
 
-CI (one job: `./ksee.sh build`, then `./ksee.sh test --built --ui`) caches
+CI (one job: `./setup.sh chrome`, the native tests, `./ksee.sh build`, then
+`./ksee.sh test --built --ui`) caches
 the kernel's products, by what builds them (the Makefile, the patch, the
 port, the plugin): the split kernel (`target/vmlinux`, `vmlinux.debug`), its
 UAPI headers and `gen_init_cpio` (`target/linux/usr/`), and the sources the
@@ -206,8 +207,8 @@ they are (`KERNEL_BUILT=true`: the Makefile asks no kbuild, and needs no
 Linux tree); else it builds the kernel and saves them, before the tests
 (kept even when they fail).
 
-The browser is Chrome's headless shell at the Makefile's `CHROME_VERSION`,
-fetched into `target/chrome/` by `make chrome`, which `ksee test` runs.
+The browser is Chrome's headless shell at setup.sh's `CHROME_VERSION`,
+fetched into `target/chrome/` by `./setup.sh`.
 
 The CLI serves the test site on a temporary local port and reads the
 shell's console on its stderr: each browser suite says `ksee test: ok` or

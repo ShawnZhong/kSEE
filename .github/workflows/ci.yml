@@ -5,12 +5,15 @@ on: [push, pull_request]
 # gen_init_cpio, the sources the page shows), by what builds them (the
 # Makefile, the patch, the port, the plugin): restored, the build uses them
 # (KERNEL_BUILT: no Linux tree, no kbuild); else it builds them and saves
-# them, before the tests (kept even when they fail).
+# them, before the browser tests (kept even when they fail). The unit tests
+# first: they need neither.
 jobs:
   test:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
+      - name: The browser
+        run: ./setup.sh chrome
       - name: Restore the kernel
         id: kernel
         uses: actions/cache/restore@v5
@@ -23,6 +26,8 @@ jobs:
             target/site/src
           key: kernel-${{ runner.arch }}-${{ hashFiles('Makefile', 'linux.patch', 'arch/wasm/**', 'plugin/**') }}
       - uses: Swatinem/rust-cache@v2
+      - name: Unit tests
+        run: cargo test --locked --release -p ksee-core -p ksee-cli
       - name: Build
         run: ./ksee.sh build
         env:
@@ -38,5 +43,5 @@ jobs:
             target/linux/usr/gen_init_cpio
             target/site/src
           key: ${{ steps.kernel.outputs.cache-primary-key }}
-      - name: Test
+      - name: Browser tests
         run: ./ksee.sh test --built --ui

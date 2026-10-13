@@ -1,4 +1,4 @@
-//! `ksee test` in Chrome's headless shell (target/chrome/, the Makefile's version),
+//! `ksee test` in Chrome's headless shell (target/chrome/, setup.sh's),
 //! without its debugging protocol: the page under `#test=NAME` runs its test
 //! and says `ok` or `fail` and its log on the console, which the shell
 //! writes on its stderr; there an error nothing caught fails it at once,
@@ -28,8 +28,8 @@ pub const TESTS: &[(&str, &str, (u32, u32))] = &[
 ];
 const SCREEN: (u32, u32) = (1500, 900);
 
-/// The browser: `make chrome`'s.
-const BROWSER: &str = "target/chrome/chrome-headless-shell";
+/// The browser: setup.sh's.
+pub const BROWSER: &str = "target/chrome/chrome-headless-shell";
 
 /// How long a test may take (the longest, seconds: the kernel's).
 const TIMEOUT: Duration = Duration::from_secs(60);

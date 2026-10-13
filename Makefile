@@ -12,7 +12,6 @@
 #   target/tables           the kernel's tables (`ksee tables`)
 #   target/site/            the site: the gzipped files, src/ (`ksee sources`), the
 #                           lessons' pages (`ksee lessons`), pkg/ (the page's module)
-#   target/chrome/          the tests' browser (`make chrome`)
 
 # ---- What is pinned ------------------------------------------------------------
 
@@ -21,8 +20,6 @@ LINUX_TREE := https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 LINUX_TAG := v7.2.7
 LINUX_COMMIT := f42acb3678424d1e08f6ed27c0d8ba8a125e14d6
 LINUX_DATE := 1789996140
-# The tests' browser (Chrome for Testing, from Playwright's mirror: it has arm64).
-CHROME_VERSION := 156.0.8078.4
 
 # ---- Where things go -----------------------------------------------------------
 
@@ -40,7 +37,7 @@ KSEE ?= target/release/ksee
 # not rebuilt when kbuild (always run) changed nothing.
 replace = cmp -s $@.new $@ && rm $@.new || mv $@.new $@
 
-.PHONY: site lessons page $(KOUT)/vmlinux patch llvm chrome
+.PHONY: site lessons page $(KOUT)/vmlinux patch llvm
 
 site: $(SITE)/vmlinux.gz $(SITE)/tables.gz $(SITE)/src $(SITE)/initramfs.cpio.gz $(SITE)/disk.img.gz lessons page
 
@@ -155,13 +152,3 @@ patch:
 	@test -f linux/Makefile || { echo "no linux/: run ./ksee.sh build first" >&2; exit 1; }
 	git -C linux reset -q
 	git -C linux diff --no-color $(LINUX_TAG) > linux.patch
-
-# Fetch Chrome's headless shell for this machine (again when CHROME_VERSION changes).
-chrome: target/chrome/$(CHROME_VERSION)
-target/chrome/$(CHROME_VERSION):
-	rm -rf target/chrome target/chrome.zip
-	a=$$(uname -m | sed 's/x86_64/linux64/; s/aarch64/linux-arm64/'); \
-	curl -fsSL --proto '=https' -o target/chrome.zip https://cdn.playwright.dev/builds/cft/$(CHROME_VERSION)/$$a/chrome-headless-shell-$$a.zip && \
-	unzip -q -d target target/chrome.zip && mv target/chrome-headless-shell-$$a target/chrome
-	rm target/chrome.zip
-	touch $@
