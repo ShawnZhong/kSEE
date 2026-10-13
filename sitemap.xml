@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://shawnzhong.github.io/kSEE/</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/welcome.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/start.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/timeline.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/stepping.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/changes.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/layers.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/getpid.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/prctl.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/exec.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/thread.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/open-close.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/dup.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/read.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/write.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/open-fails.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/create.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/dir.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/ext4-read.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/ext4-create.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/ext4-write.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/durable.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/ext4-dir.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/link.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/remove.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/sleep.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/wait.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/pipe.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/kill.html</loc></url>
+  <url><loc>https://shawnzhong.github.io/kSEE/yours.html</loc></url>
+</urlset>

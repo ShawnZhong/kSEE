@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stepping through a syscall — kSEE</title>
+<meta name="description" content="The cursor is a moment of the recording: the source shows the line running then, marked, and the Stack the calls that led there, the innermost on top, each with its arguments and local variables as they were then. Move it with the buttons under the timeline, or the arrow keys:">
+<meta property="og:title" content="Stepping through a syscall — kSEE">
+<meta property="og:description" content="The cursor is a moment of the recording: the source shows the line running then, marked, and the Stack the calls that led there, the innermost on top, each with its arguments and local variables as they were then. Move it with the buttons under the timeline, or the arrow keys:">
+<meta property="og:type" content="website">
+<meta name="ksee-built" content="c781c763eb94 https://github.com/ShawnZhong/kSEE">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#fbfbfa, #0d1117); --panel: light-dark(#fff, #161b22); --fg: light-dark(#1f2328, #e6edf3);
+  --dim: light-dark(#6b7280, #8b949e); --line: light-dark(#e3e3e0, #30363d);
+  --sel: light-dark(#e8f0fe, #1f2d3d); --ran: light-dark(#dafbe1, #12301c); --miss: light-dark(#cf222e, #f85149);
+  --accent: light-dark(#0969da, #58a6ff);
+  --at: light-dark(#fff3bf, #3d3207); --run: light-dark(#1a7f37, #3fb950);
+  --kw: light-dark(#8250df, #d2a8ff); --ty: light-dark(#0550ae, #79c0ff); --str: light-dark(#0a3069, #a5d6ff);
+  --com: light-dark(#6e7781, #8b949e); --num: light-dark(#0550ae, #79c0ff); --pp: light-dark(#953800, #ffa657);
+  --fn: light-dark(#0000ff, #61afef); --fld: light-dark(#0000cc, #e06c75); --mac: light-dark(#225566, #e06c75);
+  --bl: light-dark(#221199, #d19a66); --esc: light-dark(#ee4400, #56b6c2);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+/* The theme, kept (ksee.theme): data-theme="light" forces light,
+   data-theme="dark" forces dark, absent follows the system. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+/* The page */
+* { box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.45 system-ui, sans-serif; }
+#root { height: 100%; display: flex; flex-direction: column; }
+a { color: var(--accent); cursor: pointer; text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font: inherit; font-size: 12px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dim { color: var(--dim); }
+.mono, code, textarea { font-family: var(--mono); font-size: 12px; }
+.pad { padding: 8px 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* The layout: the lesson | the work (the timeline over the source and the tabs); the splits */
+.page { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--left) 5px minmax(0, 1fr); }
+.side { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--line); position: relative; }
+.sidescroll { flex: 1; min-height: 0; overflow: auto; }
+/* (The program: after the text, kept in view at the side's bottom while
+   the text is longer; scrolling once it is long itself.) */
+.programpane { position: sticky; bottom: 0; max-height: 55%; overflow: auto; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: 8px; }
+.work { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.below { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 1fr) 5px var(--right); }
+.vsplit { cursor: col-resize; background: var(--line); opacity: .5; }
+.hsplit { cursor: row-resize; height: 4px; background: var(--line); opacity: .5; flex: none; }
+.vsplit:hover, .hsplit:hover { background: var(--accent); opacity: .6; }
+.sheet { position: fixed; inset: 0; z-index: 50; }
+
+/* The top bar, the page's own: the lessons' contents, the build, the theme */
+/* (The lessons' menu left, kSEE in the middle, the build and the theme right.) */
+.topbar { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; padding: 4px 8px;
+  background: var(--panel); border-bottom: 1px solid var(--line); flex: none; position: relative; }
+.topbar .left, .topbar .right { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.topbar .right { justify-content: end; }
+.topbar b { font-size: 14px; white-space: nowrap; }
+.topbar b span { font-weight: normal; }
+.topbar .build { font-size: 11px; color: var(--dim); }
+.topbar .contents.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
+/* (The small headings: the chapter, the menu's chapters, the program's title.) */
+.topbar .crumb, .menu .chapter, .ptitle { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.topbar .crumb { margin: 0 4px; color: var(--dim); }
+/* (The lessons' list: over the lesson, the side's whole.) */
+.menu { position: absolute; inset: 0; z-index: 10; overflow-y: auto; background: var(--panel); padding: 4px 0 12px; }
+.menu .chapter { margin: 12px 12px 2px; font-weight: 600; color: var(--dim); }
+.menu .item { display: block; padding: 4px 12px; color: var(--fg); }
+.menu .item:hover { background: var(--sel); text-decoration: none; }
+.menu .item.on { background: var(--sel); font-weight: 600; }
+
+/* A lesson: its chapter and place, title and explanation */
+h1 { margin: 12px 12px 0; font-size: 17px; line-height: 1.3; font-weight: 600; }
+.explain { margin: 8px 12px; font-size: 12.5px; }
+.explain p { margin: 0 0 8px; }
+.explain .place { font-size: 12px; }
+.explain a.try { border: 1px solid var(--accent); border-radius: 3px; padding: 0 5px; font-size: 12px; white-space: nowrap; }
+.explain a.try:hover { text-decoration: none; background: var(--sel); }
+/* The program: a line each (its editor, its result); a column per task */
+.ptitle { margin: 10px 12px 0; display: flex; align-items: baseline; }
+.ptitle a { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.program { overflow-x: auto; }
+.turn { flex: none; display: flex; flex-direction: column; gap: 2px; padding: 6px 12px; border-top: 1px solid var(--line); }
+.turn .next { align-self: flex-end; text-align: right; }
+ol.lines { margin: 8px 12px; padding: 0; list-style: none; }
+ol.lines > li { margin: 4px 0; }
+.cell { border-radius: 3px; padding: 1px 2px; }
+.cell.on { background: var(--sel); }
+.cell .line { display: flex; align-items: baseline; gap: 0 6px; flex-wrap: wrap; }
+.cell .ret { color: var(--accent); margin-left: auto; white-space: nowrap; }
+.cell.blocked .ret { color: var(--pp); font-style: italic; }
+.cell .more { font-size: 11px; padding: 0 2px; overflow-wrap: anywhere; }
+ol.lines.columns, .taskheads { --col: 300px; }
+ol.lines.columns { width: max-content; }
+ol.lines.columns > li.row { display: grid; grid-template-columns: repeat(var(--columns), var(--col)); column-gap: 10px; }
+ol.lines.columns > li.row > .cell { grid-row: 1; }
+ol.lines.columns > li:not(.add) > .cell { border-left: 3px solid hsl(var(--hue) 50% 62%); padding-left: 5px; border-radius: 0; }
+ol.lines.columns > li.row > .wait { grid-row: 1; border-left: 3px dotted hsl(var(--hue) 50% 62%); min-height: 1.4em; }
+.taskheads { display: grid; grid-template-columns: repeat(var(--columns), var(--col)); column-gap: 10px; margin: 4px 12px 0 34px; width: max-content; }
+.taskheads .task { font-size: 11px; border-bottom: 2px solid hsl(var(--hue) 50% 62%); padding: 2px 5px; }
+
+/* A line's editor: completions, the signature */
+.editor { flex: 1; position: relative; min-width: 0; }
+.editor textarea { width: 100%; font: 12px/1.45 var(--mono); padding: 1px 2px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--fg);
+  outline: none; resize: none; field-sizing: content; overflow: hidden; display: block; }
+.editor textarea:hover { border-color: var(--line); }
+.editor textarea:focus { border-color: var(--accent); background: var(--panel); }
+li.add .editor textarea { border-color: var(--line); background: var(--panel); padding: 2px 6px; }
+.complete { position: fixed; z-index: 20; margin: 0; padding: 2px 0; list-style: none; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 3px; max-height: 240px; overflow-y: auto; box-shadow: 0 4px 12px rgb(0 0 0 / .15); font-size: 12px; }
+.complete li { padding: 1px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.complete li.on { background: var(--sel); }
+.hint { font-size: 11px; margin-top: 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.error { color: var(--miss); font-size: 12px; margin-top: 2px; }
+
+/* The timeline: the overview, the stack chart, the task strip, the transport */
+.timeline { border-bottom: 1px solid var(--line); background: var(--panel); padding: 4px 12px; flex: none; }
+.overview { position: relative; height: 18px; cursor: pointer; }
+/* (A click is the overview's: where on it, not on what it shows.) */
+.overview > * { pointer-events: none; }
+.overview .b { position: absolute; top: 3px; bottom: 3px; }
+.overview .start { position: absolute; bottom: 0; height: 4px; width: 1px; background: var(--accent); }
+.overview .win { position: absolute; top: 1px; bottom: 1px; border: 1.5px solid var(--accent); }
+.overview .at { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--fg); }
+.charthead { display: flex; gap: 12px; align-items: center; font-size: 11.5px; padding: 4px 0 2px; white-space: nowrap; }
+.find { font-size: 11px; width: 12em; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--fg); }
+.find:focus { outline: none; border-color: var(--accent); }
+.legend { margin-left: auto; display: flex; gap: 8px; color: var(--dim); overflow: hidden; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
+.chartscroll { position: relative; height: var(--chart); overflow: hidden auto; overscroll-behavior: contain; }
+.chart { position: relative; cursor: crosshair; user-select: none; touch-action: none; }
+.timeline-canvas { display: block; pointer-events: none; }
+.transport { display: flex; gap: 4px; align-items: center; padding-top: 4px; font-size: 11.5px; }
+.transport .where { margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* A tip (the chart's hover, a name's in the source) */
+.tip { position: fixed; z-index: 60; max-width: 420px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; box-shadow: 0 4px 16px rgb(0 0 0 / .15); font: 12px/1.5 var(--mono); pointer-events: none; white-space: pre-wrap; }
+.tip .f { padding-left: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* (A name's, in the source: the Stack's rows, opening; it stays while the pointer is in it.) */
+.tip.open { pointer-events: auto; white-space: normal; max-width: 640px; max-height: 50vh; overflow: auto; padding: 4px 2px; }
+.srcview { display: contents; }
+.tip .dim { font-family: system-ui, sans-serif; font-size: 11px; margin-top: 2px; }
+
+/* The source: the lines that ran, the function, the cursor's line and its values */
+.source { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); }
+.srcbar { display: flex; gap: 8px; padding: 3px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; color: var(--dim); flex: none; }
+.source .scroll { flex: 1; overflow: auto; min-height: 0; overflow-anchor: none; }
+.code { min-width: max-content; }
+.code .ln { white-space: pre; padding-right: 10px; height: 17px; line-height: 17px; }
+.code .ln.ran { background: var(--ran); }
+.code .ln.infn { box-shadow: inset 3px 0 var(--accent); }
+.code .ln.seen { background: var(--at); }
+.code .ln.now { background: var(--sel); }
+.code .no { display: inline-block; width: 5em; text-align: right; padding-right: 12px; color: var(--dim); user-select: none;
+  position: sticky; left: 0; background: var(--panel); }
+.code .ln.ran .no { background: var(--ran); } .code .ln.seen .no { background: var(--at); } .code .ln.now .no { background: var(--sel); }
+.code .ln.infn .no { box-shadow: inset 3px 0 var(--accent); }
+.code .ln.now .no::before { content: "▶ "; color: var(--run); font-size: 11px; }
+.code .kw { color: var(--kw); } .code .ty { color: var(--ty); } .code .str { color: var(--str); } .code .com { color: var(--com); font-style: italic; }
+.code .num { color: var(--num); } .code .pp { color: var(--pp); }
+.code .fn { color: var(--fn); } .code .fld { color: var(--fld); } .code .mac { color: var(--mac); } .code .bl { color: var(--bl); } .code .esc { color: var(--esc); }
+.code .val { text-decoration: underline dotted var(--dim); text-underline-offset: 3px; cursor: help; }
+/* (After a line: what it wrote, "name = a → b"; at the cursor, its names' values, "name = v".) */
+.code a.stored, .code .values { font-style: italic; margin-left: 3ch; }
+.code a.stored { color: var(--dim); }
+.code a.stored:hover { color: var(--accent); }
+.code .values { color: var(--accent); }
+
+/* The tabs: the Stack, the Objects, the Tasks, the Console */
+.panels { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel); border-left: 1px solid var(--line); }
+.tabs { display: flex; padding: 0 4px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 600; flex: none; }
+.calls { overflow: auto; flex: 1; min-height: 0; padding: 4px 0; font-size: 12px; }
+.call { white-space: nowrap; line-height: 1.6; }
+.call .fold { cursor: pointer; display: inline-block; width: 1.2em; }
+.call.on { background: var(--sel); }
+.call.here { background: var(--sel); font-weight: 600; }
+.tab { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
+.tab:hover { text-decoration: none; color: var(--fg); }
+.tab.on { color: var(--fg); border-bottom-color: var(--accent); }
+.pane { overflow: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* (The console kept at its end as it grows, unless scrolled back.) */
+.pane:has(> .console) { flex-direction: column-reverse; }
+table.fields { border-collapse: collapse; width: max-content; min-width: 100%; font-family: var(--mono); font-size: 12px; }
+table.fields td { padding: 1px 8px; white-space: nowrap; }
+table.fields tr:hover { background: var(--sel); }
+table.fields td.fval { color: var(--accent); }
+table.fields td.ftype { color: var(--dim); }
+table.fields tr.none td { color: var(--dim); }
+table.fields tr.frame td { padding: 5px 8px 2px; border-top: 1px solid var(--line); cursor: pointer; }
+table.fields tr.frame.on td { background: var(--sel); }
+table.fields tr.frame a { font-weight: 600; }
+/* (From the bottom, as the chart stacks calls, the task under them: reversed,
+   its scroll kept from the bottom, so a frame added above, a callee as the
+   cursor moves, moves nothing below it.) */
+.stack { flex: 1; min-height: 0; display: flex; flex-direction: column-reverse; overflow: auto; }
+.current { position: sticky; bottom: 0; padding: 6px 8px; border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; }
+.tw { color: var(--dim); display: inline-block; width: 1.2em; }
+tr.opens { cursor: pointer; }
+/* (Tasks: a line each, the one selected open under it: its task_struct's
+   key fields and open files, and the rest a click away.) */
+/* (A task's line as the Stack's frames; its fields as their values.) */
+.tasks .task { display: flex; gap: 10px; padding: 5px 8px 2px; border-top: 1px solid var(--line); cursor: pointer; white-space: nowrap; font: 12px var(--mono); }
+.tasks .task:hover, .tasks .task.on { background: var(--sel); }
+.tasks .task.later { opacity: .45; }
+.tasks .task .name { font-weight: 600; }
+.tasks .detail { padding-bottom: 4px; }
+.tasksopt { display: block; padding: 4px 8px; font-size: 12px; }
+/* The Objects: a box per object, a row a run of writes (the moment's marked, those after it gray) */
+.listing { padding: 0 10px 12px; }
+.listhead { padding: 6px 2px 2px; font-size: 11.5px; }
+.disk .xfer { padding: 4px 6px; border-left: 3px solid transparent; font-size: 12px; }
+.disk .xfer.on { border-left-color: var(--accent); background: var(--sel); }
+.disk .xfer.later { opacity: .45; }
+.disk .bytes { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.obj { margin: 10px 0 0; font: 11px/1.5 var(--mono); }
+.obj.under { border-left: 2px solid var(--line); padding-left: 6px; }
+.obj .title { padding: 1px 4px; border-bottom: 1px solid var(--line); white-space: nowrap; width: max-content; min-width: 100%; }
+.obj td.fname { padding-left: 12px; }
+.obj tr { cursor: pointer; }
+.obj tr.on td { background: var(--at); }
+.obj tr.same td { color: var(--dim); }
+.console { margin: 0; padding: 6px 12px; font: 11px var(--mono); white-space: pre-wrap; word-break: break-word; }
+
+/* A phone's screen: one under another, the page scrolling; no splits */
+@media (max-width: 800px) {
+  html, body { overflow: auto; }
+  #root { height: auto; }
+  .page, .below { display: block; }
+  .side { border-right: 0; border-bottom: 1px solid var(--line); }
+  .sidescroll { overflow: visible; }
+  .programpane { position: static; max-height: none; }
+  .vsplit, .hsplit, .legend { display: none; }
+  .source, .panels { height: 70dvh; border-top: 1px solid var(--line); }
+  .transport { flex-wrap: wrap; row-gap: 2px; }
+  .transport button { padding: 4px 14px; }
+  /* (Two rows: kSEE and the build and theme; then the lessons' menu.) */
+  .topbar { grid-template-columns: auto 1fr; }
+  .topbar b { grid-row: 1; grid-column: 1; }
+  .topbar b span { display: none; }
+  .topbar .right { grid-row: 1; grid-column: 2; }
+  .topbar .left { grid-row: 2; grid-column: 1 / -1; flex-wrap: wrap; }
+}
+/* (The lesson's text as the page comes with it, for what reads it without
+   running it: removed once the page runs, see lib.rs's mount.) */
+#static { max-width: 44rem; margin: 1rem auto; padding: 0 1rem; line-height: 1.55; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<article id="static">
+<p><a href="./">kSEE</a> · Start here</p>
+<h1>Stepping through a syscall</h1>
+<p>The cursor is a moment of the recording: the source shows the line running then, marked, and the Stack the calls that led there, the innermost on top, each with its arguments and local variables as they were then. Move it with the buttons under the timeline, or the arrow keys:</p>
+<p>→ Next goes through the function you are reading, a line at a time, over the calls it makes. ↑ In goes into the call the line makes (with none, on to the next line: ↑ alone follows every line the kernel ran). ← Back goes back in time the way you came, through the function after →, every line after ↑. ↓ Out goes back to the caller, at its call.</p>
+<p>1. Start at <em>vfs_write</em>, the layer every file's write goes through, and step with →. Before it writes anything, it checks: is the file open for writing (its <code>f_mode</code> has <code>FMODE_WRITE</code>), can it be written at all, and is the buffer the program's to read (<code>access_ok</code>)? Each check is a line that ran; one that failed would return its error there.</p>
+<p>2. <em>rw_verify_area</em> checks the position and the size: → steps over it, its answer 0, nothing wrong; ↑ on its line goes in instead, and ↓ comes back out.</p>
+<p>3. Then the write itself, <code>file-&gt;f_op-&gt;write</code>: the file's own write, the console's. ↑ on that line goes into <em>console_dev_write</em>, which hands the 6 bytes to the page; ↓ back out, and →: <code>vfs_write</code> returns 6, the bytes written, as the program's line says.</p>
+<p>On the Stack, <code>file</code>, <code>buf</code> and <code>count</code> are vfs_write's arguments, as they were then: click <code>file</code> to open its <code>struct file</code>, with <code>f_mode</code> and <code>f_op</code>.</p>
+<h2>The program</h2>
+<ol>
+<li><code>int fd = dup(1)</code></li>
+<li><code>write(fd, &quot;hello\n&quot;, 6)</code></li>
+</ol>
+</article>
+<noscript><p>kSEE, the kernel Syscall Execution Explorer, runs a real Linux kernel in your browser and lets you step through what a system call does, line by line. It needs JavaScript and WebAssembly (with JSPI: Chrome 137, Firefox 153, Safari 27 or later).</p></noscript>
+<script>
+// (The theme kept, before the page is drawn: nav.rs's Theme.)
+const theme = localStorage.getItem("ksee.theme");
+if (theme) document.documentElement.dataset.theme = theme;
+</script>
+<script type="module">
+// (No service worker: an older kSEE's, for cross-origin isolation, may be
+// left registered in a returning browser, between the page and its files.)
+navigator.serviceWorker?.getRegistrations().then((all) => all.forEach((r) => r.unregister()));
+// (Each file asked for as this build's, by its commit: one deploy's files
+// never meet another's in a cache.)
+const v = `?v=${document.querySelector("meta[name=ksee-built]").content.split(" ")[0]}`;
+const { default: init, mount } = await import(`./pkg/ksee_page.js${v}`);
+// (A build's file, its bytes: the .gz ones unpacked.)
+async function bytes(name) {
+  const response = await fetch(name + v);
+  if (!response.ok) throw new Error(`${name}: ${response.status}`);
+  const body = name.endsWith(".gz") ? response.body.pipeThrough(new DecompressionStream("gzip")) : response.body;
+  return new Uint8Array(await new Response(body).arrayBuffer());
+}
+// (The page at once; the kernel boots meanwhile, the page's once up.)
+const [, lessons] = await Promise.all([init({ module_or_path: `pkg/ksee_page_bg.wasm${v}` }), fetch(`lessons.json${v}`).then((r) => r.text())]);
+mount("root", lessons, Promise.all(["vmlinux.gz", "tables.gz", "initramfs.cpio.gz", "disk.img.gz"].map(bytes)));
+</script>
+</body>
+</html>

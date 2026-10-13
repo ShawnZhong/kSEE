@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Interrupts.
+ *
+ * The host never interrupts running wasm code. It raises an interrupt by
+ * setting a bit in wasm_machine.irq_pending (and waking the CPU if it idles); the kernel
+ * takes pending interrupts when it re-enables interrupts and when the CPU
+ * idles, which are the points real hardware would deliver them to a
+ * PREEMPT_NONE kernel that has interrupts masked in between.
+ */
+#include <linux/cpu.h>
+#include <linux/hardirq.h>
+#include <linux/init.h>
+#include <linux/irqflags.h>
+#include <linux/sched.h>
+#include <asm/irq_regs.h>
+#include <asm/wasm.h>
+
+unsigned long wasm_irq_flags = ARCH_IRQ_DISABLED;
+
+void wasm_deliver_irqs(void)
+{
+	struct pt_regs *old_regs;
+	int pending;
+
+	while ((pending = READ_ONCE(wasm_machine.irq_pending))) {
+		WRITE_ONCE(wasm_machine.irq_pending, 0);
+		wasm_irq_flags = ARCH_IRQ_DISABLED;
+		old_regs = set_irq_regs(task_pt_regs(current));
+		irq_enter();
+		if (pending & BIT(WASM_IRQ_TIMER))
+			wasm_timer_interrupt();
+		if (pending & BIT(WASM_IRQ_CONSOLE))
+			wasm_console_interrupt();
+		if (pending & BIT(WASM_IRQ_DISK))
+			wasm_disk_interrupt();
+		irq_exit();
+		set_irq_regs(old_regs);
+		wasm_irq_flags = ARCH_IRQ_ENABLED;
+	}
+}
+
+void __init init_IRQ(void)
+{
+}
+
+/* Called with interrupts disabled; returns with them enabled. */
+void arch_cpu_idle(void)
+{
+	wasm_idle();
+	raw_local_irq_enable();
+}
