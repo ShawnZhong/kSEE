@@ -34,7 +34,8 @@ use lesson::Lesson;
 use state::Ui;
 
 thread_local! {
-    /// The kernel's files (a promise: `mount`'s), and the Machine (one
+    /// The kernel's files (a promise: `mount`'s, taken by the boot: their
+    /// bytes, tens of MiB, not kept once booted), and the Machine (one
     /// thread: the page's), once booted (App's).
     static BOOT: RefCell<Option<Promise>> = const { RefCell::new(None) };
     static MACHINE: RefCell<Option<Rc<Machine>>> = const { RefCell::new(None) };
@@ -44,7 +45,7 @@ thread_local! {
 
 /// The Machine, booted from the kernel's files; or why it could not be.
 pub(crate) async fn boot() -> Result<Rc<Machine>, String> {
-    let promise = BOOT.with_borrow(|p| p.clone()).ok_or("not mounted")?;
+    let promise = BOOT.with_borrow_mut(|p| p.take()).ok_or("not mounted, or booted already")?;
     let said = |e: JsValue| e.as_string().or_else(|| js_sys::Error::from(e).message().as_string()).unwrap_or_default();
     let files: js_sys::Array = JsFuture::from(promise).await.map_err(said)?.unchecked_into();
     let file = |k| files.get(k).unchecked_into::<js_sys::Uint8Array>();

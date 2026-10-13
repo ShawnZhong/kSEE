@@ -24,6 +24,7 @@ pub const TESTS: &[(&str, &str, (u32, u32))] = &[
     ("tasks", "pipe.html#test=tasks", SCREEN),
     ("disk", "durable.html#test=disk", SCREEN),
     ("responsive", "read.html#test=responsive", (390, 844)),
+    ("tour", "#test=tour", SCREEN),
 ];
 const SCREEN: (u32, u32) = (1500, 900);
 

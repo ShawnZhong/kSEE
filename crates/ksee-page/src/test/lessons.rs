@@ -19,6 +19,9 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
     let mut t = KernelHarness::new(machine);
     let m = t.machine.clone();
     let lessons = crate::lessons();
+    // (The module's memory after each lesson, MiB: it never shrinks, so a
+    // lesson's leftovers would add up.)
+    let mut mib = Vec::new();
     for lesson in lessons {
         let ids = t.program(lines(&lesson.program)).await;
         let is_call = |step: &ProgramLine| matches!(statement(step.text()), Ok(Statement::Call { .. }));
@@ -45,6 +48,7 @@ pub(super) async fn run(machine: Rc<Machine>) -> super::Check {
         }
         t.check(format!("lesson {}: {} lines, all finished, the explanation's links found (missing {missing:?}, blocked {blocked:?})", lesson.name, lesson.program.len()),
                 missing.is_empty() && blocked.is_empty());
+        mib.push(core::arch::wasm32::memory_size(0) * 64 / 1024);
     }
-    t.done(format!("{} lessons", lessons.len()))
+    t.done(format!("{} lessons; MiB of memory after each: {mib:?}", lessons.len()))
 }

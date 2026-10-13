@@ -30,6 +30,25 @@ pub(super) async fn read() -> Check {
     Ok(r.join("; "))
 }
 
+/// Every lesson in turn, as a reader goes (the next one ▶), each made and
+/// drawn: the memory the page takes after each (it never shrinks: what a
+/// lesson leaves behind adds up).
+pub(super) async fn tour() -> Check {
+    let mut mib = Vec::new();
+    for lesson in crate::lessons() {
+        let n = lesson.program.len();
+        // (A lesson with no program draws nothing.)
+        wait(|| doc().title().starts_with(&lesson.title) && done(n) && (n == 0 || drew("width").is_some()), 900,
+             &format!("lesson {}: its calls made", lesson.name), || format!("{} {:?}", doc().title(), cells())).await?;
+        settle().await;
+        mib.push(core::arch::wasm32::memory_size(0) * 64 / 1024);
+        if let Some(next) = one("a.next") {
+            click(&next);
+        }
+    }
+    Ok(format!("MiB of memory after each lesson: {mib:?}"))
+}
+
 /// The timeline's colors, by area.
 fn colors() -> Result<(), String> {
     let colors = [(Some("fs/x.c"), false, "hsl(135 40% 74%)"), (Some("fs/x.c"), true, "hsl(135 50% 50%)"),
