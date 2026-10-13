@@ -10,6 +10,14 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-26.04
+    env:
+      # (The Makefile's PREBUILT.)
+      KERNEL: |
+        target/vmlinux
+        target/vmlinux.debug
+        target/linux/usr/include
+        target/linux/usr/gen_init_cpio
+        target/site/src
     steps:
       - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
@@ -17,12 +25,7 @@ jobs:
         id: kernel
         uses: actions/cache/restore@v5
         with:
-          path: |
-            target/vmlinux
-            target/vmlinux.debug
-            target/linux/usr/include
-            target/linux/usr/gen_init_cpio
-            target/site/src
+          path: ${{ env.KERNEL }}
           key: kernel-${{ runner.arch }}-${{ hashFiles('Makefile', 'linux.patch', 'arch/wasm/**', 'plugin/**') }}
       - name: Unit tests
         run: cargo test --locked --release -p ksee-core -p ksee-cli
@@ -32,12 +35,7 @@ jobs:
         if: steps.kernel.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
-          path: |
-            target/vmlinux
-            target/vmlinux.debug
-            target/linux/usr/include
-            target/linux/usr/gen_init_cpio
-            target/site/src
+          path: ${{ env.KERNEL }}
           key: ${{ steps.kernel.outputs.cache-primary-key }}
       - name: Browser tests
         run: ./ksee.sh test --built --ui
