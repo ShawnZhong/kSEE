@@ -120,7 +120,6 @@ Do not edit generated output as source:
 | `target/site/sitemap.xml` | Every page, at the address `ksee deploy` publishes the site at (the origin's GitHub Pages), for search engines (submit it in Google's Search Console). |
 | `target/vmlinux`, `target/vmlinux.debug`, `target/tables` | The kernel split (`llvm-objcopy`'s): the page's, without DWARF and the `ksee` section, and those, the pack's; and its tables (the pack's), uncompressed: the site's copies' sources. |
 | `target/user/` | The programs, the initramfs, and the disk's ext4 image. |
-| `target/chrome/` | The tests' browser, Chrome's headless shell (`setup.sh`'s). |
 
 ## Page modules and state
 
@@ -197,7 +196,7 @@ page to be drawn (`settle`: two animation frames) or for a condition
 (`wait`), never a fixed time; the whole run, native and browser, takes
 under a minute.
 
-CI (one job: `./setup.sh`, the native tests, `./ksee.sh build`, then
+CI (one job: the native tests, `./ksee.sh build`, then
 `./ksee.sh test --built --ui`) caches
 the kernel's products, by what builds them (the Makefile, the patch, the
 port, the plugin): the split kernel (`target/vmlinux`, `vmlinux.debug`), its
@@ -207,16 +206,15 @@ they are (`KERNEL_BUILT=true`: the Makefile asks no kbuild, and needs no
 Linux tree); else it builds the kernel and saves them, before the tests
 (kept even when they fail).
 
-The browser is Chrome's headless shell at setup.sh's `CHROME_VERSION`,
-fetched into `target/chrome/` by `./setup.sh` (CI runs it too). Not a full
-Chrome: even headless, Chrome keeps its window's frame (some 140 px of the
-height, and at least 500 px wide), so a test would not get the size it asks
-for (the phone test's 390 px).
-
-The CLI serves the test site on a temporary local port and reads the
-shell's console on its stderr: each browser suite says `ksee test: ok` or
-`fail` and its log there, within five minutes, and an error nothing caught
-fails it at once, whether the page's code ran or not.
+The browser is Google Chrome (`google-chrome`: setup.sh installs it; CI's
+runner has it), headless, driven through the DevTools protocol on a pipe
+(`--remote-debugging-pipe`; chrome.rs): the CLI opens a page of the test's
+size (`Emulation.setDeviceMetricsOverride`: Chrome's window, headless too,
+keeps a frame, some 140 px of its height and at least 500 px wide), serves
+the test site on a temporary local port, and reads the page's console as
+the protocol's events: each browser suite says `ksee test: ok` or `fail` and
+its log there, within a minute, and an exception nothing caught fails it at
+once, whether the page's code ran or not.
 
 For a focused native run:
 

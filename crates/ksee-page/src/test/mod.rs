@@ -30,11 +30,10 @@ pub fn start() -> Option<String> {
     Some(name)
 }
 
-/// The outcome, on the console, one line (chrome.rs reads it on the
-/// shell's stderr): `ksee test: ok` or `fail`, then its log as a JSON string.
+/// The outcome, on the console (chrome.rs reads it through the DevTools
+/// protocol): `ksee test: ok` or `fail`, and its log.
 fn report(ok: bool, log: &str) {
-    let log = js_sys::JSON::stringify(&log.into()).ok().and_then(|s| s.as_string()).unwrap_or_default();
-    web_sys::console::log_1(&format!("ksee test: {} {log}", if ok { "ok" } else { "fail" }).into());
+    web_sys::console::log_2(&(if ok { "ksee test: ok" } else { "ksee test: fail" }).into(), &log.into());
 }
 
 thread_local! {

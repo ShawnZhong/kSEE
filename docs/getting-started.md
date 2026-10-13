@@ -32,8 +32,8 @@ From the repository root:
 
 The script installs the host dependencies and rustup (or updates it);
 `rust-toolchain.toml` makes rustup add the Rust WebAssembly target on first
-use. It also installs the libraries the tests' browser needs; the browser
-itself, Chrome's headless shell, is fetched by `./ksee.sh test`.
+use. It also installs Google Chrome, the tests' browser, from Google's
+package (which adds Google's apt repository for its updates).
 
 ### Use a custom LLVM 22 build
 
@@ -87,8 +87,8 @@ runtime use one thread and one non-shared WebAssembly memory.
 ./ksee.sh test --ui
 ```
 
-The browser suites run in Chrome's headless shell, fetched once into
-`target/chrome/` for x86-64 or arm64 Linux; `--ui` adds the page's. What
+The browser suites run in Google Chrome (`google-chrome`, headless); `--ui`
+adds the page's. What
 runs, in order: [development.md#tests](development.md#tests).
 
 ## Troubleshooting
@@ -102,6 +102,4 @@ compatible `clang` and `wasm-ld` binaries.
 
 ### The browser does not start
 
-Run `target/chrome/chrome-headless-shell --version`: a missing library is
-named there. `./setup.sh` installs the libraries and fetches the shell (again
-when its `CHROME_VERSION` changes, or after `target/chrome/` is removed).
+Run `google-chrome --version`; `./setup.sh` installs it (x86-64 or arm64).

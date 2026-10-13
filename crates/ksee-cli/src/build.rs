@@ -76,7 +76,7 @@ pub fn bindgen(wasm: &str, out: &str) {
 }
 
 /// Run the native tests and build (unless `built`: earlier CI steps did),
-/// then `names` on the site in the headless shell (setup.sh's).
+/// then `names` on the site in Chrome (chrome.rs).
 pub fn test(names: &[String], built: bool) {
     if !built {
         run(Command::new("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
