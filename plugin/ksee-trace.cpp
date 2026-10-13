@@ -51,6 +51,9 @@ using namespace llvm;
 
 namespace {
 
+// The syscall table (arch/wasm/kernel/syscall.c's): the function each
+// number calls (S lines).
+constexpr StringRef SyscallTable = "sys_call_table";
 constexpr unsigned CallArgs = 7; // the syscall entry's: the number and six
 constexpr unsigned Values = 2 * CallArgs + 1; // a record's at most: a call's arguments (wide ones two words) and its frame base
 // (The kinds the plugin writes; Store records are ksee.c's.)
@@ -541,6 +544,14 @@ public:
         F.removeParamAttr(k, Attribute::ByVal);
     for (Function *F : todo)
       instrument(*F);
+
+    // (Each entry's function by id; one this kernel does not build, a weak
+    // declaration the linker leaves NULL, has no F line.)
+    if (auto *T = Mod.getGlobalVariable(SyscallTable, true); T && T->hasInitializer())
+      if (auto *A = dyn_cast<ConstantArray>(T->getInitializer()))
+        for (unsigned nr = 0; nr < A->getNumOperands(); nr++)
+          if (auto *F = dyn_cast<Function>(A->getOperand(nr)->stripPointerCasts()))
+            code += "S\t" + std::to_string(nr) + "\t" + std::to_string(fnId(F->getName(), F->hasLocalLinkage(), Mod)) + "\n";
 
     std::string head = "U\n";
     for (auto &[path, k] : files)

@@ -13,9 +13,9 @@ type R<'a> = EndianSlice<'a, LittleEndian>;
 /// parameters (`P name params`, as "name:type": the call stack's
 /// arguments). (The syscalls' names, `S nr name`, come after: see
 /// syscalls.)
-pub fn types(module: &super::module::Module) -> Result<String, gimli::Error> {
+pub fn types(sections: &std::collections::BTreeMap<&str, &[u8]>) -> Result<String, gimli::Error> {
     let dwarf = gimli::Dwarf::load(|id| -> Result<R, gimli::Error> {
-        Ok(EndianSlice::new(module.custom.get(id.name()).copied().unwrap_or(&[]), LittleEndian))
+        Ok(EndianSlice::new(sections.get(id.name()).copied().unwrap_or(&[]), LittleEndian))
     })?;
     let mut b = Builder::default();
     let mut units = dwarf.units();

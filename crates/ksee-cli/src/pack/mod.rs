@@ -6,15 +6,10 @@
 mod dwarf;
 mod module;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path};
 
 use ksee_core::arch::SYSCALL_WRAPPER;
-
-/// The syscall table (arch/wasm/kernel/syscall.c): an entry per number,
-/// the function it calls, SYSCALL_WRAPPER's `__wasm_sys_NAME`, NULL for one
-/// this kernel does not build.
-const SYSCALL_TABLE: &str = "sys_call_table";
 
 /// A function's id, as the plugin's probes have it: the 32-bit FNV-1a hash
 /// of its name (of "file:name" for one local to its file).
@@ -37,13 +32,13 @@ fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'
 /// referenced sources to their final paths.
 pub fn kernel(kernel: &Path, tables_out: &Path, sources_out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
-    let image = crate::or_fail(module::Module::read(&image), "vmlinux");
-    let mut types = crate::or_fail(dwarf::types(&image), "DWARF");
-    let code = String::from_utf8_lossy(image.custom.get("ksee.code").copied().unwrap_or(&[])).into_owned();
+    let sections = crate::or_fail(module::custom_sections(&image), "vmlinux");
+    let mut types = crate::or_fail(dwarf::types(&sections), "DWARF");
+    let code = String::from_utf8_lossy(sections.get("ksee.code").copied().unwrap_or(&[])).into_owned();
     for (name, value) in constants(&kernel.join("usr/include")) {
         types += &format!("C\t{name}\t{value}\n");
     }
-    let calls = syscalls(&image, &types);
+    let calls = syscalls(&code);
     for (nr, name) in &calls {
         types += &format!("S\t{nr}\t{name}\n");
     }
@@ -134,20 +129,15 @@ fn evaluate(text: &str, known: &[(String, i64)]) -> Option<i64> {
     ksee_core::program::value(&ksee_core::program::expression(text).ok()?, None, &named).ok()
 }
 
-/// The syscalls this kernel builds, as its syscall table (SYSCALL_TABLE,
-/// its G line in `types`, its size its type's T line's) is in the image:
-/// each entry the function a number calls, SYSCALL_WRAPPER and its name,
-/// by its index in the function table; NULL for a syscall it does not
-/// build: (number, NAME).
-fn syscalls(image: &module::Module, types: &str) -> Vec<(u32, String)> {
-    let Some((addr, ty)) = rows(types, "G").find(|c| c.first() == Some(&SYSCALL_TABLE))
-        .and_then(|c| Some((c.get(1)?.parse::<u32>().ok()?, *c.get(2)?))) else { return Vec::new() };
-    // (Its size as the page reads it: an array's, count * its element's.)
-    let size = ty.parse().map_or(0, |ty| ksee_core::types::Types::parse(types).size_of(ty));
-    image.memory(addr, size).chunks(4).enumerate().filter_map(|(nr, e)| {
-        let f = image.table.get(&u32::from_le_bytes(e.try_into().ok()?))?;
-        Some((nr as u32, image.names.get(f)?.strip_prefix(SYSCALL_WRAPPER)?.to_string()))
-    }).collect()
+/// The syscalls this kernel builds: its syscall table's entries (the
+/// plugin's S lines: number, function id) whose function it has (an F
+/// line: SYSCALL_WRAPPER and the name): (number, NAME).
+fn syscalls(code: &str) -> Vec<(u32, String)> {
+    let names: BTreeMap<&str, &str> = rows(code, "F").filter_map(|c| Some((*c.first()?, *c.get(1)?))).collect();
+    let calls: BTreeSet<(u32, String)> = rows(code, "S").filter_map(|c| {
+        Some((c.first()?.parse().ok()?, names.get(c.get(1)?)?.strip_prefix(SYSCALL_WRAPPER)?.to_string()))
+    }).collect();
+    calls.into_iter().collect()
 }
 
 #[cfg(test)]
@@ -240,31 +230,19 @@ mod constants_tests {
 }
 
 #[cfg(test)]
-mod image_tests {
+mod code_tests {
     use super::*;
 
-    /// An image whose table calls `__wasm_sys_read` at 0 and nothing at 1:
-    /// the table's two entries at 0x100, table index 5 (function 0), then NULL.
-    fn syscall_image() -> Vec<u8> {
-        wat::parse_str(r#"(module
-            (func $__wasm_sys_read)
-            (table 8 funcref) (elem (i32.const 5) $__wasm_sys_read)
-            (memory 1) (data (i32.const 0x100) "\05\00\00\00\00\00\00\00"))"#).unwrap()
-    }
-
     #[test]
-    fn syscalls_names_come_from_the_table() {
-        assert_eq!(syscalls(&module::Module::read(&syscall_image()).unwrap(), "T\t1\tbase\tint\t8\tu\nG\tsys_call_table\t256\t1\n"), [(0, "read".to_string())]);
+    fn syscalls_are_the_tables_entries_the_kernel_has() {
+        // (0 calls __wasm_sys_read, 1 a function the kernel does not have.)
+        let code = "F\t7\t__wasm_sys_read\t0:1\t1\t0\t0\nS\t0\t7\nS\t1\t9\n";
+        assert_eq!(syscalls(code), [(0, "read".to_string())]);
     }
 
     #[test]
     fn ids_are_the_plugins() {
         // (From a kernel's ksee.code section.)
         assert_eq!(id("try_to_wake_up"), 2218239081);
-    }
-
-    #[test]
-    fn syscalls_without_a_table_are_none() {
-        assert!(syscalls(&module::Module::read(&syscall_image()).unwrap(), "T\t1\tbase\tint\t8\tu\n").is_empty());
     }
 }

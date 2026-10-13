@@ -116,7 +116,9 @@ concatenated by wasm-ld):
 - `V fn k of function name param arg`: variable k of fn, as its var
   records have it: `name` of `function` (fn, or one inlined into it; `of`
   its id), its parameter number (0: a local); `arg`, if nonzero: it is fn's
-  parameter arg throughout, with no records.
+  parameter arg throughout, with no records;
+- `S nr fn`: syscall nr calls function fn (`sys_call_table`'s entry, in
+  syscall.c's unit; one this kernel does not build has no `F` line).
 
 The plugin cannot say the rest itself: a local's frame offset is the
 backend's (after the pass), a global's address the linker's, and a type is
@@ -125,8 +127,8 @@ DWARF and adds the types' text (see `types.rs`): the types (deduplicated across 
 each function's parameters with their types (`P`, as C declares them) and
 its locals with their types and, those in memory, their offsets from the
 frame base (`Q`, the offset empty for one in a wasm local), the syscalls
-this kernel builds (its `sys_call_table`'s functions: `__wasm_sys_NAME`,
-NULL for none), constants from the UAPI headers (their `#define`s, and
+this kernel builds (`S nr NAME`: the plugin's `S` lines whose function,
+`__wasm_sys_NAME`, has an `F` line), constants from the UAPI headers (their `#define`s, and
 the enums' values: for the page's calls, written as in C), and `W name
 file line` lines: where a function (an inline one too, which has no probe),
 a struct, union, enum or typedef, a global, or a member (as
