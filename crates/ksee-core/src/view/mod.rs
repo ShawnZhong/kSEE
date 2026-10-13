@@ -12,7 +12,8 @@ use crate::recording::Recording;
 use crate::stack::{self, LineStep};
 use crate::tables::{Loc, Tables, Var};
 use crate::trace::Record;
-use crate::types::{c_str, num, quote, Kind, TaskId, Types};
+use crate::print::{c_str, num, quote, TaskId};
+use crate::types::{Kind, Types};
 use crate::Memory;
 
 

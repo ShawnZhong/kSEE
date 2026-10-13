@@ -64,7 +64,7 @@ pub struct Recording {
     pub calls: stack::Calls,
     /// Who each task was (by its task_struct's address, and the last write
     /// to its pid or comm by then), read once per snapshot (View::task).
-    pub(crate) task_ids: core::cell::RefCell<alloc::collections::BTreeMap<(u32, Option<usize>), crate::types::TaskId>>,
+    pub(crate) task_ids: core::cell::RefCell<alloc::collections::BTreeMap<(u32, Option<usize>), crate::print::TaskId>>,
     /// The last span's stores, named (View::stores: what Objects and the
     /// source's notes ask again at each moment), by its first and last.
     pub(crate) span_stores: core::cell::RefCell<Option<((usize, usize), alloc::rc::Rc<crate::view::Named>)>>,

@@ -131,7 +131,7 @@ impl Types {
                 let mut b = vec![0u8; n.min(4096) as usize];
                 mem.read(addr, &mut b);
                 let len = b.iter().rposition(|&c| c != 0).map_or(0, |k| k + 1);
-                crate::types::quote(&b[..len])
+                crate::print::quote(&b[..len])
             }
             Some(n) => format!("{{{}}}", (0..n.min(16)).map(|i| self.show(mem, addr + i * esize, ty, None)).collect::<Vec<_>>().join(", ")),
             None => match &self.get(self.resolve(ty)).kind {
