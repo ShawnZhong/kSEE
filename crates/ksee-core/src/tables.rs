@@ -5,7 +5,7 @@
 use alloc::collections::BTreeMap;
 
 use crate::arch;
-use crate::flat::{At, Lists, Pod, Reader, Str, Text, Writer, Zeroable};
+use crate::flat::{Pod, Reader, Str, Text, Writer, Zeroable};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -97,6 +97,17 @@ impl Step {
     }
 }
 
+/// An inline chain, a node of their tree (Tables::chain): its innermost
+/// site, and the chain it is inlined into (u32::MAX: none, the block's
+/// function); how many sites it has.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct ChainAt {
+    site: Site,
+    outer: u32,
+    depth: u32,
+}
+
 /// An inlined function (Tables::inline_name) and where it is inlined: a
 /// line of the next one out (of the block's function, for the last).
 #[repr(C)]
@@ -173,8 +184,9 @@ pub struct Tables {
     cuts: &'static [u32],
     /// Names of inlined functions.
     inline_names: &'static [Str],
-    /// Inline chains (see Step), by index: innermost first.
-    chains: (&'static [At], &'static [Site]),
+    /// Inline chains (see Step): each one site and the chain out from it,
+    /// so that chains share what they share.
+    chains: &'static [ChainAt],
     /// Source file paths.
     files: &'static [Str],
     /// Each function's variables, as its Var records number them.
@@ -232,7 +244,7 @@ impl Tables {
         w.bytes(self.text.as_bytes());
         w.slice(self.functions);
         (w.slice(self.blocks), w.slice(self.steps), w.slice(self.cuts));
-        (w.slice(self.inline_names), w.slice(self.chains.0), w.slice(self.chains.1));
+        (w.slice(self.inline_names), w.slice(self.chains));
         (w.slice(self.files), w.slice(self.vars));
         self.types.write(&mut w);
         w.done()
@@ -249,7 +261,7 @@ impl Tables {
             steps: r.slice()?,
             cuts: r.slice()?,
             inline_names: r.slice()?,
-            chains: (r.slice()?, r.slice()?),
+            chains: r.slice()?,
             files: r.slice()?,
             vars: r.slice()?,
             types: Default::default(),
@@ -266,7 +278,8 @@ impl Tables {
         let mut text = Text::default();
         let types = Types::parse_into(types, &mut text);
         let (mut files, mut names) = (Index::<String>::default(), Index::<String>::default());
-        let mut chains = Index::<Vec<Site>>::default();
+        // (Each chain once: its innermost site and the chain out from it.)
+        let mut chains = Index::<(Site, u32)>::default();
         let mut unit = Unit::default();
         let mut functions = BTreeMap::new();
         let mut vars: BTreeMap<(u32, u32), VarAt> = BTreeMap::new();
@@ -323,7 +336,7 @@ impl Tables {
                                     at
                                 }
                             };
-                            let inlined = (!chain.is_empty()).then(|| chains.get(chain));
+                            let inlined = chain.iter().rev().fold(None, |outer, &site| Some(chains.get((site, outer.unwrap_or(u32::MAX)))));
                             these.push(Step::new(unit.loc(at), inlined));
                         }
                         // (Once: a unit's copy of a block another unit gave.)
@@ -362,7 +375,7 @@ impl Tables {
             steps: &[],
             cuts: crate::flat::keep(cuts),
             inline_names,
-            chains: (&[], &[]),
+            chains: &[],
             files,
             vars: crate::flat::keep(var_at),
             types: Default::default(),
@@ -378,34 +391,24 @@ impl Tables {
     /// it is inlined at, in the function that inlined it, so that nothing
     /// shows a frame, a node or a line of get_current. (The steps and
     /// chains, kept.)
-    fn fold_primitives(&self, mut steps: Vec<Step>, mut chains: Index<Vec<Site>>) -> (&'static [Step], (&'static [At], &'static [Site])) {
+    fn fold_primitives(&self, mut steps: Vec<Step>, chains: Index<(Site, u32)>) -> (&'static [Step], &'static [ChainAt]) {
+        let mut depth: Vec<u32> = Vec::new();
+        for &(_, outer) in &chains.list {
+            depth.push(1 + depth.get(outer as usize).copied().unwrap_or(0));
+        }
+        let kept = crate::flat::keep(chains.list.iter().zip(depth).map(|(&(site, outer), depth)| ChainAt { site, outer, depth }).collect());
+        let t = Tables { chains: kept, ..Default::default() };
         let prim: Vec<bool> = (0..self.inline_names.len() as u32)
             .map(|k| self.types.declared(self.inline_name(k)).is_some_and(|(f, _)| arch::PRIMITIVES.iter().any(|p| f.starts_with(p)))).collect();
-        if prim.iter().any(|&p| p) {
-            let mut folded: BTreeMap<u32, (Loc, Option<u32>)> = BTreeMap::new();
-            for s in steps.iter_mut() {
-                let Some(c) = s.inlined() else { continue };
-                if let Some(&(loc, inlined)) = folded.get(&c) {
-                    *s = Step::new(loc, inlined);
-                    continue;
-                }
-                let chain = &chains.list[c as usize];
-                let n = chain.iter().take_while(|site| prim[site.name as usize]).count();
-                if n == 0 {
-                    continue;
-                }
-                let loc = chain[n - 1].loc;
-                let rest = chain[n..].to_vec();
-                let inlined = (!rest.is_empty()).then(|| chains.get(rest));
-                folded.insert(c, (loc, inlined));
-                *s = Step::new(loc, inlined);
+        for s in steps.iter_mut() {
+            // (The primitives it is inlined from, innermost: the step at the
+            // line the outermost of them is inlined at, in the chain out.)
+            let n = t.chain(s.inlined()).take_while(|site| prim[site.name as usize]).count() as u32;
+            if let Some(site) = n.checked_sub(1).and_then(|k| t.chain(s.inlined()).nth(k as usize)) {
+                *s = Step::new(site.loc, t.outer(s.inlined(), n));
             }
         }
-        let mut lists = Lists::default();
-        for (k, c) in chains.list.into_iter().enumerate() {
-            lists.push(k as u32, c);
-        }
-        (crate::flat::keep(steps), lists.keep())
+        (crate::flat::keep(steps), kept)
     }
 
     /// Function `id`.
@@ -464,7 +467,7 @@ impl Tables {
 
     /// How many inline chains there are (see chain).
     pub fn chains(&self) -> u32 {
-        self.chains.0.len() as u32
+        self.chains.len() as u32
     }
 
     /// Block `n` of `func`.
@@ -488,12 +491,40 @@ impl Tables {
     /// "run to a line" looks for.
     pub fn block_lines(&self, func: u32, n: u32) -> impl Iterator<Item = Loc> + '_ {
         self.block(func, n).into_iter().flat_map(|b| b.steps)
-            .flat_map(move |s| core::iter::once(s.loc).chain(self.chain(s.inlined()).iter().map(|site| site.loc)))
+            .flat_map(move |s| core::iter::once(s.loc).chain(self.chain(s.inlined()).map(|site| site.loc)))
     }
 
-    /// Inline chain `k` (see Step), innermost first, or none.
-    pub fn chain(&self, k: Option<u32>) -> &'static [Site] {
-        k.map_or(&[], |k| crate::flat::list(self.chains.0, self.chains.1, k))
+    /// Inline chain `k`'s sites (see Step), innermost first; none, none.
+    pub fn chain(&self, mut k: Option<u32>) -> impl Iterator<Item = Site> + Clone + '_ {
+        core::iter::from_fn(move || {
+            let c = self.chains.get(k? as usize)?;
+            k = (c.outer != u32::MAX).then_some(c.outer);
+            Some(c.site)
+        })
+    }
+
+    /// How many sites chain `k` has.
+    pub fn depth(&self, k: Option<u32>) -> u32 {
+        k.and_then(|k| self.chains.get(k as usize)).map_or(0, |c| c.depth)
+    }
+
+    /// Chain `k` without its innermost `n` sites: the chain it is inlined
+    /// into, `n` out (each chain once: the same sites, the same chain).
+    pub fn outer(&self, mut k: Option<u32>, n: u32) -> Option<u32> {
+        for _ in 0..n {
+            k = k.and_then(|k| self.chains.get(k as usize)).and_then(|c| (c.outer != u32::MAX).then_some(c.outer));
+        }
+        k
+    }
+
+    /// The outermost part chains `a` and `b` share, if any.
+    pub fn common(&self, a: Option<u32>, b: Option<u32>) -> Option<u32> {
+        let (da, db) = (self.depth(a), self.depth(b));
+        let (mut a, mut b) = (self.outer(a, da.saturating_sub(db)), self.outer(b, db.saturating_sub(da)));
+        while a != b {
+            (a, b) = (self.outer(a, 1), self.outer(b, 1));
+        }
+        a
     }
 
     /// Function `func`'s argument values, from a call's words (trace::Args):
@@ -554,7 +585,7 @@ mod tests {
                       F\t1\tf\t0:1\t0\nL\t1\t0\t2:3@0@1;0:4\n";
         let t = Tables::parse(code, "W\tget_current\tarch/wasm/include/asm/current.h\t12\nW\tspin_lock\tinclude/linux/spinlock.h\t7\n");
         let steps = t.block(1, 0).unwrap().steps;
-        let chain = |s: &Step| s.inlined().map(|k| t.chain(Some(k)).iter().map(|site| t.inline_name(site.name)).collect::<Vec<_>>());
+        let chain = |s: &Step| s.inlined().map(|k| t.chain(Some(k)).map(|site| t.inline_name(site.name)).collect::<Vec<_>>());
         assert_eq!((t.file(steps[0].loc), steps[0].loc.line, chain(&steps[0])), ("include/linux/spinlock.h", 9, Some(alloc::vec!["spin_lock"])));
         assert_eq!((steps[1].loc.line, steps[1].inlined()), (4, None));
         // The block's own location was get_current's: now its first line's.

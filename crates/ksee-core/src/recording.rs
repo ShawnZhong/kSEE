@@ -209,7 +209,7 @@ impl Recording {
         let ids: BTreeSet<u32> = t.functions().filter(|(_, f)| is(f.name)).map(|(id, _)| id).collect();
         // The inline chains with one of them in them.
         let inl: BTreeSet<u32> = t.inline_names().enumerate().filter(|(_, n)| is(n)).map(|(k, _)| k as u32).collect();
-        let chains: BTreeSet<u32> = (0..t.chains()).filter(|&c| t.chain(Some(c)).iter().any(|s| inl.contains(&s.name))).collect();
+        let chains: BTreeSet<u32> = (0..t.chains()).filter(|&c| t.chain(Some(c)).any(|s| inl.contains(&s.name))).collect();
         let inlined = move |func: u32, n: u32| !chains.is_empty() && t.block(func, n)
             .is_some_and(|b| b.steps.iter().any(|s| s.inlined().is_some_and(|c| chains.contains(&c))));
         // (Per task: whether its last block ran some inlined.)
@@ -262,7 +262,7 @@ impl Recording {
             let mut out: Vec<u32> = Vec::with_capacity(self.calls.calls.len());
             for k in 0..self.calls.calls.len() as u32 {
                 let d = self.calls.caller(t, k).map_or(0, |(parent, at)| {
-                    out[parent as usize] + 1 + t.chain(at.step.and_then(|s| s.inlined())).len() as u32
+                    out[parent as usize] + 1 + t.depth(at.step.and_then(|s| s.inlined()))
                 });
                 out.push(d);
             }

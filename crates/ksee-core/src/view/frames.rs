@@ -89,9 +89,8 @@ impl View<'_> {
     /// Where line step `s` is (a store's, a write's place): the line, not
     /// what it compared.
     pub(super) fn line_only(&self, s: &LineStep) -> Line {
-        let chain = &self.tables.chain(s.inlined)[s.cut as usize..];
         Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.tables.function(s.func).map_or("?", |f| f.name), file: self.tables.file(s.loc), line: s.loc.line,
-               depth: self.rec.frame_depth(self.tables, s.call) + chain.len() as u32, turn: s.turn, tests: Vec::new(),
+               depth: self.rec.frame_depth(self.tables, s.call) + self.tables.depth(s.inlined) - s.cut, turn: s.turn, tests: Vec::new(),
                called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }) }
     }
 

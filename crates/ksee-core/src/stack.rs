@@ -299,15 +299,15 @@ impl Calls {
                 // outermost first; from this call's line before, or, the
                 // call just entered, from none.)
                 let before = match out.iter().rev().find(|l| l.depth <= c.depth) {
-                    Some(l) if (l.func, l.depth) == (c.func, c.depth) => &t.chain(l.inlined)[l.cut as usize..],
-                    _ => &[][..],
+                    Some(l) if (l.func, l.depth) == (c.func, c.depth) => t.outer(l.inlined, l.cut),
+                    _ => None,
                 };
-                let into = t.chain(s.inlined());
-                let same = into.iter().rev().zip(before.iter().rev()).take_while(|(a, b)| a == b).count();
-                for level in (0..into.len() - same).rev() {
-                    let (loc, outer) = (into[level].loc, &into[level + 1..]);
+                let into = s.inlined();
+                let same = t.depth(t.common(into, before));
+                for (level, site) in t.chain(into).enumerate().take((t.depth(into) - same) as usize).collect::<Vec<_>>().into_iter().rev() {
+                    let (loc, outer) = (site.loc, t.outer(into, level as u32 + 1));
                     // (A site with no line, the compiler's own: no step, as for lines.)
-                    if loc.line != 0 && !out.last().is_some_and(|l| l.loc == loc && &t.chain(l.inlined)[l.cut as usize..] == outer) {
+                    if loc.line != 0 && !out.last().is_some_and(|l| l.loc == loc && t.outer(l.inlined, l.cut) == outer) {
                         out.push(LineStep { loc, cut: level as u32 + 1, ..step });
                     }
                 }
