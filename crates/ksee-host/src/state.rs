@@ -25,7 +25,6 @@ pub const KERNEL_BASE: u32 = 0x20_0000;
 /// --global-base), its heap after it (checked at start).
 pub const RAM_BYTES: u32 = 32 << 20;
 
-/// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h: the same).
 /// A disk's bytes, `len` long: its blocks that are not all zeros (the
 /// others read as zeros: an image of mostly free space, 8 MiB, is a few
 /// blocks).
@@ -69,6 +68,7 @@ impl Disk {
     }
 }
 
+/// Interrupt lines (WASM_IRQ_* in the kernel's asm/wasm.h: the same).
 pub const IRQ_TIMER: u32 = 0;
 pub const IRQ_CONSOLE: u32 = 1;
 pub const IRQ_DISK: u32 = 2;

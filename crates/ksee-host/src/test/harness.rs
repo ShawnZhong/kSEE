@@ -25,6 +25,7 @@ pub async fn until(mut f: impl FnMut() -> bool, ms: i32, n: usize) -> bool {
 
 /// A call a line made, as the kernel left it once quiet: its id, whether it
 /// finished (not: it blocked) and its result, its syscall summary.
+#[derive(Default)]
 pub struct LineResult {
     pub id: Option<u32>,
     pub done: bool,
@@ -82,16 +83,16 @@ impl KernelHarness {
             Ok(m) => m,
             Err(e) => {
                 self.check(format!("{text}: {e}"), false);
-                return LineResult { id: None, done: false, ret: None, syscall: None, var: None };
+                return LineResult::default();
             }
         };
         let id = match made {
             crate::machine::Made::Call(id) => id,
-            crate::machine::Made::Decl(v) => return LineResult { id: None, done: false, ret: None, syscall: None, var: Some((v.ty, v.addr, v.count)) },
+            crate::machine::Made::Decl(v) => return LineResult { var: Some((v.ty, v.addr, v.count)), ..Default::default() },
         };
         self.quiet().await;
         let f = self.finished(id);
-        LineResult { id: Some(id), done: f.is_some(), ret: f.flatten(), syscall: self.syscall(id), var: None }
+        LineResult { id: Some(id), done: f.is_some(), ret: f.flatten(), syscall: self.syscall(id), ..Default::default() }
     }
 
     pub async fn line(&mut self, text: &str) -> LineResult {
