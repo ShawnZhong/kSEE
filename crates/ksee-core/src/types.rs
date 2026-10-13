@@ -39,7 +39,7 @@ pub enum Base {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Member {
-    pub name: String,
+    pub name: &'static str,
     pub bit_offset: u32,
     /// 0 unless a bitfield.
     pub bit_size: u32,
@@ -71,6 +71,7 @@ pub struct TaskId {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(bound(deserialize = "'de: 'static"))]
 pub enum Kind {
     Void,
     Base(Base),
@@ -78,14 +79,14 @@ pub enum Kind {
     Array { elem: u32, count: u32 },
     Struct(Vec<Member>),
     Union(Vec<Member>),
-    Enum(Vec<(String, i64)>),
+    Enum(Vec<(&'static str, i64)>),
     Typedef(u32),
     Func,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Type {
-    pub name: String,
+    pub name: &'static str,
     pub size: u32,
     pub kind: Kind,
 }
@@ -96,25 +97,25 @@ pub struct Type {
 pub struct Types {
     pub types: Vec<Type>,
     /// Struct, union, enum and typedef names -> ids.
-    type_ids: BTreeMap<String, u32>,
+    type_ids: BTreeMap<&'static str, u32>,
     /// Variables with fixed addresses: name -> (address, type).
-    pub globals: BTreeMap<String, (u32, u32)>,
+    pub globals: BTreeMap<&'static str, (u32, u32)>,
     /// Syscall names, by number.
-    pub syscalls: BTreeMap<u32, String>,
+    pub syscalls: BTreeMap<u32, &'static str>,
     /// Functions' parameters, by function id (the probes' F lines'): [(parameter, type)].
     pub params: BTreeMap<u32, Vec<(&'static str, u32)>>,
     /// The function ids of the names (the first of a name: for the
     /// syscalls' bodies, looked for by name).
-    function_ids: BTreeMap<String, u32>,
+    function_ids: BTreeMap<&'static str, u32>,
     /// Functions' local variables, by function id: [(variable, type,
     /// offset from the frame base, if it is in memory)].
     pub locals: BTreeMap<u32, Vec<(&'static str, u32, Option<u32>)>>,
     /// Constants from the UAPI headers (flags, errno names): name -> value.
-    pub constants: BTreeMap<String, i64>,
+    pub constants: BTreeMap<&'static str, i64>,
     /// Where a function (the inline ones too, which have no probe), a type
     /// (struct, union, enum, typedef) or a global is declared: name ->
     /// (file, line).
-    pub declared: BTreeMap<String, (&'static str, u32)>,
+    pub declared: BTreeMap<&'static str, (&'static str, u32)>,
 }
 
 impl Types {
@@ -122,7 +123,7 @@ impl Types {
         let mut types = Vec::new();
         let mut kinds: Vec<(String, Vec<String>)> = Vec::new();
         let mut members: BTreeMap<u32, Vec<Member>> = BTreeMap::new();
-        let mut values: BTreeMap<u32, Vec<(String, i64)>> = BTreeMap::new();
+        let mut values: BTreeMap<u32, Vec<(&'static str, i64)>> = BTreeMap::new();
         let mut globals = BTreeMap::new();
         let mut syscalls = BTreeMap::new();
         let mut params = BTreeMap::new();
@@ -130,8 +131,8 @@ impl Types {
         let mut locals = BTreeMap::new();
         let mut constants = BTreeMap::new();
         let mut declared = BTreeMap::new();
-        // (Each name once: a file's, a parameter's, a local's, each the same
-        // in thousands of declarations and functions.)
+        // (Each name once: a file's, a parameter's, a local's, a member's,
+        // each the same in thousands of declarations and functions.)
         let mut pool = Names::default();
         let mut intern = |s: &str| pool.name(s);
         for line in text.lines() {
@@ -141,22 +142,22 @@ impl Types {
                 Some(&"T") if c.len() >= 5 => {
                     let id = num(1) as usize;
                     if types.len() <= id {
-                        types.resize(id + 1, Type { name: String::new(), size: 0, kind: Kind::Void });
+                        types.resize(id + 1, Type { name: "", size: 0, kind: Kind::Void });
                         kinds.resize(id + 1, (String::new(), Vec::new()));
                     }
-                    types[id].name = c[3].to_string();
+                    types[id].name = intern(c[3]);
                     types[id].size = num(4);
                     kinds[id] = (c[2].to_string(), c[5..].iter().map(|s| s.to_string()).collect());
                 }
                 Some(&"M") if c.len() == 6 => members.entry(num(1)).or_default().push(Member {
-                    name: c[2].to_string(), bit_offset: num(3), bit_size: num(4), ty: num(5),
+                    name: intern(c[2]), bit_offset: num(3), bit_size: num(4), ty: num(5),
                 }),
                 Some(&"S") if c.len() >= 3 => {
-                    syscalls.insert(num(1), c[2].to_string());
+                    syscalls.insert(num(1), intern(c[2]));
                 }
                 Some(&"C") if c.len() == 3 => {
                     if let Ok(v) = c[2].parse() {
-                        constants.insert(c[1].to_string(), v);
+                        constants.insert(intern(c[1]), v);
                     }
                 }
                 // (P: id, name, then name:type for each parameter.)
@@ -166,7 +167,7 @@ impl Types {
                         (intern(n), t.parse().unwrap_or(0))
                     }).collect();
                     params.insert(num(1), list);
-                    function_ids.entry(c[2].to_string()).or_insert(num(1));
+                    function_ids.entry(intern(c[2])).or_insert(num(1));
                 }
                 // (Q: name:type:offset for each local, the offset empty
                 // for one not in memory.)
@@ -183,13 +184,13 @@ impl Types {
                     locals.insert(num(1), list);
                 }
                 Some(&"W") if c.len() == 4 => {
-                    declared.entry(c[1].to_string()).or_insert((intern(c[2]), num(3)));
+                    declared.entry(intern(c[1])).or_insert((intern(c[2]), num(3)));
                 }
                 Some(&"G") if c.len() == 4 => {
-                    globals.insert(c[1].to_string(), (num(2), num(3)));
+                    globals.insert(intern(c[1]), (num(2), num(3)));
                 }
                 Some(&"V") if c.len() == 4 => {
-                    values.entry(num(1)).or_default().push((c[2].to_string(), c[3].parse().unwrap_or(0)))
+                    values.entry(num(1)).or_default().push((intern(c[2]), c[3].parse().unwrap_or(0)))
                 }
                 _ => {}
             }
@@ -218,14 +219,14 @@ impl Types {
             if matches!(t.kind, Kind::Struct(_) | Kind::Union(_) | Kind::Enum(_) | Kind::Typedef(_))
                 && !t.name.is_empty()
             {
-                type_ids.entry(t.name.clone()).or_insert(id as u32);
+                type_ids.entry(t.name).or_insert(id as u32);
             }
         }
         Types { types, type_ids, globals, syscalls, params, function_ids, locals, constants, declared }
     }
 
     pub fn get(&self, id: u32) -> &Type {
-        static VOID: Type = Type { name: String::new(), size: 0, kind: Kind::Void };
+        static VOID: Type = Type { name: "", size: 0, kind: Kind::Void };
         self.types.get(id as usize).unwrap_or(&VOID)
     }
 
@@ -241,7 +242,7 @@ impl Types {
 
     /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY).
     pub fn syscall_params(&self, name: &str) -> Option<&Vec<(&'static str, u32)>> {
-        self.params.get(self.function_ids.get(&format!("{}{name}", crate::arch::SYSCALL_BODY))?)
+        self.params.get(self.function_ids.get(format!("{}{name}", crate::arch::SYSCALL_BODY).as_str())?)
     }
 
     /// Every pointer in a value of type `ty` (it, or in the structs,
@@ -272,7 +273,7 @@ impl Types {
 
     /// Syscall `nr`'s name, or its number if this kernel has none.
     pub fn syscall_name(&self, nr: u32) -> String {
-        self.syscalls.get(&nr).cloned().unwrap_or_else(|| nr.to_string())
+        self.syscalls.get(&nr).map_or_else(|| nr.to_string(), |n| n.to_string())
     }
 
     /// A call's result as the page says it: a number (in hex past 0xffff:
@@ -288,7 +289,7 @@ impl Types {
     /// Syscall `name`'s parameters, each as C declares it: ["unsigned int
     /// fd"] for close; none if this kernel has no syscall `name`.
     pub fn params_of(&self, name: &str) -> Option<Vec<String>> {
-        self.syscalls.values().find(|n| n.as_str() == name)?;
+        self.syscalls.values().find(|&&n| n == name)?;
         Some(self.syscall_params(name).into_iter().flatten().map(|(p, ty)| {
             let t = self.name(*ty);
             alloc::format!("{t}{}{p}", if t.ends_with('*') { "" } else { " " })
@@ -298,7 +299,7 @@ impl Types {
     /// The errno name of `n` (a failed call's result is -n): ENOENT for 2.
     pub(crate) fn errno(&self, n: i64) -> Option<&str> {
         let is = |k: &str| k.strip_prefix(crate::arch::ERRNO).is_some_and(|r| !r.is_empty() && r.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
-        (1..=crate::arch::MAX_ERRNO).contains(&n).then(|| self.constants.iter().find(|&(k, &v)| v == n && is(k)).map(|(k, _)| k.as_str())).flatten()
+        (1..=crate::arch::MAX_ERRNO).contains(&n).then(|| self.constants.iter().find(|&(k, &v)| v == n && is(k)).map(|(k, _)| *k)).flatten()
     }
 
     /// A struct, union, enum or typedef by name ("task_struct").
@@ -360,7 +361,7 @@ impl Types {
             Kind::Union(_) => alloc::format!("union {}", or_anon(&t.name)),
             Kind::Enum(_) => alloc::format!("enum {}", or_anon(&t.name)),
             Kind::Func => "func".into(),
-            _ => t.name.clone(),
+            _ => t.name.into(),
         }
     }
 

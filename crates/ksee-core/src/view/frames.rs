@@ -300,16 +300,16 @@ impl View<'_> {
 
 /// Value `v` as the constants whose names start with one of `prefixes`
 /// name it: one equal to it, or flags (one bit each) that make it up.
-fn constant_name(constants: &BTreeMap<String, i64>, prefixes: &[&str], v: i64) -> Option<String> {
-    let fits: Vec<(&String, i64)> = constants.iter().filter(|(n, _)| prefixes.iter().any(|p| n.starts_with(p))).map(|(n, &x)| (n, x)).collect();
+fn constant_name(constants: &BTreeMap<&'static str, i64>, prefixes: &[&str], v: i64) -> Option<String> {
+    let fits: Vec<(&str, i64)> = constants.iter().filter(|(n, _)| prefixes.iter().any(|p| n.starts_with(p))).map(|(&n, &x)| (n, x)).collect();
     if let Some((n, _)) = fits.iter().find(|(_, x)| *x == v) {
-        return Some((*n).clone());
+        return Some(n.to_string());
     }
     if v <= 0 {
         return None;
     }
     let names: Vec<&str> = (0..32).filter(|b| v >> b & 1 != 0)
-        .filter_map(|b| fits.iter().find(|(_, x)| *x == 1 << b).map(|(n, _)| n.as_str())).collect();
+        .filter_map(|b| fits.iter().find(|(_, x)| *x == 1 << b).map(|&(n, _)| n)).collect();
     (names.len() == v.count_ones() as usize).then(|| names.join(" | "))
 }
 

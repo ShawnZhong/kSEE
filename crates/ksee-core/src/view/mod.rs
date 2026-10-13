@@ -224,7 +224,7 @@ impl View<'_> {
                 task: self.task(addr, i),
                 state,
                 doing: last.and_then(|j| {
-                    let syscall = self.rec.run_at(j).and_then(|s| t.types.syscalls.get(&self.rec.runs[s].nr?).cloned());
+                    let syscall = self.rec.run_at(j).and_then(|s| t.types.syscalls.get(&self.rec.runs[s].nr?).map(|n| n.to_string()));
                     syscall.or_else(|| self.rec.calls.stack_at(t, j, None).into_iter().next().and_then(|c| t.functions.get(&c.func)).map(|f| f.name.to_string()))
                 }),
             }

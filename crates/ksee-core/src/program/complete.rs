@@ -34,7 +34,7 @@ impl Completion {
 pub fn completions(types: &Types, c: &Context, names: &[(&str, &Sym)], common: &[String]) -> Vec<Completion> {
     let Some(param) = c.param else {
         let w = c.call.as_str();
-        let all: Vec<&str> = types.syscalls.values().map(String::as_str).collect();
+        let all: Vec<&str> = types.syscalls.values().copied().collect();
         let starts = all.iter().copied().filter(|n| n.starts_with(w));
         let inside = all.iter().copied().filter(|n| !w.is_empty() && !n.starts_with(w) && n.contains(w));
         let mut out: Vec<&str> = Vec::new();
@@ -61,7 +61,7 @@ pub fn completions(types: &Types, c: &Context, names: &[(&str, &Sym)], common: &
     })).collect();
     let pname = types.syscall_params(&c.call).and_then(|p| p.get(param)).map_or("", |p| p.0);
     let fits = crate::arch::consts_of(&c.call, pname);
-    let mut consts: Vec<(&String, i64)> = types.constants.iter().filter(|(n, _)| n.starts_with(w)).map(|(n, &v)| (n, v)).collect();
+    let mut consts: Vec<(&str, i64)> = types.constants.iter().filter(|(n, _)| n.starts_with(w)).map(|(&n, &v)| (n, v)).collect();
     consts.sort_by_key(|(n, _)| !fits.iter().any(|f| n.starts_with(f)));
     out.extend(consts.into_iter().map(|(n, v)| item(n, v.to_string())));
     if "NULL".starts_with(w) {

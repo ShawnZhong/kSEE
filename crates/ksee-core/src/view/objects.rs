@@ -127,7 +127,7 @@ impl View<'_> {
                 Some(k) => k,
                 None => {
                     let task = self.rec.tasks[t.writes[0].i];
-                    let label = match (r.kind, types.get(types.resolve(r.ty)).name.as_str()) {
+                    let label = match (r.kind, types.get(types.resolve(r.ty)).name) {
                         (RegionKind::Object, name) if !name.is_empty() => name.to_string(),
                         _ => r.what.clone(),
                     };

@@ -422,7 +422,7 @@ impl View<'_> {
         let records = &self.rec.records;
         // (The kernel's globals, by address, for the stores nothing else holds.)
         let mut globals: Vec<(u32, u32, &str, u32)> = types.globals.iter()
-            .map(|(name, &(addr, ty))| (addr, types.size_of(ty), name.as_str(), ty)).filter(|g| g.1 > 0).collect();
+            .map(|(&name, &(addr, ty))| (addr, types.size_of(ty), name, ty)).filter(|g| g.1 > 0).collect();
         globals.sort_unstable();
         // (The regions by address: a store's are those starting at most the
         // largest one's size below it.)

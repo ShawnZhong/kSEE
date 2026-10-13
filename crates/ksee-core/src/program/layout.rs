@@ -95,7 +95,7 @@ impl Types {
         let members = self.members(&self.get(self.resolve(ty)).kind);
         let last = members.last()?;
         let Kind::Array { elem, count: 0 } = self.get(self.resolve(last.ty)).kind else { return None };
-        let size = members.iter().find(|m| crate::arch::RECORD_LENGTHS.contains(&m.name.as_str()))?;
+        let size = members.iter().find(|m| crate::arch::RECORD_LENGTHS.contains(&m.name))?;
         let mut out = Vec::new();
         let mut at = 0;
         while at < len && out.len() < 64 {
