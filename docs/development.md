@@ -50,10 +50,10 @@ dependency set, then runs it. `ksee build` performs these stages:
    source is part of the kernel flags, so changing the pass rebuilds the
    kernel); compile freestanding `user/init.c` and `user/prog.c` and archive
    them with `user/note.txt` as `user/initramfs.list` says (the kernel's
-   `gen_init_cpio`); make the disk, an ext4 image of `user/disk/`; copy
-   the kernel without DWARF and `ksee.code` to `target/vmlinux`
-   (`llvm-objcopy`).
-2. Pack `linux/vmlinux` into `target/site/`: combine probe descriptions with
+   `gen_init_cpio`); make the disk, an ext4 image of `user/disk/`; split
+   the kernel (`llvm-objcopy`): `target/vmlinux`, without DWARF and
+   `ksee.code`, and `target/vmlinux.debug`, only those.
+2. Pack `target/vmlinux.debug` into `target/site/`: combine probe descriptions with
    DWARF-derived types, symbols, syscalls, constants, and declaration
    locations into the tables (`Tables::to_bytes`, `target/tables`); copy
    referenced kernel sources; and write `vmlinux.gz`, `tables.gz`, then
@@ -116,7 +116,7 @@ Do not edit generated output as source:
 | `target/site/lessons.json` | Built lesson index and content. |
 | `target/site/NAME.html`, `index.html` | The page, once per lesson (and the first's, `index.html`), from `web/index.html`: the lesson's title and description (its first paragraph), and its text as plain HTML for search engines and link previews (`index.html`: every lesson's title), which the page replaces once it runs. |
 | `target/site/sitemap.xml` | Every page, at the address `ksee deploy` publishes the site at (the origin's GitHub Pages), for search engines (submit it in Google's Search Console). |
-| `target/vmlinux`, `target/tables` | The page's kernel (`llvm-objcopy`'s: without DWARF and `ksee.code`) and its tables (the pack's), uncompressed: the site's copies' sources. |
+| `target/vmlinux`, `target/vmlinux.debug`, `target/tables` | The kernel split (`llvm-objcopy`'s): the page's, without DWARF and `ksee.code`, and those, the pack's; and its tables (the pack's), uncompressed: the site's copies' sources. |
 | `target/initramfs/` | Intermediate programs, ext4 image, fixture tree, and archive. |
 | `target/chrome/` | The tests' browser, Chrome's headless shell (`make chrome`). |
 

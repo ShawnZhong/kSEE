@@ -28,10 +28,12 @@ fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'
 }
 
 /// Write the kernel's tables (parsed here, once, not by the page) and its
-/// referenced sources to their final paths.
-pub fn kernel(kernel: &Path, tables_out: &Path, sources_out: &Path) {
-    let image = crate::read(&kernel.join("vmlinux"));
-    let sections = crate::or_fail(custom_sections(&image), "vmlinux");
+/// referenced sources to their final paths: of its description `debug`
+/// (the Makefile's vmlinux.debug: its DWARF and ksee.code), and the tree
+/// `kernel` (its UAPI headers and sources).
+pub fn kernel(debug: &Path, kernel: &Path, tables_out: &Path, sources_out: &Path) {
+    let image = crate::read(debug);
+    let sections = crate::or_fail(custom_sections(&image), debug.display());
     let mut types = crate::or_fail(dwarf::types(&sections), "DWARF");
     let code = String::from_utf8_lossy(sections.get("ksee.code").copied().unwrap_or(&[])).into_owned();
     for (name, value) in constants(&kernel.join("usr/include")) {
@@ -56,8 +58,8 @@ pub fn kernel(kernel: &Path, tables_out: &Path, sources_out: &Path) {
               tables.len() >> 10, bytes >> 10);
 }
 
-/// The custom sections of a wasm module (the kernel's DWARF, the plugin's
-/// ksee.code), by name, in place.
+/// The custom sections of a wasm module (vmlinux.debug's: the kernel's
+/// DWARF, the plugin's ksee.code), by name, in place.
 fn custom_sections(bytes: &[u8]) -> Result<BTreeMap<&str, &[u8]>, wasmparser::BinaryReaderError> {
     let mut out = BTreeMap::new();
     for payload in wasmparser::Parser::new(0).parse_all(bytes) {
