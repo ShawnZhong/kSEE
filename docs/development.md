@@ -177,12 +177,14 @@ workspace's default members (a bare `cargo test`) are the native crates.
 2. The site is built, as `ksee build` builds it: the tests are in its module.
 3. Headless Chrome runs the kernel suite (`ksee-host`): it boots Linux,
    exercises recorded syscalls, and checks stacks, lines, memory history,
-   origins, tasks, and timings; then the lessons suite, every lesson and try.
+   origins, tasks, and timings; then the lessons suite, every lesson and try
+   (the module's memory after each).
 4. With `--ui`, it also runs the page's suites through the DOM: read (the
    main one, in named phases: made, links and steps, timeline, tip, window,
    editor, panels, program), url (a changed program from the URL), tasks
    (the pipe lesson's task columns, the idle task clicked into), disk (the
-   durable lesson's fsync in the Disk tab) and responsive (a phone). Test
+   durable lesson's fsync in the Disk tab), responsive (a phone) and tour
+   (every lesson as a reader goes, the page's memory after each). Test
    names can also be given directly for focused runs, such as
    `./ksee.sh test read`.
 
