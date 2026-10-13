@@ -82,9 +82,6 @@ pub fn test(names: &[String], built: bool) {
         run(Command::new("cargo").args(["test", "--locked", "--release", "-p", "ksee-core", "-p", "ksee-cli"]));
         build();
     }
-    if !std::path::Path::new(crate::chrome::BROWSER).exists() {
-        crate::fail(&format!("no {}: run ./setup.sh", crate::chrome::BROWSER));
-    }
     for name in names {
         if !crate::chrome::test(name) {
             crate::fail(&format!("the {name} test failed"));
