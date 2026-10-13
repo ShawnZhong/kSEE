@@ -9,7 +9,7 @@
 //!   ksee deploy              build, then push the page to origin's gh-pages
 //!   ksee patch               write linux.patch from linux/ (the port, as it
 //!                            differs from the release)
-//!   ksee serve [--port=N]    serve target/site (the page, as built) for
+//!   ksee serve [--port=N]    serve build/site (the page, as built) for
 //!                            a browser
 //!
 //! and the build's steps that are code (the Makefile runs them):

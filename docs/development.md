@@ -18,7 +18,8 @@ shape the code.
 | `crates/ksee-cli/` | Build, packing, test, browser driver, server, deployment, and patch commands. |
 | `user/` | What the kernel runs: freestanding `/init`, the syscall runner, their headers, the initramfs list, and the disk's files. |
 | `web/` | The page: its static frame, styles, and JavaScript loader (`index.html`), and the lessons (`lessons/*.json`). |
-| `target/site/` | Generated deployable site. |
+| `build/` | Everything the build makes (`target/` is Cargo's alone, so `cargo clean` leaves the kernel's build). |
+| `build/site/` | Generated deployable site. |
 
 The crate dependencies are intentional:
 
@@ -47,25 +48,25 @@ ksee command's (`ksee tables`, `ksee sources`, `ksee lessons`, `ksee bindgen`). 
 
 1. The kernel's half, C and LLVM: require LLVM 22; fetch
    Linux stable `v7.2.7` into `linux/` if it is absent, verify the pinned
-   commit, apply `linux.patch` and link `arch/wasm/` in; build the pass, `plugin/ksee-trace.cpp`, into `target/ksee-trace.so`; run kbuild
+   commit, apply `linux.patch` and link `arch/wasm/` in; build the pass, `plugin/ksee-trace.cpp`, into `build/ksee-trace.so`; run kbuild
    for the WebAssembly kernel and its UAPI headers (a hash of the plugin's
    source is part of the kernel flags, so changing the pass rebuilds the
    kernel); compile freestanding `user/init.c` and `user/prog.c` and archive
    them with `user/note.txt` as `user/initramfs.list` says (the kernel's
    `gen_init_cpio`); make the disk, an ext4 image of `user/disk/`; split
-   the kernel (`llvm-objcopy`): `target/vmlinux`, without DWARF and
-   the `ksee` section, and `target/vmlinux.debug`, only those.
-2. Pack `target/vmlinux.debug` (`ksee tables`): combine probe descriptions with
+   the kernel (`llvm-objcopy`): `build/vmlinux`, without DWARF and
+   the `ksee` section, and `build/vmlinux.debug`, only those.
+2. Pack `build/vmlinux.debug` (`ksee tables`): combine probe descriptions with
    DWARF-derived types, symbols, syscalls, constants, and declaration
-   locations into the tables (`Tables::to_bytes`, `target/tables`); copy
-   the kernel sources it names to `target/site/src/` (`ksee sources`); gzip `vmlinux`,
-   `tables`, `initramfs.cpio` and `disk.img` into `target/site/`.
+   locations into the tables (`Tables::to_bytes`, `build/tables`); copy
+   the kernel sources it names to `build/site/src/` (`ksee sources`); gzip `vmlinux`,
+   `tables`, `initramfs.cpio` and `disk.img` into `build/site/`.
 3. Write the lessons (`ksee lessons`, `lessons.rs`): `web/lessons/*.json` in course order
    into `lessons.json`, a page per lesson from `web/index.html`, and
    `sitemap.xml`.
 4. Build `ksee-page` for `wasm32-unknown-unknown` with `--locked --release`.
    Cargo links `ksee-host` and `ksee-core` into the same outer module, then
-   wasm-bindgen writes `target/site/pkg/` (`ksee bindgen`).
+   wasm-bindgen writes `build/site/pkg/` (`ksee bindgen`).
 
 Make tracks the files; kbuild and cargo, asked each time, track their own.
 A new ksee command packs the kernel again.
@@ -80,7 +81,7 @@ fixed, its times the release's (`SOURCE_DATE_EPOCH`).
 
 LLVM 22, as [getting-started.md](getting-started.md#use-a-custom-llvm-22-build)
 says. The build does not track which LLVM it used: after switching, rebuild the
-plugin and the kernel (remove `target/ksee-trace.so` and `linux/`).
+plugin and the kernel (remove `build/ksee-trace.so` and `linux/`).
 
 Cargo build and test commands use `--locked`, so `Cargo.lock` is the selected
 dependency set.
@@ -92,9 +93,9 @@ and passes all arguments through.
 
 | Command | Behavior |
 |---|---|
-| `./ksee.sh` | Build changed outputs, then serve `target/site/` on port 8000. |
+| `./ksee.sh` | Build changed outputs, then serve `build/site/` on port 8000. |
 | `./ksee.sh build` | Build the plugin, kernel, browser module, programs, metadata, lessons, and site. |
-| `./ksee.sh serve [--port=N]` | Serve the existing `target/site/` without rebuilding it. |
+| `./ksee.sh serve [--port=N]` | Serve the existing `build/site/` without rebuilding it. |
 | `./ksee.sh test [--built] [--ui \| NAME ...]` | Run native tests and build (`--built`: not, earlier steps did), then the selected browser suites in headless Chrome; the default is `kernel` and `lessons`. |
 | `./ksee.sh deploy` | Build, then publish the generated site to the remote `gh-pages` branch. |
 | `./ksee.sh patch` | Write `linux.patch` from Linux's own files' difference between `linux/` and `v7.2.7` (`make patch`). |
@@ -108,18 +109,18 @@ Do not edit generated output as source:
 
 | Output | Contents |
 |---|---|
-| `target/linux/` | Kbuild's output, out of the tree (`linux/` and `arch/wasm/` stay sources): `vmlinux`, the raw instrumented kernel with DWARF, and the UAPI headers (with `gen_init_cpio`, CI's cache: see below). |
-| `target/site/` | Normal site served locally and deployed. |
-| `target/site/pkg/` | wasm-bindgen output for the combined page/runtime module. |
-| `target/site/vmlinux.gz` | Instrumented, packed kernel without DWARF and the `ksee` section. |
-| `target/site/tables.gz` | The kernel's code and type tables, parsed: flat records the page reads in place (`Tables::to_bytes`, `flat.rs`). |
-| `target/site/src/` | Kernel source files referenced by probe metadata. |
-| `target/site/initramfs.cpio.gz` | `/init`, `/bin/prog`, root fixture, and ext4 image. |
-| `target/site/lessons.json` | Built lesson index and content. |
-| `target/site/NAME.html`, `index.html` | The page, once per lesson (and the first's, `index.html`), from `web/index.html`: the lesson's title and description (its first paragraph), and its text as plain HTML for search engines and link previews (`index.html`: every lesson's title), which the page replaces once it runs. |
-| `target/site/sitemap.xml` | Every page, at the address `ksee deploy` publishes the site at (the origin's GitHub Pages), for search engines (submit it in Google's Search Console). |
-| `target/vmlinux`, `target/vmlinux.debug`, `target/tables` | The kernel split (`llvm-objcopy`'s): the page's, without DWARF and the `ksee` section, and those, the pack's; and its tables (the pack's), uncompressed: the site's copies' sources. |
-| `target/user/` | The programs, the initramfs, and the disk's ext4 image. |
+| `build/linux/` | Kbuild's output, out of the tree (`linux/` and `arch/wasm/` stay sources): `vmlinux`, the raw instrumented kernel with DWARF, and the UAPI headers (with `gen_init_cpio`, CI's cache: see below). |
+| `build/site/` | Normal site served locally and deployed. |
+| `build/site/pkg/` | wasm-bindgen output for the combined page/runtime module. |
+| `build/site/vmlinux.gz` | Instrumented, packed kernel without DWARF and the `ksee` section. |
+| `build/site/tables.gz` | The kernel's code and type tables, parsed: flat records the page reads in place (`Tables::to_bytes`, `flat.rs`). |
+| `build/site/src/` | Kernel source files referenced by probe metadata. |
+| `build/site/initramfs.cpio.gz` | `/init`, `/bin/prog`, root fixture, and ext4 image. |
+| `build/site/lessons.json` | Built lesson index and content. |
+| `build/site/NAME.html`, `index.html` | The page, once per lesson (and the first's, `index.html`), from `web/index.html`: the lesson's title and description (its first paragraph), and its text as plain HTML for search engines and link previews (`index.html`: every lesson's title), which the page replaces once it runs. |
+| `build/site/sitemap.xml` | Every page, at the address `ksee deploy` publishes the site at (the origin's GitHub Pages), for search engines (submit it in Google's Search Console). |
+| `build/vmlinux`, `build/vmlinux.debug`, `build/tables` | The kernel split (`llvm-objcopy`'s): the page's, without DWARF and the `ksee` section, and those, the pack's; and its tables (the pack's), uncompressed: the site's copies' sources. |
+| `build/user/` | The programs, the initramfs, and the disk's ext4 image. |
 
 ## Page modules and state
 
@@ -199,9 +200,9 @@ under a minute.
 CI (one job: the native tests, `./ksee.sh build`, then
 `./ksee.sh test --built --ui`) caches
 the kernel's products, by what builds them (the Makefile, the patch, the
-port, the plugin): the split kernel (`target/vmlinux`, `vmlinux.debug`), its
-UAPI headers and `gen_init_cpio` (`target/linux/usr/`), and the sources the
-page shows (`target/site/src/`), some 80 MB. Restored, the build uses them as
+port, the plugin): the split kernel (`build/vmlinux`, `vmlinux.debug`), its
+UAPI headers and `gen_init_cpio` (`build/linux/usr/`), and the sources the
+page shows (`build/site/src/`), some 80 MB. Restored, the build uses them as
 they are (all there and no Linux tree: the Makefile asks no kbuild); else it
 builds the kernel and saves them, before the tests
 (kept even when they fail).

@@ -1,5 +1,5 @@
 //! `ksee build` and `ksee test`: the build is the Makefile's (`make site`:
-//! the kernel's half, then the site, target/site, its steps that are code
+//! the kernel's half, then the site, build/site, its steps that are code
 //! this command's: pack, lessons, bindgen).
 use std::process::Command;
 
@@ -19,7 +19,7 @@ pub fn run(cmd: &mut Command) {
 }
 
 /// The site: what the page loads.
-pub const SITE: &str = "target/site";
+pub const SITE: &str = "build/site";
 
 /// `make` (the Makefile's) for `args`, its jobs in parallel; this
 /// command, its steps'.

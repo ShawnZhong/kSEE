@@ -1,4 +1,4 @@
-//! `ksee deploy`: build, then push the site (target/site, as served) to the
+//! `ksee deploy`: build, then push the site (build/site, as served) to the
 //! gh-pages branch of origin, for GitHub Pages. The branch is one commit,
 //! replaced each time (the kernel is ~20 MB; no history of it to keep).
 use std::process::Command;

@@ -66,7 +66,7 @@ Open `http://127.0.0.1:8000/`. To separate the steps:
 `./ksee.sh serve --port=9000`.
 
 The first build fetches Linux stable `v7.2.7` into `linux/` and builds
-everything, into `target/site/` (the steps: [development.md#build-pipeline](development.md#build-pipeline)).
+everything, into `build/site/` (the steps: [development.md#build-pipeline](development.md#build-pipeline)).
 Later builds reuse outputs whose inputs have not changed. Use one LLVM 22
 toolchain for a checkout after its first build.
 

@@ -39,7 +39,7 @@ const BROWSER: &str = "google-chrome";
 /// How long a test may take (the longest, seconds: the kernel's).
 const TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Test `name` (on the site, target/site, in Chrome): whether the page said `ok` (its log printed either way).
+/// Test `name` (on the site, build/site, in Chrome): whether the page said `ok` (its log printed either way).
 pub fn test(name: &str) -> bool {
     let &(_, hash, (width, height)) = TESTS.iter().find(|t| t.0 == name).expect("a test's name");
     let listener = or_fail(TcpListener::bind("127.0.0.1:0"), "serve");

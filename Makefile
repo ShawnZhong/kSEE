@@ -1,16 +1,17 @@
-# The build. `make site` (what `ksee build` runs) makes target/site/, which
+# The build. `make site` (what `ksee build` runs) makes build/site/, which
 # `ksee serve` serves and `ksee deploy` publishes. Steps that need code are
-# ksee commands (crates/ksee-cli).
+# ksee commands (crates/ksee-cli). What it makes is in build/ (target/ is
+# cargo's alone):
 #
 #   linux/                  Linux at LINUX_TAG with linux.patch applied and arch/wasm/
 #                           linked in (sources only; `make patch` rewrites linux.patch)
-#   target/ksee-trace.so    the LLVM pass that instruments the kernel (plugin/)
-#   target/linux/           kbuild's output: vmlinux, the UAPI headers, gen_init_cpio
-#   target/vmlinux          the kernel for the page (no DWARF, no ksee section)
-#   target/vmlinux.debug    the DWARF and ksee section, for `ksee tables`
-#   target/user/            the programs (user/), the initramfs and the disk image
-#   target/tables           the kernel's tables (`ksee tables`)
-#   target/site/            the site: the gzipped files, src/ (`ksee sources`), the
+#   build/ksee-trace.so     the LLVM pass that instruments the kernel (plugin/)
+#   build/linux/            kbuild's output: vmlinux, the UAPI headers, gen_init_cpio
+#   build/vmlinux           the kernel for the page (no DWARF, no ksee section)
+#   build/vmlinux.debug     the DWARF and ksee section, for `ksee tables`
+#   build/user/             the programs (user/), the initramfs and the disk image
+#   build/tables            the kernel's tables (`ksee tables`)
+#   build/site/             the site: the gzipped files, src/ (`ksee sources`), the
 #                           lessons' pages (`ksee lessons`), pkg/ (the page's module)
 
 # ---- What is pinned ------------------------------------------------------------
@@ -25,11 +26,11 @@ LINUX_DATE := 1789996140
 
 # LLVM 22 (setup.sh's) first.
 export PATH := /usr/lib/llvm-22/bin:$(PATH)
-PLUGIN := target/ksee-trace.so
-KOUT := target/linux
+PLUGIN := build/ksee-trace.so
+KOUT := build/linux
 # (user/initramfs.list uses OUT.)
-export OUT := target/user
-SITE := target/site
+export OUT := build/user
+SITE := build/site
 # The ksee command (`ksee build` passes itself).
 KSEE ?= target/release/ksee
 
@@ -60,7 +61,7 @@ KMAKE = $(MAKE) -C linux O=$(CURDIR)/$(KOUT) ARCH=wasm LLVM=1 \
 
 # The kernel's products, already here with no Linux tree (CI restores them
 # from its cache): used as they are, no kbuild. Else, all built.
-PREBUILT := target/vmlinux target/vmlinux.debug $(KOUT)/usr/include $(KOUT)/usr/gen_init_cpio $(SITE)/src
+PREBUILT := build/vmlinux build/vmlinux.debug $(KOUT)/usr/include $(KOUT)/usr/gen_init_cpio $(SITE)/src
 ifeq ($(wildcard linux/Makefile)$(words $(wildcard $(PREBUILT))),$(words $(PREBUILT)))
 $(KOUT)/vmlinux $(PREBUILT): ;
 else
@@ -89,15 +90,15 @@ $(KOUT)/vmlinux: $(PLUGIN) $(KOUT)/.config
 	$(KMAKE) headers
 
 # Split the kernel: the page's, and its DWARF and ksee section.
-target/vmlinux: $(KOUT)/vmlinux
+build/vmlinux: $(KOUT)/vmlinux
 	llvm-objcopy --strip-debug --remove-section=ksee $< $@.new
 	$(replace)
-target/vmlinux.debug: $(KOUT)/vmlinux
+build/vmlinux.debug: $(KOUT)/vmlinux
 	llvm-objcopy --only-keep-debug --keep-section=ksee $< $@.new
 	$(replace)
 
 # The sources the tables name, for the page's source view.
-$(SITE)/src: target/vmlinux.debug $(KSEE)
+$(SITE)/src: build/vmlinux.debug $(KSEE)
 	$(KSEE) sources $< linux $@
 endif
 
@@ -126,12 +127,12 @@ $(OUT)/disk.img: $(shell find user/disk) Makefile
 # ---- The site ------------------------------------------------------------------
 
 # The kernel's tables (made again for a new ksee).
-target/tables: target/vmlinux.debug $(KSEE)
+build/tables: build/vmlinux.debug $(KSEE)
 	$(KSEE) tables $< $(KOUT)/usr/include $@
 
 # The site's files, gzipped (hosts compress them less or not at all).
 gzip = @mkdir -p $(@D); gzip -9nc $< > $@.new && mv $@.new $@
-$(SITE)/%.gz: target/%
+$(SITE)/%.gz: build/%
 	$(gzip)
 $(SITE)/%.gz: $(OUT)/%
 	$(gzip)

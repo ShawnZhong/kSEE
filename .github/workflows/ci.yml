@@ -13,11 +13,11 @@ jobs:
     env:
       # (The Makefile's PREBUILT.)
       KERNEL: |
-        target/vmlinux
-        target/vmlinux.debug
-        target/linux/usr/include
-        target/linux/usr/gen_init_cpio
-        target/site/src
+        build/vmlinux
+        build/vmlinux.debug
+        build/linux/usr/include
+        build/linux/usr/gen_init_cpio
+        build/site/src
     steps:
       - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2

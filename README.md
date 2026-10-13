@@ -68,7 +68,7 @@ Automated setup supports Ubuntu 26.04 (`apt`):
 The first command installs the build toolchain. The second builds everything
 that changed and serves `http://127.0.0.1:8000/`. Open it in a browser that
 supports JSPI (`WebAssembly.Suspending`). The first build fetches the kernel and
-creates the generated site under `target/site/`.
+creates the generated site under `build/site/`.
 
 `./ksee.sh test` runs the tests (`--ui`: the page's too). The
 [getting-started guide](docs/getting-started.md) has the prerequisites, a
