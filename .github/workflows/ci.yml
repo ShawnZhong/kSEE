@@ -43,5 +43,3 @@ jobs:
           key: ${{ steps.kernel.outputs.cache-primary-key }}
       - name: Browser tests
         run: ./ksee.sh test --built --ui
-        env:
-          CHROME: google-chrome

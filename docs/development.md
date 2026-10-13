@@ -208,8 +208,8 @@ Linux tree); else it builds the kernel and saves them, before the tests
 (kept even when they fail).
 
 The browser is Chrome's headless shell at setup.sh's `CHROME_VERSION`,
-fetched into `target/chrome/` by `./setup.sh`; or `$CHROME` (CI's: the
-runner's own Chrome, `google-chrome`).
+fetched into `target/chrome/` by `./setup.sh`; without it, the machine's
+own Chrome (`google-chrome`: CI's, the runner's).
 
 The CLI serves the test site on a temporary local port and reads the
 shell's console on its stderr: each browser suite says `ksee test: ok` or
