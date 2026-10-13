@@ -159,12 +159,9 @@ impl View<'_> {
                 let (args, locals) = if inlined { (mine(&func, true), mine(&func, false)) } else { (Vec::new(), Vec::new()) };
                 Frame { first: c.first, inlined, depth: 0, at: at.map(|l| (t.file(l).to_string(), l.line)), args, locals, func }
             };
-            let mut nest = self.nest(&c);
-            if out.is_empty() {
-                nest.drain(..cut.min(nest.len() - 1));
-            }
+            let nest = self.nest(&c, if out.is_empty() { cut } else { 0 });
             let (&(_, at), inner) = nest.split_last().expect("a call");
-            out.extend(inner.iter().map(|&(k, at)| frame(self.inline_name(k.unwrap_or(0)).to_string(), true, at)));
+            out.extend(inner.iter().map(|&(k, at)| frame(t.inline_name(k.unwrap_or(0)).to_string(), true, at)));
             out.push(Frame { args, locals, ..frame(name, false, at) });
         }
         // (Each its place, from the outermost.)
@@ -280,8 +277,9 @@ impl View<'_> {
     /// Call `c` and the code inlined into it where it is, innermost first:
     /// each inlined function (Some: its index, see inline_name) at its line
     /// there, then the call (None) at its own line (where the outermost
-    /// inlined code is inlined, or the line it is at).
-    pub(crate) fn nest(&self, c: &stack::StackCall) -> Vec<(Option<u32>, Option<Loc>)> {
+    /// inlined code is inlined, or the line it is at); without the
+    /// innermost `cut` (what it has not entered yet), the call kept.
+    pub(crate) fn nest(&self, c: &stack::StackCall, cut: usize) -> Vec<(Option<u32>, Option<Loc>)> {
         let mut at = c.step.map(|s| s.loc).or(self.tables.function(c.func).map(|f| f.loc));
         let mut out = Vec::new();
         for site in self.tables.chain(c.step.and_then(|s| s.inlined())) {
@@ -289,12 +287,8 @@ impl View<'_> {
             at = Some(site.loc);
         }
         out.push((None, at));
+        out.drain(..cut.min(out.len() - 1));
         out
-    }
-
-    /// Inlined function `k`'s name (Tables::inline_name).
-    pub(crate) fn inline_name(&self, k: u32) -> &'static str {
-        self.tables.inline_name(k)
     }
 }
 

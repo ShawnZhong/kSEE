@@ -325,12 +325,10 @@ impl View<'_> {
         // current->files, ->fs, ->mm: "files->next_fd" through a local
         // the optimizer kept in a register is reached this way.)
         let end = self.rec.memory_at(self.now, last.min(self.rec.last()));
-        if let Kind::Struct(members) = &types.get(types.resolve(ty)).kind {
-            for mb in members.iter().filter(|mb| mb.bit_size == 0) {
-                if let Some(to) = types.struct_target(mb.ty) {
-                    add(Naming { what: Cow::Owned(format!("{who}->{}", mb.name)), within: None, kind: RegionKind::Object, ty: to,
-                                 addr: end.read_u32(task.wrapping_add(mb.bit_offset / 8)), call: None, by: None });
-                }
+        for mb in types.members(&types.get(types.resolve(ty)).kind).iter().filter(|mb| mb.bit_size == 0) {
+            if let Some(to) = types.struct_target(mb.ty) {
+                add(Naming { what: Cow::Owned(format!("{who}->{}", mb.name)), within: None, kind: RegionKind::Object, ty: to,
+                             addr: end.read_u32(task.wrapping_add(mb.bit_offset / 8)), call: None, by: None });
             }
         }
     }

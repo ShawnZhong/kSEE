@@ -15,7 +15,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     let s = t.line("mkdirat(AT_FDCWD, \"/tmp\", 0755)").await.syscall;
     t.check("mkdirat ran vfs_mkdir", t.ran(&s, "vfs_mkdir"));
     let nap = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {0, 30000000}, NULL)").await.syscall.unwrap();
-    let idle = m.view(|v| v.timeline().tasks_in(v.rec.step_of(nap.first) as f64, v.rec.step_of(nap.last) as f64).iter().any(|s| v.task(s.2, nap.first).id.is_some_and(|t| t.comm == "swapper/0")));
+    let idle = m.view(|v| { let tl = v.timeline(); tl.tasks[tl.task_range(v.rec.step_of(nap.first) as f64, v.rec.step_of(nap.last) as f64)].to_vec() }.iter().any(|s| v.task(s.2, nap.first).id.is_some_and(|t| t.comm == "swapper/0")));
     t.check("sleeping switched to the idle task and back", t.ran(&Some(nap.clone()), "__schedule") && idle);
     let long = t.line("clock_nanosleep(CLOCK_MONOTONIC, 0, {2, 0}, NULL)").await;
     t.check("a 2 s sleep returns (the clock skipped ahead)", long.ret == Some(0));
@@ -34,7 +34,7 @@ pub(super) async fn run(t: &mut KernelHarness, main: u32) {
     t.check("fs/read_write.c coverage", m.view(|v| v.coverage("fs/read_write.c", wi)).values().any(|&n| n > 0));
     let wlast = w.last;
     let (tl, ws, we) = m.view(|v| (v.timeline(), v.rec.step_of(w.first), v.rec.step_of(wlast)));
-    t.check("a timeline of write's steps", tl.tasks_in(ws as f64, ws as f64 + 1.0).first().is_some_and(|s| s.2 == w.task.addr) && tl.depth(ws as f64, we as f64) > 3);
+    t.check("a timeline of write's steps", tl.tasks[tl.task_range(ws as f64, ws as f64 + 1.0)].first().is_some_and(|s| s.2 == w.task.addr) && tl.depth(ws as f64, we as f64) > 3);
     let steps = m.view(|v| v.lines(w.first, wlast, w.task.addr));
     // (A line of code inlined: a frame of its own, innermost, on the line; the function it is inlined into under it.)
     let inlined = steps.iter().filter(|s| s.cut == 0).find_map(|s| {

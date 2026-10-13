@@ -51,18 +51,12 @@ impl Timeline {
 
     /// Row `d`'s spans that overlap steps `a..b`.
     pub fn spans(&self, d: usize, a: f64, b: f64) -> &[(usize, usize, u32)] {
-        self.rows.get(d).map_or(&[], |row| within(row, a, b))
-    }
-
-    /// The tasks' spans that overlap steps `a..b`.
-    pub fn tasks_in(&self, a: f64, b: f64) -> &[(usize, usize, u32)] {
-        &self.tasks[self.task_range(a, b)]
+        self.rows.get(d).map_or(&[], |row| &row[within(row, a, b)])
     }
 
     /// Which of the tasks' spans overlap steps `a..b`: their indexes.
     pub fn task_range(&self, a: f64, b: f64) -> core::ops::Range<usize> {
-        let i = self.tasks.partition_point(|s| s.1 as f64 <= a);
-        i..self.tasks.partition_point(|s| (s.0 as f64) < b).max(i)
+        within(&self.tasks, a, b)
     }
 
     /// How many rows steps `a..b` stack.
@@ -79,11 +73,10 @@ impl Timeline {
     }
 }
 
-/// The spans of `spans` (in order) that overlap steps `a..b`.
-fn within(spans: &[(usize, usize, u32)], a: f64, b: f64) -> &[(usize, usize, u32)] {
+/// Which of `spans` (in order) overlap steps `a..b`: their indexes.
+fn within(spans: &[(usize, usize, u32)], a: f64, b: f64) -> core::ops::Range<usize> {
     let i = spans.partition_point(|s| s.1 as f64 <= a);
-    let j = spans.partition_point(|s| (s.0 as f64) < b);
-    &spans[i..j.max(i)]
+    i..spans.partition_point(|s| (s.0 as f64) < b).max(i)
 }
 
 impl View<'_> {
@@ -98,16 +91,14 @@ impl View<'_> {
         // (A call's bars, the code inlined into it at its line, outermost
         // first; the innermost without what it has not entered yet, `cut`.)
         let mut bars = |c: &stack::StackCall, cut: usize, out: &mut Vec<u32>| {
-            let mut nest = self.nest(c);
-            nest.drain(..cut.min(nest.len() - 1));
-            for (k, at) in nest.into_iter().rev() {
+            for (k, at) in self.nest(c, cut).into_iter().rev() {
                 out.push(*known.entry((c.first, k)).or_insert_with(|| {
-                    let defined = self.function_definition(c.func);
-                    let name = k.map_or_else(|| defined.as_ref().map_or("?".into(), |p| p.name.clone()), |k| self.inline_name(k).to_string());
+                    let f = t.function(c.func);
+                    let name = k.map_or_else(|| f.map_or("?", |f| f.name), |k| t.inline_name(k)).to_string();
                     // (Its file: code inlined, its own function's, where its line is.)
                     let file = match k {
                         Some(_) => at.map(|l| t.file(l).to_string()),
-                        None => defined.map(|p| p.file),
+                        None => f.map(|f| t.file(f.loc).to_string()),
                     };
                     tl.bars.push(Bar { first: c.first, name, file, inlined: k.is_some() });
                     tl.bars.len() as u32 - 1

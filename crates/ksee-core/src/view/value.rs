@@ -169,10 +169,8 @@ impl Types {
                     return None;
                 }
             }
-            for name in step.split('.') {
-                let m = self.members(&self.get(self.resolve(ty)).kind).into_iter().find(|m| m.name == name)?;
-                (ty, addr) = (m.ty, addr + m.bit_offset / 8);
-            }
+            let (off, member) = self.member(ty, step)?;
+            (ty, addr) = (member, addr + off);
         }
         Some(self.object(mem, path, addr, ty, 0))
     }
