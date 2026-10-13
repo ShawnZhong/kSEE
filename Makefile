@@ -1,54 +1,67 @@
-# The build, file to file: the kernel's half (C and LLVM), then the site,
-# target/site, what `ksee serve` serves and `ksee deploy` pushes (`make
-# site`, as `ksee build` runs it; its steps that are code, the ksee
-# command's: crates/ksee-cli).
+# The build, file to file: `make site` (as `ksee build` runs it) makes the
+# site, target/site/, what `ksee serve` serves and `ksee deploy` pushes. Its
+# steps that are code are the ksee command's (crates/ksee-cli: tables,
+# sources, lessons, bindgen). What it makes:
 #
-#   linux/                       Linux, the stable tree's LINUX_TAG, fetched once; linux.patch
-#                                (the port's edits to Linux's own files) applied, and arch/wasm/
-#                                (the port's own files) linked in: sources only
-#   target/ksee-trace.so         the LLVM pass that instruments the kernel (plugin/'s)
-#   target/linux/vmlinux         the kernel, instrumented (kbuild's, out of the tree: all it
-#                                makes in target/linux/), and its UAPI headers
-#   target/vmlinux               the page's: without DWARF and the plugin's ksee section
-#   target/vmlinux.debug         those, the kernel's description (the pack's: its tables)
-#   target/user/initramfs.cpio
-#                                /init and /bin/prog (user/: plain C, no C library), and a
-#                                note (user/note.txt): user/initramfs.list
-#   target/user/disk.img         the disk (the host's: the kernel's /dev/wda), ext4, of
-#                                user/disk/
-#   target/tables                the kernel's tables (ksee tables: target/vmlinux.debug's), and
-#                                target/site/src/, the sources it names (ksee sources)
-#   target/site/                 the site: vmlinux.gz, tables.gz, initramfs.cpio.gz, disk.img.gz
-#                                (gzipped here: hosts compress them less, or not at all; the
-#                                page unpacks them); lessons.json and a page per lesson (ksee
-#                                lessons: web/lessons/, web/index.html); pkg/, the runtime and
-#                                the page, one module (cargo, and ksee bindgen: wasm-bindgen's
-#                                glue)
-#   target/chrome/               the tests' browser: Chrome for Testing's headless shell,
-#                                CHROME_VERSION, fetched once (`make chrome`: `ksee test` runs it)
-#
-# `make patch` writes linux.patch from linux/ (never the build). The port's own
-# files are edited in arch/wasm/, not linux/.
+#   linux/                    Linux, LINUX_TAG, fetched once, linux.patch (the port's edits to
+#                             Linux's own files) applied, arch/wasm/ (the port's own) linked
+#                             in: sources only (`make patch` writes linux.patch from it)
+#   target/ksee-trace.so      the LLVM pass that instruments the kernel (plugin/)
+#   target/linux/             kbuild's, out of the tree: vmlinux, the kernel, instrumented,
+#                             with DWARF; usr/include, its UAPI headers; usr/gen_init_cpio
+#   target/vmlinux            the kernel, split: the page's, without DWARF and the plugin's
+#   target/vmlinux.debug        ksee section; and those, its description
+#   target/user/              the programs (user/: plain C, no C library), the initramfs
+#                             (user/initramfs.list), the disk (an ext4 image of user/disk/)
+#   target/tables             the kernel's tables, of its description (ksee tables)
+#   target/site/              the site: the kernel, its tables, the initramfs and the disk,
+#                             gzipped (hosts compress them less, or not at all; the page
+#                             unpacks them); src/, the sources the tables name (ksee
+#                             sources); lessons.json and a page per lesson (ksee lessons);
+#                             pkg/, the runtime and the page, one module (cargo, ksee bindgen)
+#   target/chrome/            the tests' browser, Chrome's headless shell (`make chrome`)
+
+# ---- What is pinned ------------------------------------------------------------
 
 # The release the port is a patch to: the stable tree's tag, the commit it
-# must be (what is fetched, checked), and its date (the commit's: the
-# build's, see KMAKE).
+# must be (what is fetched, checked), and its date (the build's: see KMAKE).
 LINUX_TREE := https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 LINUX_TAG := v7.2.7
 LINUX_COMMIT := f42acb3678424d1e08f6ed27c0d8ba8a125e14d6
 LINUX_DATE := 1789996140
-# The tests' browser: one version for every machine (Playwright's mirror
-# of Chrome for Testing has it for arm64 Linux too).
+# The tests' browser: one version for every machine (Playwright's mirror of
+# Chrome for Testing has it for arm64 Linux too).
 CHROME_VERSION := 156.0.8078.4
+
+# ---- Where things go -----------------------------------------------------------
 
 # (setup.sh's LLVM 22 first.)
 export PATH := /usr/lib/llvm-22/bin:$(PATH)
-export OUT := target/user
-KOUT := target/linux
 PLUGIN := target/ksee-trace.so
+KOUT := target/linux
+# (user/initramfs.list names the programs by it.)
+export OUT := target/user
 SITE := target/site
 # (The ksee command: the one running make, as `ksee build` says.)
 KSEE ?= target/release/ksee
+
+# A file made as $@.new, replacing $@ only if it changed (kbuild is always
+# asked; what is made of $@ is made again only when it is newer).
+replace = cmp -s $@.new $@ && rm $@.new || mv $@.new $@
+
+.PHONY: site lessons page $(KOUT)/vmlinux patch llvm chrome
+
+site: $(SITE)/vmlinux.gz $(SITE)/tables.gz $(SITE)/src $(SITE)/initramfs.cpio.gz $(SITE)/disk.img.gz lessons page
+
+# ---- Linux ---------------------------------------------------------------------
+
+llvm:
+	@v=$$(llvm-config --version); test "$${v%%.*}" = 22 || { echo "LLVM 22 is required, found $$v" >&2; exit 1; }
+
+$(PLUGIN): plugin/ksee-trace.cpp | llvm
+	@mkdir -p $(@D)
+	clang++ -shared -fPIC -O2 $< -o $@ $$(llvm-config --cxxflags)
+
 # (The same build each time: the release's date, not the clock's; a version,
 # user and host of its own, not the tree's state (-dirty: the patch applied)
 # or the machine's; build #1. A hash of the pass's source in the flags:
@@ -61,11 +74,12 @@ KMAKE = $(MAKE) -C linux O=$(CURDIR)/$(KOUT) ARCH=wasm LLVM=1 \
 	LOCALVERSION=-ksee KBUILD_BUILD_USER=ksee KBUILD_BUILD_HOST=ksee KBUILD_BUILD_VERSION=1 KBUILD_BUILD_TIMESTAMP="$(shell LC_ALL=C date -u -d @$(LINUX_DATE))" \
 	KCFLAGS="-g -ffile-prefix-map=$(CURDIR)/linux/= -finline-hint-functions -fpass-plugin=$(CURDIR)/$(PLUGIN) -DKSEE_ID=$(shell cksum < plugin/ksee-trace.cpp | cut -d' ' -f1)"
 
-all: target/vmlinux target/vmlinux.debug $(OUT)/initramfs.cpio $(OUT)/disk.img
-.PHONY: all site lessons page $(KOUT)/vmlinux patch llvm chrome
-
-llvm:
-	@v=$$(llvm-config --version); test "$${v%%.*}" = 22 || { echo "LLVM 22 is required, found $$v" >&2; exit 1; }
+# (KERNEL_BUILT=true: the kernel's products are here already, as built,
+# CI's cache's (the split kernel, the UAPI headers, gen_init_cpio, the
+# sources the page shows): no kbuild, nor its tree.)
+ifeq ($(KERNEL_BUILT),true)
+$(KOUT)/vmlinux $(KOUT)/usr/gen_init_cpio target/vmlinux target/vmlinux.debug $(SITE)/src: ;
+else
 
 # linux/: the release (a shallow git repo: its one commit), and
 # linux.patch, the first time only (to apply an updated one, remove linux/).
@@ -78,12 +92,8 @@ linux/Makefile:
 	git -C linux apply ../linux.patch
 	ln -s ../../arch/wasm linux/arch/wasm
 
-$(PLUGIN): plugin/ksee-trace.cpp | llvm
-	@mkdir -p $(@D)
-	clang++ -shared -fPIC -O2 $< -o $@ $$(llvm-config --cxxflags)
-
-# (Every Kconfig the port has: a new one runs defconfig again; touched,
-# as kbuild leaves a .config the same as it was.)
+# (Every Kconfig the port has: a new one runs defconfig again; touched, as
+# kbuild leaves a .config the same as it was.)
 $(KOUT)/.config: arch/wasm/configs/defconfig $(wildcard arch/wasm/Kconfig*) | linux/Makefile
 	$(KMAKE) defconfig
 	touch $@
@@ -96,65 +106,70 @@ $(KOUT)/vmlinux: $(PLUGIN) $(KOUT)/.config
 	$(KMAKE) headers
 
 # The kernel, split: the page's, and its description (DWARF, and the
-# plugin's ksee section). (Each replaced only if it changed: kbuild is always
-# asked, and what is made of them is made again when they are newer.)
+# plugin's ksee section).
 target/vmlinux: $(KOUT)/vmlinux
 	llvm-objcopy --strip-debug --remove-section=ksee $< $@.new
-	cmp -s $@.new $@ && rm $@.new || mv $@.new $@
+	$(replace)
 target/vmlinux.debug: $(KOUT)/vmlinux
 	llvm-objcopy --only-keep-debug --keep-section=ksee $< $@.new
-	cmp -s $@.new $@ && rm $@.new || mv $@.new $@
+	$(replace)
+
+# The sources its description names, for the page (again for a new ksee).
+$(SITE)/src: target/vmlinux.debug $(KSEE)
+	$(KSEE) sources $< linux $@
+endif
+
+# ---- The programs and the disk ------------------------------------------------
 
 # The programs: position-independent, in the kernel's memory (see
 # binfmt_wasm.c), their syscalls user/syscall.h's, with the UAPI headers.
-$(OUT):
-	mkdir -p $@
-
-$(OUT)/%.wasm: user/%.c user/syscall.h | $(KOUT)/vmlinux $(OUT)
+$(OUT)/%.wasm: user/%.c user/syscall.h | $(KOUT)/vmlinux
+	@mkdir -p $(@D)
 	clang --target=wasm32 -O2 -g0 -ffreestanding -nostdlib -fPIC -Wl,-pie -Wl,--experimental-pic \
 		-Wl,--import-memory -Wl,--no-entry -nostdinc -isystem $(KOUT)/usr/include -o $@ $<
-
-# The disk /init mounts (/dev/wda: its blocks the host's), ext4: user/disk/,
-# the files the lessons start from; blocks of 4 KiB, a page each (the
-# page cache's unit: one block to one page, as most systems have it), 8 MiB
-# (the journal's room); initialized in full: no background work after the
-# mount (ext4lazyinit's). The same each time: made anew (no blocks of the
-# last left), its UUID and hash seed fixed, its times the release's.
-$(OUT)/disk.img: $(shell find user/disk) Makefile | $(OUT)
-	rm -f $@
-	SOURCE_DATE_EPOCH=$(LINUX_DATE) mkfs.ext4 -q -F -b 4096 -L ksee -N 32 -d user/disk \
-		-U 6b736565-0000-4000-8000-000000000001 -E lazy_itable_init=0,lazy_journal_init=0,hash_seed=6b736565-0000-4000-8000-000000000002 $@ 8M
 
 # The archive (all times 0): the console (the kernel opens it before init),
 # the programs, the note.
 $(OUT)/initramfs.cpio: user/initramfs.list $(KOUT)/usr/gen_init_cpio $(OUT)/init.wasm $(OUT)/prog.wasm user/note.txt
 	$(KOUT)/usr/gen_init_cpio -t 0 $< > $@
 
-# The site.
-site: $(SITE)/vmlinux.gz $(SITE)/tables.gz $(SITE)/src $(SITE)/initramfs.cpio.gz $(SITE)/disk.img.gz lessons page
+# The disk /init mounts (/dev/wda: its blocks the host's), ext4: user/disk/,
+# the files the lessons start from; blocks of 4 KiB, a page each (the page
+# cache's unit: one block to one page, as most systems have it), 8 MiB (the
+# journal's room); initialized in full: no background work after the mount
+# (ext4lazyinit's). The same each time: made anew (no blocks of the last
+# left), its UUID and hash seed fixed, its times the release's.
+$(OUT)/disk.img: $(shell find user/disk) Makefile
+	@mkdir -p $(@D)
+	rm -f $@
+	SOURCE_DATE_EPOCH=$(LINUX_DATE) mkfs.ext4 -q -F -b 4096 -L ksee -N 32 -d user/disk \
+		-U 6b736565-0000-4000-8000-000000000001 -E lazy_itable_init=0,lazy_journal_init=0,hash_seed=6b736565-0000-4000-8000-000000000002 $@ 8M
 
-$(SITE):
-	mkdir -p $@
+# ---- The site ------------------------------------------------------------------
 
-# The kernel's tables, and the sources they name (again for a new ksee).
+# The kernel's tables (again for a new ksee).
 target/tables: target/vmlinux.debug $(KSEE)
 	$(KSEE) tables $< $(KOUT)/usr/include $@
-$(SITE)/src: target/vmlinux.debug $(KSEE) | $(SITE)
-	$(KSEE) sources $< linux $@
 
-$(SITE)/%.gz: target/% | $(SITE)
-	gzip -9nc $< > $@.new && mv $@.new $@
-$(SITE)/%.gz: $(OUT)/% | $(SITE)
-	gzip -9nc $< > $@.new && mv $@.new $@
+# The site's files, gzipped: the kernel's and its tables (target/), the
+# initramfs and the disk (target/user/).
+gzip = @mkdir -p $(@D); gzip -9nc $< > $@.new && mv $@.new $@
+$(SITE)/%.gz: target/%
+	$(gzip)
+$(SITE)/%.gz: $(OUT)/%
+	$(gzip)
 
 # (Each time: the pages say the commit they are of.)
-lessons: | $(SITE)
+lessons:
+	@mkdir -p $(SITE)
 	$(KSEE) lessons
 
 # (Each time: cargo knows what the module is of.)
-page: | $(SITE)
+page:
 	cargo build --locked --release -p ksee-page --target wasm32-unknown-unknown
 	$(KSEE) bindgen target/wasm32-unknown-unknown/release/ksee_page.wasm $(SITE)/pkg
+
+# ---- Upkeep --------------------------------------------------------------------
 
 # linux.patch: the port's edits to Linux's own files, as linux/ differs from
 # the release (the files it adds are arch/wasm/'s: git leaves them untracked).

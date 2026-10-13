@@ -1,11 +1,11 @@
 name: CI
 on: [push, pull_request]
 
-# The kernel is cached by what builds it (the Makefile, the patch, the port,
-# the plugin), saved once built, before the tests (kept even when they
-# fail). The cache: linux/, the tree; target/linux/, kbuild's output; and
-# arch/wasm/, the port's sources, restored over the checkout as old as the
-# objects, so nothing is rebuilt.
+# The kernel's products are cached (the split kernel, its UAPI headers,
+# gen_init_cpio, the sources the page shows), by what builds them (the
+# Makefile, the patch, the port, the plugin): restored, the build uses them
+# (KERNEL_BUILT: no Linux tree, no kbuild); else it builds them and saves
+# them, before the tests (kept even when they fail).
 jobs:
   test:
     runs-on: ubuntu-26.04
@@ -16,23 +16,27 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: |
-            linux
-            !linux/.git
-            target/linux
-            arch/wasm
-          key: linux-${{ runner.arch }}-${{ hashFiles('Makefile', 'linux.patch', 'arch/wasm/**', 'plugin/**') }}
+            target/vmlinux
+            target/vmlinux.debug
+            target/linux/usr/include
+            target/linux/usr/gen_init_cpio
+            target/site/src
+          key: kernel-${{ runner.arch }}-${{ hashFiles('Makefile', 'linux.patch', 'arch/wasm/**', 'plugin/**') }}
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: ./ksee.sh build
+        env:
+          KERNEL_BUILT: ${{ steps.kernel.outputs.cache-hit }}
       - name: Save the kernel
         if: steps.kernel.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: |
-            linux
-            !linux/.git
-            target/linux
-            arch/wasm
+            target/vmlinux
+            target/vmlinux.debug
+            target/linux/usr/include
+            target/linux/usr/gen_init_cpio
+            target/site/src
           key: ${{ steps.kernel.outputs.cache-primary-key }}
       - name: Test
         run: ./ksee.sh test --built --ui

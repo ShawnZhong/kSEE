@@ -108,7 +108,7 @@ Do not edit generated output as source:
 
 | Output | Contents |
 |---|---|
-| `target/linux/` | Kbuild's output, out of the tree (`linux/` and `arch/wasm/` stay sources): `vmlinux`, the raw instrumented kernel with DWARF, and the UAPI headers; retained with the Linux build cache in CI. |
+| `target/linux/` | Kbuild's output, out of the tree (`linux/` and `arch/wasm/` stay sources): `vmlinux`, the raw instrumented kernel with DWARF, and the UAPI headers (with `gen_init_cpio`, CI's cache: see below). |
 | `target/site/` | Normal site served locally and deployed. |
 | `target/site/pkg/` | wasm-bindgen output for the combined page/runtime module. |
 | `target/site/vmlinux.gz` | Instrumented, packed kernel without DWARF and the `ksee` section. |
@@ -197,13 +197,14 @@ page to be drawn (`settle`: two animation frames) or for a condition
 (`wait`), never a fixed time; the whole run, native and browser, takes
 under a minute.
 
-CI builds the kernel in a job of its own, cached by what builds it (the port,
-the plugin, the Makefile's lines for Linux) and saved even if the tests fail;
-the test job restores it, builds the rest of the site (the user programs, the
-initramfs, the page) and runs `ksee test --built --ui`. The cache holds
-arch/wasm/ too (its objects, written through the link, and its sources):
-restored over the checkout, with their times, the sources are no newer than
-the objects, so nothing of the kernel is rebuilt.
+CI (one job: `./ksee.sh build`, then `./ksee.sh test --built --ui`) caches
+the kernel's products, by what builds them (the Makefile, the patch, the
+port, the plugin): the split kernel (`target/vmlinux`, `vmlinux.debug`), its
+UAPI headers and `gen_init_cpio` (`target/linux/usr/`), and the sources the
+page shows (`target/site/src/`), some 80 MB. Restored, the build uses them as
+they are (`KERNEL_BUILT=true`: the Makefile asks no kbuild, and needs no
+Linux tree); else it builds the kernel and saves them, before the tests
+(kept even when they fail).
 
 The browser is Chrome's headless shell at the Makefile's `CHROME_VERSION`,
 fetched into `target/chrome/` by `make chrome`, which `ksee test` runs.
