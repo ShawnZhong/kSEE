@@ -58,10 +58,11 @@ KMAKE = $(MAKE) -C linux O=$(CURDIR)/$(KOUT) ARCH=wasm LLVM=1 \
 	LOCALVERSION=-ksee KBUILD_BUILD_USER=ksee KBUILD_BUILD_HOST=ksee KBUILD_BUILD_VERSION=1 KBUILD_BUILD_TIMESTAMP="$(shell LC_ALL=C date -u -d @$(LINUX_DATE))" \
 	KCFLAGS="-g -ffile-prefix-map=$(CURDIR)/linux/= -finline-hint-functions -fpass-plugin=$(CURDIR)/$(PLUGIN) -DKSEE_ID=$(shell cksum < plugin/ksee-trace.cpp | cut -d' ' -f1)"
 
-# KERNEL_BUILT=true: the kernel's products are already here (CI restores
-# them from its cache), so neither kbuild nor the Linux tree is needed.
-ifeq ($(KERNEL_BUILT),true)
-$(KOUT)/vmlinux $(KOUT)/usr/gen_init_cpio target/vmlinux target/vmlinux.debug $(SITE)/src: ;
+# The kernel's products, already here with no Linux tree (CI restores them
+# from its cache): used as they are, no kbuild. Else, all built.
+PREBUILT := target/vmlinux target/vmlinux.debug $(KOUT)/usr/include $(KOUT)/usr/gen_init_cpio $(SITE)/src
+ifeq ($(wildcard linux/Makefile)$(words $(wildcard $(PREBUILT))),$(words $(PREBUILT)))
+$(KOUT)/vmlinux $(PREBUILT): ;
 else
 
 # Fetch the release (one commit), check it, apply linux.patch. Only once:

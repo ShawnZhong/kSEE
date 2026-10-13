@@ -4,7 +4,7 @@ on: [push, pull_request]
 # The kernel's products are cached (the split kernel, its UAPI headers,
 # gen_init_cpio, the sources the page shows), by what builds them (the
 # Makefile, the patch, the port, the plugin): restored, the build uses them
-# (KERNEL_BUILT: no Linux tree, no kbuild); else it builds them and saves
+# (with no Linux tree: no kbuild); else it builds them and saves
 # them, before the browser tests (kept even when they fail). The unit tests
 # first: they need neither. (The runner has the rest, Google Chrome too.)
 jobs:
@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
       - name: Restore the kernel
         id: kernel
         uses: actions/cache/restore@v5
@@ -23,13 +24,10 @@ jobs:
             target/linux/usr/gen_init_cpio
             target/site/src
           key: kernel-${{ runner.arch }}-${{ hashFiles('Makefile', 'linux.patch', 'arch/wasm/**', 'plugin/**') }}
-      - uses: Swatinem/rust-cache@v2
       - name: Unit tests
         run: cargo test --locked --release -p ksee-core -p ksee-cli
       - name: Build
         run: ./ksee.sh build
-        env:
-          KERNEL_BUILT: ${{ steps.kernel.outputs.cache-hit }}
       - name: Save the kernel
         if: steps.kernel.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5

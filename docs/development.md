@@ -202,8 +202,8 @@ the kernel's products, by what builds them (the Makefile, the patch, the
 port, the plugin): the split kernel (`target/vmlinux`, `vmlinux.debug`), its
 UAPI headers and `gen_init_cpio` (`target/linux/usr/`), and the sources the
 page shows (`target/site/src/`), some 80 MB. Restored, the build uses them as
-they are (`KERNEL_BUILT=true`: the Makefile asks no kbuild, and needs no
-Linux tree); else it builds the kernel and saves them, before the tests
+they are (all there and no Linux tree: the Makefile asks no kbuild); else it
+builds the kernel and saves them, before the tests
 (kept even when they fail).
 
 The browser is Google Chrome (`google-chrome`: setup.sh installs it; CI's
