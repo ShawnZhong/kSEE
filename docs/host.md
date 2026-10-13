@@ -187,8 +187,10 @@ does not restore browser-held task stacks in place.
 
 ## Imports
 
-Frequent Linux imports such as `console_write`, `time_ns` and `spawn_task`
-are exports of the outer Rust WebAssembly module, so Linux calls
-them directly. Suspending scheduler operations and browser-facing work use
-closures and promises. The complete kernel-side import/export list is in
+The Linux imports that return (`console_write`, `time_ns`, `spawn_task`, the
+disk's, the programs' `user_load` and `user_start`, `syscall_enter`, …) are
+exports of the outer Rust WebAssembly module, so Linux calls them directly.
+Only those that suspend the kernel's stack (`switch_task`, `idle`,
+`restart_task`, `halt`) are closures returning promises, made suspending
+(JSPI). The complete kernel-side import/export list is in
 [kernel.md#the-host-interface](kernel.md#the-host-interface).

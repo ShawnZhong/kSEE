@@ -74,7 +74,8 @@ pub(crate) fn switch_user(prev: u32, next: u32, dead: bool) {
 
 /// clone_user: task `p` is a user clone of the current task, on its stack
 /// at `sp` (0: below the current task's, vfork).
-pub(crate) fn clone_user(p: u32, sp: u32) {
+#[unsafe(no_mangle)]
+pub extern "C" fn clone_user(p: u32, sp: u32) {
     PROGRAMS.with_borrow_mut(|u| {
         let Some(me) = u.users.get(&current()) else { return };
         let saved = if sp != 0 { sp } else { value(&me.sp) };
@@ -88,7 +89,8 @@ const ENOEXEC: i32 = 8;
 
 /// Compile program `image` for the current task: the bytes its data
 /// needs, or -ENOEXEC.
-pub(crate) fn user_load(image: u32, len: u32) -> i32 {
+#[unsafe(no_mangle)]
+pub extern "C" fn user_load(image: u32, len: u32) -> i32 {
     let Some((data, entries)) = ksee_core::wasm::dylink(&Direct, image, len) else { return -ENOEXEC };
     let Ok(module) = WebAssembly::Module::new(&Uint8Array::from(unsafe { core::slice::from_raw_parts(image as *const u8, len as usize) })) else { return -ENOEXEC };
     PROGRAMS.with_borrow_mut(|u| u.loaded.insert(current(), (module, entries)));
@@ -105,7 +107,8 @@ fn global(value: u32, mutable: bool) -> Result<WebAssembly::Global, JsValue> {
 /// Instantiate the current task's program, its data at `base` and its
 /// stack below `top`: its _start's index in the kernel's function table,
 /// or 0; its __wasm_clone_start's (or 0) at `clone_entry`.
-pub(crate) fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
+#[unsafe(no_mangle)]
+pub extern "C" fn user_start(base: u32, top: u32, clone_entry: u32) -> u32 {
     let (module, syscall, table) = PROGRAMS.with_borrow_mut(|u| (u.loaded.remove(&current()), u.syscall.clone(), u.table.clone()));
     let (Some((module, entries)), Some(table)) = (module, table) else { return 0 };
     let start = || -> Result<u32, JsValue> {
@@ -192,7 +195,8 @@ pub(crate) fn finish(tid: u32, ret: Option<i64>) {
 /// has read its call (see imports.rs's console_read), is that call: it is
 /// recorded from here (the records' id, which counts the words ever
 /// written: see trace::ring).
-pub(crate) fn syscall_enter() {
+#[unsafe(no_mangle)]
+pub extern "C" fn syscall_enter() {
     let tid = tid();
     if state_mut(|s| s.session.begin(tid, Direct.read_u32(s.trace))) {
         record();
@@ -200,7 +204,8 @@ pub(crate) fn syscall_enter() {
 }
 
 /// syscall_exit: it returns `ret`: a runner's call, begun, is done.
-pub(crate) fn syscall_exit(ret: i32) {
+#[unsafe(no_mangle)]
+pub extern "C" fn syscall_exit(ret: i32) {
     let tid = tid();
     if state(|s| s.session.begun(tid)) {
         finish(tid, Some(ret.into()));

@@ -1,10 +1,10 @@
 //! The kernel's imports (arch/wasm/include/asm/wasm.h).
 //!
-//! Frequent ones (time, the console, the disk; and sched.rs's spawn_task) are exports of this module, so the
-//! kernel calls them directly. The rest need JS objects (promises,
-//! programs' modules) and are closures reached through wasm-bindgen: the
-//! tasks' (sched.rs's switch_task, idle and restart_task, and halt here,
-//! suspend the kernel's stack) and the programs' (programs.rs).
+//! Those that return (time, the console, the disk, the programs': here,
+//! sched.rs's spawn_task, programs.rs's) are exports of this module, so the
+//! kernel calls them directly. Those that suspend the kernel's stack
+//! (sched.rs's switch_task, idle and restart_task, and halt here) return a
+//! promise: closures, made suspending (JSPI).
 
 use std::cell::RefCell;
 
@@ -15,7 +15,6 @@ use wasm_bindgen::JsCast;
 use ksee_core::Memory;
 
 use crate::js;
-use crate::programs::{clone_user, user_load, user_start};
 use crate::sched;
 use crate::state::*;
 
@@ -149,7 +148,8 @@ pub fn kernel() -> Object {
     let export = |name: &str| js::get(&rt, name);
 
     let kernel = Object::new();
-    for name in ["console_write", "console_read", "time_ns", "spawn_task", "disk_submit", "disk_done"] {
+    for name in ["console_write", "console_read", "time_ns", "spawn_task", "disk_submit", "disk_done",
+                 "syscall_enter", "syscall_exit", "user_load", "user_start", "clone_user"] {
         js::set(&kernel, name, export(name));
     }
     js::set(&kernel, "switch_task", sched::suspending(Closure::<dyn FnMut(u32, u32, u32) -> Promise>::new(sched::switch_task).into_js_value()));
@@ -160,11 +160,6 @@ pub fn kernel() -> Object {
         crate::machine::settle(Some(format!("the kernel halted ({code})")));
         sched::never()
     }).into_js_value()));
-    js::set(&kernel, "syscall_enter", Closure::<dyn FnMut()>::new(crate::programs::syscall_enter).into_js_value());
-    js::set(&kernel, "syscall_exit", Closure::<dyn FnMut(i32)>::new(crate::programs::syscall_exit).into_js_value());
-    js::set(&kernel, "user_load", Closure::<dyn FnMut(u32, u32) -> i32>::new(user_load).into_js_value());
-    js::set(&kernel, "user_start", Closure::<dyn FnMut(u32, u32, u32) -> u32>::new(user_start).into_js_value());
-    js::set(&kernel, "clone_user", Closure::<dyn FnMut(u32, u32)>::new(clone_user).into_js_value());
 
     let env = Object::new();
     js::set(&env, "memory", wasm_bindgen::memory());
