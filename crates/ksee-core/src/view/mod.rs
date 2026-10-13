@@ -131,7 +131,7 @@ pub struct View<'a> {
 
 impl View<'_> {
     fn name(&self, func: u32) -> String {
-        self.tables.functions.get(&func).map_or_else(|| format!("{func:#x}"), |f| f.name.to_string())
+        self.tables.function(func).map_or_else(|| format!("{func:#x}"), |f| f.name.to_string())
     }
 
     /// Who the task at `addr` was at record `at`: its pid and comm as memory
@@ -225,7 +225,7 @@ impl View<'_> {
                 state,
                 doing: last.and_then(|j| {
                     let syscall = self.rec.run_at(j).and_then(|s| t.types.syscalls.get(&self.rec.runs[s].nr?).map(|n| n.to_string()));
-                    syscall.or_else(|| self.rec.calls.stack_at(t, j, None).into_iter().next().and_then(|c| t.functions.get(&c.func)).map(|f| f.name.to_string()))
+                    syscall.or_else(|| self.rec.calls.stack_at(t, j, None).into_iter().next().and_then(|c| t.function(c.func)).map(|f| f.name.to_string()))
                 }),
             }
         }).collect()
@@ -254,15 +254,15 @@ impl View<'_> {
         if let Some(id) = self.tables.find(name) {
             return self.function_definition(id);
         }
-        let (file, line) = self.tables.types.declared.get(name)?;
-        Some(Definition { name: name.to_string(), file: file.to_string(), line: *line, last: None, sealed: false })
+        let (file, line) = self.tables.types.declared(name)?;
+        Some(Definition { name: name.to_string(), file: file.to_string(), line, last: None, sealed: false })
     }
 
     /// Where member `member` is declared: of the one struct that has a
     /// member so named, if only one does.
     pub fn member_definition(&self, member: &str) -> Option<Definition> {
         let suffix = format!(".{member}");
-        let mut of = self.tables.types.declared.keys().filter(|k| k.ends_with(&suffix) && !k[..k.len() - suffix.len()].contains('.'));
+        let mut of = self.tables.types.declared_names().filter(|k| k.ends_with(&suffix) && !k[..k.len() - suffix.len()].contains('.'));
         match (of.next(), of.next()) {
             (Some(k), None) => self.definition(k),
             _ => None,
@@ -272,7 +272,7 @@ impl View<'_> {
     /// Function `id`: where it is.
     pub(crate) fn function_definition(&self, id: u32) -> Option<Definition> {
         let t = self.tables;
-        let f = t.functions.get(&id)?;
+        let f = t.function(id)?;
         let last = t.blocks_of(id).filter(|l| l.file == f.loc.file).map(|l| l.line).fold(f.loc.line, u32::max);
         Some(Definition { name: f.name.to_string(), file: t.file(f.loc).to_string(), line: f.loc.line, last: Some(last), sealed: f.sealed })
     }

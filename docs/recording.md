@@ -132,6 +132,8 @@ file line` lines: where a function (an inline one too, which has no probe),
 a struct, union, enum or typedef, a global, or a member (as
 `struct.member`) is declared (the page's Ctrl+click and F12 go there).
 The pack parses both texts (core's parser) and writes the result as one
-binary file, `tables`, which the page decodes as it is (no text to parse).
+binary file, `tables` (`flat.rs`): sorted arrays of fixed-size records, and
+one text their names are offsets into, which the page reads where they are
+(nothing to parse or decode but the few thousand types).
 The page's kernel is a copy of vmlinux without DWARF and `ksee.code`, plus
 the sources the probes name.

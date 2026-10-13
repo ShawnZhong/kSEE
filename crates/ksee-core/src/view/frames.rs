@@ -90,7 +90,7 @@ impl View<'_> {
     /// what it compared.
     pub(super) fn line_only(&self, s: &LineStep) -> Line {
         let chain = &self.tables.chain(s.inlined)[s.cut as usize..];
-        Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.tables.functions.get(&s.func).map_or("?", |f| f.name), file: self.tables.file(s.loc), line: s.loc.line,
+        Line { i: s.record, at: s.at, nth: s.nth, cut: s.cut, func: self.tables.function(s.func).map_or("?", |f| f.name), file: self.tables.file(s.loc), line: s.loc.line,
                depth: self.rec.frame_depth(self.tables, s.call) + chain.len() as u32, turn: s.turn, tests: Vec::new(),
                called: s.callee.map(|(f, value, at)| Called { func: self.name(f), value, at }) }
     }
@@ -178,18 +178,18 @@ impl View<'_> {
     /// The variables call `c` keeps in wasm locals (Record::Var), by record
     /// `at`: each one's last value, by its function (the call's, or one
     /// inlined into it: by name) and its name, parameters by number.
-    fn var_values(&self, c: &stack::StackCall, at: usize) -> BTreeMap<(&str, u32, &str), (&Var, u64)> {
+    fn var_values(&self, c: &stack::StackCall, at: usize) -> BTreeMap<(&'static str, u32, &'static str), (Var, u64)> {
         let mut out = BTreeMap::new();
         // (One that is the call's argument throughout: that.)
         let args = self.rec.args.get(c.first).map(|(w, _)| self.tables.values(c.func, w)).unwrap_or_default();
-        for (_, v) in self.tables.vars.range((c.func, 0)..=(c.func, u32::MAX)).filter(|(_, v)| v.arg > 0) {
+        for v in self.tables.vars_of(c.func).filter(|v| v.arg > 0) {
             if let Some(&value) = args.get(v.arg as usize - 1) {
                 out.insert((v.function, v.param, v.name), (v, value));
             }
         }
         for j in self.rec.calls.vars_of(c.first, at) {
             if let Record::Var { var, value, .. } = self.rec.records[j]
-                && let Some(v) = self.tables.vars.get(&(c.func, var)) {
+                && let Some(v) = self.tables.var(c.func, var) {
                 out.insert((v.function, v.param, v.name), (v, value));
             }
         }
@@ -200,7 +200,7 @@ impl View<'_> {
     /// number, a local after them, in the order it declares them.
     fn declared(&self, v: &Var) -> (bool, usize) {
         match v.param {
-            0 => (true, self.tables.types.locals.get(&v.of).and_then(|l| l.iter().position(|l| l.0 == v.name)).unwrap_or(0)),
+            0 => (true, self.tables.types.locals(v.of).position(|l| l.0 == v.name).unwrap_or(0)),
             k => (false, k as usize),
         }
     }
@@ -215,8 +215,8 @@ impl View<'_> {
     pub(super) fn var_ty(&self, v: &Var) -> Option<u32> {
         let types = &self.tables.types;
         Some(match v.param {
-            0 => types.locals.get(&v.of)?.iter().find(|l| l.0 == v.name)?.1,
-            k => types.params.get(&v.of)?.get(k as usize - 1)?.1,
+            0 => types.locals(v.of).find(|l| l.0 == v.name)?.1,
+            k => types.params(v.of).nth(k as usize - 1)?.1,
         })
     }
 
@@ -241,9 +241,9 @@ impl View<'_> {
     /// parameters, as values of their types.
     fn args(&self, func: u32, args: Vec<u64>, mem: &dyn Memory) -> Vec<Object> {
         let t = self.tables;
-        let known = t.functions.get(&func).map_or(u32::MAX, |f| f.known);
-        t.types.params.get(&func).into_iter().flatten().zip(args).enumerate().map(|(k, ((pname, ty), v))| {
-            let arg = t.types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, *ty, 0);
+        let known = t.function(func).map_or(u32::MAX, |f| f.known);
+        t.types.params(func).zip(args).enumerate().map(|(k, ((pname, ty), v))| {
+            let arg = t.types.object(&Arg(&v.to_le_bytes(), mem), pname, 0, ty, 0);
             // (Not passed any more: the optimizer took it away.)
             if known >> k & 1 == 0 {
                 return arg.missing(Missing::OptimizedOut);
@@ -264,16 +264,16 @@ impl View<'_> {
         // (A name once: two variables of one name, in two of its scopes, are
         // one to the recording, which knows a variable by its name.)
         let mut seen = alloc::collections::BTreeSet::new();
-        types.locals.get(&func).into_iter().flatten().filter(|(var, _, _)| seen.insert(*var)).map(|(var, ty, off)| match off {
+        types.locals(func).filter(|(var, _, _)| seen.insert(*var)).map(|(var, ty, off)| match off {
             Some(off) => {
-                let addr = frame.wrapping_add(*off);
-                let o = types.object(mem, var, addr, *ty, 0);
+                let addr = frame.wrapping_add(off);
+                let o = types.object(mem, var, addr, ty, 0);
                 // (Stored to in the call, by `at`.)
-                let written = self.rec.stores().last_write(addr, types.size_of(*ty).max(1), at).is_some_and(|(i, _)| i >= first);
+                let written = self.rec.stores().last_write(addr, types.size_of(ty).max(1), at).is_some_and(|(i, _)| i >= first);
                 if written { o } else { o.missing(Missing::Uninitialized) }
             }
-            None => set.iter().find(|o| o.name == *var).cloned()
-                .unwrap_or_else(|| types.object(&Arg(&[0; 8], mem), var, 0, *ty, 0).missing(Missing::NotRecorded)),
+            None => set.iter().find(|o| o.name == var).cloned()
+                .unwrap_or_else(|| types.object(&Arg(&[0; 8], mem), var, 0, ty, 0).missing(Missing::NotRecorded)),
         }).collect()
     }
 
@@ -282,19 +282,19 @@ impl View<'_> {
     /// there, then the call (None) at its own line (where the outermost
     /// inlined code is inlined, or the line it is at).
     pub(crate) fn nest(&self, c: &stack::StackCall) -> Vec<(Option<u32>, Option<Loc>)> {
-        let mut at = c.step.map(|s| s.loc).or(self.tables.functions.get(&c.func).map(|f| f.loc));
+        let mut at = c.step.map(|s| s.loc).or(self.tables.function(c.func).map(|f| f.loc));
         let mut out = Vec::new();
-        for &(k, site) in self.tables.chain(c.step.and_then(|s| s.inlined)) {
-            out.push((Some(k), at));
-            at = Some(site);
+        for site in self.tables.chain(c.step.and_then(|s| s.inlined())) {
+            out.push((Some(site.name), at));
+            at = Some(site.loc);
         }
         out.push((None, at));
         out
     }
 
-    /// Inlined function `k`'s name (Tables::inline_names).
+    /// Inlined function `k`'s name (Tables::inline_name).
     pub(crate) fn inline_name(&self, k: u32) -> &'static str {
-        self.tables.inline_names.get(k as usize).copied().unwrap_or("")
+        self.tables.inline_name(k)
     }
 }
 

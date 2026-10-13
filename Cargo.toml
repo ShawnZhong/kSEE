@@ -19,6 +19,7 @@ wasm-bindgen-futures = "0.4.78"
 js-sys = "0.3.105"
 web-sys = "0.3.105"
 serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
+bytemuck = { version = "1", features = ["derive"] }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 
 [profile.release]

@@ -235,7 +235,7 @@ impl Calls {
                 (*steps.last()?, steps.len() as u32 - 1)
             }
         };
-        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, call: p.call, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, turn: 0, callee: None })
+        Some(LineStep { record: p.record as usize, at: i, nth, index: line, func: c.func, call: p.call, depth: c.depth, loc: s.loc, inlined: s.inlined(), cut: 0, turn: 0, callee: None })
     }
 
     /// The source lines task `task` ran in records `from..=to`, in order: each block's lines up to its first call, then, as
@@ -291,7 +291,7 @@ impl Calls {
                 // before it left it: the record before the first on it or a
                 // later one; with none, after the stretch's last.)
                 let at = first_at.range((base + nth) as u32..).map(|(_, &j)| j).min().map_or(last, |j| j - 1).max(i);
-                let step = LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, call: p.call, depth: c.depth, loc: s.loc, inlined: s.inlined, cut: 0, turn, callee: None };
+                let step = LineStep { record: i, at, nth: nth as u32, index: (base + nth) as u32, func: c.func, call: p.call, depth: c.depth, loc: s.loc, inlined: s.inlined(), cut: 0, turn, callee: None };
                 // (Code inlined it enters, as a call would be: first the line
                 // calling each function it enters, in the one calling it, the
                 // outermost first; from this call's line before, or, the
@@ -300,16 +300,16 @@ impl Calls {
                     Some(l) if (l.func, l.depth) == (c.func, c.depth) => &t.chain(l.inlined)[l.cut as usize..],
                     _ => &[][..],
                 };
-                let into = t.chain(s.inlined);
+                let into = t.chain(s.inlined());
                 let same = into.iter().rev().zip(before.iter().rev()).take_while(|(a, b)| a == b).count();
                 for level in (0..into.len() - same).rev() {
-                    let (loc, outer) = (into[level].1, &into[level + 1..]);
+                    let (loc, outer) = (into[level].loc, &into[level + 1..]);
                     // (A site with no line, the compiler's own: no step, as for lines.)
                     if loc.line != 0 && !out.last().is_some_and(|l| l.loc == loc && &t.chain(l.inlined)[l.cut as usize..] == outer) {
                         out.push(LineStep { loc, cut: level as u32 + 1, ..step });
                     }
                 }
-                if out.last().is_some_and(|l| l.loc == s.loc && (l.inlined, l.cut) == (s.inlined, 0)) {
+                if out.last().is_some_and(|l| l.loc == s.loc && (l.inlined, l.cut) == (s.inlined(), 0)) {
                     continue;
                 }
                 out.push(step);

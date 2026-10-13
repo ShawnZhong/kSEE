@@ -56,8 +56,9 @@ impl Machine {
 
         let module: WebAssembly::Module =
             JsFuture::from(WebAssembly::compile(&kernel)).await?.unchecked_into();
-        // (Its bytes kept, as the tables are: their names are in them.)
-        let tables = Tables::from_bytes(tables.to_vec().leak()).ok_or("the kernel's tables are not this build's")?;
+        // (Read where they are: their bytes kept, as the tables are.)
+        let bytes = ksee_core::flat::kept(tables.length() as usize, |b| tables.copy_to(b));
+        let tables = Tables::from_bytes(bytes).ok_or("the kernel's tables are not this build's")?;
         TABLES.set(tables).map_err(|_| "one machine per page")?;
 
         // The initramfs goes at the top of RAM; the kernel reserves it.

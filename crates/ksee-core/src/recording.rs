@@ -206,13 +206,12 @@ impl Recording {
     /// where it starts (a block that runs some, the task's block before not).
     pub fn find_calls<'a>(&'a self, t: &'a Tables, is: impl Fn(&str) -> bool, first: usize, last: usize, task: Option<u32>) -> impl Iterator<Item = usize> + 'a {
         use alloc::collections::BTreeSet;
-        let ids: BTreeSet<u32> = t.functions.iter().filter(|(_, f)| is(&f.name)).map(|(&id, _)| id).collect();
+        let ids: BTreeSet<u32> = t.functions().filter(|(_, f)| is(f.name)).map(|(id, _)| id).collect();
         // The inline chains with one of them in them.
-        let inl: BTreeSet<u32> = t.inline_names.iter().enumerate().filter(|(_, n)| is(n)).map(|(k, _)| k as u32).collect();
-        let chains: BTreeSet<u32> = t.inlines.iter().enumerate()
-            .filter(|(_, c)| c.iter().any(|(k, _)| inl.contains(k))).map(|(c, _)| c as u32).collect();
+        let inl: BTreeSet<u32> = t.inline_names().enumerate().filter(|(_, n)| is(n)).map(|(k, _)| k as u32).collect();
+        let chains: BTreeSet<u32> = (0..t.chains()).filter(|&c| t.chain(Some(c)).iter().any(|s| inl.contains(&s.name))).collect();
         let inlined = move |func: u32, n: u32| !chains.is_empty() && t.block(func, n)
-            .is_some_and(|b| b.steps.iter().any(|s| s.inlined.is_some_and(|c| chains.contains(&c))));
+            .is_some_and(|b| b.steps.iter().any(|s| s.inlined().is_some_and(|c| chains.contains(&c))));
         // (Per task: whether its last block ran some inlined.)
         let mut was: BTreeMap<u32, bool> = BTreeMap::new();
         (first..self.len().min(last.saturating_add(1))).filter(move |&i| {
@@ -263,7 +262,7 @@ impl Recording {
             let mut out: Vec<u32> = Vec::with_capacity(self.calls.calls.len());
             for k in 0..self.calls.calls.len() as u32 {
                 let d = self.calls.caller(t, k).map_or(0, |(parent, at)| {
-                    out[parent as usize] + 1 + t.chain(at.step.and_then(|s| s.inlined)).len() as u32
+                    out[parent as usize] + 1 + t.chain(at.step.and_then(|s| s.inlined())).len() as u32
                 });
                 out.push(d);
             }

@@ -151,7 +151,7 @@ impl View<'_> {
             frames.clear();
             if let Some((k, inner)) = rec.calls.innermost(t, i, Some(nth as usize)) {
                 frames.extend_from_slice(&callers_of(k, &mut bars));
-                let key = (inner.first, inner.step.and_then(|s| s.inlined), cut);
+                let key = (inner.first, inner.step.and_then(|s| s.inlined()), cut);
                 if inside != Some(key) {
                     own.clear();
                     bars(&inner, cut as usize, &mut own);

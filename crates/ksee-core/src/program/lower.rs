@@ -34,7 +34,7 @@ pub fn lower(text: &str, types: &Types, env: &dyn Env) -> Result<Lowered, String
                     let like: Vec<&str> = types.syscalls.values().filter(|n| n.starts_with(call.as_str())).take(3).copied().collect();
                     format!("this kernel has no syscall {call}{}", if like.is_empty() { String::new() } else { format!(": {}?", like.join(", ")) })
                 })?;
-            let params = types.syscall_params(&call).cloned().unwrap_or_default();
+            let params = types.syscall_params(&call).unwrap_or_default();
             if args.len() > params.len() {
                 return Err(format!("{call}: {} arguments, not {}", params.len(), args.len()));
             }

@@ -156,8 +156,8 @@ impl View<'_> {
     /// Variable set `i` (a Var record)'s value, printed.
     fn var_value(&self, i: usize) -> String {
         let Record::Var { var, value, .. } = self.rec.records[i] else { return String::new() };
-        let v = self.rec.calls.call_at(i).and_then(|c| self.tables.vars.get(&(c.func, var)));
-        v.and_then(|v| self.var_object(v, value, self.now)?.value).unwrap_or_default()
+        let v = self.rec.calls.call_at(i).and_then(|c| self.tables.var(c.func, var));
+        v.and_then(|v| self.var_object(&v, value, self.now)?.value).unwrap_or_default()
     }
 
     /// Thing `t`'s write `k` (of its writes), printed: from what to what (a
@@ -345,28 +345,28 @@ impl View<'_> {
         let last = last.min(self.rec.last());
         for i in first..=last {
             let Record::Block { func, n: 0 } = records[i] else { continue };
-            let Some((f, (words, frame))) = t.functions.get(&func).zip(args.get(i)) else { continue };
+            let Some((f, (words, frame))) = t.function(func).zip(args.get(i)) else { continue };
             let frames = Self::frames(calls, args, i);
             // (What the machine's own functions name, its: the call's plumbing.)
             let machine = t.file(f.loc).starts_with(arch::MACHINE);
             let kind = |k: RegionKind| if machine { RegionKind::Machine } else { k };
-            for ((pname, ty), v) in types.params.get(&func).into_iter().flatten().zip(t.values(func, words)) {
+            for ((pname, ty), v) in types.params(func).zip(t.values(func, words)) {
                 let v = v as u32;
-                if let Some(to) = types.struct_target(*ty) {
-                    add(Naming { what: Cow::Borrowed(pname), within: Some(&f.name), kind: kind(RegionKind::Object), ty: to, addr: v,
+                if let Some(to) = types.struct_target(ty) {
+                    add(Naming { what: Cow::Borrowed(pname), within: Some(f.name), kind: kind(RegionKind::Object), ty: to, addr: v,
                                  call: Self::frame_of(&frames, v), by: Some(i) });
                 }
             }
             // (Where its pointers point as the call ends.)
             let end = calls.call_end(i).unwrap_or(last).min(last);
-            for (var, ty, off) in types.locals.get(&func).into_iter().flatten().filter_map(|(v, t, o)| Some((v, t, (*o)?))) {
-                add(Naming { what: Cow::Borrowed(var), within: Some(&f.name), kind: kind(RegionKind::Local), ty: *ty, addr: frame.wrapping_add(off),
+            for (var, ty, off) in types.locals(func).filter_map(|(v, t, o)| Some((v, t, o?))) {
+                add(Naming { what: Cow::Borrowed(var), within: Some(f.name), kind: kind(RegionKind::Local), ty, addr: frame.wrapping_add(off),
                              call: Some(i), by: Some(i) });
                 // (A local pointing at a struct: that too ("files->next_fd"
                 // through `struct files_struct *files = current->files`).)
-                if let Some(to) = types.struct_target(*ty) {
+                if let Some(to) = types.struct_target(ty) {
                     let v = self.rec.memory_at(self.now, end).read_u32(frame.wrapping_add(off));
-                    add(Naming { what: Cow::Borrowed(var), within: Some(&f.name), kind: kind(RegionKind::Object), ty: to, addr: v,
+                    add(Naming { what: Cow::Borrowed(var), within: Some(f.name), kind: kind(RegionKind::Object), ty: to, addr: v,
                                  call: Self::frame_of(&frames, v), by: Some(i) });
                 }
             }
@@ -374,9 +374,9 @@ impl View<'_> {
             // (Record::Var): its last value; in the order the code first
             // sets them: the call's own filp names the file before an
             // inlined callee's file.)
-            let mut values: Vec<(&Var, u32)> = Vec::new();
+            let mut values: Vec<(Var, u32)> = Vec::new();
             for j in calls.vars_of(i, end) {
-                if let Record::Var { var, value, .. } = records[j] && let Some(v) = t.vars.get(&(func, var)) {
+                if let Record::Var { var, value, .. } = records[j] && let Some(v) = t.var(func, var) {
                     match values.iter_mut().find(|(w, _)| w.function == v.function && w.name == v.name) {
                         Some(w) => w.1 = value as u32,
                         None => values.push((v, value as u32)),
@@ -384,8 +384,8 @@ impl View<'_> {
                 }
             }
             for (v, value) in values {
-                if let Some(to) = self.var_ty(v).and_then(|ty| types.struct_target(ty)) {
-                    add(Naming { what: Cow::Borrowed(&v.name), within: Some(&v.function), kind: kind(RegionKind::Object), ty: to, addr: value,
+                if let Some(to) = self.var_ty(&v).and_then(|ty| types.struct_target(ty)) {
+                    add(Naming { what: Cow::Borrowed(v.name), within: Some(v.function), kind: kind(RegionKind::Object), ty: to, addr: value,
                                  call: Self::frame_of(&frames, value), by: Some(i) });
                 }
             }
@@ -446,7 +446,7 @@ impl View<'_> {
                 None => {
                     let r = match Self::global_at(&globals, addr) {
                         Some((gaddr, size, name, ty)) => {
-                            let machine = types.declared.get(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
+                            let machine = types.declared(name).is_some_and(|(f, _)| f.starts_with(arch::MACHINE));
                             Region { what: name.into(), within: None, kind: if machine { RegionKind::Machine } else { RegionKind::Global }, ty: types.resolve(ty), addr: gaddr, size, life: None, depth: u32::MAX }
                         }
                         None => Region { what: format!("{addr:#x}"), within: None, kind: RegionKind::Other, ty: 0, addr, size: 0, life: None, depth: u32::MAX },
@@ -483,8 +483,8 @@ impl View<'_> {
             let Record::Var { var, .. } = records[i] else { continue };
             let Some(c) = calls.call_at(i) else { continue };
             let region = *vars.entry((c.first, var)).or_insert_with(|| {
-                let v = t.vars.get(&(c.func, var));
-                let r = v.and_then(|v| Some(Region { what: v.name.to_string(), within: Some(v.function.to_string()), kind: RegionKind::Var, ty: self.var_ty(v)?, addr: 0, size: 0, life: None, depth: c.depth }));
+                let v = t.var(c.func, var);
+                let r = v.and_then(|v| Some(Region { what: v.name.to_string(), within: Some(v.function.to_string()), kind: RegionKind::Var, ty: self.var_ty(&v)?, addr: 0, size: 0, life: None, depth: c.depth }));
                 r.map(|r| (regions.push(r), regions.len() as u32 - 1).1)
             });
             let Some(region) = region else { continue };

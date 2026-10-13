@@ -27,6 +27,7 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 
 use crate::Memory;
+use crate::flat::{At, Lists, Pod, Reader, Str, Text, Writer, Zeroable};
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Base {
@@ -102,20 +103,49 @@ pub struct Types {
     pub globals: BTreeMap<&'static str, (u32, u32)>,
     /// Syscall names, by number.
     pub syscalls: BTreeMap<u32, &'static str>,
-    /// Functions' parameters, by function id (the probes' F lines'): [(parameter, type)].
-    pub params: BTreeMap<u32, Vec<(&'static str, u32)>>,
-    /// The function ids of the names (the first of a name: for the
-    /// syscalls' bodies, looked for by name).
-    function_ids: BTreeMap<&'static str, u32>,
-    /// Functions' local variables, by function id: [(variable, type,
-    /// offset from the frame base, if it is in memory)].
-    pub locals: BTreeMap<u32, Vec<(&'static str, u32, Option<u32>)>>,
+    /// The syscalls' bodies' function ids (arch::SYSCALL_BODY's), by name.
+    bodies: BTreeMap<&'static str, u32>,
     /// Constants from the UAPI headers (flags, errno names): name -> value.
     pub constants: BTreeMap<&'static str, i64>,
-    /// Where a function (the inline ones too, which have no probe), a type
-    /// (struct, union, enum, typedef) or a global is declared: name ->
-    /// (file, line).
-    pub declared: BTreeMap<&'static str, (&'static str, u32)>,
+    /// The functions' parameters and locals, and the declarations: tens
+    /// of thousands, flat (see flat), the file's as it is.
+    #[serde(skip)]
+    flat: Flat,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct Flat {
+    text: &'static str,
+    /// By function id (the probes' F lines'), in order.
+    params: (&'static [At], &'static [Param]),
+    locals: (&'static [At], &'static [Local]),
+    /// Sorted by name.
+    declared: &'static [Declared],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct Param {
+    name: Str,
+    ty: u32,
+}
+
+/// `offset`: from the frame base, u32::MAX for a local not in memory.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct Local {
+    name: Str,
+    ty: u32,
+    offset: u32,
+}
+
+/// Where `name` is declared.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct Declared {
+    name: Str,
+    file: Str,
+    line: u32,
 }
 
 impl Types {
@@ -126,11 +156,13 @@ impl Types {
         let mut values: BTreeMap<u32, Vec<(&'static str, i64)>> = BTreeMap::new();
         let mut globals = BTreeMap::new();
         let mut syscalls = BTreeMap::new();
-        let mut params = BTreeMap::new();
-        let mut function_ids = BTreeMap::new();
-        let mut locals = BTreeMap::new();
+        let mut params = Lists::default();
+        let mut bodies = BTreeMap::new();
+        let mut locals = Lists::default();
         let mut constants = BTreeMap::new();
-        let mut declared = BTreeMap::new();
+        let mut declared: BTreeMap<&str, (Str, u32)> = BTreeMap::new();
+        // (The flat tables' names, each once.)
+        let mut strs = Text::default();
         // (Each name once: a file's, a parameter's, a local's, a member's,
         // each the same in thousands of declarations and functions.)
         let mut pool = Names::default();
@@ -162,29 +194,31 @@ impl Types {
                 }
                 // (P: id, name, then name:type for each parameter.)
                 Some(&"P") if c.len() == 4 => {
-                    let list = c[3].split(',').filter(|p| !p.is_empty()).map(|p| {
+                    let list: Vec<Param> = c[3].split(',').filter(|p| !p.is_empty()).map(|p| {
                         let (n, t) = p.rsplit_once(':').unwrap_or((p, "0"));
-                        (intern(n), t.parse().unwrap_or(0))
+                        Param { name: strs.name(n), ty: t.parse().unwrap_or(0) }
                     }).collect();
-                    params.insert(num(1), list);
-                    function_ids.entry(intern(c[2])).or_insert(num(1));
+                    params.push(num(1), list);
+                    if c[2].starts_with(crate::arch::SYSCALL_BODY) {
+                        bodies.entry(intern(c[2])).or_insert(num(1));
+                    }
                 }
                 // (Q: name:type:offset for each local, the offset empty
                 // for one not in memory.)
                 Some(&"Q") if c.len() == 3 => {
-                    let list = c[2].split(',').filter_map(|p| {
+                    let list: Vec<Local> = c[2].split(',').filter_map(|p| {
                         let mut f = p.split(':');
                         let (n, t, o) = (f.next()?, f.next()?, f.next()?);
                         // (Not one the kernel's macros made up.)
                         if n.starts_with(crate::arch::MADE_UP) {
                             return None;
                         }
-                        Some((intern(n), t.parse().ok()?, o.parse().ok()))
+                        Some(Local { name: strs.name(n), ty: t.parse().ok()?, offset: o.parse().unwrap_or(u32::MAX) })
                     }).collect();
-                    locals.insert(num(1), list);
+                    locals.push(num(1), list);
                 }
                 Some(&"W") if c.len() == 4 => {
-                    declared.entry(intern(c[1])).or_insert((intern(c[2]), num(3)));
+                    declared.entry(c[1]).or_insert((strs.name(c[2]), num(3)));
                 }
                 Some(&"G") if c.len() == 4 => {
                     globals.insert(intern(c[1]), (num(2), num(3)));
@@ -222,7 +256,51 @@ impl Types {
                 type_ids.entry(t.name).or_insert(id as u32);
             }
         }
-        Types { types, type_ids, globals, syscalls, params, function_ids, locals, constants, declared }
+        let declared = declared.into_iter().map(|(name, (file, line))| Declared { name: strs.name(name), file, line }).collect();
+        let flat = Flat { text: strs.keep(), params: params.keep(), locals: locals.keep(), declared: crate::flat::keep(declared) };
+        Types { types, type_ids, globals, syscalls, bodies, constants, flat }
+    }
+
+    pub(crate) fn write(&self, w: &mut Writer) {
+        w.bytes(&postcard::to_allocvec(self).expect("types"));
+        let f = &self.flat;
+        w.bytes(f.text.as_bytes());
+        (w.slice(f.params.0), w.slice(f.params.1), w.slice(f.locals.0), w.slice(f.locals.1), w.slice(f.declared));
+    }
+
+    pub(crate) fn read(r: &mut Reader) -> Option<Types> {
+        let mut t: Types = postcard::from_bytes(r.bytes()?).ok()?;
+        t.flat = Flat { text: r.text()?, params: (r.slice()?, r.slice()?), locals: (r.slice()?, r.slice()?), declared: r.slice()? };
+        Some(t)
+    }
+
+    /// Function `func`'s parameters (its id, the probes' F lines'):
+    /// [(parameter, type)].
+    pub fn params(&self, func: u32) -> impl Iterator<Item = (&'static str, u32)> + Clone + 'static {
+        let f = self.flat;
+        crate::flat::list(f.params.0, f.params.1, func).iter().map(move |p| (p.name.of(f.text), p.ty))
+    }
+
+    /// Function `func`'s local variables: [(variable, type, offset from
+    /// the frame base, if it is in memory)].
+    pub fn locals(&self, func: u32) -> impl Iterator<Item = (&'static str, u32, Option<u32>)> + Clone + 'static {
+        let f = self.flat;
+        crate::flat::list(f.locals.0, f.locals.1, func).iter()
+            .map(move |l| (l.name.of(f.text), l.ty, (l.offset != u32::MAX).then_some(l.offset)))
+    }
+
+    /// Where a function (the inline ones too, which have no probe), a type
+    /// (struct, union, enum, typedef), a global or a member
+    /// ("struct.member") is declared: (file, line).
+    pub fn declared(&self, name: &str) -> Option<(&'static str, u32)> {
+        let f = &self.flat;
+        let k = f.declared.binary_search_by(|d| d.name.of(f.text).cmp(name)).ok()?;
+        Some((f.declared[k].file.of(f.text), f.declared[k].line))
+    }
+
+    /// Every name declared (see declared), in order.
+    pub fn declared_names(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.flat.declared.iter().map(|d| d.name.of(self.flat.text))
     }
 
     pub fn get(&self, id: u32) -> &Type {
@@ -241,8 +319,8 @@ impl Types {
     }
 
     /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY).
-    pub fn syscall_params(&self, name: &str) -> Option<&Vec<(&'static str, u32)>> {
-        self.params.get(self.function_ids.get(format!("{}{name}", crate::arch::SYSCALL_BODY).as_str())?)
+    pub fn syscall_params(&self, name: &str) -> Option<Vec<(&'static str, u32)>> {
+        Some(self.params(*self.bodies.get(format!("{}{name}", crate::arch::SYSCALL_BODY).as_str())?).collect())
     }
 
     /// Every pointer in a value of type `ty` (it, or in the structs,
@@ -291,7 +369,7 @@ impl Types {
     pub fn params_of(&self, name: &str) -> Option<Vec<String>> {
         self.syscalls.values().find(|&&n| n == name)?;
         Some(self.syscall_params(name).into_iter().flatten().map(|(p, ty)| {
-            let t = self.name(*ty);
+            let t = self.name(ty);
             alloc::format!("{t}{}{p}", if t.ends_with('*') { "" } else { " " })
         }).collect())
     }

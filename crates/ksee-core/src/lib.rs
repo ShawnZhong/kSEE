@@ -1,7 +1,8 @@
 //! kSEE core: everything about a recording that needs no browser.
 //!
 //! * [`tables`], [`types`]: what the kernel says about itself (the plugin's
-//!   probe tables; types from DWARF, see crates/ksee-cli's pack); [`wasm`]:
+//!   probe tables; types from DWARF, see crates/ksee-cli's pack), the big
+//!   ones [`flat`], read in place; [`wasm`]:
 //!   where they are, a module's custom sections; [`arch`]: the kernel's own
 //!   names, and its timers.
 //! * [`trace`]: decoding the trace ring into records.
@@ -23,6 +24,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod arch;
+pub mod flat;
 pub mod highlight;
 pub mod program;
 pub mod mem;

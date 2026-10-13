@@ -110,7 +110,7 @@ Do not edit generated output as source:
 | `target/site/` | Normal site served locally and deployed. |
 | `target/site/pkg/` | wasm-bindgen output for the combined page/runtime module. |
 | `target/site/vmlinux.gz` | Instrumented, packed kernel without DWARF and `ksee.code`. |
-| `target/site/tables.gz` | The kernel's code and type tables, parsed (postcard: `Tables::to_bytes`). |
+| `target/site/tables.gz` | The kernel's code and type tables, parsed: flat records the page reads in place (`Tables::to_bytes`, `flat.rs`). |
 | `target/site/src/` | Kernel source files referenced by probe metadata. |
 | `target/site/initramfs.cpio.gz` | `/init`, `/bin/prog`, root fixture, and ext4 image. |
 | `target/site/lessons.json` | Built lesson index and content. |

@@ -1,22 +1,24 @@
 //! The code and type tables: the trace plugin's (its ksee.code section)
 //! and the pack's (the types' text), parsed by the pack into the page's
-//! `tables` file.
+//! `tables` file, which the page reads in place (see flat).
 
 use alloc::collections::BTreeMap;
 
 use crate::arch;
+use crate::flat::{At, Lists, Pod, Reader, Str, Text, Writer, Zeroable};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// A source location; `file` indexes [`Tables::files`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+/// A source location; `file` indexes the files (Tables::file).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Pod, Zeroable)]
 pub struct Loc {
     pub file: u32,
     pub line: u32,
 }
 
-/// An instrumented function.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// An instrumented function (a view of the tables', Tables::function).
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Function {
     pub name: &'static str,
     /// Where it is defined.
@@ -31,29 +33,75 @@ pub struct Function {
     pub sealed: bool,
 }
 
+/// A function, as the tables have it: by id.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct FunctionAt {
+    id: u32,
+    name: Str,
+    loc: Loc,
+    known: u32,
+    wide: u32,
+    sealed: u32,
+}
+
 /// A named variable kept in a wasm local, whose values the recording has
 /// (Record::Var): variable `name` of function `function` (the one whose
 /// records they are, or one inlined into it; `of`: its id), parameter
 /// `param` of it (from 1; 0: a local). `arg`: if nonzero, it is the
 /// call's parameter `arg` throughout (an inlined call's parameter passed
 /// one of the call's own), with no records.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// (A view of the tables', Tables::var.)
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Var {
     pub of: u32,
-    /// (Shared: the same names, many times over.)
     pub function: &'static str,
     pub name: &'static str,
     pub param: u32,
     pub arg: u32,
 }
 
-/// A source line a block runs; `inlined`: if it is code inlined into the
-/// block's function, the functions it is inlined from (an index into
-/// [`Tables::inlines`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Variable `k` of function `func`, as the tables have it.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct VarAt {
+    func: u32,
+    k: u32,
+    of: u32,
+    function: Str,
+    name: Str,
+    param: u32,
+    arg: u32,
+}
+
+/// A source line a block runs, and if it is code inlined into the block's
+/// function, the functions it is inlined from (Step::inlined).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
 pub struct Step {
     pub loc: Loc,
-    pub inlined: Option<u32>,
+    /// An inline chain (Tables::chain), u32::MAX for none.
+    chain: u32,
+}
+
+impl Step {
+    pub fn new(loc: Loc, inlined: Option<u32>) -> Step {
+        Step { loc, chain: inlined.unwrap_or(u32::MAX) }
+    }
+
+    /// The inline chain it is in (Tables::chain), if it is inlined.
+    pub fn inlined(&self) -> Option<u32> {
+        (self.chain != u32::MAX).then_some(self.chain)
+    }
+}
+
+/// An inlined function (Tables::inline_name) and where it is inlined: a
+/// line of the next one out (of the block's function, for the last).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Pod, Zeroable)]
+pub struct Site {
+    pub name: u32,
+    pub loc: Loc,
 }
 
 use crate::types::Types;
@@ -69,12 +117,20 @@ pub struct Block<'a> {
     cuts: &'a [u32],
 }
 
-/// Where block `key` (function, n)'s steps and cuts are in the Tables'.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+/// Where block (func, n)'s steps and cuts are in the Tables'.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct BlockAt {
-    key: (u32, u32),
-    steps: (u32, u32),
-    cuts: (u32, u32),
+    func: u32,
+    n: u32,
+    steps: [u32; 2],
+    cuts: [u32; 2],
+}
+
+impl BlockAt {
+    fn key(&self) -> (u32, u32) {
+        (self.func, self.n)
+    }
 }
 
 impl<'a> Block<'a> {
@@ -108,50 +164,47 @@ impl<'a> Block<'a> {
     }
 }
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-// (Names borrowed from the tables' bytes, kept for the page's life.)
-#[serde(bound(deserialize = "'de: 'static"))]
+/// The tables: flat (see flat), the file's as it is, or as parse made
+/// them.
+#[derive(Debug, Default)]
 pub struct Tables {
-    pub functions: BTreeMap<u32, Function>,
+    /// The names' text.
+    text: &'static str,
+    /// By id.
+    functions: &'static [FunctionAt],
     /// The blocks, by (function, n): where each one's steps and cuts are
-    /// in `steps` and `cuts`, every block's in one (a hundred thousand
-    /// blocks: not an allocation each). See block.
-    blocks: Vec<BlockAt>,
-    steps: Vec<Step>,
-    cuts: Vec<u32>,
+    /// in `steps` and `cuts`. See block.
+    blocks: &'static [BlockAt],
+    steps: &'static [Step],
+    cuts: &'static [u32],
     /// Names of inlined functions.
-    pub inline_names: Vec<&'static str>,
-    /// Inline chains (see [`Step`]): innermost first, each an inlined
-    /// function (in [`Tables::inline_names`]) and where it is inlined (a line of
-    /// the next one out; the last: of the block's function).
-    pub inlines: Vec<Vec<(u32, Loc)>>,
+    inline_names: &'static [Str],
+    /// Inline chains (see Step), by index: innermost first.
+    chains: (&'static [At], &'static [Site]),
     /// Source file paths.
-    pub files: Vec<&'static str>,
+    files: &'static [Str],
+    /// By (function, k): its variable k, as its Var records have it.
+    vars: &'static [VarAt],
     /// The kernel's types.
     pub types: Types,
-    /// (function, k) -> its variable k, as its Var records have it.
-    pub vars: BTreeMap<(u32, u32), Var>,
 }
 
 /// Interns file paths while parsing.
 #[derive(Default)]
 struct Files {
-    ids: BTreeMap<&'static str, u32>,
-    paths: Vec<&'static str>,
+    ids: BTreeMap<String, u32>,
+    paths: Vec<Str>,
 }
 
 impl Files {
-    fn intern(&mut self, path: &str, names: &mut crate::types::Names) -> u32 {
-        match self.ids.get(path) {
-            Some(&id) => id,
-            None => {
-                let path = names.name(path);
-                self.paths.push(path);
-                let id = self.paths.len() as u32 - 1;
-                self.ids.insert(path, id);
-                id
-            }
+    fn intern(&mut self, path: &str, text: &mut Text) -> u32 {
+        if let Some(&id) = self.ids.get(path) {
+            return id;
         }
+        self.paths.push(text.name(path));
+        let id = self.paths.len() as u32 - 1;
+        self.ids.insert(path.into(), id);
+        id
     }
 }
 
@@ -160,7 +213,7 @@ impl Files {
 #[derive(Default)]
 struct Unit {
     files: BTreeMap<u32, u32>,
-    sites: BTreeMap<u32, (u32, Loc)>,
+    sites: BTreeMap<u32, Site>,
 }
 
 impl Unit {
@@ -174,71 +227,93 @@ impl Unit {
 
 impl Tables {
     /// The tables as the page loads them (the pack's: parsed once, at
-    /// build time).
+    /// build time; see flat).
     pub fn to_bytes(&self) -> Vec<u8> {
-        postcard::to_allocvec(self).expect("tables")
+        let mut w = Writer::default();
+        w.bytes(self.text.as_bytes());
+        w.slice(self.functions);
+        (w.slice(self.blocks), w.slice(self.steps), w.slice(self.cuts));
+        (w.slice(self.inline_names), w.slice(self.chains.0), w.slice(self.chains.1));
+        (w.slice(self.files), w.slice(self.vars));
+        self.types.write(&mut w);
+        w.done()
     }
 
-    /// The tables from [`Tables::to_bytes`]' bytes, which the names
-    /// borrow: kept, as the tables are, for the page's life.
+    /// The tables of [`Tables::to_bytes`]' bytes, read where they are
+    /// (8-aligned: flat::kept), kept as the tables are.
     pub fn from_bytes(bytes: &'static [u8]) -> Option<Tables> {
-        postcard::from_bytes(bytes).ok()
+        let mut r = Reader::new(bytes);
+        Some(Tables {
+            text: r.text()?,
+            functions: r.slice()?,
+            blocks: r.slice()?,
+            steps: r.slice()?,
+            cuts: r.slice()?,
+            inline_names: r.slice()?,
+            chains: (r.slice()?, r.slice()?),
+            files: r.slice()?,
+            vars: r.slice()?,
+            types: Types::read(&mut r)?,
+        })
     }
 
     /// Parse the `ksee.code` section and the types' text. Lines are
     /// tab-separated and may repeat (one copy per compilation unit).
     pub fn parse(code: &str, types: &str) -> Tables {
-        let mut t = Tables { types: Types::parse(types), ..Default::default() };
+        let types = Types::parse(types);
+        let mut text = Text::default();
         let mut files = Files::default();
         let mut unit = Unit::default();
         let mut names: BTreeMap<String, u32> = BTreeMap::new();
-        let mut chains: BTreeMap<Vec<(u32, Loc)>, u32> = BTreeMap::new();
+        let mut inline_names = Vec::new();
+        let mut chains: BTreeMap<Vec<Site>, u32> = BTreeMap::new();
+        let mut functions = BTreeMap::new();
+        let mut vars = BTreeMap::new();
+        let (mut blocks, mut steps, mut cuts) = (Vec::new(), Vec::new(), Vec::new());
         let mut seen: alloc::collections::BTreeSet<(u32, u32)> = Default::default();
-        // (Each name once: variables repeat their functions' and their own.)
-        let mut pool = crate::types::Names::default();
         for line in code.lines() {
             let cols: Vec<&str> = line.split('\t').collect();
             match cols.as_slice() {
                 ["U"] => unit = Unit::default(),
                 ["P", k, path] => {
                     if let Ok(k) = k.parse() {
-                        unit.files.insert(k, files.intern(path, &mut pool));
+                        unit.files.insert(k, files.intern(path, &mut text));
                     }
                 }
                 ["I", k, name, site] => {
                     if let Ok(k) = k.parse() {
                         let name = *names.entry(name.to_string()).or_insert_with(|| {
-                            t.inline_names.push(pool.name(name));
-                            t.inline_names.len() as u32 - 1
+                            inline_names.push(text.name(name));
+                            inline_names.len() as u32 - 1
                         });
-                        unit.sites.insert(k, (name, unit.loc(site)));
+                        unit.sites.insert(k, Site { name, loc: unit.loc(site) });
                     }
                 }
                 ["V", id, k, of, function, name, param, arg] => {
-                    if let (Ok(id), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) && !name.starts_with(crate::arch::MADE_UP) {
+                    if let (Ok(func), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) && !name.starts_with(crate::arch::MADE_UP) {
                         let (param, arg) = (param.parse().unwrap_or(0), arg.parse().unwrap_or(0));
-                        t.vars.insert((id, k), Var { of, function: pool.name(function), name: pool.name(name), param, arg });
+                        vars.insert((func, k), VarAt { func, k, of, function: text.name(function), name: text.name(name), param, arg });
                     }
                 }
                 ["F", id, name, location, known, rest @ ..] => {
                     let Ok(id) = id.parse() else { continue };
                     let loc = unit.loc(location);
-                    let sealed = rest.first() == Some(&"1");
+                    let sealed = (rest.first() == Some(&"1")) as u32;
                     let wide = rest.get(1).and_then(|w| w.parse().ok()).unwrap_or(0);
-                    t.functions.insert(id, Function { name: pool.name(name), loc, known: known.parse().unwrap_or(0), wide, sealed });
+                    functions.insert(id, FunctionAt { id, name: text.name(name), loc, known: known.parse().unwrap_or(0), wide, sealed });
                 }
                 ["L", id, n, items] => {
-                    if let (Ok(id), Ok(n)) = (id.parse(), n.parse()) {
-                        let (mut steps, mut cuts) = (Vec::new(), alloc::vec![0]);
+                    if let (Ok(func), Ok(n)) = (id.parse(), n.parse()) {
+                        let (mut these, mut cut) = (Vec::new(), alloc::vec![0]);
                         let mut file = ""; // ":line": the item before's
                         for item in items.split(';') {
                             if item == "|" {
-                                cuts.push(steps.len() as u32);
+                                cut.push(these.len() as u32);
                                 continue;
                             }
                             let (at, inl) = item.split_once('@').map_or((item, None), |(a, f)| (a, Some(f)));
                             // The functions it is inlined from: an I line's site each.
-                            let chain: Vec<(u32, Loc)> = inl.into_iter().flat_map(|c| c.split('@'))
+                            let chain: Vec<Site> = inl.into_iter().flat_map(|c| c.split('@'))
                                 .filter_map(|k| unit.sites.get(&k.parse::<u32>().ok()?).copied()).collect();
                             let full;
                             let at = match at.strip_prefix(':') {
@@ -251,74 +326,139 @@ impl Tables {
                                     at
                                 }
                             };
-                            let inlined = (!chain.is_empty()).then(|| *chains.entry(chain.clone()).or_insert_with(|| {
-                                t.inlines.push(chain);
-                                t.inlines.len() as u32 - 1
-                            }));
-                            steps.push(Step { loc: unit.loc(at), inlined });
+                            let inlined = (!chain.is_empty()).then(|| {
+                                let next = chains.len() as u32;
+                                *chains.entry(chain).or_insert(next)
+                            });
+                            these.push(Step::new(unit.loc(at), inlined));
                         }
                         // (Once: a unit's copy of a block another unit gave.)
-                        if seen.insert((id, n)) {
-                            let at = |v: usize, n: usize| (v as u32, (v + n) as u32);
-                            t.blocks.push(BlockAt { key: (id, n), steps: at(t.steps.len(), steps.len()), cuts: at(t.cuts.len(), cuts.len()) });
-                            t.steps.extend(steps);
-                            t.cuts.extend(cuts);
+                        if seen.insert((func, n)) {
+                            let at = |v: usize, n: usize| [v as u32, (v + n) as u32];
+                            blocks.push(BlockAt { func, n, steps: at(steps.len(), these.len()), cuts: at(cuts.len(), cut.len()) });
+                            steps.extend(these);
+                            cuts.extend(cut);
                         }
                     }
                 }
                 _ => {}
             }
         }
-        t.blocks.sort_by_key(|b| b.key);
-        t.steps.shrink_to_fit();
-        t.cuts.shrink_to_fit();
-        t.files = files.paths;
-        t.fold_primitives();
+        blocks.sort_by_key(BlockAt::key);
+        let mut by_index: Vec<(u32, Vec<Site>)> = chains.into_iter().map(|(c, k)| (k, c)).collect();
+        by_index.sort_by_key(|c| c.0);
+        let chains = by_index.into_iter().map(|(_, c)| c).collect();
+        let mut t = Tables {
+            text: "",
+            functions: crate::flat::keep(functions.into_values().collect()),
+            blocks: crate::flat::keep(blocks),
+            steps: &[],
+            cuts: crate::flat::keep(cuts),
+            inline_names: crate::flat::keep(inline_names),
+            chains: (&[], &[]),
+            files: crate::flat::keep(files.paths),
+            vars: crate::flat::keep(vars.into_values().collect()),
+            types,
+        };
+        t.text = text.keep();
+        (t.steps, t.chains) = t.fold_primitives(steps, chains);
         t
     }
 
     /// The machine's primitives (arch::PRIMITIVES) inlined into kernel code
     /// are the machine, not calls: a step in one becomes a step at the line
     /// it is inlined at, in the function that inlined it, so that nothing
-    /// shows a frame, a node or a line of get_current.
-    fn fold_primitives(&mut self) {
-        let prim: Vec<bool> = self.inline_names.iter()
-            .map(|n| self.types.declared.get(*n).is_some_and(|(f, _)| arch::PRIMITIVES.iter().any(|p| f.starts_with(p)))).collect();
-        if !prim.iter().any(|&p| p) {
-            return;
-        }
-        let mut chains: BTreeMap<Vec<(u32, Loc)>, u32> = self.inlines.iter().enumerate().map(|(i, c)| (c.clone(), i as u32)).collect();
-        let mut folded: BTreeMap<u32, (Loc, Option<u32>)> = BTreeMap::new();
-        for s in self.steps.iter_mut() {
-            let Some(c) = s.inlined else { continue };
-            if let Some(&(loc, inlined)) = folded.get(&c) {
-                (s.loc, s.inlined) = (loc, inlined);
-                continue;
+    /// shows a frame, a node or a line of get_current. (The steps and
+    /// chains, kept.)
+    fn fold_primitives(&self, mut steps: Vec<Step>, mut chains: Vec<Vec<Site>>) -> (&'static [Step], (&'static [At], &'static [Site])) {
+        let prim: Vec<bool> = (0..self.inline_names.len() as u32)
+            .map(|k| self.types.declared(self.inline_name(k)).is_some_and(|(f, _)| arch::PRIMITIVES.iter().any(|p| f.starts_with(p)))).collect();
+        if prim.iter().any(|&p| p) {
+            let mut index: BTreeMap<Vec<Site>, u32> = chains.iter().enumerate().map(|(i, c)| (c.clone(), i as u32)).collect();
+            let mut folded: BTreeMap<u32, (Loc, Option<u32>)> = BTreeMap::new();
+            for s in steps.iter_mut() {
+                let Some(c) = s.inlined() else { continue };
+                if let Some(&(loc, inlined)) = folded.get(&c) {
+                    *s = Step::new(loc, inlined);
+                    continue;
+                }
+                let chain = &chains[c as usize];
+                let n = chain.iter().take_while(|site| prim[site.name as usize]).count();
+                if n == 0 {
+                    continue;
+                }
+                let loc = chain[n - 1].loc;
+                let rest = chain[n..].to_vec();
+                let inlined = (!rest.is_empty()).then(|| *index.entry(rest.clone()).or_insert_with(|| {
+                    chains.push(rest);
+                    chains.len() as u32 - 1
+                }));
+                folded.insert(c, (loc, inlined));
+                *s = Step::new(loc, inlined);
             }
-            let chain = &self.inlines[c as usize];
-            let n = chain.iter().take_while(|&&(k, _)| prim[k as usize]).count();
-            if n == 0 {
-                continue;
-            }
-            let loc = chain[n - 1].1;
-            let rest = chain[n..].to_vec();
-            let inlined = (!rest.is_empty()).then(|| *chains.entry(rest.clone()).or_insert_with(|| {
-                self.inlines.push(rest);
-                self.inlines.len() as u32 - 1
-            }));
-            folded.insert(c, (loc, inlined));
-            (s.loc, s.inlined) = (loc, inlined);
         }
+        let mut lists = Lists::default();
+        for (k, c) in chains.into_iter().enumerate() {
+            lists.push(k as u32, c);
+        }
+        (crate::flat::keep(steps), lists.keep())
+    }
+
+    /// Function `id`.
+    pub fn function(&self, id: u32) -> Option<Function> {
+        let k = self.functions.binary_search_by_key(&id, |f| f.id).ok()?;
+        Some(self.view_function(&self.functions[k]))
+    }
+
+    fn view_function(&self, f: &FunctionAt) -> Function {
+        Function { name: f.name.of(self.text), loc: f.loc, known: f.known, wide: f.wide, sealed: f.sealed != 0 }
+    }
+
+    /// Every function, by id.
+    pub fn functions(&self) -> impl Iterator<Item = (u32, Function)> + '_ {
+        self.functions.iter().map(|f| (f.id, self.view_function(f)))
+    }
+
+    /// Variable `k` of function `func`.
+    pub fn var(&self, func: u32, k: u32) -> Option<Var> {
+        let at = self.vars.binary_search_by_key(&(func, k), |v| (v.func, v.k)).ok()?;
+        Some(self.view_var(&self.vars[at]))
+    }
+
+    fn view_var(&self, v: &VarAt) -> Var {
+        Var { of: v.of, function: v.function.of(self.text), name: v.name.of(self.text), param: v.param, arg: v.arg }
+    }
+
+    /// Function `func`'s variables, in order.
+    pub fn vars_of(&self, func: u32) -> impl Iterator<Item = Var> + '_ {
+        let from = self.vars.partition_point(|v| v.func < func);
+        self.vars[from..].iter().take_while(move |v| v.func == func).map(|v| self.view_var(v))
+    }
+
+    /// Inlined function `k`'s name (a Site's).
+    pub fn inline_name(&self, k: u32) -> &'static str {
+        self.inline_names.get(k as usize).map_or("", |n| n.of(self.text))
+    }
+
+    /// Every inlined function's name, by k (see inline_name).
+    pub fn inline_names(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.inline_names.iter().map(|n| n.of(self.text))
+    }
+
+    /// How many inline chains there are (see chain).
+    pub fn chains(&self) -> u32 {
+        self.chains.0.len() as u32
     }
 
     /// Block `n` of `func`.
-    pub fn block(&self, func: u32, n: u32) -> Option<Block<'_>> {
-        let k = self.blocks.binary_search_by_key(&(func, n), |b| b.key).ok()?;
+    pub fn block(&self, func: u32, n: u32) -> Option<Block<'static>> {
+        let k = self.blocks.binary_search_by_key(&(func, n), BlockAt::key).ok()?;
         Some(self.view(&self.blocks[k]))
     }
 
-    fn view(&self, b: &BlockAt) -> Block<'_> {
-        Block { steps: &self.steps[b.steps.0 as usize..b.steps.1 as usize], cuts: &self.cuts[b.cuts.0 as usize..b.cuts.1 as usize] }
+    fn view(&self, b: &BlockAt) -> Block<'static> {
+        let (steps, cuts): (&'static [Step], &'static [u32]) = (self.steps, self.cuts);
+        Block { steps: &steps[b.steps[0] as usize..b.steps[1] as usize], cuts: &cuts[b.cuts[0] as usize..b.cuts[1] as usize] }
     }
 
     /// Every line block `n` of `func` runs: its lines' own, and the lines
@@ -328,23 +468,23 @@ impl Tables {
     /// "run to a line" looks for.
     pub fn block_lines(&self, func: u32, n: u32) -> impl Iterator<Item = Loc> + '_ {
         self.block(func, n).into_iter().flat_map(|b| b.steps)
-            .flat_map(move |s| core::iter::once(s.loc).chain(self.chain(s.inlined).iter().map(|&(_, site)| site)))
+            .flat_map(move |s| core::iter::once(s.loc).chain(self.chain(s.inlined()).iter().map(|site| site.loc)))
     }
 
-    /// Inline chain `k` (see inlines), or none.
-    pub fn chain(&self, k: Option<u32>) -> &[(u32, Loc)] {
-        k.and_then(|k| self.inlines.get(k as usize)).map_or(&[], Vec::as_slice)
+    /// Inline chain `k` (see Step), innermost first, or none.
+    pub fn chain(&self, k: Option<u32>) -> &'static [Site] {
+        k.map_or(&[], |k| crate::flat::list(self.chains.0, self.chains.1, k))
     }
 
     /// Stretch `seg` of block `n` of `func`'s lines (none past the last).
-    pub fn stretch(&self, func: u32, n: u32, seg: u32) -> &[Step] {
+    pub fn stretch(&self, func: u32, n: u32, seg: u32) -> &'static [Step] {
         self.block(func, n).map_or(&[], |b| b.stretch(seg))
     }
 
     /// Function `func`'s argument values, from a call's words (trace::Args):
     /// a word each, two (low, high) for a wide one.
     pub fn values(&self, func: u32, words: &[u32]) -> Vec<u64> {
-        let wide = self.functions.get(&func).map_or(0, |f| f.wide);
+        let wide = self.function(func).map_or(0, |f| f.wide);
         let (mut out, mut w) = (Vec::new(), words.iter().copied());
         while let Some(lo) = w.next() {
             let hi = if wide >> out.len() & 1 == 1 { w.next().unwrap_or(0) } else { 0 };
@@ -355,22 +495,22 @@ impl Tables {
 
     /// Where the blocks of `func` begin, in order.
     pub fn blocks_of(&self, func: u32) -> impl Iterator<Item = Loc> + '_ {
-        let from = self.blocks.partition_point(|b| b.key.0 < func);
-        self.blocks[from..].iter().take_while(move |b| b.key.0 == func).map(|b| self.view(b).loc())
+        let from = self.blocks.partition_point(|b| b.func < func);
+        self.blocks[from..].iter().take_while(move |b| b.func == func).map(|b| self.view(b).loc())
     }
 
     pub fn file(&self, loc: Loc) -> &'static str {
-        self.files.get(loc.file as usize).copied().unwrap_or("?")
+        self.files.get(loc.file as usize).map_or("?", |f| f.of(self.text))
     }
 
     /// The id of file `path` (Loc::file; the paths are each once).
     pub(crate) fn file_id(&self, path: &str) -> Option<u32> {
-        self.files.iter().position(|f| *f == path).map(|k| k as u32)
+        self.files.iter().position(|f| f.of(self.text) == path).map(|k| k as u32)
     }
 
     /// The id of the (first) instrumented function called `name`.
     pub fn find(&self, name: &str) -> Option<u32> {
-        self.functions.iter().find(|(_, f)| f.name == name).map(|(&id, _)| id)
+        self.functions.iter().find(|f| f.name.of(self.text) == name).map(|f| f.id)
     }
 }
 
@@ -382,8 +522,8 @@ mod tests {
     fn parses_code_and_types() {
         let code = "U\nP\t0\t/s/p.c\nP\t1\t/s/q.h\nF\t7\tpick\t0:2\t3\t0\nL\t7\t0\t1:2\nU\nP\t0\t/s/p.c\nF\t7\tpick\t0:2\t3\t0\nF\t8\tcrc\t0:9\t1\t1\n";
         let t = Tables::parse(code, "T\t1\tbase\tint\t4\ts\nT\t2\tstruct\ttask_struct\t740\nM\t2\tpid\t5888\t0\t1\n");
-        let f = &t.functions[&7];
-        assert_eq!((f.known, f.sealed, t.functions[&8].sealed), (3, false, true));
+        let f = t.function(7).unwrap();
+        assert_eq!((f.known, f.sealed, t.function(8).unwrap().sealed), (3, false, true));
         assert_eq!((t.file(f.loc), f.loc.line), ("/s/p.c", 2));
         let b = t.block(7, 0).unwrap().loc();
         assert_eq!((t.file(b), b.line), ("/s/q.h", 2));
@@ -400,9 +540,9 @@ mod tests {
                       F\t1\tf\t0:1\t0\nL\t1\t0\t2:3@0@1;0:4\n";
         let t = Tables::parse(code, "W\tget_current\tarch/wasm/include/asm/current.h\t12\nW\tspin_lock\tinclude/linux/spinlock.h\t7\n");
         let steps = t.block(1, 0).unwrap().steps;
-        let chain = |s: &Step| s.inlined.map(|k| t.inlines[k as usize].iter().map(|&(n, _)| t.inline_names[n as usize].clone()).collect::<Vec<_>>());
-        assert_eq!((t.file(steps[0].loc), steps[0].loc.line, chain(&steps[0])), ("include/linux/spinlock.h", 9, Some(alloc::vec!["spin_lock".into()])));
-        assert_eq!((steps[1].loc.line, steps[1].inlined), (4, None));
+        let chain = |s: &Step| s.inlined().map(|k| t.chain(Some(k)).iter().map(|site| t.inline_name(site.name)).collect::<Vec<_>>());
+        assert_eq!((t.file(steps[0].loc), steps[0].loc.line, chain(&steps[0])), ("include/linux/spinlock.h", 9, Some(alloc::vec!["spin_lock"])));
+        assert_eq!((steps[1].loc.line, steps[1].inlined()), (4, None));
         // The block's own location was get_current's: now its first line's.
         let b = t.block(1, 0).unwrap().loc();
         assert_eq!((t.file(b), b.line), ("include/linux/spinlock.h", 9));
@@ -418,8 +558,9 @@ mod tests {
     #[test]
     fn bytes_are_the_tables() {
         let t = Tables::parse("U\nP\t0\tf.c\nF\t7\tf\t0:1\t7\t0\t2\nL\t7\t0\t0:3\n", "T\t1\tbase\tint\t4\ts\nP\t7\tf\ta:1\n");
-        let back = Tables::from_bytes(t.to_bytes().leak()).unwrap();
-        assert_eq!((back.functions[&7].name, back.file(back.block(7, 0).unwrap().loc())), ("f", "f.c"));
-        assert_eq!(back.types.params[&7], [("a", 1)]);
+        let bytes = t.to_bytes();
+        let back = Tables::from_bytes(crate::flat::kept(bytes.len(), |b| b.copy_from_slice(&bytes))).unwrap();
+        assert_eq!((back.function(7).unwrap().name, back.file(back.block(7, 0).unwrap().loc())), ("f", "f.c"));
+        assert_eq!(back.types.params(7).collect::<Vec<_>>(), [("a", 1)]);
     }
 }

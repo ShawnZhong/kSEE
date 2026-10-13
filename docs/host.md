@@ -57,9 +57,10 @@ Page modules and Dioxus state are documented in
 JavaScript fetches and decompresses the packed kernel, its tables, the
 initramfs and the disk, then `Machine::start` receives their bytes. It grows
 the outer memory to the product's fixed 64 MiB of kernel RAM, compiles the
-kernel, places the initramfs on the built-in command line, and decodes the
-tables once (`Tables::from_bytes`: the pack parsed them; their names stay in
-their bytes, kept for the page's life).
+kernel, places the initramfs on the built-in command line, and reads the
+tables where their bytes are (`Tables::from_bytes`: the pack parsed them,
+into flat records, see `flat.rs`; the bytes are kept for the page's life,
+copied once into 8-aligned memory).
 
 Each boot then:
 
