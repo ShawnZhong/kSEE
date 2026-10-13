@@ -23,7 +23,7 @@ jobs:
           key: linux-${{ runner.arch }}-${{ hashFiles('Makefile', 'linux.patch', 'arch/wasm/**', 'plugin/**') }}
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --locked --release -p ksee-cli && target/release/ksee build
+        run: ./ksee.sh build
       - name: Save the kernel
         if: steps.kernel.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
@@ -35,4 +35,4 @@ jobs:
             arch/wasm
           key: ${{ steps.kernel.outputs.cache-primary-key }}
       - name: Test
-        run: target/release/ksee test --built --ui
+        run: ./ksee.sh test --built --ui
