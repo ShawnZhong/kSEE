@@ -33,7 +33,9 @@ pub struct Function {
     pub sealed: bool,
 }
 
-/// A function, as the tables have it: by id.
+/// A function, as the tables have it: by id; its blocks and its variables
+/// from `blocks` and `vars` on (each numbered from 0, to the next
+/// function's).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct FunctionAt {
@@ -43,6 +45,8 @@ struct FunctionAt {
     known: u32,
     wide: u32,
     sealed: u32,
+    blocks: u32,
+    vars: u32,
 }
 
 /// A named variable kept in a wasm local, whose values the recording has
@@ -61,12 +65,10 @@ pub struct Var {
     pub arg: u32,
 }
 
-/// Variable `k` of function `func`, as the tables have it.
+/// A variable, as the tables have it (none: no name; see FunctionAt).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct VarAt {
-    func: u32,
-    k: u32,
     of: u32,
     function: Str,
     name: Str,
@@ -117,20 +119,13 @@ pub struct Block<'a> {
     cuts: &'a [u32],
 }
 
-/// Where block (func, n)'s steps and cuts are in the Tables'.
+/// Where a block's steps and cuts begin in the Tables' (each to where the
+/// next block's do: see FunctionAt).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct BlockAt {
-    func: u32,
-    n: u32,
-    steps: [u32; 2],
-    cuts: [u32; 2],
-}
-
-impl BlockAt {
-    fn key(&self) -> (u32, u32) {
-        (self.func, self.n)
-    }
+    steps: u32,
+    cuts: u32,
 }
 
 impl<'a> Block<'a> {
@@ -170,10 +165,9 @@ impl<'a> Block<'a> {
 pub struct Tables {
     /// The names' text.
     text: &'static str,
-    /// By id.
+    /// By id; each its blocks and variables, in its order.
     functions: &'static [FunctionAt],
-    /// The blocks, by (function, n): where each one's steps and cuts are
-    /// in `steps` and `cuts`. See block.
+    /// Where each block's steps and cuts are in `steps` and `cuts`.
     blocks: &'static [BlockAt],
     steps: &'static [Step],
     cuts: &'static [u32],
@@ -183,7 +177,7 @@ pub struct Tables {
     chains: (&'static [At], &'static [Site]),
     /// Source file paths.
     files: &'static [Str],
-    /// By (function, k): its variable k, as its Var records have it.
+    /// Each function's variables, as its Var records number them.
     vars: &'static [VarAt],
     /// The kernel's types.
     pub types: Types,
@@ -271,9 +265,9 @@ impl Tables {
         let mut chains = Index::<Vec<Site>>::default();
         let mut unit = Unit::default();
         let mut functions = BTreeMap::new();
-        let mut vars = BTreeMap::new();
-        let (mut blocks, mut steps, mut cuts) = (Vec::new(), Vec::new(), Vec::new());
-        let mut seen: alloc::collections::BTreeSet<(u32, u32)> = Default::default();
+        let mut vars: BTreeMap<(u32, u32), VarAt> = BTreeMap::new();
+        // (Each block's steps and cuts, by (function, n).)
+        let mut blocks: BTreeMap<(u32, u32), (Vec<Step>, Vec<u32>)> = BTreeMap::new();
         for line in code.lines() {
             let cols: Vec<&str> = line.split('\t').collect();
             match cols.as_slice() {
@@ -291,7 +285,7 @@ impl Tables {
                 ["V", id, k, of, function, name, param, arg] => {
                     if let (Ok(func), Ok(k), Ok(of)) = (id.parse(), k.parse(), of.parse()) && !name.starts_with(crate::arch::MADE_UP) {
                         let (param, arg) = (param.parse().unwrap_or(0), arg.parse().unwrap_or(0));
-                        vars.insert((func, k), VarAt { func, k, of, function: text.name(function), name: text.name(name), param, arg });
+                        vars.insert((func, k), VarAt { of, function: text.name(function), name: text.name(name), param, arg });
                     }
                 }
                 ["F", id, name, location, known, rest @ ..] => {
@@ -299,7 +293,7 @@ impl Tables {
                     let loc = unit.loc(location);
                     let sealed = (rest.first() == Some(&"1")) as u32;
                     let wide = rest.get(1).and_then(|w| w.parse().ok()).unwrap_or(0);
-                    functions.insert(id, FunctionAt { id, name: text.name(name), loc, known: known.parse().unwrap_or(0), wide, sealed });
+                    functions.insert(id, FunctionAt { id, name: text.name(name), loc, known: known.parse().unwrap_or(0), wide, sealed, blocks: 0, vars: 0 });
                 }
                 ["L", id, n, items] => {
                     if let (Ok(func), Ok(n)) = (id.parse(), n.parse()) {
@@ -329,30 +323,44 @@ impl Tables {
                             these.push(Step::new(unit.loc(at), inlined));
                         }
                         // (Once: a unit's copy of a block another unit gave.)
-                        if seen.insert((func, n)) {
-                            let at = |v: usize, n: usize| [v as u32, (v + n) as u32];
-                            blocks.push(BlockAt { func, n, steps: at(steps.len(), these.len()), cuts: at(cuts.len(), cut.len()) });
-                            steps.extend(these);
-                            cuts.extend(cut);
-                        }
+                        blocks.entry((func, n)).or_insert((these, cut));
                     }
                 }
                 _ => {}
             }
         }
-        blocks.sort_by_key(BlockAt::key);
+        // (Each function's blocks and variables in its order, from 0: one
+        // missing, empty (a variable the kernel's macros made up). A function
+        // with blocks or variables but no F line: one with no name.)
+        for &(id, _) in blocks.keys().chain(vars.keys()) {
+            functions.entry(id).or_insert(FunctionAt { id, ..FunctionAt::zeroed() });
+        }
+        let (mut block_at, mut steps, mut cuts, mut var_at) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for f in functions.values_mut() {
+            (f.blocks, f.vars) = (block_at.len() as u32, var_at.len() as u32);
+            let n = blocks.range((f.id, 0)..=(f.id, u32::MAX)).last().map_or(0, |(k, _)| k.1 + 1);
+            for n in 0..n {
+                block_at.push(BlockAt { steps: steps.len() as u32, cuts: cuts.len() as u32 });
+                if let Some((these, cut)) = blocks.remove(&(f.id, n)) {
+                    steps.extend(these);
+                    cuts.extend(cut);
+                }
+            }
+            let n = vars.range((f.id, 0)..=(f.id, u32::MAX)).last().map_or(0, |(k, _)| k.1 + 1);
+            var_at.extend((0..n).map(|k| vars.get(&(f.id, k)).copied().unwrap_or(VarAt::zeroed())));
+        }
         let mut name = |list: Vec<String>| crate::flat::keep(list.iter().map(|s| text.name(s)).collect());
         let (inline_names, files) = (name(names.list), name(files.list));
         let mut t = Tables {
             text: "",
             functions: crate::flat::keep(functions.into_values().collect()),
-            blocks: crate::flat::keep(blocks),
+            blocks: crate::flat::keep(block_at),
             steps: &[],
             cuts: crate::flat::keep(cuts),
             inline_names,
             chains: (&[], &[]),
             files,
-            vars: crate::flat::keep(vars.into_values().collect()),
+            vars: crate::flat::keep(var_at),
             types,
         };
         t.text = text.keep();
@@ -397,33 +405,46 @@ impl Tables {
 
     /// Function `id`.
     pub fn function(&self, id: u32) -> Option<Function> {
-        let k = self.functions.binary_search_by_key(&id, |f| f.id).ok()?;
-        Some(self.view_function(&self.functions[k]))
+        self.view_function(&self.functions[self.function_at(id)?])
     }
 
-    fn view_function(&self, f: &FunctionAt) -> Function {
-        Function { name: f.name.of(self.text), loc: f.loc, known: f.known, wide: f.wide, sealed: f.sealed != 0 }
+    /// Function `id`'s index in `functions`.
+    fn function_at(&self, id: u32) -> Option<usize> {
+        self.functions.binary_search_by_key(&id, |f| f.id).ok()
+    }
+
+    /// Function `id`'s blocks and its variables: where they are in `blocks`
+    /// and `vars` (none: no function).
+    fn spans(&self, id: u32) -> (core::ops::Range<usize>, core::ops::Range<usize>) {
+        let Some(k) = self.function_at(id) else { return (0..0, 0..0) };
+        let (f, next) = (&self.functions[k], self.functions.get(k + 1));
+        (f.blocks as usize..next.map_or(self.blocks.len(), |g| g.blocks as usize),
+         f.vars as usize..next.map_or(self.vars.len(), |g| g.vars as usize))
+    }
+
+    /// (None: one with blocks but no F line.)
+    fn view_function(&self, f: &FunctionAt) -> Option<Function> {
+        let name = f.name.of(self.text);
+        (!name.is_empty()).then_some(Function { name, loc: f.loc, known: f.known, wide: f.wide, sealed: f.sealed != 0 })
     }
 
     /// Every function, by id.
     pub fn functions(&self) -> impl Iterator<Item = (u32, Function)> + '_ {
-        self.functions.iter().map(|f| (f.id, self.view_function(f)))
+        self.functions.iter().filter_map(|f| Some((f.id, self.view_function(f)?)))
     }
 
     /// Variable `k` of function `func`.
     pub fn var(&self, func: u32, k: u32) -> Option<Var> {
-        let at = self.vars.binary_search_by_key(&(func, k), |v| (v.func, v.k)).ok()?;
-        Some(self.view_var(&self.vars[at]))
+        self.vars.get(self.spans(func).1).and_then(|vars| vars.get(k as usize)).and_then(|v| self.view_var(v))
     }
 
-    fn view_var(&self, v: &VarAt) -> Var {
-        Var { of: v.of, function: v.function.of(self.text), name: v.name.of(self.text), param: v.param, arg: v.arg }
+    fn view_var(&self, v: &VarAt) -> Option<Var> {
+        (v.name.of(self.text) != "").then(|| Var { of: v.of, function: v.function.of(self.text), name: v.name.of(self.text), param: v.param, arg: v.arg })
     }
 
     /// Function `func`'s variables, in order.
     pub fn vars_of(&self, func: u32) -> impl Iterator<Item = Var> + '_ {
-        let from = self.vars.partition_point(|v| v.func < func);
-        self.vars[from..].iter().take_while(move |v| v.func == func).map(|v| self.view_var(v))
+        self.vars[self.spans(func).1].iter().filter_map(|v| self.view_var(v))
     }
 
     /// Inlined function `k`'s name (a Site's).
@@ -443,13 +464,16 @@ impl Tables {
 
     /// Block `n` of `func`.
     pub fn block(&self, func: u32, n: u32) -> Option<Block<'static>> {
-        let k = self.blocks.binary_search_by_key(&(func, n), BlockAt::key).ok()?;
-        Some(self.view(&self.blocks[k]))
+        let blocks = self.spans(func).0;
+        ((n as usize) < blocks.len()).then(|| self.view(blocks.start + n as usize))
     }
 
-    fn view(&self, b: &BlockAt) -> Block<'static> {
+    /// Block `k` (of `blocks`): its steps and cuts, to the next one's.
+    fn view(&self, k: usize) -> Block<'static> {
         let (steps, cuts): (&'static [Step], &'static [u32]) = (self.steps, self.cuts);
-        Block { steps: &steps[b.steps[0] as usize..b.steps[1] as usize], cuts: &cuts[b.cuts[0] as usize..b.cuts[1] as usize] }
+        let (b, next) = (self.blocks[k], self.blocks.get(k + 1));
+        Block { steps: &steps[b.steps as usize..next.map_or(steps.len(), |n| n.steps as usize)],
+                cuts: &cuts[b.cuts as usize..next.map_or(cuts.len(), |n| n.cuts as usize)] }
     }
 
     /// Every line block `n` of `func` runs: its lines' own, and the lines
@@ -481,8 +505,7 @@ impl Tables {
 
     /// Where the blocks of `func` begin, in order.
     pub fn blocks_of(&self, func: u32) -> impl Iterator<Item = Loc> + '_ {
-        let from = self.blocks.partition_point(|b| b.func < func);
-        self.blocks[from..].iter().take_while(move |b| b.func == func).map(|b| self.view(b).loc())
+        self.spans(func).0.map(|k| self.view(k).loc())
     }
 
     pub fn file(&self, loc: Loc) -> &'static str {
