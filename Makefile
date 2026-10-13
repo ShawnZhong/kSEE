@@ -30,11 +30,13 @@
 # `make patch` writes linux.patch from linux/ (never the build). The port's own
 # files are edited in arch/wasm/, not linux/.
 
-# The release the port is a patch to: the stable tree's tag, and the commit
-# it must be (what is fetched, checked).
+# The release the port is a patch to: the stable tree's tag, the commit it
+# must be (what is fetched, checked), and its date (the commit's: the
+# build's, see KMAKE).
 LINUX_TREE := https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 LINUX_TAG := v7.2.7
 LINUX_COMMIT := f42acb3678424d1e08f6ed27c0d8ba8a125e14d6
+LINUX_DATE := 1789996140
 # The tests' browser: one version for every machine (Playwright's mirror
 # of Chrome for Testing has it for arm64 Linux too).
 CHROME_VERSION := 156.0.8078.4
@@ -55,9 +57,8 @@ KSEE ?= target/release/ksee
 # compiler's own choices would hide calls, with their arguments, as inlined
 # code. Its files named from the tree's top, fs/read_write.c, as in it, not
 # where it is: kbuild, out of the tree, names them by absolute path.)
-EPOCH = $(shell git -C linux log -1 --format=%ct $(LINUX_TAG))
 KMAKE = $(MAKE) -C linux O=$(CURDIR)/$(KOUT) ARCH=wasm LLVM=1 \
-	LOCALVERSION=-ksee KBUILD_BUILD_USER=ksee KBUILD_BUILD_HOST=ksee KBUILD_BUILD_VERSION=1 KBUILD_BUILD_TIMESTAMP="$(shell LC_ALL=C date -u -d @$(EPOCH))" \
+	LOCALVERSION=-ksee KBUILD_BUILD_USER=ksee KBUILD_BUILD_HOST=ksee KBUILD_BUILD_VERSION=1 KBUILD_BUILD_TIMESTAMP="$(shell LC_ALL=C date -u -d @$(LINUX_DATE))" \
 	KCFLAGS="-g -ffile-prefix-map=$(CURDIR)/linux/= -finline-hint-functions -fpass-plugin=$(CURDIR)/$(PLUGIN) -DKSEE_ID=$(shell cksum < plugin/ksee-trace.cpp | cut -d' ' -f1)"
 
 all: target/vmlinux target/vmlinux.debug $(OUT)/initramfs.cpio $(OUT)/disk.img
@@ -119,9 +120,9 @@ $(OUT)/%.wasm: user/%.c user/syscall.h | $(KOUT)/vmlinux $(OUT)
 # (the journal's room); initialized in full: no background work after the
 # mount (ext4lazyinit's). The same each time: made anew (no blocks of the
 # last left), its UUID and hash seed fixed, its times the release's.
-$(OUT)/disk.img: $(shell find user/disk) Makefile | linux/Makefile $(OUT)
+$(OUT)/disk.img: $(shell find user/disk) Makefile | $(OUT)
 	rm -f $@
-	SOURCE_DATE_EPOCH=$(EPOCH) mkfs.ext4 -q -F -b 4096 -L ksee -N 32 -d user/disk \
+	SOURCE_DATE_EPOCH=$(LINUX_DATE) mkfs.ext4 -q -F -b 4096 -L ksee -N 32 -d user/disk \
 		-U 6b736565-0000-4000-8000-000000000001 -E lazy_itable_init=0,lazy_journal_init=0,hash_seed=6b736565-0000-4000-8000-000000000002 $@ 8M
 
 # The archive (all times 0): the console (the kernel opens it before init),
