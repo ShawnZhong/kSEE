@@ -4,7 +4,7 @@
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use ksee_core::view::{Group, Node, RegionKind};
+use ksee_core::view::{Node, RegionKind};
 
 use crate::machine;
 use crate::state::{Derived, Shared, Ui};
@@ -64,9 +64,9 @@ pub(crate) fn Objects() -> Element {
     for k in 0..nodes.len() {
         depth[k] = nodes[k].under.map_or(0, |parent| depth[parent] + 1);
     }
-    let own: Vec<usize> = (0..nodes.len()).filter(|&k| nodes[k].group == Group::Changed && nodes[k].by.is_none()).collect();
-    let same: Vec<usize> = (0..nodes.len()).filter(|&k| nodes[k].group == Group::Same).collect();
-    let others = grouped((0..nodes.len()).filter(|&k| nodes[k].group == Group::Changed)
+    let own: Vec<usize> = (0..nodes.len()).filter(|&k| !nodes[k].same() && nodes[k].by.is_none()).collect();
+    let same: Vec<usize> = (0..nodes.len()).filter(|&k| nodes[k].same()).collect();
+    let others = grouped((0..nodes.len()).filter(|&k| !nodes[k].same())
         .filter_map(|k| Some((nodes[k].by.as_ref()?.named(), k))));
     let mut head = if own.is_empty() {
         format!("{title} itself changed nothing of the kernel's data")

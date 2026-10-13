@@ -25,8 +25,6 @@ pub struct Node {
     pub size: u32,
     pub changes: Vec<Diff>,
     pub depth: u32,
-    /// What happened to it (Group).
-    pub group: Group,
     /// Another task than the span's, if one made its first write (one the
     /// span woke, or that ran while it waited: a journal's thread).
     pub by: Option<Task>,
@@ -38,13 +36,13 @@ pub struct Node {
     pub via: Option<String>,
 }
 
-/// What happened to an object: it ends otherwise than it began (what the
-/// call did), or as it began (every change undone by the end: a lock
-/// taken and released, a count taken and dropped).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Group {
-    Changed,
-    Same,
+
+impl Node {
+    /// Whether it ends as it began: every change undone by the end (a lock
+    /// taken and released, a count taken and dropped), not what the call did.
+    pub fn same(&self) -> bool {
+        self.changes.iter().all(|d| d.before == d.after)
+    }
 }
 
 /// A member a span of records changed: from `before` (as the span began)
@@ -132,7 +130,7 @@ impl View<'_> {
                         _ => r.what.clone(),
                     };
                     nodes.push((Node { label, what: r.what.clone(), within: r.within.clone(), kind: r.kind, type_name: types.name(r.ty), ty: r.ty, addr: r.addr, size: r.size,
-                                       changes: Vec::new(), depth: r.depth, group: Group::Changed, by: (Some(task) != own).then(|| self.task(task, t.writes[0].i)),
+                                       changes: Vec::new(), depth: r.depth, by: (Some(task) != own).then(|| self.task(task, t.writes[0].i)),
                                        under: None, via: None }, Vec::new()));
                     nodes.len() - 1
                 }
@@ -142,10 +140,6 @@ impl View<'_> {
             n.changes.push(Diff { member: t.member.clone(), before: a, after: z, to: None, streaks });
         }
         for (n, points) in &mut nodes {
-            // (Lasting, but every member as it was: its changes undone.)
-            if n.changes.iter().all(|d| d.before == d.after) {
-                n.group = Group::Same;
-            }
             // (The members it ends with changed first, then those as they were.)
             let mut both: Vec<(Diff, Option<u32>)> = n.changes.drain(..).zip(points.drain(..)).collect();
             both.sort_by_key(|(d, _)| d.before == d.after);
@@ -171,7 +165,7 @@ impl View<'_> {
                 tasks.push(t);
             }
         }
-        nodes.sort_by_key(|n| (n.0.group == Group::Same, tasks.iter().position(|&t| t == n.0.by.as_ref().map(|t| t.addr)), n.0.depth));
+        nodes.sort_by_key(|n| (n.0.same(), tasks.iter().position(|&t| t == n.0.by.as_ref().map(|t| t.addr)), n.0.depth));
         // (One name for two (the slabs of two caches a callee named by one
         // parameter): the later numbered: "slab #2 in pfmemalloc_match".)
         let mut seen: BTreeMap<(String, Option<String>), u32> = BTreeMap::new();
@@ -194,7 +188,7 @@ impl View<'_> {
         // memory is as the span ends: the tree each is shown as.)
         let links: Vec<Vec<(String, usize)>> = nodes.iter().enumerate().map(|(k, n)| {
             types.pointers(n.ty).into_iter().filter_map(|(member, off)| Some((member, within(mem.read_u32(n.addr.wrapping_add(off)))
-                .filter(|&to| to != k && nodes[to].group == n.group && nodes[to].by == n.by)?))).collect()
+                .filter(|&to| to != k && nodes[to].same() == n.same() && nodes[to].by == n.by)?))).collect()
         }).collect();
         let tos: Vec<Vec<Option<usize>>> = points.iter().enumerate().map(|(k, p)| p.iter().map(|p| p.and_then(within).filter(|&to| to != k)).collect()).collect();
         // (The tree they are shown in, from the ones nothing points to (then

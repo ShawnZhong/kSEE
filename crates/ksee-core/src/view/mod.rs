@@ -26,7 +26,7 @@ mod tests;
 
 pub use chart::{wheel_window, Bar, Timeline};
 pub use frames::{step, Called, Frame, Line};
-pub use objects::{Diff, Group, Node, Streak};
+pub use objects::{Diff, Node, Streak};
 pub use stores::{Note, RegionKind, Write};
 pub(crate) use stores::{Named, RegionWrite};
 pub use value::{Missing, Object, Target};
