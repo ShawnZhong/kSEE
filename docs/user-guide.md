@@ -114,6 +114,15 @@ as they were just before the current line. Pointers and compound values can be
 opened. Hover a value to see its most recent recorded writer and, when the
 value was copied, its earlier origins.
 
+### Calls
+
+The Calls tab shows the whole syscall at the cursor as a tree: what it called
+and what those called, with the code inlined into each where it is (`·
+inlined`). Each function appears once per path of callers, with how often it
+was called there (`×2`). The frames the cursor is in are highlighted, the
+innermost in bold. Select a function to move the cursor to where it is first
+reached; fold a subtree with its arrow.
+
 ## 4. Inspect tasks, objects, values, and output
 
 ### Tasks

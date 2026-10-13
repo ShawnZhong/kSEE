@@ -602,3 +602,29 @@ fn a_path_follows_pointers() {
     assert_eq!((o.name.as_str(), o.addr), ("files->a", 0x40));
     assert!(t.types.at_path(&m, 5, 0x10, "files->b").is_none());
 }
+
+#[test]
+fn a_calls_tree_groups_its_callees_by_function() {
+    // f calls g twice (the first time g calls h), then h itself.
+    let t = Tables::parse("U\nP\t0\tf.c\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:5\t0\nF\t3\th\t0:9\t0\n", "");
+    let (b, r) = (|func, n| Record::Block { func, n }, |func| Record::Return { func, value: None });
+    let records = [b(1, 0), b(2, 0), b(3, 0), r(3), r(2), b(2, 0), r(2), b(1, 1), b(3, 0), r(3), r(1)];
+    let rec = Recording::new(&t, records.to_vec(), (0..records.len() as u32).collect(), Args::default());
+    let mem = alloc::vec![0; 16];
+    let v = View { tables: &t, rec: &rec, now: &mem };
+    let tree: Vec<_> = v.call_tree(0).into_iter().map(|n| (n.name, n.depth, n.count, n.first)).collect();
+    assert_eq!(tree, [("f".into(), 0, 1, 0), ("g".into(), 1, 2, 1), ("h".into(), 2, 1, 2), ("h".into(), 1, 1, 8)]);
+}
+
+#[test]
+fn a_calls_tree_has_the_code_inlined_where_it_is() {
+    // f's block 0 runs a line of spin_lock (inlined), which calls g there.
+    let code = "U\nP\t0\tf.c\nI\t0\tspin_lock\t0:2\nF\t1\tf\t0:1\t0\nF\t2\tg\t0:5\t0\nL\t1\t0\t0:9@0;|\nL\t2\t0\t0:6\n";
+    let t = Tables::parse(code, "");
+    let records = [Record::Block { func: 1, n: 0 }, Record::Block { func: 2, n: 0 }, Record::Return { func: 2, value: None }, Record::Return { func: 1, value: None }];
+    let rec = Recording::new(&t, records.to_vec(), (0..4).collect(), Args::default());
+    let mem = alloc::vec![0; 16];
+    let v = View { tables: &t, rec: &rec, now: &mem };
+    let tree: Vec<_> = v.call_tree(0).into_iter().map(|n| (n.name, n.depth, n.inlined)).collect();
+    assert_eq!(tree, [("f".into(), 0, false), ("spin_lock".into(), 1, true), ("g".into(), 2, false)]);
+}

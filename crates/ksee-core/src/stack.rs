@@ -172,8 +172,13 @@ impl Calls {
         self.calls.get(self.call_index(first)? as usize)
     }
 
+    /// The index of the call running at record `i` (its task's innermost).
+    pub(crate) fn index_at(&self, i: usize) -> Option<u32> {
+        Some(self.place_at(i)?.call)
+    }
+
     /// The index of the call the block 0 at record `first` begins.
-    fn call_index(&self, first: usize) -> Option<u32> {
+    pub(crate) fn call_index(&self, first: usize) -> Option<u32> {
         let call = self.place_at(first)?.call;
         (self.calls.get(call as usize)?.first == first).then_some(call)
     }

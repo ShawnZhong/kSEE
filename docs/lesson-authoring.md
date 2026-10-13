@@ -61,8 +61,8 @@ A target is `[call[#n]/]function[/tab]`, a tab, or `try:N`. A call is named by
 its syscall (`read`, `openat`), its `n`th in the program if more than one; with
 no call named, the first call that ran the function. A function is looked for
 in the call's own task first, then in any task that ran during it (one it
-woke, a kernel thread). The tabs are `stack`, `memory`, `tasks`, `disk` and
-`console`; try numbers count from 1. Name only as much as finding the place
+woke, a kernel thread). The tabs are `stack`, `calls`, `memory`, `tasks`,
+`disk` and `console`; try numbers count from 1. Name only as much as finding the place
 needs: a function alone, most often. Malformed targets fail lesson self-test
 validation. A try keeps the lesson prose visible. A link into the recording
 stays a link while the recording has where it goes, whatever program made it

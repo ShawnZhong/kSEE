@@ -179,6 +179,11 @@ li.add .editor textarea { border-color: var(--line); background: var(--panel); p
 /* The tabs: the Stack, the Objects, the Tasks, the Console */
 .panels { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel); border-left: 1px solid var(--line); }
 .tabs { display: flex; padding: 0 4px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 600; flex: none; }
+.calls { overflow: auto; flex: 1; min-height: 0; padding: 4px 0; font-size: 12px; }
+.call { white-space: nowrap; line-height: 1.6; }
+.call .fold { cursor: pointer; display: inline-block; width: 1.2em; }
+.call.on { background: var(--sel); }
+.call.here { background: var(--sel); font-weight: 600; }
 .tab { color: var(--dim); padding: 6px 8px; border-bottom: 2px solid transparent; }
 .tab:hover { text-decoration: none; color: var(--fg); }
 .tab.on { color: var(--fg); border-bottom-color: var(--accent); }

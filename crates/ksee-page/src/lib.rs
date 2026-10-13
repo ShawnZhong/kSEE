@@ -18,6 +18,7 @@ use ksee_host::machine::Machine;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
+mod calls;
 mod chart;
 mod editor;
 mod layout;

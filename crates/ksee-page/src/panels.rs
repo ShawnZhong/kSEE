@@ -25,6 +25,7 @@ pub fn Tabs() -> Element {
         div { class: "panels",
             nav { class: "tabs",
                 {head(Tab::Stack, "Stack", "the calls at the cursor, their values as they were then")}
+                {head(Tab::Calls, "Calls", "the syscall at the cursor as a tree: what it called and what those called, with the code inlined into each, each function once per path, how often it was called there; the frames the cursor is in marked")}
                 {head(Tab::Tasks, "Tasks", "every task at the cursor: what each is doing, its task_struct")}
                 {head(Tab::Memory, "Memory", "what the call you read wrote in the kernel's memory, with what it called (the bottom frame: the whole syscall): the objects it changed, and how they point to each other")}
                 {head(Tab::Disk, "Disk", "every transfer the disk made during the calls, for which task, and what it wrote; the cursor's place among them")}
@@ -33,6 +34,7 @@ pub fn Tabs() -> Element {
             div { class: "pane",
                 match tab {
                     Tab::Stack => rsx! { crate::stack::Stack {} },
+                    Tab::Calls => rsx! { crate::calls::Calls {} },
                     Tab::Memory => rsx! { Objects {} },
                     Tab::Tasks => rsx! { Tasks {} },
                     Tab::Disk => rsx! { Disk {} },

@@ -17,6 +17,7 @@ use crate::types::{Kind, Types};
 use crate::Memory;
 
 
+mod calls;
 mod chart;
 mod frames;
 mod objects;
@@ -25,6 +26,7 @@ mod value;
 #[cfg(test)]
 mod tests;
 
+pub use calls::CallNode;
 pub use chart::{wheel_window, Bar, Timeline};
 pub use frames::{step, Called, Frame, Line};
 pub use objects::{Diff, Node, Streak};

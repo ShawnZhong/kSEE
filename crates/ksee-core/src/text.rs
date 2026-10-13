@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LessonTab {
     Stack,
+    Calls,
     Memory,
     Tasks,
     Console,
@@ -18,6 +19,7 @@ impl LessonTab {
     fn parse(part: &str) -> Option<Self> {
         match part {
             "stack" => Some(Self::Stack),
+            "calls" => Some(Self::Calls),
             "memory" => Some(Self::Memory),
             "tasks" => Some(Self::Tasks),
             "console" => Some(Self::Console),

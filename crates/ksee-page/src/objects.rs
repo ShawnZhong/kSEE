@@ -17,6 +17,16 @@ fn count(n: usize) -> String {
     format!("{n} object{}", if n == 1 { "" } else { "s" })
 }
 
+/// The call you read (the Memory and Calls tabs'): the frame chosen (inlined
+/// code: the call it is in; the bottom frame: the whole syscall), its first
+/// record and name.
+pub(crate) fn read_call(d: Derived) -> Memo<Option<(usize, String)>> {
+    use_memo(move || {
+        let stack = d.stack.read();
+        stack.get(*d.frame.read()..).and_then(|up| up.iter().find(|f| !f.inlined)).map(|f| (f.first, f.func.clone()))
+    })
+}
+
 /// `items` by their keys, in the order each key first comes.
 fn grouped<T>(items: impl IntoIterator<Item = (String, T)>) -> Vec<(String, Vec<T>)> {
     let mut out: Vec<(String, Vec<T>)> = Vec::new();
@@ -35,13 +45,8 @@ fn grouped<T>(items: impl IntoIterator<Item = (String, T)>) -> Vec<(String, Vec<
 pub(crate) fn Objects() -> Element {
     let ui = use_context::<Ui>();
     let d = use_context::<Derived>();
-    // (What it shows: what the call you read changed, with what it called
-    // (the frame chosen; inlined code, the call it is in): the whole
-    // syscall, its outermost.)
-    let scope = use_memo(move || {
-        let stack = d.stack.read();
-        stack.get(*d.frame.read()..).and_then(|up| up.iter().find(|f| !f.inlined)).map(|f| (f.first, f.func.clone()))
-    });
+    // (What it shows: what the call you read changed, with what it called.)
+    let scope = read_call(d);
     let graph = use_memo(move || {
         (ui.snapshot)();
         let m = machine();

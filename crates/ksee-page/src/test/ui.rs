@@ -422,6 +422,16 @@ async fn panels(r: &mut Vec<String>) -> Result<(), String> {
     }
     let whole: Vec<String> = all(".obj .title").iter().map(text).collect();
     check(whole.len() > objects.len() && whole.iter().any(|o| o.starts_with("prog(")), "the whole syscall's objects", (&objects, &whole))?;
+    // (Calls: the whole syscall's tree; a function in it, its first call.)
+    tab("Calls").await;
+    let names: Vec<String> = all(".call a:not(.fold)").iter().map(text).collect();
+    check(names.len() > 10 && names.iter().any(|n| n == "filemap_read"), "the syscall's calls, a tree", &names[..names.len().min(12)])?;
+    click(&named(".call a", "filemap_read").ok_or("no filemap_read in Calls")?);
+    settle().await;
+    let here = one(".call.here a:not(.fold)").map(|a| text(&a));
+    check(place().starts_with("filemap_read") && here.as_deref() == Some("filemap_read") && all(".call").len() == names.len(),
+          "a function in Calls: its first call, marked, the tree as it was", (place(), &here))?;
+    r.push(format!("calls {}: {:?}", names.len(), all(".call").iter().take(14).map(text).collect::<Vec<_>>()));
     tab("Tasks").await;
     // (The running one, open: its files, then their fd_array, the file the
     // program read among them, by where it is; opened, its position.)
