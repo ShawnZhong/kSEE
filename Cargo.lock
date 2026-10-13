@@ -1202,15 +1202,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gimli"
-version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1033caf0b349c518623b5396bfb2cf0bddf44f0306d543a250e5743297aafd10"
-dependencies = [
- "stable_deref_trait",
-]
-
-[[package]]
 name = "gloo-net"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1651,7 +1642,7 @@ checksum = "a4933f3f57a8e9d9da04db23fb153356ecaf00cbd14aee46279c33dc80925c37"
 name = "ksee-cli"
 version = "0.1.0"
 dependencies = [
- "gimli 0.34.0",
+ "gimli",
  "ksee-core",
  "libc",
  "serde_json",
@@ -3005,7 +2996,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25b63a2bc6e4acb4cf69080068a531bad4530791098230e972ffcb64fd1dc266"
 dependencies = [
  "anyhow",
- "gimli 0.32.3",
+ "gimli",
  "id-arena",
  "leb128",
  "log",
