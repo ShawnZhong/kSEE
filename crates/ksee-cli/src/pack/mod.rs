@@ -4,7 +4,6 @@
 //! Makefile's: llvm-objcopy's.)
 
 mod dwarf;
-mod module;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path};
@@ -32,7 +31,7 @@ fn column<'a>(text: &'a str, kind: &'a str, k: usize) -> impl Iterator<Item = &'
 /// referenced sources to their final paths.
 pub fn kernel(kernel: &Path, tables_out: &Path, sources_out: &Path) {
     let image = crate::read(&kernel.join("vmlinux"));
-    let sections = crate::or_fail(module::custom_sections(&image), "vmlinux");
+    let sections = crate::or_fail(custom_sections(&image), "vmlinux");
     let mut types = crate::or_fail(dwarf::types(&sections), "DWARF");
     let code = String::from_utf8_lossy(sections.get("ksee.code").copied().unwrap_or(&[])).into_owned();
     for (name, value) in constants(&kernel.join("usr/include")) {
@@ -55,6 +54,18 @@ pub fn kernel(kernel: &Path, tables_out: &Path, sources_out: &Path) {
     eprintln!("{}: {} types, {} syscalls, parameters for {known} of {} functions, {} KiB; {files} sources, {} KiB",
               tables_out.display(), column(&types, "T", 1).count(), calls.len(), functions.len(),
               tables.len() >> 10, bytes >> 10);
+}
+
+/// The custom sections of a wasm module (the kernel's DWARF, the plugin's
+/// ksee.code), by name, in place.
+fn custom_sections(bytes: &[u8]) -> Result<BTreeMap<&str, &[u8]>, wasmparser::BinaryReaderError> {
+    let mut out = BTreeMap::new();
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
+        if let wasmparser::Payload::CustomSection(c) = payload? {
+            out.insert(c.name(), c.data());
+        }
+    }
+    Ok(out)
 }
 
 fn source_path(file: &str) -> Option<&Path> {
@@ -238,6 +249,13 @@ mod code_tests {
         // (0 calls __wasm_sys_read, 1 a function the kernel does not have.)
         let code = "F\t7\t__wasm_sys_read\t0:1\t1\t0\t0\nS\t0\t7\nS\t1\t9\n";
         assert_eq!(syscalls(code), [(0, "read".to_string())]);
+    }
+
+    #[test]
+    fn a_modules_custom_sections() {
+        let m = wat::parse_str(r#"(module (func) (@custom "ksee.code" "F") (@custom ".debug_info" "D"))"#).unwrap();
+        let s = custom_sections(&m).unwrap();
+        assert_eq!((s.get("ksee.code"), s.get(".debug_info")), (Some(&&b"F"[..]), Some(&&b"D"[..])));
     }
 
     #[test]
