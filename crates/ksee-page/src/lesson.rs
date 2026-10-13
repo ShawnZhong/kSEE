@@ -31,10 +31,6 @@ impl ProgramLine {
         match self { ProgramLine::Main(_) => None, ProgramLine::Task { task, .. } => Some(task) }
     }
 
-    fn with_text(&self, text: String) -> ProgramLine {
-        match self { ProgramLine::Main(_) => ProgramLine::Main(text), ProgramLine::Task { task, .. } => ProgramLine::Task { task: task.clone(), text } }
-    }
-
     fn on(task: Option<&str>, text: String) -> ProgramLine {
         match task { Some(task) => ProgramLine::Task { task: task.into(), text }, None => ProgramLine::Main(text) }
     }
@@ -252,7 +248,7 @@ fn Cell(j: usize, step: ProgramLine, outcome: Option<Outcome>, column: Option<(u
                 crate::editor::Editor { text: step.text().to_string(), task: step.task().map(String::from), line: j, placeholder: "",
                     done: move |text: String| {
                         let mut program = ui.program.write();
-                        if text.is_empty() { program.remove(j); } else { program[j] = step.with_text(text); }
+                        if text.is_empty() { program.remove(j); } else { program[j] = ProgramLine::on(step.task(), text); }
                     },
                     focus: move |_| if let Some(k) = run { ui.select(k) } }
                 span { class: "ret mono", title: "{during(outcome.as_ref(), &ui.program.read())}", {said(outcome.as_ref(), &ui.program.read())} }

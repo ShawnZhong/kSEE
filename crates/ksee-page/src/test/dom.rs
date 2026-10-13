@@ -5,7 +5,7 @@ use web_sys::{Document, Element, Event, EventInit, HtmlElement, HtmlTextAreaElem
               MouseEvent, MouseEventInit, PointerEvent, PointerEventInit};
 
 pub(super) fn doc() -> Document {
-    web_sys::window().and_then(|w| w.document()).expect("a document")
+    crate::document().expect("a document")
 }
 
 pub(super) fn all(sel: &str) -> Vec<Element> {

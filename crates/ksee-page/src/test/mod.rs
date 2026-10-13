@@ -14,8 +14,7 @@ pub(super) type Check = Result<String, String>;
 /// outcome said on the console (see report; a panic's too: the page stops
 /// there).
 pub fn start() -> Option<String> {
-    let hash = web_sys::window()?.location().hash().ok()?;
-    let name = hash.trim_start_matches('#').split('&').find_map(|kv| kv.strip_prefix("test="))?.to_string();
+    let name = crate::nav::hash("test")?;
     ON.set(true);
     std::panic::set_hook(Box::new(|p| {
         web_sys::console::error_1(&p.to_string().into());

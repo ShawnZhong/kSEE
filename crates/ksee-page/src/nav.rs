@@ -15,9 +15,14 @@ fn url() -> (Option<String>, Option<String>) {
     let Some(loc) = web_sys::window().map(|w| w.location()) else { return (None, None) };
     let path = loc.pathname().unwrap_or_default();
     let name = path.rsplit('/').next().and_then(|f| f.strip_suffix(".html")).map(String::from);
-    let p = loc.hash().unwrap_or_default().trim_start_matches('#').split('&').find_map(|kv| kv.strip_prefix("p=").map(String::from))
-        .and_then(|v| js_sys::decode_uri_component(&v).ok()?.as_string());
+    let p = hash("p").and_then(|v| js_sys::decode_uri_component(&v).ok()?.as_string());
     (name, p)
+}
+
+/// The URL's hash's value of `key` (#p=…&test=…), as it is.
+pub(crate) fn hash(key: &str) -> Option<String> {
+    let hash = web_sys::window()?.location().hash().ok()?;
+    hash.trim_start_matches('#').split('&').find_map(|kv| kv.strip_prefix(key)?.strip_prefix('=').map(String::from))
 }
 
 /// A program as the URL has it: JSON.

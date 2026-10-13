@@ -30,6 +30,16 @@ pub enum Move {
     Out,
 }
 
+/// The steps: each its key (the page's, see listen), its button's label
+/// and title. (Up and down: the stack, as the Stack and the chart have it,
+/// the callers below.)
+const MOVES: [(Move, &str, &str, &str); 4] = [
+    (Move::Back, "ArrowLeft", "← Back", "Back in time, the way the last step came: after Next, the line before in the function you read; after In, the very line before (←)"),
+    (Move::Next, "ArrowRight", "→ Next", "On in time: the line that runs next, in the function you read, over its calls (→)"),
+    (Move::In, "ArrowUp", "↑ In", "The very next line, into the call this line makes, if any (↑; with a caller's frame chosen: the frame above)"),
+    (Move::Out, "ArrowDown", "↓ Out", "Out to the caller, at its call (↓)"),
+];
+
 /// The moment shown (hovered, else the cursor) moved by `m`, the cursor
 /// pinned there; past the run's lines, into its task's run after it (or
 /// before): its next syscall, or what it did between.
@@ -92,11 +102,9 @@ pub fn Transport() -> Element {
         .map_or(String::new(), |c| format!(" · {} returned {}", c.func, machine().tables().types.result(c.value)));
     rsx! {
         div { class: "transport",
-            button { title: "Back in time, the way the last step came: after Next, the line before in the function you read; after In, the very line before (←)", onclick: move |_| walk(ui, d, Move::Back), "← Back" }
-            button { title: "On in time: the line that runs next, in the function you read, over its calls (→)", onclick: move |_| walk(ui, d, Move::Next), "→ Next" }
-            button { title: "The very next line, into the call this line makes, if any (↑; with a caller's frame chosen: the frame above)",
-                onclick: move |_| walk(ui, d, Move::In), "↑ In" }
-            button { title: "Out to the caller, at its call (↓)", onclick: move |_| walk(ui, d, Move::Out), "↓ Out" }
+            for (m, _, label, title) in MOVES {
+                button { title, onclick: move |_| walk(ui, d, m), "{label}" }
+            }
             span { class: "where mono dim", "{place}{turn}{returned}" }
         }
     }
@@ -121,18 +129,10 @@ pub fn listen(ui: Ui) {
                     return;
                 }
             }
-            // (← →: once the kernel is up.)
-            let up = matches!(*ui.kernel.peek(), Some(Ok(())));
-            let arrow = match e.key().as_str() {
-                "ArrowLeft" if up => { walk(ui, d, Move::Back); true }
-                "ArrowRight" if up => { walk(ui, d, Move::Next); true }
-                // (Up and down: the stack, as the Stack and the chart have
-                // it, the callers below.)
-                "ArrowUp" if up => { walk(ui, d, Move::In); true }
-                "ArrowDown" if up => { walk(ui, d, Move::Out); true }
-                _ => false,
-            };
-            if arrow {
+            // (Once the kernel is up.)
+            let Some(&(m, ..)) = MOVES.iter().find(|x| x.1 == e.key()) else { return };
+            if matches!(*ui.kernel.peek(), Some(Ok(()))) {
+                walk(ui, d, m);
                 e.prevent_default();
             }
         });
