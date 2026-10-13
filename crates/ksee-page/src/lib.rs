@@ -15,7 +15,6 @@ use dioxus::dioxus_core::Task;
 use dioxus::prelude::*;
 use js_sys::Promise;
 use ksee_host::machine::Machine;
-use wasm_bindgen::convert::TryFromJsValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
@@ -35,7 +34,7 @@ use lesson::Lesson;
 use state::Ui;
 
 thread_local! {
-    /// The Machine's boot (a promise: `mount`'s), and the Machine (one
+    /// The kernel's files (a promise: `mount`'s), and the Machine (one
     /// thread: the page's), once booted (App's).
     static BOOT: RefCell<Option<Promise>> = const { RefCell::new(None) };
     static MACHINE: RefCell<Option<Rc<Machine>>> = const { RefCell::new(None) };
@@ -43,17 +42,13 @@ thread_local! {
     static LESSONS: Cell<&'static [Lesson]> = const { Cell::new(&[]) };
 }
 
-/// The Machine, once booted; or why it could not be.
+/// The Machine, booted from the kernel's files; or why it could not be.
 pub(crate) async fn boot() -> Result<Rc<Machine>, String> {
     let promise = BOOT.with_borrow(|p| p.clone()).ok_or("not mounted")?;
-    let booted = JsFuture::from(promise).await.map_err(|e| {
-        e.as_string()
-            .or_else(|| js_sys::Error::from(e).message().as_string())
-            .unwrap_or_default()
-    })?;
-    Ok(Rc::new(
-        Machine::try_from_js_value(booted).map_err(|_| "not a Machine".to_string())?,
-    ))
+    let said = |e: JsValue| e.as_string().or_else(|| js_sys::Error::from(e).message().as_string()).unwrap_or_default();
+    let files: js_sys::Array = JsFuture::from(promise).await.map_err(said)?.unchecked_into();
+    let file = |k| files.get(k).unchecked_into::<js_sys::Uint8Array>();
+    Ok(Rc::new(Machine::start(file(0), file(1), file(2), file(3)).await.map_err(said)?))
 }
 
 /// The page's document.
@@ -71,8 +66,9 @@ pub(crate) fn lessons() -> &'static [Lesson] {
 }
 
 /// Mount the page into the element `root`, with the lessons, `lessons`
-/// (lessons.json), and `machine`, the kernel booting (a promise of the
-/// Machine: the page owns it once booted; the lesson shows meanwhile).
+/// (lessons.json), and `machine`, the kernel's files arriving (a promise of
+/// its image, tables, initramfs and disk: the page boots it; the lesson
+/// shows meanwhile).
 #[wasm_bindgen]
 pub fn mount(root: &str, lessons: &str, machine: Promise) -> Result<(), JsValue> {
     // (A panic said on the console, not only "unreachable".)

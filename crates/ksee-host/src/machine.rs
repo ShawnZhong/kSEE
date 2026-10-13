@@ -19,7 +19,6 @@ use crate::sched;
 use crate::state::*;
 
 /// A booted machine. Its views of the recording are in replay.rs.
-#[wasm_bindgen]
 pub struct Machine {
     /// The kernel, compiled (a new instance of it each boot); and the
     /// initramfs (at the top of RAM).
@@ -47,7 +46,6 @@ fn layout() -> (u32, u32) {
     (core::hint::black_box(&DATA) as *const u8 as u32, core::hint::black_box(&local) as *const u8 as u32)
 }
 
-#[wasm_bindgen]
 impl Machine {
     /// Boot the built kernel and initramfs bytes in its RAM, with the disk
     /// image; the kernel's tables, the pack's.

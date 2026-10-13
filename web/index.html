@@ -265,7 +265,7 @@ navigator.serviceWorker?.getRegistrations().then((all) => all.forEach((r) => r.u
 // (Each file asked for as this build's, by its commit: one deploy's files
 // never meet another's in a cache.)
 const v = `?v=${document.querySelector("meta[name=ksee-built]").content.split(" ")[0]}`;
-const { default: init, mount, Machine } = await import(`./pkg/ksee_page.js${v}`);
+const { default: init, mount } = await import(`./pkg/ksee_page.js${v}`);
 // (A build's file, its bytes: the .gz ones unpacked.)
 async function bytes(name) {
   const response = await fetch(name + v);
@@ -275,7 +275,7 @@ async function bytes(name) {
 }
 // (The page at once; the kernel boots meanwhile, the page's once up.)
 const [, lessons] = await Promise.all([init({ module_or_path: `pkg/ksee_page_bg.wasm${v}` }), fetch(`lessons.json${v}`).then((r) => r.text())]);
-mount("root", lessons, Promise.all(["vmlinux.gz", "tables.gz", "initramfs.cpio.gz", "disk.img.gz"].map(bytes)).then(([kernel, tables, initrd, disk]) => Machine.start(kernel, tables, initrd, disk)));
+mount("root", lessons, Promise.all(["vmlinux.gz", "tables.gz", "initramfs.cpio.gz", "disk.img.gz"].map(bytes)));
 </script>
 </body>
 </html>

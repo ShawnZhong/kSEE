@@ -58,7 +58,9 @@ Page modules and Dioxus state are documented in
 ## Boot and restart
 
 JavaScript fetches and decompresses the packed kernel, its tables, the
-initramfs and the disk, then `Machine::start` receives their bytes. It checks
+initramfs and the disk, and hands the page their bytes (`mount`); the page
+boots it (`Machine::start`, a Rust call: the Machine is no JavaScript
+object). It checks
 that the runtime's heap is above the kernel's RAM (see above), compiles the
 kernel, places the initramfs on the built-in command line, and reads the
 tables where their bytes are (`Tables::from_bytes`: the pack parsed them,
