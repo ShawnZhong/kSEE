@@ -38,6 +38,15 @@ fn initrd_at(initrd: &[u8]) -> Result<u32, JsValue> {
         .ok_or_else(|| JsValue::from_str("initramfs does not fit in RAM"))
 }
 
+/// Where this module's static data is, and its stack (a local's, here: not
+/// an async fn's, whose locals are its future's, on the heap).
+#[inline(never)]
+fn layout() -> (u32, u32) {
+    static DATA: u8 = 0;
+    let local = 0u8;
+    (core::hint::black_box(&DATA) as *const u8 as u32, core::hint::black_box(&local) as *const u8 as u32)
+}
+
 #[wasm_bindgen]
 impl Machine {
     /// Boot the built kernel and initramfs bytes in its RAM, with the disk
@@ -47,9 +56,10 @@ impl Machine {
             return Err("this browser has no JSPI (WebAssembly.Suspending): kSEE needs Chrome 137, Firefox 153, Safari 27 or later".into());
         }
         // The kernel's RAM: this module's memory between its stack and its
-        // static data, its heap above.
-        if (&*Box::new(0u8) as *const u8 as u32) < RAM_BYTES {
-            return Err("the runtime's heap is in the kernel's RAM: link it with --global-base=RAM_BYTES (.cargo/config.toml)".into());
+        // static data (its heap after the data).
+        let (data, stack) = layout();
+        if data < RAM_BYTES || stack >= KERNEL_BASE {
+            return Err(format!("the runtime's static data ({data:#x}) or stack ({stack:#x}) is in the kernel's RAM: link it with --global-base=RAM_BYTES (.cargo/config.toml)").into());
         }
 
         let module: WebAssembly::Module =
