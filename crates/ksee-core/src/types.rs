@@ -94,7 +94,7 @@ pub struct Types {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-struct Flat {
+pub(crate) struct Flat {
     text: &'static str,
     /// By id.
     types: &'static [TypeAt],
@@ -190,15 +190,25 @@ struct Declared {
 
 impl Types {
     pub fn parse(text: &str) -> Types {
+        let mut strs = Text::default();
+        let flat = Types::parse_into(text, &mut strs);
+        Types::with_text(flat, strs.keep())
+    }
+
+    /// The types of parse_into's flat tables, their names in `text`.
+    pub(crate) fn with_text(flat: Flat, text: &'static str) -> Types {
+        Types::of(Flat { text, ..flat })
+    }
+
+    /// The types of `text`, their names in `strs` (the tables': one text
+    /// for both), as flat tables (their text: strs's, once it is kept).
+    pub(crate) fn parse_into(text: &str, strs: &mut Text) -> Flat {
         let mut types: Vec<TypeAt> = Vec::new();
         let mut members: BTreeMap<u32, Vec<MemberAt>> = BTreeMap::new();
         let mut values: BTreeMap<u32, Vec<Value>> = BTreeMap::new();
         let (mut globals, mut syscalls, mut bodies, mut constants) = (BTreeMap::new(), BTreeMap::new(), BTreeMap::new(), BTreeMap::new());
         let (mut params, mut locals) = (Lists::default(), Lists::default());
         let mut declared: BTreeMap<&str, (Str, u32)> = BTreeMap::new();
-        // (Each name once: a file's, a parameter's, a local's, a member's,
-        // each the same in thousands of declarations and functions.)
-        let mut strs = Text::default();
         for line in text.lines() {
             let c: Vec<&str> = line.split('\t').collect();
             let num = |i: usize| c.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -283,8 +293,8 @@ impl Types {
         }
         let declared = declared.into_iter().map(|(name, (file, line))| Declared { name: strs.name(name), file, line }).collect();
         use crate::flat::keep;
-        Types::of(Flat {
-            text: strs.keep(),
+        Flat {
+            text: "",
             types: keep(types),
             members: keep(all),
             enumerators: keep(enumerators),
@@ -295,7 +305,7 @@ impl Types {
             params: params.keep(),
             locals: locals.keep(),
             declared: keep(declared),
-        })
+        }
     }
 
     /// The types of their flat tables: the types, and the names of a few,
@@ -335,17 +345,18 @@ impl Types {
         }
     }
 
+    /// Written after its text (see read).
     pub(crate) fn write(&self, w: &mut Writer) {
         let f = &self.flat;
-        w.bytes(f.text.as_bytes());
         (w.slice(f.types), w.slice(f.members), w.slice(f.enumerators), w.slice(f.globals));
         (w.slice(f.syscalls), w.slice(f.bodies), w.slice(f.constants));
         (w.slice(f.params.0), w.slice(f.params.1), w.slice(f.locals.0), w.slice(f.locals.1), w.slice(f.declared));
     }
 
-    pub(crate) fn read(r: &mut Reader) -> Option<Types> {
+    /// The types `write` wrote, their names in `text`.
+    pub(crate) fn read(r: &mut Reader, text: &'static str) -> Option<Types> {
         Some(Types::of(Flat {
-            text: r.text()?,
+            text,
             types: r.slice()?,
             members: r.slice()?,
             enumerators: r.slice()?,

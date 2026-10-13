@@ -252,15 +252,19 @@ impl Tables {
             chains: (r.slice()?, r.slice()?),
             files: r.slice()?,
             vars: r.slice()?,
-            types: Types::read(&mut r)?,
+            types: Default::default(),
+        }).and_then(|mut t| {
+            t.types = Types::read(&mut r, t.text)?;
+            Some(t)
         })
     }
 
     /// Parse the `ksee` section and the types' text. Lines are
     /// tab-separated and may repeat (one copy per compilation unit).
     pub fn parse(code: &str, types: &str) -> Tables {
-        let types = Types::parse(types);
+        // (One text: the types' names and the code's, each once.)
         let mut text = Text::default();
+        let types = Types::parse_into(types, &mut text);
         let (mut files, mut names) = (Index::<String>::default(), Index::<String>::default());
         let mut chains = Index::<Vec<Site>>::default();
         let mut unit = Unit::default();
@@ -361,9 +365,10 @@ impl Tables {
             chains: (&[], &[]),
             files,
             vars: crate::flat::keep(var_at),
-            types,
+            types: Default::default(),
         };
         t.text = text.keep();
+        t.types = Types::with_text(types, t.text);
         (t.steps, t.chains) = t.fold_primitives(steps, chains);
         t
     }
