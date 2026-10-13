@@ -11,30 +11,13 @@ const KIND_SHIFT: u32 = 28;
 const COUNT_SHIFT: u32 = 24;
 const FIELDS: u32 = (1 << COUNT_SHIFT) - 1;
 
-#[derive(Clone, Copy, PartialEq)]
-#[repr(u32)]
-enum Kind {
-    Block = 1,
-    Task = 3,
-    Return = 4,
-    Compare = 6,
-    Store = 7,
-    Var = 9,
-}
-
-impl Kind {
-    fn of(tag: u32) -> Option<Kind> {
-        Some(match tag >> KIND_SHIFT {
-            1 => Kind::Block,
-            3 => Kind::Task,
-            4 => Kind::Return,
-            6 => Kind::Compare,
-            7 => Kind::Store,
-            9 => Kind::Var,
-            _ => return None,
-        })
-    }
-}
+// The kinds (a tag's top bits).
+const BLOCK: u32 = 1;
+const TASK: u32 = 3;
+const RETURN: u32 = 4;
+const COMPARE: u32 = 6;
+const STORE: u32 = 7;
+const VAR: u32 = 9;
 
 const fn fields(tag: u32) -> u32 {
     tag & FIELDS
@@ -145,11 +128,12 @@ pub fn ring(mem: &dyn Memory, at: Ring) -> (Vec<Record>, Vec<u32>, Args) {
         return Default::default();
     }
     let pos = mem.read_u32(at.pos);
-    let found = decode(pos, pos.saturating_sub(words), |i| mem.read_u32(at.ring + i % words * 4));
+    let word = |i| mem.read_u32(at.ring + i % words * 4);
+    let found = decode(pos, pos.saturating_sub(words), word);
     let (mut records, mut ids, mut args) = (Vec::with_capacity(found.len()), Vec::with_capacity(found.len()), Args::default());
-    for (id, r, values) in found {
+    for (id, end, r) in found {
         if matches!(r, Record::Block { n: 0, .. }) {
-            args.push(records.len(), &values);
+            args.push(records.len(), &(id..end).map(word).collect::<Vec<_>>());
         }
         records.push(r);
         ids.push(id);
@@ -159,19 +143,24 @@ pub fn ring(mem: &dyn Memory, at: Ring) -> (Vec<Record>, Vec<u32>, Args) {
 
 /// The records that end at word `pos`, back to word `oldest` (what the ring
 /// still has: a record that starts before it is gone), `word(i)` the
-/// word ever written `i`-th: each record's first word, the record, its
-/// values; oldest first. A record ends with its head, `a` and its tag,
+/// word ever written `i`-th: each record's first word, where its values
+/// end (they are first..end), and the record; oldest first. A record ends with its head, `a` and its tag,
 /// which says how many values come before them: read back from `pos`, a
 /// record's end, the records are each whole.
-pub(crate) fn decode(pos: u32, oldest: u32, word: impl Fn(u32) -> u32) -> Vec<(u32, Record, Vec<u32>)> {
+pub(crate) fn decode(pos: u32, oldest: u32, word: impl Fn(u32) -> u32) -> Vec<(u32, u32, Record)> {
     let mut out = Vec::new();
     let mut p = pos;
+    // (A record's values: at most 15, the count's 4 bits.)
+    let mut values = [0u32; 15];
     while p >= oldest.saturating_add(2) {
         let tag = word(p - 1);
         let Some(start) = p.checked_sub(2 + count(tag)).filter(|&s| s >= oldest) else { break };
-        let values: Vec<u32> = (start..p - 2).map(&word).collect();
-        if let Some(r) = record(word(p - 2), tag, &values) {
-            out.push((start, r, values));
+        let n = (p - 2 - start) as usize;
+        for (k, i) in (start..p - 2).enumerate() {
+            values[k] = word(i);
+        }
+        if let Some(r) = record(word(p - 2), tag, &values[..n]) {
+            out.push((start, p - 2, r));
         }
         p = start;
     }
@@ -185,24 +174,24 @@ fn record(a: u32, tag: u32, v: &[u32]) -> Option<Record> {
     let fields = fields(tag);
     let got = v.len();
     let word = |k: usize| v.get(k).copied().unwrap_or(0) as u64;
-    Some(match Kind::of(tag)? {
+    Some(match tag >> KIND_SHIFT {
         // (An entry block: the call's arguments, as many words as they
         // take, then its frame base.)
-        Kind::Block if (fields == 0) == (1..=15).contains(&got) => Record::Block { func: a, n: fields },
-        Kind::Task if got == 0 => Record::Task { task: a },
-        Kind::Return if got <= 2 => {
+        BLOCK if (fields == 0) == (1..=15).contains(&got) => Record::Block { func: a, n: fields },
+        TASK if got == 0 => Record::Task { task: a },
+        RETURN if got <= 2 => {
             let value = match got { 0 => None, 1 => Some(word(0) as u32 as i32 as i64), _ => Some((word(0) | word(1) << 32) as i64) };
             Record::Return { func: a, value }
         }
         // (A wide one: then the high words, lhs's and rhs's.)
-        Kind::Compare if matches!(got, 1 | 3) => {
+        COMPARE if matches!(got, 1 | 3) => {
             let wide = got == 3;
             let hi = |k: usize| if wide { word(k) << 32 } else { 0 };
             Record::Compare { lhs: a as u64 | hi(1), rhs: word(0) | hi(2), wide, pred: (fields & 0xf) as u8, line: fields >> 4 }
         }
         // (Its width, 1 << the class (0..=3, 1 to 8 bytes); the old value (an
         // 8-byte one's in two words); then, a copy's, where from.)
-        Kind::Store if fields & 0xf <= 3 => {
+        STORE if fields & 0xf <= 3 => {
             let wide = fields & 0xf == 3;
             let words = 1 + wide as usize;
             if got != words && got != words + 1 {
@@ -213,7 +202,7 @@ fn record(a: u32, tag: u32, v: &[u32]) -> Option<Record> {
             Record::Store { addr: a, size: 1 << (fields & 0xf), old, line: fields >> 4, from }
         }
         // (A wide one's high word before it.)
-        Kind::Var if got <= 1 => Record::Var { var: fields & 0xfff, line: fields >> 12, value: a as u64 | word(0) << 32 },
+        VAR if got <= 1 => Record::Var { var: fields & 0xfff, line: fields >> 12, value: a as u64 | word(0) << 32 },
         _ => return None,
     })
 }
@@ -221,13 +210,6 @@ fn record(a: u32, tag: u32, v: &[u32]) -> Option<Record> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-
-    const BLOCK: u32 = Kind::Block as u32;
-    const RETURN: u32 = Kind::Return as u32;
-    const COMPARE: u32 = Kind::Compare as u32;
-    const STORE: u32 = Kind::Store as u32;
-    const VAR: u32 = Kind::Var as u32;
-    const TASK: u32 = Kind::Task as u32;
 
     /// A record as ksee.c writes it: its values, then `a` and its tag
     /// (`kind` and `fields`) with their count.
@@ -244,7 +226,8 @@ pub(crate) mod tests {
 
     /// The same, with each record's values.
     fn decode_values(words: &[u32]) -> Vec<(Record, Vec<u32>)> {
-        super::decode(words.len() as u32, 0, |i| words[i as usize]).into_iter().map(|(_, r, v)| (r, v)).collect()
+        super::decode(words.len() as u32, 0, |i| words[i as usize]).into_iter()
+            .map(|(first, end, r)| (r, words[first as usize..end as usize].to_vec())).collect()
     }
 
     #[test]
@@ -276,7 +259,7 @@ pub(crate) mod tests {
         w.extend(ret(5, 42));
         assert_eq!(decode_values(&w)[0], (Record::Block { func: 5, n: 0 }, alloc::vec![1, 2, 0x900]));
         // (Its first word overwritten: the ring has from word 1 on.)
-        let got: Vec<Record> = super::decode(w.len() as u32, 1, |i| w[i as usize]).into_iter().map(|(_, r, _)| r).collect();
+        let got: Vec<Record> = super::decode(w.len() as u32, 1, |i| w[i as usize]).into_iter().map(|(_, _, r)| r).collect();
         assert_eq!(got, [Record::Block { func: 5, n: 3 }, Record::Return { func: 5, value: Some(42) }]);
     }
 

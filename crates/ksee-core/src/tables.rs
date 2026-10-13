@@ -110,7 +110,7 @@ use crate::types::Types;
 /// the calls it makes (a stretch runs at the block's record, the next at
 /// each return into it). A Store's, Compare's or Var's `line` indexes
 /// `steps`. (A view of the Tables' steps and cuts: Tables::block.)
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Block<'a> {
     pub steps: &'a [Step],
     /// Where each stretch begins in `steps` (the first at 0).
@@ -189,22 +189,27 @@ pub struct Tables {
     pub types: Types,
 }
 
-/// Interns file paths while parsing.
-#[derive(Default)]
-struct Files {
-    ids: BTreeMap<String, u32>,
-    paths: Vec<Str>,
+/// Values numbered as parsing meets them, each once (files, inlined
+/// functions, inline chains).
+struct Index<K> {
+    ids: BTreeMap<K, u32>,
+    list: Vec<K>,
 }
 
-impl Files {
-    fn intern(&mut self, path: &str, text: &mut Text) -> u32 {
-        if let Some(&id) = self.ids.get(path) {
+impl<K> Default for Index<K> {
+    fn default() -> Self {
+        Index { ids: BTreeMap::new(), list: Vec::new() }
+    }
+}
+
+impl<K: Ord + Clone> Index<K> {
+    fn get(&mut self, k: K) -> u32 {
+        if let Some(&id) = self.ids.get(&k) {
             return id;
         }
-        self.paths.push(text.name(path));
-        let id = self.paths.len() as u32 - 1;
-        self.ids.insert(path.into(), id);
-        id
+        self.list.push(k.clone());
+        self.ids.insert(k, self.list.len() as u32 - 1);
+        self.list.len() as u32 - 1
     }
 }
 
@@ -262,11 +267,9 @@ impl Tables {
     pub fn parse(code: &str, types: &str) -> Tables {
         let types = Types::parse(types);
         let mut text = Text::default();
-        let mut files = Files::default();
+        let (mut files, mut names) = (Index::<String>::default(), Index::<String>::default());
+        let mut chains = Index::<Vec<Site>>::default();
         let mut unit = Unit::default();
-        let mut names: BTreeMap<String, u32> = BTreeMap::new();
-        let mut inline_names = Vec::new();
-        let mut chains: BTreeMap<Vec<Site>, u32> = BTreeMap::new();
         let mut functions = BTreeMap::new();
         let mut vars = BTreeMap::new();
         let (mut blocks, mut steps, mut cuts) = (Vec::new(), Vec::new(), Vec::new());
@@ -277,16 +280,12 @@ impl Tables {
                 ["U"] => unit = Unit::default(),
                 ["P", k, path] => {
                     if let Ok(k) = k.parse() {
-                        unit.files.insert(k, files.intern(path, &mut text));
+                        unit.files.insert(k, files.get(path.to_string()));
                     }
                 }
                 ["I", k, name, site] => {
                     if let Ok(k) = k.parse() {
-                        let name = *names.entry(name.to_string()).or_insert_with(|| {
-                            inline_names.push(text.name(name));
-                            inline_names.len() as u32 - 1
-                        });
-                        unit.sites.insert(k, Site { name, loc: unit.loc(site) });
+                        unit.sites.insert(k, Site { name: names.get(name.to_string()), loc: unit.loc(site) });
                     }
                 }
                 ["V", id, k, of, function, name, param, arg] => {
@@ -326,10 +325,7 @@ impl Tables {
                                     at
                                 }
                             };
-                            let inlined = (!chain.is_empty()).then(|| {
-                                let next = chains.len() as u32;
-                                *chains.entry(chain).or_insert(next)
-                            });
+                            let inlined = (!chain.is_empty()).then(|| chains.get(chain));
                             these.push(Step::new(unit.loc(at), inlined));
                         }
                         // (Once: a unit's copy of a block another unit gave.)
@@ -345,18 +341,17 @@ impl Tables {
             }
         }
         blocks.sort_by_key(BlockAt::key);
-        let mut by_index: Vec<(u32, Vec<Site>)> = chains.into_iter().map(|(c, k)| (k, c)).collect();
-        by_index.sort_by_key(|c| c.0);
-        let chains = by_index.into_iter().map(|(_, c)| c).collect();
+        let mut name = |list: Vec<String>| crate::flat::keep(list.iter().map(|s| text.name(s)).collect());
+        let (inline_names, files) = (name(names.list), name(files.list));
         let mut t = Tables {
             text: "",
             functions: crate::flat::keep(functions.into_values().collect()),
             blocks: crate::flat::keep(blocks),
             steps: &[],
             cuts: crate::flat::keep(cuts),
-            inline_names: crate::flat::keep(inline_names),
+            inline_names,
             chains: (&[], &[]),
-            files: crate::flat::keep(files.paths),
+            files,
             vars: crate::flat::keep(vars.into_values().collect()),
             types,
         };
@@ -370,11 +365,10 @@ impl Tables {
     /// it is inlined at, in the function that inlined it, so that nothing
     /// shows a frame, a node or a line of get_current. (The steps and
     /// chains, kept.)
-    fn fold_primitives(&self, mut steps: Vec<Step>, mut chains: Vec<Vec<Site>>) -> (&'static [Step], (&'static [At], &'static [Site])) {
+    fn fold_primitives(&self, mut steps: Vec<Step>, mut chains: Index<Vec<Site>>) -> (&'static [Step], (&'static [At], &'static [Site])) {
         let prim: Vec<bool> = (0..self.inline_names.len() as u32)
             .map(|k| self.types.declared(self.inline_name(k)).is_some_and(|(f, _)| arch::PRIMITIVES.iter().any(|p| f.starts_with(p)))).collect();
         if prim.iter().any(|&p| p) {
-            let mut index: BTreeMap<Vec<Site>, u32> = chains.iter().enumerate().map(|(i, c)| (c.clone(), i as u32)).collect();
             let mut folded: BTreeMap<u32, (Loc, Option<u32>)> = BTreeMap::new();
             for s in steps.iter_mut() {
                 let Some(c) = s.inlined() else { continue };
@@ -382,23 +376,20 @@ impl Tables {
                     *s = Step::new(loc, inlined);
                     continue;
                 }
-                let chain = &chains[c as usize];
+                let chain = &chains.list[c as usize];
                 let n = chain.iter().take_while(|site| prim[site.name as usize]).count();
                 if n == 0 {
                     continue;
                 }
                 let loc = chain[n - 1].loc;
                 let rest = chain[n..].to_vec();
-                let inlined = (!rest.is_empty()).then(|| *index.entry(rest.clone()).or_insert_with(|| {
-                    chains.push(rest);
-                    chains.len() as u32 - 1
-                }));
+                let inlined = (!rest.is_empty()).then(|| chains.get(rest));
                 folded.insert(c, (loc, inlined));
                 *s = Step::new(loc, inlined);
             }
         }
         let mut lists = Lists::default();
-        for (k, c) in chains.into_iter().enumerate() {
+        for (k, c) in chains.list.into_iter().enumerate() {
             lists.push(k as u32, c);
         }
         (crate::flat::keep(steps), lists.keep())
@@ -474,11 +465,6 @@ impl Tables {
     /// Inline chain `k` (see Step), innermost first, or none.
     pub fn chain(&self, k: Option<u32>) -> &'static [Site] {
         k.map_or(&[], |k| crate::flat::list(self.chains.0, self.chains.1, k))
-    }
-
-    /// Stretch `seg` of block `n` of `func`'s lines (none past the last).
-    pub fn stretch(&self, func: u32, n: u32, seg: u32) -> &'static [Step] {
-        self.block(func, n).map_or(&[], |b| b.stretch(seg))
     }
 
     /// Function `func`'s argument values, from a call's words (trace::Args):

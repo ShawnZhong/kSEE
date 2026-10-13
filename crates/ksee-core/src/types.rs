@@ -85,7 +85,8 @@ pub struct Types {
     pub globals: BTreeMap<&'static str, (u32, u32)>,
     /// Syscall names, by number.
     pub syscalls: BTreeMap<u32, &'static str>,
-    /// The syscalls' bodies' function ids (arch::SYSCALL_BODY's), by name.
+    /// The syscalls' bodies' function ids (arch::SYSCALL_BODY's), by the
+    /// syscall's name.
     bodies: BTreeMap<&'static str, u32>,
     /// Constants from the UAPI headers (flags, errno names): name -> value.
     pub constants: BTreeMap<&'static str, i64>,
@@ -232,8 +233,8 @@ impl Types {
                         Param { name: strs.name(n), ty: t.parse().unwrap_or(0) }
                     }).collect();
                     params.push(num(1), list);
-                    if c[2].starts_with(crate::arch::SYSCALL_BODY) {
-                        bodies.entry(c[2]).or_insert((strs.name(c[2]), num(1)));
+                    if let Some(call) = c[2].strip_prefix(crate::arch::SYSCALL_BODY) {
+                        bodies.entry(call).or_insert((strs.name(call), num(1)));
                     }
                 }
                 // (Q: name:type:offset for each local, the offset empty
@@ -404,7 +405,7 @@ impl Types {
 
     /// Syscall `name`'s parameters (its body's, arch::SYSCALL_BODY).
     pub fn syscall_params(&self, name: &str) -> Option<Vec<(&'static str, u32)>> {
-        Some(self.params(*self.bodies.get(format!("{}{name}", crate::arch::SYSCALL_BODY).as_str())?).collect())
+        Some(self.params(*self.bodies.get(name)?).collect())
     }
 
     /// Every pointer in a value of type `ty` (it, or in the structs,
@@ -527,13 +528,6 @@ impl Types {
         }
     }
 
-    /// Whether `ty` holds flags (arch::FLAG_TYPES: fmode_t, gfp_t,
-    /// vm_flags_t, ...).
-    fn is_flags(&self, ty: u32) -> bool {
-        let name = self.name(ty);
-        crate::arch::FLAG_TYPES.iter().any(|&f| name == f || f.starts_with('*') && name.ends_with(&f[1..]))
-    }
-
     /// Print the scalar (or string) value of type `ty` at `addr`, possibly
     /// a bitfield (`bit_off`, `bit_size`); an aggregate as "{...}" (see
     /// view::Object for their members).
@@ -554,9 +548,17 @@ impl Types {
                     Base::Char => write!(&mut out, "{}", sign_extend(v, bits.max(1))),
                     Base::Float if size == 4 => write!(&mut out, "{}", f32::from_bits(v as u32)),
                     Base::Float => write!(&mut out, "{}", f64::from_bits(v)),
-                    // Unsigned: as num, but flags in hex and file modes in octal.
-                    _ if v > 9 && self.is_flags(ty) => write!(&mut out, "{v:#x}"),
-                    _ if v > 7 && crate::arch::OCTAL_TYPES.contains(&self.name(ty).as_str()) => write!(&mut out, "0{v:o}"),
+                    // Unsigned: as num, but flags (arch::FLAG_TYPES: fmode_t,
+                    // gfp_t, ...) in hex and file modes in octal.
+                    _ if v > 7 => {
+                        let name = self.name(ty);
+                        let flags = crate::arch::FLAG_TYPES.iter().any(|&f| name == f || f.starts_with('*') && name.ends_with(&f[1..]));
+                        match () {
+                            _ if v > 9 && flags => write!(&mut out, "{v:#x}"),
+                            _ if crate::arch::OCTAL_TYPES.contains(&name.as_str()) => write!(&mut out, "0{v:o}"),
+                            _ => write!(&mut out, "{}", num(v)),
+                        }
+                    }
                     _ => write!(&mut out, "{}", num(v)),
                 };
             }

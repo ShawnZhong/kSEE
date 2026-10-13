@@ -432,7 +432,7 @@ impl View<'_> {
         // (Regions of their own, once each: a global, an address nothing names.)
         let mut own: BTreeMap<u32, u32> = BTreeMap::new();
         let mut writes = Vec::new();
-        for &i in self.rec.stores_between(first, last) {
+        for &i in self.rec.stores().between(first, last) {
             let Record::Store { addr, .. } = records[i] else { continue };
             let end = by_start.partition_point(|&k| regions[k].addr <= addr);
             // (The outermost: an object inside another (a page's refcount,

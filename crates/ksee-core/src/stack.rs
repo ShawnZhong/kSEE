@@ -15,7 +15,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use crate::tables::{Step, Tables};
+use crate::tables::{Block, Step, Tables};
 use crate::trace::Record;
 
 /// No call, or no place.
@@ -146,11 +146,12 @@ impl Calls {
         t.block(self.calls[p.call as usize].func, p.n)?.last_by(p.seg)
     }
 
-    /// The lines record `i` runs, if it runs some (a block, or a return
-    /// into the middle of one): (its place, the lines).
-    fn stretch<'t>(&self, t: &'t Tables, i: usize) -> Option<(&Place, &'t [Step])> {
+    /// The stretch record `i` runs, if it runs one (a block, or a return
+    /// into the middle of one): its place, and its block (its lines:
+    /// `stretch(p.seg)`).
+    fn stretch(&self, t: &Tables, i: usize) -> Option<(&Place, Block<'static>)> {
         let p = self.place_at(i).filter(|p| p.record as usize == i && p.n != NONE)?;
-        Some((p, t.stretch(self.calls[p.call as usize].func, p.n, p.seg)))
+        Some((p, t.block(self.calls[p.call as usize].func, p.n).unwrap_or_default()))
     }
 
     /// The call running at record `i` (its task's innermost).
@@ -205,7 +206,7 @@ impl Calls {
         let p = self.place_at(i)?;
         // (At the record that starts a stretch, its task is at the
         // stretch's first line, or the `nth`; after, at its last.)
-        let step = self.stretch(t, i).and_then(|(_, s)| s.get(nth.unwrap_or(0)).copied()).or_else(|| self.line(t, p));
+        let step = self.stretch(t, i).and_then(|(p, b)| b.stretch(p.seg).get(nth.unwrap_or(0)).copied()).or_else(|| self.line(t, p));
         let c = &self.calls[p.call as usize];
         Some((p.call, StackCall { func: c.func, first: c.first, step }))
     }
@@ -251,7 +252,8 @@ impl Calls {
             if tasks[i] != task {
                 continue;
             }
-            let Some((p, steps)) = self.stretch(t, i) else { continue };
+            let Some((p, b)) = self.stretch(t, i) else { continue };
+            let steps = b.stretch(p.seg);
             let c = &self.calls[p.call as usize];
             // (After a return into it: the line that made the call says what
             // it returned, the value its `ret = f(...)` got; nothing, a void
@@ -268,7 +270,7 @@ impl Calls {
             // (The stretch's lines are numbered on from the block's earlier
             // ones: a store says which it is on; the first store of each line,
             // among the records up to the task's next block or return.)
-            let base = t.block(c.func, p.n).map_or(0, |b| b.start(p.seg));
+            let base = b.start(p.seg);
             let mut first_at: BTreeMap<u32, usize> = BTreeMap::new();
             let mut last = i;
             for (j, r) in records[i + 1..].iter().enumerate().map(|(k, r)| (i + 1 + k, r)) {

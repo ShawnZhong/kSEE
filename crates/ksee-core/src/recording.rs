@@ -270,11 +270,6 @@ impl Recording {
         });
         all.get(k as usize).copied().unwrap_or(0)
     }
-
-    /// The stores in records `from..=to`, oldest first.
-    pub(crate) fn stores_between(&self, from: usize, to: usize) -> &[usize] {
-        self.stores().between(from, to.min(self.last()))
-    }
 }
 
 #[cfg(test)]
